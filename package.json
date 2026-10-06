@@ -8,12 +8,13 @@
   "scripts": {
     "boundaries": "node scripts/verify-import-boundaries.mjs",
     "build": "turbo run build",
-    "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run knip",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run knip && bun run test",
     "fix": "ultracite fix",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "knip": "knip",
     "lint": "biome lint .",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
@@ -22,7 +23,8 @@
     "knip": "^6.39.0",
     "turbo": "^2.11.7",
     "typescript": "^7.0.2",
-    "ultracite": "7.12.4"
+    "ultracite": "7.12.4",
+    "vitest": "5.0.3"
   },
   "packageManager": "bun@1.4.2",
   "engines": {
