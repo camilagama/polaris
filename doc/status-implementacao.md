@@ -35,7 +35,9 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR07 — React + Vite + Cloudflare Worker | Concluído | Check, build e smoke local aprovados; CI remoto do PR #5 verde; draft aguarda revisão e merge do responsável. |
 | PR08 — Hono shell | Concluído | Check, build e smoke HTTP aprovados; CI remoto do PR #6 verde; draft aguarda revisão e merge do responsável. |
 | PR09 — oRPC POC | Concluído | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais e CI remoto do PR #7 passaram; draft aguarda revisão e merge. |
-| PR10–PR12 — PostgreSQL/Drizzle/Hyperdrive, RLS e persistência offline | Pendente | PostgreSQL 18 é o baseline; PR11 exige prova remota na região escolhida. |
+| PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Em revisão; runtime DB adiado | DB package, schema/migration, binding e runner POC adicionados; check/build/dev smoke passam. Query, transação, rollback e reuso aguardam URL de um PostgreSQL 18 descartável; pooling/cache remoto fica para PR11. |
+| PR11 — Gate RLS/Hyperdrive | Pendente | Exige prova real Worker → Hyperdrive → Neon, PostgreSQL 18 na região escolhida e query caching SQL desabilitado. |
+| PR12 — Offline persistence POC | Pendente | Persistência offline e fallback definidos no plano continuam pendentes. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
 ## Publicação GitHub
@@ -45,6 +47,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
+- PR10 está na branch `feat/postgres-hyperdrive-poc`, baseada em `feat/orpc-poc`; publicação em andamento e smoke SQL aguardando conexão local PostgreSQL 18.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

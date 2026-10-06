@@ -13,6 +13,7 @@
     "@orpc/client": "^1.15.4",
     "@orpc/server": "^1.15.4",
     "@polaris/contracts": "workspace:*",
+    "@polaris/db": "workspace:*",
     "hono": "^4.13.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

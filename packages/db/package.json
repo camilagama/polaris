@@ -2,9 +2,23 @@
   "name": "@polaris/db",
   "private": true,
   "type": "module",
+  "exports": {
+    "./client": "./src/client.ts",
+    "./schema/poc": "./src/schema/poc.ts"
+  },
   "scripts": {
-    "build": "tsc --noEmit",
-    "check": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "bun run typecheck",
+    "check": "bun run typecheck",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "poc": "bun scripts/poc.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.3",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.5"
   }
 }
