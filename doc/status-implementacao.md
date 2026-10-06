@@ -34,7 +34,8 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | --- | --- | --- |
 | PR07 — React + Vite + Cloudflare Worker | Concluído | Check, build e smoke local aprovados; CI remoto do PR #5 verde; draft aguarda revisão e merge do responsável. |
 | PR08 — Hono shell | Concluído | Check, build e smoke HTTP aprovados; CI remoto do PR #6 verde; draft aguarda revisão e merge do responsável. |
-| PR09–PR12 — oRPC, DB/Hyperdrive, RLS e persistência offline | Pendente | PostgreSQL 18 é o baseline; PR11 exige prova remota na região escolhida. |
+| PR09 — oRPC POC | Em revisão | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais passam; CI remoto pendente. |
+| PR10–PR12 — PostgreSQL/Drizzle/Hyperdrive, RLS e persistência offline | Pendente | PostgreSQL 18 é o baseline; PR11 exige prova remota na região escolhida. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
 ## Publicação GitHub
@@ -43,6 +44,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 - PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4; #6 `feat/hono-shell` → #5.
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
+- PR09 está na branch `feat/orpc-poc`, baseada em `feat/hono-shell`; publicação e CI pendentes.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

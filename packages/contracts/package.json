@@ -2,9 +2,16 @@
   "name": "@polaris/contracts",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@orpc/contract": "^1.15.4",
+    "zod": "^4.6.5"
   }
 }

@@ -13,6 +13,10 @@
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },
+    "packages/contracts": {
+      "entry": [],
+      "project": ["src/**/*.ts"]
+    },
     "apps/web": {
       "entry": [],
       "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
