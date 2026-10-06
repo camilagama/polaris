@@ -1,0 +1,10 @@
+{
+  "name": "@polaris/db",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

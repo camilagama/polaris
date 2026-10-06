@@ -1,0 +1,6973 @@
+# Polaris ERP vNext
+
+## Plano de implementação detalhado e cauteloso
+
+
+
+**Status:** plano de execução derivado da arquitetura canônica  
+
+**Objetivo:** construir o novo Polaris do zero sem transportar acidentalmente as limitações arquiteturais do sistema legado.  
+
+**Estratégia:** fundação comprovada primeiro; funcionalidades depois.  
+
+**Regra principal:** nenhum módulo posterior pode contornar ou duplicar uma decisão já consolidada na fundação.
+
+
+
+---
+
+
+
+# 1. Como usar este plano
+
+
+
+O desenvolvimento deve acontecer em PRs pequenos e semanticamente coesos.
+
+
+
+Um PR não deve tentar simultaneamente:
+
+
+
+- criar infraestrutura;
+
+- mudar arquitetura;
+
+- implementar feature;
+
+- redesenhar UI;
+
+- alterar billing;
+
+- alterar segurança.
+
+
+
+Cada PR precisa possuir:
+
+
+
+1. problema;
+
+2. resultado esperado;
+
+3. arquivos alterados;
+
+4. risco;
+
+5. testes necessários;
+
+6. critério de aceite;
+
+7. documentação afetada.
+
+
+
+Sempre que um PR introduzir uma decisão estrutural nova que contradiga este documento, ele deve parar e gerar uma decisão arquitetural explícita antes de prosseguir.
+
+
+
+---
+
+
+
+# 2. Regras para todos os PRs
+
+
+
+## 2.1 Branches
+
+
+
+Usar branches curtas:
+
+
+
+```text
+
+feat/foundation-...
+
+feat/auth-...
+
+feat/catalog-...
+
+fix/...
+
+chore/...
+
+```
+
+
+
+Não desenvolver semanas inteiras numa branch.
+
+
+
+---
+
+
+
+## 2.2 Tamanho
+
+
+
+Preferência:
+
+
+
+```text
+
+1 PR = 1 mudança conceitual
+
+```
+
+
+
+Não usar número de arquivos como métrica de tamanho.
+
+
+
+Uma migration + domínio + testes necessários para uma regra pode ser um único PR.
+
+
+
+Três features independentes não devem estar juntas apenas porque cada uma altera poucos arquivos.
+
+
+
+---
+
+
+
+## 2.3 Verificação mínima
+
+
+
+Todo PR deverá passar, quando aplicável:
+
+
+
+```text
+
+bun install --frozen-lockfile
+
+bun run check
+
+bun run typecheck
+
+bun run test
+
+bun run knip
+
+bun run build
+
+```
+
+
+
+O conjunto real será criado durante a Fase 0.
+
+
+
+PRs de banco deverão também executar a suíte PostgreSQL.
+
+
+
+PRs de UI crítica deverão executar E2E relevante.
+
+
+
+---
+
+
+
+# 3. Classificação de risco
+
+
+
+## Low
+
+
+
+Exemplos:
+
+
+
+- copy;
+
+- documentação;
+
+- componente puramente visual;
+
+- refactor sem comportamento.
+
+
+
+Verificação mínima.
+
+
+
+## Medium
+
+
+
+Exemplos:
+
+
+
+- API;
+
+- formulário;
+
+- query;
+
+- entitlement não financeiro;
+
+- mudança de fluxo.
+
+
+
+Exige testes focados e integração.
+
+
+
+## High
+
+
+
+Exemplos:
+
+
+
+- autenticação;
+
+- billing;
+
+- RLS;
+
+- estoque;
+
+- venda;
+
+- offline;
+
+- migration destrutiva;
+
+- privacy;
+
+- Admin;
+
+- restore.
+
+
+
+Exige testes de comportamento reais, documentação e avaliação explícita de rollback.
+
+
+
+---
+
+
+
+# 4. Gate global
+
+Não começar a multiplicar features enquanto estas quatro provas de infraestrutura não existirem:
+
+- React/Vite no Worker;
+- Hono + oRPC funcionando;
+- Hyperdrive + PostgreSQL 18 + RLS comprovados remotamente;
+- offline persistence POC aprovado ou alternativa escolhida.
+
+Isso é o Gate Foundation. Better Auth fica depois desse gate, como primeira prova da Fase 2, e precisa passar pelo Gate Auth antes dos fluxos de login e tenant.
+
+# FASE 0 — REPOSITÓRIO E GOVERNANÇA
+
+
+
+Objetivo: criar um repositório saudável antes de criar qualquer regra de negócio.
+
+
+
+---
+
+
+
+# PR 01 — Scaffold do monorepo
+
+
+
+## Objetivo
+
+
+
+Criar a estrutura inicial:
+
+
+
+```text
+
+apps/web
+
+apps/admin
+
+apps/catalog
+
+
+
+packages/domain
+
+packages/contracts
+
+packages/db
+
+packages/billing
+
+packages/ui
+
+```
+
+
+
+## Incluir
+
+
+
+- Bun workspaces;
+
+- Turborepo;
+
+- TypeScript 7;
+
+- Node 24 pinado;
+
+- `.gitignore`;
+
+- `.editorconfig`;
+
+- package scripts;
+
+- tsconfigs compartilhados.
+
+
+
+## Ainda não incluir
+
+
+
+- autenticação;
+
+- banco;
+
+- billing;
+
+- feature real.
+
+
+
+## Aceite
+
+
+
+- `bun install` funciona;
+
+- todos os workspaces são detectados;
+
+- Turbo executa comandos;
+
+- todos os packages compilam vazios;
+
+- zero dependência circular.
+
+
+
+---
+
+
+
+# PR 02 — Biome, Ultracite e convenções
+
+
+
+## Objetivo
+
+
+
+Adicionar padrão de qualidade desde o primeiro código.
+
+
+
+## Implementar
+
+
+
+- Biome;
+
+- Ultracite;
+
+- regras TypeScript strict;
+
+- import sorting;
+
+- formatting;
+
+- regras anti-`any`;
+
+- tratamento consistente de unused imports.
+
+
+
+## Aceite
+
+
+
+```text
+
+bun run lint
+
+bun run format:check
+
+bun run typecheck
+
+```
+
+
+
+passam.
+
+
+
+Não adicionar ESLint ou Prettier em paralelo.
+
+
+
+---
+
+
+
+# PR 03 — Knip e boundaries
+
+
+
+## Objetivo
+
+
+
+Evitar dependências e imports arquiteturalmente inválidos.
+
+
+
+## Regras principais
+
+
+
+`packages/domain` não pode importar:
+
+
+
+```text
+
+react
+
+hono
+
+orpc
+
+drizzle
+
+cloudflare
+
+better-auth
+
+billing providers
+
+```
+
+
+
+`packages/contracts` não pode importar DB.
+
+
+
+Aplicações podem consumir domain/contracts.
+
+
+
+## Aceite
+
+
+
+Um teste/fixture deve provar que um import proibido faz o gate falhar.
+
+
+
+---
+
+
+
+# PR 04 — Documentação canônica inicial
+
+
+
+Criar:
+
+
+
+```text
+
+PRODUCT.md
+
+CONTEXT.md
+
+DESIGN.md
+
+AGENTS.md
+
+docs/architecture/
+
+docs/adr/
+
+docs/business-rules/
+
+docs/runbooks/
+
+```
+
+
+
+Colocar a arquitetura consolidada como fonte inicial.
+
+
+
+## Não fazer
+
+
+
+Duplicar a mesma regra em cinco documentos.
+
+
+
+Cada documento precisa declarar sua autoridade.
+
+
+
+---
+
+
+
+# PR 05 — CI baseline
+
+
+
+Criar GitHub Actions.
+
+
+
+Jobs iniciais:
+
+
+
+```text
+
+lint
+
+typecheck
+
+unit
+
+knip
+
+build
+
+```
+
+
+
+Configurar:
+
+
+
+- Bun pinado;
+
+- Node pinado;
+
+- cache adequado;
+
+- permissões mínimas;
+
+- actions pinadas;
+
+- concurrency.
+
+
+
+Nenhum deploy ainda.
+
+
+
+---
+
+
+
+# PR 06 — Renovate e dependency policy
+
+
+
+Adicionar Renovate.
+
+
+
+Agrupar:
+
+
+
+```text
+
+TanStack
+
+Cloudflare
+
+Biome/Ultracite
+
+Vitest
+
+Playwright
+
+```
+
+
+
+Major updates:
+
+
+
+```text
+
+manual review
+
+```
+
+
+
+Nada de auto-merge de major.
+
+
+
+---
+
+
+
+# GATE 0
+
+
+
+Antes da Fase 1:
+
+
+
+- repo limpo;
+
+- CI verde;
+
+- boundaries funcionando;
+
+- documentação presente;
+
+- builds vazios funcionando.
+
+
+
+---
+
+
+
+# FASE 1 — PROVAS DE ARQUITETURA
+
+
+
+Nenhuma feature comercial deve ser construída nesta fase.
+
+
+
+---
+
+
+
+# PR 07 — React + Vite + Cloudflare Worker
+
+
+
+## Objetivo
+
+
+
+Provar `apps/web`.
+
+
+
+Criar:
+
+
+
+```text
+
+React
+
+Vite
+
+Cloudflare Vite Plugin
+
+Worker
+
+Static Assets
+
+```
+
+
+
+## Endpoint mínimo
+
+
+
+```text
+
+GET /health
+
+```
+
+
+
+retorna informações não sensíveis:
+
+
+
+```json
+
+{
+
+  "status": "ok"
+
+}
+
+```
+
+
+
+## Aceite
+
+
+
+- dev local funciona;
+
+- build Worker funciona;
+
+- React é servido;
+
+- `/health` passa.
+
+
+
+---
+
+
+
+# PR 08 — Hono shell
+
+
+
+Adicionar Hono.
+
+
+
+Estruturar aproximadamente:
+
+
+
+```text
+
+src/server/
+
+  app.ts
+
+  middleware/
+
+  routes/
+
+```
+
+
+
+Criar:
+
+
+
+```text
+
+GET /health
+
+GET /ready
+
+```
+
+
+
+Adicionar:
+
+
+
+- request id;
+
+- error boundary;
+
+- headers básicos.
+
+
+
+Não adicionar domínio ainda.
+
+
+
+---
+
+
+
+# PR 09 — oRPC POC
+
+
+
+Adicionar major estável do oRPC.
+
+
+
+Criar procedure simples:
+
+
+
+```text
+
+system.ping
+
+```
+
+
+
+Fluxo completo:
+
+
+
+```text
+
+React
+
+→ oRPC client
+
+→ Hono
+
+→ oRPC handler
+
+→ result
+
+```
+
+
+
+## Proibição
+
+
+
+Procedure não acessa banco diretamente.
+
+
+
+Criar use case mínimo intermediário mesmo no POC.
+
+
+
+---
+
+
+
+# PR 10 — PostgreSQL + Drizzle + Hyperdrive POC
+
+
+
+Adicionar:
+
+
+
+- Drizzle;
+
+- `pg`;
+
+- Hyperdrive binding;
+
+- DB package.
+
+
+
+Criar tabela descartável de POC ou schema mínimo.
+
+
+
+Testar:
+
+
+
+- query;
+
+- transaction;
+
+- rollback;
+
+- connection reuse.
+
+
+
+Não construir entidades reais ainda.
+
+
+
+---
+
+
+
+# PR 11 — Gate RLS/Hyperdrive
+
+**Risco: crítico.**
+
+Este é um dos PRs mais importantes do projeto.
+
+## Criar
+
+Duas organizações artificiais, org_a e org_b, com dados independentes.
+
+Implementar withTenantTransaction() para abrir uma transação, definir o contexto local com set_config('app.organization_id', ..., true) e executar nela todas as queries tenant-scoped da operação.
+
+## Testar localmente e com PostgreSQL 18
+
+- tenant A vê A e tenant A não vê B;
+- tentativa cross-tenant retorna zero/erro;
+- todos os statements de uma operação compartilham a mesma transação contextualizada;
+- leituras sem contexto são negadas ou retornam zero linhas;
+- rollback limpa o contexto;
+- uma nova transação não herda o contexto anterior;
+- tenant A e B concorrentes não cruzam dados quando conexões são reutilizadas;
+- falha em um statement faz rollback da operação inteira;
+- interrupção da conexão exige retry integral da operação em uma nova transação, reaplicando o contexto;
+- FORCE RLS;
+- runtime role não é owner e não tem BYPASSRLS;
+- query caching desabilitado sem perder connection pooling.
+
+## Obrigatório
+
+Executar o POC pelo caminho real Worker → Hyperdrive → Neon, na região Neon pretendida para o projeto. Guardar resultados e configuração usados para que o gate seja reproduzível.
+
+## Stop condition
+
+Qualquer vazamento, contexto ausente aceito ou resultado não reproduzível bloqueia a implementação tenant. Corrigir a causa antes de continuar.
+
+# PR 12 — Offline persistence POC
+
+
+
+Criar aplicação isolada/Página de laboratório.
+
+
+
+Testar TanStack DB:
+
+
+
+- criar dados offline;
+
+- reload;
+
+- fechar browser;
+
+- abrir novamente;
+
+- duas abas;
+
+- alteração concorrente;
+
+- schema migration;
+
+- kill abrupto.
+
+
+
+Testar:
+
+
+
+- Chrome;
+
+- Edge;
+
+- Android Chrome;
+
+- Safari/iPhone.
+
+
+
+## Critério
+
+
+
+Se os requisitos não forem confiáveis:
+
+
+
+```text
+
+TanStack persistence → rejeitada
+
+Dexie/IndexedDB → fallback
+
+```
+
+
+
+O protocolo futuro não deve depender dessa escolha.
+
+
+
+---
+
+
+
+# GATE FOUNDATION
+
+
+
+Só continuar se:
+
+
+
+- RLS aprovado;
+
+- Hyperdrive aprovado;
+
+- oRPC aprovado;
+
+- Worker aprovado;
+
+- offline persistence aprovada ou fallback escolhido.
+
+
+
+---
+
+
+
+# FASE 2 — IDENTIDADE E TENANCY
+
+
+
+---
+
+
+
+# PR 13 — Better Auth base
+
+Adicionar Better Auth como primeiro trabalho da Fase 2, depois do Gate Foundation.
+
+Configurar somente:
+
+- users;
+- accounts;
+- sessions;
+- verifications.
+
+Não adicionar Organization plugin como source of truth.
+
+Este PR é também a prova base de Better Auth no Worker: verificar inicialização, persistência necessária e criação/leitura/revogação de sessão por fixture controlada, sem depender de um provider OAuth real.
+
+## GATE AUTH
+
+Não iniciar PR14 Google, PR15 senha ou fluxos tenant até:
+
+- Better Auth operar no runtime Worker;
+- as sessões persistirem e serem validadas pelo servidor;
+- logout/revogação invalidar a sessão;
+- migrations e cookies/headers necessários funcionarem no ambiente de teste;
+- não haver dependência do plugin Organization como autoridade de tenancy.
+
+Se falhar, corrigir a integração antes dos fluxos de login.
+
+# PR 14 — Login Google
+
+
+
+Implementar OAuth Google.
+
+
+
+Testar:
+
+
+
+- login;
+
+- logout;
+
+- sessão;
+
+- callback inválido;
+
+- provider error.
+
+
+
+Adicionar audit events de segurança apropriados.
+
+
+
+Não registrar OAuth payload.
+
+
+
+---
+
+
+
+# PR 15 — Email/password
+
+
+
+Adicionar:
+
+
+
+- signup;
+
+- email verification;
+
+- password login;
+
+- password reset.
+
+
+
+Aplicar política de senha decidida.
+
+
+
+Integrar HIBP.
+
+
+
+---
+
+
+
+# PR 16 — Turnstile e auth abuse
+
+
+
+Adicionar Turnstile em:
+
+
+
+- signup;
+
+- password login;
+
+- password reset.
+
+
+
+Adicionar rate limiting.
+
+
+
+Testar:
+
+
+
+- token ausente;
+
+- inválido;
+
+- replay;
+
+- limite excedido.
+
+
+
+---
+
+
+
+# PR 17 — Account linking
+
+
+
+Implementar Google + password linking seguro.
+
+
+
+Casos obrigatórios:
+
+
+
+```text
+
+verified same email → eligible
+
+unverified email → reject
+
+different email → reject
+
+```
+
+
+
+Testar account takeover scenarios.
+
+
+
+---
+
+
+
+# PR 18 — Sessões
+
+
+
+Implementar:
+
+
+
+- 7 dias idle;
+
+- 30 dias absolute;
+
+- múltiplas sessões;
+
+- session list;
+
+- revoke session;
+
+- logout.
+
+
+
+Reset de senha revoga todas.
+
+
+
+---
+
+
+
+# PR 19 — Organizations e memberships
+
+
+
+Criar schema:
+
+
+
+```text
+
+organizations
+
+memberships
+
+```
+
+
+
+Campos mínimos:
+
+
+
+```text
+
+organization.id
+
+organization.name
+
+organization.timezone
+
+organization.currency
+
+organization.status
+
+```
+
+
+
+Membership:
+
+
+
+```text
+
+owner
+
+active
+
+```
+
+
+
+V1 impede múltiplas orgs via regra de domínio.
+
+
+
+Não impor acoplamento estrutural irreversível.
+
+
+
+---
+
+
+
+# PR 20 — Onboarding idempotente
+
+
+
+Implementar use case:
+
+
+
+```text
+
+createInitialOrganization()
+
+```
+
+
+
+Transação cria:
+
+
+
+- organization;
+
+- owner membership;
+
+- defaults essenciais.
+
+
+
+Usar idempotency/advisory mechanism apropriado.
+
+
+
+Testar request duplicada.
+
+
+
+---
+
+
+
+# PR 21 — Capabilities tenant
+
+
+
+Criar autorização baseada em capabilities.
+
+
+
+Mesmo só existindo `owner`, definir mapa.
+
+
+
+Exemplos:
+
+
+
+```text
+
+catalog:read
+
+product:create
+
+product:update
+
+inventory:adjust
+
+sale:create
+
+customer:update
+
+expense:create
+
+organization:manage
+
+```
+
+
+
+Não espalhar checks de role.
+
+
+
+---
+
+
+
+# PR 22 — Tenant request context
+
+
+
+Implementar middleware/use-case context:
+
+
+
+```text
+
+authenticate
+
+→ resolve org
+
+→ membership
+
+→ capability
+
+→ tenant transaction
+
+```
+
+
+
+Toda query tenant passa por ele.
+
+
+
+Criar testes cross-tenant.
+
+
+
+---
+
+
+
+# PR 23 — Audit events tenant
+
+
+
+Criar audit trail transacional.
+
+
+
+Para mutações críticas:
+
+
+
+```text
+
+business mutation + audit event
+
+```
+
+
+
+na mesma transaction quando necessário.
+
+
+
+Nunca logar secrets.
+
+
+
+---
+
+
+
+# GATE 2
+
+
+
+Antes do catálogo:
+
+
+
+- auth completo;
+
+- organization criada;
+
+- tenancy comprovada;
+
+- RLS em entidades reais;
+
+- capability checks centralizados.
+
+
+
+---
+
+
+
+# FASE 3 — CATÁLOGO, VARIANTES E ESTOQUE
+
+
+
+---
+
+
+
+# PR 24 — Categories
+
+
+
+Schema + domínio + API + UI mínima.
+
+
+
+Categoria:
+
+
+
+- tenant-scoped;
+
+- opcional para produto;
+
+- archive/delete rules simples.
+
+
+
+Adicionar offline-read compatibility desde o contrato, mas não sync ainda.
+
+
+
+---
+
+
+
+# PR 25 — Products
+
+
+
+Criar:
+
+
+
+```text
+
+products
+
+```
+
+
+
+Campos:
+
+
+
+- id UUIDv7;
+
+- organization;
+
+- name;
+
+- description;
+
+- category;
+
+- status;
+
+- timestamps/version.
+
+
+
+Não adicionar estoque.
+
+
+
+---
+
+
+
+# PR 26 — Variants
+
+
+
+Criar:
+
+
+
+```text
+
+product_variants
+
+product_options
+
+product_option_values
+
+variant_option_values
+
+```
+
+
+
+Opções fixas de UX:
+
+
+
+- Modelo;
+
+- Cor;
+
+- Tamanho.
+
+
+
+Máximo:
+
+
+
+```text
+
+50 variantes por produto
+
+```
+
+
+
+Produto sem opções recebe default variant.
+
+
+
+---
+
+
+
+# PR 27 — SKU
+
+
+
+Adicionar SKU opcional na variante.
+
+
+
+Unique tenant-scoped.
+
+
+
+Testar:
+
+
+
+- mesmo SKU em organizations diferentes → permitido;
+
+- mesmo SKU na mesma organização → rejeitado.
+
+
+
+---
+
+
+
+# PR 28 — Inventory ledger
+
+
+
+Criar:
+
+
+
+```text
+
+inventory_balances
+
+stock_movements
+
+```
+
+
+
+Movimento append-only.
+
+
+
+Saldo materializado.
+
+
+
+Mutation do saldo e ledger na mesma transaction.
+
+
+
+---
+
+
+
+# PR 29 — Receive stock
+
+
+
+Implementar:
+
+
+
+```text
+
+receiveStock
+
+```
+
+
+
+Inputs:
+
+
+
+- variant;
+
+- quantity integer > 0;
+
+- unit cost;
+
+- occurred date.
+
+
+
+Atualizar moving weighted average.
+
+
+
+Criar testes matemáticos/property-based.
+
+
+
+---
+
+
+
+# PR 30 — Write-off stock
+
+
+
+Implementar:
+
+
+
+```text
+
+writeOffStock
+
+```
+
+
+
+Nunca permitir saldo negativo.
+
+
+
+Adicionar reason estruturado.
+
+
+
+---
+
+
+
+# PR 31 — Inventory count
+
+
+
+Implementar:
+
+
+
+```text
+
+inventoryCount
+
+```
+
+
+
+Usuário informa:
+
+
+
+```text
+
+physical quantity = X
+
+```
+
+
+
+Servidor calcula diferença e cria movimento.
+
+
+
+Não permitir mutation direta do balance.
+
+
+
+---
+
+
+
+# PR 32 — Archive/delete catalog
+
+
+
+Implementar:
+
+
+
+- archive;
+
+- restore;
+
+- tombstone delete.
+
+
+
+Delete só quando domínio permitir.
+
+
+
+Sem hard-delete operacional.
+
+
+
+---
+
+
+
+# PR 33 — Media schema
+
+
+
+Criar:
+
+
+
+```text
+
+media_assets
+
+product_media
+
+variant_media
+
+```
+
+
+
+Sem upload ainda.
+
+
+
+Separar asset de produto/variante.
+
+
+
+---
+
+
+
+# PR 34 — Upload/crop pipeline
+
+
+
+Implementar:
+
+
+
+```text
+
+upload
+
+→ crop coords
+
+→ Cloudflare Images
+
+→ WebP 1200
+
+→ R2
+
+```
+
+
+
+Testar:
+
+
+
+- arquivo inválido;
+
+- tamanho excessivo;
+
+- orientation;
+
+- crop;
+
+- no-upscale;
+
+- metadata stripped.
+
+
+
+---
+
+
+
+# PR 35 — Derivatives e media cleanup
+
+
+
+Gerar/cachear:
+
+
+
+- 320;
+
+- 640.
+
+
+
+Staging lifecycle.
+
+
+
+Orphan reconciler.
+
+
+
+Sem bucket público.
+
+
+
+---
+
+
+
+# GATE 3
+
+
+
+Catalog e estoque devem provar:
+
+
+
+- nenhum negative stock;
+
+- ledger consistente;
+
+- custo médio correto;
+
+- variants corretas;
+
+- media privada.
+
+
+
+---
+
+
+
+# FASE 4 — CLIENTES E VENDAS ONLINE
+
+
+
+Primeiro implementar tudo online.
+
+
+
+Offline entra depois.
+
+
+
+---
+
+
+
+# PR 36 — Customers
+
+
+
+Criar:
+
+
+
+```text
+
+customers
+
+```
+
+
+
+Campos mínimos:
+
+
+
+- name;
+
+- phone;
+
+- email;
+
+- notes;
+
+- archived.
+
+
+
+Regra:
+
+
+
+pelo menos um identificador útil.
+
+
+
+Não unique rígido em email/telefone.
+
+
+
+---
+
+
+
+# PR 37 — Possible duplicates
+
+
+
+Criar consulta de possíveis duplicados.
+
+
+
+UI informa:
+
+
+
+```text
+
+Encontramos um possível cliente existente
+
+```
+
+
+
+Usuário escolhe:
+
+
+
+- usar existente;
+
+- criar mesmo assim.
+
+
+
+Não merge automático.
+
+
+
+---
+
+
+
+# PR 38 — Sale aggregate
+
+
+
+Criar:
+
+
+
+```text
+
+sales
+
+sale_items
+
+```
+
+
+
+Venda confirmada imutável.
+
+
+
+Snapshot:
+
+
+
+- variant;
+
+- product label;
+
+- quantity;
+
+- listed price;
+
+- charged price;
+
+- unit cost.
+
+
+
+---
+
+
+
+# PR 39 — Money library
+
+
+
+Antes de cálculo completo, criar primitives:
+
+
+
+```text
+
+Money
+
+Percentage
+
+DecimalAmount
+
+```
+
+
+
+Usar decimal exato.
+
+
+
+Adicionar property tests:
+
+
+
+- soma;
+
+- desconto;
+
+- arredondamento;
+
+- percentuais;
+
+- multiplicação por quantity.
+
+
+
+---
+
+
+
+# PR 40 — Sale adjustments
+
+
+
+Criar:
+
+
+
+```text
+
+sale_adjustments
+
+```
+
+
+
+Tipos:
+
+
+
+- discount;
+
+- surcharge;
+
+- freight;
+
+- payment surcharge.
+
+
+
+Permitir também negociação por item.
+
+
+
+---
+
+
+
+# PR 41 — Sale payments
+
+
+
+Criar:
+
+
+
+```text
+
+sale_payments
+
+```
+
+
+
+Métodos:
+
+
+
+- pix;
+
+- cash;
+
+- credit_card;
+
+- debit_card;
+
+- bank_transfer;
+
+- other.
+
+
+
+Um pagamento por venda na V1.
+
+
+
+---
+
+
+
+# PR 42 — Payment profiles
+
+
+
+Criar configurações de taxa.
+
+
+
+Permitir regras por:
+
+
+
+- método;
+
+- parcelas;
+
+- processing fee;
+
+- anticipation.
+
+
+
+Snapshots na venda.
+
+
+
+---
+
+
+
+# PR 43 — Sale transaction
+
+
+
+Implementar criação da venda completa.
+
+
+
+Uma transaction deve:
+
+
+
+1. validar stock;
+
+2. calcular valores;
+
+3. criar sale;
+
+4. criar items;
+
+5. criar payment;
+
+6. criar adjustments;
+
+7. criar stock movements;
+
+8. atualizar balance;
+
+9. criar audit event;
+
+10. criar outbox intents quando necessário.
+
+
+
+Se qualquer passo falhar:
+
+
+
+```text
+
+rollback total
+
+```
+
+
+
+---
+
+
+
+# PR 44 — Customer attribution
+
+
+
+Criar:
+
+
+
+```text
+
+sale_customer_links
+
+```
+
+
+
+Implementar:
+
+
+
+```text
+
+assign
+
+reassign
+
+unassign
+
+```
+
+
+
+Economia da venda não muda.
+
+
+
+Tudo auditado/versionado.
+
+
+
+---
+
+
+
+# PR 45 — Sale cancellation
+
+
+
+Criar operação compensatória.
+
+
+
+Nunca editar itens antigos.
+
+
+
+Gerar inverse inventory movements.
+
+
+
+---
+
+
+
+# PR 46 — Partial returns
+
+
+
+Criar:
+
+
+
+```text
+
+sale_returns
+
+sale_return_items
+
+```
+
+
+
+Validar:
+
+
+
+```text
+
+returned <= available_to_return
+
+restocked <= returned
+
+```
+
+
+
+Property tests obrigatórios.
+
+
+
+---
+
+
+
+# PR 47 — Sale dates
+
+
+
+Implementar:
+
+
+
+- occurred_at;
+
+- recorded_at;
+
+- confirmed_at.
+
+
+
+Timezone organization-aware.
+
+
+
+Validar limite retroativo.
+
+
+
+---
+
+
+
+# GATE 4
+
+
+
+Provar:
+
+
+
+- venda atômica;
+
+- stock correto;
+
+- money correto;
+
+- cancellation correto;
+
+- returns corretos;
+
+- customer reconciliation não altera economia.
+
+
+
+---
+
+
+
+# FASE 5 — OFFLINE
+
+
+
+Esta fase não deve redesenhar o domínio.
+
+
+
+Ela deve transportar commands do domínio já existente.
+
+
+
+---
+
+
+
+# PR 48 — Device model
+
+
+
+Criar:
+
+
+
+```text
+
+devices
+
+offline_grants
+
+```
+
+
+
+Sem fingerprint.
+
+
+
+Adicionar revoke.
+
+
+
+---
+
+
+
+# PR 49 — Offline authorization
+
+
+
+Criar lease de 72h.
+
+
+
+Assinar/validar de forma segura.
+
+
+
+Regras:
+
+
+
+- user;
+
+- org;
+
+- device;
+
+- epoch;
+
+- expiry;
+
+- capability snapshot.
+
+
+
+Servidor continua revalidando tudo no sync.
+
+
+
+---
+
+
+
+# PR 50 — Local collections
+
+
+
+Criar collections locais para:
+
+
+
+- categories;
+
+- products;
+
+- variants;
+
+- inventory;
+
+- customers;
+
+- recent sales.
+
+
+
+Sem mutations offline ainda.
+
+
+
+Implementar bootstrap inicial.
+
+
+
+---
+
+
+
+# PR 51 — Sync change log
+
+
+
+Criar schema:
+
+
+
+```text
+
+sync_changes
+
+```
+
+
+
+Sequência monotônica.
+
+
+
+Registrar mudanças relevantes na mesma transaction do domínio.
+
+
+
+Implementar:
+
+
+
+```text
+
+sync.pull(cursor)
+
+```
+
+
+
+---
+
+
+
+# PR 52 — Durable command outbox
+
+
+
+Implementar local outbox.
+
+
+
+Command:
+
+
+
+```text
+
+commandId
+
+type
+
+organizationId
+
+deviceId
+
+baseVersion
+
+lease
+
+payload
+
+```
+
+
+
+Persistência sobrevivendo restart.
+
+
+
+---
+
+
+
+# PR 53 — sync.push
+
+
+
+Implementar server protocol.
+
+
+
+Regras:
+
+
+
+- idempotency;
+
+- same command returns same outcome;
+
+- capability recheck;
+
+- entitlement recheck;
+
+- lease validation;
+
+- organization check.
+
+
+
+---
+
+
+
+# PR 54 — Offline customer create
+
+
+
+Primeiro write offline real.
+
+
+
+Fluxo:
+
+
+
+```text
+
+create customer offline
+
+→ pending
+
+→ sync
+
+→ confirmed
+
+```
+
+
+
+Testar duplicate push.
+
+
+
+---
+
+
+
+# PR 55 — Offline product create
+
+
+
+Criar produto/variant offline.
+
+
+
+Com:
+
+
+
+- UUIDv7;
+
+- SKU conflict handling;
+
+- optional initial inventory.
+
+
+
+Sync deve ser atomic.
+
+
+
+---
+
+
+
+# PR 56 — Offline stock commands
+
+
+
+Implementar:
+
+
+
+- receive;
+
+- write-off;
+
+- inventory count.
+
+
+
+Rejeição clara em conflitos.
+
+
+
+---
+
+
+
+# PR 57 — Offline sale
+
+
+
+Implementar venda offline.
+
+
+
+Estados locais:
+
+
+
+```text
+
+pending
+
+syncing
+
+confirmed
+
+rejected
+
+needs_attention
+
+```
+
+
+
+Stock server-authoritative.
+
+
+
+---
+
+
+
+# PR 58 — Conflict UX
+
+
+
+Construir página/painel de operações que precisam atenção.
+
+
+
+Casos:
+
+
+
+- stock insufficiency;
+
+- version conflict;
+
+- entitlement change;
+
+- authorization revoked;
+
+- SKU conflict.
+
+
+
+Não ter botão genérico:
+
+
+
+```text
+
+Forçar sincronização
+
+```
+
+
+
+---
+
+
+
+# PR 59 — Logout pending
+
+
+
+Implementar proteção.
+
+
+
+Se pending:
+
+
+
+- tentar sync;
+
+- ou pedir discard explícito.
+
+
+
+Após logout:
+
+
+
+- purge local tenant data.
+
+
+
+---
+
+
+
+# PR 60 — PWA service worker
+
+
+
+Adicionar:
+
+
+
+- app shell;
+
+- offline navigation;
+
+- asset versioning.
+
+
+
+Não armazenar API tenant genérica em Cache Storage.
+
+
+
+---
+
+
+
+# PR 61 — PWA update lifecycle
+
+
+
+Implementar:
+
+
+
+```text
+
+update available + outbox empty
+
+update available + pending commands
+
+```
+
+
+
+Não reload automático destrutivo.
+
+
+
+---
+
+
+
+# PR 62 — Browser/offline test suite
+
+
+
+Automatizar:
+
+
+
+- reload;
+
+- kill/reopen;
+
+- reconnect;
+
+- two tabs;
+
+- conflict;
+
+- old app version;
+
+- pending update.
+
+
+
+Completar gate Safari físico antes de go-live.
+
+
+
+---
+
+
+
+# GATE 5
+
+
+
+Offline só é considerado pronto quando:
+
+
+
+- iPhone real funciona;
+
+- restart preserva outbox;
+
+- duplicate sync é seguro;
+
+- stock conflict não corrompe;
+
+- logout não perde silenciosamente dados.
+
+
+
+---
+
+
+
+# FASE 6 — DESPESAS, ANALYTICS E METAS
+
+
+
+---
+
+
+
+# PR 63 — Expense categories
+
+
+
+Criar grupos e categorias.
+
+
+
+Permitir customização tenant.
+
+
+
+---
+
+
+
+# PR 64 — Expenses
+
+
+
+Criar:
+
+
+
+```text
+
+expenses
+
+```
+
+
+
+Campos:
+
+
+
+- amount;
+
+- category;
+
+- competence date;
+
+- description/payee;
+
+- optional sale_id;
+
+- audit/version.
+
+
+
+Sem accounts payable.
+
+
+
+---
+
+
+
+# PR 65 — Recurring expenses
+
+
+
+Criar:
+
+
+
+```text
+
+expense_recurring_rules
+
+```
+
+
+
+Gerar ocorrências.
+
+
+
+Alterar série não muda passado.
+
+
+
+Testar catch-up de scheduler.
+
+
+
+---
+
+
+
+# PR 66 — Sale-linked costs
+
+
+
+Integrar despesas vinculadas à venda na margem.
+
+
+
+Evitar duplicar:
+
+
+
+- processing fee;
+
+- anticipation fee.
+
+
+
+---
+
+
+
+# PR 67 — Economic metrics engine
+
+
+
+Criar cálculos puros em domain:
+
+
+
+```text
+
+gross sales
+
+net sales
+
+COGS
+
+gross profit
+
+contribution margin
+
+operating result estimate
+
+```
+
+
+
+Property tests obrigatórios.
+
+
+
+---
+
+
+
+# PR 68 — Dashboard queries
+
+
+
+Criar read models otimizados.
+
+
+
+Cards:
+
+
+
+- net sales;
+
+- operating result;
+
+- margin;
+
+- count;
+
+- ticket;
+
+- items.
+
+
+
+Sem cache SQL Hyperdrive.
+
+
+
+---
+
+
+
+# PR 69 — Result quality indicator
+
+
+
+Implementar dados de completude:
+
+
+
+- products with known cost;
+
+- sales with known fee;
+
+- expenses present;
+
+- missing inputs.
+
+
+
+Evitar falsa precisão.
+
+
+
+---
+
+
+
+# PR 70 — Goals
+
+
+
+Criar goal aggregate.
+
+
+
+Tipos:
+
+
+
+- net sales;
+
+- operating result;
+
+- sale count.
+
+
+
+Implementar lifecycle.
+
+
+
+---
+
+
+
+# PR 71 — Offline dashboard read
+
+
+
+Persistir último snapshot confirmado.
+
+
+
+Mostrar:
+
+
+
+```text
+
+Atualizado até ...
+
+```
+
+
+
+Nunca tratar pending local como resultado oficial.
+
+
+
+---
+
+
+
+# FASE 7 — BILLING E ENTITLEMENTS
+
+
+
+**Risco alto.**
+
+
+
+---
+
+
+
+# PR 72 — Plan catalog e entitlements
+
+
+
+Criar:
+
+
+
+```text
+
+billing_plans
+
+billing_prices
+
+entitlements
+
+```
+
+
+
+Não integrar provider ainda.
+
+
+
+Seed comercial inicial:
+
+
+
+Free/Pro.
+
+
+
+---
+
+
+
+# PR 73 — Entitlement engine
+
+
+
+Resolver effective entitlement considerando:
+
+
+
+```text
+
+base plan
+
+trial
+
+subscription
+
+temporary grants
+
+downgrade state
+
+```
+
+
+
+Criar testes de matriz.
+
+
+
+---
+
+
+
+# PR 74 — Free quotas
+
+
+
+Implementar server-side:
+
+
+
+```text
+
+50 variants
+
+1 image/product
+
+50 images total
+
+1 active goal
+
+offline.write false
+
+publicCatalog false
+
+```
+
+
+
+Sem esconder apenas UI.
+
+
+
+---
+
+
+
+# PR 75 — Pro quotas
+
+
+
+Adicionar:
+
+
+
+```text
+
+2000 variants
+
+10 images/product
+
+5000 images total
+
+3 goals
+
+offline.write
+
+publicCatalog
+
+```
+
+
+
+---
+
+
+
+# PR 76 — Trial state machine
+
+
+
+Estados conceituais:
+
+
+
+```text
+
+free
+
+trial_setup
+
+trialing
+
+active
+
+grace
+
+free_over_limit
+
+```
+
+
+
+Não integrar pagamento ainda.
+
+
+
+Property tests da state machine.
+
+
+
+---
+
+
+
+# PR 77 — Asaas card adapter
+
+
+
+Implementar:
+
+
+
+```text
+
+CardRecurringProvider
+
+```
+
+
+
+Criar Asaas adapter.
+
+
+
+Suportar:
+
+
+
+- trial first charge future;
+
+- recurring;
+
+- monthly;
+
+- semiannual;
+
+- annual;
+
+- cancellation;
+
+- refund;
+
+- reconciliation.
+
+
+
+Nenhum dado de cartão toca Polaris.
+
+
+
+---
+
+
+
+# PR 78 — Woovi Pix Automatic adapter
+
+
+
+Implementar:
+
+
+
+```text
+
+PixAutomaticProvider
+
+```
+
+
+
+Fluxo:
+
+
+
+```text
+
+authorization QR
+
+→ approval
+
+→ trial
+
+→ future charge
+
+→ recurring
+
+```
+
+
+
+Testar sandbox antes de considerar concluído.
+
+
+
+---
+
+
+
+# PR 79 — Billing inbox/webhooks
+
+
+
+Criar durable webhook inbox.
+
+
+
+Dedup por provider/event id.
+
+
+
+Responder rápido.
+
+
+
+Processar via async layer.
+
+
+
+---
+
+
+
+# PR 80 — Trial UX
+
+
+
+Tela:
+
+
+
+```text
+
+Testar Pro por 7 dias
+
+```
+
+
+
+Escolher:
+
+
+
+- cycle;
+
+- card;
+
+- Pix Automatic.
+
+
+
+Trial começa somente após método confirmado.
+
+
+
+---
+
+
+
+# PR 81 — Billing lifecycle
+
+
+
+Implementar:
+
+
+
+- first charge success;
+
+- first charge fail;
+
+- renewal success;
+
+- renewal fail;
+
+- 7-day grace;
+
+- cancellation;
+
+- scheduled cycle change.
+
+
+
+---
+
+
+
+# PR 82 — Free Over Limit
+
+
+
+Criar entitlement selection.
+
+
+
+Permitir escolher:
+
+
+
+```text
+
+50 variants operational
+
+```
+
+
+
+Bloquear expansão/rotação indevida.
+
+
+
+Não alterar product rows com `plan_locked`.
+
+
+
+---
+
+
+
+# PR 83 — Downgrade resource rules
+
+
+
+Implementar:
+
+
+
+- public catalog unpublish;
+
+- offline lease stop;
+
+- image restrictions;
+
+- goal pause.
+
+
+
+Preservar integridade histórica.
+
+
+
+---
+
+
+
+# PR 84 — Refund e chargeback
+
+
+
+Refund integral:
+
+
+
+```text
+
+remove Pro entitlement
+
+```
+
+
+
+Chargeback:
+
+
+
+```text
+
+immediate entitlement removal
+
+```
+
+
+
+Testar reversão posterior.
+
+
+
+---
+
+
+
+# PR 85 — Temporary entitlement grants
+
+
+
+Criar internal grants.
+
+
+
+Sempre:
+
+
+
+- reason;
+
+- actor;
+
+- start;
+
+- expiry.
+
+
+
+Nunca fake subscription.
+
+
+
+---
+
+
+
+# GATE 7
+
+
+
+Staging deve provar com sandboxes reais:
+
+
+
+- card trial;
+
+- Pix trial;
+
+- automatic charge;
+
+- renewal;
+
+- failure;
+
+- refund;
+
+- cancel;
+
+- duplicate webhook;
+
+- event reorder.
+
+
+
+---
+
+
+
+# FASE 8 — CATÁLOGO PÚBLICO
+
+
+
+---
+
+
+
+# PR 86 — Catalog app scaffold
+
+
+
+Criar `apps/catalog` com TanStack Start.
+
+
+
+Separado do ERP.
+
+
+
+---
+
+
+
+# PR 87 — Public catalog profile
+
+
+
+Criar perfil explícito.
+
+
+
+Campos públicos escolhidos conscientemente.
+
+
+
+Nunca reutilizar automaticamente dados privados do owner.
+
+
+
+---
+
+
+
+# PR 88 — Product publication
+
+
+
+Criar publication state.
+
+
+
+Somente Pro.
+
+
+
+Selecionar produtos publicados.
+
+
+
+---
+
+
+
+# PR 89 — Public media route
+
+
+
+Servir R2 privado via camada pública autorizada.
+
+
+
+URLs versionadas/cacheáveis.
+
+
+
+---
+
+
+
+# PR 90 — SEO/OpenGraph
+
+
+
+Implementar:
+
+
+
+- title;
+
+- description;
+
+- social preview;
+
+- canonical URLs.
+
+
+
+Sem acesso a dados tenant privados.
+
+
+
+---
+
+
+
+# PR 91 — Unpublish/cache invalidation
+
+
+
+Despublicar:
+
+
+
+- produto;
+
+- organização;
+
+- downgrade;
+
+- closing.
+
+
+
+Purge/invalidate cache.
+
+
+
+---
+
+
+
+# FASE 9 — ADMIN
+
+
+
+---
+
+
+
+# PR 92 — Admin app + Cloudflare Access
+
+
+
+Criar deployment.
+
+
+
+Validar Access JWT:
+
+
+
+- signature;
+
+- issuer;
+
+- audience;
+
+- subject.
+
+
+
+Não confiar apenas em headers.
+
+
+
+---
+
+
+
+# PR 93 — Platform principal
+
+
+
+Criar:
+
+
+
+```text
+
+platform_principals
+
+```
+
+
+
+V1:
+
+
+
+```text
+
+platform_owner
+
+```
+
+
+
+Persistir Access issuer + subject.
+
+
+
+Email apenas display snapshot.
+
+
+
+---
+
+
+
+# PR 94 — Admin capability model
+
+
+
+Mesmo com uma role, criar capability engine.
+
+
+
+Não hardcode owner em cada use case.
+
+
+
+---
+
+
+
+# PR 95 — Admin diagnostics
+
+
+
+Criar visão de organização:
+
+
+
+- status;
+
+- plan;
+
+- entitlement;
+
+- quotas;
+
+- devices;
+
+- sync health;
+
+- billing summary;
+
+- jobs/errors.
+
+
+
+Não mostrar business data completo por default.
+
+
+
+---
+
+
+
+# PR 96 — Support/privacy cases
+
+
+
+Criar case system interno.
+
+
+
+Mesmo sendo usado apenas pelo owner.
+
+
+
+Fields:
+
+
+
+- organization;
+
+- reason;
+
+- status;
+
+- context.
+
+
+
+---
+
+
+
+# PR 97 — JIT tenant access
+
+
+
+Criar grant read-only temporário.
+
+
+
+Default sugerido:
+
+
+
+```text
+
+60 min
+
+```
+
+
+
+Associado a case.
+
+
+
+RLS valida acesso.
+
+
+
+---
+
+
+
+# PR 98 — PII reveal
+
+
+
+Masked by default.
+
+
+
+Criar explicit reveal action.
+
+
+
+Audit obrigatória.
+
+
+
+Nunca reveal secrets.
+
+
+
+---
+
+
+
+# PR 99 — Billing admin commands
+
+
+
+Adicionar somente commands semânticos:
+
+
+
+```text
+
+reconcile
+
+retry
+
+cancel renewal
+
+refund
+
+grant entitlement
+
+```
+
+
+
+Nunca status dropdown.
+
+
+
+---
+
+
+
+# PR 100 — Organization suspension
+
+
+
+Implementar:
+
+
+
+```text
+
+suspend
+
+reactivate
+
+```
+
+
+
+Suspensão:
+
+
+
+- separate billing;
+
+- increment authorization epoch;
+
+- revoke leases.
+
+
+
+---
+
+
+
+# FASE 10 — PRIVACIDADE
+
+
+
+---
+
+
+
+# PR 101 — Organization closure
+
+
+
+Implementar:
+
+
+
+```text
+
+active
+
+closing
+
+closed
+
+purge_pending
+
+purged
+
+```
+
+
+
+30-day normal recovery.
+
+
+
+Revogar acesso imediatamente.
+
+
+
+---
+
+
+
+# PR 102 — Customer privacy anonymization
+
+
+
+Implementar:
+
+
+
+```text
+
+customer.anonymizeForPrivacy
+
+```
+
+
+
+Preservar fatos econômicos.
+
+
+
+---
+
+
+
+# PR 103 — Privacy cases / DSR
+
+
+
+Criar workflow interno:
+
+
+
+- request;
+
+- identity verification;
+
+- role determination;
+
+- scope;
+
+- decision;
+
+- execution;
+
+- resolution.
+
+
+
+---
+
+
+
+# PR 104 — Export on request
+
+
+
+Criar export assíncrono.
+
+
+
+Formatos:
+
+
+
+- JSON;
+
+- CSV;
+
+- images.
+
+
+
+Não oferecer automaticamente no closure.
+
+
+
+Arquivo temporário e privado.
+
+
+
+---
+
+
+
+# PR 105 — Retention framework
+
+
+
+Criar retention policies por classe.
+
+
+
+Não hardcode “5 anos em tudo”.
+
+
+
+Criar jobs somente onde política estiver aprovada.
+
+
+
+---
+
+
+
+# PR 106 — Deletion ledger
+
+
+
+Criar tombstone mínima.
+
+
+
+Usada em restore.
+
+
+
+Sem business payload.
+
+
+
+---
+
+
+
+# PR 107 — Full purge workflow
+
+
+
+Purge:
+
+
+
+- DB;
+
+- R2 masters;
+
+- derivatives;
+
+- catalog cache;
+
+- local references;
+
+- related resources.
+
+
+
+Idempotente.
+
+
+
+---
+
+
+
+# FASE 11 — ASYNC INFRASTRUCTURE
+
+
+
+Parte pode ser criada antes se alguma feature depender, mas não deve ser superdimensionada antecipadamente.
+
+
+
+---
+
+
+
+# PR 108 — Transactional outbox
+
+
+
+Criar schema:
+
+
+
+```text
+
+event_outbox
+
+```
+
+
+
+Fields:
+
+
+
+- event;
+
+- type;
+
+- status;
+
+- available_at;
+
+- attempts;
+
+- idempotency;
+
+- correlation.
+
+
+
+---
+
+
+
+# PR 109 — Queue infrastructure
+
+
+
+Criar:
+
+
+
+```text
+
+critical
+
+default
+
+media
+
+```
+
+
+
+Envelope tipado.
+
+
+
+Consumers idempotentes.
+
+
+
+---
+
+
+
+# PR 110 — Outbox dispatcher/sweeper
+
+
+
+Fluxo:
+
+
+
+```text
+
+pending DB event
+
+→ queue
+
+→ mark dispatched
+
+```
+
+
+
+Crash-safe.
+
+
+
+Duplicates acceptable.
+
+
+
+---
+
+
+
+# PR 111 — DLQ
+
+
+
+Configurar DLQ.
+
+
+
+DLQ gera operational incident.
+
+
+
+Admin permite retry.
+
+
+
+---
+
+
+
+# PR 112 — Scheduled jobs
+
+
+
+Criar scheduler framework.
+
+
+
+Jobs:
+
+
+
+- outbox;
+
+- grace/trial;
+
+- recurring expenses;
+
+- provider reconcile;
+
+- cleanup.
+
+
+
+Todos catch-up safe.
+
+
+
+---
+
+
+
+# PR 113 — Workflows
+
+
+
+Adicionar Cloudflare Workflows somente para:
+
+
+
+- exports;
+
+- purge;
+
+- long-running operations necessárias.
+
+
+
+Não mover billing canonical state para Workflow.
+
+
+
+---
+
+
+
+# FASE 12 — OBSERVABILIDADE E SEGURANÇA
+
+
+
+---
+
+
+
+# PR 114 — evlog
+
+
+
+Adicionar evlog à infraestrutura backend.
+
+
+
+Criar typed logger wrapper.
+
+
+
+Não importar em domain.
+
+
+
+---
+
+
+
+# PR 115 — Canonical wide events
+
+
+
+Criar field schema:
+
+
+
+```text
+
+requestId
+
+correlationId
+
+organizationId
+
+actorId
+
+deviceId
+
+commandId
+
+operation
+
+outcome
+
+durationMs
+
+...
+
+```
+
+
+
+Proibir aliases inconsistentes.
+
+
+
+---
+
+
+
+# PR 116 — Redaction policy
+
+
+
+Centralizar redaction.
+
+
+
+Testar que logs não contêm:
+
+
+
+- passwords;
+
+- cookies;
+
+- tokens;
+
+- phone;
+
+- email;
+
+- card;
+
+- secrets.
+
+
+
+---
+
+
+
+# PR 117 — Cloudflare tracing
+
+
+
+Habilitar observabilidade.
+
+
+
+Sampling:
+
+
+
+- Staging alto;
+
+- Production inicial ~5%.
+
+
+
+Error logs 100%.
+
+
+
+---
+
+
+
+# PR 118 — Sentry Browser
+
+
+
+Adicionar somente frontend inicialmente.
+
+
+
+Configurar:
+
+
+
+- source maps;
+
+- environment;
+
+- release SHA;
+
+- sanitization.
+
+
+
+Sem session replay.
+
+
+
+---
+
+
+
+# PR 119 — Alertas
+
+
+
+Criar alertas para:
+
+
+
+- 5xx;
+
+- latency;
+
+- DLQ;
+
+- stale outbox;
+
+- billing reconcile failures;
+
+- DB errors;
+
+- R2/media failure;
+
+- sync rejection spike.
+
+
+
+---
+
+
+
+# PR 120 — Security headers
+
+
+
+Centralizar CSP e headers.
+
+
+
+Criar tests automatizados.
+
+
+
+---
+
+
+
+# FASE 13 — TESTING HARDENING
+
+
+
+---
+
+
+
+# PR 121 — Cloudflare Worker test harness
+
+
+
+Padronizar `@cloudflare/vitest-plugin`.
+
+
+
+Bindings locais realistas.
+
+
+
+---
+
+
+
+# PR 122 — PostgreSQL 18 CI
+
+
+
+Adicionar PostgreSQL real na CI.
+
+
+
+Replay migrations desde zero.
+
+
+
+Executar RLS/behavior.
+
+
+
+---
+
+
+
+# PR 123 — Concurrency suite
+
+
+
+Cobrir:
+
+
+
+- double sale;
+
+- stock race;
+
+- duplicate command;
+
+- duplicate webhook;
+
+- customer reconciliation race;
+
+- billing transition race.
+
+
+
+---
+
+
+
+# PR 124 — Property test suite
+
+
+
+Expandir fast-check para invariantes.
+
+
+
+Não perseguir coverage percentual arbitrário.
+
+
+
+---
+
+
+
+# PR 125 — E2E Web
+
+
+
+Jornadas mínimas:
+
+
+
+```text
+
+signup
+
+onboarding
+
+product
+
+stock
+
+customer
+
+sale
+
+return
+
+expense
+
+```
+
+
+
+Fixtures determinísticas.
+
+
+
+---
+
+
+
+# PR 126 — E2E Billing
+
+
+
+Mocks em CI.
+
+
+
+Sandbox no Staging.
+
+
+
+---
+
+
+
+# PR 127 — E2E Admin
+
+
+
+Cloudflare Access pode ser mockado de maneira segura em CI, mas production guard precisa de prova real.
+
+
+
+Testar:
+
+
+
+- no access;
+
+- owner access;
+
+- JIT;
+
+- refund;
+
+- suspension.
+
+
+
+---
+
+
+
+# PR 128 — Visual regression seletiva
+
+
+
+Somente superfícies críticas e determinísticas.
+
+
+
+Não screenshot de todo o ERP.
+
+
+
+Exemplos:
+
+
+
+- login;
+
+- dashboard;
+
+- sale form;
+
+- catalog page.
+
+
+
+---
+
+
+
+# FASE 14 — ENVIRONMENTS
+
+
+
+---
+
+
+
+# PR 129 — Local env contract
+
+
+
+Criar validação tipada das envs.
+
+
+
+Cada app conhece apenas suas variáveis.
+
+
+
+---
+
+
+
+# PR 130 — PR Preview
+
+
+
+Configurar Worker Preview.
+
+
+
+Criar Neon branch efêmera.
+
+
+
+Dados sintéticos.
+
+
+
+Nunca clonar Production com PII.
+
+
+
+---
+
+
+
+# PR 131 — Staging persistente
+
+
+
+Provisionar:
+
+
+
+- Web;
+
+- Admin;
+
+- Catalog;
+
+- Neon;
+
+- R2;
+
+- Queues;
+
+- Workflows;
+
+- Cron;
+
+- provider sandboxes.
+
+
+
+Documentar IDs/resources.
+
+
+
+---
+
+
+
+# PR 132 — Staging deploy automático
+
+
+
+Merge main:
+
+
+
+```text
+
+deploy staging
+
+→ migration staging
+
+→ smoke
+
+```
+
+
+
+Falha deixa main verde de código, mas release operacional bloqueada até correção.
+
+
+
+---
+
+
+
+# FASE 15 — PRODUCTION
+
+
+
+---
+
+
+
+# PR 133 — Production resource provisioning
+
+
+
+Provisionar separadamente:
+
+
+
+- Workers;
+
+- Neon;
+
+- R2;
+
+- Queues;
+
+- Workflows;
+
+- Hyperdrive;
+
+- Access;
+
+- Turnstile;
+
+- provider production accounts.
+
+
+
+Nenhum segredo de staging reutilizado.
+
+
+
+---
+
+
+
+# PR 134 — Production migration workflow
+
+
+
+`workflow_dispatch`.
+
+
+
+Exigir:
+
+
+
+- SHA;
+
+- target validado;
+
+- migrator credentials;
+
+- concurrency lock.
+
+
+
+Nunca migration no build.
+
+
+
+---
+
+
+
+# PR 135 — Workers Versions release
+
+
+
+Workflow:
+
+
+
+```text
+
+version upload
+
+→ candidate smoke
+
+→ migrations
+
+→ deploy exact version
+
+→ production smoke
+
+```
+
+
+
+Registrar SHA e version id.
+
+
+
+---
+
+
+
+# PR 136 — Production rollback
+
+
+
+Criar runbook real.
+
+
+
+Rollback:
+
+
+
+- Worker/app only;
+
+- nunca schema automático.
+
+
+
+Testar rollback em Staging primeiro.
+
+
+
+---
+
+
+
+# FASE 16 — BACKUP E RECOVERY
+
+
+
+---
+
+
+
+# PR 137 — Neon PITR configuration
+
+
+
+Configurar conforme plano contratado.
+
+
+
+Documentar retention real.
+
+
+
+Não presumir default.
+
+
+
+---
+
+
+
+# PR 138 — External pg_dump backup
+
+
+
+Criar job.
+
+
+
+Dump:
+
+
+
+- cifrado;
+
+- R2 privado;
+
+- retenção definida.
+
+
+
+Monitorar falha.
+
+
+
+---
+
+
+
+# PR 139 — R2 master backup
+
+
+
+Ao criar master:
+
+
+
+```text
+
+primary
+
+→ async backup copy
+
+```
+
+
+
+Backup curto ~7 dias.
+
+
+
+Derivatives não precisam.
+
+
+
+---
+
+
+
+# PR 140 — Restore automation/runbook
+
+
+
+Restaurar em ambiente descartável.
+
+
+
+Passos:
+
+
+
+1. DB;
+
+2. image masters;
+
+3. deletion ledger;
+
+4. migrations;
+
+5. RLS checks;
+
+6. smoke.
+
+
+
+---
+
+
+
+# PR 141 — Primeiro restore drill real
+
+
+
+Executar antes do go-live.
+
+
+
+Medir:
+
+
+
+```text
+
+RPO
+
+RTO
+
+```
+
+
+
+Registrar evidência real.
+
+
+
+Só depois definir objetivos oficiais.
+
+
+
+---
+
+
+
+# GATE DE GO-LIVE
+
+
+
+Production não recebe clientes reais até que estes itens estejam comprovados:
+
+
+
+## Segurança
+
+
+
+```text
+
+RLS real
+
+Cloudflare Access
+
+MFA
+
+Turnstile
+
+security headers
+
+secret isolation
+
+```
+
+
+
+## Dados
+
+
+
+```text
+
+migrations replay
+
+Neon production role
+
+PITR
+
+external backup
+
+restore drill
+
+```
+
+
+
+## Offline
+
+
+
+```text
+
+Safari iPhone real
+
+Android
+
+desktop
+
+sync conflict
+
+kill/reopen
+
+PWA update
+
+```
+
+
+
+## Billing
+
+
+
+```text
+
+Asaas production readiness
+
+Woovi production readiness
+
+card recurring
+
+Pix Automatic
+
+trial
+
+refund
+
+webhooks
+
+```
+
+
+
+## Operações
+
+
+
+```text
+
+DLQ
+
+alerts
+
+outbox sweeper
+
+staging
+
+production smoke
+
+rollback
+
+```
+
+
+
+## Privacidade
+
+
+
+```text
+
+closure
+
+purge
+
+customer anonymization
+
+deletion ledger
+
+retention matrix
+
+```
+
+
+
+---
+
+
+
+# 5. Ordem que o desenvolvedor júnior deve seguir
+
+
+
+O desenvolvedor **não deve escolher a próxima feature pelo que parece mais interessante**.
+
+
+
+Seguir estritamente:
+
+
+
+```text
+
+Fase 0
+
+↓
+
+Fase 1
+
+↓
+
+Gate Foundation
+
+↓
+
+Fase 2
+
+↓
+
+Fase 3
+
+↓
+
+Fase 4
+
+↓
+
+Fase 5
+
+↓
+
+Fase 6
+
+↓
+
+Fase 7
+
+↓
+
+Fase 8+
+
+```
+
+
+
+Alguns trabalhos de infraestrutura das fases 11–16 podem entrar antes quando se tornarem dependência concreta.
+
+
+
+Exemplo:
+
+
+
+billing precisa de async inbox/outbox antes da feature billing estar completa.
+
+
+
+Nesse caso:
+
+
+
+```text
+
+implementar apenas a fatia mínima necessária do outbox
+
+```
+
+
+
+e não todo o sistema operacional antecipadamente.
+
+
+
+---
+
+
+
+# 6. Regra de YAGNI
+
+
+
+Não implementar porque “vamos precisar depois” se o contrato atual já permite extensão futura.
+
+
+
+Exemplos deliberadamente adiados:
+
+
+
+```text
+
+collaborators
+
+supplier domain
+
+accounts payable
+
+accounts receivable
+
+native app
+
+public API
+
+multi-currency
+
+fractional inventory
+
+barcode
+
+AI
+
+CRM
+
+marketplace
+
+fiscal ERP
+
+feature flag SaaS
+
+session replay
+
+```
+
+
+
+Preparar arquitetura não significa implementar tabela/UI vazia.
+
+
+
+---
+
+
+
+# 7. Regra contra abstração prematura
+
+
+
+Não criar:
+
+
+
+```text
+
+BaseRepository<T>
+
+GenericCrudService<T>
+
+UniversalProvider
+
+GenericEntityService
+
+AbstractDomainManager
+
+```
+
+
+
+sem dois ou mais usos reais que demonstrem a abstração.
+
+
+
+Preferir código explícito:
+
+
+
+```text
+
+createSale
+
+receiveStock
+
+createCustomer
+
+refundSubscription
+
+```
+
+
+
+ao invés de CRUD genérico.
+
+
+
+---
+
+
+
+# 8. Regra de banco
+
+
+
+Toda alteração deve responder:
+
+
+
+```text
+
+qual é a fonte da verdade?
+
+qual invariante o DB protege?
+
+qual regra é de domínio?
+
+qual dado é histórico?
+
+qual dado pode mudar?
+
+qual dado é derivado?
+
+```
+
+
+
+Evitar duplicar verdade.
+
+
+
+Exemplos:
+
+
+
+```text
+
+stock_movements = histórico
+
+inventory_balance = projeção
+
+```
+
+
+
+```text
+
+sale_items = snapshot econômico
+
+product_variant.price = estado atual
+
+```
+
+
+
+---
+
+
+
+# 9. Regra de commands
+
+
+
+Mutation relevante deve possuir semântica.
+
+
+
+Preferir:
+
+
+
+```text
+
+cancelSale()
+
+receiveStock()
+
+assignCustomerToSale()
+
+archiveProduct()
+
+```
+
+
+
+Não:
+
+
+
+```text
+
+updateSale({ status: "cancelled" })
+
+updateStock({ quantity: 12 })
+
+updateSubscription({ status: "active" })
+
+```
+
+
+
+---
+
+
+
+# 10. Regra de transação
+
+
+
+Se duas mudanças precisam existir juntas para o domínio ser válido:
+
+
+
+```text
+
+mesma transaction
+
+```
+
+
+
+Exemplos:
+
+
+
+```text
+
+sale + stock movement
+
+sale + audit
+
+stock movement + balance
+
+domain event + outbox
+
+```
+
+
+
+---
+
+
+
+# 11. Regra de idempotência
+
+
+
+Obrigatória para:
+
+
+
+- offline commands;
+
+- webhook processing;
+
+- outbox effects;
+
+- payment operations;
+
+- inventory commands relevantes;
+
+- export/purge workflows.
+
+
+
+Uma repetição não pode produzir um segundo efeito econômico.
+
+
+
+---
+
+
+
+# 12. Regra de UI
+
+
+
+A UI não deve esconder complexidade estrutural usando comportamento perigoso.
+
+
+
+Exemplo ruim:
+
+
+
+```text
+
+clicar Salvar
+
+→ várias mutations independentes
+
+→ uma falha no meio
+
+```
+
+
+
+Preferir:
+
+
+
+```text
+
+um command de domínio
+
+→ transaction server
+
+→ resultado explícito
+
+```
+
+
+
+---
+
+
+
+# 13. Regra de erros
+
+
+
+Todo erro esperado deve possuir código de domínio.
+
+
+
+Exemplos:
+
+
+
+```text
+
+INSUFFICIENT_STOCK
+
+DUPLICATE_SKU
+
+VERSION_CONFLICT
+
+ENTITLEMENT_REQUIRED
+
+OFFLINE_LEASE_EXPIRED
+
+TRIAL_ALREADY_CONSUMED
+
+```
+
+
+
+UI não deve depender de texto em português para identificar o erro.
+
+
+
+---
+
+
+
+# 14. Regra de observabilidade
+
+
+
+Cada use case crítico deve responder:
+
+
+
+```text
+
+o que aconteceu?
+
+para quem?
+
+em qual organization?
+
+qual command?
+
+qual provider?
+
+qual resultado?
+
+quanto demorou?
+
+qual correlation id?
+
+```
+
+
+
+Sem colocar conteúdo sensível no log.
+
+
+
+---
+
+
+
+# 15. Regra de performance
+
+
+
+Não otimizar prematuramente.
+
+
+
+Antes de adicionar:
+
+
+
+```text
+
+Redis
+
+cache SQL
+
+materialized view
+
+complex index
+
+denormalização
+
+```
+
+
+
+medir.
+
+
+
+Exceções:
+
+
+
+- índices obviamente necessários para constraints;
+
+- índices necessários a queries críticas já conhecidas;
+
+- inventory balance materializado por desenho.
+
+
+
+---
+
+
+
+# 16. Regra de índices
+
+
+
+Todo índice novo deve estar ligado a:
+
+
+
+- constraint;
+
+- query real;
+
+- foreign-key/access pattern real.
+
+
+
+Evitar “indexar tudo”.
+
+
+
+Usar `EXPLAIN ANALYZE` com dataset representativo antes de otimização relevante.
+
+
+
+---
+
+
+
+# 17. Regra de migrations
+
+
+
+Nunca editar migration já aplicada em ambiente compartilhado.
+
+
+
+Criar nova migration.
+
+
+
+Migrations devem poder ser replayadas desde zero em CI.
+
+
+
+---
+
+
+
+# 18. Regra de offline
+
+
+
+Antes de adicionar mutation offline, responder:
+
+
+
+```text
+
+qual command?
+
+é idempotente?
+
+qual conflito possível?
+
+qual baseVersion?
+
+qual autoridade server?
+
+como usuário corrige rejeição?
+
+```
+
+
+
+Se a resposta não existir, não habilitar offline para aquela operação.
+
+
+
+---
+
+
+
+# 19. Regra de billing
+
+
+
+Provider envia fatos.
+
+
+
+Provider não decide produto.
+
+
+
+Fluxo:
+
+
+
+```text
+
+provider fact
+
+→ reconcile
+
+→ Polaris billing state
+
+→ entitlement state
+
+```
+
+
+
+Nunca:
+
+
+
+```text
+
+webhook PAYMENT_RECEIVED
+
+→ set plan = pro diretamente
+
+```
+
+
+
+---
+
+
+
+# 20. Regra de Admin
+
+
+
+Admin nunca corrige dados através de SQL manual como operação normal.
+
+
+
+Se existe necessidade operacional legítima repetível:
+
+
+
+```text
+
+criar command administrativo
+
+```
+
+
+
+com:
+
+
+
+- autorização;
+
+- confirmação;
+
+- reason;
+
+- audit.
+
+
+
+SQL manual é último recurso de incidente, via runbook.
+
+
+
+---
+
+
+
+# 21. Regra de privacidade
+
+
+
+Ao adicionar dado pessoal novo, perguntar:
+
+
+
+```text
+
+por que precisamos dele?
+
+é necessário?
+
+quem é controlador?
+
+entra no offline?
+
+entra no log?
+
+entra em export?
+
+quando é apagado?
+
+```
+
+
+
+Sem essas respostas, não adicionar o campo.
+
+
+
+---
+
+
+
+# 22. Regra de documentação
+
+
+
+Todo PR que muda regra canônica precisa atualizar a fonte correspondente no mesmo PR.
+
+
+
+Exemplos:
+
+
+
+mudou produto:
+
+
+
+```text
+
+PRODUCT.md
+
+```
+
+
+
+mudou terminology:
+
+
+
+```text
+
+CONTEXT.md
+
+```
+
+
+
+mudou arquitetura:
+
+
+
+```text
+
+ADR/docs architecture
+
+```
+
+
+
+mudou business invariant:
+
+
+
+```text
+
+business-rules
+
+```
+
+
+
+Não deixar documentação para “depois”.
+
+
+
+---
+
+
+
+# 23. Definition of Done por feature
+
+
+
+Uma feature só está pronta quando:
+
+
+
+```text
+
+domain
+
+server
+
+authorization
+
+RLS
+
+validation
+
+audit when applicable
+
+tests
+
+errors
+
+observability
+
+UI
+
+empty/loading/error states
+
+documentation
+
+```
+
+
+
+estão concluídos.
+
+
+
+“Funciona na minha máquina” não é Definition of Done.
+
+
+
+---
+
+
+
+# 24. Critérios especiais para features offline
+
+
+
+Além do DoD normal:
+
+
+
+```text
+
+online behavior
+
+offline create/edit behavior
+
+restart recovery
+
+sync
+
+idempotency
+
+conflict
+
+rejection UX
+
+old PWA compatibility
+
+logout behavior
+
+entitlement change
+
+```
+
+
+
+---
+
+
+
+# 25. Critérios especiais para billing
+
+
+
+Além do DoD normal:
+
+
+
+```text
+
+provider sandbox
+
+webhook duplicate
+
+webhook reorder
+
+timeout
+
+retry
+
+reconciliation
+
+audit
+
+state machine
+
+entitlement
+
+grace
+
+cancel
+
+refund
+
+```
+
+
+
+---
+
+
+
+# 26. Critérios especiais para migrations high-risk
+
+
+
+Antes:
+
+
+
+- backup confirmado;
+
+- Staging replay;
+
+- schema compatibility;
+
+- rollback/forward-fix definidos.
+
+
+
+Durante:
+
+
+
+- execução isolada;
+
+- logs;
+
+- timeout conhecido.
+
+
+
+Depois:
+
+
+
+- smoke;
+
+- constraints;
+
+- RLS;
+
+- performance básica.
+
+
+
+---
+
+
+
+# 27. Primeira milestone recomendada
+
+A primeira milestone não deve ser “Cadastro de produtos pronto”. Deve provar a fundação antes de qualquer domínio de produto.
+
+# Foundation Proven
+
+Critérios, correspondentes ao fim da Fase 1:
+
+- monorepo, tooling, boundaries, documentação canônica e CI verdes;
+- workspaces Web, Admin e Catalog presentes, ainda vazios;
+- Worker React/Vite, Hono e oRPC funcionando;
+- PostgreSQL 18, Drizzle e Hyperdrive validados em ambiente remoto;
+- isolamento RLS e contexto transacional aprovados no Gate RLS/Hyperdrive;
+- migrations replayáveis e testes PostgreSQL/Worker;
+- POC de persistência offline aprovado ou alternativa escolhida e documentada.
+
+Better Auth não faz parte desta milestone: é provado no PR13/Gate Auth, no início da Fase 2. Preview/PR, Staging, Cloudflare Access de produção e observabilidade completa ficam nas fases de ambientes, Admin e hardening. Os workspaces vazios de Admin e Catalog não significam que esses produtos ou deployments estejam prontos.
+
+Somente quando Foundation Proven estiver verde começa a Fase 2. Catálogo, inventário, clientes e vendas aguardam também o Gate Auth e o Gate 2 de identidade/tenancy.
+
+# 28. Segunda milestone
+
+
+
+# Core Operations Online
+
+
+
+Inclui:
+
+
+
+- organizations;
+
+- catalog;
+
+- variants;
+
+- inventory;
+
+- customers;
+
+- sales;
+
+- cancellation;
+
+- returns.
+
+
+
+Sem billing complexo.
+
+
+
+Sem catálogo público.
+
+
+
+Sem offline write ainda.
+
+
+
+Isso nos permite validar o coração econômico antes de adicionar distribuição e monetização.
+
+
+
+---
+
+
+
+# 29. Terceira milestone
+
+
+
+# Offline Core
+
+
+
+Inclui:
+
+
+
+- device;
+
+- lease;
+
+- local DB;
+
+- sync;
+
+- command outbox;
+
+- products;
+
+- stock;
+
+- customers;
+
+- sales.
+
+
+
+É uma milestone independente porque offline é risco arquitetural alto.
+
+
+
+---
+
+
+
+# 30. Quarta milestone
+
+
+
+# Business Intelligence
+
+
+
+Inclui:
+
+
+
+- expenses;
+
+- recurrence;
+
+- metrics;
+
+- dashboard;
+
+- goals.
+
+
+
+---
+
+
+
+# 31. Quinta milestone
+
+
+
+# Commercial Launch
+
+
+
+Inclui:
+
+
+
+- Free/Pro;
+
+- trial;
+
+- Asaas;
+
+- Woovi;
+
+- quotas;
+
+- downgrade;
+
+- catalog public;
+
+- Admin;
+
+- privacy flows.
+
+
+
+---
+
+
+
+# 32. Sexta milestone
+
+
+
+# Production Ready
+
+
+
+Inclui:
+
+
+
+- queues;
+
+- DLQ;
+
+- alerts;
+
+- staging;
+
+- production release;
+
+- backups;
+
+- restore drill;
+
+- Safari real;
+
+- provider production gates;
+
+- privacy retention;
+
+- incident procedures.
+
+
+
+---
+
+
+
+# 33. O que não fazer durante a reconstrução
+
+
+
+Não copiar arquivos do legacy apenas para acelerar.
+
+
+
+O legacy pode ser consultado para:
+
+
+
+- comportamento;
+
+- copy;
+
+- casos de borda;
+
+- regras úteis;
+
+- dados de referência.
+
+
+
+Mas qualquer código trazido deve passar pela nova arquitetura.
+
+
+
+Não fazer:
+
+
+
+```text
+
+"vamos copiar agora e refatorar depois"
+
+```
+
+
+
+nas fundações de auth, tenancy, inventory, sales, billing ou offline.
+
+
+
+Esses são justamente os lugares onde dívida arquitetural se torna estrutural.
+
+
+
+---
+
+
+
+# 34. Estratégia para aproveitar o legado com segurança
+
+
+
+Para cada módulo antigo:
+
+
+
+1. documentar comportamento atual;
+
+2. identificar regras válidas;
+
+3. identificar bugs/contradições;
+
+4. mapear para novo domínio;
+
+5. implementar do zero;
+
+6. criar testes com casos reais herdados;
+
+7. somente então substituir funcionalidade.
+
+
+
+O legado é uma **fonte de requisitos e testes**, não a arquitetura de destino.
+
+
+
+---
+
+
+
+# 35. Ordem resumida das primeiras entregas
+
+
+
+Se um desenvolvedor começar amanhã, a sequência prática inicial deve ser:
+
+
+
+```text
+
+PR01 monorepo
+
+PR02 tooling
+
+PR03 boundaries
+
+PR04 docs
+
+PR05 CI
+
+PR06 Renovate
+
+
+
+PR07 Worker/Vite
+
+PR08 Hono
+
+PR09 oRPC
+
+PR10 DB/Hyperdrive
+
+PR11 RLS gate
+
+PR12 offline POC
+
+
+
+PR13 Better Auth
+
+PR14 Google
+
+PR15 password
+
+PR16 Turnstile
+
+PR17 linking
+
+PR18 sessions
+
+PR19 organizations
+
+PR20 onboarding
+
+PR21 capabilities
+
+PR22 tenant context
+
+PR23 audit
+
+```
+
+
+
+Só depois:
+
+
+
+```text
+
+catalog
+
+inventory
+
+customers
+
+sales
+
+offline
+
+expenses
+
+billing
+
+catalog public
+
+admin
+
+production hardening
+
+```
+
+
+
+---
+
+
+
+# 36. Resultado esperado deste plano
+
+
+
+Se seguido corretamente, o novo Polaris não deverá chegar ao fim da implementação apenas como:
+
+
+
+> “uma versão nova da interface do sistema antigo”.
+
+
+
+Ele deverá emergir como um sistema com fundação diferente:
+
+
+
+```text
+
+Cloudflare-native
+
+offline-first onde importa
+
+server-authoritative
+
+RLS protected
+
+domain-driven sem framework acoplado
+
+economically immutable
+
+provider-independent
+
+operationally observable
+
+privacy-aware
+
+recoverable
+
+```
+
+
+
+A principal função deste plano é impedir que a pressão natural por “começar logo as telas” destrua silenciosamente as decisões arquiteturais que levamos todo o grilling para definir.
+
+
+
+A prioridade correta é:
+
+
+
+> **provar as partes arriscadas primeiro, estabilizar as invariantes e só depois acelerar a construção das funcionalidades.**
+
