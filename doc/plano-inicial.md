@@ -12,6 +12,8 @@
 
 **Regra principal:** nenhum módulo posterior pode contornar ou duplicar uma decisão já consolidada na fundação.
 
+**Autoridade:** este arquivo rege a sequência e os critérios de implementação. Objetivos, terminologia, design, arquitetura e invariantes de negócio têm seus homes canônicos nos arquivos de raiz e em docs/. Detalhes antigos ainda não migrados são propostas e não autorizam implementação sem validação.
+
 
 
 ---

@@ -4,11 +4,13 @@
 
 
 
-**Status:** decisão arquitetural consolidada  
+**Status:** documento de origem; decisões ativas estão nos documentos canônicos do repositório
 
 **Data de referência:** 6 de outubro de 2026  
 
 **Natureza:** greenfield; o Polaris atual é referência histórica, não base obrigatória de implementação.
+
+A autoridade atual é distribuída entre PRODUCT.md, CONTEXT.md, DESIGN.md, AGENTS.md e docs/. Este arquivo permanece como material de origem; propostas detalhadas ainda não migradas não autorizam implementação sem validação.
 
 
 
