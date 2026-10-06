@@ -32,15 +32,15 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 
 | Etapa | Status | Observação |
 | --- | --- | --- |
-| PR07 — React + Vite + Cloudflare Worker | Em revisão | Check e build passam; dev, SPA e GET /health validados localmente; CI do PR pendente. |
+| PR07 — React + Vite + Cloudflare Worker | Concluído | Check, build e smoke local aprovados; CI remoto do PR #5 verde; draft aguarda revisão e merge do responsável. |
 | PR08–PR12 — Hono, oRPC, DB/Hyperdrive, RLS e persistência offline | Pendente | PostgreSQL 18 é o baseline; PR11 exige prova remota na região escolhida. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
-- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3.
-- PR07 está na branch `feat/web-worker`, baseada em `chore/renovate-policy`; implementação e validação local concluídas, publicação em andamento.
+- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4.
+- PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
