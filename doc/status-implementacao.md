@@ -35,7 +35,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR07 — React + Vite + Cloudflare Worker | Concluído | Check, build e smoke local aprovados; CI remoto do PR #5 verde; draft aguarda revisão e merge do responsável. |
 | PR08 — Hono shell | Concluído | Check, build e smoke HTTP aprovados; CI remoto do PR #6 verde; draft aguarda revisão e merge do responsável. |
 | PR09 — oRPC POC | Concluído | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais e CI remoto do PR #7 passaram; draft aguarda revisão e merge. |
-| PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Em revisão; runtime DB adiado | DB package, schema/migration, binding e runner POC adicionados; check/build/dev smoke passam. Query, transação, rollback e reuso aguardam URL de um PostgreSQL 18 descartável; pooling/cache remoto fica para PR11. |
+| PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Em revisão; runtime DB adiado | Migration gerada; lock/check/build/dev smoke e CI do PR #8 passam. Query, transação, rollback e reuso aguardam URL de PostgreSQL 18 descartável; pooling/cache remoto fica para PR11. |
 | PR11 — Gate RLS/Hyperdrive | Pendente | Exige prova real Worker → Hyperdrive → Neon, PostgreSQL 18 na região escolhida e query caching SQL desabilitado. |
 | PR12 — Offline persistence POC | Pendente | Persistência offline e fallback definidos no plano continuam pendentes. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
@@ -43,11 +43,11 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
-- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4; #6 `feat/hono-shell` → #5; #7 `feat/orpc-poc` → #6.
+- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4; #6 `feat/hono-shell` → #5; #7 `feat/orpc-poc` → #6; #8 `feat/postgres-hyperdrive-poc` → #7.
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
-- PR10 está na branch `feat/postgres-hyperdrive-poc`, baseada em `feat/orpc-poc`; publicação em andamento e smoke SQL aguardando conexão local PostgreSQL 18.
+- PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão; smoke SQL ainda requer uma URL PostgreSQL 18 descartável.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
