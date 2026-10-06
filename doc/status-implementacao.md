@@ -37,9 +37,9 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 
 ## Publicação GitHub
 
-- Repositório local inicializado na branch main.
-- origin aponta para https://github.com/camilagama/polaris.git; a leitura remota não encontrou refs existentes.
-- O push está **adiado**: o GitHub CLI está autenticado com token inválido e não há outro credential helper configurado. Não solicite nem cole um token no chat; após autenticar uma conta com permissão de escrita para o repositório, o push pode ser repetido.
+- Repositório local na branch main, origin apontando para https://github.com/camilagama/polaris.git.
+- Commit inicial 665c0fb enviado com sucesso para origin/main; o repositório remoto estava sem refs antes do push.
+- O token do GitHub CLI continua inválido, mas o fluxo de autenticação usado pelo git push funcionou. Nenhum PR foi criado; o push inicial estabeleceu main.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
