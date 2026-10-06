@@ -22,7 +22,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | --- | --- | --- |
 | PR01 — Scaffold do monorepo | Concluído | Oito workspaces; Bun 1.4.2 e Node 24.21.0; lock congelado, check, typecheck e build passaram. |
 | PR02 — Biome, Ultracite e convenções | Concluído | Biome 2.5.15 + Ultracite 7.12.4; import sorting, no explicit any e unused imports pelo preset. fix, check e build passaram. |
-| PR03 — Knip e boundaries | Pendente | |
+| PR03 — Knip e boundaries | Concluído | Knip 6.39.0; boundaries por Biome; fixtures negativos para domain/contracts; check e build passaram. Branch chore/workspace-boundaries. |
 | PR04 — Documentação canônica inicial | Pendente | Correções dirigidas já aplicadas nos anexos; ainda falta criar a hierarquia canônica do plano. |
 | PR05 — CI baseline | Pendente | |
 | PR06 — Renovate e dependency policy | Pendente | |

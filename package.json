@@ -6,16 +6,20 @@
     "packages/*"
   ],
   "scripts": {
+    "boundaries": "node scripts/verify-import-boundaries.mjs",
     "build": "turbo run build",
-    "check": "bun run lint && bun run format:check && bun run typecheck",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run knip",
     "fix": "ultracite fix",
     "format": "biome format --write .",
     "format:check": "biome format .",
+    "knip": "knip",
     "lint": "biome lint .",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@types/node": "24",
+    "knip": "^6.39.0",
     "turbo": "^2.11.7",
     "typescript": "^7.0.2",
     "ultracite": "7.12.4"

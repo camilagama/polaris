@@ -5,5 +5,92 @@
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "react",
+                      "react/**",
+                      "react-dom",
+                      "react-dom/**",
+                      "hono",
+                      "hono/**",
+                      "@orpc/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "drizzle-kit",
+                      "@cloudflare/**",
+                      "cloudflare:*",
+                      "better-auth",
+                      "better-auth/**",
+                      "@better-auth/**",
+                      "@aws-sdk/**",
+                      "aws-sdk",
+                      "@sentry/**",
+                      "evlog",
+                      "asaas",
+                      "asaas/**",
+                      "@asaas/**",
+                      "woovi",
+                      "woovi/**",
+                      "@woovi/**",
+                      "@polaris/db",
+                      "@polaris/db/**",
+                      "@polaris/billing",
+                      "@polaris/billing/**",
+                      "../../db/**",
+                      "../../billing/**"
+                    ],
+                    "message": "packages/domain must stay framework- and infrastructure-independent."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/contracts/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/db",
+                      "@polaris/db/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "drizzle-kit",
+                      "pg",
+                      "pg/**",
+                      "postgres",
+                      "postgres/**",
+                      "@neondatabase/**",
+                      "@cloudflare/hyperdrive",
+                      "../../db/**"
+                    ],
+                    "message": "packages/contracts must not import database or driver implementation."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }
