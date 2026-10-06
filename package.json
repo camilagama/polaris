@@ -9,6 +9,7 @@
     "boundaries": "node scripts/verify-import-boundaries.mjs",
     "build": "turbo run build",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run knip && bun run test",
+    "dev": "turbo run dev --filter=@polaris/web",
     "fix": "ultracite fix",
     "format": "biome format --write .",
     "format:check": "biome format .",

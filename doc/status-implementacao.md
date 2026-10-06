@@ -26,20 +26,21 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR04 — Documentação canônica inicial | Concluído | PRODUCT, CONTEXT, DESIGN, AGENTS, architecture, ADRs, regras de negócio, moeda, tempo, despesas/resultados e runbooks; autoridade dos anexos esclarecida. |
 | PR05 — CI baseline | Concluído | .github/workflows/ci.yml cobre lint/boundaries, typecheck, unit, Knip e build; SHAs completos, permissions read-only, cache por lockfile e sem deploy. Vitest passWithNoTests registra que ainda não há testes de domínio. |
 | PR06 — Renovate e dependency policy | Concluído | Renovate agrupa TanStack, Cloudflare, Biome/Ultracite, Vitest e Playwright; majors exigem dashboard approval; automerge desativado. renovate-config-validator --strict --no-global passou. |
-| Gate 0 | Pendente | Só avaliar depois de PR01–PR06. |
+| Gate 0 | Concluído | Baseline PR01–PR06 limpa; CI do PR05 verde; boundaries, documentação e builds vazios confirmados antes da Fase 1. |
 
 ## Fase 1 — provas de arquitetura
 
 | Etapa | Status | Observação |
 | --- | --- | --- |
-| PR07–PR12 — Worker, API, banco/RLS e persistência offline | Pendente | PostgreSQL 18 é o baseline; PR11 exige prova remota na região escolhida. |
+| PR07 — React + Vite + Cloudflare Worker | Em revisão | Check e build passam; dev, SPA e GET /health validados localmente; CI do PR pendente. |
+| PR08–PR12 — Hono, oRPC, DB/Hyperdrive, RLS e persistência offline | Pendente | PostgreSQL 18 é o baseline; PR11 exige prova remota na região escolhida. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
 ## Publicação GitHub
 
-- Repositório local na branch main, origin apontando para https://github.com/camilagama/polaris.git.
-- Commit inicial 665c0fb enviado com sucesso para origin/main; o repositório remoto estava sem refs antes do push.
-- O token do GitHub CLI continua inválido, mas o fluxo de autenticação usado pelo git push funcionou. Nenhum PR foi criado; o push inicial estabeleceu main.
+- `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
+- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3.
+- PR07 está na branch `feat/web-worker`, baseada em `chore/renovate-policy`; implementação e validação local concluídas, publicação em andamento.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
