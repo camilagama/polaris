@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./auth-schema": "./src/schema/auth.ts",
     "./client": "./src/client.ts",
     "./schema/poc": "./src/schema/poc.ts",
     "./rls-poc-client": "./src/rls-poc-client.ts",
@@ -12,6 +13,7 @@
     "build": "bun run typecheck",
     "check": "bun run typecheck",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "poc": "bun scripts/poc.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
     "poc:rls:verify": "bun scripts/verify-rls-gate.ts",

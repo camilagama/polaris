@@ -1,8 +1,9 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { authSchema } from "./schema/auth";
 import { dbPocOperations } from "./schema/poc";
 
-const databaseSchema = { dbPocOperations };
+const databaseSchema = { ...authSchema, dbPocOperations };
 
 export interface DatabaseOptions {
   connectionTimeoutMillis?: number;

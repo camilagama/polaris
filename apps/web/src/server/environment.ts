@@ -5,6 +5,8 @@ interface HyperdriveBinding {
 }
 
 export interface WorkerBindings {
+  BETTER_AUTH_BASE_URL?: string;
+  BETTER_AUTH_SECRET?: string;
   DB_POC_ENABLED: string;
   DB_RLS_POC_ENABLED: string;
   HYPERDRIVE: HyperdriveBinding;

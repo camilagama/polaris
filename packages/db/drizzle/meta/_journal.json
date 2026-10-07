@@ -15,6 +15,13 @@
       "when": 1791342551659,
       "tag": "0001_typical_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791375954904,
+      "tag": "0002_reflective_tarot",
+      "breakpoints": true
     }
   ]
 }

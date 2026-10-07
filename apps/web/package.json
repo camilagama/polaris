@@ -8,6 +8,7 @@
     "check": "bun run typecheck",
     "dev": "vite --host 127.0.0.1",
     "preview": "vite preview --host 127.0.0.1",
+    "test:auth-gate": "bun scripts/test-better-auth-gate.ts",
     "test:offline-poc": "playwright test --config playwright.offline-poc.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
@@ -20,6 +21,7 @@
     "@tanstack/db": "^0.12.1",
     "@tanstack/offline-transactions": "^1.0.63",
     "@tanstack/react-db": "^0.5.5",
+    "better-auth": "1.6.23",
     "hono": "^4.13.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

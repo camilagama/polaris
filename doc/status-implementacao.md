@@ -55,6 +55,24 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | Offline do app shell | Fora do escopo | Não há service worker nesta POC. |
 | Gate Foundation | Aprovado tecnicamente; revisão pendente | Critérios técnicos cumpridos. Os itens explicitamente adiados estão listados acima; Better Auth começa no PR13. |
 
+## Fase 2 — identidade e acesso
+
+| Etapa | Status | Observação |
+| --- | --- | --- |
+| PR13 — Better Auth base | Implementação local concluída; revisão pendente | Better Auth 1.6.23 no Worker com Drizzle/PostgreSQL, schema e migration versionada para user/account/session/verification. Email/password, OAuth e Organization plugin permanecem desligados. CI local e build passaram; a prova de sessão local Worker + Neon PostgreSQL 18 passou. Draft aguarda revisão. |
+| Gate Auth | Pendente | A validação com Hyperdrive remoto permanece necessária antes de PR14, PR15 ou fluxos tenant. O worker local usou o binding Hyperdrive em modo localConnectionString, que não mede pooling/cache remoto. |
+
+### PR13 — checkpoint para revisão
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Better Auth no Worker e route Hono | Concluída | GET/POST em /api/auth/*; configuração ausente responde 503; secret exige pelo menos 32 caracteres. |
+| Schema e migration PostgreSQL | Concluída | Migration 0002 cria user, account, session e verification; aplicada com a cadeia Drizzle na branch Neon temporária. |
+| Sessão: criar, ler, revogar | Concluída localmente | Dois testes Vitest e integração local Worker + PostgreSQL leram sessão persistida, revogaram e confirmaram leitura autoritativa nula. |
+| Hyperdrive remoto no Gate Auth | Adiado | O reviewer automático rejeitou a criação do role polaris_pr13_runtime e o envio de sua credencial à Cloudflare Hyperdrive; a autorização geral para testar não especificava esse destino/segredo. Nenhum role ou Hyperdrive novo foi criado. Requer autorização específica para concluir esse teste. |
+| Login senha/OAuth/Organization | Fora do escopo | Este PR só prepara o runtime, schema e sessão de fixture; os fluxos previstos ficam nos PRs seguintes. |
+
+A branch Neon de teste criada a partir do projeto descartável expira automaticamente em um dia; o branch production do PR11 permaneceu intacto. A integração local não substitui a validação remota Hyperdrive.
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.

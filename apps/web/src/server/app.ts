@@ -1,76 +1,113 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { createDatabase } from "@polaris/db/client";
-import { Hono } from "hono";
-import type { ServerEnv } from "./environment";
+import { Hono, type Context } from "hono";
+import type { ServerEnv, WorkerBindings } from "./environment";
+import { handleBetterAuthRequest } from "./auth/handler";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { systemRoutes } from "./routes/system";
 import { rpcRouter } from "./rpc/router";
 
-export const app = new Hono<ServerEnv>();
+type AuthRequestHandler = (
+  request: Request,
+  bindings: WorkerBindings
+) => Promise<Response>;
 
-const rpcHandler = new RPCHandler(rpcRouter);
+interface ServerAppOptions {
+  authHandler?: AuthRequestHandler;
+}
 
-app.use("*", requestIdMiddleware);
-app.use("*", securityHeadersMiddleware);
-app.use("/rpc/*", async (context, next) => {
-  const { matched, response } = await rpcHandler.handle(context.req.raw, {
-    context: {},
-    prefix: "/rpc",
+export function createServerApp({
+  authHandler = handleBetterAuthRequest,
+}: ServerAppOptions = {}) {
+  const app = new Hono<ServerEnv>();
+  const rpcHandler = new RPCHandler(rpcRouter);
+
+  app.use("*", requestIdMiddleware);
+  app.use("*", securityHeadersMiddleware);
+  app.use("/rpc/*", async (context, next) => {
+    const { matched, response } = await rpcHandler.handle(context.req.raw, {
+      context: {},
+      prefix: "/rpc",
+    });
+
+    if (matched) {
+      return context.newResponse(response.body, response);
+    }
+
+    await next();
   });
 
-  if (matched) {
-    return context.newResponse(response.body, response);
-  }
+  const authRoute = async (context: Context<ServerEnv>) => {
+    const secret = context.env.BETTER_AUTH_SECRET;
+    const baseURL = context.env.BETTER_AUTH_BASE_URL;
 
-  await next();
-});
-app.route("/", systemRoutes);
+    if (!secret || secret.length < 32 || !baseURL) {
+      return context.json(
+        {
+          error: { code: "auth_unavailable" },
+          requestId: context.get("requestId"),
+        },
+        503
+      );
+    }
 
-app.post("/api/poc/database", async (context) => {
-  if (context.env.DB_POC_ENABLED !== "true") {
-    return context.json(
+    return await authHandler(context.req.raw, context.env);
+  };
+  app.get("/api/auth/*", authRoute);
+  app.post("/api/auth/*", authRoute);
+
+  app.route("/", systemRoutes);
+
+  app.post("/api/poc/database", async (context) => {
+    if (context.env.DB_POC_ENABLED !== "true") {
+      return context.json(
+        {
+          error: { code: "not_found" },
+          requestId: context.get("requestId"),
+        },
+        404
+      );
+    }
+
+    const { pool } = createDatabase(context.env.HYPERDRIVE.connectionString, {
+      maxConnections: 1,
+    });
+
+    try {
+      const probe = await pool.query("SELECT 1 AS connected");
+
+      if (Number(probe.rows[0]?.connected) !== 1) {
+        return context.json({ error: { code: "database_unavailable" } }, 503);
+      }
+
+      return context.json({ status: "ok" });
+    } finally {
+      await pool.end();
+    }
+  });
+
+  app.notFound((context) =>
+    context.json(
       {
         error: { code: "not_found" },
         requestId: context.get("requestId"),
       },
       404
-    );
-  }
+    )
+  );
 
-  const { pool } = createDatabase(context.env.HYPERDRIVE.connectionString, {
-    maxConnections: 1,
-  });
+  app.onError((_error, context) =>
+    context.json(
+      {
+        error: { code: "internal_error" },
+        requestId: context.get("requestId"),
+      },
+      500
+    )
+  );
 
-  try {
-    const probe = await pool.query("SELECT 1 AS connected");
+  return app;
+}
 
-    if (Number(probe.rows[0]?.connected) !== 1) {
-      return context.json({ error: { code: "database_unavailable" } }, 503);
-    }
-
-    return context.json({ status: "ok" });
-  } finally {
-    await pool.end();
-  }
-});
-
-app.notFound((context) =>
-  context.json(
-    {
-      error: { code: "not_found" },
-      requestId: context.get("requestId"),
-    },
-    404
-  )
-);
-
-app.onError((_error, context) =>
-  context.json(
-    {
-      error: { code: "internal_error" },
-      requestId: context.get("requestId"),
-    },
-    500
-  )
-);
+export const app = createServerApp();
