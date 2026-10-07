@@ -59,8 +59,8 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 
 | Etapa | Status | Observação |
 | --- | --- | --- |
-| PR13 — Better Auth base | Implementação local concluída; draft PR #11 para revisão | Better Auth 1.6.23 no Worker com Drizzle/PostgreSQL, migration para user/account/session/verification; password, OAuth e Organization seguem desligados. Check, build, dois testes Vitest e integração local Worker + Neon passaram. Gate Auth remoto via Hyperdrive continua pendente; nenhum segredo foi commitado. |
-| Gate Auth | Pendente | A validação com Hyperdrive remoto permanece necessária antes de PR14, PR15 ou fluxos tenant. O worker local usou o binding Hyperdrive em modo localConnectionString, que não mede pooling/cache remoto. |
+| PR13 — Better Auth base | Implementação e gates local/remoto concluídos; draft PR #11 para revisão | Better Auth 1.6.23 no Worker com Drizzle/PostgreSQL, migration para user/account/session/verification; password, OAuth e Organization seguem desligados. Check, build, dois testes Vitest e integração local Worker + Neon passaram. O Gate Auth local e remoto passou; Worker, Hyperdrive, papel de runtime e fixture temporários foram removidos; nenhum segredo foi commitado. |
+| Gate Auth | Concluído | O Worker remoto leu e revogou uma sessão persistida via Hyperdrive e Neon PostgreSQL 18; a leitura posterior foi nula. O papel temporário teve CRUD somente nas quatro tabelas Better Auth. Worker, config Hyperdrive, papel e fixture foram removidos. A branch Neon expira em 2026-10-08 às 09:29 (America/Sao_Paulo). |
 
 ### PR13 — checkpoint para revisão
 
@@ -68,11 +68,11 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | --- | --- | --- |
 | Better Auth no Worker e route Hono | Concluída | GET/POST em /api/auth/*; configuração ausente responde 503; secret exige pelo menos 32 caracteres. |
 | Schema e migration PostgreSQL | Concluída | Migration 0002 cria user, account, session e verification; aplicada com a cadeia Drizzle na branch Neon temporária. |
-| Sessão: criar, ler, revogar | Concluída localmente | Dois testes Vitest e integração local Worker + PostgreSQL leram sessão persistida, revogaram e confirmaram leitura autoritativa nula. |
-| Hyperdrive remoto no Gate Auth | Adiado | O reviewer automático rejeitou a criação do role polaris_pr13_runtime e o envio de sua credencial à Cloudflare Hyperdrive; a autorização geral para testar não especificava esse destino/segredo. Nenhum role ou Hyperdrive novo foi criado. Requer autorização específica para concluir esse teste. |
+| Sessão: criar, ler, revogar | Concluída local e remotamente | Dois testes Vitest e integrações local e remota leram sessão persistida, revogaram e confirmaram leitura autoritativa nula. |
+| Hyperdrive remoto no Gate Auth | Concluído | A prova Worker → Hyperdrive → Neon passou com o role polaris_pr13_runtime restrito às quatro tabelas de autenticação. A leitura e a revogação de sessão passaram; o role temporário e a config Hyperdrive foram removidos após o teste. |
 | Login senha/OAuth/Organization | Fora do escopo | Este PR só prepara o runtime, schema e sessão de fixture; os fluxos previstos ficam nos PRs seguintes. |
 
-A branch Neon de teste criada a partir do projeto descartável expira automaticamente em um dia; o branch production do PR11 permaneceu intacto. A integração local não substitui a validação remota Hyperdrive.
+A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 (America/Sao_Paulo). O branch production do PR11 permaneceu intacto. Worker e config Hyperdrive temporários foram removidos após o Gate Auth remoto passar.
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
@@ -83,6 +83,6 @@ A branch Neon de teste criada a partir do projeto descartável expira automatica
 - PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão/merge.
 - PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável e Hyperdrive criados; subdomínio account-level workers.dev habilitado; gate remoto passou e CI do commit `7f20292` está verde.
 - PR12 está como draft em https://github.com/camilagama/polaris/pull/10, empilhado sobre PR11; o GitHub registrou os seis jobs de CI como verdes, incluindo Playwright. Validação manual relatada: Safari em iPhone 12/iOS 26.6.2, navegação normal, roteiro completo sem erros. Preview e Worker temporários removidos; ambos os endpoints retornam HTTP 404. Edge real, Android físico e migração provider-native do mesmo ID permanecem adiados.
-- PR13 está como draft em https://github.com/camilagama/polaris/pull/11, empilhado sobre PR12. A migration 0002 e a integração local Worker + PostgreSQL 18 passaram; Gate Auth remoto via Hyperdrive está pendente após bloqueio do auto-review. A branch Neon de teste expira automaticamente em um dia.
+- PR13 está como draft em https://github.com/camilagama/polaris/pull/11, empilhado sobre PR12. A migration 0002 e as integrações local e remota Worker + PostgreSQL 18 passaram. O Gate Auth remoto via Hyperdrive foi concluído; Worker, config Hyperdrive, role temporário e fixture foram removidos. A branch Neon de teste expira em 2026-10-08 às 09:29 (America/Sao_Paulo).
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

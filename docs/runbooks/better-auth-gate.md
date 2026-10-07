@@ -58,5 +58,6 @@ Esse modo executa o Worker local com conexão direta ao banco; ele não mede o p
 - `bun run check` e `bun run build` passaram.
 - Os dois testes Vitest passaram.
 - A integração local Worker + PostgreSQL 18 na branch Neon `pr13-better-auth-gate` passou: leitura de sessão e revogação.
-- A branch Neon expira automaticamente em um dia.
-- A integração Worker → Hyperdrive remoto permanece pendente.
+- A integração remota Worker → Hyperdrive → Neon passou em 2026-10-07: o Worker leu a sessão criada pelo fixture, revogou-a e confirmou leitura autoritativa nula.
+- O role temporário tinha somente CRUD nas quatro tabelas Better Auth. O Worker, a config Hyperdrive, o role e o usuário sintético foram removidos; a contagem do fixture ficou em zero.
+- A branch Neon pr13-better-auth-gate expira em 2026-10-08 às 09:29 (America/Sao_Paulo); a branch production não foi alterada.
