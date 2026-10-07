@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "build:offline-poc": "vite build --config vite.offline.config.ts --mode offline-poc --outDir dist/offline-poc",
     "check": "bun run typecheck",
     "dev": "vite --host 127.0.0.1",
     "preview": "vite preview --host 127.0.0.1",
+    "test:offline-poc": "playwright test --config playwright.offline-poc.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
@@ -14,6 +16,10 @@
     "@orpc/server": "^1.15.4",
     "@polaris/contracts": "workspace:*",
     "@polaris/db": "workspace:*",
+    "@tanstack/browser-db-sqlite-persistence": "^0.2.30",
+    "@tanstack/db": "^0.12.1",
+    "@tanstack/offline-transactions": "^1.0.63",
+    "@tanstack/react-db": "^0.5.5",
     "hono": "^4.13.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
@@ -21,6 +27,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.62.5",
     "@cloudflare/workers-types": "^5.20261006.1",
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",

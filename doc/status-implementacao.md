@@ -37,8 +37,22 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR09 — oRPC POC | Concluído | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais e CI remoto do PR #7 passaram; draft aguarda revisão e merge. |
 | PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Concluído | PostgreSQL 18.6 POC passou query, commit, rollback e reuso com tabela TEMP; Worker local via binding respondeu 200; check/build e CI final do PR #8 verdes. Pooling/cache Hyperdrive remoto permanece no Gate PR11. |
 | PR11 — Gate RLS/Hyperdrive | Concluído | PR #9 draft publicado. Neon descartável PostgreSQL 18 em São Paulo; fixture, policy, grants, role, memberships e constraints PG18 validados; senha do runtime role rotacionada; Hyperdrive `ebe151e5081344479947edb6028279bb` criado com cache desativado e limite de origem 5. O gate remoto Worker → Hyperdrive → Neon passou: isolamento concorrente, contexto transacional e reset no mesmo backend, rollback, rejeição de escrita cruzada e retry após terminar um backend. A correção usa pool de cliente por requisição (recomendação do Hyperdrive) e trata SQLSTATEs encapsulados pelo Drizzle e a falha de conexão observada no rollback; concorrência do gate limitada a 16 chamadas. `bun run check` e `bun run build` passaram; preview remoto parado e `.dev.vars` temporário removido. CI do commit `7f20292` passou nos cinco jobs; PR aguarda revisão do responsável. Rotacionar a credencial owner fornecida depois do teste. |
-| PR12 — Offline persistence POC | Pendente | Persistência offline e fallback definidos no plano continuam pendentes. |
+| PR12 — Offline persistence POC | Em andamento | Laboratório sintético concluído localmente: `bun run check`, `bun run build` e 16/16 cenários Playwright Chromium passaram. A revisão real no Safari/iPhone aguarda preview temporário; Android físico e migração provider-native do mesmo ID ficam adiados. Ver checkpoint e runbook abaixo. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
+
+### PR12 — checkpoint para revisão
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Implementação local e integração CI | Concluída | Laboratório sintético, reset idempotente com journal IndexedDB persistente e recovery serializado por Web Locks, outbox separado, migração versionada e job Playwright adicionados. |
+| Check e build padrão | Concluída | `bun run check` e `bun run build` passaram. |
+| Fluxos Chromium automatizados | Concluída | 16/16 casos passaram em Chromium desktop e Pixel 5 emulado, serialmente. |
+| WebKit Playwright no Windows | Adiada | O binário 26.6 falha ao abrir `createSyncAccessHandle()`; não é evidência sobre Safari no iPhone. |
+| Safari real no iPhone | Pendente | Requer preview HTTPS público temporário e revisão do responsável. |
+| Android Chrome físico | Adiado | Não há aparelho Android disponível; emulação não substitui o teste físico. |
+| Migração provider-native com mesmo ID | Adiada | O POC prova cópia explícita entre IDs de coleção versionados e preserva v1; não prova migração in-place de `schemaVersion`. |
+| Offline do app shell | Fora do escopo | Não há service worker nesta POC. |
+| Gate Foundation | Pendente | Permanece aberto até o resultado do Safari/iPhone e a decisão de aceitar o escopo adiado. |
 
 ## Publicação GitHub
 

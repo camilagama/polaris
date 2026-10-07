@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "polaris-pr12-offline-poc",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./worker/pr12-offline.ts",
+  "assets": {
+    "directory": "./dist/offline-poc",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/health"]
+  }
+}
