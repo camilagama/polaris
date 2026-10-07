@@ -199,58 +199,67 @@ try {
       [runtimeRole]
     );
     const tableResult = await pool.query<{
-      columns: string[];
-      constraints: string[];
-      externalGrantees: string[];
+      columns: string;
+      constraintCount: number;
+      externalGranteeCount: number;
       forceRls: boolean;
       kind: string;
       owner: string;
+      primaryKey: string | null;
       rls: boolean;
       runtimeHasGrantOptions: boolean;
-      runtimePrivileges: string[];
+      runtimePrivileges: string | null;
       triggerCount: number;
-      types: string[];
+      types: string;
     }>(
       `SELECT relation.relkind AS kind,
               relation.relrowsecurity AS "rls",
               relation.relforcerowsecurity AS "forceRls",
               owner.rolname AS owner,
-              ARRAY(
-                SELECT attribute.attname
+              (
+                SELECT string_agg(attribute.attname::text, ',' ORDER BY attribute.attnum)
                   FROM pg_attribute AS attribute
                  WHERE attribute.attrelid = relation.oid
                    AND attribute.attnum > 0
                    AND NOT attribute.attisdropped
-                 ORDER BY attribute.attnum
               ) AS columns,
-              ARRAY(
-                SELECT pg_catalog.format_type(attribute.atttypid, attribute.atttypmod)
+              (
+                SELECT string_agg(
+                         pg_catalog.format_type(attribute.atttypid, attribute.atttypmod),
+                         ',' ORDER BY attribute.attnum
+                       )
                   FROM pg_attribute AS attribute
                  WHERE attribute.attrelid = relation.oid
                    AND attribute.attnum > 0
                    AND NOT attribute.attisdropped
-                 ORDER BY attribute.attnum
               ) AS types,
-              ARRAY(
+              (
+                SELECT count(*)::integer
+                  FROM pg_constraint AS constraint_row
+                 WHERE constraint_row.conrelid = relation.oid
+              ) AS "constraintCount",
+              (
                 SELECT pg_get_constraintdef(constraint_row.oid)
                   FROM pg_constraint AS constraint_row
                  WHERE constraint_row.conrelid = relation.oid
-                 ORDER BY constraint_row.conname
-              ) AS constraints,
-              ARRAY(
-                SELECT DISTINCT privilege.grantee
+                   AND constraint_row.contype = 'p'
+              ) AS "primaryKey",
+              (
+                SELECT count(DISTINCT privilege.grantee)::integer
                   FROM information_schema.table_privileges AS privilege
-                WHERE privilege.table_schema = 'public'
+                 WHERE privilege.table_schema = 'public'
                    AND privilege.table_name = 'rls_poc_operations'
                    AND privilege.grantee NOT IN (current_user::text, $1)
-              ) AS "externalGrantees",
-              ARRAY(
-                SELECT DISTINCT privilege.privilege_type
+              ) AS "externalGranteeCount",
+              (
+                SELECT string_agg(
+                         DISTINCT privilege.privilege_type,
+                         ',' ORDER BY privilege.privilege_type
+                       )
                   FROM information_schema.table_privileges AS privilege
                  WHERE privilege.table_schema = 'public'
                    AND privilege.table_name = 'rls_poc_operations'
                    AND privilege.grantee = $1
-                 ORDER BY privilege.privilege_type
               ) AS "runtimePrivileges",
               EXISTS (
                 SELECT 1
@@ -349,25 +358,24 @@ try {
         tableState.owner === runtimeRole &&
         "fixture-table-owned-by-runtime",
       tableState &&
-        tableState.columns.join(",") !== "organization_id,token,value" &&
+        tableState.columns !== "organization_id,token,value" &&
         "fixture-columns",
       tableState &&
-        tableState.types.join(",") !== "text,text,text" &&
+        tableState.types !== "text,text,text" &&
         "fixture-column-types",
       tableState &&
-        tableState.externalGrantees.length !== 0 &&
+        tableState.externalGranteeCount !== 0 &&
         "fixture-external-grantees",
       tableState &&
-        tableState.runtimePrivileges.join(",") !==
-          "DELETE,INSERT,SELECT,UPDATE" &&
+        tableState.runtimePrivileges !== "DELETE,INSERT,SELECT,UPDATE" &&
         "fixture-runtime-privileges",
       tableState?.runtimeHasGrantOptions && "fixture-runtime-grant-options",
       tableState &&
-        tableState.constraints.length !== 1 &&
+        tableState.constraintCount !== 1 &&
         "fixture-constraint-count",
       tableState &&
-        tableState.constraints.length === 1 &&
-        tableState.constraints[0] !== "PRIMARY KEY (organization_id, token)" &&
+        tableState.constraintCount === 1 &&
+        tableState.primaryKey !== "PRIMARY KEY (organization_id, token)" &&
         "fixture-primary-key",
       tableState && tableState.triggerCount !== 0 && "fixture-triggers",
       policyResult.rows.length !== 1 && "fixture-policy-count",
