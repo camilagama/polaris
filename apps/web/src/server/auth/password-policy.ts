@@ -15,6 +15,32 @@ export class PasswordPolicyError extends Error {
   }
 }
 
+export interface PasswordPolicyErrorDetails {
+  code: PasswordPolicyErrorCode;
+  message: string;
+  status: 400 | 503;
+}
+
+export function passwordPolicyErrorDetails(
+  error: PasswordPolicyError
+): PasswordPolicyErrorDetails {
+  const messages = {
+    password_compromised:
+      "Choose a password that has not appeared in a breach.",
+    password_hibp_unavailable:
+      "Password validation is temporarily unavailable.",
+    password_invalid_unicode: "Password contains unsupported Unicode.",
+    password_too_long: "Password exceeds the maximum length.",
+    password_too_short: "Password does not meet the minimum length.",
+  } satisfies Record<PasswordPolicyErrorCode, string>;
+
+  return {
+    code: error.code,
+    message: messages[error.code],
+    status: error.code === "password_hibp_unavailable" ? 503 : 400,
+  };
+}
+
 const PASSWORD_MIN_CODE_POINTS = 15;
 const PASSWORD_MAX_CODE_POINTS = 128;
 const HIBP_RANGE_URL = "https://api.pwnedpasswords.com/range/";

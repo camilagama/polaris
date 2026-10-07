@@ -12,6 +12,7 @@ import type { GoogleOptions } from "better-auth/social-providers";
 import {
   normalizePassword,
   PasswordPolicyError,
+  passwordPolicyErrorDetails,
   validateNewPassword,
 } from "./auth/password-policy";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
@@ -72,7 +73,7 @@ interface AuthHookContext {
   returned?: unknown;
   session?: {
     session?: { userId?: string };
-    user?: { id?: string };
+    user?: { emailVerified?: boolean; id?: string };
   };
 }
 
@@ -240,24 +241,53 @@ async function normalizeAndValidatePasswordRequest(
   }
 }
 
+async function validateVerifiedAccountLinkingRequest(
+  context: AuthBeforeHookContext
+): Promise<void> {
+  if (context.path !== "/link-social" && context.path !== "/set-password") {
+    return;
+  }
+
+  const currentSession = (await getSessionFromCtx(
+    context
+  )) as unknown as AuthHookContext["session"];
+  if (!currentSession?.user?.id) {
+    throw APIError.from("UNAUTHORIZED", {
+      code: "session_required",
+      message: "Sign in before managing linked sign-in methods.",
+    });
+  }
+  if (currentSession.user.emailVerified !== true) {
+    throw APIError.from("FORBIDDEN", {
+      code: "email_not_verified",
+      message: "Verify your email before linking or adding a password.",
+    });
+  }
+
+  if (context.path === "/link-social") {
+    const requestBody = asRecord(context.body);
+    if (requestBody?.provider !== "google") {
+      throw APIError.from("BAD_REQUEST", {
+        code: "provider_not_supported",
+        message: "Only Google account linking is supported.",
+      });
+    }
+    if (requestBody.idToken !== undefined) {
+      throw APIError.from("BAD_REQUEST", {
+        code: "oauth_redirect_required",
+        message: "Link Google with the OAuth redirect flow.",
+      });
+    }
+  }
+}
+
 function passwordPolicyApiError(error: PasswordPolicyError): APIError {
-  const status =
-    error.code === "password_hibp_unavailable"
-      ? "SERVICE_UNAVAILABLE"
-      : "BAD_REQUEST";
-  const messages = {
-    password_compromised:
-      "Choose a password that has not appeared in a breach.",
-    password_hibp_unavailable:
-      "Password validation is temporarily unavailable.",
-    password_invalid_unicode: "Password contains unsupported Unicode.",
-    password_too_long: "Password exceeds the maximum length.",
-    password_too_short: "Password does not meet the minimum length.",
-  } satisfies Record<PasswordPolicyError["code"], string>;
+  const details = passwordPolicyErrorDetails(error);
+  const status = details.status === 503 ? "SERVICE_UNAVAILABLE" : "BAD_REQUEST";
 
   return APIError.from(status, {
-    code: error.code,
-    message: messages[error.code],
+    code: details.code,
+    message: details.message,
   });
 }
 function normalizeRequestId(requestId: string | undefined): string {
@@ -321,6 +351,43 @@ function callbackErrorCode(
     : "callback_failed";
 }
 
+function googleCallbackRedirectLocation(returned: unknown): string | undefined {
+  let status: number | undefined;
+  let location: string | undefined;
+
+  if (returned instanceof Response) {
+    const { headers, status: responseStatus } = returned;
+    status = responseStatus;
+    location = headers.get("location") ?? undefined;
+  } else if (isAPIError(returned)) {
+    const redirect = returned as APIError & {
+      headers?: Headers;
+      statusCode?: number;
+    };
+    status = redirect.statusCode;
+    location = redirect.headers?.get("location") ?? undefined;
+  }
+
+  if (status === undefined || status < 300 || status >= 400) {
+    return undefined;
+  }
+
+  return location;
+}
+
+function isSuccessfulGoogleCallbackRedirect(returned: unknown): boolean {
+  const location = googleCallbackRedirectLocation(returned);
+  if (!location) {
+    return false;
+  }
+
+  try {
+    return !new URL(location, "http://localhost").searchParams.has("error");
+  } catch {
+    return false;
+  }
+}
+
 function googleLoginStartedEvent(
   input: AuthAuditHookInput
 ): AuthSecurityAuditEvent | undefined {
@@ -358,13 +425,28 @@ function googleCallbackEvent(
   }
 
   const queryParams = asRecord(query);
-  const { newSession, returned } = context;
+  const { newSession, returned, session } = context;
   const user = newSession?.user;
-  const actorId = user?.id ?? null;
+  const actorId =
+    user?.id ??
+    session?.user?.id ??
+    session?.session?.userId ??
+    capturedLogoutActorId;
 
-  if (actorId) {
+  if (typeof queryParams?.error === "string") {
     return {
-      actorId,
+      actorId: actorId ?? null,
+      errorCode: "provider_error",
+      eventType: "google_callback_failed",
+      outcome: "failed",
+      provider: "google",
+      requestId,
+    };
+  }
+
+  if (user?.id || isSuccessfulGoogleCallbackRedirect(returned)) {
+    return {
+      actorId: actorId ?? null,
       errorCode: null,
       eventType: "google_callback_succeeded",
       outcome: "succeeded",
@@ -373,13 +455,14 @@ function googleCallbackEvent(
     };
   }
 
-  const errorCode =
-    typeof queryParams?.error === "string"
-      ? "provider_error"
-      : callbackErrorCode(returned);
+  if (returned === undefined) {
+    return undefined;
+  }
+
+  const errorCode = callbackErrorCode(returned);
 
   return {
-    actorId: capturedLogoutActorId,
+    actorId: actorId ?? null,
     errorCode,
     eventType: "google_callback_failed",
     outcome: "failed",
@@ -466,6 +549,7 @@ export function createBetterAuth({
 
   let capturedLogoutActorId: string | null = null;
   const captureLogoutSession = createAuthMiddleware(async (context) => {
+    await validateVerifiedAccountLinkingRequest(context);
     await normalizeAndValidatePasswordRequest(context);
 
     if (context.path !== "/sign-out") {
@@ -480,6 +564,23 @@ export function createBetterAuth({
   });
   const auditHook = createAuthMiddleware(async (context) => {
     const authContext = context.context as unknown as AuthHookContext;
+    if (
+      isGoogleCallbackPath(context.path, context.params) &&
+      !authContext.newSession?.user?.id &&
+      googleCallbackRedirectLocation(authContext.returned) !== undefined &&
+      !authContext.session?.user?.id
+    ) {
+      try {
+        const callbackSession = (await getSessionFromCtx(context)) as unknown as
+          | AuthHookContext["session"]
+          | null;
+        if (callbackSession) {
+          authContext.session = callbackSession;
+        }
+      } catch {
+        // A successful OAuth callback can be a link flow with an existing session.
+      }
+    }
     const event = buildAuthSecurityAuditEvent({
       body: context.body,
       capturedLogoutActorId,
@@ -497,7 +598,14 @@ export function createBetterAuth({
 
   return betterAuth({
     account: {
-      accountLinking: { enabled: false },
+      accountLinking: {
+        allowDifferentEmails: false,
+        disableImplicitLinking: true,
+        enabled: true,
+        requireLocalEmailVerified: true,
+        trustedProviders: [],
+        updateUserInfoOnLink: false,
+      },
       encryptOAuthTokens: true,
     },
     appName: "Polaris",

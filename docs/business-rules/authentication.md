@@ -30,3 +30,13 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 - Aplicar um limite geral por IP nas rotas protegidas e limite menor nas rotas que podem enviar email. As chaves usam HMAC e não incluem o IP em claro.
 - Os bindings nativos Workers Rate Limiting mantêm contadores aproximados por localidade Cloudflare, não um contador global. Eles são uma camada de contenção; não tratar o resultado como quota global ou como única defesa contra abuso distribuído.
 - A autenticação por email/senha permanece desligada até Turnstile, bindings, site key do cliente, Resend e domínio de envio estarem configurados. A UI ainda não existe; ela deve obter um token novo para cada envio e transmiti-lo no header definido.
+
+## Vínculo de contas
+
+- Não associar contas automaticamente durante um login social. O vínculo Google exige uma sessão existente e verificada, iniciada por ação explícita do usuário no fluxo OAuth com redirect/PKCE.
+- O email da conta Polaris e o email retornado pelo Google precisam estar verificados e ser iguais sem distinção de caixa. Rejeitar email ausente, não verificado ou diferente.
+- Não aceitar `idToken` enviado diretamente pelo cliente para criar vínculo. `trustedProviders` permanece vazio, emails diferentes não são permitidos e o perfil local não é sobrescrito ao vincular.
+- Uma sessão Google só pode adicionar senha se o email local estiver verificado; o Worker chama a API server-only do Better Auth, aplica a mesma normalização NFC, tamanho e consulta HIBP do PR15 e mantém a sessão associada ao mesmo user ID.
+- O callback OAuth de vínculo gera evento de segurança com o ID interno do usuário quando a sessão está presente; nunca registrar token, payload ou dados sensíveis do provider.
+
+O fluxo explícito e a API server-side `setPassword` seguem a [documentação Better Auth de usuários e contas](https://www.better-auth.com/docs/concepts/users-accounts).

@@ -2,6 +2,11 @@ import { createDatabase } from "@polaris/db/client";
 import { createBetterAuth } from "../auth";
 import { createResendAuthEmailDelivery } from "./email";
 import type { WorkerBindings } from "../environment";
+import {
+  PasswordPolicyError,
+  passwordPolicyErrorDetails,
+  validateNewPassword,
+} from "../auth/password-policy";
 
 const trailingSlashPattern = /\/+$/;
 
@@ -18,6 +23,8 @@ function isEmailPasswordAuthRoute(request: Request): boolean {
       "/reset-password",
       "/send-verification-email",
       "/change-password",
+      "/set-password",
+      "/link-social",
     ].some((suffix) => path.endsWith(suffix));
   }
 
@@ -41,12 +48,16 @@ const resetPasswordCallbackPathPattern = /\/reset-password\/[^/]+$/;
 
 async function isGoogleOAuthRequest(request: Request): Promise<boolean> {
   const url = new URL(request.url);
+  const path = url.pathname.replace(trailingSlashPattern, "");
 
-  if (url.pathname.endsWith("/callback/google")) {
+  if (path.endsWith("/callback/google")) {
     return true;
   }
 
-  if (request.method !== "POST" || !url.pathname.endsWith("/sign-in/social")) {
+  if (
+    request.method !== "POST" ||
+    !(path.endsWith("/sign-in/social") || path.endsWith("/link-social"))
+  ) {
     return false;
   }
 
@@ -61,6 +72,72 @@ async function isGoogleOAuthRequest(request: Request): Promise<boolean> {
     "provider" in body &&
     (body as { provider?: unknown }).provider === "google"
   );
+}
+
+function isSetPasswordRequest(request: Request): boolean {
+  return (
+    request.method.toUpperCase() === "POST" &&
+    new URL(request.url).pathname
+      .replace(trailingSlashPattern, "")
+      .endsWith("/set-password")
+  );
+}
+
+export async function handleSetPasswordRequest(
+  auth: ReturnType<typeof createBetterAuth>,
+  request: Request
+): Promise<Response> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session) {
+    return Response.json(
+      { error: { code: "session_required" } },
+      { status: 401 }
+    );
+  }
+  if (session.user.emailVerified !== true) {
+    return Response.json(
+      { error: { code: "email_not_verified" } },
+      { status: 403 }
+    );
+  }
+
+  const body: unknown = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  const requestBody =
+    typeof body === "object" && body !== null && !Array.isArray(body)
+      ? (body as { newPassword?: unknown })
+      : undefined;
+  if (typeof requestBody?.newPassword !== "string") {
+    return Response.json(
+      { error: { code: "invalid_request_body" } },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const normalizedPassword = await validateNewPassword(
+      requestBody.newPassword
+    );
+    return await auth.api.setPassword({
+      asResponse: true,
+      body: { newPassword: normalizedPassword },
+      headers: request.headers,
+    });
+  } catch (error) {
+    if (error instanceof PasswordPolicyError) {
+      const details = passwordPolicyErrorDetails(error);
+      return Response.json(
+        {
+          error: { code: details.code, message: details.message },
+        },
+        { status: details.status }
+      );
+    }
+
+    throw error;
+  }
 }
 
 export async function handleBetterAuthRequest(
@@ -137,6 +214,10 @@ export async function handleBetterAuthRequest(
       ...(requestId ? { requestId } : {}),
       secret,
     });
+    if (isSetPasswordRequest(request)) {
+      return await handleSetPasswordRequest(auth, request);
+    }
+
     return await auth.handler(request);
   } finally {
     await pool.end();

@@ -1210,7 +1210,7 @@ Registrar configuração, limites, contrato do header, privacidade e passos de a
 
 
 
-Implementar Google + password linking seguro.
+Implementar vínculo explícito entre uma conta Better Auth de senha e a identidade Google. Não vincular automaticamente durante login social. O endpoint `link-social` exige sessão com email verificado, rejeita `idToken` enviado pelo cliente e inicia o fluxo OAuth com redirect/PKCE. Manter `disableImplicitLinking: true`, `trustedProviders: []`, `allowDifferentEmails: false` e não substituir o perfil local pelos dados do Google ao vincular.
 
 
 
@@ -1230,7 +1230,19 @@ different email → reject
 
 
 
-Testar account takeover scenarios.
+O email local e a afirmação de email do Google precisam estar verificados e ser iguais sem distinção de caixa. Uma sessão Google verificada pode adicionar senha pelo método server-only `auth.api.setPassword`, desde que siga a política de senha do PR15; sessão com email não verificado é rejeitada. O fluxo permanece atrás da configuração de email/senha.
+
+Testar:
+
+- vínculo explícito com sessão e mesmo email verificado;
+- email local não verificado;
+- email Google não verificado;
+- email diferente;
+- sessão ausente;
+- tentativa de vincular por `idToken` enviado pelo cliente;
+- login Google sem vínculo implícito de uma conta de senha existente;
+- adicionar senha a uma sessão Google verificada e confirmar que ambos os métodos usam o mesmo user ID;
+- chamadas de `set-password` rejeitadas quando email/senha está desligado.
 
 
 
