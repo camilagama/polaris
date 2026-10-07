@@ -59,6 +59,7 @@ const excludedCloudflareEnvironment = new Set([
   "NEON_API_TOKEN",
   "POLARIS_RLS_ADMIN_DATABASE_URL",
   "POLARIS_RLS_CONFIRM_DISPOSABLE",
+  "POLARIS_RLS_CF_BODY",
   "POLARIS_RLS_EXPECTED_HOSTNAME",
 ]);
 const cfEnvironment: NodeJS.ProcessEnv = {};
@@ -67,21 +68,34 @@ for (const [key, value] of Object.entries(process.env)) {
     cfEnvironment[key] = value;
   }
 }
-const pwshCheck = spawnSync(
-  "pwsh.exe",
+const cfRuntimeCheck = spawnSync(
+  "powershell.exe",
   [
     "-NoLogo",
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    "$PSVersionTable.PSVersion.Major",
+    "$cfShim = (Get-Command cf -ErrorAction Stop).Source; $cfDirectory = Split-Path $cfShim -Parent; $node = Join-Path $cfDirectory 'node.exe'; if (-not (Test-Path $node)) { $node = (Get-Command node.exe -ErrorAction Stop).Source }; $entry = Join-Path $cfDirectory 'node_modules\\cf\\bin\\cf'; if (-not (Test-Path $entry)) { throw 'The cf JavaScript entrypoint was not found.' }; [pscustomobject]@{ node = $node; entry = $entry } | ConvertTo-Json -Compress",
   ],
   { cwd: webDirectory, encoding: "utf8", env: cfEnvironment }
 );
-const pwshMajor = Number.parseInt(pwshCheck.stdout.trim(), 10);
-if (pwshCheck.status !== 0 || !Number.isFinite(pwshMajor) || pwshMajor < 7) {
+if (cfRuntimeCheck.status !== 0 || !cfRuntimeCheck.stdout?.trim()) {
   throw new Error(
-    "PowerShell 7 (pwsh.exe) is required for safe cf CLI JSON argument handling; no database changes were made."
+    "The cf CLI Node entrypoint could not be resolved; no database changes were made."
+  );
+}
+let cfRuntime: { entry?: string; node?: string };
+try {
+  cfRuntime = JSON.parse(cfRuntimeCheck.stdout.trim()) as typeof cfRuntime;
+} catch (error) {
+  throw new Error(
+    "The cf CLI Node entrypoint check returned unreadable output; no database changes were made.",
+    { cause: error }
+  );
+}
+if (!(cfRuntime.node && cfRuntime.entry)) {
+  throw new Error(
+    "The cf CLI Node entrypoint was incomplete; no database changes were made."
   );
 }
 
@@ -437,7 +451,7 @@ try {
   }
 
   const cfAuth = spawnSync(
-    "pwsh.exe",
+    "powershell.exe",
     [
       "-NoLogo",
       "-NoProfile",
@@ -594,17 +608,9 @@ try {
     origin_connection_limit: 5,
     mtls: { sslmode: "require" },
   });
-  cfEnvironment.POLARIS_RLS_CF_BODY = cfBody;
-
   const cf = spawnSync(
-    "pwsh.exe",
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "cf hyperdrive create --quiet --body $env:POLARIS_RLS_CF_BODY",
-    ],
+    cfRuntime.node,
+    [cfRuntime.entry, "hyperdrive", "create", "--quiet", "--body", cfBody],
     {
       cwd: webDirectory,
       encoding: "utf8",
