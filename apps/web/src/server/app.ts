@@ -1,8 +1,16 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { createDatabase } from "@polaris/db/client";
-import { Hono, type Context } from "hono";
+import { type Context, Hono } from "hono";
+import {
+  type AuthAbuseProtector,
+  isAuthAbuseProtectionApplicable,
+  protectAuthRequest,
+} from "./auth/abuse-protection";
+import {
+  handleBetterAuthRequest,
+  isEmailPasswordAuthEnabled,
+} from "./auth/handler";
 import type { ServerEnv, WorkerBindings } from "./environment";
-import { handleBetterAuthRequest } from "./auth/handler";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { systemRoutes } from "./routes/system";
@@ -15,10 +23,12 @@ type AuthRequestHandler = (
 ) => Promise<Response>;
 
 interface ServerAppOptions {
+  authAbuseProtector?: AuthAbuseProtector;
   authHandler?: AuthRequestHandler;
 }
 
 export function createServerApp({
+  authAbuseProtector = protectAuthRequest,
   authHandler = handleBetterAuthRequest,
 }: ServerAppOptions = {}) {
   const app = new Hono<ServerEnv>();
@@ -51,6 +61,20 @@ export function createServerApp({
         },
         503
       );
+    }
+
+    if (
+      isAuthAbuseProtectionApplicable(context.req.raw) &&
+      isEmailPasswordAuthEnabled(context.env)
+    ) {
+      const abuseResponse = await authAbuseProtector(
+        context.req.raw,
+        context.env,
+        context.get("requestId")
+      );
+      if (abuseResponse !== undefined) {
+        return context.newResponse(abuseResponse.body, abuseResponse);
+      }
     }
 
     return await authHandler(

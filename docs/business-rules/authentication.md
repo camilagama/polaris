@@ -22,3 +22,11 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 
 - Verificação de endereço e recuperação de senha dependem de um sender transacional configurado; ausência de configuração deve falhar de forma segura.
 - Resend está escolhido para emails transacionais de autenticação; templates são minimalistas e sem imagens. `RESEND_API_KEY` é secret do Worker; `AUTH_EMAIL_FROM` é variável de configuração não secreta e deve pertencer a um domínio verificado. `AUTH_EMAIL_REPLY_TO` é opcional. Não incluir credenciais no repositório.
+
+## Proteção contra abuso
+
+- Antes de encaminhar signup, login por senha, solicitação/conclusão de reset e reenvio de verificação, o Worker exige um token Turnstile de uso único validado pelo Siteverify. O servidor confere a ação esperada para a rota e o hostname de `BETTER_AUTH_BASE_URL`; o cliente não é autoridade para esses valores.
+- O token vem no header `x-turnstile-token`; não registrar nem devolver esse valor. Sem token/configuração, com token inválido, ou se a validação externa estiver indisponível, não processar a operação.
+- Aplicar um limite geral por IP nas rotas protegidas e limite menor nas rotas que podem enviar email. As chaves usam HMAC e não incluem o IP em claro.
+- Os bindings nativos Workers Rate Limiting mantêm contadores aproximados por localidade Cloudflare, não um contador global. Eles são uma camada de contenção; não tratar o resultado como quota global ou como única defesa contra abuso distribuído.
+- A autenticação por email/senha permanece desligada até Turnstile, bindings, site key do cliente, Resend e domínio de envio estarem configurados. A UI ainda não existe; ela deve obter um token novo para cada envio e transmiti-lo no header definido.

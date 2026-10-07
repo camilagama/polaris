@@ -1165,19 +1165,23 @@ Usar Resend com templates React Email minimalistas, idempotency key por token e 
 
 
 
-Adicionar Turnstile em:
+Adicionar verificação Turnstile server-side e rate limiting para as operações públicas de email/senha:
 
 
 
-- signup;
+- signup e envio de verificação;
 
 - password login;
 
-- password reset.
+- solicitação e conclusão do reset de senha.
 
 
 
-Adicionar rate limiting.
+O Worker deve validar o token pelo Siteverify, conferir `action` e o hostname configurado do Better Auth, limitar tentativas antes de chamar o provider e falhar fechado se a configuração ou a verificação estiver indisponível. O token chega no header `x-turnstile-token`; token ausente/inválido não deve chegar ao Better Auth.
+
+Usar bindings nativos de rate limiting do Workers para um limite geral por IP e um limite menor para operações que enviam email. As chaves não devem conter IP em claro. Os contadores desses bindings são locais por região Cloudflare, então não representam uma quota global; registrar a limitação e reavaliar uma proteção distribuída antes de lançar caso o risco exija.
+
+A interface de autenticação ainda não existe. Este PR fecha os endpoints; a tela futura deve renderizar o widget com a site key pública, enviar o token no header acima e usar a ação correspondente ao endpoint. Manter os fluxos de senha desligados até secret, hostnames, bindings e widget estarem configurados.
 
 
 
@@ -1187,11 +1191,14 @@ Testar:
 
 - token ausente;
 
-- inválido;
+- token inválido e ação/hostname divergentes;
 
-- replay;
+- replay de token;
 
-- limite excedido.
+- limite de IP e limite de envio de email excedidos;
+- timeout/erro do Siteverify e ausência de configuração.
+
+Registrar configuração, limites, contrato do header, privacidade e passos de ativação em runbook.
 
 
 
@@ -6971,4 +6978,3 @@ A prioridade correta é:
 
 
 > **provar as partes arriscadas primeiro, estabilizar as invariantes e só depois acelerar a construção das funcionalidades.**
-

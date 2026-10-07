@@ -118,6 +118,8 @@ function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
     secret: testSecret,
   });
   const testApp = createServerApp({
+    // These tests isolate Better Auth; abuse controls have dedicated tests.
+    authAbuseProtector: async () => undefined,
     authHandler: (request) => auth.handler(request),
   });
 

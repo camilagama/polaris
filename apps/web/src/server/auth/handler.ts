@@ -3,7 +3,7 @@ import { createBetterAuth } from "../auth";
 import { createResendAuthEmailDelivery } from "./email";
 import type { WorkerBindings } from "../environment";
 
-function isEmailPasswordRoute(request: Request): boolean {
+function isEmailPasswordAuthRoute(request: Request): boolean {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method.toUpperCase();
@@ -27,6 +27,13 @@ function isEmailPasswordRoute(request: Request): boolean {
   }
 
   return false;
+}
+
+export function isEmailPasswordAuthEnabled(bindings: WorkerBindings): boolean {
+  return (
+    bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
+    Boolean(bindings.RESEND_API_KEY?.trim() && bindings.AUTH_EMAIL_FROM?.trim())
+  );
 }
 const resetPasswordCallbackPathPattern = /\/reset-password\/[^/]+$/;
 
@@ -83,11 +90,9 @@ export async function handleBetterAuthRequest(
 
   const resendApiKey = bindings.RESEND_API_KEY?.trim();
   const emailFrom = bindings.AUTH_EMAIL_FROM?.trim();
-  const emailPasswordAuthEnabled =
-    bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
-    Boolean(resendApiKey && emailFrom);
+  const emailPasswordAuthEnabled = isEmailPasswordAuthEnabled(bindings);
 
-  if (isEmailPasswordRoute(request) && !emailPasswordAuthEnabled) {
+  if (isEmailPasswordAuthRoute(request) && !emailPasswordAuthEnabled) {
     return Response.json(
       { error: { code: "auth_email_unavailable" } },
       { status: 503 }
