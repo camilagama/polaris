@@ -36,18 +36,19 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR08 — Hono shell | Concluído | Check, build e smoke HTTP aprovados; CI remoto do PR #6 verde; draft aguarda revisão e merge do responsável. |
 | PR09 — oRPC POC | Concluído | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais e CI remoto do PR #7 passaram; draft aguarda revisão e merge. |
 | PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Concluído | PostgreSQL 18.6 POC passou query, commit, rollback e reuso com tabela TEMP; Worker local via binding respondeu 200; check/build e CI final do PR #8 verdes. Pooling/cache Hyperdrive remoto permanece no Gate PR11. |
-| PR11 — Gate RLS/Hyperdrive | Em andamento | Fixture RLS, contexto transaction-local, entrypoint isolado e schema ausente do bundle Worker padrão, bootstrap com hostname exato/relações persistentes ausentes e runner implementados. `check` e `build` locais passaram. Prova remota aguarda projeto Neon descartável, reautenticação manual do Wrangler e execução real do runner. |
+| PR11 — Gate RLS/Hyperdrive | Em andamento | PR #9 draft publicado; CI remoto verde. Fixture RLS, contexto transaction-local, entrypoint isolado e schema ausente do bundle Worker padrão, bootstrap com hostname exato/relações persistentes ausentes e runner implementados. `check` e `build` locais passaram. Prova remota Worker → Hyperdrive → Neon pendente; a reautenticação Wrangler ficará a cargo do responsável. |
 | PR12 — Offline persistence POC | Pendente | Persistência offline e fallback definidos no plano continuam pendentes. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
-- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4; #6 `feat/hono-shell` → #5; #7 `feat/orpc-poc` → #6; #8 `feat/postgres-hyperdrive-poc` → #7.
+- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4; #6 `feat/hono-shell` → #5; #7 `feat/orpc-poc` → #6; #8 `feat/postgres-hyperdrive-poc` → #7; #9 `codex/pr11-rls-hyperdrive-gate` → #8.
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
 - PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão/merge.
+- PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; CI remoto verde, prova remota pendente e sem recursos Neon/Cloudflare de teste provisionados.
 - Nenhum recurso Cloudflare ou banco Neon foi provisionado nesta etapa.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
