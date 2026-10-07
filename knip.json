@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6.39.0/schema.json",
+  "ignoreBinaries": ["pwsh.exe"],
   "workspaces": {
     ".": {
       "entry": ["scripts/**/*.mjs"],

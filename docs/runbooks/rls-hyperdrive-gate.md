@@ -4,9 +4,10 @@ This is an isolated architecture proof. It uses only the synthetic organizations
 
 ## Prerequisites
 
-- A new, empty Neon Free plan project named `polaris-pr11-rls-gate` in AWS South America East 1 (São Paulo), with PostgreSQL 18 and the default `neondb` database.
+- A disposable Neon Free plan project named `polaris-pr11-rls-gate` in AWS South America East 1 (São Paulo), with PostgreSQL 18 and the default `neondb` database. The first run must be empty; a retry accepts only the exact verified PR11 fixture from an interrupted bootstrap.
 - A direct (non-pooled) owner connection URL for that project. Do not use the existing `polaris_runtime` URL or a production database.
 - `cf auth whoami` reports a valid token and exactly one Cloudflare account. The bootstrap uses `cf hyperdrive create`.
+- PowerShell 7 (`pwsh.exe`) is available on `PATH`; Windows PowerShell 5.1 does not preserve the JSON `--body` argument through the installed `cf.ps1` wrapper.
 - Wrangler authenticated separately to that same account for local development with the remote Hyperdrive binding. The `cf` and Wrangler CLIs keep separate authentication profiles. This repository still uses `wrangler.jsonc`; Cloudflare's current `cf dev` requires migrating Wrangler configuration first, so do not run it here.
 - Dependencies installed from `bun.lock`.
 
@@ -31,9 +32,9 @@ try {
 }
 ```
 
-The bootstrap stores the runtime password in the Cloudflare Hyperdrive resource; it does not write a database URL or password to the repository or print them. The `cf` CLI receives the generated password in its create request, so it may be visible in host process data while the command runs. The password is random, belongs only to this fixture role, and should be used on a host where unrelated users cannot inspect processes. The bootstrap updates `apps/web/wrangler.pr11.jsonc` with the non-secret resource ID. It intentionally accepts only a fresh project; if bootstrap stops after making database changes, preserve the disposable project for diagnosis and use a fresh test project for a clean rerun.
+The bootstrap stores the runtime password in the Cloudflare Hyperdrive resource; it does not write a database URL or password to the repository or print them. The `cf` CLI receives the generated password in its create request, so it may be visible in host process data while the command runs. The password is random, belongs only to this fixture role, and should be used on a host where unrelated users cannot inspect processes. The bootstrap updates `apps/web/wrangler.pr11.jsonc` with the non-secret resource ID.
 
-If the bootstrap fails during or after the Hyperdrive create step, use any printed resource ID to inspect `cf hyperdrive get <hyperdrive-id>` and confirm the name is `polaris-pr11-rls-gate` and caching is disabled. After confirming that exact test resource is orphaned, `cf hyperdrive delete <hyperdrive-id>` removes it; the CLI prompts by default. The bootstrap intentionally never deletes resources automatically.
+If Hyperdrive creation fails after the database fixture is prepared, a retry is allowed only when the project contains exactly the expected `rls_poc_operations` table, policy, runtime role, and two synthetic seed rows. The bootstrap validates that full state, rotates the runtime password, and resumes without dropping objects. Any other existing database state is rejected and left unchanged. If a Hyperdrive resource was created but writing its ID to Wrangler config failed, inspect the reported ID with `cf hyperdrive get <hyperdrive-id>` and confirm the exact test resource name and caching settings before deleting it manually and retrying.
 
 ## Run the Worker through remote Hyperdrive
 

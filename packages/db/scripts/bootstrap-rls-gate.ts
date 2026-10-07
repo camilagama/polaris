@@ -67,6 +67,24 @@ for (const [key, value] of Object.entries(process.env)) {
     cfEnvironment[key] = value;
   }
 }
+const pwshCheck = spawnSync(
+  "pwsh.exe",
+  [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    "$PSVersionTable.PSVersion.Major",
+  ],
+  { cwd: webDirectory, encoding: "utf8", env: cfEnvironment }
+);
+const pwshMajor = Number.parseInt(pwshCheck.stdout.trim(), 10);
+if (pwshCheck.status !== 0 || !Number.isFinite(pwshMajor) || pwshMajor < 7) {
+  throw new Error(
+    "PowerShell 7 (pwsh.exe) is required for safe cf CLI JSON argument handling; no database changes were made."
+  );
+}
+
 const pool = new Pool({ connectionString: adminConnectionString, max: 1 });
 
 try {
@@ -95,21 +113,16 @@ try {
     throw new Error("The admin URL must not use the PR11 runtime role.");
   }
 
-  const publicObjects = await pool.query<{ name: string }>(
-    `SELECT relation.relname AS name
+  const publicObjects = await pool.query<{ kind: string; name: string }>(
+    `SELECT relation.relname AS name,
+            relation.relkind AS kind
        FROM pg_class AS relation
        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
       WHERE namespace.nspname = 'public'
         AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
         AND relation.relpersistence <> 't'
-      LIMIT 1`
+      ORDER BY relation.relname`
   );
-  if (publicObjects.rowCount !== 0) {
-    throw new Error(
-      "The target public schema already has a persistent relation. Use the fresh disposable project created for this gate."
-    );
-  }
-
   const existing = await pool.query<{
     relation: string | null;
     role: string | null;
@@ -118,15 +131,313 @@ try {
             (SELECT rolname FROM pg_roles WHERE rolname = $1) AS role`,
     [runtimeRole]
   );
+  const [fixture] = existing.rows;
+  const isFresh =
+    publicObjects.rows.length === 0 && !fixture?.relation && !fixture?.role;
+  const isRecoverableFixture =
+    publicObjects.rows.length === 1 &&
+    publicObjects.rows[0]?.name === "rls_poc_operations" &&
+    publicObjects.rows[0]?.kind === "r" &&
+    Boolean(fixture?.relation) &&
+    fixture?.role === runtimeRole;
 
-  if (existing.rows[0]?.relation || existing.rows[0]?.role) {
+  if (!(isFresh || isRecoverableFixture)) {
     throw new Error(
-      "The fixture or runtime role already exists. Bootstrap only a fresh disposable project; use a new one for a repeat run."
+      "The target must be empty or contain only the complete PR11 fixture from an interrupted bootstrap. Unknown existing state is never changed."
+    );
+  }
+
+  if (isRecoverableFixture) {
+    const roleResult = await pool.query<{
+      bypassRls: boolean;
+      canCreateDatabase: boolean;
+      canCreateInSchema: boolean;
+      canCreateRole: boolean;
+      hasMemberships: boolean;
+      inherit: boolean;
+      login: boolean;
+      ownsTable: boolean;
+      superuser: boolean;
+    }>(
+      `SELECT role.rolsuper AS "superuser",
+              role.rolcreatedb AS "canCreateDatabase",
+              role.rolcreaterole AS "canCreateRole",
+              EXISTS (
+                SELECT 1
+                  FROM pg_namespace AS public_schema
+                 WHERE public_schema.nspname = 'public'
+                   AND has_schema_privilege(role.oid, public_schema.oid, 'CREATE')
+              ) AS "canCreateInSchema",
+              role.rolinherit AS "inherit",
+              role.rolcanlogin AS "login",
+              role.rolbypassrls AS "bypassRls",
+              EXISTS (
+                SELECT 1
+                  FROM pg_auth_members AS membership
+                 WHERE membership.member = role.oid
+                    OR membership.roleid = role.oid
+              ) AS "hasMemberships",
+              relation.relowner = role.oid AS "ownsTable"
+         FROM pg_roles AS role
+         JOIN pg_class AS relation
+           ON relation.oid = 'public.rls_poc_operations'::regclass
+        WHERE role.rolname = $1`,
+      [runtimeRole]
+    );
+    const tableResult = await pool.query<{
+      columns: string[];
+      constraints: string[];
+      externalGrantees: string[];
+      forceRls: boolean;
+      kind: string;
+      owner: string;
+      rls: boolean;
+      runtimeHasGrantOptions: boolean;
+      runtimePrivileges: string[];
+      triggerCount: number;
+      types: string[];
+    }>(
+      `SELECT relation.relkind AS kind,
+              relation.relrowsecurity AS "rls",
+              relation.relforcerowsecurity AS "forceRls",
+              owner.rolname AS owner,
+              ARRAY(
+                SELECT attribute.attname
+                  FROM pg_attribute AS attribute
+                 WHERE attribute.attrelid = relation.oid
+                   AND attribute.attnum > 0
+                   AND NOT attribute.attisdropped
+                 ORDER BY attribute.attnum
+              ) AS columns,
+              ARRAY(
+                SELECT pg_catalog.format_type(attribute.atttypid, attribute.atttypmod)
+                  FROM pg_attribute AS attribute
+                 WHERE attribute.attrelid = relation.oid
+                   AND attribute.attnum > 0
+                   AND NOT attribute.attisdropped
+                 ORDER BY attribute.attnum
+              ) AS types,
+              ARRAY(
+                SELECT pg_get_constraintdef(constraint_row.oid)
+                  FROM pg_constraint AS constraint_row
+                 WHERE constraint_row.conrelid = relation.oid
+                 ORDER BY constraint_row.conname
+              ) AS constraints,
+              ARRAY(
+                SELECT DISTINCT privilege.grantee
+                  FROM information_schema.table_privileges AS privilege
+                WHERE privilege.table_schema = 'public'
+                   AND privilege.table_name = 'rls_poc_operations'
+                   AND privilege.grantee NOT IN (current_user::text, $1)
+              ) AS "externalGrantees",
+              ARRAY(
+                SELECT DISTINCT privilege.privilege_type
+                  FROM information_schema.table_privileges AS privilege
+                 WHERE privilege.table_schema = 'public'
+                   AND privilege.table_name = 'rls_poc_operations'
+                   AND privilege.grantee = $1
+                 ORDER BY privilege.privilege_type
+              ) AS "runtimePrivileges",
+              EXISTS (
+                SELECT 1
+                  FROM information_schema.table_privileges AS privilege
+                 WHERE privilege.table_schema = 'public'
+                   AND privilege.table_name = 'rls_poc_operations'
+                   AND privilege.grantee = $1
+                   AND privilege.is_grantable = 'YES'
+              ) AS "runtimeHasGrantOptions",
+              (
+                SELECT count(*)::integer
+                  FROM pg_trigger AS trigger_row
+                 WHERE trigger_row.tgrelid = relation.oid
+                   AND NOT trigger_row.tgisinternal
+              ) AS "triggerCount"
+         FROM pg_class AS relation
+         JOIN pg_roles AS owner ON owner.oid = relation.relowner
+        WHERE relation.oid = 'public.rls_poc_operations'::regclass`,
+      [runtimeRole]
+    );
+    const policyResult = await pool.query<{
+      checkExpression: string | null;
+      command: string;
+      includesPublic: boolean;
+      name: string;
+      permissive: boolean;
+      usingExpression: string | null;
+    }>(
+      `SELECT policy.polname AS name,
+              policy.polcmd AS command,
+              policy.polpermissive AS permissive,
+              0::oid = ANY(policy.polroles) AS "includesPublic",
+              pg_get_expr(policy.polqual, policy.polrelid) AS "usingExpression",
+              pg_get_expr(policy.polwithcheck, policy.polrelid) AS "checkExpression"
+         FROM pg_policy AS policy
+        WHERE policy.polrelid = 'public.rls_poc_operations'::regclass`
+    );
+    const [roleState] = roleResult.rows;
+    const [tableState] = tableResult.rows;
+    const [policy] = policyResult.rows;
+    const normalizePolicyExpression = (expression: string) => {
+      let normalized = expression
+        .replaceAll('"', "")
+        .replace(/::\s*text\b/g, "")
+        .replace(/\((organization_id)\)/g, "$1")
+        .replace(/\s+/g, "")
+        .toLowerCase();
+
+      while (normalized.startsWith("(") && normalized.endsWith(")")) {
+        let depth = 0;
+        let wrapsWholeExpression = true;
+        for (let index = 0; index < normalized.length; index += 1) {
+          if (normalized[index] === "(") {
+            depth += 1;
+          }
+          if (normalized[index] === ")") {
+            depth -= 1;
+          }
+          if (depth === 0 && index < normalized.length - 1) {
+            wrapsWholeExpression = false;
+            break;
+          }
+        }
+        if (!wrapsWholeExpression) {
+          break;
+        }
+        normalized = normalized.slice(1, -1);
+      }
+
+      return normalized;
+    };
+    const expectedPolicyExpression =
+      "organization_id=current_setting('app.organization_id',true)";
+    const expressionIsExpected = (expression: string | null | undefined) =>
+      Boolean(
+        expression &&
+          normalizePolicyExpression(expression) === expectedPolicyExpression
+      );
+
+    if (
+      !roleState ||
+      roleState.superuser ||
+      roleState.canCreateDatabase ||
+      roleState.canCreateInSchema ||
+      roleState.canCreateRole ||
+      roleState.hasMemberships ||
+      roleState.inherit ||
+      !roleState.login ||
+      roleState.bypassRls ||
+      roleState.ownsTable ||
+      !tableState ||
+      tableState.kind !== "r" ||
+      !tableState.rls ||
+      !tableState.forceRls ||
+      tableState.owner === runtimeRole ||
+      tableState.columns.join(",") !== "organization_id,token,value" ||
+      tableState.types.join(",") !== "text,text,text" ||
+      tableState.externalGrantees.length !== 0 ||
+      tableState.runtimePrivileges.join(",") !==
+        "DELETE,INSERT,SELECT,UPDATE" ||
+      tableState.runtimeHasGrantOptions ||
+      tableState.constraints.length !== 1 ||
+      tableState.constraints[0] !== "PRIMARY KEY (organization_id, token)" ||
+      tableState.triggerCount !== 0 ||
+      policyResult.rows.length !== 1 ||
+      policy?.name !== "rls_poc_operations_organization_isolation" ||
+      policy.command !== "*" ||
+      !policy.permissive ||
+      !policy.includesPublic ||
+      !expressionIsExpected(policy.usingExpression) ||
+      !expressionIsExpected(policy.checkExpression)
+    ) {
+      throw new Error(
+        "Existing PR11 fixture does not match the expected safe recovery state; no database objects were changed."
+      );
+    }
+
+    const expectedSeeds = [
+      {
+        organizationId: "org_a",
+        token: "seed-a",
+        value: "synthetic data for org_a",
+      },
+      {
+        organizationId: "org_b",
+        token: "seed-b",
+        value: "synthetic data for org_b",
+      },
+    ] as const;
+    const validationClient = await pool.connect();
+    try {
+      await validationClient.query("BEGIN");
+      await validationClient.query("SET LOCAL row_security = off");
+      const allFixtureRows = await validationClient.query<{
+        organization_id: string;
+        token: string;
+        value: string;
+      }>(
+        `SELECT organization_id, token, value
+           FROM public.rls_poc_operations
+          ORDER BY organization_id, token`
+      );
+      if (
+        allFixtureRows.rows.length !== expectedSeeds.length ||
+        allFixtureRows.rows.some((fixtureRow, index) => {
+          const seed = expectedSeeds[index];
+          return (
+            !seed ||
+            fixtureRow.organization_id !== seed.organizationId ||
+            fixtureRow.token !== seed.token ||
+            fixtureRow.value !== seed.value
+          );
+        })
+      ) {
+        throw new Error(
+          "Existing PR11 fixture must contain exactly the two expected synthetic seed rows."
+        );
+      }
+      const assertSeed = async (seed: (typeof expectedSeeds)[number]) => {
+        await validationClient.query("SELECT set_config($1, $2, true)", [
+          "app.organization_id",
+          seed.organizationId,
+        ]);
+        const result = await validationClient.query<{
+          organization_id: string;
+          token: string;
+          value: string;
+        }>(
+          `SELECT organization_id, token, value
+             FROM public.rls_poc_operations
+            WHERE organization_id = $1`,
+          [seed.organizationId]
+        );
+        if (
+          result.rows.length !== 1 ||
+          result.rows[0]?.organization_id !== seed.organizationId ||
+          result.rows[0]?.token !== seed.token ||
+          result.rows[0]?.value !== seed.value
+        ) {
+          throw new Error(
+            "Existing PR11 fixture seeds do not match the expected synthetic rows."
+          );
+        }
+      };
+      const [orgASeed, orgBSeed] = expectedSeeds;
+      await assertSeed(orgASeed);
+      await assertSeed(orgBSeed);
+      await validationClient.query("COMMIT");
+    } catch (error) {
+      await validationClient.query("ROLLBACK");
+      throw error;
+    } finally {
+      validationClient.release();
+    }
+    console.log(
+      "Resuming the verified PR11 fixture after an interrupted Hyperdrive bootstrap; rotating the runtime role password."
     );
   }
 
   const cfAuth = spawnSync(
-    "powershell.exe",
+    "pwsh.exe",
     [
       "-NoLogo",
       "-NoProfile",
@@ -168,26 +479,42 @@ try {
     );
   }
 
-  await pool.query(
-    `CREATE ROLE ${runtimeRole}
-       LOGIN PASSWORD '${runtimePassword}'
-       NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`
-  );
+  if (isRecoverableFixture) {
+    await pool.query(
+      `ALTER ROLE ${runtimeRole}
+         WITH LOGIN PASSWORD '${runtimePassword}'
+         NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`
+    );
+  } else {
+    await pool.query(
+      `CREATE ROLE ${runtimeRole}
+         LOGIN PASSWORD '${runtimePassword}'
+         NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`
+    );
+  }
   await pool.query(
     `GRANT CONNECT ON DATABASE ${databaseName} TO ${runtimeRole}`
   );
 
-  const migrationClient = await pool.connect();
-  try {
-    await migrationClient.query("BEGIN");
-    await migrationClient.query(migrationSql);
-    await migrationClient.query("COMMIT");
-  } catch (error) {
-    await migrationClient.query("ROLLBACK");
-    throw error;
-  } finally {
-    migrationClient.release();
+  if (!isRecoverableFixture) {
+    const migrationClient = await pool.connect();
+    try {
+      await migrationClient.query("BEGIN");
+      await migrationClient.query(migrationSql);
+      await migrationClient.query("COMMIT");
+    } catch (error) {
+      await migrationClient.query("ROLLBACK");
+      throw error;
+    } finally {
+      migrationClient.release();
+    }
   }
+  await pool.query(`GRANT USAGE ON SCHEMA public TO ${runtimeRole}`);
+  await pool.query(
+    `GRANT SELECT, INSERT, UPDATE, DELETE
+       ON public.rls_poc_operations
+       TO ${runtimeRole}`
+  );
 
   const client = await pool.connect();
   try {
@@ -198,7 +525,8 @@ try {
     ]);
     await client.query(
       `INSERT INTO public.rls_poc_operations (organization_id, token, value)
-       VALUES ('org_a', 'seed-a', 'synthetic data for org_a')`
+       VALUES ('org_a', 'seed-a', 'synthetic data for org_a')
+       ON CONFLICT (organization_id, token) DO NOTHING`
     );
     await client.query("SELECT set_config($1, $2, true)", [
       "app.organization_id",
@@ -206,7 +534,8 @@ try {
     ]);
     await client.query(
       `INSERT INTO public.rls_poc_operations (organization_id, token, value)
-       VALUES ('org_b', 'seed-b', 'synthetic data for org_b')`
+       VALUES ('org_b', 'seed-b', 'synthetic data for org_b')
+       ON CONFLICT (organization_id, token) DO NOTHING`
     );
     await client.query("COMMIT");
   } catch (error) {
@@ -218,11 +547,18 @@ try {
 
   const roleCheck = await pool.query<{
     bypassRls: boolean;
+    canCreateInSchema: boolean;
     ownsTable: boolean;
     superuser: boolean;
   }>(
     `SELECT role.rolsuper AS "superuser",
             role.rolbypassrls AS "bypassRls",
+            EXISTS (
+              SELECT 1
+                FROM pg_namespace AS public_schema
+               WHERE public_schema.nspname = 'public'
+                 AND has_schema_privilege(role.oid, public_schema.oid, 'CREATE')
+            ) AS "canCreateInSchema",
             relation.relowner = role.oid AS "ownsTable"
        FROM pg_roles AS role
        JOIN pg_class AS relation
@@ -236,6 +572,7 @@ try {
     !security ||
     security.superuser ||
     security.bypassRls ||
+    security.canCreateInSchema ||
     security.ownsTable
   ) {
     throw new Error(
@@ -260,7 +597,7 @@ try {
   cfEnvironment.POLARIS_RLS_CF_BODY = cfBody;
 
   const cf = spawnSync(
-    "powershell.exe",
+    "pwsh.exe",
     [
       "-NoLogo",
       "-NoProfile",
