@@ -59,7 +59,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 
 | Etapa | Status | Observação |
 | --- | --- | --- |
-| PR13 — Better Auth base | Implementação local concluída; revisão pendente | Better Auth 1.6.23 no Worker com Drizzle/PostgreSQL, schema e migration versionada para user/account/session/verification. Email/password, OAuth e Organization plugin permanecem desligados. CI local e build passaram; a prova de sessão local Worker + Neon PostgreSQL 18 passou. Draft aguarda revisão. |
+| PR13 — Better Auth base | Implementação local concluída; draft PR #11 para revisão | Better Auth 1.6.23 no Worker com Drizzle/PostgreSQL, migration para user/account/session/verification; password, OAuth e Organization seguem desligados. Check, build, dois testes Vitest e integração local Worker + Neon passaram. Gate Auth remoto via Hyperdrive continua pendente; nenhum segredo foi commitado. |
 | Gate Auth | Pendente | A validação com Hyperdrive remoto permanece necessária antes de PR14, PR15 ou fluxos tenant. O worker local usou o binding Hyperdrive em modo localConnectionString, que não mede pooling/cache remoto. |
 
 ### PR13 — checkpoint para revisão
@@ -76,12 +76,13 @@ A branch Neon de teste criada a partir do projeto descartável expira automatica
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
-- PRs draft empilhados: #1 `chore/workspace-boundaries` → `main`; #2 `docs/canonical-docs` → #1; #3 `ci/baseline` → #2; #4 `chore/renovate-policy` → #3; #5 `feat/web-worker` → #4; #6 `feat/hono-shell` → #5; #7 `feat/orpc-poc` → #6; #8 `feat/postgres-hyperdrive-poc` → #7; #9 `codex/pr11-rls-hyperdrive-gate` → #8.
+- PRs draft empilhados: #1 chore/workspace-boundaries → main; #2 docs/canonical-docs → #1; #3 ci/baseline → #2; #4 chore/renovate-policy → #3; #5 feat/web-worker → #4; #6 feat/hono-shell → #5; #7 feat/orpc-poc → #6; #8 feat/postgres-hyperdrive-poc → #7; #9 codex/pr11-rls-hyperdrive-gate → #8; #10 codex/pr12-offline-persistence → #9; #11 codex/pr13-better-auth → #10.
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
 - PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão/merge.
 - PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável e Hyperdrive criados; subdomínio account-level workers.dev habilitado; gate remoto passou e CI do commit `7f20292` está verde.
 - PR12 está como draft em https://github.com/camilagama/polaris/pull/10, empilhado sobre PR11; o GitHub registrou os seis jobs de CI como verdes, incluindo Playwright. Validação manual relatada: Safari em iPhone 12/iOS 26.6.2, navegação normal, roteiro completo sem erros. Preview e Worker temporários removidos; ambos os endpoints retornam HTTP 404. Edge real, Android físico e migração provider-native do mesmo ID permanecem adiados.
+- PR13 está como draft em https://github.com/camilagama/polaris/pull/11, empilhado sobre PR12. A migration 0002 e a integração local Worker + PostgreSQL 18 passaram; Gate Auth remoto via Hyperdrive está pendente após bloqueio do auto-review. A branch Neon de teste expira automaticamente em um dia.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
