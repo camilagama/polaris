@@ -6,6 +6,7 @@ interface HyperdriveBinding {
 
 export interface WorkerBindings {
   DB_POC_ENABLED: string;
+  DB_RLS_POC_ENABLED: string;
   HYPERDRIVE: HyperdriveBinding;
 }
 

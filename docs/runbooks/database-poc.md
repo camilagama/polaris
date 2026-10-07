@@ -23,6 +23,6 @@ The migration itself remains reviewable at `packages/db/drizzle/0000_watery_rave
 
 `apps/web/wrangler.jsonc` declares a `HYPERDRIVE` binding with a local-only placeholder ID and a loopback connection string. Override `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` for a different local Postgres connection. Turborepo passes this variable only to the uncached `dev` task. Replace the placeholder ID with a real Hyperdrive resource before deploying.
 
-Wrangler local development connects directly to `localConnectionString`; it does not exercise Hyperdrive's remote pooling or query cache. The Worker local probe and PostgreSQL 18.6 POC passed. The Worker → Hyperdrive → Neon pooling/cache proof remains in PR11.
+Wrangler local development with the default config connects directly to `localConnectionString`; it does not exercise Hyperdrive's remote pooling or query cache. The Worker local probe and PostgreSQL 18.6 POC passed. PR11's separate [RLS/Hyperdrive runbook](./rls-hyperdrive-gate.md) covers the real remote binding and its disposable Neon fixture.
 
 No database URL is committed. This workspace has no local PostgreSQL service, so use a disposable PostgreSQL 18 URL for the POC runner.

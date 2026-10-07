@@ -2,6 +2,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { dbPocOperations } from "./schema/poc";
 
+const databaseSchema = { dbPocOperations };
+
 export interface DatabaseOptions {
   connectionTimeoutMillis?: number;
   idleTimeoutMillis?: number;
@@ -20,7 +22,7 @@ export function createDatabase(
   });
 
   return {
-    db: drizzle({ client: pool, schema: { dbPocOperations } }),
+    db: drizzle({ client: pool, schema: databaseSchema }),
     pool,
   };
 }

@@ -4,13 +4,17 @@
   "type": "module",
   "exports": {
     "./client": "./src/client.ts",
-    "./schema/poc": "./src/schema/poc.ts"
+    "./schema/poc": "./src/schema/poc.ts",
+    "./rls-poc-client": "./src/rls-poc-client.ts",
+    "./rls-poc-gate": "./src/rls-poc-gate.ts"
   },
   "scripts": {
     "build": "bun run typecheck",
     "check": "bun run typecheck",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "poc": "bun scripts/poc.ts",
+    "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
+    "poc:rls:verify": "bun scripts/verify-rls-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

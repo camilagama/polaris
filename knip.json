@@ -18,7 +18,7 @@
       "project": ["src/**/*.ts"]
     },
     "apps/web": {
-      "entry": [],
+      "entry": ["worker/pr11.ts"],
       "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
     }
   }
