@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
@@ -47,6 +47,26 @@ const migrationPath = fileURLToPath(
   new URL("../drizzle/0001_typical_jackpot.sql", import.meta.url)
 );
 const migrationSql = await readFile(migrationPath, "utf8");
+const webDirectory = fileURLToPath(
+  new URL("../../../apps/web/", import.meta.url)
+);
+const configPath = fileURLToPath(
+  new URL("../../../apps/web/wrangler.pr11.jsonc", import.meta.url)
+);
+const excludedCloudflareEnvironment = new Set([
+  "DATABASE_URL",
+  "NEON_API_KEY",
+  "NEON_API_TOKEN",
+  "POLARIS_RLS_ADMIN_DATABASE_URL",
+  "POLARIS_RLS_CONFIRM_DISPOSABLE",
+  "POLARIS_RLS_EXPECTED_HOSTNAME",
+]);
+const cfEnvironment: NodeJS.ProcessEnv = {};
+for (const [key, value] of Object.entries(process.env)) {
+  if (value !== undefined && !excludedCloudflareEnvironment.has(key)) {
+    cfEnvironment[key] = value;
+  }
+}
 const pool = new Pool({ connectionString: adminConnectionString, max: 1 });
 
 try {
@@ -102,6 +122,49 @@ try {
   if (existing.rows[0]?.relation || existing.rows[0]?.role) {
     throw new Error(
       "The fixture or runtime role already exists. Bootstrap only a fresh disposable project; use a new one for a repeat run."
+    );
+  }
+
+  const cfAuth = spawnSync(
+    "powershell.exe",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "cf auth whoami --quiet",
+    ],
+    { cwd: webDirectory, encoding: "utf8", env: cfEnvironment }
+  );
+  if (cfAuth.status !== 0) {
+    throw new Error(
+      `The cf CLI authentication check failed (exit ${cfAuth.status ?? "unknown"}).`
+    );
+  }
+
+  let cfIdentity: {
+    accounts?: Array<{ id?: string }>;
+    authenticated?: boolean;
+    tokenValid?: boolean;
+  };
+  try {
+    cfIdentity = JSON.parse(cfAuth.stdout ?? "") as typeof cfIdentity;
+  } catch (error) {
+    throw new Error(
+      "The cf CLI returned an unreadable authentication result.",
+      {
+        cause: error,
+      }
+    );
+  }
+  if (
+    cfIdentity.authenticated !== true ||
+    cfIdentity.tokenValid !== true ||
+    cfIdentity.accounts?.length !== 1 ||
+    !cfIdentity.accounts[0]?.id
+  ) {
+    throw new Error(
+      "The cf CLI must have a valid token and exactly one selected Cloudflare account before bootstrap."
     );
   }
 
@@ -180,61 +243,109 @@ try {
     );
   }
 
-  const webDirectory = fileURLToPath(
-    new URL("../../../apps/web/", import.meta.url)
-  );
-  const configPath = fileURLToPath(
-    new URL("../../../apps/web/wrangler.pr11.jsonc", import.meta.url)
-  );
-  const wrangler = spawnSync(
-    "bun",
+  const cfBody = JSON.stringify({
+    name: "polaris-pr11-rls-gate",
+    origin: {
+      database: databaseName,
+      host: adminUrl.hostname,
+      password: runtimePassword,
+      port: Number(adminUrl.port || "5432"),
+      scheme: "postgresql",
+      user: runtimeRole,
+    },
+    caching: { disabled: true },
+    origin_connection_limit: 5,
+    mtls: { sslmode: "require" },
+  });
+  cfEnvironment.POLARIS_RLS_CF_BODY = cfBody;
+
+  const cf = spawnSync(
+    "powershell.exe",
     [
-      "x",
-      "wrangler",
-      "hyperdrive",
-      "create",
-      "polaris-pr11-rls-gate",
-      `--host=${adminUrl.hostname}`,
-      `--port=${adminUrl.port || "5432"}`,
-      `--database=${databaseName}`,
-      `--user=${runtimeRole}`,
-      `--password=${runtimePassword}`,
-      "--sslmode=require",
-      "--origin-connection-limit=4",
-      "--caching-disabled=true",
-      "--binding=HYPERDRIVE",
-      "--update-config=true",
-      `--config=${configPath}`,
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "cf hyperdrive create --quiet --body $env:POLARIS_RLS_CF_BODY",
     ],
-    { cwd: webDirectory, encoding: "utf8" }
+    {
+      cwd: webDirectory,
+      encoding: "utf8",
+      env: cfEnvironment,
+    }
   );
 
-  const cliOutput = `${wrangler.stdout ?? ""}${wrangler.stderr ?? ""}`
+  const cliOutput = `${cf.stdout ?? ""}${cf.stderr ?? ""}`
     .replaceAll(runtimePassword, "[redacted]")
     .replaceAll(adminConnectionString, "[redacted]");
 
-  if (wrangler.status !== 0) {
+  if (cf.status !== 0) {
     throw new Error(
-      `Wrangler could not create the Hyperdrive binding (exit ${wrangler.status ?? "unknown"}). ${cliOutput}`
+      `The Cloudflare cf CLI could not create the Hyperdrive resource (exit ${cf.status ?? "unknown"}). ${cliOutput}`
     );
   }
 
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
-    hyperdrive?: Array<{ binding?: string; id?: string; remote?: boolean }>;
-  };
-  const binding = config.hyperdrive?.find(
-    (candidate) => candidate.binding === "HYPERDRIVE"
-  );
-
-  if (!binding?.id || binding.id === "00000000000000000000000000000000") {
+  interface HyperdriveResource {
+    caching?: { disabled?: boolean };
+    id?: string;
+  }
+  interface HyperdriveResponse extends HyperdriveResource {
+    data?: HyperdriveResource;
+    result?: HyperdriveResource;
+    success?: boolean;
+  }
+  let response: HyperdriveResponse;
+  try {
+    response = JSON.parse(cf.stdout ?? "") as typeof response;
+  } catch (error) {
     throw new Error(
-      "Wrangler created a resource but did not update the PR11 config with its id."
+      `The Cloudflare cf CLI returned an unreadable Hyperdrive response. ${cliOutput}`,
+      { cause: error }
+    );
+  }
+  const resource: HyperdriveResource =
+    response.result ?? response.data ?? response;
+
+  if (
+    response.success === false ||
+    !resource.id ||
+    resource.caching?.disabled !== true
+  ) {
+    throw new Error(
+      `Cloudflare did not confirm a Hyperdrive resource with SQL response caching disabled. ${cliOutput}`
     );
   }
 
-  if (binding.remote !== true) {
+  let binding: { binding?: string; id?: string; remote?: boolean } | undefined;
+  try {
+    const config = JSON.parse(await readFile(configPath, "utf8")) as {
+      hyperdrive?: Array<{
+        binding?: string;
+        id?: string;
+        remote?: boolean;
+      }>;
+    };
+    binding = config.hyperdrive?.find(
+      (candidate) => candidate.binding === "HYPERDRIVE"
+    );
+
+    if (!binding) {
+      throw new Error(
+        "The PR11 Wrangler config is missing its HYPERDRIVE binding."
+      );
+    }
+
+    binding.id = resource.id;
+    binding.remote = true;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    if (binding.id !== resource.id || binding.remote !== true) {
+      throw new Error("The PR11 Hyperdrive binding did not update correctly.");
+    }
+  } catch (error) {
     throw new Error(
-      "The PR11 Hyperdrive binding must remain remote in local Wrangler development."
+      `Hyperdrive ${resource.id} was created but the PR11 config was not updated. Inspect it with cf hyperdrive get ${resource.id} before recovery.`,
+      { cause: error }
     );
   }
 
@@ -243,6 +354,7 @@ try {
       database: databaseName,
       hyperdriveBinding: binding.binding,
       hyperdriveResourceId: binding.id,
+      hyperdriveOriginConnectionLimit: 5,
       postgresMajor: serverMajor,
       region: "aws-sa-east-1",
       runtimeRole,
