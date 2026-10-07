@@ -6,13 +6,12 @@
   "main": "./worker/pr11.ts",
   "vars": {
     "DB_POC_ENABLED": "false",
-    "DB_RLS_POC_ENABLED": "false"
+    "DB_RLS_POC_ENABLED": "true"
   },
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "00000000000000000000000000000000",
-      "remote": true
+      "id": "ebe151e5081344479947edb6028279bb"
     }
   ]
 }

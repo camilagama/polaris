@@ -36,7 +36,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR08 — Hono shell | Concluído | Check, build e smoke HTTP aprovados; CI remoto do PR #6 verde; draft aguarda revisão e merge do responsável. |
 | PR09 — oRPC POC | Concluído | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais e CI remoto do PR #7 passaram; draft aguarda revisão e merge. |
 | PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Concluído | PostgreSQL 18.6 POC passou query, commit, rollback e reuso com tabela TEMP; Worker local via binding respondeu 200; check/build e CI final do PR #8 verdes. Pooling/cache Hyperdrive remoto permanece no Gate PR11. |
-| PR11 — Gate RLS/Hyperdrive | Em andamento | PR #9 draft publicado. O Neon confirmou que PostgreSQL 18 registra as três constraints NOT NULL e a chave primária, e associa `neondb_owner` como único membro da role runtime; a runtime não pertence a outras roles. A validação foi ajustada para esse estado. A retomada passou essa validação, mas Neon recusou `ALTER ROLE` quando a instrução repetia `NOSUPERUSER`; a instrução agora altera somente a senha depois de verificar os atributos existentes. A tentativa não criou Hyperdrive nem alterou a senha. Check e build locais passaram; falta retomar. O Worker remoto ainda requer autenticação Wrangler separada. |
+| PR11 — Gate RLS/Hyperdrive | Em andamento | PR #9 draft publicado. O Neon descartável `polaris-pr11-rls-gate` é PostgreSQL 18 em São Paulo. O bootstrap retomou o fixture parcial, validou policy, grants, role, memberships e constraints PG18, rotacionou a senha runtime e criou o Hyperdrive `ebe151e5081344479947edb6028279bb` com cache SQL desativado e limite 5. `cf` está autenticado e `wrangler whoami --account <cf-account>` confirmou acesso à mesma conta. O `wrangler dev --remote` exige um subdomínio account-level `workers.dev`, que não está habilitado; nenhum Worker remoto foi iniciado. A prova Worker → Hyperdrive → Neon aguarda decisão sobre esse host público. |
 | PR12 — Offline persistence POC | Pendente | Persistência offline e fallback definidos no plano continuam pendentes. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
@@ -48,7 +48,6 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
 - PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão/merge.
-- PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável criado, Hyperdrive pendente. A retomada segura passou a validação do fixture, mas o `ALTER ROLE` foi recusado por incluir `NOSUPERUSER`; agora atualiza somente a senha, preservando os atributos já verificados.
-- O projeto Neon descartável foi provisionado; o Hyperdrive ainda não havia sido criado ao registrar este status.
+- PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável e Hyperdrive criados; prova remota aguarda autorização para configurar o subdomínio público workers.dev exigido pelo Wrangler remote dev.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

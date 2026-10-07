@@ -1,6 +1,6 @@
 # RLS and Hyperdrive gate (PR11)
 
-This is an isolated architecture proof. It uses only the synthetic organizations `org_a` and `org_b` and the table `rls_poc_operations`; it does not create Polaris business entities. The route is absent from the default Worker entrypoint and is included only by `worker/pr11.ts`. The separate Wrangler configuration is for local development; do not deploy `wrangler.pr11.jsonc`.
+This is an isolated architecture proof. It uses only the synthetic organizations `org_a` and `org_b` and the table `rls_poc_operations`; it does not create Polaris business entities. The route is absent from the default Worker entrypoint and is included only by `worker/pr11.ts`. The separate Wrangler configuration is for remote development; do not deploy `wrangler.pr11.jsonc`.
 
 ## Prerequisites
 
@@ -8,7 +8,8 @@ This is an isolated architecture proof. It uses only the synthetic organizations
 - A direct (non-pooled) owner connection URL for that project. Do not use the existing `polaris_runtime` URL or a production database.
 - `cf auth whoami` reports a valid token and exactly one Cloudflare account. The bootstrap uses `cf hyperdrive create`.
 - Node.js is available on `PATH`, as required by the installed global `cf` CLI. The bootstrap resolves its Node executable and JavaScript entrypoint, then invokes Node directly so PowerShell does not rewrite the JSON `--body` argument.
-- Wrangler authenticated separately to that same account for local development with the remote Hyperdrive binding. The `cf` and Wrangler CLIs keep separate authentication profiles. This repository still uses `wrangler.jsonc`; Cloudflare's current `cf dev` requires migrating Wrangler configuration first, so do not run it here.
+- Wrangler authenticated separately to that same account for remote development. The `cf` and Wrangler CLIs keep separate authentication profiles. This repository still uses `wrangler.jsonc`; Cloudflare's current `cf dev` requires migrating Wrangler configuration first, so do not run it here.
+- A `workers.dev` account subdomain must be configured before `wrangler dev --remote`. Cloudflare `workers.dev` URLs are public unless protected with Cloudflare Access; the PR11 endpoint uses only the disposable synthetic database, and the remote dev session should be stopped after the gate.
 - Dependencies installed from `bun.lock`.
 
 ## Bootstrap the disposable project
@@ -38,17 +39,16 @@ If Hyperdrive creation fails after the database fixture is prepared, a retry is 
 
 ## Run the Worker through remote Hyperdrive
 
-In `apps/web`, create an ignored local vars file and start Wrangler. The `remote: true` binding makes the local Worker use the real Cloudflare Hyperdrive resource; the Worker is not deployed.
+In `apps/web`, start Wrangler in remote development mode. `wrangler dev --remote` runs this PR11 Worker in Cloudflare's network and uses the deployed Hyperdrive configuration, including its pooling and caching settings. This is a temporary development session, not `wrangler deploy`. The dedicated config enables only the synthetic RLS test route; all database writes target the disposable Neon fixture. The remote preview may have a public `workers.dev` URL unless an Access policy protects it.
 
 ```powershell
-Set-Content .dev.vars "DB_RLS_POC_ENABLED=true"
 $cfIdentity = cf auth whoami --quiet | ConvertFrom-Json
 if (-not $cfIdentity.tokenValid -or $cfIdentity.accounts.Count -ne 1) { throw "cf authentication must be valid for exactly one account." }
 $env:CLOUDFLARE_ACCOUNT_ID = $cfIdentity.accounts[0].id
 try {
   bunx wrangler whoami --account $env:CLOUDFLARE_ACCOUNT_ID
   if ($LASTEXITCODE -ne 0) { throw "Authenticate Wrangler to the same Cloudflare account first." }
-  bunx wrangler dev --config wrangler.pr11.jsonc
+  bunx wrangler dev --remote --config wrangler.pr11.jsonc
 } finally {
   Remove-Item Env:CLOUDFLARE_ACCOUNT_ID -ErrorAction SilentlyContinue
 }
