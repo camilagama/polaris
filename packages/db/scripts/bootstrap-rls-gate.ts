@@ -167,9 +167,10 @@ try {
       canCreateDatabase: boolean;
       canCreateInSchema: boolean;
       canCreateRole: boolean;
-      hasMemberships: boolean;
       inherit: boolean;
       login: boolean;
+      noExternalMembers: boolean;
+      noParentMemberships: boolean;
       ownsTable: boolean;
       superuser: boolean;
     }>(
@@ -185,12 +186,18 @@ try {
               role.rolinherit AS "inherit",
               role.rolcanlogin AS "login",
               role.rolbypassrls AS "bypassRls",
-              EXISTS (
+              NOT EXISTS (
                 SELECT 1
                   FROM pg_auth_members AS membership
                  WHERE membership.member = role.oid
-                    OR membership.roleid = role.oid
-              ) AS "hasMemberships",
+              ) AS "noParentMemberships",
+              NOT EXISTS (
+                SELECT 1
+                  FROM pg_auth_members AS membership
+                  JOIN pg_roles AS member_role ON member_role.oid = membership.member
+                 WHERE membership.roleid = role.oid
+                   AND member_role.rolname <> current_user
+              ) AS "noExternalMembers",
               relation.relowner = role.oid AS "ownsTable"
          FROM pg_roles AS role
          JOIN pg_class AS relation
@@ -205,6 +212,7 @@ try {
       forceRls: boolean;
       kind: string;
       owner: string;
+      notNullColumns: string;
       primaryKey: string | null;
       rls: boolean;
       runtimeHasGrantOptions: boolean;
@@ -238,6 +246,14 @@ try {
                   FROM pg_constraint AS constraint_row
                  WHERE constraint_row.conrelid = relation.oid
               ) AS "constraintCount",
+              (
+                SELECT string_agg(attribute.attname::text, ',' ORDER BY attribute.attnum)
+                  FROM pg_attribute AS attribute
+                 WHERE attribute.attrelid = relation.oid
+                   AND attribute.attnum > 0
+                   AND NOT attribute.attisdropped
+                   AND attribute.attnotnull
+              ) AS "notNullColumns",
               (
                 SELECT pg_get_constraintdef(constraint_row.oid)
                   FROM pg_constraint AS constraint_row
@@ -345,7 +361,12 @@ try {
       roleState?.canCreateDatabase && "runtime-role-create-database",
       roleState?.canCreateInSchema && "runtime-role-schema-create",
       roleState?.canCreateRole && "runtime-role-create-role",
-      roleState?.hasMemberships && "runtime-role-membership",
+      roleState &&
+        !roleState.noParentMemberships &&
+        "runtime-role-member-of-another-role",
+      roleState &&
+        !roleState.noExternalMembers &&
+        "unexpected-runtime-role-members",
       roleState?.inherit && "runtime-role-inherit",
       roleState && !roleState.login && "runtime-role-no-login",
       roleState?.bypassRls && "runtime-role-bypassrls",
@@ -371,10 +392,13 @@ try {
         "fixture-runtime-privileges",
       tableState?.runtimeHasGrantOptions && "fixture-runtime-grant-options",
       tableState &&
-        tableState.constraintCount !== 1 &&
+        tableState.constraintCount !== 4 &&
         "fixture-constraint-count",
       tableState &&
-        tableState.constraintCount === 1 &&
+        tableState.notNullColumns !== "organization_id,token,value" &&
+        "fixture-not-null-columns",
+      tableState &&
+        tableState.constraintCount === 4 &&
         tableState.primaryKey !== "PRIMARY KEY (organization_id, token)" &&
         "fixture-primary-key",
       tableState && tableState.triggerCount !== 0 && "fixture-triggers",
@@ -526,9 +550,7 @@ try {
 
   if (isRecoverableFixture) {
     await pool.query(
-      `ALTER ROLE ${runtimeRole}
-         WITH LOGIN PASSWORD '${runtimePassword}'
-         NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`
+      `ALTER ROLE ${runtimeRole} WITH PASSWORD '${runtimePassword}'`
     );
   } else {
     await pool.query(
@@ -593,6 +615,8 @@ try {
   const roleCheck = await pool.query<{
     bypassRls: boolean;
     canCreateInSchema: boolean;
+    noExternalMembers: boolean;
+    noParentMemberships: boolean;
     ownsTable: boolean;
     superuser: boolean;
   }>(
@@ -604,6 +628,18 @@ try {
                WHERE public_schema.nspname = 'public'
                  AND has_schema_privilege(role.oid, public_schema.oid, 'CREATE')
             ) AS "canCreateInSchema",
+            NOT EXISTS (
+              SELECT 1
+                FROM pg_auth_members AS membership
+               WHERE membership.member = role.oid
+            ) AS "noParentMemberships",
+            NOT EXISTS (
+              SELECT 1
+                FROM pg_auth_members AS membership
+                JOIN pg_roles AS member_role ON member_role.oid = membership.member
+               WHERE membership.roleid = role.oid
+                 AND member_role.rolname <> current_user
+            ) AS "noExternalMembers",
             relation.relowner = role.oid AS "ownsTable"
        FROM pg_roles AS role
        JOIN pg_class AS relation
@@ -618,10 +654,12 @@ try {
     security.superuser ||
     security.bypassRls ||
     security.canCreateInSchema ||
+    !security.noParentMemberships ||
+    !security.noExternalMembers ||
     security.ownsTable
   ) {
     throw new Error(
-      "The runtime role must be non-superuser, NOBYPASSRLS, and not the fixture owner."
+      "The runtime role must be unprivileged, isolated from other roles, and not the fixture owner."
     );
   }
 
