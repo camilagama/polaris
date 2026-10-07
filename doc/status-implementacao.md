@@ -63,5 +63,6 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
 - PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão/merge.
 - PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável e Hyperdrive criados; subdomínio account-level workers.dev habilitado; gate remoto passou e CI do commit `7f20292` está verde.
+- PR12 foi publicado como draft em https://github.com/camilagama/polaris/pull/10, empilhado sobre PR11; CI remoto aguardando execução. Safari/iPhone permanece pendente de preview HTTPS temporário; Android físico foi adiado.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
