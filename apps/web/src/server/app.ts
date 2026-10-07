@@ -10,7 +10,8 @@ import { rpcRouter } from "./rpc/router";
 
 type AuthRequestHandler = (
   request: Request,
-  bindings: WorkerBindings
+  bindings: WorkerBindings,
+  requestId: string
 ) => Promise<Response>;
 
 interface ServerAppOptions {
@@ -52,7 +53,11 @@ export function createServerApp({
       );
     }
 
-    return await authHandler(context.req.raw, context.env);
+    return await authHandler(
+      context.req.raw,
+      context.env,
+      context.get("requestId")
+    );
   };
   app.get("/api/auth/*", authRoute);
   app.post("/api/auth/*", authRoute);

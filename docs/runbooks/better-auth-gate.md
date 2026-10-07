@@ -61,3 +61,14 @@ Esse modo executa o Worker local com conexão direta ao banco; ele não mede o p
 - A integração remota Worker → Hyperdrive → Neon passou em 2026-10-07: o Worker leu a sessão criada pelo fixture, revogou-a e confirmou leitura autoritativa nula.
 - O role temporário tinha somente CRUD nas quatro tabelas Better Auth. O Worker, a config Hyperdrive, o role e o usuário sintético foram removidos; a contagem do fixture ficou em zero.
 - A branch Neon pr13-better-auth-gate expira em 2026-10-08 às 09:29 (America/Sao_Paulo); a branch production não foi alterada.
+
+## PR14 — Google OAuth e audit trail
+
+- O Worker aceita os secrets GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET. Sem os dois, a rota de iniciar login Google e o callback devolvem 503.
+- Registre no OAuth Web client do Google o redirect URI definido por BETTER_AUTH_BASE_URL + /api/auth/callback/google.
+- O fluxo usa os escopos padrão openid, email e profile, accessType online e cifra access/refresh tokens OAuth e remove idToken antes da persistência. Account linking e login por ID token enviado pelo cliente ficam desativados até os PRs previstos.
+- A migration 0003 cria auth_security_audit_event. O evento guarda apenas operation/event type, outcome, provider, actor ID interno, request ID e error code sanitizado; não guarda email, URL/query, code, state, token, descrição de erro ou payload OAuth.
+- A migration concede somente INSERT na auditoria e USAGE nos enums a `polaris_pr11_runtime`, o papel persistente do runtime provisionado pelo bootstrap PR11. `polaris_pr13_runtime` foi um papel temporário do Gate Auth e foi removido. O grant foi verificado na branch Neon descartável; outros papéis por ambiente precisam receber privilégios equivalentes no provisionamento.
+- Os testes atuais usam Google mockado e validam login, sessão, logout, callback inválido, erro do provider e rejeição de linking implícito. Eles não comprovam o login contra uma conta Google real.
+- Para o smoke test real, é necessário criar um OAuth Web client, autorizar o redirect URI do Worker temporário e aprovar explicitamente o armazenamento do client ID/secret como Cloudflare Secrets. Nenhum segredo Google está no repositório.
+- A retenção do audit trail não tem expurgo automático; a regra de privacidade deixa os prazos legais/contábeis para decisão antes do go-live.
