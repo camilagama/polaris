@@ -5,6 +5,7 @@ const siteverifyURL =
 const turnstileTokenHeader = "x-turnstile-token";
 const turnstileTokenMaxLength = 2048;
 const invalidClientIpPattern = /[\r\n,\s]/;
+const trailingSlashPattern = /\/+$/;
 
 type TurnstileAction =
   | "login"
@@ -58,7 +59,10 @@ function actionForRequest(request: Request): TurnstileAction | undefined {
     return undefined;
   }
 
-  const { pathname } = new URL(request.url);
+  const pathname = new URL(request.url).pathname.replace(
+    trailingSlashPattern,
+    ""
+  );
   for (const [suffix, action] of protectedActions) {
     if (pathname.endsWith(suffix)) {
       return action;

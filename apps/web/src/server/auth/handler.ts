@@ -3,9 +3,11 @@ import { createBetterAuth } from "../auth";
 import { createResendAuthEmailDelivery } from "./email";
 import type { WorkerBindings } from "../environment";
 
+const trailingSlashPattern = /\/+$/;
+
 function isEmailPasswordAuthRoute(request: Request): boolean {
   const url = new URL(request.url);
-  const path = url.pathname;
+  const path = url.pathname.replace(trailingSlashPattern, "");
   const method = request.method.toUpperCase();
 
   if (method === "POST") {

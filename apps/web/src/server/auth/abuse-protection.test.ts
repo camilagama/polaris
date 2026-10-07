@@ -48,6 +48,7 @@ describe("auth abuse protection", () => {
   it.each([
     ["/api/auth/sign-up/email", "signup"],
     ["/api/auth/sign-in/email", "login"],
+    ["/api/auth/sign-in/email/", "login"],
     ["/api/auth/request-password-reset", "password_reset_request"],
     ["/api/auth/reset-password", "password_reset"],
     ["/api/auth/send-verification-email", "verification_email"],
@@ -286,6 +287,11 @@ describe("auth abuse protection", () => {
       { method: "POST" },
       bindings
     );
+    const protectedTrailingSlashResponse = await testApp.request(
+      "/api/auth/sign-in/email/",
+      { method: "POST" },
+      bindings
+    );
     const unrelatedResponse = await testApp.request(
       "/api/auth/get-session",
       { method: "GET" },
@@ -293,8 +299,9 @@ describe("auth abuse protection", () => {
     );
 
     expect(protectedResponse.status).toBe(403);
+    expect(protectedTrailingSlashResponse.status).toBe(403);
     expect(authHandler).toHaveBeenCalledOnce();
-    expect(protector).toHaveBeenCalledOnce();
+    expect(protector).toHaveBeenCalledTimes(2);
     expect(unrelatedResponse.status).toBe(200);
   });
 

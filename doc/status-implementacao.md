@@ -102,7 +102,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | --- | --- | --- |
 | Siteverify e cobertura de rotas | Concluídos com testes mock | Signup, login, solicitação/conclusão de reset e reenvio de verificação exigem token de uso único, ação esperada e hostname de `BETTER_AUTH_BASE_URL`. |
 | Rate limiting | Implementado; limites remotos aproximados | 10/60s geral por IP e 3/60s para envio de email por IP; HMAC nas chaves. Contadores Cloudflare são por localidade, não globais. |
-| Testes, check e build | Concluídos localmente | 13 testes novos; `bun run check` passou com 36 testes no total; `bun run build` passou. Siteverify real não foi chamado. |
+| Testes, check e build | Concluídos localmente | 14 testes novos; `bun run check` passou com 37 testes no total; `bun run build` passou. Siteverify real não foi chamado. |
 | UI Turnstile, segredo e bindings remotos | Adiados | O app ainda não tem UI de autenticação. Nenhum widget/secret foi provisionado; IDs `901016`/`901017` são placeholders e precisam ser confirmados como únicos na conta antes de deploy. |
 | Ativação da senha | Desligada | Habilitar somente quando UI, site key, secret Turnstile, IDs dos bindings, Resend e domínio verificado estiverem prontos. |
 
