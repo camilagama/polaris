@@ -6,6 +6,7 @@ import {
   verifyRlsPocCrossWrite,
   verifyRlsPocRollback,
   verifyRlsPocStatementFailure,
+  verifyRlsPocTransactionContextReset,
   type RlsPocOrganizationId,
 } from "@polaris/db/rls-poc-gate";
 import { createRlsPocDatabase } from "@polaris/db/rls-poc-client";
@@ -16,6 +17,7 @@ type RlsPocAction =
   | "read"
   | "cross-read"
   | "contextless"
+  | "context-reuse"
   | "rollback"
   | "statement-failure"
   | "cross-write"
@@ -30,21 +32,10 @@ interface RlsPocRequest {
 
 const route = new Hono<ServerEnv>();
 const tokenPattern = /^[0-9a-f-]{36}$/i;
-let databaseConnectionString: string | undefined;
-let databaseInstance: ReturnType<typeof createRlsPocDatabase> | undefined;
 
-function getDatabase(connectionString: string) {
-  if (databaseInstance && databaseConnectionString === connectionString) {
-    return databaseInstance;
-  }
-
-  databaseConnectionString = connectionString;
-  databaseInstance = createRlsPocDatabase(connectionString, {
-    maxConnections: 4,
-  });
-
-  return databaseInstance;
-}
+route.onError((_error, context) =>
+  context.json({ error: { code: "internal_error" } }, 500)
+);
 
 function isOrganizationId(value: unknown): value is RlsPocOrganizationId {
   return value === "org_a" || value === "org_b";
@@ -61,6 +52,7 @@ function isRlsPocRequest(value: unknown): value is RlsPocRequest {
       "read",
       "cross-read",
       "contextless",
+      "context-reuse",
       "rollback",
       "statement-failure",
       "cross-write",
@@ -92,72 +84,100 @@ route.post("/run", async (context) => {
     return context.json({ error: { code: "invalid_request" } }, 400);
   }
 
-  const database = getDatabase(context.env.HYPERDRIVE.connectionString);
+  // Hyperdrive owns the shared origin pool. Keep each pg client pool scoped to
+  // this Worker request so concurrent invocations never share a pg.Pool.
+  const database = createRlsPocDatabase(
+    context.env.HYPERDRIVE.connectionString,
+    { maxConnections: 1 }
+  );
   const organizationId = requestBody.organizationId ?? "org_a";
   const token = requestBody.token ?? randomUUID();
 
-  switch (requestBody.action) {
-    case "read":
-    case "cross-read": {
-      const result = await readRlsPocRows(
-        database,
-        organizationId,
-        requestBody.action === "cross-read",
-        requestBody.delayMs
-      );
+  try {
+    switch (requestBody.action) {
+      case "read":
+      case "cross-read": {
+        const result = await readRlsPocRows(
+          database,
+          organizationId,
+          requestBody.action === "cross-read",
+          requestBody.delayMs
+        );
 
-      return context.json({
-        backendPid: result.firstState.backendPid,
-        organizationId: result.firstState.organizationId,
-        rows: result.rows,
-        transactionIds: [
-          result.firstState.transactionId,
-          result.secondState.transactionId,
-        ],
-      });
+        return context.json({
+          backendPid: result.firstState.backendPid,
+          organizationId: result.firstState.organizationId,
+          rows: result.rows,
+          transactionIds: [
+            result.firstState.transactionId,
+            result.secondState.transactionId,
+          ],
+        });
+      }
+      case "contextless": {
+        const result = await readRlsPocWithoutContext(database);
+        return context.json({
+          backendPid: result.backendPid,
+          organizationId: result.organizationId,
+          visibleRows: result.rows,
+        });
+      }
+      case "context-reuse": {
+        const result = await verifyRlsPocTransactionContextReset(
+          database,
+          organizationId
+        );
+        return context.json({
+          contextReuse: {
+            tenant: {
+              backendPid: result.tenantState.backendPid,
+              organizationId: result.tenantState.organizationId,
+            },
+            contextless: {
+              backendPid: result.contextlessState.backendPid,
+              organizationId: result.contextlessState.organizationId,
+            },
+            visibleRows: result.visibleRows,
+          },
+        });
+      }
+      case "rollback": {
+        const rolledBack = await verifyRlsPocRollback(
+          database,
+          organizationId,
+          token
+        );
+        return context.json({ rolledBack });
+      }
+      case "statement-failure": {
+        const result = await verifyRlsPocStatementFailure(
+          database,
+          organizationId,
+          token
+        );
+        return context.json(result);
+      }
+      case "cross-write": {
+        const rejectedByRls = await verifyRlsPocCrossWrite(
+          database,
+          organizationId,
+          token
+        );
+        return context.json({ rejectedByRls });
+      }
+      case "retry": {
+        const result = await retryRlsPocAfterConnectionFailure(
+          database,
+          organizationId,
+          token
+        );
+        return context.json(result);
+      }
+      default:
+        return context.json({ error: { code: "unsupported_action" } }, 400);
     }
-    case "contextless": {
-      const result = await readRlsPocWithoutContext(database);
-      return context.json({
-        backendPid: result.backendPid,
-        organizationId: result.organizationId,
-        visibleRows: result.rows,
-      });
-    }
-    case "rollback": {
-      const rolledBack = await verifyRlsPocRollback(
-        database,
-        organizationId,
-        token
-      );
-      return context.json({ rolledBack });
-    }
-    case "statement-failure": {
-      const result = await verifyRlsPocStatementFailure(
-        database,
-        organizationId,
-        token
-      );
-      return context.json(result);
-    }
-    case "cross-write": {
-      const rejectedByRls = await verifyRlsPocCrossWrite(
-        database,
-        organizationId,
-        token
-      );
-      return context.json({ rejectedByRls });
-    }
-    case "retry": {
-      const result = await retryRlsPocAfterConnectionFailure(
-        database,
-        organizationId,
-        token
-      );
-      return context.json(result);
-    }
-    default:
-      return context.json({ error: { code: "unsupported_action" } }, 400);
+  } finally {
+    await database.pool.end();
   }
 });
 

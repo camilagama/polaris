@@ -41,6 +41,8 @@ If Hyperdrive creation fails after the database fixture is prepared, a retry is 
 
 In `apps/web`, start Wrangler in remote development mode. `wrangler dev --remote` runs this PR11 Worker in Cloudflare's network and uses the deployed Hyperdrive configuration, including its pooling and caching settings. This is a temporary development session, not `wrangler deploy`. The dedicated config enables only the synthetic RLS test route; all database writes target the disposable Neon fixture. The remote preview may have a public `workers.dev` URL unless an Access policy protects it.
 
+The test route creates a one-connection `pg.Pool` for each Worker request and closes it when that request finishes. Hyperdrive owns the shared pool to the Neon origin; do not cache a `pg.Pool` globally across Worker requests.
+
 ```powershell
 $cfIdentity = cf auth whoami --quiet | ConvertFrom-Json
 if (-not $cfIdentity.tokenValid -or $cfIdentity.accounts.Count -ne 1) { throw "cf authentication must be valid for exactly one account." }
@@ -73,7 +75,7 @@ try {
 }
 ```
 
-The runner checks the database version and region, role ownership and `BYPASSRLS`, `FORCE ROW LEVEL SECURITY`, policy expressions, isolated and context-free reads, cross-tenant read/write behavior, rollback after application and SQL failures, transaction-local context on a reused backend, concurrent `org_a`/`org_b` requests, and recovery after the owner terminates an active Worker backend. The interruption case uses an idempotency key, expects the first transaction to roll back, and checks that the retry uses a new transaction with the organization context reapplied.
+The runner checks the database version and region, role ownership and `BYPASSRLS`, `FORCE ROW LEVEL SECURITY`, policy expressions, isolated and context-free reads, cross-tenant read/write behavior, rollback after application and SQL failures, transaction-local context reset across two transactions on the same request-scoped backend, 16 concurrent `org_a`/`org_b` requests, and recovery after the owner terminates an active Worker backend. Sixteen requests were measured to reuse a backend across both tenants. An initial 120-request burst against the prior globally shared `pg.Pool` implementation produced connection timeouts; the gate uses a bounded concurrency to prove RLS isolation, not to benchmark saturation. PostgreSQL may report an unset custom GUC as either `NULL` or an empty string after a transaction-local value is restored; both are accepted as absent context, and the runner separately requires zero visible rows. The interruption case uses an idempotency key, expects the first transaction to roll back, and checks that the retry uses a new transaction with the organization context reapplied.
 
 ## Security boundaries and limits
 

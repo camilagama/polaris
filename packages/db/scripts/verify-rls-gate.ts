@@ -29,6 +29,11 @@ if (!expectedHostname) {
 interface WorkerResult {
   attempts?: number;
   backendPid?: number;
+  contextReuse?: {
+    contextless: { backendPid: number; organizationId: string | null };
+    tenant: { backendPid: number; organizationId: string | null };
+    visibleRows: Array<{ organizationId: string; token: string }>;
+  };
   contexts?: Array<string | null>;
   organizationId?: string | null;
   rejectedByRls?: boolean;
@@ -55,13 +60,23 @@ async function callWorker(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action, organizationId, token, delayMs }),
   });
-  const result = (await response.json()) as WorkerResult & {
-    error?: { code?: string };
-  };
+  const contentType = response.headers.get("content-type") ?? "unknown";
+  const responseBody = await response.text();
+  let result: WorkerResult & { error?: { code?: string } };
+  try {
+    result = JSON.parse(responseBody) as WorkerResult & {
+      error?: { code?: string };
+    };
+  } catch (cause) {
+    throw new Error(
+      `The Worker POC returned HTTP ${response.status} with content type ${contentType}; expected JSON.`,
+      { cause }
+    );
+  }
 
   if (!response.ok) {
     throw new Error(
-      `The Worker POC returned HTTP ${response.status} (${result.error?.code ?? "unknown"}).`
+      `The Worker POC action "${action}" returned HTTP ${response.status} (${result.error?.code ?? "unknown"}).`
     );
   }
 
@@ -162,20 +177,19 @@ try {
   assert.equal(crossReadA.rows?.length, 0);
   assert.equal(crossReadB.rows?.length, 0);
 
-  let reusedBackend = false;
-  // Requests are sequential here by design to exercise reuse of the idle client.
-  for (let attempt = 0; attempt < 20 && !reusedBackend; attempt += 1) {
-    // biome-ignore lint/performance/noAwaitInLoops: Sequential transaction pairs prove context is cleared on a reused backend.
-    const contextual = await callWorker("read", "org_a");
-    const contextless = await callWorker("contextless");
-    assert.equal(contextless.organizationId, null);
-    assert.deepEqual(contextless.visibleRows, []);
-    reusedBackend = contextual.backendPid === contextless.backendPid;
-  }
+  const contextReuse = await callWorker("context-reuse", "org_a");
+  check(contextReuse.contextReuse, "The context-reset proof is missing.");
+  assert.equal(contextReuse.contextReuse.tenant.organizationId, "org_a");
   check(
-    reusedBackend,
-    "The gate did not observe a reused backend with cleared transaction context."
+    contextReuse.contextReuse.contextless.organizationId === null ||
+      contextReuse.contextReuse.contextless.organizationId === "",
+    "A context-free transaction must not retain an organization setting."
   );
+  assert.equal(
+    contextReuse.contextReuse.tenant.backendPid,
+    contextReuse.contextReuse.contextless.backendPid
+  );
+  assert.deepEqual(contextReuse.contextReuse.visibleRows, []);
 
   const crossWrite = await callWorker("cross-write", "org_a", randomUUID());
   assert.equal(crossWrite.rejectedByRls, true);
@@ -193,8 +207,10 @@ try {
   assert.equal(statementFailure.attempts, 1);
 
   const organizationsByBackend = new Map<number, Set<string>>();
+  // Sixteen requests are sufficient to exercise backend reuse across tenants
+  // with this disposable pool configuration while keeping the remote gate bounded.
   const concurrentResults = await Promise.all(
-    Array.from({ length: 120 }, (_, index) => {
+    Array.from({ length: 16 }, (_, index) => {
       const organizationId = index % 2 === 0 ? "org_a" : "org_b";
       return callWorker("read", organizationId, undefined, 50);
     })

@@ -30,7 +30,24 @@ const retryableSqlStates = new Set([
   "57P03",
 ]);
 const retryableConnectionMessage =
-  /connection terminated|connection reset|socket hang up/i;
+  /connection terminated|connection reset|socket hang up|connection error and is not queryable/i;
+
+function getSqlState(
+  error: unknown,
+  visited = new Set<object>()
+): string | undefined {
+  if (!error || typeof error !== "object" || visited.has(error)) {
+    return undefined;
+  }
+  visited.add(error);
+
+  const candidate = error as { cause?: unknown; code?: unknown };
+  if (typeof candidate.code === "string") {
+    return candidate.code;
+  }
+
+  return getSqlState(candidate.cause, visited);
+}
 
 function isRetryableConnectionFailure(
   error: unknown,
@@ -147,9 +164,36 @@ export function readRlsPocWithoutContext(database: Database) {
         token: rlsPocOperations.token,
       })
       .from(rlsPocOperations);
-
     return { ...state, rows };
   });
+}
+
+export async function verifyRlsPocTransactionContextReset(
+  database: Database,
+  organizationId: RlsPocOrganizationId
+) {
+  const tenantState = await withTenantTransaction(
+    database.db,
+    organizationId,
+    readDatabaseState
+  );
+  const contextless = await database.db.transaction(async (transaction) => {
+    const state = await readDatabaseState(transaction);
+    const rows = await transaction
+      .select({
+        organizationId: rlsPocOperations.organizationId,
+        token: rlsPocOperations.token,
+      })
+      .from(rlsPocOperations);
+
+    return { state, rows };
+  });
+
+  return {
+    contextlessState: contextless.state,
+    tenantState,
+    visibleRows: contextless.rows,
+  };
 }
 
 export async function verifyRlsPocRollback(
@@ -211,11 +255,7 @@ export async function verifyRlsPocStatementFailure(
       }
     );
   } catch (error) {
-    const code =
-      error && typeof error === "object" && "code" in error
-        ? error.code
-        : undefined;
-    if (code !== "22012") {
+    if (getSqlState(error) !== "22012") {
       throw error;
     }
     statementFailed = true;
@@ -249,11 +289,7 @@ export async function verifyRlsPocCrossWrite(
     );
     return false;
   } catch (error) {
-    const code =
-      error && typeof error === "object" && "code" in error
-        ? error.code
-        : undefined;
-    if (code === "42501") {
+    if (getSqlState(error) === "42501") {
       return true;
     }
     throw error;

@@ -3,7 +3,7 @@ import { pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 export const rlsPocOperations = pgTable(
   "rls_poc_operations",
   {
-    organizationId: text().notNull(),
+    organizationId: text("organization_id").notNull(),
     token: text().notNull(),
     value: text().notNull(),
   },
