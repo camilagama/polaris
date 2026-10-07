@@ -57,10 +57,15 @@ Para provar recuperação após o encerramento do processo do Safari, feche o Sa
 | Chromium desktop | Playwright local e CI | Automatizado |
 | Chromium mobile | Emulação Pixel 5 | Automatizado; não substitui Android físico |
 | WebKit desktop (Playwright Windows) | Probe local: `createSyncAccessHandle()` falha com `UnknownError` transitório | Fora do gate obrigatório; não representa Safari iOS |
-| Safari/iPhone | Safari real no aparelho do responsável | Aguardando execução e revisão |
+| Edge desktop real | Sem evidência específica; o job Playwright usa Chromium | Adiado; validação dedicada não executada |
+| Safari/iPhone | iPhone 12, iOS 26.6.2, navegação normal; responsável confirma o roteiro completo sem erros | Aprovado manualmente (relato do responsável; 2026-10-07) |
 | Android Chrome real | Aparelho não disponível nesta validação | Adiado; requer aparelho físico |
 | Offline do app shell | Sem service worker nesta POC | Fora do escopo / não comprovado |
 
 ## Critério de decisão
 
+
+
 Registrar como aprovado somente após CI verde e a validação manual do iPhone sem falha de persistência, migração ou replay. Se iOS não oferecer OPFS/IndexedDB conforme requerido, deixar o gate reprovado e decidir fallback com evidência do aparelho. Android real permanece explicitamente adiado até haver aparelho para teste; a emulação não altera esse status.
+
+Validação manual registrada em 2026-10-07: o responsável confirmou Safari no iPhone 12/iOS 26.6.2 em navegação normal; todos os cenários propostos passaram sem erros. Após o teste, o Worker e o Preview temporários foram removidos; ambos os endereços retornaram HTTP 404.
