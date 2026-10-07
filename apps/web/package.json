@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "@orpc/client": "^1.15.4",
     "@orpc/server": "^1.15.4",
     "@polaris/contracts": "workspace:*",
@@ -24,7 +25,8 @@
     "better-auth": "1.6.23",
     "hono": "^4.13.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "react-email": "^6.11.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.62.5",

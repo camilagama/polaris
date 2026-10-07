@@ -3,9 +3,10 @@ import type { GoogleOptions } from "better-auth/social-providers";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AuthSecurityAuditEvent } from "./auth";
+import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "./auth";
 import { createBetterAuth } from "./auth";
 import { handleBetterAuthRequest } from "./auth/handler";
+import { createResendAuthEmailDelivery } from "./auth/email";
 import { app, createServerApp } from "./app";
 import type { WorkerBindings } from "./environment";
 
@@ -14,6 +15,8 @@ const testBaseURL = "http://localhost";
 const SET_COOKIE_SPLIT_REGEX = /,(?=\s*[^;,=\s]+=)/;
 const EXPIRED_COOKIE_REGEX = /;\s*max-age=0/i;
 const SESSION_COOKIE_REGEX = /(?:__Secure-)?better-auth\.session_token=/;
+const HIBP_RANGE_PATH_PATTERN =
+  /^https:\/\/api\.pwnedpasswords\.com\/range\/[A-F0-9]{5}$/;
 const testBindings = {
   DB_POC_ENABLED: "false",
   DB_RLS_POC_ENABLED: "false",
@@ -74,6 +77,90 @@ function createGoogleTestApp() {
   });
 
   return { app: testApp, auditEvents, auth };
+}
+function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
+  const auditEvents: AuthSecurityAuditEvent[] = [];
+  const verificationEmails: Array<{
+    email: string;
+    token: string;
+    url: string;
+  }> = [];
+  const passwordResetEmails: Array<{
+    email: string;
+    token: string;
+    url: string;
+  }> = [];
+  const databaseAdapter = memoryAdapter({
+    account: [],
+    session: [],
+    user: [],
+    verification: [],
+  });
+  const emailDelivery: AuthEmailDelivery = {
+    sendPasswordReset: ({ user, token, url }) => {
+      passwordResetEmails.push({ email: user.email, token, url });
+      return Promise.resolve();
+    },
+    sendVerificationEmail: ({ user, token, url }) => {
+      verificationEmails.push({ email: user.email, token, url });
+      return Promise.resolve();
+    },
+  };
+  const auth = createBetterAuth({
+    auditEventWriter: (event) => {
+      auditEvents.push(event);
+      return Promise.resolve();
+    },
+    baseURL: testBaseURL,
+    databaseAdapter,
+    emailDelivery: emailDeliveryOverride ?? emailDelivery,
+    requestId: "pr15-email-auth-test-request",
+    secret: testSecret,
+  });
+  const testApp = createServerApp({
+    authHandler: (request) => auth.handler(request),
+  });
+
+  return {
+    app: testApp,
+    auditEvents,
+    auth,
+    passwordResetEmails,
+    verificationEmails,
+  };
+}
+
+function stubPwnedPasswordRange() {
+  let calls = 0;
+  let requestURL = "";
+  let addPadding = "";
+
+  vi.stubGlobal(
+    "fetch",
+    (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (typeof input === "string") {
+        requestURL = input;
+      } else if (input instanceof Request) {
+        requestURL = input.url;
+      } else {
+        requestURL = input.href;
+      }
+
+      if (!requestURL.startsWith("https://api.pwnedpasswords.com/range/")) {
+        throw new Error("Unexpected outbound request during auth test.");
+      }
+
+      addPadding = new Headers(init?.headers).get("Add-Padding") ?? "";
+      calls += 1;
+      return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
+    }
+  );
+
+  return {
+    calls: () => calls,
+    requestURL: () => requestURL,
+    addPadding: () => addPadding,
+  };
 }
 
 function setCookieValues(headers: Headers): string[] {
@@ -236,6 +323,545 @@ describe("Better Auth route", () => {
   });
 });
 
+describe("Email/password authentication", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("requires verified email before password login and normalizes Unicode", async () => {
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
+    const hibp = stubPwnedPasswordRange();
+    const password = "frase longa com acento e\u0301 para uma senha segura 42";
+    const normalizedPassword = password.normalize("NFC");
+    const email = "password-user@example.invalid";
+    const signUp = await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({ email, name: "Password User", password }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+
+    expect(signUp.status).toBe(200);
+    expect(signUp.headers.get("set-cookie") ?? "").not.toMatch(
+      SESSION_COOKIE_REGEX
+    );
+    expect(verificationEmails).toHaveLength(1);
+    expect(verificationEmails[0]?.email).toBe(email);
+    expect(hibp.calls()).toBe(1);
+    expect(hibp.addPadding()).toBe("true");
+    expect(hibp.requestURL()).toMatch(HIBP_RANGE_PATH_PATTERN);
+
+    const unverifiedLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: normalizedPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(unverifiedLogin.status).not.toBe(200);
+
+    const verificationURL = new URL(verificationEmails[0]?.url as string);
+    const verify = await testApp.request(
+      `${verificationURL.pathname}?token=${encodeURIComponent(verificationEmails[0]?.token as string)}`,
+      { headers: { origin: testBaseURL } },
+      testBindings
+    );
+    expect(verify.status).toBe(200);
+    expect(verify.headers.get("set-cookie") ?? "").not.toMatch(
+      SESSION_COOKIE_REGEX
+    );
+
+    const login = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: normalizedPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(login.status).toBe(200);
+    expect(cookieHeader(login.headers)).toMatch(SESSION_COOKIE_REGEX);
+    expect(hibp.calls()).toBe(1);
+  });
+
+  it("uses generic reset responses and revokes all sessions after password reset", async () => {
+    const {
+      app: testApp,
+      passwordResetEmails,
+      verificationEmails,
+    } = createEmailPasswordTestApp();
+    const hibp = stubPwnedPasswordRange();
+    const email = "reset-user@example.invalid";
+    const oldPassword = "Old long password for Polaris 2026!";
+    const signUp = await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({
+          email,
+          name: "Reset User",
+          password: oldPassword,
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(signUp.status).toBe(200);
+    const verificationURL = new URL(verificationEmails[0]?.url as string);
+    const verify = await testApp.request(
+      `${verificationURL.pathname}?token=${encodeURIComponent(verificationEmails[0]?.token as string)}`,
+      { headers: { origin: testBaseURL } },
+      testBindings
+    );
+    expect(verify.status).toBe(200);
+
+    const login = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: oldPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(login.status).toBe(200);
+    const sessionCookie = cookieHeader(login.headers);
+    const knownEmailReset = await testApp.request(
+      "/api/auth/request-password-reset",
+      {
+        body: JSON.stringify({ email, redirectTo: "/reset-password" }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const unknownEmailReset = await testApp.request(
+      "/api/auth/request-password-reset",
+      {
+        body: JSON.stringify({
+          email: "unknown-user@example.invalid",
+          redirectTo: "/reset-password",
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+
+    expect(knownEmailReset.status).toBe(200);
+    expect(await knownEmailReset.json()).toEqual(
+      await unknownEmailReset.json()
+    );
+    expect(passwordResetEmails).toHaveLength(1);
+
+    const newPassword = "A different long password for Polaris 2026!";
+    const reset = await testApp.request(
+      "/api/auth/reset-password",
+      {
+        body: JSON.stringify({
+          newPassword,
+          token: passwordResetEmails[0]?.token,
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(reset.status).toBe(200);
+    expect(hibp.calls()).toBe(2);
+
+    const priorSession = await testApp.request(
+      "/api/auth/get-session?disableCookieCache=true",
+      { headers: { cookie: sessionCookie } },
+      testBindings
+    );
+    expect(await priorSession.json()).toBeNull();
+
+    const oldPasswordLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: oldPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(oldPasswordLogin.status).not.toBe(200);
+
+    const newPasswordLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: newPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(newPasswordLogin.status).toBe(200);
+  });
+
+  it("uses NFC rather than compatibility normalization for password hashes", async () => {
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
+    stubPwnedPasswordRange();
+    const fullWidthPassword = `${"Ａ".repeat(15)}!`;
+    const asciiPassword = `${"A".repeat(15)}!`;
+    const email = "unicode-password@example.invalid";
+    const signUp = await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({
+          email,
+          name: "Unicode Password",
+          password: fullWidthPassword,
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(signUp.status).toBe(200);
+
+    const verificationToken = verificationEmails[0]?.token;
+    const verify = await testApp.request(
+      `/api/auth/verify-email?token=${encodeURIComponent(verificationToken ?? "")}`,
+      { headers: { origin: testBaseURL } },
+      testBindings
+    );
+    expect(verify.status).toBe(200);
+
+    const compatibilityVariantLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: asciiPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const originalPasswordLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: fullWidthPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+
+    expect(compatibilityVariantLogin.status).not.toBe(200);
+    expect(originalPasswordLogin.status).toBe(200);
+  });
+  it("normalizes the existing password before an authenticated password change", async () => {
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
+    const hibp = stubPwnedPasswordRange();
+    const email = "change-password@example.invalid";
+    const currentPassword = "A passphrase with e\u0301 for Polaris 2026!";
+    const newPassword = "A newly chosen passphrase for Polaris 2026!";
+    const signUp = await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({
+          email,
+          name: "Password Change",
+          password: currentPassword,
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(signUp.status).toBe(200);
+    const verify = await testApp.request(
+      `/api/auth/verify-email?token=${encodeURIComponent(verificationEmails[0]?.token ?? "")}`,
+      { headers: { origin: testBaseURL } },
+      testBindings
+    );
+    expect(verify.status).toBe(200);
+
+    const login = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({
+          email,
+          password: currentPassword.normalize("NFC"),
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(login.status).toBe(200);
+    const change = await testApp.request(
+      "/api/auth/change-password",
+      {
+        body: JSON.stringify({ currentPassword, newPassword }),
+        headers: {
+          cookie: cookieHeader(login.headers),
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(change.status).toBe(200);
+    expect(hibp.calls()).toBe(2);
+
+    const newPasswordLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: newPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(newPasswordLogin.status).toBe(200);
+  });
+  it("does not query HIBP for an invalid reset token or unauthenticated password change", async () => {
+    const { app: testApp } = createEmailPasswordTestApp();
+    const hibp = stubPwnedPasswordRange();
+    const invalidReset = await testApp.request(
+      "/api/auth/reset-password",
+      {
+        body: JSON.stringify({
+          newPassword: "A long password to test invalid reset token!",
+          token: "invalid-reset-token",
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const unauthenticatedChange = await testApp.request(
+      "/api/auth/change-password",
+      {
+        body: JSON.stringify({
+          currentPassword: "A current long password!",
+          newPassword: "A different long password to test session!",
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+
+    expect(invalidReset.status).not.toBe(200);
+    expect(unauthenticatedChange.status).not.toBe(200);
+    expect(hibp.calls()).toBe(0);
+  });
+  it("keeps verification and reset responses generic when Resend rejects delivery", async () => {
+    const resendFetch = vi.fn<typeof fetch>((input) => {
+      let url: string;
+      if (typeof input === "string") {
+        url = input;
+      } else if (input instanceof Request) {
+        ({ url } = input);
+      } else {
+        ({ href: url } = input);
+      }
+
+      if (url.startsWith("https://api.pwnedpasswords.com/range/")) {
+        return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
+      }
+
+      if (url === "https://api.resend.com/emails") {
+        return Promise.resolve(
+          Response.json(
+            { message: "provider detail must not be exposed" },
+            { status: 403 }
+          )
+        );
+      }
+
+      return Promise.reject(
+        new Error("Unexpected outbound request in auth test.")
+      );
+    });
+    vi.stubGlobal("fetch", resendFetch);
+    const loggerSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const emailDelivery = createResendAuthEmailDelivery({
+      apiKey: "re_test_only",
+      from: "Polaris <auth@example.invalid>",
+    });
+    const { app: testApp } = createEmailPasswordTestApp(emailDelivery);
+    const email = "resend-outage@example.invalid";
+    const password = "A unique long password for resend tests!";
+    const signUp = await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({ email, name: "Resend Outage", password }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const knownVerification = await testApp.request(
+      "/api/auth/send-verification-email",
+      {
+        body: JSON.stringify({ email }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+      testBindings
+    );
+    const unknownVerification = await testApp.request(
+      "/api/auth/send-verification-email",
+      {
+        body: JSON.stringify({ email: "not-registered@example.invalid" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+      testBindings
+    );
+    const knownReset = await testApp.request(
+      "/api/auth/request-password-reset",
+      {
+        body: JSON.stringify({ email }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const unknownReset = await testApp.request(
+      "/api/auth/request-password-reset",
+      {
+        body: JSON.stringify({ email: "not-registered@example.invalid" }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+
+    expect(signUp.status).toBe(200);
+    expect(knownVerification.status).toBe(200);
+    expect(unknownVerification.status).toBe(200);
+    expect(await knownVerification.json()).toEqual(
+      await unknownVerification.json()
+    );
+    expect(knownReset.status).toBe(200);
+    expect(unknownReset.status).toBe(200);
+    expect(await knownReset.json()).toEqual(await unknownReset.json());
+    expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(email);
+    expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
+      "provider detail must not be exposed"
+    );
+  });
+  it("fails closed when HIBP is unavailable before account creation", async () => {
+    const {
+      app: testApp,
+      verificationEmails,
+      auth,
+    } = createEmailPasswordTestApp();
+    const password = "A very long test passphrase 2026!";
+    const loggerSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", () => Promise.reject(new Error(password)));
+
+    const response = await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({
+          email: "hibp-down@example.invalid",
+          name: "HIBP Down",
+          password,
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const authContext = (await auth.$context) as unknown as {
+      internalAdapter: {
+        findUserByEmail: (email: string) => Promise<unknown>;
+      };
+    };
+
+    expect(response.status).toBe(503);
+    expect(
+      await authContext.internalAdapter.findUserByEmail(
+        "hibp-down@example.invalid"
+      )
+    ).toBeNull();
+    expect(verificationEmails).toHaveLength(0);
+    expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(password);
+  });
+});
 describe("Google OAuth and security audit", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -428,6 +1054,41 @@ describe("Google OAuth and security audit", () => {
     expect(getTokenCalls()).toBe(1);
   });
 
+  it("keeps email/password routes disabled without the feature flag and Resend sender", async () => {
+    const request = new Request(`${testBaseURL}/api/auth/sign-up/email`, {
+      body: JSON.stringify({
+        email: "user@example.invalid",
+        name: "Test User",
+        password: "A long enough test password!",
+      }),
+      headers: { "content-type": "application/json", origin: testBaseURL },
+      method: "POST",
+    });
+    const missingSender = await handleBetterAuthRequest(
+      request,
+      { ...testBindings, EMAIL_PASSWORD_AUTH_ENABLED: "true" },
+      "pr15-test"
+    );
+    const disabledFeature = await handleBetterAuthRequest(
+      request,
+      {
+        ...testBindings,
+        AUTH_EMAIL_FROM: "Polaris <auth@example.invalid>",
+        EMAIL_PASSWORD_AUTH_ENABLED: "false",
+        RESEND_API_KEY: "re_test_only",
+      },
+      "pr15-test"
+    );
+
+    expect(missingSender.status).toBe(503);
+    expect(await missingSender.json()).toEqual({
+      error: { code: "auth_email_unavailable" },
+    });
+    expect(disabledFeature.status).toBe(503);
+    expect(await disabledFeature.json()).toEqual({
+      error: { code: "auth_email_unavailable" },
+    });
+  });
   it("fails closed when Google credentials are missing", async () => {
     const request = new Request(`${testBaseURL}/api/auth/sign-in/social`, {
       body: JSON.stringify({ provider: "google" }),

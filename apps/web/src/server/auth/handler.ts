@@ -1,6 +1,34 @@
 import { createDatabase } from "@polaris/db/client";
 import { createBetterAuth } from "../auth";
+import { createResendAuthEmailDelivery } from "./email";
 import type { WorkerBindings } from "../environment";
+
+function isEmailPasswordRoute(request: Request): boolean {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method.toUpperCase();
+
+  if (method === "POST") {
+    return [
+      "/sign-up/email",
+      "/sign-in/email",
+      "/request-password-reset",
+      "/reset-password",
+      "/send-verification-email",
+      "/change-password",
+    ].some((suffix) => path.endsWith(suffix));
+  }
+
+  if (method === "GET") {
+    return (
+      path.endsWith("/verify-email") ||
+      resetPasswordCallbackPathPattern.test(path)
+    );
+  }
+
+  return false;
+}
+const resetPasswordCallbackPathPattern = /\/reset-password\/[^/]+$/;
 
 async function isGoogleOAuthRequest(request: Request): Promise<boolean> {
   const url = new URL(request.url);
@@ -53,6 +81,19 @@ export async function handleBetterAuthRequest(
     );
   }
 
+  const resendApiKey = bindings.RESEND_API_KEY?.trim();
+  const emailFrom = bindings.AUTH_EMAIL_FROM?.trim();
+  const emailPasswordAuthEnabled =
+    bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
+    Boolean(resendApiKey && emailFrom);
+
+  if (isEmailPasswordRoute(request) && !emailPasswordAuthEnabled) {
+    return Response.json(
+      { error: { code: "auth_email_unavailable" } },
+      { status: 503 }
+    );
+  }
+
   const { db, pool } = createDatabase(bindings.HYPERDRIVE.connectionString, {
     maxConnections: 1,
   });
@@ -61,6 +102,17 @@ export async function handleBetterAuthRequest(
     const auth = createBetterAuth({
       baseURL,
       database: db,
+      ...(emailPasswordAuthEnabled
+        ? {
+            emailDelivery: createResendAuthEmailDelivery({
+              apiKey: resendApiKey as string,
+              from: emailFrom as string,
+              ...(bindings.AUTH_EMAIL_REPLY_TO?.trim()
+                ? { replyTo: bindings.AUTH_EMAIL_REPLY_TO.trim() }
+                : {}),
+            }),
+          }
+        : {}),
       ...(googleClientId && googleClientSecret
         ? {
             googleProvider: {

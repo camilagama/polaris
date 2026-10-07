@@ -3,11 +3,18 @@ import { authSecurityAuditEvents } from "@polaris/db/security-audit-schema";
 import type { createDatabase } from "@polaris/db/client";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import {
+  APIError,
   createAuthMiddleware,
   getSessionFromCtx,
   isAPIError,
 } from "better-auth/api";
 import type { GoogleOptions } from "better-auth/social-providers";
+import {
+  normalizePassword,
+  PasswordPolicyError,
+  validateNewPassword,
+} from "./auth/password-policy";
+import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
 type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
@@ -33,6 +40,17 @@ export interface AuthSecurityAuditEvent {
   requestId: string;
 }
 
+type EmailVerificationSender = NonNullable<
+  NonNullable<BetterAuthOptions["emailVerification"]>["sendVerificationEmail"]
+>;
+type PasswordResetSender = NonNullable<
+  NonNullable<BetterAuthOptions["emailAndPassword"]>["sendResetPassword"]
+>;
+
+export interface AuthEmailDelivery {
+  sendPasswordReset: PasswordResetSender;
+  sendVerificationEmail: EmailVerificationSender;
+}
 type AuthSecurityAuditEventWriter = (
   event: AuthSecurityAuditEvent
 ) => Promise<void>;
@@ -42,6 +60,7 @@ interface CreateBetterAuthOptions {
   baseURL: string;
   database?: PolarisDatabase;
   databaseAdapter?: BetterAuthOptions["database"];
+  emailDelivery?: AuthEmailDelivery;
   googleProvider?: GoogleOptions;
   plugins?: BetterAuthOptions["plugins"];
   requestId?: string;
@@ -75,6 +94,172 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
+function passwordFieldForPath(
+  path: string
+): "newPassword" | "password" | undefined {
+  if (path === "/sign-in/email" || path === "/sign-up/email") {
+    return "password";
+  }
+
+  if (
+    path === "/reset-password" ||
+    path === "/change-password" ||
+    path === "/set-password"
+  ) {
+    return "newPassword";
+  }
+
+  return undefined;
+}
+
+interface PasswordResetVerification {
+  expiresAt: Date;
+}
+
+interface PasswordResetStore {
+  findVerificationValue: (
+    identifier: string
+  ) => Promise<PasswordResetVerification | null>;
+}
+
+type AuthBeforeHookContext = Parameters<typeof getSessionFromCtx>[0];
+
+function passwordResetTokenFromContext(
+  context: AuthBeforeHookContext
+): string | undefined {
+  const body = asRecord(context.body);
+  const query = asRecord(context.query);
+
+  if (typeof body?.token === "string") {
+    return body.token;
+  }
+
+  if (typeof query?.token === "string") {
+    return query.token;
+  }
+
+  return undefined;
+}
+
+async function hasValidPasswordResetToken(
+  context: AuthBeforeHookContext
+): Promise<boolean> {
+  const token = passwordResetTokenFromContext(context);
+
+  if (!token) {
+    return false;
+  }
+
+  const authContext = context.context as {
+    internalAdapter?: PasswordResetStore;
+  };
+  const verification = await authContext.internalAdapter?.findVerificationValue(
+    `reset-password:${token}`
+  );
+
+  return Boolean(verification && verification.expiresAt > new Date());
+}
+
+async function shouldCheckPasswordAgainstHibp(
+  context: AuthBeforeHookContext
+): Promise<boolean> {
+  if (context.path === "/reset-password") {
+    return hasValidPasswordResetToken(context);
+  }
+
+  if (context.path === "/change-password" || context.path === "/set-password") {
+    return Boolean(await getSessionFromCtx(context));
+  }
+
+  return true;
+}
+
+function normalizeExistingPasswordField(
+  requestBody: Record<string, unknown>,
+  field: "currentPassword" | "password"
+): void {
+  const existingPassword = requestBody[field];
+
+  if (typeof existingPassword !== "string") {
+    return;
+  }
+
+  try {
+    requestBody[field] = normalizePassword(existingPassword);
+  } catch (error) {
+    if (error instanceof PasswordPolicyError) {
+      throw passwordPolicyApiError(error);
+    }
+
+    throw error;
+  }
+}
+async function normalizeAndValidatePasswordRequest(
+  context: AuthBeforeHookContext
+): Promise<void> {
+  const requestBody = asRecord(context.body);
+
+  if (!requestBody) {
+    return;
+  }
+
+  if (context.path === "/change-password") {
+    normalizeExistingPasswordField(requestBody, "currentPassword");
+  }
+
+  if (
+    context.path === "/sign-in/email" ||
+    context.path === "/verify-password"
+  ) {
+    normalizeExistingPasswordField(requestBody, "password");
+    return;
+  }
+
+  const passwordField = passwordFieldForPath(context.path);
+  if (!passwordField) {
+    return;
+  }
+
+  const rawPassword = requestBody[passwordField];
+  if (typeof rawPassword !== "string") {
+    return;
+  }
+
+  if (!(await shouldCheckPasswordAgainstHibp(context))) {
+    return;
+  }
+
+  try {
+    requestBody[passwordField] = await validateNewPassword(rawPassword);
+  } catch (error) {
+    if (error instanceof PasswordPolicyError) {
+      throw passwordPolicyApiError(error);
+    }
+
+    throw error;
+  }
+}
+
+function passwordPolicyApiError(error: PasswordPolicyError): APIError {
+  const status =
+    error.code === "password_hibp_unavailable"
+      ? "SERVICE_UNAVAILABLE"
+      : "BAD_REQUEST";
+  const messages = {
+    password_compromised:
+      "Choose a password that has not appeared in a breach.",
+    password_hibp_unavailable:
+      "Password validation is temporarily unavailable.",
+    password_invalid_unicode: "Password contains unsupported Unicode.",
+    password_too_long: "Password exceeds the maximum length.",
+    password_too_short: "Password does not meet the minimum length.",
+  } satisfies Record<PasswordPolicyError["code"], string>;
+
+  return APIError.from(status, {
+    code: error.code,
+    message: messages[error.code],
+  });
+}
 function normalizeRequestId(requestId: string | undefined): string {
   if (requestId && requestIdPattern.test(requestId)) {
     return requestId;
@@ -245,6 +430,7 @@ export function createBetterAuth({
   baseURL,
   database,
   databaseAdapter,
+  emailDelivery,
   googleProvider,
   plugins,
   requestId,
@@ -280,6 +466,8 @@ export function createBetterAuth({
 
   let capturedLogoutActorId: string | null = null;
   const captureLogoutSession = createAuthMiddleware(async (context) => {
+    await normalizeAndValidatePasswordRequest(context);
+
     if (context.path !== "/sign-out") {
       return;
     }
@@ -290,7 +478,6 @@ export function createBetterAuth({
     const { session, user } = currentSession ?? {};
     capturedLogoutActorId = user?.id ?? session?.userId ?? null;
   });
-
   const auditHook = createAuthMiddleware(async (context) => {
     const authContext = context.context as unknown as AuthHookContext;
     const event = buildAuthSecurityAuditEvent({
@@ -326,7 +513,31 @@ export function createBetterAuth({
         },
       },
     },
-    emailAndPassword: { enabled: false },
+    emailAndPassword: emailDelivery
+      ? {
+          autoSignIn: false,
+          enabled: true,
+          maxPasswordLength: 256,
+          minPasswordLength: 1,
+          password: {
+            hash: hashPasswordNfc,
+            verify: verifyPasswordNfc,
+          },
+          requireEmailVerification: true,
+          resetPasswordTokenExpiresIn: 60 * 60,
+          revokeSessionsOnPasswordReset: true,
+          sendResetPassword: emailDelivery.sendPasswordReset,
+        }
+      : { enabled: false },
+    emailVerification: emailDelivery
+      ? {
+          autoSignInAfterVerification: false,
+          expiresIn: 24 * 60 * 60,
+          sendOnSignIn: false,
+          sendOnSignUp: true,
+          sendVerificationEmail: emailDelivery.sendVerificationEmail,
+        }
+      : undefined,
     hooks: { before: captureLogoutSession, after: auditHook },
     logger: {
       level: "error",

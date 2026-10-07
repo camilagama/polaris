@@ -7,3 +7,4 @@
 - Exportação ocorre mediante pedido autorizado, em artefato privado temporário com validade curta.
 - Purge abrange banco, masters de imagem, derivados, caches e cópias de staging. Restore reaplica o deletion ledger antes de reutilizar o ambiente.
 - Prazos legais de retenção e de incidentes exigem revisão jurídica e contábil antes do go-live.
+- Emails de verificação e recuperação enviados via Resend compartilham com o provider o endereço destinatário, link/token transacional e metadados de entrega. Antes de habilitar envio real, incluir esse tratamento na política de privacidade e revisar termos/DPA, região e retenção do provider; não enviar dados de negócio nesses emails.

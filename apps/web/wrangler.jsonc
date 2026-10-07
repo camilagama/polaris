@@ -5,7 +5,8 @@
   "compatibility_flags": ["nodejs_compat", "nodejs_als"],
   "vars": {
     "DB_POC_ENABLED": "false",
-    "DB_RLS_POC_ENABLED": "false"
+    "DB_RLS_POC_ENABLED": "false",
+    "EMAIL_PASSWORD_AUTH_ENABLED": "false"
   },
   "main": "./worker/index.ts",
   "hyperdrive": [

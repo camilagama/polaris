@@ -3,6 +3,7 @@
 Este diretório é a fonte de verdade para invariantes de domínio. Mantenha cada regra em um único arquivo e referencie-o em vez de copiar a regra para outros documentos.
 
 - Ciclo da organização, membership e acesso: [organization-and-access.md](organization-and-access.md).
+- Identidade, verificação e credenciais: [authentication.md](authentication.md).
 - Quantidades, custo e histórico de estoque: [inventory.md](inventory.md).
 - Valores monetários e precisão: [money.md](money.md).
 - Tempo, timezone e datas de negócio: [time-and-dates.md](time-and-dates.md).
