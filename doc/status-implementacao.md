@@ -36,7 +36,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 | PR08 — Hono shell | Concluído | Check, build e smoke HTTP aprovados; CI remoto do PR #6 verde; draft aguarda revisão e merge do responsável. |
 | PR09 — oRPC POC | Concluído | Client React → RPCLink → Hono → RPCHandler → use case retornou `pong`; check/build locais e CI remoto do PR #7 passaram; draft aguarda revisão e merge. |
 | PR10 — PostgreSQL + Drizzle + Hyperdrive POC | Concluído | PostgreSQL 18.6 POC passou query, commit, rollback e reuso com tabela TEMP; Worker local via binding respondeu 200; check/build e CI final do PR #8 verdes. Pooling/cache Hyperdrive remoto permanece no Gate PR11. |
-| PR11 — Gate RLS/Hyperdrive | Em andamento | PR #9 draft publicado. O projeto Neon `polaris-pr11-rls-gate` foi criado no plano Free em São Paulo com PostgreSQL 18. A primeira tentativa preparou role, schema RLS e seeds sintéticos, mas o `cf hyperdrive create` falhou porque Windows PowerShell 5.1 alterou o argumento JSON; nenhum Hyperdrive foi criado. A execução seguinte parou antes do DB porque `pwsh.exe` não estava no PATH do terminal integrado. Correção para chamar o entrypoint Node do `cf` diretamente passou nos gates locais e no dry-run fictício; falta retomar o bootstrap no Neon. O Worker remoto ainda requer autenticação Wrangler separada. |
+| PR11 — Gate RLS/Hyperdrive | Em andamento | PR #9 draft publicado. O projeto Neon `polaris-pr11-rls-gate` foi criado no plano Free em São Paulo com PostgreSQL 18. A primeira tentativa preparou role, schema RLS e seeds sintéticos, mas o `cf hyperdrive create` falhou porque Windows PowerShell 5.1 alterou o argumento JSON; nenhum Hyperdrive foi criado. A execução seguinte parou antes do DB porque `pwsh.exe` não estava no PATH do terminal integrado. Com a chamada Node direta, a tentativa mais recente chegou ao Neon, mas o guard de retomada recusou o fixture antes de qualquer mutação. O erro agora incluirá os rótulos de validação que falharem. O Worker remoto ainda requer autenticação Wrangler separada. |
 | PR12 — Offline persistence POC | Pendente | Persistência offline e fallback definidos no plano continuam pendentes. |
 | Gate Foundation | Pendente | Após PR12; Better Auth não faz parte deste gate. |
 
@@ -48,7 +48,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
 - PR10 foi publicado em https://github.com/camilagama/polaris/pull/8; CI remoto verde e draft aguardando revisão/merge.
-- PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável criado, Hyperdrive pendente após falha de parsing JSON e preflight `pwsh.exe`; correção local chama o Node do `cf` diretamente e está pronta para retomar o fixture parcial.
+- PR11 foi publicado em https://github.com/camilagama/polaris/pull/9 como draft; Neon descartável criado, Hyperdrive pendente. A chamada Node direta chega ao Neon, mas a retomada segura rejeitou um detalhe do fixture sem alterar o banco; diagnóstico por check agora será mostrado no próximo run.
 - O projeto Neon descartável foi provisionado; o Hyperdrive ainda não havia sido criado ao registrar este status.
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

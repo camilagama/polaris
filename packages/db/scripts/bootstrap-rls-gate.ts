@@ -330,41 +330,64 @@ try {
           normalizePolicyExpression(expression) === expectedPolicyExpression
       );
 
-    if (
-      !roleState ||
-      roleState.superuser ||
-      roleState.canCreateDatabase ||
-      roleState.canCreateInSchema ||
-      roleState.canCreateRole ||
-      roleState.hasMemberships ||
-      roleState.inherit ||
-      !roleState.login ||
-      roleState.bypassRls ||
-      roleState.ownsTable ||
-      !tableState ||
-      tableState.kind !== "r" ||
-      !tableState.rls ||
-      !tableState.forceRls ||
-      tableState.owner === runtimeRole ||
-      tableState.columns.join(",") !== "organization_id,token,value" ||
-      tableState.types.join(",") !== "text,text,text" ||
-      tableState.externalGrantees.length !== 0 ||
-      tableState.runtimePrivileges.join(",") !==
-        "DELETE,INSERT,SELECT,UPDATE" ||
-      tableState.runtimeHasGrantOptions ||
-      tableState.constraints.length !== 1 ||
-      tableState.constraints[0] !== "PRIMARY KEY (organization_id, token)" ||
-      tableState.triggerCount !== 0 ||
-      policyResult.rows.length !== 1 ||
-      policy?.name !== "rls_poc_operations_organization_isolation" ||
-      policy.command !== "*" ||
-      !policy.permissive ||
-      !policy.includesPublic ||
-      !expressionIsExpected(policy.usingExpression) ||
-      !expressionIsExpected(policy.checkExpression)
-    ) {
+    const failedRecoveryChecks = [
+      !roleState && "runtime-role-missing",
+      roleState?.superuser && "runtime-role-superuser",
+      roleState?.canCreateDatabase && "runtime-role-create-database",
+      roleState?.canCreateInSchema && "runtime-role-schema-create",
+      roleState?.canCreateRole && "runtime-role-create-role",
+      roleState?.hasMemberships && "runtime-role-membership",
+      roleState?.inherit && "runtime-role-inherit",
+      roleState && !roleState.login && "runtime-role-no-login",
+      roleState?.bypassRls && "runtime-role-bypassrls",
+      roleState?.ownsTable && "runtime-role-owns-table",
+      !tableState && "fixture-table-missing",
+      tableState && tableState.kind !== "r" && "fixture-table-kind",
+      tableState && !tableState.rls && "fixture-table-rls-disabled",
+      tableState && !tableState.forceRls && "fixture-table-force-rls-disabled",
+      tableState &&
+        tableState.owner === runtimeRole &&
+        "fixture-table-owned-by-runtime",
+      tableState &&
+        tableState.columns.join(",") !== "organization_id,token,value" &&
+        "fixture-columns",
+      tableState &&
+        tableState.types.join(",") !== "text,text,text" &&
+        "fixture-column-types",
+      tableState &&
+        tableState.externalGrantees.length !== 0 &&
+        "fixture-external-grantees",
+      tableState &&
+        tableState.runtimePrivileges.join(",") !==
+          "DELETE,INSERT,SELECT,UPDATE" &&
+        "fixture-runtime-privileges",
+      tableState?.runtimeHasGrantOptions && "fixture-runtime-grant-options",
+      tableState &&
+        tableState.constraints.length !== 1 &&
+        "fixture-constraint-count",
+      tableState &&
+        tableState.constraints.length === 1 &&
+        tableState.constraints[0] !== "PRIMARY KEY (organization_id, token)" &&
+        "fixture-primary-key",
+      tableState && tableState.triggerCount !== 0 && "fixture-triggers",
+      policyResult.rows.length !== 1 && "fixture-policy-count",
+      policy &&
+        policy.name !== "rls_poc_operations_organization_isolation" &&
+        "fixture-policy-name",
+      policy && policy.command !== "*" && "fixture-policy-command",
+      policy && !policy.permissive && "fixture-policy-restrictive",
+      policy && !policy.includesPublic && "fixture-policy-role",
+      policy &&
+        !expressionIsExpected(policy.usingExpression) &&
+        "fixture-policy-using-expression",
+      policy &&
+        !expressionIsExpected(policy.checkExpression) &&
+        "fixture-policy-check-expression",
+    ].filter((check): check is string => typeof check === "string");
+
+    if (failedRecoveryChecks.length !== 0) {
       throw new Error(
-        "Existing PR11 fixture does not match the expected safe recovery state; no database objects were changed."
+        `Existing PR11 fixture does not match the expected safe recovery state (${failedRecoveryChecks.join(", ")}); no database objects were changed.`
       );
     }
 
