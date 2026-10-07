@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { eq, inArray } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import { dbPocOperations } from "../src/schema/poc";
 
@@ -20,7 +20,6 @@ const tokens = {
   query: `${tokenPrefix}-query`,
   rollback: `${tokenPrefix}-rollback`,
 };
-let migrationApplied = false;
 
 async function backendPid() {
   const client = await pool.connect();
@@ -46,10 +45,22 @@ try {
     );
   }
 
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL("../drizzle", import.meta.url)),
-  });
-  migrationApplied = true;
+  const migrationPath = fileURLToPath(
+    new URL("../drizzle/0000_watery_ravenous.sql", import.meta.url)
+  );
+  const migrationSql = await readFile(migrationPath, "utf8");
+  const temporaryTableSql = migrationSql
+    .replace(
+      'CREATE TABLE "db_poc_operations"',
+      'CREATE TEMP TABLE "db_poc_operations"'
+    )
+    .replace(/;\s*$/, " ON COMMIT PRESERVE ROWS;");
+
+  if (temporaryTableSql === migrationSql) {
+    throw new Error("The POC migration did not match the expected table name.");
+  }
+
+  await pool.query(temporaryTableSql);
 
   await db.insert(dbPocOperations).values({ token: tokens.query });
   const queryRows = await db
@@ -113,18 +124,11 @@ try {
       poolConnectionReuse: "passed",
       postgresMajor: serverMajor,
       query: "passed",
+      temporaryTable: "session-only",
       transactionCommit: "passed",
       transactionRollback: "passed",
     })
   );
 } finally {
-  try {
-    if (migrationApplied) {
-      await db
-        .delete(dbPocOperations)
-        .where(inArray(dbPocOperations.token, Object.values(tokens)));
-    }
-  } finally {
-    await pool.end();
-  }
+  await pool.end();
 }
