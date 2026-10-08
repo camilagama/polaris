@@ -1293,40 +1293,29 @@ Gate: gerar e reaplicar a migration em branch Neon descartável PostgreSQL 18; p
 
 # PR 20 — Onboarding idempotente
 
-
-
-Implementar use case:
-
-
+Implementar o use case interno:
 
 ```text
-
 createInitialOrganization()
-
 ```
 
+O use case recebe o `userId` obtido de uma sessão autenticada no servidor e valida `user.email_verified` diretamente no banco. Não aceitar identidade ou estado de verificação enviados pelo cliente. Validar e normalizar nome e timezone IANA antes de iniciar a transação.
 
+Dentro de uma transação PostgreSQL `READ COMMITTED`:
 
-Transação cria:
+1. obter advisory lock transaction-scoped em namespace próprio e chave derivada do usuário;
+2. bloquear a linha de usuário para leitura enquanto confere email verificado;
+3. procurar memberships existentes;
+4. se houver exatamente um, retornar a organização existente sem alterar nome/timezone (retry idempotente); se houver mais de um, falhar fechado;
+5. se não houver, inserir organization e membership owner/active na mesma transação.
 
+A regra V1 de uma organização por usuário é a fronteira de idempotência; não criar tabela de idempotency keys nem constraint global em `memberships.user_id`. O use case não persiste uma chave por request: retry para o mesmo `userId` retorna a organização existente sem alterá-la; payloads concorrentes diferentes para o mesmo usuário também retornam o primeiro resultado. O lock é liberado automaticamente no commit/rollback.
 
+“Defaults essenciais” neste PR são os defaults já definidos no schema: currency BRL, organization status active, membership role owner e status active. Não há regra de produto para semear categorias, produtos ou outros registros; não inventar seed data.
 
-- organization;
+Este PR entrega o use case interno e seu gate, sem rota HTTP ou grants para `polaris_pr11_runtime`. Expor onboarding só depois de capabilities, contexto de autorização e RLS conforme PR21/22.
 
-- owner membership;
-
-- defaults essenciais.
-
-
-
-Usar idempotency/advisory mechanism apropriado. Para impor uma organização por usuário sob concorrência, obter lock transacional por usuário antes de consultar/criar o membership; uma chave de idempotência por request, sozinha, não impede duas criações simultâneas com chaves diferentes.
-
-
-
-Testar retry com a mesma chave idempotente e duas requests concorrentes para o mesmo usuário com chaves distintas; deve existir exatamente uma organização e um membership owner. Validar timezone IANA e email verificado no servidor.
-
-
-
+Testar: repetir o mesmo comando retorna o mesmo ID sem alterar campos; requests concorrentes para o mesmo usuário, com payloads distintos, criam exatamente uma organização e um membership owner; usuário não verificado/ausente, timezone inválido e memberships preexistentes múltiplos são rejeitados. Executar gate em PostgreSQL 18 de branch Neon descartável; a branch production permanece intacta.
 ---
 
 

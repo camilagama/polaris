@@ -6,6 +6,7 @@
     "./auth-schema": "./src/schema/auth.ts",
     "./security-audit-schema": "./src/schema/security-audit.ts",
     "./organization-schema": "./src/schema/organization.ts",
+    "./organization-repository": "./src/organization-repository.ts",
     "./client": "./src/client.ts",
     "./schema/poc": "./src/schema/poc.ts",
     "./rls-poc-client": "./src/rls-poc-client.ts",

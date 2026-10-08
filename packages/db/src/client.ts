@@ -3,9 +3,11 @@ import { Pool } from "pg";
 import { authSchema } from "./schema/auth";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { dbPocOperations } from "./schema/poc";
+import { organizationSchema } from "./schema/organization";
 
 const databaseSchema = {
   ...authSchema,
+  ...organizationSchema,
   authSecurityAuditEvents,
   dbPocOperations,
 };

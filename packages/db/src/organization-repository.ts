@@ -1,0 +1,124 @@
+import { eq, sql } from "drizzle-orm";
+import type { createDatabase } from "./client";
+import { user } from "./schema/auth";
+import { memberships, organizations } from "./schema/organization";
+
+type Database = ReturnType<typeof createDatabase>["db"];
+type Organization = typeof organizations.$inferSelect;
+
+/** ASCII "POLA" namespace for this advisory lock family. */
+const organizationCreationLockNamespace = 0x50_4f_4c_41;
+
+export type InitialOrganizationRepositoryErrorCode =
+  | "user_not_found"
+  | "email_not_verified"
+  | "multiple_existing_organizations"
+  | "organization_insert_failed";
+
+export class InitialOrganizationRepositoryError extends Error {
+  readonly code: InitialOrganizationRepositoryErrorCode;
+
+  constructor(
+    code: InitialOrganizationRepositoryErrorCode,
+    options?: ErrorOptions
+  ) {
+    super(code, options);
+    this.code = code;
+    this.name = "InitialOrganizationRepositoryError";
+  }
+}
+
+export interface CreateInitialOrganizationInDatabaseInput {
+  id: string;
+  name: string;
+  timezone: string;
+  userId: string;
+}
+
+export interface CreateInitialOrganizationInDatabaseResult {
+  created: boolean;
+  organization: Organization;
+}
+
+/**
+ * Persists initial organization creation atomically. The user-scoped advisory
+ * lock is the V1 single-organization boundary; the schema remains multi-org.
+ */
+export function createInitialOrganizationInDatabase(
+  database: Database,
+  input: CreateInitialOrganizationInDatabaseInput
+): Promise<CreateInitialOrganizationInDatabaseResult> {
+  return database.transaction(
+    async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(${organizationCreationLockNamespace}, hashtext(${input.userId}))`
+      );
+
+      const [identity] = await transaction
+        .select({ emailVerified: user.emailVerified })
+        .from(user)
+        .where(eq(user.id, input.userId))
+        .for("share")
+        .limit(1);
+
+      if (!identity) {
+        throw new InitialOrganizationRepositoryError("user_not_found");
+      }
+      if (!identity.emailVerified) {
+        throw new InitialOrganizationRepositoryError("email_not_verified");
+      }
+
+      const existingOrganizations = await transaction
+        .select({
+          id: organizations.id,
+          name: organizations.name,
+          timezone: organizations.timezone,
+          currency: organizations.currency,
+          status: organizations.status,
+          createdAt: organizations.createdAt,
+          updatedAt: organizations.updatedAt,
+        })
+        .from(memberships)
+        .innerJoin(
+          organizations,
+          eq(memberships.organizationId, organizations.id)
+        )
+        .where(eq(memberships.userId, input.userId))
+        .limit(2);
+
+      if (existingOrganizations.length > 1) {
+        throw new InitialOrganizationRepositoryError(
+          "multiple_existing_organizations"
+        );
+      }
+
+      const [existingOrganization] = existingOrganizations;
+      if (existingOrganization) {
+        return { created: false, organization: existingOrganization };
+      }
+
+      const [organization] = await transaction
+        .insert(organizations)
+        .values({
+          id: input.id,
+          name: input.name,
+          timezone: input.timezone,
+        })
+        .returning();
+
+      if (!organization) {
+        throw new InitialOrganizationRepositoryError(
+          "organization_insert_failed"
+        );
+      }
+
+      await transaction.insert(memberships).values({
+        organizationId: organization.id,
+        userId: input.userId,
+      });
+
+      return { created: true, organization };
+    },
+    { isolationLevel: "read committed" }
+  );
+}

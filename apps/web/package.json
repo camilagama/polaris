@@ -9,6 +9,7 @@
     "dev": "vite --host 127.0.0.1",
     "preview": "vite preview --host 127.0.0.1",
     "test:auth-gate": "bun scripts/test-better-auth-gate.ts",
+    "test:organization-onboarding-gate": "bun scripts/test-organization-onboarding-gate.ts",
     "test:offline-poc": "playwright test --config playwright.offline-poc.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
