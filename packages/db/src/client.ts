@@ -1,15 +1,17 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { authSchema } from "./schema/auth";
-import { authSecurityAuditEvents } from "./schema/security-audit";
-import { dbPocOperations } from "./schema/poc";
+import { categories } from "./schema/category";
 import { organizationSchema } from "./schema/organization";
+import { dbPocOperations } from "./schema/poc";
+import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 
 const databaseSchema = {
   ...authSchema,
   ...organizationSchema,
   authSecurityAuditEvents,
+  categories,
   dbPocOperations,
   tenantAuditEvents,
 };

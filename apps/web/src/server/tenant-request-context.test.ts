@@ -1,4 +1,3 @@
-import { describe, expect, it, vi } from "vitest";
 import type { createDatabase } from "@polaris/db/client";
 import type {
   AuthorizedTenantTransactionInput,
@@ -6,14 +5,15 @@ import type {
   TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "@polaris/db/tenant-transaction";
+import { describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "./environment";
+import { TenantRequestContextError } from "./request-context-error";
 import {
   createTenantRequestContext,
-  TenantRequestContextError,
-  withTenantRequestContext,
-  type TenantRequestContextInput,
   type TenantRequestContextDependencies,
+  type TenantRequestContextInput,
   type TenantRequestSession,
+  withTenantRequestContext,
 } from "./tenant-request-context";
 
 type Database = ReturnType<typeof createDatabase>["db"];

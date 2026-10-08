@@ -21,13 +21,13 @@ function testUser(): Parameters<
   AuthEmailDelivery["sendVerificationEmail"]
 >[0]["user"] {
   return {
-    id: "user-test-id",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
     email: recipient,
     emailVerified: false,
-    name: "Polaris Test User",
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    id: "user-test-id",
     image: null,
+    name: "Polaris Test User",
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
 }
 
@@ -45,7 +45,7 @@ describe("Resend authentication email delivery", () => {
     const url = `https://polaris.example.invalid/api/auth/verify-email?token=${token}`;
 
     await delivery.sendVerificationEmail(
-      { user: testUser(), token, url },
+      { token, url, user: testUser() },
       new Request("https://polaris.example.invalid/api/auth/sign-up/email")
     );
 
@@ -82,7 +82,7 @@ describe("Resend authentication email delivery", () => {
     const url = `https://polaris.example.invalid/api/auth/reset-password/${token}`;
 
     await delivery.sendPasswordReset(
-      { user: testUser(), token, url },
+      { token, url, user: testUser() },
       new Request(
         "https://polaris.example.invalid/api/auth/request-password-reset"
       )
@@ -123,9 +123,9 @@ describe("Resend authentication email delivery", () => {
     await expect(
       delivery.sendPasswordReset(
         {
-          user: testUser(),
           token: "reset-secret-token",
           url: "https://polaris.example.invalid/reset-password/reset-secret-token",
+          user: testUser(),
         },
         new Request(
           "https://polaris.example.invalid/api/auth/request-password-reset"

@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
+import { createDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
-import { createDatabase } from "@polaris/db/client";
 import { createBetterAuth } from "../src/server/auth";
 
 interface TestAuthHelpers {
   createUser: (overrides?: Record<string, unknown>) => { id: string };
-  saveUser: (user: { id: string }) => Promise<{ id: string }>;
+  deleteUser: (userId: string) => Promise<void>;
   login: (options: { userId: string }) => Promise<{
     headers: Headers;
     token: string;
   }>;
-  deleteUser: (userId: string) => Promise<void>;
+  saveUser: (user: { id: string }) => Promise<{ id: string }>;
 }
 
 function requiredEnvironment(name: string): string {

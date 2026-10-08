@@ -15,12 +15,12 @@ const runtimeRole = "polaris_pr11_runtime";
 export const organizations = pgTable(
   "organizations",
   {
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    currency: text("currency").notNull().default("BRL"),
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    timezone: text("timezone").notNull(),
-    currency: text("currency").notNull().default("BRL"),
     status: text("status").notNull().default("active"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    timezone: text("timezone").notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -58,19 +58,19 @@ export const organizations = pgTable(
 export const memberships = pgTable(
   "memberships",
   {
+    createdAt: timestamp("created_at").defaultNow().notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "restrict" }),
     role: text("role").notNull().default("owner"),
     status: text("status").notNull().default("active"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
       .$onUpdate(() => new Date())
       .notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
   },
   (table) => [
     primaryKey({

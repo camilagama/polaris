@@ -5,16 +5,6 @@ const inCI = Boolean(process.env.CI);
 export default defineConfig({
   forbidOnly: inCI,
   fullyParallel: false,
-  workers: 1, // SQLite WASM is memory-intensive; keep browser runs serial.
-  reporter: "list",
-  retries: inCI ? 1 : 0,
-  testDir: "./e2e",
-  testMatch: "**/*.e2e.ts",
-  timeout: 45_000,
-  use: {
-    baseURL: "http://127.0.0.1:4173",
-    trace: "retain-on-failure",
-  },
   projects: [
     {
       name: "chromium-desktop",
@@ -38,6 +28,15 @@ export default defineConfig({
         ]
       : []),
   ],
+  reporter: "list",
+  retries: inCI ? 1 : 0,
+  testDir: "./e2e",
+  testMatch: "**/*.e2e.ts",
+  timeout: 45_000,
+  use: {
+    baseURL: "http://127.0.0.1:4173",
+    trace: "retain-on-failure",
+  },
   webServer: {
     command:
       "bun run build:offline-poc && bunx vite preview --config vite.offline.config.ts --host 127.0.0.1 --port 4173 --strictPort",
@@ -45,4 +44,5 @@ export default defineConfig({
     timeout: 120_000,
     url: "http://127.0.0.1:4173/offline-poc?release=1",
   },
+  workers: 1, // SQLite WASM is memory-intensive; keep browser runs serial.
 });

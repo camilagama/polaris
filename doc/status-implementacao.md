@@ -199,6 +199,19 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | Draft PR [#20](https://github.com/camilagama/polaris/pull/20) publicado sobre PR #19; CI 6/6 verde no commit de código `17dff66`. |
 | Revisão do usuário | Continuidade autorizada | O usuário respondeu “prossiga” para a próxima etapa; PR #20 continua draft e sem merge enquanto PR23 é implementado sobre ele. |
 
+### Gate 2 — aprovado tecnicamente
+
+| Critério | Status | Evidência / trabalho restante |
+| --- | --- | --- |
+| Autenticação | Gate aprovado; integrações externas adiadas | O Worker validou sessão Better Auth e email verificado. OAuth Google, email/Resend, Turnstile e credenciais reais continuam pré-go-live. |
+| Organização inicial | Concluída | RPC deriva o ator da sessão; função SECURITY DEFINER usa `ONBOARDING_HYPERDRIVE` e role dedicada. Gate PostgreSQL e Worker passaram com onboarding idempotente e auditado. |
+| Contexto e tenancy | Concluídos | Worker local passou autenticação, `category.list/create`, capability server-side e negação de acesso cross-tenant. |
+| RLS em entidade de negócio | Concluído | Migration 0012 aplicada à branch descartável Neon PostgreSQL 18.6. `categories` tem ENABLE/FORCE RLS, grants mínimos, isolamento e negação de DML forjado confirmados. |
+| Capabilities | Concluídas | `catalog:read` e `category:create` foram exercitadas pelos procedimentos do Worker; auditoria da criação passou. |
+| Gate PostgreSQL + Worker | Concluídos | Gates passaram na branch `gate2-runtime-proof`, região São Paulo, PostgreSQL 18.6. O database gate confirmou roles, grants, SECURITY DEFINER, rollback e cascade; o Worker confirmou onboarding, retry, isolamento e auditoria. Branch é descartável e expira automaticamente. |
+| Revisão independente | Concluída, sem achados Critical/Important | Um achado Minor sobre registro incremental de fixtures foi corrigido; revisão final recomendou seguir. |
+| Check e build finais | Concluídos | `bun run check`: lint, formato, typecheck, boundaries, Knip e 79 testes em 13 arquivos passaram. `bun run build` passou nos oito workspaces. |
+| Próxima etapa | Publicar checkpoint para revisão | Publicar draft PR sobre `codex/pr23-tenant-audit`, aguardar CI e revisão do responsável. O PR24 completo — UI, archive/delete e leitura offline — fica adiado até a revisão deste checkpoint; schema e operações mínimos do slice serão reutilizados. |
 ### PR23 — checkpoint para revisão
 
 | Subetapa | Status | Evidência / dependência |

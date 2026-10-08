@@ -106,7 +106,7 @@ async function main() {
         "ORDER BY relation.relname"
     );
     assert.deepEqual(publicObjects.rows, [
-      { name: "rls_poc_operations", kind: "r" },
+      { kind: "r", name: "rls_poc_operations" },
     ]);
 
     const journal = await pool.query<{ count: number }>(
@@ -139,13 +139,13 @@ async function main() {
         "FROM pg_class AS relation WHERE relation.oid = 'public.rls_poc_operations'::regclass"
     );
     assert.deepEqual(tableState.rows[0], {
-      rls_enabled: true,
-      force_rls: true,
-      owner: identity.rows[0]?.current_user,
+      all_columns_not_null: true,
       column_names: "organization_id,token,value",
       column_types: "text,text,text",
-      all_columns_not_null: true,
+      force_rls: true,
+      owner: identity.rows[0]?.current_user,
       primary_key: "PRIMARY KEY (organization_id, token)",
+      rls_enabled: true,
     });
 
     const policies = await pool.query<{
@@ -193,10 +193,10 @@ async function main() {
       [runtimeRole]
     );
     assert.deepEqual(grants.rows[0], {
-      can_select: true,
-      can_insert: true,
-      can_update: true,
       can_delete: true,
+      can_insert: true,
+      can_select: true,
+      can_update: true,
       has_grant_option: false,
     });
 
@@ -246,13 +246,13 @@ async function main() {
 
     console.log(
       JSON.stringify({
-        status: "prepared",
+        actions: ["verified fixture", "dropped only rls_poc_operations"],
         database: "neondb",
+        migrationsJournalWasEmpty: true,
+        next: "run Drizzle db:migrate immediately, then the PR22 tenant gate",
         postgresMajorVersion: 18,
         reconciledFixture: "exact synthetic PR11 RLS table and seed rows",
-        migrationsJournalWasEmpty: true,
-        actions: ["verified fixture", "dropped only rls_poc_operations"],
-        next: "run Drizzle db:migrate immediately, then the PR22 tenant gate",
+        status: "prepared",
       })
     );
   } finally {

@@ -16,6 +16,7 @@ describe("tenant capability map", () => {
       "customer:update",
       "expense:create",
       "organization:manage",
+      "category:create",
     ]);
     expect(capabilitiesForRole("owner")).toEqual(CAPABILITIES);
   });

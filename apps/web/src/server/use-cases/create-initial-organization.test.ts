@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { createDatabase } from "@polaris/db/client";
+import { describe, expect, it, vi } from "vitest";
 import { createInitialOrganization } from "./create-initial-organization";
 
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -18,9 +18,9 @@ describe("createInitialOrganization input validation", () => {
 
     await expect(
       createInitialOrganization(database, {
+        authenticatedUserId: "   ",
         name: "Polaris",
         timezone: "America/Sao_Paulo",
-        authenticatedUserId: "   ",
       })
     ).rejects.toMatchObject({ code: "invalid_user_id" });
     expect(transaction).not.toHaveBeenCalled();
@@ -31,9 +31,9 @@ describe("createInitialOrganization input validation", () => {
 
     await expect(
       createInitialOrganization(database, {
+        authenticatedUserId: " verified-user ",
         name: "Polaris",
         timezone: "America/Sao_Paulo",
-        authenticatedUserId: " verified-user ",
       })
     ).rejects.toMatchObject({ code: "invalid_user_id" });
     expect(transaction).not.toHaveBeenCalled();
@@ -43,9 +43,9 @@ describe("createInitialOrganization input validation", () => {
 
     await expect(
       createInitialOrganization(database, {
+        authenticatedUserId: "verified-user",
         name: "  ",
         timezone: "America/Sao_Paulo",
-        authenticatedUserId: "verified-user",
       })
     ).rejects.toMatchObject({ code: "invalid_organization_name" });
     expect(transaction).not.toHaveBeenCalled();
@@ -56,9 +56,9 @@ describe("createInitialOrganization input validation", () => {
 
     await expect(
       createInitialOrganization(database, {
+        authenticatedUserId: "verified-user",
         name: "Polaris",
         timezone: "Mars/Olympus_Mons",
-        authenticatedUserId: "verified-user",
       })
     ).rejects.toMatchObject({ code: "invalid_timezone" });
     expect(transaction).not.toHaveBeenCalled();

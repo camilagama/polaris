@@ -1,17 +1,17 @@
-import { createCollection } from "@tanstack/db";
 import {
   BrowserCollectionCoordinator,
+  type BrowserWASQLiteDatabase,
   createBrowserWASQLitePersistence,
   openBrowserWASQLiteOPFSDatabase,
   persistedCollectionOptions,
-  type BrowserWASQLiteDatabase,
 } from "@tanstack/browser-db-sqlite-persistence";
+import { createCollection } from "@tanstack/db";
 import {
   IndexedDBAdapter,
-  startOfflineExecutor,
   type OfflineExecutor,
   type OfflineTransaction,
   type OnlineDetector,
+  startOfflineExecutor,
 } from "@tanstack/offline-transactions";
 
 export const OFFLINE_POC_DATABASE_FILE = "polaris-pr12-offline-poc.sqlite";
@@ -70,6 +70,7 @@ export interface OfflinePocMigrationResult {
 export interface OfflinePocRuntime {
   capabilities: OfflinePocCapabilities;
   close: () => Promise<void>;
+  database: BrowserWASQLiteDatabase;
   diagnostics: OfflinePocDiagnostics;
   executor: OfflineExecutor;
   mockServerStorage: IndexedDBAdapter;
@@ -78,7 +79,6 @@ export interface OfflinePocRuntime {
   onlineDetector: MockOnlineDetector;
   outboxStorage: IndexedDBAdapter;
   release: OfflinePocRelease;
-  database: BrowserWASQLiteDatabase;
 }
 
 export interface OfflinePocResetResult {
@@ -264,6 +264,7 @@ export async function createOfflinePocRuntime(
       },
     },
     onLeadershipChange: () => undefined,
+    onlineDetector,
     onStorageFailure: (diagnostic) => {
       diagnostics.storageFailure = diagnostic.message;
     },
@@ -273,7 +274,6 @@ export async function createOfflinePocRuntime(
         transactionId: transaction.id,
       };
     },
-    onlineDetector,
     storage: outboxStorage,
   });
 
@@ -307,10 +307,10 @@ export async function createOfflinePocRuntime(
     mockServerStorage,
     notesV1,
     ...(notesV2 ? { notesV2 } : {}),
+    database,
     onlineDetector,
     outboxStorage,
     release,
-    database,
   };
 }
 

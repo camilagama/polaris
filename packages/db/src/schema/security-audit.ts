@@ -27,14 +27,14 @@ export const authSecurityAuditOutcome = pgEnum("auth_security_audit_outcome", [
 export const authSecurityAuditEvents = pgTable(
   "auth_security_audit_event",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    actorId: text("actor_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    errorCode: text("error_code"),
     eventType: authSecurityAuditEventType("event_type").notNull(),
+    id: uuid("id").defaultRandom().primaryKey(),
     outcome: authSecurityAuditOutcome("outcome").notNull(),
     provider: text("provider"),
-    actorId: text("actor_id"),
     requestId: text("request_id").notNull(),
-    errorCode: text("error_code"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("auth_security_audit_event_actor_created_idx").on(

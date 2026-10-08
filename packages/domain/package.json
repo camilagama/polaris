@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./authorization/capabilities": "./src/authorization/capabilities.ts"
+    "./authorization/capabilities": "./src/authorization/capabilities.ts",
+    "./catalog/category": "./src/catalog/category.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

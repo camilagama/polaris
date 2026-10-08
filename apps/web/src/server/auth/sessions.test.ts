@@ -2,11 +2,11 @@ import type { BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createServerApp } from "../app";
 import type { AuthSecurityAuditEvent } from "../auth";
 import { createBetterAuth } from "../auth";
-import { createServerApp } from "../app";
-import { enforceAbsoluteSessionLifetime } from "./handler";
 import type { WorkerBindings } from "../environment";
+import { enforceAbsoluteSessionLifetime } from "./handler";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
 const testBaseURL = "http://localhost";

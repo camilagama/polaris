@@ -4,11 +4,11 @@ import { normalizePassword } from "./password-policy";
 
 // Preserve Better Auth Scrypt parameters and salt:key format while using the product-required NFC normalization.
 const SCRYPT_OPTIONS = {
-  N: 16_384,
-  r: 16,
-  p: 1,
   dkLen: 64,
   maxmem: 128 * 16_384 * 16 * 2,
+  N: 16_384,
+  p: 1,
+  r: 16,
 };
 const SALT_BYTES = 16;
 const DERIVED_KEY_BYTES = 64;

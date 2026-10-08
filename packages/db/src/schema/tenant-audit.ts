@@ -15,16 +15,16 @@ const runtimeRole = "polaris_pr11_runtime";
 export const tenantAuditEvents = pgTable(
   "tenant_audit_event",
   {
+    actorUserId: text("actor_user_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    entityId: text("entity_id").notNull(),
+    entityType: text("entity_type").notNull(),
+    eventType: text("event_type").notNull(),
     id: uuid("id").defaultRandom().primaryKey(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    actorUserId: text("actor_user_id").notNull(),
-    eventType: text("event_type").notNull(),
-    entityType: text("entity_type").notNull(),
-    entityId: text("entity_id").notNull(),
     requestId: uuid("request_id"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     check(

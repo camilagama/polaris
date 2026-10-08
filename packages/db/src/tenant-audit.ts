@@ -1,8 +1,8 @@
+import { tenantAuditEvents } from "./schema/tenant-audit";
 import type {
   TenantRequestIdentity,
   TenantRequestTransaction,
 } from "./tenant-transaction";
-import { tenantAuditEvents } from "./schema/tenant-audit";
 
 export type TenantAuditIdentity = Pick<
   TenantRequestIdentity,
@@ -55,11 +55,11 @@ export async function recordTenantAuditEvent(
     throw new TenantAuditEventError();
   }
   await transaction.insert(tenantAuditEvents).values({
-    organizationId: identity.organizationId,
     actorUserId: identity.userId,
-    eventType: input.eventType,
-    entityType: input.entityType,
     entityId: input.entityId,
+    entityType: input.entityType,
+    eventType: input.eventType,
+    organizationId: identity.organizationId,
     requestId: input.requestId ?? null,
   });
 }

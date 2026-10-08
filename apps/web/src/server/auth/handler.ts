@@ -1,12 +1,12 @@
 import { createDatabase } from "@polaris/db/client";
 import { createBetterAuth } from "../auth";
-import { createResendAuthEmailDelivery } from "./email";
-import type { WorkerBindings } from "../environment";
 import {
   PasswordPolicyError,
   passwordPolicyErrorDetails,
   validateNewPassword,
 } from "../auth/password-policy";
+import type { WorkerBindings } from "../environment";
+import { createResendAuthEmailDelivery } from "./email";
 import { isSessionPastAbsoluteExpiration } from "./session-policy";
 
 const trailingSlashPattern = /\/+$/;
@@ -226,9 +226,9 @@ export async function handleBetterAuthRequest(
         ? {
             googleProvider: {
               accessType: "online",
-              disableIdTokenSignIn: true,
               clientId: googleClientId,
               clientSecret: googleClientSecret,
+              disableIdTokenSignIn: true,
               redirectURI: new URL(
                 "/api/auth/callback/google",
                 baseURL

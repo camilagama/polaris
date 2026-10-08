@@ -10,20 +10,21 @@ interface RateLimitBinding {
 
 export interface WorkerBindings {
   AUTH_ABUSE_PROTECTION_ENABLED?: string;
+  AUTH_EMAIL_FROM?: string;
   AUTH_EMAIL_RATE_LIMITER?: RateLimitBinding;
+  AUTH_EMAIL_REPLY_TO?: string;
   AUTH_RATE_LIMITER?: RateLimitBinding;
   BETTER_AUTH_BASE_URL?: string;
   BETTER_AUTH_SECRET?: string;
-  AUTH_EMAIL_FROM?: string;
-  AUTH_EMAIL_REPLY_TO?: string;
-  EMAIL_PASSWORD_AUTH_ENABLED?: string;
-  RESEND_API_KEY?: string;
-  GOOGLE_CLIENT_ID?: string;
-  GOOGLE_CLIENT_SECRET?: string;
-  TURNSTILE_SECRET_KEY?: string;
   DB_POC_ENABLED: string;
   DB_RLS_POC_ENABLED: string;
+  EMAIL_PASSWORD_AUTH_ENABLED?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
+  ONBOARDING_HYPERDRIVE?: HyperdriveBinding;
+  RESEND_API_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
 }
 
 export interface ServerEnv {

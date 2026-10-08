@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   normalizePassword,
   PasswordPolicyError,
-  validateNewPassword,
   type PasswordRangeFetcher,
+  validateNewPassword,
 } from "./password-policy";
 
 async function sha1Hex(value: string): Promise<string> {

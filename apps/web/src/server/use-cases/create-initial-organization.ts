@@ -30,10 +30,10 @@ export class CreateInitialOrganizationError extends Error {
 }
 
 export interface CreateInitialOrganizationInput {
+  authenticatedUserId: string;
   name: string;
   requestId?: string | null;
   timezone: string;
-  authenticatedUserId: string;
 }
 
 export interface CreateInitialOrganizationResult {

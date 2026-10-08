@@ -1,7 +1,8 @@
 import { authSchema } from "@polaris/db/auth-schema";
-import { authSecurityAuditEvents } from "@polaris/db/security-audit-schema";
 import type { createDatabase } from "@polaris/db/client";
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { authSecurityAuditEvents } from "@polaris/db/security-audit-schema";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
   APIError,
   createAuthMiddleware,
@@ -9,14 +10,13 @@ import {
   isAPIError,
 } from "better-auth/api";
 import type { GoogleOptions } from "better-auth/social-providers";
+import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
   normalizePassword,
   PasswordPolicyError,
   passwordPolicyErrorDetails,
   validateNewPassword,
 } from "./auth/password-policy";
-import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
   SESSION_IDLE_TTL_SECONDS,
   SESSION_REFRESH_INTERVAL_SECONDS,
@@ -650,16 +650,16 @@ export function createBetterAuth({
           sendVerificationEmail: emailDelivery.sendVerificationEmail,
         }
       : undefined,
-    hooks: { before: captureLogoutSession, after: auditHook },
+    hooks: { after: auditHook, before: captureLogoutSession },
+    logger: {
+      level: "error",
+      log: (level) => console.error("better_auth_internal_error", level),
+    },
     session: {
       cookieCache: { enabled: false },
       expiresIn: SESSION_IDLE_TTL_SECONDS,
       freshAge: SESSION_REFRESH_INTERVAL_SECONDS,
       updateAge: SESSION_REFRESH_INTERVAL_SECONDS,
-    },
-    logger: {
-      level: "error",
-      log: (level) => console.error("better_auth_internal_error", level),
     },
     ...(googleProvider ? { socialProviders: { google: googleProvider } } : {}),
     ...(plugins ? { plugins } : {}),

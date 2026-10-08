@@ -28,6 +28,7 @@
         "@orpc/server": "^1.15.4",
         "@polaris/contracts": "workspace:*",
         "@polaris/db": "workspace:*",
+        "@polaris/domain": "workspace:*",
         "@tanstack/browser-db-sqlite-persistence": "^0.2.30",
         "@tanstack/db": "^0.12.1",
         "@tanstack/offline-transactions": "^1.0.63",
@@ -62,6 +63,7 @@
     "packages/db": {
       "name": "@polaris/db",
       "dependencies": {
+        "@polaris/domain": "workspace:*",
         "drizzle-orm": "^0.45.3",
         "pg": "^8.23.1",
       },

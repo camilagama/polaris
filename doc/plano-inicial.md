@@ -1396,28 +1396,28 @@ O gate PostgreSQL 18 em branch Neon descartável deve provar o evento de onboard
 
 # GATE 2
 
-
-
 Antes do catálogo:
 
+- sessão autenticada integrada ao runtime;
+- onboarding inicial da organização validado;
+- tenancy comprovada em uma operação real;
+- RLS aplicado a uma entidade de negócio;
+- capability checks centralizados e usados nas operações.
 
+## Fechamento do Gate 2 — concluído antes do PR24 completo
 
-- auth completo;
+A auditoria do checkpoint PR23 confirmou que Better Auth, onboarding idempotente, transação tenant, RLS de organizations/memberships e o mapa de capabilities tinham provas isoladas, mas ainda não formavam um fluxo autenticado com uma entidade de negócio protegida. Foi criada uma etapa prévia e limitada para fechar essas lacunas antes do PR24 completo.
 
-- organization criada;
+O slice pré-gate foi implementado e seus gates passaram na branch Neon descartável `gate2-runtime-proof`, PostgreSQL 18.6, AWS South America East 1 (São Paulo):
 
-- tenancy comprovada;
+- onboarding `organization.createInitial` exige sessão Better Auth com email verificado; o ator vem da sessão, e a escrita passa pela função SECURITY DEFINER em `ONBOARDING_HYPERDRIVE` com a role dedicada `polaris_onboarding_runtime`;
+- a migration 0012 cria `categories` com ENABLE/FORCE RLS e grants mínimos de SELECT/INSERT; `category.list/create` usam o compositor tenant e as capabilities centralizadas;
+- o gate PostgreSQL confirmou idempotência, auditoria transacional, negação de DML direto, separação de roles, isolamento RLS, rollback e cascade; o Worker local confirmou autenticação, onboarding, leitura/criação, negação cross-tenant e auditoria;
+- UI, archive/delete, produto, estoque e sync ficaram fora deste slice. O PR24 completo reutiliza o schema e as operações já criadas, sem migrations duplicadas.
 
-- RLS em entidades reais;
-
-- capability checks centralizados.
-
-
+Com as duas provas verdes, o Gate 2 está aprovado tecnicamente para este escopo. A revisão do draft PR e sua integração continuam separadas; a implementação completa do PR24 começa depois desse checkpoint. Credenciais reais dos providers e configurações persistentes de produção continuam pré-go-live. A função SECURITY DEFINER usa search_path fixo e confiável, objetos qualificados, sem SQL dinâmico, EXECUTE revogado de PUBLIC e concedido somente à role `polaris_onboarding_runtime` conectada por `ONBOARDING_HYPERDRIVE`; a role tenant comum não tem esse privilégio. A função não valida sessão e só pode ser chamada depois da autorização no Worker. Ver [PostgreSQL CREATE FUNCTION](https://www.postgresql.org/docs/18/sql-createfunction.html).
 
 ---
-
-
-
 # FASE 3 — CATÁLOGO, VARIANTES E ESTOQUE
 
 
@@ -1430,7 +1430,7 @@ Antes do catálogo:
 
 
 
-Schema + domínio + API + UI mínima.
+Completar o módulo após o Gate 2 aprovado. O slice pré-gate pode já ter criado schema e operações mínimas de leitura/criação; reutilizar esses objetos, sem migrations duplicadas. PR24 completa domínio, regras de archive/delete, contrato de leitura offline e UI mínima.
 
 
 

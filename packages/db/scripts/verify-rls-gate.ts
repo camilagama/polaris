@@ -56,9 +56,9 @@ async function callWorker(
   delayMs?: number
 ): Promise<WorkerResult> {
   const response = await fetch(workerUrl, {
-    method: "POST",
+    body: JSON.stringify({ action, delayMs, organizationId, token }),
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action, organizationId, token, delayMs }),
+    method: "POST",
   });
   const contentType = response.headers.get("content-type") ?? "unknown";
   const responseBody = await response.text();

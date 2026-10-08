@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { createRlsPocDatabase } from "@polaris/db/rls-poc-client";
 import {
+  type RlsPocOrganizationId,
   readRlsPocRows,
   readRlsPocWithoutContext,
   retryRlsPocAfterConnectionFailure,
@@ -7,9 +9,7 @@ import {
   verifyRlsPocRollback,
   verifyRlsPocStatementFailure,
   verifyRlsPocTransactionContextReset,
-  type RlsPocOrganizationId,
 } from "@polaris/db/rls-poc-gate";
-import { createRlsPocDatabase } from "@polaris/db/rls-poc-client";
 import { Hono } from "hono";
 import type { ServerEnv } from "../environment";
 
@@ -25,9 +25,9 @@ type RlsPocAction =
 
 interface RlsPocRequest {
   action: RlsPocAction;
+  delayMs?: number;
   organizationId?: RlsPocOrganizationId;
   token?: string;
-  delayMs?: number;
 }
 
 const route = new Hono<ServerEnv>();
@@ -129,13 +129,13 @@ route.post("/run", async (context) => {
         );
         return context.json({
           contextReuse: {
-            tenant: {
-              backendPid: result.tenantState.backendPid,
-              organizationId: result.tenantState.organizationId,
-            },
             contextless: {
               backendPid: result.contextlessState.backendPid,
               organizationId: result.contextlessState.organizationId,
+            },
+            tenant: {
+              backendPid: result.tenantState.backendPid,
+              organizationId: result.tenantState.organizationId,
             },
             visibleRows: result.visibleRows,
           },

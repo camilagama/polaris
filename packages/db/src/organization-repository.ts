@@ -1,14 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { createDatabase } from "./client";
-import { user } from "./schema/auth";
-import { memberships, organizations } from "./schema/organization";
-import { recordTenantAuditEvent } from "./tenant-audit";
+import type { organizations } from "./schema/organization";
 
 type Database = ReturnType<typeof createDatabase>["db"];
 type Organization = typeof organizations.$inferSelect;
-
-/** ASCII "POLA" namespace for this advisory lock family. */
-const organizationCreationLockNamespace = 0x50_4f_4c_41;
 
 export type InitialOrganizationRepositoryErrorCode =
   | "user_not_found"
@@ -43,107 +38,105 @@ export interface CreateInitialOrganizationInDatabaseResult {
   organization: Organization;
 }
 
+interface InitialOrganizationWriterRow {
+  created: boolean;
+  created_at: Date;
+  currency: string;
+  id: string;
+  name: string;
+  status: string;
+  timezone: string;
+  updated_at: Date;
+}
+
+function writerErrorDetail(error: unknown): string | undefined {
+  const visited = new Set<object>();
+  let current: unknown = error;
+
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      return undefined;
+    }
+    visited.add(current);
+
+    const candidate = current as { cause?: unknown; detail?: unknown };
+    if (typeof candidate.detail === "string") {
+      return candidate.detail;
+    }
+    current = candidate.cause;
+  }
+
+  return undefined;
+}
+
+function mapWriterError(error: unknown): unknown {
+  const detail = writerErrorDetail(error);
+  const allowedCodes: readonly InitialOrganizationRepositoryErrorCode[] = [
+    "user_not_found",
+    "email_not_verified",
+    "multiple_existing_organizations",
+    "organization_not_available",
+    "organization_insert_failed",
+  ];
+
+  if (
+    detail &&
+    allowedCodes.includes(detail as InitialOrganizationRepositoryErrorCode)
+  ) {
+    return new InitialOrganizationRepositoryError(
+      detail as InitialOrganizationRepositoryErrorCode,
+      { cause: error instanceof Error ? error : undefined }
+    );
+  }
+
+  return error;
+}
+
 /**
- * Persists initial organization creation atomically. The user-scoped advisory
- * lock is the V1 single-organization boundary; the schema remains multi-org.
- * This is an onboarding transaction, not an authorized tenant transaction.
- * It currently requires a separately controlled privileged connection because
- * the runtime role intentionally has no organization or membership INSERT grant.
- * Do not expose it from a request route until a controlled writer is designed.
+ * Calls a narrowly scoped PostgreSQL SECURITY DEFINER writer. The Worker must
+ * authenticate Better Auth first and pass only the session user ID. This
+ * repository grants no direct DML on organizations or memberships.
  */
-export function createInitialOrganizationInDatabase(
+export async function createInitialOrganizationInDatabase(
   database: Database,
   input: CreateInitialOrganizationInDatabaseInput
 ): Promise<CreateInitialOrganizationInDatabaseResult> {
-  return database.transaction(
-    async (transaction) => {
-      await transaction.execute(
-        sql`select pg_advisory_xact_lock(${organizationCreationLockNamespace}, hashtext(${input.userId}))`
+  try {
+    const result = await database.execute(sql`
+      SELECT *
+      FROM public.create_initial_organization(
+        ${input.userId},
+        ${input.id},
+        ${input.name},
+        ${input.timezone},
+        ${input.requestId ?? null}::uuid
+      )
+    `);
+    const row = result.rows[0] as InitialOrganizationWriterRow | undefined;
+
+    if (!row) {
+      throw new InitialOrganizationRepositoryError(
+        "organization_insert_failed"
       );
-      const [identity] = await transaction
-        .select({ emailVerified: user.emailVerified })
-        .from(user)
-        .where(eq(user.id, input.userId))
-        .for("share")
-        .limit(1);
+    }
 
-      if (!identity) {
-        throw new InitialOrganizationRepositoryError("user_not_found");
-      }
-      if (!identity.emailVerified) {
-        throw new InitialOrganizationRepositoryError("email_not_verified");
-      }
-
-      const existingMemberships = await transaction
-        .select({ organizationId: memberships.organizationId })
-        .from(memberships)
-        .where(eq(memberships.userId, input.userId))
-        .limit(2);
-
-      if (existingMemberships.length > 1) {
-        throw new InitialOrganizationRepositoryError(
-          "multiple_existing_organizations"
-        );
-      }
-
-      const [existingMembership] = existingMemberships;
-      if (existingMembership) {
-        const [existingOrganization] = await transaction
-          .select()
-          .from(organizations)
-          .where(eq(organizations.id, existingMembership.organizationId))
-          .limit(1);
-
-        if (!existingOrganization) {
-          throw new InitialOrganizationRepositoryError(
-            "organization_not_available"
-          );
-        }
-
-        return { created: false, organization: existingOrganization };
-      }
-
-      await transaction.insert(organizations).values({
-        id: input.id,
-        name: input.name,
-        timezone: input.timezone,
-      });
-
-      await transaction.insert(memberships).values({
-        organizationId: input.id,
-        userId: input.userId,
-      });
-
-      await recordTenantAuditEvent(
-        transaction,
-        { organizationId: input.id, userId: input.userId },
-        {
-          eventType: "organization.created",
-          entityType: "organization",
-          entityId: input.id,
-          requestId: input.requestId ?? null,
-        }
-      );
-
-      const [organization] = await transaction
-        .select()
-        .from(organizations)
-        .where(
-          and(
-            eq(organizations.id, input.id),
-            eq(organizations.status, "active")
-          )
-        )
-        .limit(1);
-
-      if (!organization) {
-        throw new InitialOrganizationRepositoryError(
-          "organization_insert_failed"
-        );
-      }
-
-      return { created: true, organization };
-    },
-    { isolationLevel: "read committed" }
-  );
+    return {
+      created: row.created,
+      organization: {
+        createdAt: row.created_at,
+        currency: row.currency,
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        timezone: row.timezone,
+        updatedAt: row.updated_at,
+      },
+    };
+  } catch (error) {
+    const mappedError = mapWriterError(error);
+    if (mappedError instanceof InitialOrganizationRepositoryError) {
+      throw mappedError;
+    }
+    throw mappedError;
+  }
 }

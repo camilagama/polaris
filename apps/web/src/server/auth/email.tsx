@@ -1,5 +1,5 @@
-import { render } from "react-email";
 import type { ReactNode } from "react";
+import { render } from "react-email";
 import type { AuthEmailDelivery } from "../auth";
 import { EmailVerificationEmail, PasswordResetEmail } from "./emails";
 
@@ -53,21 +53,21 @@ async function sendAuthEmail({
       render(react, { plainText: true }),
     ]);
     const response = await fetch(RESEND_EMAILS_ENDPOINT, {
-      method: "POST",
+      body: JSON.stringify({
+        from,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        html,
+        subject,
+        text,
+        to: [to],
+      }),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "Idempotency-Key": await tokenIdempotencyKey(event, token),
         "User-Agent": "Polaris/1.0",
       },
-      body: JSON.stringify({
-        from,
-        ...(replyTo ? { reply_to: replyTo } : {}),
-        to: [to],
-        subject,
-        html,
-        text,
-      }),
+      method: "POST",
       signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
     });
 
@@ -97,8 +97,8 @@ export function createResendAuthEmailDelivery({
         react: <PasswordResetEmail url={url} />,
         ...(replyTo ? { replyTo } : {}),
         subject: "Redefina sua senha do Polaris",
-        token,
         to: user.email,
+        token,
       });
     },
     sendVerificationEmail: async ({ user, url, token }) => {
@@ -109,8 +109,8 @@ export function createResendAuthEmailDelivery({
         react: <EmailVerificationEmail url={url} />,
         ...(replyTo ? { replyTo } : {}),
         subject: "Confirme seu email do Polaris",
-        token,
         to: user.email,
+        token,
       });
     },
   };

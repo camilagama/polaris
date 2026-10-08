@@ -2,17 +2,17 @@ import { eq, sql } from "drizzle-orm";
 import type { createRlsPocDatabase } from "./rls-poc-client";
 import { rlsPocOperations } from "./schema/rls-poc";
 import {
-  withRlsPocTransaction,
   type TenantTransaction,
+  withRlsPocTransaction,
 } from "./tenant-transaction";
 
 export type RlsPocOrganizationId = "org_a" | "org_b";
 type Database = ReturnType<typeof createRlsPocDatabase>;
 
 interface DatabaseState {
+  backendPid: number;
   organizationId: string | null;
   transactionId: string;
-  backendPid: number;
 }
 
 const seedTokens: Record<RlsPocOrganizationId, string> = {
@@ -186,7 +186,7 @@ export async function verifyRlsPocTransactionContextReset(
       })
       .from(rlsPocOperations);
 
-    return { state, rows };
+    return { rows, state };
   });
 
   return {

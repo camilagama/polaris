@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TenantRequestTransaction } from "./tenant-transaction";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 import {
   recordTenantAuditEvent,
   TenantAuditEventError,
   type TenantAuditIdentity,
 } from "./tenant-audit";
+import type { TenantRequestTransaction } from "./tenant-transaction";
 
 const identity: TenantAuditIdentity = {
   organizationId: "organization-1",
@@ -27,11 +27,11 @@ describe("recordTenantAuditEvent", () => {
 
     expect(insert).toHaveBeenCalledWith(tenantAuditEvents);
     expect(values).toHaveBeenCalledWith({
-      organizationId: "organization-1",
       actorUserId: "user-1",
-      eventType: "organization.created",
-      entityType: "organization",
       entityId: "00000000-0000-4000-8000-000000000002",
+      entityType: "organization",
+      eventType: "organization.created",
+      organizationId: "organization-1",
       requestId: "00000000-0000-4000-8000-000000000001",
     });
   });

@@ -1,6 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 
@@ -664,6 +664,8 @@ try {
   }
 
   const cfBody = JSON.stringify({
+    caching: { disabled: true },
+    mtls: { sslmode: "require" },
     name: "polaris-pr11-rls-gate",
     origin: {
       database: databaseName,
@@ -673,9 +675,7 @@ try {
       scheme: "postgresql",
       user: runtimeRole,
     },
-    caching: { disabled: true },
     origin_connection_limit: 5,
-    mtls: { sslmode: "require" },
   });
   const cf = spawnSync(
     cfRuntime.node,
@@ -765,8 +765,8 @@ try {
     JSON.stringify({
       database: databaseName,
       hyperdriveBinding: binding.binding,
-      hyperdriveResourceId: binding.id,
       hyperdriveOriginConnectionLimit: 5,
+      hyperdriveResourceId: binding.id,
       postgresMajor: serverMajor,
       region: "aws-sa-east-1",
       runtimeRole,

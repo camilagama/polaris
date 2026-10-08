@@ -14,7 +14,7 @@ import type { ServerEnv, WorkerBindings } from "./environment";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { systemRoutes } from "./routes/system";
-import { rpcRouter } from "./rpc/router";
+import { rpcRouter as defaultRpcRouter } from "./rpc/router";
 
 type AuthRequestHandler = (
   request: Request,
@@ -25,11 +25,13 @@ type AuthRequestHandler = (
 interface ServerAppOptions {
   authAbuseProtector?: AuthAbuseProtector;
   authHandler?: AuthRequestHandler;
+  rpcRouter?: typeof defaultRpcRouter;
 }
 
 export function createServerApp({
   authAbuseProtector = protectAuthRequest,
   authHandler = handleBetterAuthRequest,
+  rpcRouter = defaultRpcRouter,
 }: ServerAppOptions = {}) {
   const app = new Hono<ServerEnv>();
   const rpcHandler = new RPCHandler(rpcRouter);
@@ -38,7 +40,11 @@ export function createServerApp({
   app.use("*", securityHeadersMiddleware);
   app.use("/rpc/*", async (context, next) => {
     const { matched, response } = await rpcHandler.handle(context.req.raw, {
-      context: {},
+      context: {
+        bindings: context.env,
+        request: context.req.raw,
+        requestId: context.get("requestId"),
+      },
       prefix: "/rpc",
     });
 

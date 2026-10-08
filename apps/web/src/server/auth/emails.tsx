@@ -27,7 +27,7 @@ function AuthActionEmail({
   purpose,
 }: AuthActionEmailProps) {
   return (
-    <Html lang="pt-BR" dir="ltr">
+    <Html dir="ltr" lang="pt-BR">
       <Head />
       <Preview>{preview}</Preview>
       <Body

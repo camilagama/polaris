@@ -3,9 +3,9 @@ import type { createDatabase } from "./client";
 import { memberships, organizations } from "./schema/organization";
 import {
   TenantAuthorizationError,
-  withAuthorizedTenantTransaction,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
+  withAuthorizedTenantTransaction,
 } from "./tenant-transaction";
 
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -31,7 +31,6 @@ function createDatabaseStub(options: DatabaseStubOptions = {}) {
       }
       return query;
     }),
-    where: vi.fn(() => query),
     limit: vi.fn(() => {
       if (selectedTable === memberships) {
         return Promise.resolve(options.membership ? [options.membership] : []);
@@ -40,6 +39,7 @@ function createDatabaseStub(options: DatabaseStubOptions = {}) {
         options.organization ? [options.organization] : []
       );
     }),
+    where: vi.fn(() => query),
   };
 
   const transaction = {

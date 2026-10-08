@@ -1,13 +1,13 @@
+import type { OfflineTransaction } from "@tanstack/offline-transactions";
+import { useLiveQuery } from "@tanstack/react-db";
 import {
+  type ChangeEvent,
+  type FormEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
-  type FormEvent,
 } from "react";
-import { useLiveQuery } from "@tanstack/react-db";
-import type { OfflineTransaction } from "@tanstack/offline-transactions";
 import {
   clearOfflinePocStorage,
   copyLegacyNotesToV2,
@@ -15,15 +15,15 @@ import {
   getMockServerReceiptCount,
   inspectOfflinePocCapabilities,
   OFFLINE_POC_DATABASE_FILE,
-  resumeOfflinePocResetIfNeeded,
-  queueOfflineNote,
-  removeOfflinePocDatabaseFile,
-  SHARED_RECORD_ID,
-  writeSharedNote,
   type OfflineNoteV1,
   type OfflineNoteV2,
   type OfflinePocMigrationResult,
   type OfflinePocRuntime,
+  queueOfflineNote,
+  removeOfflinePocDatabaseFile,
+  resumeOfflinePocResetIfNeeded,
+  SHARED_RECORD_ID,
+  writeSharedNote,
 } from "./runtime";
 import "./offline-poc.css";
 
@@ -88,8 +88,8 @@ function useLabSnapshot(runtime: OfflinePocRuntime) {
     loaded: false,
     mockOnline: runtime.onlineDetector.isOnline(),
     mockServerReceipts: 0,
-    outbox: [],
     offlineEnabled: runtime.executor.isOfflineEnabled,
+    outbox: [],
     refreshFailure: null,
     storageFailure: runtime.diagnostics.storageFailure ?? null,
     unknownMutation:
@@ -107,8 +107,8 @@ function useLabSnapshot(runtime: OfflinePocRuntime) {
         loaded: true,
         mockOnline: runtime.onlineDetector.isOnline(),
         mockServerReceipts,
-        outbox,
         offlineEnabled: runtime.executor.isOfflineEnabled,
+        outbox,
         refreshFailure: null,
         storageFailure: runtime.diagnostics.storageFailure ?? null,
         unknownMutation:
@@ -228,8 +228,8 @@ interface LabSnapshot {
   loaded: boolean;
   mockOnline: boolean;
   mockServerReceipts: number;
-  outbox: OfflineTransaction[];
   offlineEnabled: boolean;
+  outbox: OfflineTransaction[];
   refreshFailure: string | null;
   storageFailure: string | null;
   unknownMutation: string | null;
@@ -362,13 +362,13 @@ function CapabilitiesPanel({
         <StatusValue label="Web Locks" value={capabilities.webLocks} />
         <StatusValue
           label="Offline outbox líder"
-          value={snapshot.offlineEnabled}
           testId="offline-enabled"
+          value={snapshot.offlineEnabled}
         />
         <StatusValue
           label="Rede real do navegador"
-          value={snapshot.actualBrowserOnline}
           testId="browser-network"
+          value={snapshot.actualBrowserOnline}
         />
         <StatusValue
           label="Mock server"

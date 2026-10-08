@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import {
-  createInitialOrganizationInDatabase,
   type CreateInitialOrganizationInDatabaseResult,
+  createInitialOrganizationInDatabase,
 } from "../src/organization-repository";
 import { memberships, organizations } from "../src/schema/organization";
-import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { rlsPocOperations } from "../src/schema/rls-poc";
+import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { recordTenantAuditEvent } from "../src/tenant-audit";
 import {
   TenantAuthorizationError,
@@ -568,18 +568,18 @@ async function main() {
     );
     const expectedOnboardingAuditEvents = [
       {
-        organization_id: initialA.organization.id,
         actor_user_id: userA,
-        event_type: "organization.created",
-        entity_type: "organization",
         entity_id: initialA.organization.id,
+        entity_type: "organization",
+        event_type: "organization.created",
+        organization_id: initialA.organization.id,
       },
       {
-        organization_id: initialB.organization.id,
         actor_user_id: userB,
-        event_type: "organization.created",
-        entity_type: "organization",
         entity_id: initialB.organization.id,
+        entity_type: "organization",
+        event_type: "organization.created",
+        organization_id: initialB.organization.id,
       },
     ].sort((left, right) => left.entity_id.localeCompare(right.entity_id));
     assert.equal(onboardingAuditEvents.rows.length, 2);
@@ -673,9 +673,9 @@ async function main() {
           value: "mutation and audit commit together",
         });
         await recordTenantAuditEvent(transaction, identity, {
-          eventType: "poc.mutation_recorded",
-          entityType: "rls_poc_operation",
           entityId: auditMutationToken,
+          entityType: "rls_poc_operation",
+          eventType: "poc.mutation_recorded",
           requestId: auditRequestId,
         });
       }
@@ -709,31 +709,31 @@ async function main() {
         requestedOrganizationId: initialA.organization.id,
       },
       async (transaction) => ({
-        organizations: await transaction
-          .select({ id: organizations.id })
-          .from(organizations),
         memberships: await transaction
           .select({
             organizationId: memberships.organizationId,
             userId: memberships.userId,
           })
           .from(memberships),
-        otherOrganization: await transaction
+        organizations: await transaction
           .select({ id: organizations.id })
-          .from(organizations)
-          .where(eq(organizations.id, initialB.organization.id)),
+          .from(organizations),
         otherMembership: await transaction
           .select({ organizationId: memberships.organizationId })
           .from(memberships)
           .where(eq(memberships.organizationId, initialB.organization.id)),
-        ownPocRow: await transaction
-          .select({ token: rlsPocOperations.token })
-          .from(rlsPocOperations)
-          .where(eq(rlsPocOperations.token, tokenA)),
+        otherOrganization: await transaction
+          .select({ id: organizations.id })
+          .from(organizations)
+          .where(eq(organizations.id, initialB.organization.id)),
         otherPocRow: await transaction
           .select({ token: rlsPocOperations.token })
           .from(rlsPocOperations)
           .where(eq(rlsPocOperations.organizationId, initialB.organization.id)),
+        ownPocRow: await transaction
+          .select({ token: rlsPocOperations.token })
+          .from(rlsPocOperations)
+          .where(eq(rlsPocOperations.token, tokenA)),
       })
     );
     assert.deepEqual(visibleA.organizations, [
@@ -806,11 +806,11 @@ async function main() {
         },
         async (transaction) => {
           await transaction.insert(tenantAuditEvents).values({
-            organizationId: initialA.organization.id,
             actorUserId: userA,
-            eventType: "poc.unsafe_entity_denied",
-            entityType: "rls_poc_operation",
             entityId: invalidAuditEntityId,
+            entityType: "rls_poc_operation",
+            eventType: "poc.unsafe_entity_denied",
+            organizationId: initialA.organization.id,
           });
         }
       ),
@@ -827,11 +827,11 @@ async function main() {
         },
         async (transaction) => {
           await transaction.insert(tenantAuditEvents).values({
-            organizationId: initialB.organization.id,
             actorUserId: userA,
-            eventType: "poc.cross_tenant_denied",
-            entityType: "rls_poc_operation",
             entityId: crossTenantAuditToken,
+            entityType: "rls_poc_operation",
+            eventType: "poc.cross_tenant_denied",
+            organizationId: initialB.organization.id,
           });
         }
       ),
@@ -896,9 +896,9 @@ async function main() {
             transaction,
             { organizationId: initialA.organization.id, userId: userA },
             {
-              eventType: "poc.mutation_rolled_back",
-              entityType: "rls_poc_operation",
               entityId: rollbackToken,
+              entityType: "rls_poc_operation",
+              eventType: "poc.mutation_rolled_back",
               requestId: randomUUID(),
             }
           );
@@ -934,23 +934,23 @@ async function main() {
         requestedOrganizationId: initialB.organization.id,
       },
       async (transaction) => ({
-        organizations: await transaction
-          .select({ id: organizations.id })
-          .from(organizations),
         memberships: await transaction
           .select({
             organizationId: memberships.organizationId,
             userId: memberships.userId,
           })
           .from(memberships),
-        ownPocRow: await transaction
-          .select({ token: rlsPocOperations.token })
-          .from(rlsPocOperations)
-          .where(eq(rlsPocOperations.organizationId, initialB.organization.id)),
+        organizations: await transaction
+          .select({ id: organizations.id })
+          .from(organizations),
         otherPocRow: await transaction
           .select({ token: rlsPocOperations.token })
           .from(rlsPocOperations)
           .where(eq(rlsPocOperations.organizationId, initialA.organization.id)),
+        ownPocRow: await transaction
+          .select({ token: rlsPocOperations.token })
+          .from(rlsPocOperations)
+          .where(eq(rlsPocOperations.organizationId, initialB.organization.id)),
       })
     );
     assert.deepEqual(visibleB.organizations, [
@@ -1013,31 +1013,31 @@ async function main() {
     gatePassed = true;
     console.log(
       JSON.stringify({
-        status: "passed",
+        adminRoleBypassRls: adminRole.bypass_rls,
+        contextlessReads: "denied",
+        crossTenantReadsAndWrites: "denied",
+        onboardingOwnerOnly: "passed",
+        ownMembershipAndOrganization: "allowed",
+        pooledBackendContextReset: "passed",
         postgresMajorVersion: 18,
         postgresServerVersion,
+        retryIdempotency: "passed",
+        rlsTables: ["organizations", "memberships", "tenant_audit_event"],
         role: runtimeRole,
         roleBypassRls: false,
-        runtimeRoleOwnsRlsTables: false,
-        adminRoleBypassRls: adminRole.bypass_rls,
-        rlsTables: ["organizations", "memberships", "tenant_audit_event"],
-        contextlessReads: "denied",
-        ownMembershipAndOrganization: "allowed",
-        crossTenantReadsAndWrites: "denied",
         runtimeOrganizationAndMembershipInsert: "denied_even_with_forged_gucs",
+        runtimeRoleOwnsRlsTables: false,
+        status: "passed",
         tenantAudit: {
-          onboardingEventSameTransaction: "passed",
           authorizedInsert: "passed",
           crossTenantInsert: "denied",
+          insertOnlyGrant: "passed",
+          onboardingEventSameTransaction: "passed",
+          rollbackWithMutation: "passed",
           runtimeSelect: "denied",
           unsafeEntityId: "denied",
-          rollbackWithMutation: "passed",
-          insertOnlyGrant: "passed",
         },
-        onboardingOwnerOnly: "passed",
-        retryIdempotency: "passed",
         transactionRollback: "passed",
-        pooledBackendContextReset: "passed",
         updateAndDeleteGrants: "denied",
       })
     );
@@ -1047,8 +1047,8 @@ async function main() {
       adminRoleName,
       runtimeClient,
       runtimeClientConnected,
-      runtimeRoleName: runtimeRole,
       runtimeRoleMembershipGrantAttempted,
+      runtimeRoleName: runtimeRole,
     });
     const fixtureCleanupErrors = await cleanupTenantFixtures({
       adminPool,

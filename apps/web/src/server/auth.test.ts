@@ -1,13 +1,13 @@
-import { betterAuth, type BetterAuthPlugin } from "better-auth";
-import type { GoogleOptions } from "better-auth/social-providers";
+import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
+import type { GoogleOptions } from "better-auth/social-providers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { app, createServerApp } from "./app";
 import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "./auth";
 import { createBetterAuth } from "./auth";
-import { handleBetterAuthRequest } from "./auth/handler";
 import { createResendAuthEmailDelivery } from "./auth/email";
-import { app, createServerApp } from "./app";
+import { handleBetterAuthRequest } from "./auth/handler";
 import type { WorkerBindings } from "./environment";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
@@ -18,20 +18,20 @@ const SESSION_COOKIE_REGEX = /(?:__Secure-)?better-auth\.session_token=/;
 const HIBP_RANGE_PATH_PATTERN =
   /^https:\/\/api\.pwnedpasswords\.com\/range\/[A-F0-9]{5}$/;
 const testBindings = {
+  BETTER_AUTH_BASE_URL: testBaseURL,
+  BETTER_AUTH_SECRET: testSecret,
   DB_POC_ENABLED: "false",
   DB_RLS_POC_ENABLED: "false",
-  BETTER_AUTH_SECRET: testSecret,
-  BETTER_AUTH_BASE_URL: testBaseURL,
   HYPERDRIVE: { connectionString: "" },
 } as WorkerBindings;
 
 interface TestAuthHelpers {
   createUser: (overrides?: Record<string, unknown>) => { id: string };
-  saveUser: (user: { id: string }) => Promise<{ id: string }>;
   login: (options: { userId: string }) => Promise<{
     headers: Headers;
     token: string;
   }>;
+  saveUser: (user: { id: string }) => Promise<{ id: string }>;
 }
 
 const testGoogleProvider: GoogleOptions = {
@@ -159,9 +159,9 @@ function stubPwnedPasswordRange() {
   );
 
   return {
+    addPadding: () => addPadding,
     calls: () => calls,
     requestURL: () => requestURL,
-    addPadding: () => addPadding,
   };
 }
 
@@ -670,8 +670,8 @@ describe("Email/password authentication", () => {
       {
         body: JSON.stringify({ currentPassword, newPassword }),
         headers: {
-          cookie: cookieHeader(login.headers),
           "content-type": "application/json",
+          cookie: cookieHeader(login.headers),
           origin: testBaseURL,
         },
         method: "POST",

@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
-import type { GoogleOptions } from "better-auth/social-providers";
 import { testUtils } from "better-auth/plugins";
+import type { GoogleOptions } from "better-auth/social-providers";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "../auth";
 import { createBetterAuth } from "../auth";
@@ -132,10 +132,10 @@ function createAccountLinkingTestApp(
     app,
     auditEvents,
     auth,
-    passwordResetEmails,
-    verificationEmails,
     googleUserEmails,
+    passwordResetEmails,
     setGoogleEmail,
+    verificationEmails,
     verifyIdToken,
   };
 }
@@ -271,8 +271,8 @@ async function beginGoogleLink(
         provider: "google",
       }),
       headers: {
-        cookie: sessionCookie,
         "content-type": "application/json",
+        cookie: sessionCookie,
         origin: testBaseURL,
       },
       method: "POST",
@@ -517,8 +517,8 @@ describe("Google and password account linking", () => {
       {
         body: JSON.stringify({ provider: "google" }),
         headers: {
-          cookie: cookieHeader(login.headers),
           "content-type": "application/json",
+          cookie: cookieHeader(login.headers),
           origin: testBaseURL,
         },
         method: "POST",
@@ -549,8 +549,8 @@ describe("Google and password account linking", () => {
           provider: "google",
         }),
         headers: {
-          cookie: passwordSession.sessionCookie,
           "content-type": "application/json",
+          cookie: passwordSession.sessionCookie,
           origin: testBaseURL,
         },
         method: "POST",
@@ -613,8 +613,8 @@ describe("Google and password account linking", () => {
       {
         body: JSON.stringify({ newPassword }),
         headers: {
-          cookie: googleSessionCookie,
           "content-type": "application/json",
+          cookie: googleSessionCookie,
           origin: testBaseURL,
         },
         method: "POST",
@@ -673,8 +673,8 @@ describe("Google and password account linking", () => {
           newPassword: "A long unverified account password 2026!",
         }),
         headers: {
-          cookie: cookieHeader(login.headers),
           "content-type": "application/json",
+          cookie: cookieHeader(login.headers),
           origin: testBaseURL,
         },
         method: "POST",
