@@ -197,8 +197,22 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Check e build final | Concluídos | Após as correções: `bun run check` passou (72 testes em 10 arquivos, lint, format, typecheck, boundaries e Knip); `bun run build` passou nos oito workspaces. |
 | Revisão independente | Concluída sem blockers | A primeira revisão encontrou INSERT persistente autorizável por GUC forgeável e cleanup frágil; correções foram aplicadas; o follow-up não encontrou achados Critical, Important ou Minor. |
 | Draft PR e CI remoto | Concluídos | Draft PR [#20](https://github.com/camilagama/polaris/pull/20) publicado sobre PR #19; CI 6/6 verde no commit de código `17dff66`. |
-| Revisão do usuário | Pendente | PR #20 está draft e pronto para revisão; não foi feito merge. PR23 aguarda revisão/autorização. |
+| Revisão do usuário | Continuidade autorizada | O usuário respondeu “prossiga” para a próxima etapa; PR #20 continua draft e sem merge enquanto PR23 é implementado sobre ele. |
 
+### PR23 — checkpoint para revisão
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Plano, escopo e worktree | Concluídos | PR23 autorizado por “prossiga”; branch codex/pr23-tenant-audit baseada no HEAD do PR22. Leitura de histórico e rota ficam fora do escopo. |
+| Modelo e privacidade | Concluídos | Stream tenant separado do auth audit; organização, ator interno, tipo/alvo, request ID UUID opcional e timestamp; sem payload livre, snapshots ou secrets. Retenção legal permanece pré-go-live. |
+| Schema, RLS e writer | Concluídos | tenant_audit_event usa ENABLE/FORCE RLS; runtime recebe somente INSERT, sem SELECT/UPDATE/DELETE; writer usa transação já aberta e identidade do contexto tenant. |
+| Mutação transacional | Concluída | organization.created é auditado junto com organização e membership no onboarding owner-only; retry idempotente não duplica o evento. |
+| Gate Neon PostgreSQL | Concluído | PostgreSQL 18.6 descartável: onboarding, INSERT autorizado, cross-tenant negado, runtime SELECT negado, rollback conjunto e cascade de purge passaram; runtime NOBYPASSRLS/não-owner. |
+| Check e build | Concluídos | `bun run check` passou com 74 testes em 11 arquivos; `bun run build` passou nos oito workspaces. |
+| Revisão independente | Pendente | Revisar migration, policy INSERT-only, writer transacional, privacidade e comportamento com role runtime NOBYPASSRLS antes do push. |
+| Draft PR e CI remoto | Pendente | Publicar draft empilhado sobre PR #20 depois da revisão independente. |
+| Revisão do usuário | Pendente | Apresentar PR23 draft para revisão; não fazer merge sem nova instrução. |
+| Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.

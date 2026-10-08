@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { createDatabase } from "./client";
 import { user } from "./schema/auth";
 import { memberships, organizations } from "./schema/organization";
+import { recordTenantAuditEvent } from "./tenant-audit";
 
 type Database = ReturnType<typeof createDatabase>["db"];
 type Organization = typeof organizations.$inferSelect;
@@ -32,6 +33,7 @@ export class InitialOrganizationRepositoryError extends Error {
 export interface CreateInitialOrganizationInDatabaseInput {
   id: string;
   name: string;
+  requestId?: string | null;
   timezone: string;
   userId: string;
 }
@@ -111,6 +113,17 @@ export function createInitialOrganizationInDatabase(
         organizationId: input.id,
         userId: input.userId,
       });
+
+      await recordTenantAuditEvent(
+        transaction,
+        { organizationId: input.id, userId: input.userId },
+        {
+          eventType: "organization.created",
+          entityType: "organization",
+          entityId: input.id,
+          requestId: input.requestId ?? null,
+        }
+      );
 
       const [organization] = await transaction
         .select()

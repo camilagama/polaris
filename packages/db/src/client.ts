@@ -4,12 +4,14 @@ import { authSchema } from "./schema/auth";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { dbPocOperations } from "./schema/poc";
 import { organizationSchema } from "./schema/organization";
+import { tenantAuditEvents } from "./schema/tenant-audit";
 
 const databaseSchema = {
   ...authSchema,
   ...organizationSchema,
   authSecurityAuditEvents,
   dbPocOperations,
+  tenantAuditEvents,
 };
 
 export interface DatabaseOptions {

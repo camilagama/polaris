@@ -9,7 +9,9 @@ import {
   type CreateInitialOrganizationInDatabaseResult,
 } from "../src/organization-repository";
 import { memberships, organizations } from "../src/schema/organization";
+import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { rlsPocOperations } from "../src/schema/rls-poc";
+import { recordTenantAuditEvent } from "../src/tenant-audit";
 import {
   TenantAuthorizationError,
   withAuthorizedTenantTransaction,
@@ -29,7 +31,7 @@ const expectedPocSeeds = [
   },
 ];
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
-const rollbackFailurePattern = /intentional PR22 rollback/;
+const rollbackFailurePattern = /intentional PR23 rollback/;
 const sqlIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const neonTestHostnamePattern =
   /^ep-[a-z-]+-[a-z0-9]+\.[a-z0-9-]+\.sa-east-1\.aws\.neon\.tech$/;
@@ -254,6 +256,7 @@ async function main() {
     const result = await createInitialOrganizationInDatabase(adminDatabase, {
       id: randomUUID(),
       name,
+      requestId: randomUUID(),
       timezone: "America/Sao_Paulo",
       userId,
     });
@@ -311,16 +314,16 @@ async function main() {
       "SELECT c.relname AS table_name, pg_get_userbyid(c.relowner) AS owner " +
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
         "WHERE n.nspname = 'public' AND c.relname = ANY($1::text[])",
-      [["organizations", "memberships"]]
+      [["organizations", "memberships", "tenant_audit_event"]]
     );
-    assert.equal(tableOwners.rows.length, 2);
+    assert.equal(tableOwners.rows.length, 3);
     assert.equal(
       tableOwners.rows.some((row) => row.owner === runtimeRole),
       false
     );
     assert.ok(
       tableOwners.rows.every((row) => row.owner === adminRole.admin_role),
-      "The privileged gate connection must own both RLS tables."
+      "The privileged gate connection must own all RLS tables."
     );
 
     const rlsState = await adminPool.query<{
@@ -333,7 +336,7 @@ async function main() {
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
         "WHERE n.nspname = 'public' AND c.relname = ANY($1::text[]) " +
         "ORDER BY c.relname",
-      [["memberships", "organizations"]]
+      [["memberships", "organizations", "tenant_audit_event"]]
     );
     assert.deepEqual(
       rlsState.rows.map((row) => [
@@ -344,6 +347,7 @@ async function main() {
       [
         ["memberships", true, true],
         ["organizations", true, true],
+        ["tenant_audit_event", true, true],
       ]
     );
 
@@ -359,11 +363,15 @@ async function main() {
         "roles, qual AS using_expression, with_check " +
         "FROM pg_policies WHERE schemaname = 'public' " +
         "AND tablename = ANY($1::text[]) ORDER BY tablename, policyname",
-      [["memberships", "organizations"]]
+      [["memberships", "organizations", "tenant_audit_event"]]
     );
     assert.deepEqual(
       policies.rows.map((policy) => policy.policy_name),
-      ["memberships_current_user_select", "organizations_active_tenant_select"]
+      [
+        "memberships_current_user_select",
+        "organizations_active_tenant_select",
+        "tenant_audit_event_current_actor_insert",
+      ]
     );
     assert.ok(
       policies.rows.every((policy) => policy.roles === `{${runtimeRole}}`)
@@ -372,6 +380,16 @@ async function main() {
       (policy) => policy.policy_name === "organizations_active_tenant_select"
     );
     assert.ok(organizationReadPolicy?.using_expression?.includes("active"));
+    const tenantAuditInsertPolicy = policies.rows.find(
+      (policy) =>
+        policy.policy_name === "tenant_audit_event_current_actor_insert"
+    );
+    assert.equal(tenantAuditInsertPolicy?.command, "INSERT");
+    assert.ok(tenantAuditInsertPolicy?.with_check?.includes("app.user_id"));
+    assert.ok(
+      tenantAuditInsertPolicy?.with_check?.includes("app.organization_id")
+    );
+    assert.ok(tenantAuditInsertPolicy?.with_check?.includes("active"));
 
     const grants = await adminPool.query<{
       memberships_delete: boolean;
@@ -402,6 +420,24 @@ async function main() {
       organizations_insert: false,
       organizations_select: true,
       organizations_update: false,
+    });
+    const tenantAuditGrants = await adminPool.query<{
+      can_delete: boolean;
+      can_insert: boolean;
+      can_select: boolean;
+      can_update: boolean;
+    }>(
+      "SELECT has_table_privilege($1, 'public.tenant_audit_event', 'SELECT') AS can_select, " +
+        "has_table_privilege($1, 'public.tenant_audit_event', 'INSERT') AS can_insert, " +
+        "has_table_privilege($1, 'public.tenant_audit_event', 'UPDATE') AS can_update, " +
+        "has_table_privilege($1, 'public.tenant_audit_event', 'DELETE') AS can_delete",
+      [runtimeRole]
+    );
+    assert.deepEqual(tenantAuditGrants.rows[0], {
+      can_delete: false,
+      can_insert: true,
+      can_select: false,
+      can_update: false,
     });
 
     const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
@@ -472,6 +508,44 @@ async function main() {
     assert.equal(retryA.organization.id, initialA.organization.id);
     assert.equal(retryA.organization.name, initialA.organization.name);
 
+    const onboardingAuditEvents = await adminPool.query<{
+      actor_user_id: string;
+      entity_id: string;
+      entity_type: string;
+      event_type: string;
+      organization_id: string;
+      request_id: string | null;
+    }>(
+      "SELECT organization_id, actor_user_id, event_type, entity_type, entity_id, request_id " +
+        "FROM public.tenant_audit_event " +
+        "WHERE event_type = 'organization.created' AND entity_id = ANY($1::text[]) " +
+        "ORDER BY entity_id",
+      [[initialA.organization.id, initialB.organization.id]]
+    );
+    const expectedOnboardingAuditEvents = [
+      {
+        organization_id: initialA.organization.id,
+        actor_user_id: userA,
+        event_type: "organization.created",
+        entity_type: "organization",
+        entity_id: initialA.organization.id,
+      },
+      {
+        organization_id: initialB.organization.id,
+        actor_user_id: userB,
+        event_type: "organization.created",
+        entity_type: "organization",
+        entity_id: initialB.organization.id,
+      },
+    ].sort((left, right) => left.entity_id.localeCompare(right.entity_id));
+    assert.equal(onboardingAuditEvents.rows.length, 2);
+    assert.deepEqual(
+      onboardingAuditEvents.rows.map(
+        ({ request_id: _requestId, ...event }) => event
+      ),
+      expectedOnboardingAuditEvents
+    );
+    assert.ok(onboardingAuditEvents.rows.every((event) => event.request_id));
     const forgedOrganizationId = randomUUID();
     await expectForgedGucInsertDenied(
       runtimeClient,
@@ -499,6 +573,11 @@ async function main() {
     );
     assert.deepEqual(contextlessOrganizations.rows, []);
     assert.deepEqual(contextlessMemberships.rows, []);
+    await expectSqlState(
+      runtimeClient.query("SELECT id FROM public.tenant_audit_event"),
+      "42501",
+      "runtime tenant audit SELECT"
+    );
 
     const tokenA = `pr22-${randomUUID()}`;
     const tokenB = `pr22-${randomUUID()}`;
@@ -534,6 +613,48 @@ async function main() {
       }
     );
 
+    const auditMutationToken = randomUUID();
+    const auditRequestId = randomUUID();
+    fixtureOperationTokens.push(auditMutationToken);
+    await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "organization:manage",
+        requestedOrganizationId: initialA.organization.id,
+      },
+      async (transaction, identity) => {
+        await transaction.insert(rlsPocOperations).values({
+          organizationId: initialA.organization.id,
+          token: auditMutationToken,
+          value: "mutation and audit commit together",
+        });
+        await recordTenantAuditEvent(transaction, identity, {
+          eventType: "poc.mutation_recorded",
+          entityType: "rls_poc_operation",
+          entityId: auditMutationToken,
+          requestId: auditRequestId,
+        });
+      }
+    );
+    const committedAuditEvent = await adminPool.query<{
+      actor_user_id: string;
+      entity_id: string;
+      organization_id: string;
+      request_id: string | null;
+    }>(
+      "SELECT actor_user_id, entity_id, organization_id, request_id " +
+        "FROM public.tenant_audit_event WHERE event_type = $1 AND entity_id = $2",
+      ["poc.mutation_recorded", auditMutationToken]
+    );
+    assert.deepEqual(committedAuditEvent.rows, [
+      {
+        actor_user_id: userA,
+        entity_id: auditMutationToken,
+        organization_id: initialA.organization.id,
+        request_id: auditRequestId,
+      },
+    ]);
     const firstBackend = await runtimeClient.query(
       "SELECT pg_backend_pid() AS pid"
     );
@@ -565,7 +686,7 @@ async function main() {
         ownPocRow: await transaction
           .select({ token: rlsPocOperations.token })
           .from(rlsPocOperations)
-          .where(eq(rlsPocOperations.organizationId, initialA.organization.id)),
+          .where(eq(rlsPocOperations.token, tokenA)),
         otherPocRow: await transaction
           .select({ token: rlsPocOperations.token })
           .from(rlsPocOperations)
@@ -630,6 +751,28 @@ async function main() {
       "cross-tenant POC insert"
     );
 
+    const crossTenantAuditToken = randomUUID();
+    await expectSqlState(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "organization:manage",
+          requestedOrganizationId: initialA.organization.id,
+        },
+        async (transaction) => {
+          await transaction.insert(tenantAuditEvents).values({
+            organizationId: initialB.organization.id,
+            actorUserId: userA,
+            eventType: "poc.cross_tenant_denied",
+            entityType: "rls_poc_operation",
+            entityId: crossTenantAuditToken,
+          });
+        }
+      ),
+      "42501",
+      "cross-tenant tenant audit INSERT"
+    );
     await expectSqlState(
       withAuthorizedTenantTransaction(
         runtimeDb,
@@ -685,7 +828,17 @@ async function main() {
             token: rollbackToken,
             value: "must roll back",
           });
-          throw new Error("intentional PR22 rollback");
+          await recordTenantAuditEvent(
+            transaction,
+            { organizationId: initialA.organization.id, userId: userA },
+            {
+              eventType: "poc.mutation_rolled_back",
+              entityType: "rls_poc_operation",
+              entityId: rollbackToken,
+              requestId: randomUUID(),
+            }
+          );
+          throw new Error("intentional PR23 rollback");
         }
       ),
       rollbackFailurePattern
@@ -696,6 +849,13 @@ async function main() {
       [initialA.organization.id, rollbackToken]
     );
     assert.deepEqual(rolledBackOperation.rows, []);
+
+    const rolledBackAuditEvent = await adminPool.query(
+      "SELECT id FROM public.tenant_audit_event " +
+        "WHERE event_type = $1 AND entity_id = $2",
+      ["poc.mutation_rolled_back", rollbackToken]
+    );
+    assert.deepEqual(rolledBackAuditEvent.rows, []);
 
     const contextlessPocRows = await runtimeClient.query(
       "SELECT organization_id FROM public.rls_poc_operations"
@@ -796,11 +956,19 @@ async function main() {
         roleBypassRls: false,
         runtimeRoleOwnsRlsTables: false,
         adminRoleBypassRls: adminRole.bypass_rls,
-        rlsTables: ["organizations", "memberships"],
+        rlsTables: ["organizations", "memberships", "tenant_audit_event"],
         contextlessReads: "denied",
         ownMembershipAndOrganization: "allowed",
         crossTenantReadsAndWrites: "denied",
         runtimeOrganizationAndMembershipInsert: "denied_even_with_forged_gucs",
+        tenantAudit: {
+          onboardingEventSameTransaction: "passed",
+          authorizedInsert: "passed",
+          crossTenantInsert: "denied",
+          runtimeSelect: "denied",
+          rollbackWithMutation: "passed",
+          insertOnlyGrant: "passed",
+        },
         onboardingOwnerOnly: "passed",
         retryIdempotency: "passed",
         transactionRollback: "passed",
@@ -829,6 +997,12 @@ async function main() {
           "DELETE FROM public.organizations WHERE id = ANY($1::text[])",
           [fixtureOrganizationIds]
         );
+        const remainingAuditEvents = await adminPool.query(
+          "SELECT id FROM public.tenant_audit_event " +
+            "WHERE organization_id = ANY($1::text[])",
+          [fixtureOrganizationIds]
+        );
+        assert.deepEqual(remainingAuditEvents.rows, []);
       }
       if (fixtureUserIds.length > 0) {
         await adminPool.query(

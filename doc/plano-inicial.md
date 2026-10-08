@@ -1382,35 +1382,17 @@ Criar testes cross-tenant.
 
 # PR 23 — Audit events tenant
 
+Criar a tabela tenant-specific `tenant_audit_event`, separada da auditoria global de autenticação `auth_security_audit_event`.
 
+O evento registra apenas organization ID, actor user ID interno, event type, entity type/ID, request ID UUID opcional e timestamp. Não armazenar payloads, snapshots before/after, email, IP, user-agent, tokens ou outros segredos.
 
-Criar audit trail transacional.
+`recordTenantAuditEvent(transaction, identity, event)` escreve na transação já aberta e usa a identidade validada do contexto tenant. Não iniciar uma segunda transação no writer. Eventos de mutação crítica devem comitar ou sofrer rollback junto com a mutação.
 
+A primeira mutação auditada é `organization.created`, escrita junto com organização e membership no onboarding interno. Retry idempotente não cria outro evento. Mutações de catálogo, estoque e vendas ainda não existem e serão auditadas nos PRs de cada domínio.
 
+A tabela usa `ENABLE` e `FORCE ROW LEVEL SECURITY`. O runtime recebe somente `INSERT`; não recebe `SELECT`, `UPDATE` ou `DELETE`. A policy exige o contexto de user/organization, membership ativa e organização ativa. GUCs são alteráveis pelo runtime: RLS ajuda contra contexto incorreto, mas não protege contra SQL arbitrário. Esta etapa não expõe histórico de auditoria à aplicação.
 
-Para mutações críticas:
-
-
-
-```text
-
-business mutation + audit event
-
-```
-
-
-
-na mesma transaction quando necessário.
-
-
-
-Nunca logar secrets.
-
-
-
----
-
-
+O gate PostgreSQL 18 em branch Neon descartável deve provar o evento de onboarding no mesmo commit, INSERT autorizado pelo contexto, negação cross-tenant, ausência de leitura/alteração pelo runtime, rollback do evento junto com a mutação e purge dos eventos ao remover a organização. A exclusão da organização remove seus eventos por cascade. Não há expiração automática; retenção legal e eventual legal hold devem ser definidos antes do go-live.
 
 # GATE 2
 

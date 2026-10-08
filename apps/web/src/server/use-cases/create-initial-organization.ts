@@ -31,6 +31,7 @@ export class CreateInitialOrganizationError extends Error {
 
 export interface CreateInitialOrganizationInput {
   name: string;
+  requestId?: string | null;
   timezone: string;
   authenticatedUserId: string;
 }
@@ -62,6 +63,7 @@ function normalizeInput(input: CreateInitialOrganizationInput) {
     return {
       id: randomUUID(),
       name,
+      requestId: input.requestId ?? null,
       timezone: new Intl.DateTimeFormat("en-US", {
         timeZone: timezone,
       }).resolvedOptions().timeZone,
