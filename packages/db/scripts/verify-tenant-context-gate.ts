@@ -328,7 +328,6 @@ async function main() {
       18,
       "The tenant context gate requires PostgreSQL 18."
     );
-
     const adminRoleResult = await adminPool.query<{
       admin_role: string;
       bypass_rls: boolean;
@@ -355,7 +354,6 @@ async function main() {
       bypass_rls: false,
       superuser: false,
     });
-
     const tableOwners = await adminPool.query<{
       owner: string;
       table_name: string;
@@ -439,7 +437,6 @@ async function main() {
       tenantAuditInsertPolicy?.with_check?.includes("app.organization_id")
     );
     assert.ok(tenantAuditInsertPolicy?.with_check?.includes("active"));
-
     const grants = await adminPool.query<{
       memberships_delete: boolean;
       memberships_insert: boolean;
@@ -488,7 +485,6 @@ async function main() {
       can_select: false,
       can_update: false,
     });
-
     const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
       await ensureRuntimeRoleCanBeSet(adminPool, runtimeRole);
     adminRoleName = resolvedAdminRoleName;
@@ -535,7 +531,6 @@ async function main() {
         "ORDER BY organization_id"
     );
     assert.deepEqual(restoredPocSeeds.rows, expectedPocSeeds);
-
     const userA = await createUser("PR22 tenant context A");
     const userB = await createUser("PR22 tenant context B");
     const initialA = await createInitialOrganization(
@@ -627,7 +622,6 @@ async function main() {
       "42501",
       "runtime tenant audit SELECT"
     );
-
     const tokenA = `pr22-${randomUUID()}`;
     const tokenB = `pr22-${randomUUID()}`;
     fixtureOperationTokens.push(tokenA, tokenB);
@@ -882,8 +876,7 @@ async function main() {
       "42501",
       "cross-tenant membership insert"
     );
-
-    const rollbackToken = `pr22-${randomUUID()}`;
+    const rollbackToken = randomUUID();
     fixtureOperationTokens.push(rollbackToken);
     await assert.rejects(
       withAuthorizedTenantTransaction(

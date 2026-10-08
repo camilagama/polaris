@@ -40,8 +40,8 @@ export const tenantAuditEvents = pgTable(
       sql`char_length(${table.entityType}) BETWEEN 1 AND 64 AND ${table.entityType} ~ '^[a-z][a-z0-9_]*$'`
     ),
     check(
-      "tenant_audit_entity_id_format",
-      sql`char_length(${table.entityId}) BETWEEN 1 AND 255 AND ${table.entityId} ~ '^[A-Za-z0-9._:-]+$'`
+      "tenant_audit_entity_id_uuid",
+      sql`char_length(${table.entityId}) = 36 AND ${table.entityId} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'`
     ),
     index("tenant_audit_event_org_created_idx").on(
       table.organizationId,

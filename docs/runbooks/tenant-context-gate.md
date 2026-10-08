@@ -11,7 +11,7 @@ Este gate verifica as policies reais de organizations/memberships e `tenant_audi
 - testa contexto ausente, leituras próprias, isolamento cross-tenant, INSERT com GUCs falsificados, audit insert autorizado/cross-tenant, SELECT/UPDATE/DELETE negados, rollback do evento junto com a mutação e reuso do backend;
 - valida purge dos eventos com a organização e remove as fixtures ao terminar, inclusive quando a validação falha.
 
-O gate conecta diretamente ao Neon e usa SET ROLE para executar leituras tenant e INSERT de audit como polaris_pr11_runtime. O onboarding sintético, incluindo `organization.created`, e a preparação de usuários/organizações/memberships usam a conexão owner privilegiada, que precisa ser owner das tabelas e ter BYPASSRLS. A migration 0008 remove policies/grants de INSERT temporários; a migration 0009 cria audit com policy de INSERT e grant mínimo. O migrator PostgreSQL instalado do Drizzle aplica migrations pendentes numa transação, então 0007–0009 entram juntas. O runtime não lê eventos; o gate verifica leitura somente pelo owner. GUCs podem ser alterados pelo runtime: as policies ajudam contra contexto incorreto da aplicação, não contra SQL arbitrário. O bootstrap PR11 criou a fixture RLS fora do journal Drizzle; a preparação inicial aceita somente o fixture esperado e journal vazio, removendo apenas essa tabela sintética para que db:migrate recrie a cadeia. Em uma branch já migrada pelo PR22/23, pule a preparação e execute apenas `db:migrate` e `poc:tenant:verify`. O gate PR11 segue cobrindo Worker → Hyperdrive → Neon, pooling e reset transaction-local. Nenhuma rota tenant ou tela de histórico é publicada nesta etapa.
+O gate conecta diretamente ao Neon e usa SET ROLE para executar leituras tenant e INSERT de audit como polaris_pr11_runtime. O onboarding sintético, incluindo `organization.created`, e a preparação de usuários/organizações/memberships usam a conexão owner privilegiada, que precisa ser owner das tabelas e ter BYPASSRLS. A migration 0008 remove policies/grants de INSERT temporários; a 0009 cria audit com policy/grant INSERT-only; 0010 limita event/entity codes e 0011 exige entity ID UUID. O migrator PostgreSQL instalado do Drizzle aplica migrations pendentes numa transação, então 0007–0011 entram juntas. O runtime não lê eventos; o gate verifica leitura somente pelo owner. GUCs podem ser alterados pelo runtime: as policies ajudam contra contexto incorreto da aplicação, não contra SQL arbitrário. O bootstrap PR11 criou a fixture RLS fora do journal Drizzle; a preparação inicial aceita somente o fixture esperado e journal vazio, removendo apenas essa tabela sintética para que db:migrate recrie a cadeia. Em uma branch já migrada pelo PR22/23, pule a preparação e execute apenas `db:migrate` e `poc:tenant:verify`. O gate PR11 segue cobrindo Worker → Hyperdrive → Neon, pooling e reset transaction-local. Nenhuma rota tenant ou tela de histórico é publicada nesta etapa.
 
 ## Pré-requisitos
 
@@ -39,12 +39,12 @@ Na raiz do repositório, rode o bloco abaixo. O URL é solicitado como SecureStr
       $preparePr11Fixture = Read-Host "Is this an untouched PR11 fixture with an empty Drizzle journal? Type yes to prepare"
       if ($preparePr11Fixture -ceq "yes") {
         bun run --filter @polaris/db poc:tenant:prepare
-        if ($LASTEXITCODE -ne 0) { throw "PR22 fixture reconciliation failed." }
+        if ($LASTEXITCODE -ne 0) { throw "Tenant fixture reconciliation failed." }
       }
       bun run --filter @polaris/db db:migrate
-      if ($LASTEXITCODE -ne 0) { throw "PR22 migration failed." }
+      if ($LASTEXITCODE -ne 0) { throw "Tenant audit migration failed." }
       bun run --filter @polaris/db poc:tenant:verify
-      if ($LASTEXITCODE -ne 0) { throw "PR22 tenant context gate failed." }
+      if ($LASTEXITCODE -ne 0) { throw "Tenant/audit gate failed." }
     } finally {
       [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($urlPointer)
       Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue

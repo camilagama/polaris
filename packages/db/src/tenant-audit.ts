@@ -16,12 +16,12 @@ export interface TenantAuditEventInput {
   requestId?: string | null;
 }
 
-const requestIdPattern =
+const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const eventTypePattern = /^[a-z][a-z0-9_.-]{0,127}$/;
 const entityTypePattern = /^[a-z][a-z0-9_]{0,63}$/;
-const entityIdPattern = /^[A-Za-z0-9._:-]{1,255}$/;
+
 export class TenantAuditEventError extends Error {
   readonly code = "invalid_tenant_audit_event";
 
@@ -47,10 +47,10 @@ export async function recordTenantAuditEvent(
     identityValues.some((value) => !value.trim() || value !== value.trim()) ||
     !eventTypePattern.test(input.eventType) ||
     !entityTypePattern.test(input.entityType) ||
-    !entityIdPattern.test(input.entityId) ||
+    !uuidPattern.test(input.entityId) ||
     (input.requestId !== undefined &&
       input.requestId !== null &&
-      !requestIdPattern.test(input.requestId))
+      !uuidPattern.test(input.requestId))
   ) {
     throw new TenantAuditEventError();
   }

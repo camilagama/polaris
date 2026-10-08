@@ -19,7 +19,7 @@ describe("recordTenantAuditEvent", () => {
     const transaction = { insert } as unknown as TenantRequestTransaction;
 
     await recordTenantAuditEvent(transaction, identity, {
-      entityId: "organization-1",
+      entityId: "00000000-0000-4000-8000-000000000002",
       entityType: "organization",
       eventType: "organization.created",
       requestId: "00000000-0000-4000-8000-000000000001",
@@ -31,7 +31,7 @@ describe("recordTenantAuditEvent", () => {
       actorUserId: "user-1",
       eventType: "organization.created",
       entityType: "organization",
-      entityId: "organization-1",
+      entityId: "00000000-0000-4000-8000-000000000002",
       requestId: "00000000-0000-4000-8000-000000000001",
     });
   });

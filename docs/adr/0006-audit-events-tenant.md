@@ -10,7 +10,7 @@ O plano exige auditar mutações críticas no mesmo commit da mutação. O strea
 
 ## Decisão
 
-- Criar `tenant_audit_event` com organization ID, actor user ID interno, códigos event/entity type, entity ID interno de formato/tamanho limitado, request ID UUID opcional e timestamp. Writer e constraints PostgreSQL impõem esse contrato. Não armazenar metadata livre, snapshots, email, IP, user-agent, tokens ou conteúdo de negócio.
+- Criar `tenant_audit_event` com organization ID, actor user ID interno, códigos event/entity type limitados, entity ID opaco UUID, request ID UUID opcional e timestamp. Writer e constraints PostgreSQL impõem esse contrato. Não armazenar metadata livre, snapshots, email, IP, user-agent, tokens ou conteúdo de negócio.
 - Escrever eventos pelo `recordTenantAuditEvent()` dentro da transação já aberta; o writer não abre outra transação. O onboarding registra `organization.created` junto com organization e membership.
 - O runtime recebe apenas `INSERT`, protegido por `FORCE ROW LEVEL SECURITY`; a policy exige user/organization no contexto e membership/organização ativas. Não conceder leitura, atualização ou exclusão neste PR.
 - GUCs são contextos que o runtime pode alterar, não uma prova contra SQL arbitrário. A policy protege contra uso incorreto do contexto pela aplicação; não é defesa contra SQL injection.
