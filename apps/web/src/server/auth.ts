@@ -17,6 +17,10 @@ import {
 } from "./auth/password-policy";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import {
+  SESSION_IDLE_TTL_SECONDS,
+  SESSION_REFRESH_INTERVAL_SECONDS,
+} from "./auth/session-policy";
 
 type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
 
@@ -647,6 +651,12 @@ export function createBetterAuth({
         }
       : undefined,
     hooks: { before: captureLogoutSession, after: auditHook },
+    session: {
+      cookieCache: { enabled: false },
+      expiresIn: SESSION_IDLE_TTL_SECONDS,
+      freshAge: SESSION_REFRESH_INTERVAL_SECONDS,
+      updateAge: SESSION_REFRESH_INTERVAL_SECONDS,
+    },
     logger: {
       level: "error",
       log: (level) => console.error("better_auth_internal_error", level),

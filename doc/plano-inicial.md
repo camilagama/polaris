@@ -1252,34 +1252,16 @@ Testar:
 
 # PR 18 — Sessões
 
-
-
 Implementar:
 
-
-
-- 7 dias idle;
-
-- 30 dias absolute;
-
-- múltiplas sessões;
-
-- session list;
-
-- revoke session;
-
-- logout.
-
-
-
-Reset de senha revoga todas.
-
-
+- TTL idle de 7 dias (`expiresIn`) com renovação no máximo a cada 24 horas (`updateAge`) durante uso autenticado; desativar cookie cache para validar revogação no servidor.
+- Limite absoluto de 30 dias desde a criação. O Worker revoga sessões vencidas antes de encaminhar qualquer rota Better Auth; a migration PostgreSQL limita `expires_at` no INSERT/UPDATE, preserva `created_at` e ajusta linhas existentes.
+- Permitir múltiplas sessões e usar os endpoints Better Auth de listagem, revogação individual e logout, verificando isolamento por usuário. A listagem exige sessão fresca de até 24 horas.
+- Reset de senha revoga todas as sessões.
+- Testar idle e absolute expiry, refresh perto do limite, múltiplas sessões, listagem/revogação do próprio usuário, logout, token cru e reset em duas sessões.
+- Aplicar a migration e verificar o limite absoluto em PostgreSQL 18.
 
 ---
-
-
-
 # PR 19 — Organizations e memberships
 
 

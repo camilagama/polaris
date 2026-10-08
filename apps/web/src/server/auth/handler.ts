@@ -7,6 +7,7 @@ import {
   passwordPolicyErrorDetails,
   validateNewPassword,
 } from "../auth/password-policy";
+import { isSessionPastAbsoluteExpiration } from "./session-policy";
 
 const trailingSlashPattern = /\/+$/;
 
@@ -83,6 +84,30 @@ function isSetPasswordRequest(request: Request): boolean {
   );
 }
 
+export async function enforceAbsoluteSessionLifetime(
+  auth: ReturnType<typeof createBetterAuth>,
+  request: Request,
+  now = Date.now()
+): Promise<void> {
+  const currentSession = await auth.api.getSession({
+    headers: request.headers,
+    query: { disableCookieCache: true, disableRefresh: true },
+  });
+
+  if (
+    !(
+      currentSession &&
+      isSessionPastAbsoluteExpiration(currentSession.session.createdAt, now)
+    )
+  ) {
+    return;
+  }
+
+  await auth.api.revokeSession({
+    body: { token: currentSession.session.token },
+    headers: request.headers,
+  });
+}
 export async function handleSetPasswordRequest(
   auth: ReturnType<typeof createBetterAuth>,
   request: Request
@@ -214,6 +239,7 @@ export async function handleBetterAuthRequest(
       ...(requestId ? { requestId } : {}),
       secret,
     });
+    await enforceAbsoluteSessionLifetime(auth, request);
     if (isSetPasswordRequest(request)) {
       return await handleSetPasswordRequest(auth, request);
     }

@@ -449,6 +449,20 @@ describe("Email/password authentication", () => {
     );
     expect(login.status).toBe(200);
     const sessionCookie = cookieHeader(login.headers);
+    const secondLogin = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email, password: oldPassword }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    expect(secondLogin.status).toBe(200);
+    const secondSessionCookie = cookieHeader(secondLogin.headers);
     const knownEmailReset = await testApp.request(
       "/api/auth/request-password-reset",
       {
@@ -508,6 +522,13 @@ describe("Email/password authentication", () => {
       testBindings
     );
     expect(await priorSession.json()).toBeNull();
+
+    const secondPriorSession = await testApp.request(
+      "/api/auth/get-session?disableCookieCache=true",
+      { headers: { cookie: secondSessionCookie } },
+      testBindings
+    );
+    expect(await secondPriorSession.json()).toBeNull();
 
     const oldPasswordLogin = await testApp.request(
       "/api/auth/sign-in/email",
