@@ -17,9 +17,13 @@ O Worker de Web responde por autenticação, procedures, mídia, health, sincron
 
 ## Acesso a dados e isolamento por organização
 
-PostgreSQL 18 no Neon é o baseline. Hyperdrive fornece connection pooling com SQL query caching desabilitado para caminhos tenant e Admin. Cada operação com escopo de organização usa uma transação explícita, validação de membership e capability no servidor, contexto de organização transaction-local e RLS do PostgreSQL.
+PostgreSQL 18 no Neon é o baseline. Hyperdrive fornece connection pooling com SQL query caching desabilitado para caminhos tenant e Admin.
 
-RLS é defesa em profundidade, não substituto da autorização da aplicação. O gate remoto Worker → Hyperdrive → Neon precisa passar antes das features tenant; os casos obrigatórios estão registrados no [ADR 0002](../adr/0002-neon-postgresql18-hyperdrive-rls.md).
+Uma request tenant resolve a sessão Better Auth antes de abrir a transação de dados. O servidor recebe a organização solicitada como contexto não confiável; dentro de uma única transação explícita, define app.user_id com o ID da sessão, lê apenas o membership próprio, valida membership ativo e a capability no mapa de domínio, define app.organization_id e lê uma organização ativa. Só então chama o callback tenant. Os dois GUCs são transaction-local e não substituem autenticação nem autorização da aplicação.
+
+As tabelas organizations e memberships usam FORCE ROW LEVEL SECURITY e grants mínimos para o papel runtime. A policy de membership permite a leitura do próprio vínculo; a policy de organização também exige a organização do contexto, vínculo ativo e organização ativa. O onboarding inicial permanece em uma transação separada porque ainda não existe membership; ele usa o usuário autenticado, ID de organização gerado no servidor, e policies de INSERT próprias. Nenhuma rota de produto tenant é exposta nesta etapa.
+
+RLS é defesa em profundidade, não substituto da autorização da aplicação. O gate remoto Worker → Hyperdrive → Neon precisa passar antes das features tenant; os casos obrigatórios estão registrados no [ADR 0002](../adr/0002-neon-postgresql18-hyperdrive-rls.md) e no [runbook de contexto tenant](../runbooks/tenant-context-gate.md).
 
 ## Identidade e ownership do domínio
 

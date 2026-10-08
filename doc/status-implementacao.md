@@ -174,17 +174,35 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Mapa domain owner→capability | Concluído localmente | `owner` mapeia para as oito capabilities do plano; role ou capability desconhecido falha fechado. Testes incluem `__proto__`/`constructor`. |
+| Mapa domain owner→capability | Concluído localmente | owner mapeia para as oito capabilities do plano; role ou capability desconhecido falha fechado. |
 | Autenticação, membership e status | Adiados para PR22 | O helper de domínio não é autorização completa; esse gate depende do request context server-side. |
 | Rota tenant, grants e RLS | Adiados para PR22 | Nenhuma rota ou acesso runtime deve ser exposto neste PR. |
-| Testes, check e build | Concluídos localmente | `bun run check` passou com 62 testes; `bun run build` passou nos oito workspaces. Cobertura owner, todos os tokens, fail-closed para desconhecidos e coleções imutáveis. |
-| Revisão independente | Concluída | Sem blockers; confirmação de fail-closed para `__proto__`/`constructor`, mapa owner exato e subpath exportado. |
-| Draft PR e CI remoto | Concluídos | [PR #19](https://github.com/camilagama/polaris/pull/19), draft empilhado sobre #18; 6/6 checks passaram no commit `99d1860`. |
-| Revisão do usuário | Aguardando | Revisar o draft PR #19 antes de avançar ao PR22. |
+| Testes, check e build | Concluídos localmente | bun run check passou com 62 testes; bun run build passou nos oito workspaces. |
+| Revisão independente | Concluída | Sem blockers; confirmação de fail-closed para roles/capabilities desconhecidos, mapa owner exato e subpath exportado. |
+| Draft PR e CI remoto | Concluídos | PR #19, draft empilhado sobre #18; 6/6 checks passaram no commit 99d1860. |
+| Revisão do usuário | Continuidade autorizada | O usuário respondeu “prossiga” em 8 de outubro; PR #19 segue draft aberto e sem merge. |
+
+### PR22 — checkpoint para revisão
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Escopo, documentação e baseline | Concluídos | Plano/ADRs/runbook lidos; branch codex/pr22-tenant-context baseada no PR21; install congelado, baseline check/build passaram. |
+| Compositor Better Auth → tenant | Concluído | Sessão Better Auth resolvida antes da transação; user ID vem somente da sessão; a organização enviada é contexto não confiável; nenhuma rota tenant neste PR. |
+| Membership, capability e status | Concluídos | Uma transação valida membership active, capability central e organização active antes do callback tenant; GUC de organização só é setado após membership/capability. |
+| RLS, grants e migration | Concluídos | Migration Drizzle 0007 adiciona policies específicas, ENABLE/FORCE RLS e SELECT/INSERT mínimos; papel runtime não recebe UPDATE/DELETE. |
+| Compatibilidade do onboarding | Concluída | Transação própria preserva advisory lock, verificação de email e idempotência; seta user/org transaction-local para criar organização active + membership próprio. |
+| Reconciliação do fixture PR11 | Concluída | A URL descartável tinha somente a fixture RLS sintética, role runtime e journal vazio. Preflight validou tabela/policy/grants e duas sementes, mais uma única retry UUID conhecida; a tabela foi recriada pela cadeia Drizzle e as sementes-base foram restauradas. Nenhum outro objeto público foi alterado. |
+| Gate Neon PostgreSQL | Concluído | PostgreSQL 18.6 na URL descartável fornecida pelo usuário; papel polaris_pr11_runtime NOBYPASSRLS e não owner; leituras sem contexto vazias; membership/capability/org active; cross-tenant reads/writes negados; onboarding/retry, rollback e reuso do mesmo backend passaram. Membership temporária do owner foi revogada no cleanup. |
+| Rota de produto / gate Worker específico | Adiados | Conforme plano PR22, nenhuma rota tenant foi exposta. O gate PR11 Worker → Hyperdrive → Neon continua como prova de pooling/contexto; uma rota tenant exige gate próprio antes de feature de produto. |
+| Check e build final | Concluídos | bun run check passou: 72 testes em 10 arquivos, lint, format, typecheck, boundaries e Knip; bun run build passou nos oito workspaces. |
+| Revisão independente | Em andamento | Revisão de segurança do diff antes da publicação. |
+| Draft PR e CI remoto | Pendente | Será publicado empilhado sobre PR #19 depois da revisão independente. |
+| Revisão do usuário | Pendente | O checkpoint será apresentado com PR #20 draft; PR23 aguarda revisão/autorização do usuário. |
+
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
-- PRs draft empilhados: #1 chore/workspace-boundaries → main; #2 docs/canonical-docs → #1; #3 ci/baseline → #2; #4 chore/renovate-policy → #3; #5 feat/web-worker → #4; #6 feat/hono-shell → #5; #7 feat/orpc-poc → #6; #8 feat/postgres-hyperdrive-poc → #7; #9 codex/pr11-rls-hyperdrive-gate → #8; #10 codex/pr12-offline-persistence → #9; #11 codex/pr13-better-auth → #10; #12 codex/pr14-google → #11; #13 codex/pr15-password → #12; #14 codex/pr16-turnstile → #13; #15 codex/pr17-account-linking → #14; #16 codex/pr18-sessions → #15; #17 codex/pr19-organizations → #16; #18 codex/pr20-onboarding → #17; #19 codex/pr21-capabilities → #18.
+- PRs draft empilhados: #1 chore/workspace-boundaries → main; #2 docs/canonical-docs → #1; #3 ci/baseline → #2; #4 chore/renovate-policy → #3; #5 feat/web-worker → #4; #6 feat/hono-shell → #5; #7 feat/orpc-poc → #6; #8 feat/postgres-hyperdrive-poc → #7; #9 codex/pr11-rls-hyperdrive-gate → #8; #10 codex/pr12-offline-persistence → #9; #11 codex/pr13-better-auth → #10; #12 codex/pr14-google → #11; #13 codex/pr15-password → #12; #14 codex/pr16-turnstile → #13; #15 codex/pr17-account-linking → #14; #16 codex/pr18-sessions → #15; #17 codex/pr19-organizations → #16; #18 codex/pr20-onboarding → #17; #19 codex/pr21-capabilities → #18; #20 codex/pr22-tenant-context → #19.
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
@@ -200,5 +218,5 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 - PR18 está como draft em https://github.com/camilagama/polaris/pull/16, empilhado sobre PR17. 54 testes, check e build passaram; o gate de sessão PostgreSQL 18 passou na branch Neon descartável; revisão independente sem blockers; CI 6/6 verde no commit de código dcf42ab. UI de gerenciamento permanece adiada; a branch de teste expira automaticamente em 2026-10-08 às 21:30 (America/Sao_Paulo).
 - PR19 está como draft em https://github.com/camilagama/polaris/pull/17, empilhado sobre PR18. `bun run check` passou com 54 testes; `bun run build` passou nos oito workspaces; CI remoto 6/6 verde, incluindo 16/16 testes Playwright desktop/mobile emulado. Gate PostgreSQL 18 em branch Neon descartável passou; revisão independente sem blockers. PR20 foi autorizado pelo usuário em 8 de outubro; PR21 foi autorizado pelo usuário em 8 de outubro; o mapa local de capabilities foi implementado e revisado sem blockers na branch codex/pr21-capabilities.
 - PR20 está como draft em https://github.com/camilagama/polaris/pull/18, empilhado sobre PR19. `bun run check` passou com 58 testes; `bun run build` passou nos oito workspaces; CI remoto 6/6 verde no commit `f6e3cda`. O gate PG18 descartável verificou criação, retry idempotente, concorrência, email/timezone, privilégios runtime e limpeza. Revisão independente sem blockers. PR21 foi autorizado pelo usuário em 8 de outubro; o mapa local foi implementado e revisado sem blockers, com draft PR/CI pendentes.
-- PR21 está como draft em https://github.com/camilagama/polaris/pull/19, empilhado sobre PR20. O mapa owner→capabilities está centralizado no package domain; roles/capabilities desconhecidos falham fechado. `bun run check` passou com 62 testes; build dos oito workspaces passou; CI remoto 6/6 verde no commit `99d1860`; revisão independente sem blockers. PR22 aguarda revisão deste checkpoint.
+- PR21 está como draft em https://github.com/camilagama/polaris/pull/19, empilhado sobre PR20. O mapa owner→capabilities está centralizado no package domain; roles/capabilities desconhecidos falham fechado. `bun run check` passou com 62 testes; build dos oito workspaces passou; CI remoto 6/6 verde no commit `99d1860`; revisão independente sem blockers. PR22 foi autorizado pelo usuário em 8 de outubro e está em implementação; PR #19 permanece draft sem merge.
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

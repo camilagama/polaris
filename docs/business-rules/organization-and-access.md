@@ -13,4 +13,5 @@
 - O ID de organização enviado pelo cliente é contexto solicitado, nunca prova de autorização. O servidor valida autenticação, membership e capability antes de aceitar a operação.
 - A exclusão física da organização remove seus memberships por cascade no banco. Isso não define política de exclusão/retention de dados; o estado `closed` continua distinto da exclusão física.
 - A exclusão física do usuário é bloqueada enquanto houver membership (`ON DELETE RESTRICT`). Transferência de ownership ou encerramento antes da exclusão ainda não tem fluxo definido.
+- Uma operação tenant exige sessão Better Auth válida, membership active, organização active e capability concedida pelo mapa de domínio. Membership inexistente/inativo, organização suspended/closed e role ou capability desconhecido falham fechado.
 - Suspensão e eventos de segurança invalidam autorização offline. Uma autorização offline não transforma um command em registro oficial.

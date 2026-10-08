@@ -10,7 +10,8 @@
     "./client": "./src/client.ts",
     "./schema/poc": "./src/schema/poc.ts",
     "./rls-poc-client": "./src/rls-poc-client.ts",
-    "./rls-poc-gate": "./src/rls-poc-gate.ts"
+    "./rls-poc-gate": "./src/rls-poc-gate.ts",
+    "./tenant-transaction": "./src/tenant-transaction.ts"
   },
   "scripts": {
     "build": "bun run typecheck",
@@ -20,11 +21,14 @@
     "poc": "bun scripts/poc.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
     "poc:rls:verify": "bun scripts/verify-rls-gate.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json",
+    "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
+    "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.3",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "@polaris/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",

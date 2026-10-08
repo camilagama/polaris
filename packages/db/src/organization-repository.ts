@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { createDatabase } from "./client";
 import { user } from "./schema/auth";
 import { memberships, organizations } from "./schema/organization";
@@ -13,6 +13,7 @@ export type InitialOrganizationRepositoryErrorCode =
   | "user_not_found"
   | "email_not_verified"
   | "multiple_existing_organizations"
+  | "organization_not_available"
   | "organization_insert_failed";
 
 export class InitialOrganizationRepositoryError extends Error {
@@ -43,6 +44,7 @@ export interface CreateInitialOrganizationInDatabaseResult {
 /**
  * Persists initial organization creation atomically. The user-scoped advisory
  * lock is the V1 single-organization boundary; the schema remains multi-org.
+ * This is an onboarding transaction, not an authorized tenant transaction.
  */
 export function createInitialOrganizationInDatabase(
   database: Database,
@@ -52,6 +54,9 @@ export function createInitialOrganizationInDatabase(
     async (transaction) => {
       await transaction.execute(
         sql`select pg_advisory_xact_lock(${organizationCreationLockNamespace}, hashtext(${input.userId}))`
+      );
+      await transaction.execute(
+        sql`SELECT set_config('app.user_id', ${input.userId}, true)`
       );
 
       const [identity] = await transaction
@@ -68,54 +73,70 @@ export function createInitialOrganizationInDatabase(
         throw new InitialOrganizationRepositoryError("email_not_verified");
       }
 
-      const existingOrganizations = await transaction
-        .select({
-          id: organizations.id,
-          name: organizations.name,
-          timezone: organizations.timezone,
-          currency: organizations.currency,
-          status: organizations.status,
-          createdAt: organizations.createdAt,
-          updatedAt: organizations.updatedAt,
-        })
+      const existingMemberships = await transaction
+        .select({ organizationId: memberships.organizationId })
         .from(memberships)
-        .innerJoin(
-          organizations,
-          eq(memberships.organizationId, organizations.id)
-        )
         .where(eq(memberships.userId, input.userId))
         .limit(2);
 
-      if (existingOrganizations.length > 1) {
+      if (existingMemberships.length > 1) {
         throw new InitialOrganizationRepositoryError(
           "multiple_existing_organizations"
         );
       }
 
-      const [existingOrganization] = existingOrganizations;
-      if (existingOrganization) {
+      const [existingMembership] = existingMemberships;
+      if (existingMembership) {
+        await transaction.execute(
+          sql`SELECT set_config('app.organization_id', ${existingMembership.organizationId}, true)`
+        );
+
+        const [existingOrganization] = await transaction
+          .select()
+          .from(organizations)
+          .where(eq(organizations.id, existingMembership.organizationId))
+          .limit(1);
+
+        if (!existingOrganization) {
+          throw new InitialOrganizationRepositoryError(
+            "organization_not_available"
+          );
+        }
+
         return { created: false, organization: existingOrganization };
       }
 
+      await transaction.execute(
+        sql`SELECT set_config('app.organization_id', ${input.id}, true)`
+      );
+
+      await transaction.insert(organizations).values({
+        id: input.id,
+        name: input.name,
+        timezone: input.timezone,
+      });
+
+      await transaction.insert(memberships).values({
+        organizationId: input.id,
+        userId: input.userId,
+      });
+
       const [organization] = await transaction
-        .insert(organizations)
-        .values({
-          id: input.id,
-          name: input.name,
-          timezone: input.timezone,
-        })
-        .returning();
+        .select()
+        .from(organizations)
+        .where(
+          and(
+            eq(organizations.id, input.id),
+            eq(organizations.status, "active")
+          )
+        )
+        .limit(1);
 
       if (!organization) {
         throw new InitialOrganizationRepositoryError(
           "organization_insert_failed"
         );
       }
-
-      await transaction.insert(memberships).values({
-        organizationId: organization.id,
-        userId: input.userId,
-      });
 
       return { created: true, organization };
     },
