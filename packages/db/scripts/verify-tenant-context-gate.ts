@@ -186,6 +186,55 @@ async function cleanupTemporaryRuntimeRole(input: {
   }
   return errors;
 }
+async function cleanupTenantFixtures(input: {
+  adminPool: ReturnType<typeof createDatabase>["pool"];
+  fixtureOperationTokens: string[];
+  fixtureOrganizationIds: string[];
+  fixtureUserIds: string[];
+}): Promise<unknown[]> {
+  const errors: unknown[] = [];
+  if (input.fixtureOperationTokens.length > 0) {
+    try {
+      await input.adminPool.query(
+        "DELETE FROM public.rls_poc_operations WHERE token = ANY($1::text[])",
+        [input.fixtureOperationTokens]
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (input.fixtureOrganizationIds.length > 0) {
+    try {
+      await input.adminPool.query(
+        "DELETE FROM public.organizations WHERE id = ANY($1::text[])",
+        [input.fixtureOrganizationIds]
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      const remainingAuditEvents = await input.adminPool.query(
+        "SELECT id FROM public.tenant_audit_event " +
+          "WHERE organization_id = ANY($1::text[])",
+        [input.fixtureOrganizationIds]
+      );
+      assert.deepEqual(remainingAuditEvents.rows, []);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (input.fixtureUserIds.length > 0) {
+    try {
+      await input.adminPool.query(
+        'DELETE FROM public."user" WHERE id = ANY($1::text[])',
+        [input.fixtureUserIds]
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return errors;
+}
 async function main() {
   const connectionString = requiredEnvironment(
     "POLARIS_TENANT_CONTEXT_TEST_DATABASE_URL"
@@ -752,6 +801,28 @@ async function main() {
     );
 
     const crossTenantAuditToken = randomUUID();
+    const invalidAuditEntityId = "owner@example.invalid";
+    await expectSqlState(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "organization:manage",
+          requestedOrganizationId: initialA.organization.id,
+        },
+        async (transaction) => {
+          await transaction.insert(tenantAuditEvents).values({
+            organizationId: initialA.organization.id,
+            actorUserId: userA,
+            eventType: "poc.unsafe_entity_denied",
+            entityType: "rls_poc_operation",
+            entityId: invalidAuditEntityId,
+          });
+        }
+      ),
+      "23514",
+      "tenant audit entity ID format check"
+    );
     await expectSqlState(
       withAuthorizedTenantTransaction(
         runtimeDb,
@@ -966,6 +1037,7 @@ async function main() {
           authorizedInsert: "passed",
           crossTenantInsert: "denied",
           runtimeSelect: "denied",
+          unsafeEntityId: "denied",
           rollbackWithMutation: "passed",
           insertOnlyGrant: "passed",
         },
@@ -985,35 +1057,13 @@ async function main() {
       runtimeRoleName: runtimeRole,
       runtimeRoleMembershipGrantAttempted,
     });
-    try {
-      if (fixtureOperationTokens.length > 0) {
-        await adminPool.query(
-          "DELETE FROM public.rls_poc_operations WHERE token = ANY($1::text[])",
-          [fixtureOperationTokens]
-        );
-      }
-      if (fixtureOrganizationIds.length > 0) {
-        await adminPool.query(
-          "DELETE FROM public.organizations WHERE id = ANY($1::text[])",
-          [fixtureOrganizationIds]
-        );
-        const remainingAuditEvents = await adminPool.query(
-          "SELECT id FROM public.tenant_audit_event " +
-            "WHERE organization_id = ANY($1::text[])",
-          [fixtureOrganizationIds]
-        );
-        assert.deepEqual(remainingAuditEvents.rows, []);
-      }
-      if (fixtureUserIds.length > 0) {
-        await adminPool.query(
-          'DELETE FROM public."user" WHERE id = ANY($1::text[])',
-          [fixtureUserIds]
-        );
-      }
-    } catch (error) {
-      cleanupErrors.push(error);
-    }
-
+    const fixtureCleanupErrors = await cleanupTenantFixtures({
+      adminPool,
+      fixtureOperationTokens,
+      fixtureOrganizationIds,
+      fixtureUserIds,
+    });
+    cleanupErrors.push(...fixtureCleanupErrors);
     const poolsClosed = await Promise.allSettled([
       adminPool.end(),
       runtimeClientConnected ? runtimeClient.end() : Promise.resolve(),

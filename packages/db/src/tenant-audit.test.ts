@@ -50,4 +50,19 @@ describe("recordTenantAuditEvent", () => {
 
     expect(insert).not.toHaveBeenCalled();
   });
+
+  it("rejects freeform entity data before issuing an INSERT", async () => {
+    const insert = vi.fn();
+    const transaction = { insert } as unknown as TenantRequestTransaction;
+
+    await expect(
+      recordTenantAuditEvent(transaction, identity, {
+        entityId: "owner@example.invalid",
+        entityType: "organization",
+        eventType: "organization.created",
+      })
+    ).rejects.toBeInstanceOf(TenantAuditEventError);
+
+    expect(insert).not.toHaveBeenCalled();
+  });
 });

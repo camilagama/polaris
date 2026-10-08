@@ -71,6 +71,13 @@
       "when": 1791444727604,
       "tag": "0009_new_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791445664906,
+      "tag": "0010_colorful_albert_cleary",
+      "breakpoints": true
     }
   ]
 }

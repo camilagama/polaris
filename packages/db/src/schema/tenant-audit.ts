@@ -28,17 +28,20 @@ export const tenantAuditEvents = pgTable(
   },
   (table) => [
     check(
-      "tenant_audit_actor_nonempty",
-      sql`btrim(${table.actorUserId}) <> ''`
-    ),
-    check("tenant_audit_type_nonempty", sql`btrim(${table.eventType}) <> ''`),
-    check(
-      "tenant_audit_entity_type_nonempty",
-      sql`btrim(${table.entityType}) <> ''`
+      "tenant_audit_actor_id_length",
+      sql`char_length(btrim(${table.actorUserId})) BETWEEN 1 AND 255`
     ),
     check(
-      "tenant_audit_entity_id_nonempty",
-      sql`btrim(${table.entityId}) <> ''`
+      "tenant_audit_event_type_format",
+      sql`char_length(${table.eventType}) BETWEEN 1 AND 128 AND ${table.eventType} ~ '^[a-z][a-z0-9_.-]*$'`
+    ),
+    check(
+      "tenant_audit_entity_type_format",
+      sql`char_length(${table.entityType}) BETWEEN 1 AND 64 AND ${table.entityType} ~ '^[a-z][a-z0-9_]*$'`
+    ),
+    check(
+      "tenant_audit_entity_id_format",
+      sql`char_length(${table.entityId}) BETWEEN 1 AND 255 AND ${table.entityId} ~ '^[A-Za-z0-9._:-]+$'`
     ),
     index("tenant_audit_event_org_created_idx").on(
       table.organizationId,

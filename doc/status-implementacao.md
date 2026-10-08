@@ -205,11 +205,11 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | --- | --- | --- |
 | Plano, escopo e worktree | Concluídos | PR23 autorizado por “prossiga”; branch codex/pr23-tenant-audit baseada no HEAD do PR22. Leitura de histórico e rota ficam fora do escopo. |
 | Modelo e privacidade | Concluídos | Stream tenant separado do auth audit; organização, ator interno, tipo/alvo, request ID UUID opcional e timestamp; sem payload livre, snapshots ou secrets. Retenção legal permanece pré-go-live. |
-| Schema, RLS e writer | Concluídos | tenant_audit_event usa ENABLE/FORCE RLS; runtime recebe somente INSERT, sem SELECT/UPDATE/DELETE; writer usa transação já aberta e identidade do contexto tenant. |
+| Schema, RLS e writer | Concluídos | Migration 0009 cria tenant_audit_event com ENABLE/FORCE RLS e INSERT-only; migration 0010 limita formato/tamanho dos códigos/IDs. Runtime não recebe SELECT/UPDATE/DELETE; writer usa a transação e identidade existentes. |
 | Mutação transacional | Concluída | organization.created é auditado junto com organização e membership no onboarding owner-only; retry idempotente não duplica o evento. |
-| Gate Neon PostgreSQL | Concluído | PostgreSQL 18.6 descartável: onboarding, INSERT autorizado, cross-tenant negado, runtime SELECT negado, rollback conjunto e cascade de purge passaram; runtime NOBYPASSRLS/não-owner. |
-| Check e build | Concluídos | `bun run check` passou com 74 testes em 11 arquivos; `bun run build` passou nos oito workspaces. |
-| Revisão independente | Pendente | Revisar migration, policy INSERT-only, writer transacional, privacidade e comportamento com role runtime NOBYPASSRLS antes do push. |
+| Gate Neon PostgreSQL | Concluído após hardening | PostgreSQL 18.6 descartável: onboarding, INSERT autorizado, cross-tenant negado, runtime SELECT negado, entity ID inseguro rejeitado por constraint, rollback conjunto e cascade de purge passaram; runtime NOBYPASSRLS/não-owner. |
+| Check e build | Concluídos após hardening | `bun run check` passou com 75 testes em 11 arquivos; `bun run build` passou nos oito workspaces. |
+| Revisão independente | Follow-up pendente | A primeira revisão não encontrou blockers e apontou dois refinamentos minor; campos agora têm constraints no writer/DB e limpeza tenta todas as remoções independentemente. Solicitei a verificação final. |
 | Draft PR e CI remoto | Pendente | Publicar draft empilhado sobre PR #20 depois da revisão independente. |
 | Revisão do usuário | Pendente | Apresentar PR23 draft para revisão; não fazer merge sem nova instrução. |
 | Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |

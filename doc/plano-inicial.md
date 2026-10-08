@@ -1384,7 +1384,7 @@ Criar testes cross-tenant.
 
 Criar a tabela tenant-specific `tenant_audit_event`, separada da auditoria global de autenticação `auth_security_audit_event`.
 
-O evento registra apenas organization ID, actor user ID interno, event type, entity type/ID, request ID UUID opcional e timestamp. Não armazenar payloads, snapshots before/after, email, IP, user-agent, tokens ou outros segredos.
+O evento registra apenas organization ID, actor user ID interno, códigos event/entity type, entity ID interno com formato e comprimento limitados e request ID UUID opcional. O writer e os checks do banco rejeitam campos fora desse contrato. Não armazenar payloads, snapshots before/after, email, IP, user-agent, tokens ou outros segredos.
 
 `recordTenantAuditEvent(transaction, identity, event)` escreve na transação já aberta e usa a identidade validada do contexto tenant. Não iniciar uma segunda transação no writer. Eventos de mutação crítica devem comitar ou sofrer rollback junto com a mutação.
 

@@ -19,6 +19,9 @@ export interface TenantAuditEventInput {
 const requestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const eventTypePattern = /^[a-z][a-z0-9_.-]{0,127}$/;
+const entityTypePattern = /^[a-z][a-z0-9_]{0,63}$/;
+const entityIdPattern = /^[A-Za-z0-9._:-]{1,255}$/;
 export class TenantAuditEventError extends Error {
   readonly code = "invalid_tenant_audit_event";
 
@@ -39,22 +42,18 @@ export async function recordTenantAuditEvent(
   identity: TenantAuditIdentity,
   input: TenantAuditEventInput
 ): Promise<void> {
-  const values = [
-    identity.organizationId,
-    identity.userId,
-    input.eventType,
-    input.entityType,
-    input.entityId,
-  ];
+  const identityValues = [identity.organizationId, identity.userId];
   if (
-    values.some((value) => !value.trim() || value !== value.trim()) ||
+    identityValues.some((value) => !value.trim() || value !== value.trim()) ||
+    !eventTypePattern.test(input.eventType) ||
+    !entityTypePattern.test(input.entityType) ||
+    !entityIdPattern.test(input.entityId) ||
     (input.requestId !== undefined &&
       input.requestId !== null &&
       !requestIdPattern.test(input.requestId))
   ) {
     throw new TenantAuditEventError();
   }
-
   await transaction.insert(tenantAuditEvents).values({
     organizationId: identity.organizationId,
     actorUserId: identity.userId,

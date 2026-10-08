@@ -58,7 +58,7 @@ O comando db:migrate usa URL direta. A migration requer o papel runtime já prov
 
 ## Resultado exigido
 
-O gate deve imprimir status passed e confirmar: PostgreSQL major 18 e server_version observado; runtime NOBYPASSRLS/sem ownership; owner privilegiado identificado; RLS ENABLE/FORCE nas três tabelas; SELECT-only em organizations/memberships; INSERT-only em tenant_audit_event, sem SELECT/UPDATE/DELETE; contexto ausente sem linhas; membership/capability/organização validados; cross-tenant reads/writes negados; `organization.created` no mesmo commit do onboarding; audit insert autorizado e rollback do evento junto com a mutação; cascade de eventos ao purgar organização.
+O gate deve imprimir status passed e confirmar: PostgreSQL major 18 e server_version observado; runtime NOBYPASSRLS/sem ownership; owner privilegiado identificado; RLS ENABLE/FORCE nas três tabelas; SELECT-only em organizations/memberships; INSERT-only em tenant_audit_event, sem SELECT/UPDATE/DELETE; contexto ausente sem linhas; membership/capability/organização validados; cross-tenant reads/writes negados; `organization.created` no mesmo commit do onboarding; audit insert autorizado; IDs fora do formato rejeitados; rollback do evento junto com a mutação; cascade de eventos ao purgar organização.
 
 Eventos tenant não têm expiração automática. A purge física da organização remove seus eventos por cascade; retenção legal e legal hold precisam de decisão antes do go-live.
 
