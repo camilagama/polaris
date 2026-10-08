@@ -209,7 +209,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Mutação transacional | Concluída | organization.created é auditado junto com organização e membership no onboarding owner-only; retry idempotente não duplica o evento. |
 | Gate Neon PostgreSQL | Concluído após hardening | PostgreSQL 18.6 descartável: onboarding, INSERT autorizado, cross-tenant negado, runtime SELECT negado, email em entity ID rejeitado, rollback conjunto e cascade de purge passaram; runtime NOBYPASSRLS/não-owner. Uma execução inicial retornou `timeout expired`; probe read-only confirmou DB/migration 0011 e gates subsequentes passaram; causa inicial não confirmada. |
 | Check e build | Concluídos após hardening | `bun run check` passou com 75 testes em 11 arquivos; `bun run build` passou nos oito workspaces. |
-| Revisão independente | Follow-up pendente | A primeira revisão não encontrou blockers e apontou dois refinamentos minor; IDs agora são UUID opacos e cleanup tenta as remoções independentemente. Revisão final solicitada. |
+| Revisão independente | Concluída sem achados | A revisão final não encontrou Critical/Important/Minor; ID opaco UUID e cleanup independente corrigiram os dois minors. Um timeout inicial do gate não se reproduziu nas verificações posteriores; causa não confirmada. |
 | Draft PR e CI remoto | Pendente | Publicar draft empilhado sobre PR #20 depois da revisão independente. |
 | Revisão do usuário | Pendente | Apresentar PR23 draft para revisão; não fazer merge sem nova instrução. |
 | Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |
