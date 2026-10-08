@@ -211,7 +211,8 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Gate PostgreSQL + Worker | Concluídos | Gates passaram na branch `gate2-runtime-proof`, região São Paulo, PostgreSQL 18.6. O database gate confirmou roles, grants, SECURITY DEFINER, rollback e cascade; o Worker confirmou onboarding, retry, isolamento e auditoria. Branch é descartável e expira automaticamente. |
 | Revisão independente | Concluída, sem achados Critical/Important | Um achado Minor sobre registro incremental de fixtures foi corrigido; revisão final recomendou seguir. |
 | Check e build finais | Concluídos | `bun run check`: lint, formato, typecheck, boundaries, Knip e 79 testes em 13 arquivos passaram. `bun run build` passou nos oito workspaces. |
-| Próxima etapa | Publicar checkpoint para revisão | Publicar draft PR sobre `codex/pr23-tenant-audit`, aguardar CI e revisão do responsável. O PR24 completo — UI, archive/delete e leitura offline — fica adiado até a revisão deste checkpoint; schema e operações mínimos do slice serão reutilizados. |
+| Draft PR e CI | Concluídos no commit de implementação | Draft PR [#22](https://github.com/camilagama/polaris/pull/22) publicado sobre `codex/pr23-tenant-audit`; CI 6/6 verde no commit `a1de720`. Continua draft e sem merge. |
+| Próxima etapa | Revisão do responsável | Aguardar revisão do PR #22. O PR24 completo — UI, archive/delete e leitura offline — fica adiado até a revisão deste checkpoint; schema e operações mínimos do slice serão reutilizados. |
 ### PR23 — checkpoint para revisão
 
 | Subetapa | Status | Evidência / dependência |
