@@ -1322,46 +1322,24 @@ Testar: repetir o mesmo comando retorna o mesmo ID sem alterar campos; requests 
 
 # PR 21 — Capabilities tenant
 
-
-
-Criar autorização baseada em capabilities.
-
-
-
-Mesmo só existindo `owner`, definir mapa.
-
-
-
-Exemplos:
-
-
+Criar em `packages/domain` um mapa único de role→capability. No V1, `owner` recebe somente o conjunto nomeado abaixo:
 
 ```text
-
 catalog:read
-
 product:create
-
 product:update
-
 inventory:adjust
-
 sale:create
-
 customer:update
-
 expense:create
-
 organization:manage
-
 ```
 
+Centralizar a consulta em `capabilitiesForRole()`/`hasCapabilityForRole()`; não espalhar comparações de role pela aplicação. Role desconhecido ou capability desconhecida falha fechado, sem permissão.
 
+Este mapa puro não autentica usuário, não verifica membership/status e não escolhe organização. Essas etapas pertencem ao contexto de request do PR22. Não adicionar rota tenant neste PR.
 
-Não espalhar checks de role.
-
-
-
+Testar o conjunto exato de capabilities de `owner`, allow para cada capability declarada, deny para role/capability desconhecidos e imutabilidade do mapa exportado.
 ---
 
 

@@ -2,6 +2,9 @@
   "name": "@polaris/domain",
   "private": true,
   "type": "module",
+  "exports": {
+    "./authorization/capabilities": "./src/authorization/capabilities.ts"
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
