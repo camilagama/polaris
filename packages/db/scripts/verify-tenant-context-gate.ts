@@ -95,6 +95,30 @@ async function expectNoRowsOrSqlState(
     throw error;
   }
 }
+async function expectForgedGucInsertDenied(
+  runtimeClient: Client,
+  userId: string,
+  organizationId: string,
+  insertSql: string,
+  values: string[],
+  operationName: string
+): Promise<void> {
+  await runtimeClient.query("BEGIN");
+  try {
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    await expectSqlState(
+      runtimeClient.query(insertSql, values),
+      "42501",
+      operationName
+    );
+  } finally {
+    await runtimeClient.query("ROLLBACK");
+  }
+}
 async function expectTenantAuthorizationError(
   operation: Promise<unknown>,
   expectedCode: string
@@ -109,7 +133,7 @@ async function expectTenantAuthorizationError(
 async function ensureRuntimeRoleCanBeSet(
   adminPool: ReturnType<typeof createDatabase>["pool"],
   roleName: string
-): Promise<{ adminRoleName: string; membershipAdded: boolean }> {
+): Promise<{ adminRoleName: string; canSetRuntimeRole: boolean }> {
   const result = await adminPool.query<{
     admin_role: string;
     can_set_runtime_role: boolean;
@@ -120,13 +144,45 @@ async function ensureRuntimeRoleCanBeSet(
   const [adminRole] = result.rows;
   assert.ok(adminRole);
   assert.match(adminRole.admin_role, sqlIdentifierPattern);
-  if (adminRole.can_set_runtime_role) {
-    return { adminRoleName: adminRole.admin_role, membershipAdded: false };
-  }
+  return {
+    adminRoleName: adminRole.admin_role,
+    canSetRuntimeRole: adminRole.can_set_runtime_role,
+  };
+}
 
-  const grantSql = `GRANT "${roleName}" TO "${adminRole.admin_role}"`;
-  await adminPool.query(grantSql);
-  return { adminRoleName: adminRole.admin_role, membershipAdded: true };
+async function cleanupTemporaryRuntimeRole(input: {
+  adminPool: ReturnType<typeof createDatabase>["pool"];
+  adminRoleName: string | undefined;
+  runtimeClient: Client;
+  runtimeClientConnected: boolean;
+  runtimeRoleName: string;
+  runtimeRoleMembershipGrantAttempted: boolean;
+}): Promise<unknown[]> {
+  const errors: unknown[] = [];
+  if (input.runtimeClientConnected) {
+    try {
+      await input.runtimeClient.query("RESET ROLE");
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (input.runtimeRoleMembershipGrantAttempted && input.adminRoleName) {
+    try {
+      await input.adminPool.query(
+        `REVOKE "${input.runtimeRoleName}" FROM "${input.adminRoleName}"`
+      );
+      const roleMembership = await input.adminPool.query<{
+        can_set_runtime_role: boolean;
+      }>(
+        "SELECT pg_has_role(current_user, $1, 'SET') AS can_set_runtime_role",
+        [input.runtimeRoleName]
+      );
+      assert.equal(roleMembership.rows[0]?.can_set_runtime_role, false);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return errors;
 }
 async function main() {
   const connectionString = requiredEnvironment(
@@ -160,9 +216,12 @@ async function main() {
   assert.equal(databaseUrl.hostname.includes("-pooler"), false);
   assert.match(databaseUrl.hostname, neonTestHostnamePattern);
 
-  const { pool: adminPool } = createDatabase(connectionString, {
-    maxConnections: 2,
-  });
+  const { db: adminDatabase, pool: adminPool } = createDatabase(
+    connectionString,
+    {
+      maxConnections: 2,
+    }
+  );
   const runtimeClient = new Client({
     connectionString,
     connectionTimeoutMillis: 5000,
@@ -176,7 +235,7 @@ async function main() {
   const fixtureOperationTokens: string[] = [];
   let gatePassed = false;
   let adminRoleName: string | undefined;
-  let runtimeRoleMembershipAdded = false;
+  let runtimeRoleMembershipGrantAttempted = false;
 
   async function createUser(name: string): Promise<string> {
     const id = randomUUID();
@@ -192,7 +251,7 @@ async function main() {
     userId: string,
     name: string
   ): Promise<CreateInitialOrganizationInDatabaseResult> {
-    const result = await createInitialOrganizationInDatabase(runtimeDb, {
+    const result = await createInitialOrganizationInDatabase(adminDatabase, {
       id: randomUUID(),
       name,
       timezone: "America/Sao_Paulo",
@@ -210,15 +269,29 @@ async function main() {
       "SELECT current_database() AS database, current_setting('server_version') AS server_version"
     );
     assert.equal(databaseIdentity.rows[0]?.database, "neondb");
+    const postgresServerVersion = databaseIdentity.rows[0]?.server_version;
+    assert.ok(postgresServerVersion);
     assert.equal(
-      Number.parseInt(
-        databaseIdentity.rows[0]?.server_version.split(".")[0] ?? "",
-        10
-      ),
+      Number.parseInt(postgresServerVersion.split(".")[0] ?? "", 10),
       18,
       "The tenant context gate requires PostgreSQL 18."
     );
 
+    const adminRoleResult = await adminPool.query<{
+      admin_role: string;
+      bypass_rls: boolean;
+    }>(
+      "SELECT current_user AS admin_role, rolbypassrls AS bypass_rls " +
+        "FROM pg_roles WHERE rolname = current_user"
+    );
+    const [adminRole] = adminRoleResult.rows;
+    assert.ok(adminRole);
+    assert.notEqual(adminRole.admin_role, runtimeRole);
+    assert.equal(
+      adminRole.bypass_rls,
+      true,
+      "The disposable gate requires its privileged Neon owner connection."
+    );
     const runtimeRoleResult = await adminPool.query<{
       bypass_rls: boolean;
       superuser: boolean;
@@ -244,6 +317,10 @@ async function main() {
     assert.equal(
       tableOwners.rows.some((row) => row.owner === runtimeRole),
       false
+    );
+    assert.ok(
+      tableOwners.rows.every((row) => row.owner === adminRole.admin_role),
+      "The privileged gate connection must own both RLS tables."
     );
 
     const rlsState = await adminPool.query<{
@@ -286,12 +363,7 @@ async function main() {
     );
     assert.deepEqual(
       policies.rows.map((policy) => policy.policy_name),
-      [
-        "memberships_current_user_insert",
-        "memberships_current_user_select",
-        "organizations_active_tenant_select",
-        "organizations_context_insert",
-      ]
+      ["memberships_current_user_select", "organizations_active_tenant_select"]
     );
     assert.ok(
       policies.rows.every((policy) => policy.roles === `{${runtimeRole}}`)
@@ -300,10 +372,6 @@ async function main() {
       (policy) => policy.policy_name === "organizations_active_tenant_select"
     );
     assert.ok(organizationReadPolicy?.using_expression?.includes("active"));
-    const organizationInsertPolicy = policies.rows.find(
-      (policy) => policy.policy_name === "organizations_context_insert"
-    );
-    assert.ok(organizationInsertPolicy?.with_check?.includes("active"));
 
     const grants = await adminPool.query<{
       memberships_delete: boolean;
@@ -327,17 +395,22 @@ async function main() {
     );
     assert.deepEqual(grants.rows[0], {
       memberships_delete: false,
-      memberships_insert: true,
+      memberships_insert: false,
       memberships_select: true,
       memberships_update: false,
       organizations_delete: false,
-      organizations_insert: true,
+      organizations_insert: false,
       organizations_select: true,
       organizations_update: false,
     });
 
-    ({ adminRoleName, membershipAdded: runtimeRoleMembershipAdded } =
-      await ensureRuntimeRoleCanBeSet(adminPool, runtimeRole));
+    const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
+      await ensureRuntimeRoleCanBeSet(adminPool, runtimeRole);
+    adminRoleName = resolvedAdminRoleName;
+    if (!canSetRuntimeRole) {
+      runtimeRoleMembershipGrantAttempted = true;
+      await adminPool.query(`GRANT "${runtimeRole}" TO "${adminRoleName}"`);
+    }
     await runtimeClient.connect();
     runtimeClientConnected = true;
     await runtimeClient.query("SET ROLE polaris_pr11_runtime");
@@ -399,6 +472,25 @@ async function main() {
     assert.equal(retryA.organization.id, initialA.organization.id);
     assert.equal(retryA.organization.name, initialA.organization.name);
 
+    const forgedOrganizationId = randomUUID();
+    await expectForgedGucInsertDenied(
+      runtimeClient,
+      userA,
+      initialB.organization.id,
+      "INSERT INTO public.memberships (organization_id, user_id, role, status) " +
+        "VALUES ($1, $2, 'owner', 'active')",
+      [initialB.organization.id, userA],
+      "runtime membership INSERT with forged GUCs"
+    );
+    await expectForgedGucInsertDenied(
+      runtimeClient,
+      userA,
+      forgedOrganizationId,
+      "INSERT INTO public.organizations (id, name, timezone) " +
+        "VALUES ($1, $2, $3)",
+      [forgedOrganizationId, "Forged organization", "America/Sao_Paulo"],
+      "runtime organization INSERT with forged GUCs"
+    );
     const contextlessOrganizations = await runtimeClient.query(
       "SELECT id FROM public.organizations"
     );
@@ -699,14 +791,17 @@ async function main() {
       JSON.stringify({
         status: "passed",
         postgresMajorVersion: 18,
+        postgresServerVersion,
         role: runtimeRole,
         roleBypassRls: false,
-        tableOwnerBypass: false,
+        runtimeRoleOwnsRlsTables: false,
+        adminRoleBypassRls: adminRole.bypass_rls,
         rlsTables: ["organizations", "memberships"],
         contextlessReads: "denied",
         ownMembershipAndOrganization: "allowed",
         crossTenantReadsAndWrites: "denied",
-        onboardingUnderRls: "passed",
+        runtimeOrganizationAndMembershipInsert: "denied_even_with_forged_gucs",
+        onboardingOwnerOnly: "passed",
         retryIdempotency: "passed",
         transactionRollback: "passed",
         pooledBackendContextReset: "passed",
@@ -714,20 +809,14 @@ async function main() {
       })
     );
   } finally {
-    const cleanupErrors: unknown[] = [];
-    try {
-      if (runtimeClientConnected) {
-        await runtimeClient.query("RESET ROLE");
-      }
-      if (runtimeRoleMembershipAdded && adminRoleName) {
-        const revokeSql = `REVOKE "${runtimeRole}" FROM "${adminRoleName}"`;
-        await adminPool.query(revokeSql);
-        runtimeRoleMembershipAdded = false;
-      }
-    } catch (error) {
-      cleanupErrors.push(error);
-    }
-
+    const cleanupErrors = await cleanupTemporaryRuntimeRole({
+      adminPool,
+      adminRoleName,
+      runtimeClient,
+      runtimeClientConnected,
+      runtimeRoleName: runtimeRole,
+      runtimeRoleMembershipGrantAttempted,
+    });
     try {
       if (fixtureOperationTokens.length > 0) {
         await adminPool.query(

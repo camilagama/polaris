@@ -75,8 +75,11 @@ function normalizeInput(input: CreateInitialOrganizationInput) {
 }
 
 /**
- * Internal application use case. It is intentionally not wired to HTTP until
- * authentication, authorization, runtime grants, and RLS context are ready.
+ * Internal privileged onboarding use case. The supplied database must be
+ * separately controlled and must not be the request-runtime connection.
+ * authenticatedUserId must come from a server-verified session. This use case
+ * is not wired to HTTP; runtime onboarding writes remain deferred until a
+ * controlled writer can bind the operation to that session.
  */
 export async function createInitialOrganization(
   database: Database,

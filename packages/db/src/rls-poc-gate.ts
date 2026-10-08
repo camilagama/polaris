@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import type { createRlsPocDatabase } from "./rls-poc-client";
 import { rlsPocOperations } from "./schema/rls-poc";
 import {
-  withTenantTransaction,
+  withRlsPocTransaction,
   type TenantTransaction,
 } from "./tenant-transaction";
 
@@ -93,7 +93,7 @@ async function withRetryableTenantTransaction<T>(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       // biome-ignore lint/performance/noAwaitInLoops: Retry attempts must be sequential and stop after the first success.
-      return await withTenantTransaction(database.db, organizationId, (tx) =>
+      return await withRlsPocTransaction(database.db, organizationId, (tx) =>
         operation(tx, attempt)
       );
     } catch (error) {
@@ -128,7 +128,7 @@ export function readRlsPocRows(
   crossTenant = false,
   delayMs = 0
 ) {
-  return withTenantTransaction(
+  return withRlsPocTransaction(
     database.db,
     organizationId,
     async (transaction) => {
@@ -172,7 +172,7 @@ export async function verifyRlsPocTransactionContextReset(
   database: Database,
   organizationId: RlsPocOrganizationId
 ) {
-  const tenantState = await withTenantTransaction(
+  const tenantState = await withRlsPocTransaction(
     database.db,
     organizationId,
     readDatabaseState
@@ -202,7 +202,7 @@ export async function verifyRlsPocRollback(
   token: string
 ) {
   try {
-    await withTenantTransaction(database.db, organizationId, async (tx) => {
+    await withRlsPocTransaction(database.db, organizationId, async (tx) => {
       await tx.insert(rlsPocOperations).values({
         organizationId,
         token,
@@ -219,7 +219,7 @@ export async function verifyRlsPocRollback(
     }
   }
 
-  const rows = await withTenantTransaction(database.db, organizationId, (tx) =>
+  const rows = await withRlsPocTransaction(database.db, organizationId, (tx) =>
     tx
       .select({ token: rlsPocOperations.token })
       .from(rlsPocOperations)
@@ -261,7 +261,7 @@ export async function verifyRlsPocStatementFailure(
     statementFailed = true;
   }
 
-  const rows = await withTenantTransaction(database.db, organizationId, (tx) =>
+  const rows = await withRlsPocTransaction(database.db, organizationId, (tx) =>
     tx
       .select({ token: rlsPocOperations.token })
       .from(rlsPocOperations)
@@ -280,7 +280,7 @@ export async function verifyRlsPocCrossWrite(
     organizationId === "org_a" ? "org_b" : "org_a";
 
   try {
-    await withTenantTransaction(database.db, organizationId, (tx) =>
+    await withRlsPocTransaction(database.db, organizationId, (tx) =>
       tx.insert(rlsPocOperations).values({
         organizationId: otherOrganizationId,
         token,

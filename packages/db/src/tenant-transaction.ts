@@ -47,7 +47,7 @@ export class TenantAuthorizationError extends Error {
  * This helper is for the isolated POC table; product tenant queries use
  * withAuthorizedTenantTransaction below.
  */
-export function withTenantTransaction<T>(
+export function withRlsPocTransaction<T>(
   database: PocDatabase,
   organizationId: string,
   operation: (transaction: TenantTransaction) => Promise<T>

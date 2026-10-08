@@ -5,19 +5,19 @@ Este gate verifica as policies reais de organizations/memberships em PostgreSQL 
 ## Escopo
 
 - aplica a migration Drizzle do PR22;
-- confirma FORCE RLS, policies, papel runtime sem ownership/BYPASSRLS e grants mínimos;
-- cria usuários, organizações e memberships sintéticos com o papel runtime;
-- verifica onboarding idempotente sob RLS;
-- testa contexto ausente, leituras próprias, isolamento cross-tenant, INSERTs proibidos, rollback e reuso do mesmo backend;
+- confirma FORCE RLS, policies de SELECT, papel runtime sem ownership/BYPASSRLS e grants SELECT-only nas tabelas tenant;
+- cria usuários, organizações e memberships sintéticos pela conexão owner do banco descartável;
+- verifica a idempotência do onboarding com a conexão owner; o runtime não recebe INSERT nessas tabelas;
+- testa contexto ausente, leituras próprias, isolamento cross-tenant, tentativas de INSERT com GUCs falsificados, rollback e reuso do mesmo backend;
 - remove as fixtures ao terminar, inclusive quando a validação falha.
 
-O gate conecta diretamente ao Neon e usa SET ROLE para executar como polaris_pr11_runtime. O bootstrap PR11 criou a fixture RLS fora do journal Drizzle; por isso a preparação somente aceita o fixture PR11 esperado: sementes org_a/org_b e, opcionalmente, uma linha UUID com valor retry survives once; policy/grants esperados e journal vazio. Ela remove apenas essa tabela sintética para que db:migrate recrie toda a cadeia; as sementes são repostas pelo gate. O gate PR11 já cobre Worker → Hyperdrive → Neon, pooling, concorrência e reset transaction-local no harness RLS. Este gate valida o novo schema Polaris sob o papel runtime; ele não adiciona nem publica uma rota de produto tenant. A resolução Better Auth é coberta pelos testes locais do compositor.
+O gate conecta diretamente ao Neon e usa SET ROLE para executar as leituras tenant como polaris_pr11_runtime. O onboarding sintético e a preparação de usuários/organizações/memberships usam a conexão owner privilegiada, que precisa ser owner das tabelas e ter BYPASSRLS. A migration 0008 remove as policies e o grant de INSERT da migration 0007; o migrator PostgreSQL instalado do Drizzle aplica as migrations pendentes numa transação, então 0007+0008 entram juntas e o estado final é SELECT-only antes da aplicação começar. O bootstrap PR11 criou a fixture RLS fora do journal Drizzle; por isso a preparação somente aceita o fixture PR11 esperado: sementes org_a/org_b e, opcionalmente, uma linha UUID com valor retry survives once; policy/grants esperados e journal vazio. Ela remove apenas essa tabela sintética para que db:migrate recrie toda a cadeia; as sementes são repostas pelo gate. O gate PR11 já cobre Worker → Hyperdrive → Neon, pooling, concorrência e reset transaction-local no harness RLS. Este gate valida o novo schema Polaris sob o papel runtime; ele não adiciona nem publica uma rota de produto tenant. A resolução Better Auth é coberta pelos testes locais do compositor.
 
 ## Pré-requisitos
 
 - Use somente a conexão direta que o responsável identificou como banco descartável para testes; não use production.
 - Banco neondb em PostgreSQL 18, região AWS South America East 1 (São Paulo).
-- URL owner direta, sem -pooler, para essa branch.
+- URL owner direta, sem -pooler, para essa branch; o owner precisa ter BYPASSRLS e ser owner das tabelas tenant.
 - Papel polaris_pr11_runtime existente, sem BYPASSRLS e sem ownership das tabelas.
 - Dependências do monorepo instaladas pelo lockfile.
 
@@ -53,6 +53,6 @@ O comando db:migrate usa URL direta. A migration requer o papel runtime já prov
 
 ## Resultado exigido
 
-O gate deve imprimir status passed e confirmar: PostgreSQL 18; role NOBYPASSRLS e não owner; RLS habilitado e forçado; grants SELECT/INSERT apenas; contexto ausente sem linhas; membership/capability/organização validados; reads e writes cross-tenant negados; onboarding e retry idempotentes sob RLS; rollback; reset do contexto após reusar o mesmo backend; UPDATE/DELETE negados.
+O gate deve imprimir status passed e confirmar: PostgreSQL major 18 (também imprime server_version observado); role runtime NOBYPASSRLS e sem ownership; owner privilegiado identificado; RLS habilitado e forçado; grants SELECT-only nas tabelas tenant; contexto ausente sem linhas; membership/capability/organização validados; reads e writes cross-tenant negados; INSERT de organization/membership negado mesmo após falsificar os GUCs; onboarding/retry idempotentes pela conexão owner; rollback; reset do contexto após reusar o mesmo backend; UPDATE/DELETE negados.
 
 Se a limpeza falhar, preserve o resultado do erro, confirme que a branch continua descartável e remova as fixtures ou descarte a branch antes de reutilizá-la. Não rode o gate contra production.

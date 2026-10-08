@@ -47,15 +47,6 @@ export const organizations = pgTable(
         )
       `,
     }),
-    pgPolicy("organizations_context_insert", {
-      for: "insert",
-      to: runtimeRole,
-      withCheck: sql`
-        ${table.id} = NULLIF(current_setting('app.organization_id', true), '')
-        AND NULLIF(current_setting('app.user_id', true), '') IS NOT NULL
-        AND ${table.status} = 'active'
-      `,
-    }),
   ]
 ).enableRLS();
 
@@ -98,16 +89,6 @@ export const memberships = pgTable(
           NULLIF(current_setting('app.organization_id', true), '') IS NULL
           OR ${table.organizationId} = NULLIF(current_setting('app.organization_id', true), '')
         )
-      `,
-    }),
-    pgPolicy("memberships_current_user_insert", {
-      for: "insert",
-      to: runtimeRole,
-      withCheck: sql`
-        ${table.organizationId} = NULLIF(current_setting('app.organization_id', true), '')
-        AND ${table.userId} = NULLIF(current_setting('app.user_id', true), '')
-        AND ${table.role} = 'owner'
-        AND ${table.status} = 'active'
       `,
     }),
   ]

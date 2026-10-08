@@ -45,6 +45,9 @@ export interface CreateInitialOrganizationInDatabaseResult {
  * Persists initial organization creation atomically. The user-scoped advisory
  * lock is the V1 single-organization boundary; the schema remains multi-org.
  * This is an onboarding transaction, not an authorized tenant transaction.
+ * It currently requires a separately controlled privileged connection because
+ * the runtime role intentionally has no organization or membership INSERT grant.
+ * Do not expose it from a request route until a controlled writer is designed.
  */
 export function createInitialOrganizationInDatabase(
   database: Database,
@@ -55,10 +58,6 @@ export function createInitialOrganizationInDatabase(
       await transaction.execute(
         sql`select pg_advisory_xact_lock(${organizationCreationLockNamespace}, hashtext(${input.userId}))`
       );
-      await transaction.execute(
-        sql`SELECT set_config('app.user_id', ${input.userId}, true)`
-      );
-
       const [identity] = await transaction
         .select({ emailVerified: user.emailVerified })
         .from(user)
@@ -87,10 +86,6 @@ export function createInitialOrganizationInDatabase(
 
       const [existingMembership] = existingMemberships;
       if (existingMembership) {
-        await transaction.execute(
-          sql`SELECT set_config('app.organization_id', ${existingMembership.organizationId}, true)`
-        );
-
         const [existingOrganization] = await transaction
           .select()
           .from(organizations)
@@ -105,10 +100,6 @@ export function createInitialOrganizationInDatabase(
 
         return { created: false, organization: existingOrganization };
       }
-
-      await transaction.execute(
-        sql`SELECT set_config('app.organization_id', ${input.id}, true)`
-      );
 
       await transaction.insert(organizations).values({
         id: input.id,
