@@ -1,0 +1,2 @@
+ALTER TABLE "memberships" ADD CONSTRAINT "memberships_role_check" CHECK ("memberships"."role" = 'owner');--> statement-breakpoint
+ALTER TABLE "memberships" ADD CONSTRAINT "memberships_status_check" CHECK ("memberships"."status" = 'active');

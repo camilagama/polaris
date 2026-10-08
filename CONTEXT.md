@@ -8,6 +8,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Evitar:** conta, quando o assunto for a pessoa autenticada.
 
 **Organização (organization):** unidade operacional que possui o catálogo, o estoque, as vendas e os registros do revendedor.<br>
+**Estado da organização (organization status):** estado operacional `active`, `suspended` ou `closed`; não representa o estado de billing.<br>
 **Evitar:** workspace na interface; tenant como nome de produto.
 
 **Membership (vínculo):** relação de acesso entre um usuário e uma organização.
@@ -46,11 +47,14 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 ## Dinheiro e tempo
 
+**Moeda:** unidade monetária usada para expressar valores econômicos; a V1 opera em BRL.<br>
 **Money:** valor econômico expresso na moeda usada pelo negócio.
 
-**Competência:** período ao qual uma despesa ou resultado pertence, independentemente da data em que o dinheiro foi pago.
+**Competência:** período ao qual uma despesa ou resultado pertence, independentemente da data em que o dinheiro foi pago.<br>
+**Fuso horário da organização:** zona IANA usada para interpretar datas de negócio daquela organização; instantes técnicos são UTC.
 
 **Resultado operacional estimado:** indicador gerencial obtido das vendas, custos e despesas registrados; não significa lucro líquido nem confirmação de caixa recebido.
+
 ## Acesso comercial
 
 **Plano:** oferta comercial, como Free ou Pro.

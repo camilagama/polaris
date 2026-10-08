@@ -1262,66 +1262,30 @@ Implementar:
 - Aplicar a migration e verificar o limite absoluto em PostgreSQL 18.
 
 ---
+
 # PR 19 — Organizations e memberships
 
+Criar schema e migration PostgreSQL para `organizations` e `memberships`.
 
-
-Criar schema:
-
-
+Campos mínimos de organização:
 
 ```text
-
-organizations
-
-memberships
-
+id
+name
+timezone
+currency
+status
 ```
 
+Membership é identificado pela chave composta `(organization_id, user_id)` e inicia com `role = owner` e `status = active`; checks no banco limitam o vocabulário desta etapa a esses dois valores até que novos roles ou estados sejam definidos por migration. Não adicionar unicidade global a `user_id`: permitir múltiplas organizações no modelo preserva a evolução futura; a regra V1 de uma organização por usuário será imposta no domínio durante o PR20.
 
+A V1 opera em BRL. A organização mantém timezone IANA; o PR20 valida o identificador no servidor durante o onboarding. A criação exige email verificado e essa condição é conferida no servidor, conforme `docs/business-rules/organization-and-access.md`.
 
-Campos mínimos:
+Estados de organização: `active`, `suspended` e `closed`; não misturar estado operacional com estado de billing. A FK de membership para usuário usa `ON DELETE RESTRICT`; portanto, a exclusão física de um usuário com vínculo fica bloqueada. Fluxo de transferência/encerramento antes da exclusão ainda precisa ser definido.
 
+Não impor acoplamento estrutural irreversível. Este PR cria somente schema: sem grant para role de runtime, políticas RLS ou rotas tenant. Grants/RLS entram junto da autorização e do contexto tenant, antes de operações tenant serem expostas.
 
-
-```text
-
-organization.id
-
-organization.name
-
-organization.timezone
-
-organization.currency
-
-organization.status
-
-```
-
-
-
-Membership:
-
-
-
-```text
-
-owner
-
-active
-
-```
-
-
-
-V1 impede múltiplas orgs via regra de domínio.
-Criação da organização exige email verificado e valida a condição no servidor, conforme docs/business-rules/organization-and-access.md.
-
-
-
-Não impor acoplamento estrutural irreversível.
-
-
+Gate: gerar e reaplicar a migration em branch Neon descartável PostgreSQL 18; provar checks de status/moeda e de role/status do membership, chave composta e FKs; confirmar que `polaris_pr11_runtime` continua sem `SELECT` nas novas tabelas e que a branch production não foi alterada.
 
 ---
 
@@ -1355,11 +1319,11 @@ Transação cria:
 
 
 
-Usar idempotency/advisory mechanism apropriado.
+Usar idempotency/advisory mechanism apropriado. Para impor uma organização por usuário sob concorrência, obter lock transacional por usuário antes de consultar/criar o membership; uma chave de idempotência por request, sozinha, não impede duas criações simultâneas com chaves diferentes.
 
 
 
-Testar request duplicada.
+Testar retry com a mesma chave idempotente e duas requests concorrentes para o mesmo usuário com chaves distintas; deve existir exatamente uma organização e um membership owner. Validar timezone IANA e email verificado no servidor.
 
 
 
