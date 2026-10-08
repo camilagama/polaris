@@ -68,16 +68,31 @@ async function main() {
       "The onboarding gate requires PostgreSQL 18."
     );
     const runtimePrivileges = await pool.query<{
+      membershipsDelete: boolean;
+      membershipsInsert: boolean;
       membershipsSelect: boolean;
+      membershipsUpdate: boolean;
+      organizationsDelete: boolean;
       organizationsInsert: boolean;
       organizationsSelect: boolean;
+      organizationsUpdate: boolean;
     }>(`SELECT has_table_privilege('polaris_pr11_runtime', 'public.memberships', 'SELECT') AS "membershipsSelect",
+             has_table_privilege('polaris_pr11_runtime', 'public.memberships', 'INSERT') AS "membershipsInsert",
+             has_table_privilege('polaris_pr11_runtime', 'public.memberships', 'UPDATE') AS "membershipsUpdate",
+             has_table_privilege('polaris_pr11_runtime', 'public.memberships', 'DELETE') AS "membershipsDelete",
              has_table_privilege('polaris_pr11_runtime', 'public.organizations', 'SELECT') AS "organizationsSelect",
-             has_table_privilege('polaris_pr11_runtime', 'public.organizations', 'INSERT') AS "organizationsInsert"`);
+             has_table_privilege('polaris_pr11_runtime', 'public.organizations', 'INSERT') AS "organizationsInsert",
+             has_table_privilege('polaris_pr11_runtime', 'public.organizations', 'UPDATE') AS "organizationsUpdate",
+             has_table_privilege('polaris_pr11_runtime', 'public.organizations', 'DELETE') AS "organizationsDelete"`);
     assert.deepEqual(runtimePrivileges.rows[0], {
+      membershipsDelete: false,
+      membershipsInsert: false,
       membershipsSelect: false,
+      membershipsUpdate: false,
+      organizationsDelete: false,
       organizationsInsert: false,
       organizationsSelect: false,
+      organizationsUpdate: false,
     });
 
     const verifiedUserId = await createUser(true);

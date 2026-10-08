@@ -41,7 +41,10 @@ export interface CreateInitialOrganizationResult {
 }
 
 function normalizeInput(input: CreateInitialOrganizationInput) {
-  if (!input.authenticatedUserId.trim()) {
+  if (
+    !input.authenticatedUserId.trim() ||
+    input.authenticatedUserId !== input.authenticatedUserId.trim()
+  ) {
     throw new CreateInitialOrganizationError("invalid_user_id");
   }
 

@@ -26,6 +26,18 @@ describe("createInitialOrganization input validation", () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it("rejects a user ID with surrounding whitespace", async () => {
+    const { database, transaction } = databaseWithoutQueries();
+
+    await expect(
+      createInitialOrganization(database, {
+        name: "Polaris",
+        timezone: "America/Sao_Paulo",
+        authenticatedUserId: " verified-user ",
+      })
+    ).rejects.toMatchObject({ code: "invalid_user_id" });
+    expect(transaction).not.toHaveBeenCalled();
+  });
   it("rejects a blank organization name before opening a transaction", async () => {
     const { database, transaction } = databaseWithoutQueries();
 
