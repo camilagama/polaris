@@ -228,7 +228,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão do usuário | Pendente | PR #21 aguarda sua revisão; nenhum merge foi feito. |
 | Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |
 
-### PR24 — Categories (em andamento)
+### PR24 — Categories (em andamento; gate remoto pendente)
 
 | Subetapa | Status | Evidência / trabalho restante |
 | --- | --- | --- |
@@ -238,8 +238,8 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Read contract e UI | Implementados localmente | DTO estável com UUID, organização, nome, estado e timestamps serializados; tela de gestão responsiva com temas claro/escuro. Cache, comandos e sync offline e UI de login permanecem adiados. |
 | Verificação local | Concluída | `bun run check`: lint, format, types, boundaries, Knip e 91 testes em 14 arquivos passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou mudanças adicionais. |
 | Gate Neon PostgreSQL + Worker | Pendente de credencial | A conexão owner atual retornou SQLSTATE `28P01` antes da migration 0013; nenhum SQL foi aplicado. O Worker PR24 ainda não foi executado. É necessária uma URL owner direta válida da branch descartável ou o handoff de rotação manual da senha. |
-| Revisão independente | Concluída após correção | A revisão encontrou divergência entre code points no domínio e unidades UTF-16 no contrato/inputs HTML. Contrato e interface agora contam code points, sem truncar emojis; regressão RPC confirma 100 emojis aceitos e 101 rejeitados. Nenhum outro achado concreto foi reportado. |
-| Draft PR e CI | Em andamento | Publicar draft PR empilhado sobre PR22 e acompanhar CI. O gate remoto Neon permanece pendente; não fazer merge sem instrução explícita. |
+| Revisão independente | Concluída após correção | A revisão identificou que `maxLength` do HTML limita unidades UTF-16 e poderia truncar nomes com emojis. A documentação Zod 4.6.5 confirma que `.max()` conta code points; o contrato e a UI agora usam validação/contador explícitos alinhados ao domínio. Regressão RPC confirma 100 emojis aceitos e 101 rejeitados. Nenhum outro achado concreto foi reportado. |
+| Draft PR e CI | Concluídos no commit de implementação | [PR #23](https://github.com/camilagama/polaris/pull/23), draft empilhado sobre PR #22. GitHub Actions 6/6 passaram no commit `325d4d3`. O gate Neon PostgreSQL + Worker segue pendente de credencial owner válida; nenhum merge foi feito. |
 
 ## Publicação GitHub
 
