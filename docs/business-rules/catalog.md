@@ -9,3 +9,4 @@
 - Criação, rename, archive, restore e tombstone delete são auditados na mesma transação da mutação. Repetir uma transição já aplicada é idempotente e não emite evento duplicado.
 - O read contract contém UUID estável, organização, nome, estado e timestamps serializados para futura leitura offline. PR24 não adiciona cache local, comandos offline ou sync.
 - A V1 não semeia categorias por padrão. Categorias iniciais vêm da organização.
+- Produtos podem manter categoria opcional somente dentro da mesma organização; a remoção terminal de categoria exige ausência de vínculos. Regras completas em [products.md](products.md).

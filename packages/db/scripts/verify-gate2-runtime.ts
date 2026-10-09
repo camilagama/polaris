@@ -11,15 +11,28 @@ import {
   renameCategory,
   restoreCategory,
 } from "../src/category-repository";
+import {
+  archiveProduct,
+  createProduct,
+  listProducts,
+  restoreProduct,
+  updateProduct,
+} from "../src/product-repository";
 import { createDatabase } from "../src/client";
 import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import { categories } from "../src/schema/category";
+import { products } from "../src/schema/product";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import {
   CategoryDeletedError,
+  CategoryInUseError,
   CategoryLifecycleError,
   CategoryNameConflictError,
 } from "@polaris/domain/catalog/category";
+import {
+  ProductCategoryUnavailableError,
+  ProductVersionConflictError,
+} from "@polaris/domain/catalog/product";
 
 const runtimeRole = "polaris_pr11_runtime";
 const onboardingRole = "polaris_onboarding_runtime";
@@ -175,6 +188,107 @@ async function expectCategoryHardDeleteDenied(
   }
 }
 
+async function expectCategoryTombstoneTriggerDenied(
+  client: Client,
+  userId: string,
+  organizationId: string,
+  categoryId: string
+): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    await expectSqlState(
+      client.query(
+        "UPDATE public.categories SET deleted_at = now() WHERE id = $1",
+        [categoryId]
+      ),
+      "23503",
+      "database trigger blocks tombstoning a category referenced by products"
+    );
+  } finally {
+    await client.query("ROLLBACK");
+  }
+}
+
+async function expectInactiveCategoryAssignmentDenied(
+  client: Client,
+  userId: string,
+  organizationId: string,
+  categoryId: string
+): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    await expectSqlState(
+      client.query(
+        "INSERT INTO public.products (organization_id, category_id, name) " +
+          "VALUES ($1, $2, $3)",
+        [organizationId, categoryId, "Direct archived category assignment"]
+      ),
+      "23503",
+      "database trigger rejects assigning a new product to an archived category"
+    );
+  } finally {
+    await client.query("ROLLBACK");
+  }
+}
+
+async function expectProductVariantDeleteDenied(
+  client: Client,
+  userId: string,
+  organizationId: string,
+  productId: string
+): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    await expectSqlState(
+      client.query(
+        "DELETE FROM public.product_variants WHERE product_id = $1",
+        [productId]
+      ),
+      "42501",
+      "tenant role cannot delete the default product variant"
+    );
+  } finally {
+    await client.query("ROLLBACK");
+  }
+}
+
+async function expectProductWithoutVariantDenied(
+  pool: ReturnType<typeof createDatabase>["pool"],
+  organizationId: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "INSERT INTO public.products (organization_id, name) VALUES ($1, $2)",
+      [organizationId, "Gate product without variant"]
+    );
+    await expectSqlState(
+      client.query("SET CONSTRAINTS ALL IMMEDIATE"),
+      "23514",
+      "deferred database invariant requires every product to have a variant"
+    );
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This gate is a sequential checklist of independent database invariants.
 async function main() {
   const connectionString = requiredEnvironment(
@@ -293,7 +407,16 @@ async function main() {
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
         "WHERE n.nspname = 'public' AND c.relname = ANY($1::text[]) " +
         "ORDER BY c.relname",
-      [["categories", "memberships", "organizations", "tenant_audit_event"]]
+      [
+        [
+          "categories",
+          "memberships",
+          "organizations",
+          "product_variants",
+          "products",
+          "tenant_audit_event",
+        ],
+      ]
     );
     assert.deepEqual(
       rls.rows.map((table) => [table.name, table.enabled, table.forced]),
@@ -301,6 +424,8 @@ async function main() {
         ["categories", true, true],
         ["memberships", true, true],
         ["organizations", true, true],
+        ["product_variants", true, true],
+        ["products", true, true],
         ["tenant_audit_event", true, true],
       ]
     );
@@ -354,11 +479,128 @@ async function main() {
       categoryPolicies.rows[2]?.withCheck?.includes("app.organization_id")
     );
 
+    const productPolicies = await adminPool.query<{
+      name: string;
+      command: string;
+      roles: string;
+      usingExpression: string | null;
+      withCheck: string | null;
+    }>(
+      "SELECT policyname AS name, cmd AS command, roles, " +
+        'qual AS "usingExpression", with_check AS "withCheck" ' +
+        "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' " +
+        "ORDER BY policyname"
+    );
+    assert.deepEqual(
+      productPolicies.rows.map((policy) => [policy.name, policy.command]),
+      [
+        ["products_current_tenant_insert", "INSERT"],
+        ["products_current_tenant_select", "SELECT"],
+        ["products_current_tenant_update", "UPDATE"],
+      ]
+    );
+    assert.ok(
+      productPolicies.rows.every(
+        (policy) => policy.roles === `{${runtimeRole}}`
+      )
+    );
+    assert.ok(
+      productPolicies.rows
+        .filter((policy) => policy.command !== "SELECT")
+        .every(
+          (policy) =>
+            policy.withCheck?.includes("app.user_id") &&
+            policy.withCheck.includes("app.organization_id")
+        )
+    );
+    assert.ok(
+      productPolicies.rows
+        .find((policy) => policy.command === "SELECT")
+        ?.usingExpression?.includes("app.organization_id")
+    );
+
+    const variantPolicies = await adminPool.query<{
+      name: string;
+      command: string;
+      roles: string;
+      usingExpression: string | null;
+      withCheck: string | null;
+    }>(
+      "SELECT policyname AS name, cmd AS command, roles, " +
+        'qual AS "usingExpression", with_check AS "withCheck" ' +
+        "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_variants' " +
+        "ORDER BY policyname"
+    );
+    assert.deepEqual(
+      variantPolicies.rows.map((policy) => [policy.name, policy.command]),
+      [
+        ["product_variants_current_tenant_insert", "INSERT"],
+        ["product_variants_current_tenant_select", "SELECT"],
+      ]
+    );
+    assert.ok(
+      variantPolicies.rows.every(
+        (policy) => policy.roles === `{${runtimeRole}}`
+      )
+    );
+    assert.ok(
+      variantPolicies.rows
+        .filter((policy) => policy.command === "INSERT")
+        .every(
+          (policy) =>
+            policy.withCheck?.includes("app.user_id") &&
+            policy.withCheck.includes("product_scope")
+        )
+    );
+
+    const productTriggers = await adminPool.query<{
+      name: string;
+      deferrable: boolean | null;
+      initiallyDeferred: boolean | null;
+    }>(
+      "SELECT t.tgname AS name, c.condeferrable AS deferrable, " +
+        'c.condeferred AS "initiallyDeferred" ' +
+        "FROM pg_trigger AS t LEFT JOIN pg_constraint AS c ON c.oid = t.tgconstraint " +
+        "WHERE NOT t.tgisinternal AND t.tgrelid = ANY($1::regclass[]) " +
+        "ORDER BY t.tgname",
+      [["public.categories", "public.products", "public.product_variants"]]
+    );
+    assert.deepEqual(productTriggers.rows, [
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "categories_prevent_tombstone_with_products",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
+        name: "product_variants_preserve_parent",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "products_require_active_category",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
+        name: "products_require_variant",
+      },
+    ]);
+
     const grants = await adminPool.query<{
       categorySelect: boolean;
       categoryInsert: boolean;
       categoryUpdate: boolean;
       categoryDelete: boolean;
+      productSelect: boolean;
+      productInsert: boolean;
+      productUpdate: boolean;
+      productDelete: boolean;
+      variantSelect: boolean;
+      variantInsert: boolean;
+      variantUpdate: boolean;
+      variantDelete: boolean;
       organizationInsert: boolean;
       membershipInsert: boolean;
     }>(
@@ -366,6 +608,14 @@ async function main() {
         "has_table_privilege($1, 'public.categories', 'INSERT') AS \"categoryInsert\", " +
         "has_table_privilege($1, 'public.categories', 'UPDATE') AS \"categoryUpdate\", " +
         "has_table_privilege($1, 'public.categories', 'DELETE') AS \"categoryDelete\", " +
+        "has_table_privilege($1, 'public.products', 'SELECT') AS \"productSelect\", " +
+        "has_table_privilege($1, 'public.products', 'INSERT') AS \"productInsert\", " +
+        "has_table_privilege($1, 'public.products', 'UPDATE') AS \"productUpdate\", " +
+        "has_table_privilege($1, 'public.products', 'DELETE') AS \"productDelete\", " +
+        "has_table_privilege($1, 'public.product_variants', 'SELECT') AS \"variantSelect\", " +
+        "has_table_privilege($1, 'public.product_variants', 'INSERT') AS \"variantInsert\", " +
+        "has_table_privilege($1, 'public.product_variants', 'UPDATE') AS \"variantUpdate\", " +
+        "has_table_privilege($1, 'public.product_variants', 'DELETE') AS \"variantDelete\", " +
         "has_table_privilege($1, 'public.organizations', 'INSERT') AS \"organizationInsert\", " +
         "has_table_privilege($1, 'public.memberships', 'INSERT') AS \"membershipInsert\"",
       [runtimeRole]
@@ -377,6 +627,14 @@ async function main() {
       categoryUpdate: true,
       membershipInsert: false,
       organizationInsert: false,
+      productDelete: false,
+      productInsert: true,
+      productSelect: true,
+      productUpdate: true,
+      variantDelete: false,
+      variantInsert: true,
+      variantSelect: true,
+      variantUpdate: false,
     });
 
     const functionAccess = await adminPool.query<{
@@ -662,6 +920,184 @@ async function main() {
     );
     assert.equal(renameRetry.changed, false);
 
+    const productA = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          categoryId: categoryA.id,
+          description: "  ",
+          name: "Bolsa",
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(productA.description, null);
+    assert.equal(productA.categoryId, categoryA.id);
+    assert.equal(productA.version, 1);
+
+    const duplicateProductA = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Bolsa",
+          requestId: randomUUID(),
+        })
+    );
+    const productB = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userB,
+        capability: "product:create",
+        requestedOrganizationId: organizationB.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          categoryId: categoryB.id,
+          name: "Bolsa",
+          requestId: randomUUID(),
+        })
+    );
+    assert.notEqual(productA.id, duplicateProductA.id);
+    assert.equal(productA.name, duplicateProductA.name);
+    assert.equal(productB.name, productA.name);
+
+    const archivedCategoryB = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userB,
+        capability: "category:manage",
+        requestedOrganizationId: organizationB.organization.id,
+      },
+      (transaction, identity) =>
+        archiveCategory(transaction, identity, { id: categoryB.id })
+    );
+    assert.equal(archivedCategoryB.changed, true);
+    assert.equal(productB.categoryId, categoryB.id);
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userB,
+          capability: "product:create",
+          requestedOrganizationId: organizationB.organization.id,
+        },
+        (transaction, identity) =>
+          createProduct(transaction, identity, {
+            categoryId: categoryB.id,
+            name: "Produto em categoria arquivada",
+          })
+      ),
+      ProductCategoryUnavailableError
+    );
+    await expectInactiveCategoryAssignmentDenied(
+      runtimeClient,
+      userB,
+      organizationB.organization.id,
+      categoryB.id
+    );
+    const restoredCategoryB = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userB,
+        capability: "category:manage",
+        requestedOrganizationId: organizationB.organization.id,
+      },
+      (transaction, identity) =>
+        restoreCategory(transaction, identity, { id: categoryB.id })
+    );
+    assert.equal(restoredCategoryB.changed, true);
+
+    const productIds = [productA.id, duplicateProductA.id, productB.id];
+    const productIdVersions = await adminPool.query<{ version: number }>(
+      "SELECT uuid_extract_version(id) AS version FROM public.products " +
+        "WHERE id = ANY($1::uuid[])",
+      [productIds]
+    );
+    assert.equal(productIdVersions.rows.length, 3);
+    assert.ok(productIdVersions.rows.every((row) => row.version === 7));
+    const defaultVariants = await adminPool.query<{
+      product_id: string;
+      variant_count: string;
+      all_default: boolean;
+    }>(
+      "SELECT product_id::text, count(*)::text AS variant_count, " +
+        "bool_and(is_default) AS all_default FROM public.product_variants " +
+        "WHERE product_id = ANY($1::uuid[]) GROUP BY product_id " +
+        "ORDER BY product_id",
+      [productIds]
+    );
+    assert.equal(defaultVariants.rows.length, 3);
+    assert.ok(
+      defaultVariants.rows.every(
+        (row) => row.variant_count === "1" && row.all_default
+      )
+    );
+    const variantIdVersions = await adminPool.query<{ version: number }>(
+      "SELECT uuid_extract_version(id) AS version " +
+        "FROM public.product_variants WHERE product_id = ANY($1::uuid[])",
+      [productIds]
+    );
+    assert.equal(variantIdVersions.rows.length, 3);
+    assert.ok(variantIdVersions.rows.every((row) => row.version === 7));
+    await expectProductWithoutVariantDenied(
+      adminPool,
+      organizationA.organization.id
+    );
+    await expectProductVariantDeleteDenied(
+      runtimeClient,
+      userA,
+      organizationA.organization.id,
+      productA.id
+    );
+
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:create",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          createProduct(transaction, identity, {
+            categoryId: categoryB.id,
+            name: "Categoria de outro tenant",
+          })
+      ),
+      ProductCategoryUnavailableError,
+      "product cannot point at another tenant category"
+    );
+
+    const productListsA = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      async (transaction, identity) => ({
+        products: await listProducts(transaction, identity, { status: "all" }),
+        otherTenantRows: await transaction
+          .select({ id: products.id })
+          .from(products)
+          .where(eq(products.organizationId, organizationB.organization.id)),
+      })
+    );
+    assert.deepEqual(
+      productListsA.products.map((product) => product.id).sort(),
+      [productA.id, duplicateProductA.id].sort()
+    );
+    assert.deepEqual(productListsA.otherTenantRows, []);
+
     const visibleA = await withAuthorizedTenantTransaction(
       runtimeDb,
       {
@@ -697,6 +1133,162 @@ async function main() {
       organizationA.organization.id,
       categoryA.id
     );
+
+    const updatedProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        updateProduct(transaction, identity, {
+          categoryId: categoryA.id,
+          description: "Lona resistente",
+          expectedVersion: 1,
+          id: productA.id,
+          name: "Bolsa transversal",
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(updatedProduct.changed, true);
+    assert.equal(updatedProduct.product.version, 2);
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          updateProduct(transaction, identity, {
+            categoryId: categoryA.id,
+            description: "Concorrência obsoleta",
+            expectedVersion: 1,
+            id: productA.id,
+            name: "Bolsa velha",
+          })
+      ),
+      ProductVersionConflictError
+    );
+
+    const archivedProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        archiveProduct(transaction, identity, {
+          expectedVersion: 2,
+          id: productA.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(archivedProduct.changed, true);
+    assert.equal(archivedProduct.product.version, 3);
+    const archiveProductRetry = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        archiveProduct(transaction, identity, {
+          expectedVersion: 2,
+          id: productA.id,
+        })
+    );
+    assert.equal(archiveProductRetry.changed, false);
+    const activeProductsAfterArchive = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) => listProducts(transaction, identity)
+    );
+    assert.deepEqual(
+      activeProductsAfterArchive.map((product) => product.id),
+      [duplicateProductA.id]
+    );
+    const archivedProducts = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        listProducts(transaction, identity, { status: "archived" })
+    );
+    assert.deepEqual(
+      archivedProducts.map((product) => product.id),
+      [productA.id]
+    );
+    const restoredProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        restoreProduct(transaction, identity, {
+          expectedVersion: 3,
+          id: productA.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(restoredProduct.changed, true);
+    assert.equal(restoredProduct.product.version, 4);
+
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "category:manage",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          deleteCategory(transaction, identity, {
+            id: categoryA.id,
+          })
+      ),
+      CategoryInUseError,
+      "category tombstone is blocked while a product points at it"
+    );
+    await expectCategoryTombstoneTriggerDenied(
+      runtimeClient,
+      userA,
+      organizationA.organization.id,
+      categoryA.id
+    );
+
+    const unlinkedProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        updateProduct(transaction, identity, {
+          categoryId: null,
+          description: "Lona resistente",
+          expectedVersion: 4,
+          id: productA.id,
+          name: "Bolsa transversal",
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(unlinkedProduct.changed, true);
+    assert.equal(unlinkedProduct.product.version, 5);
 
     const archivedCategory = await withAuthorizedTenantTransaction(
       runtimeDb,
@@ -917,6 +1509,22 @@ async function main() {
       ]
     );
 
+    const productAudit = await adminPool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 ORDER BY event_type",
+      [productA.id]
+    );
+    assert.deepEqual(
+      productAudit.rows.map((row) => row.event_type),
+      [
+        "product.archived",
+        "product.created",
+        "product.restored",
+        "product.updated",
+        "product.updated",
+      ]
+    );
+
     await adminPool.query("DELETE FROM public.organizations WHERE id = $1", [
       organizationB.organization.id,
     ]);
@@ -936,6 +1544,17 @@ async function main() {
     assert.deepEqual(
       (
         await adminPool.query(
+          "SELECT id FROM public.products WHERE id = $1 " +
+            "UNION ALL SELECT id FROM public.product_variants WHERE product_id = $1",
+          [productB.id]
+        )
+      ).rows,
+      [],
+      "organization cascade removes products and their variants"
+    );
+    assert.deepEqual(
+      (
+        await adminPool.query(
           "SELECT id FROM public.tenant_audit_event WHERE entity_id = $1",
           [categoryB.id]
         )
@@ -948,6 +1567,7 @@ async function main() {
       JSON.stringify({
         categoryIsolationAndAudit: "passed",
         categoryLifecycleAndUniqueName: "passed",
+        categoryProductTombstoneProtection: "passed",
         directOnboardingDml: "denied",
         onboardingAtomicRetryAndAudit: "passed",
         onboardingRole,
@@ -959,8 +1579,12 @@ async function main() {
           "categories",
           "memberships",
           "organizations",
+          "product_variants",
+          "products",
           "tenant_audit_event",
         ],
+        productAtomicVariantAndUuidV7: "passed",
+        productLifecycleConcurrencyAndAudit: "passed",
         rollbackAndCascade: "passed",
         status: "passed",
         tenantRole: runtimeRole,

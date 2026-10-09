@@ -1,5 +1,9 @@
 import { implement, ORPCError } from "@orpc/server";
-import { type CategoryReadModel, polarisContract } from "@polaris/contracts";
+import {
+  type CategoryReadModel,
+  type ProductReadModel,
+  polarisContract,
+} from "@polaris/contracts";
 import {
   archiveCategory,
   createCategory,
@@ -8,16 +12,31 @@ import {
   renameCategory,
   restoreCategory,
 } from "@polaris/db/category-repository";
+import {
+  archiveProduct,
+  createProduct,
+  listProducts,
+  restoreProduct,
+  updateProduct,
+} from "@polaris/db/product-repository";
 import { createDatabase } from "@polaris/db/client";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
   CategoryDeletedError,
+  CategoryInUseError,
   CategoryLifecycleError,
   CategoryNameConflictError,
   CategoryNameError,
   CategoryNotFoundError,
   deriveCategoryLifecycle,
 } from "@polaris/domain/catalog/category";
+import {
+  ProductCategoryUnavailableError,
+  ProductNameError,
+  ProductNotFoundError,
+  ProductVersionConflictError,
+  deriveProductLifecycle,
+} from "@polaris/domain/catalog/product";
 import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
@@ -49,6 +68,11 @@ interface RpcRouterDependencies {
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   deleteCategory: typeof deleteCategory;
+  archiveProduct: typeof archiveProduct;
+  createProduct: typeof createProduct;
+  listProducts: typeof listProducts;
+  restoreProduct: typeof restoreProduct;
+  updateProduct: typeof updateProduct;
   listCategories: typeof listCategories;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
@@ -84,6 +108,31 @@ function categoryReadModel(category: {
     organizationId: category.organizationId,
     status: deriveCategoryLifecycle(category.archivedAt, category.deletedAt),
     updatedAt: category.updatedAt.toISOString(),
+  };
+}
+
+function productReadModel(product: {
+  archivedAt: Date | null;
+  categoryId: string | null;
+  createdAt: Date;
+  description: string | null;
+  id: string;
+  name: string;
+  organizationId: string;
+  updatedAt: Date;
+  version: number;
+}): ProductReadModel {
+  return {
+    archivedAt: product.archivedAt?.toISOString() ?? null,
+    categoryId: product.categoryId,
+    createdAt: product.createdAt.toISOString(),
+    description: product.description,
+    id: product.id,
+    name: product.name,
+    organizationId: product.organizationId,
+    status: deriveProductLifecycle(product.archivedAt),
+    updatedAt: product.updatedAt.toISOString(),
+    version: product.version,
   };
 }
 
@@ -136,15 +185,26 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
+  if (error instanceof ProductNameError) {
+    throw new ORPCError("BAD_REQUEST", { cause: error });
+  }
+
   if (
     error instanceof CategoryDeletedError ||
+    error instanceof CategoryInUseError ||
     error instanceof CategoryNameConflictError ||
-    error instanceof CategoryLifecycleError
+    error instanceof CategoryLifecycleError ||
+    error instanceof ProductCategoryUnavailableError ||
+    error instanceof ProductVersionConflictError
   ) {
     throw new ORPCError("CONFLICT", { cause: error });
   }
 
   if (error instanceof CategoryNotFoundError) {
+    throw new ORPCError("NOT_FOUND", { cause: error });
+  }
+
+  if (error instanceof ProductNotFoundError) {
     throw new ORPCError("NOT_FOUND", { cause: error });
   }
 
@@ -174,6 +234,11 @@ export function createRpcRouter(
   const restoreTenantCategory = overrides.restoreCategory ?? restoreCategory;
   const deleteTenantCategory = overrides.deleteCategory ?? deleteCategory;
   const renameTenantCategory = overrides.renameCategory ?? renameCategory;
+  const listTenantProducts = overrides.listProducts ?? listProducts;
+  const createTenantProduct = overrides.createProduct ?? createProduct;
+  const updateTenantProduct = overrides.updateProduct ?? updateProduct;
+  const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
+  const restoreTenantProduct = overrides.restoreProduct ?? restoreProduct;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
 
@@ -389,9 +454,138 @@ export function createRpcRouter(
     }
   );
 
+  const listProduct = implementContract.product.list.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "catalog:read",
+          operation: async (transaction, identity) => ({
+            products: await listTenantProducts(transaction, identity, {
+              status: input.status,
+            }),
+          }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return { products: result.products.map(productReadModel) };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const createProductRecord = implementContract.product.create.handler(
+    async ({ context, input }) => {
+      try {
+        const product = await tenantRequest({
+          bindings: context.bindings,
+          capability: "product:create",
+          operation: (transaction, identity) =>
+            createTenantProduct(transaction, identity, {
+              categoryId: input.categoryId ?? null,
+              description: input.description ?? null,
+              name: input.name,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return productReadModel(product);
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const updateProductRecord = implementContract.product.update.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "product:update",
+          operation: (transaction, identity) =>
+            updateTenantProduct(transaction, identity, {
+              categoryId: input.categoryId,
+              description: input.description,
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              name: input.name,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          product: productReadModel(result.product),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const archiveProductRecord = implementContract.product.archive.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "product:update",
+          operation: (transaction, identity) =>
+            archiveTenantProduct(transaction, identity, {
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          product: productReadModel(result.product),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const restoreProductRecord = implementContract.product.restore.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "product:update",
+          operation: (transaction, identity) =>
+            restoreTenantProduct(transaction, identity, {
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          product: productReadModel(result.product),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     organization: { createInitial },
+    product: {
+      archive: archiveProductRecord,
+      create: createProductRecord,
+      list: listProduct,
+      restore: restoreProductRecord,
+      update: updateProductRecord,
+    },
     system: { ping },
   });
 }

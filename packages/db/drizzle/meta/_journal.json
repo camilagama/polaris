@@ -99,6 +99,13 @@
       "when": 1791502156258,
       "tag": "0013_lovely_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791513121335,
+      "tag": "0014_spotty_stick",
+      "breakpoints": true
     }
   ]
 }

@@ -1457,100 +1457,86 @@ Completar o módulo usando a tabela `categories`, o RPC de criação/listagem e 
 
 # PR 25 — Products
 
+Introduzir o catálogo de produtos como uma fatia vertical tenant, com criação,
+consulta, edição, arquivamento e restauração.
 
+Criar as tabelas products e a estrutura mínima product_variants necessária
+para tornar verdadeira desde esta etapa a regra canônica de que todo produto tem
+ao menos uma variante. A variante padrão nasce na mesma transação do produto.
+PR26 amplia essa estrutura com opções e variantes configuráveis.
 
-Criar:
+Campos de produto:
 
+- id UUIDv7, com default PostgreSQL 18 uuidv7();
+- organização;
+- nome obrigatório, aparado e não vazio; duplicatas são permitidas;
+- descrição opcional;
+- categoria de catálogo opcional, pertencente à mesma organização;
+- estado derivado: active ou archived;
+- timestamps técnicos e versão positiva iniciada em 1.
 
+Sem limite de nome neste PR: as fontes não definem um e não devemos inventá-lo.
+A versão é incrementada em alterações reais; update exige expectedVersion e
+rejeita concorrência obsoleta. Repetir archive/restore já aplicado é idempotente.
 
-```text
+A categoria só pode ser atribuída em criação ou troca para categoria ativa da
+mesma organização. Arquivar a categoria preserva referências existentes; a
+remoção terminal (tombstone) é recusada enquanto houver produtos vinculados.
+A proteção deve existir no domínio e no banco, incluindo concorrência entre
+atribuição e tombstone.
 
-products
+Cada criação grava produto, variante padrão e audit event na mesma transação.
+RLS é habilitado e forçado nas duas tabelas, com policies e grants para a role
+tenant limitados a SELECT/INSERT/UPDATE necessários. A role não recebe DELETE.
+O banco deve rejeitar commit de produto sem variante.
 
-```
+Não incluir estoque, saldo, custo, preço, SKU, código de barras, mídia, opções,
+combinações, escrita offline nem hard-delete de produto. SKU continua planejado
+para PR27. Exclusão/tombstone de produto fica adiada até as regras de estoque e
+histórico permitirem definir quando ela é segura.
 
+UI mínima cobre organização existente, criação, listagem, edição, archive e
+restore, com estados carregando, vazio, sucesso e erro. Produto sem opções usa a
+variante padrão invisível na UI.
 
-
-Campos:
-
-
-
-- id UUIDv7;
-
-- organization;
-
-- name;
-
-- description;
-
-- category;
-
-- status;
-
-- timestamps/version.
-
-
-
-Não adicionar estoque.
-
-
+Gate: migration 0014 replayada em branch Neon descartável PostgreSQL 18;
+provar UUIDv7, criação atômica e variante obrigatória, FK de organização,
+bloqueio de categoria tombstone, lifecycle/version, audit, grants/RLS e
+negação cross-tenant. Executar bun run check, bun run build e CI. Publicar
+draft PR empilhado sobre PR24; não fazer merge nem alterar recursos de produção.
 
 ---
-
 
 
 # PR 26 — Variants
 
+Expandir product_variants, introduzida com a variante padrão mínima no PR25, e
+criar:
 
-
-Criar:
-
-
-
-```text
-
-product_variants
-
-product_options
-
-product_option_values
-
-variant_option_values
-
-```
-
-
+- product_options;
+- product_option_values;
+- variant_option_values.
 
 Opções fixas de UX:
 
-
-
 - Modelo;
-
 - Cor;
-
 - Tamanho.
 
+Cada produto aceita no máximo 50 variantes. Criar combinações explicitamente;
+não gerar produto cartesiano desnecessariamente. Produto sem opções mantém sua
+variante padrão. Ao adicionar combinações configuráveis, inserir as novas
+variantes e seus valores e remover a variante padrão na mesma transação; o
+produto nunca pode ficar sem variante, nem mesmo dentro do commit.
 
+Não incluir SKU (PR27), preço, estoque, mídia ou escrita offline.
 
-Máximo:
-
-
-
-```text
-
-50 variantes por produto
-
-```
-
-
-
-Produto sem opções recebe default variant.
-
-
+Testar unicidade e limites por produto, combinações inválidas, isolamento de
+organização, lifecycle, RLS e a substituição atômica da variante padrão.
+Executar bun run check, bun run build e o gate PostgreSQL 18 em branch Neon
+descartável.
 
 ---
-
 
 
 # PR 27 — SKU

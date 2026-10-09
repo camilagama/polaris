@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeCategoryName } from "@polaris/domain/catalog/category";
 import {
   CategoryDeletedError,
+  CategoryInUseError,
   CategoryNameConflictError,
   CategoryNotFoundError,
   deriveCategoryLifecycle,
@@ -10,6 +11,7 @@ import {
 } from "@polaris/domain/catalog/category";
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { categories } from "./schema/category";
+import { products } from "./schema/product";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import type {
   TenantRequestIdentity,
@@ -61,6 +63,23 @@ function sqlState(error: unknown): string | undefined {
     const candidate = current as { cause?: unknown; code?: unknown };
     if (typeof candidate.code === "string") {
       return candidate.code;
+    }
+    current = candidate.cause;
+  }
+  return undefined;
+}
+
+function sqlConstraint(error: unknown): string | undefined {
+  const visited = new Set<object>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      return undefined;
+    }
+    visited.add(current);
+    const candidate = current as { cause?: unknown; constraint?: unknown };
+    if (typeof candidate.constraint === "string") {
+      return candidate.constraint;
     }
     current = candidate.cause;
   }
@@ -234,6 +253,22 @@ async function changeCategoryLifecycle(
     return { category: existing, changed: false };
   }
 
+  if (action === "delete") {
+    const [dependentProduct] = await transaction
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(
+          eq(products.categoryId, input.id),
+          eq(products.organizationId, identity.organizationId)
+        )
+      )
+      .limit(1);
+    if (dependentProduct) {
+      throw new CategoryInUseError();
+    }
+  }
+
   const { archivedAt: currentArchivedAt, deletedAt: currentDeletedAt } =
     existing;
   let archivedAt = currentArchivedAt;
@@ -247,16 +282,28 @@ async function changeCategoryLifecycle(
       ? (currentDeletedAt ?? new Date())
       : currentDeletedAt;
 
-  const [category] = await transaction
-    .update(categories)
-    .set({ archivedAt, deletedAt, updatedAt: new Date() })
-    .where(
-      and(
-        eq(categories.id, input.id),
-        eq(categories.organizationId, identity.organizationId)
+  let category: typeof categories.$inferSelect | undefined;
+  try {
+    [category] = await transaction
+      .update(categories)
+      .set({ archivedAt, deletedAt, updatedAt: new Date() })
+      .where(
+        and(
+          eq(categories.id, input.id),
+          eq(categories.organizationId, identity.organizationId)
+        )
       )
-    )
-    .returning(categoryColumns);
+      .returning(categoryColumns);
+  } catch (error) {
+    if (
+      sqlState(error) === "23503" &&
+      sqlConstraint(error) === "categories_products_tombstone_guard"
+    ) {
+      // biome-ignore lint/style/useErrorCause: CategoryInUseError forwards this cause to Error.
+      throw new CategoryInUseError({ cause: error });
+    }
+    throw error;
+  }
 
   if (!category) {
     throw new CategoryNotFoundError();

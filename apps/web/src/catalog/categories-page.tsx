@@ -71,6 +71,9 @@ function errorMessage(
   if (code === "CONFLICT" && action === "restore") {
     return "Categorias removidas não podem ser restauradas.";
   }
+  if (code === "CONFLICT" && action === "delete") {
+    return "Desvincule os produtos desta categoria antes de removê-la.";
+  }
   if (code === "CONFLICT") {
     return "O estado da categoria mudou. Atualize a lista e tente novamente.";
   }
@@ -874,10 +877,12 @@ export function CategoriesPage() {
           </span>
           <span>Polaris</span>
         </a>
-        <div className="categories-topbar-context">
-          <span className="categories-context-dot" />
-          <span>Catálogo</span>
-        </div>
+        <nav aria-label="Catálogo" className="catalog-switcher">
+          <a aria-current="page" href="/">
+            Categorias
+          </a>
+          <a href="/products">Produtos</a>
+        </nav>
       </header>
 
       <main className="categories-content">

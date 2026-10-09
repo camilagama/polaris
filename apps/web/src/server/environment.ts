@@ -9,6 +9,7 @@ interface RateLimitBinding {
 }
 
 export interface WorkerBindings {
+  AUTH_DATABASE_CONNECT_TIMEOUT_MS?: string;
   AUTH_ABUSE_PROTECTION_ENABLED?: string;
   AUTH_EMAIL_FROM?: string;
   AUTH_EMAIL_RATE_LIMITER?: RateLimitBinding;

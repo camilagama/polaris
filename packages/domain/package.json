@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     "./authorization/capabilities": "./src/authorization/capabilities.ts",
-    "./catalog/category": "./src/catalog/category.ts"
+    "./catalog/category": "./src/catalog/category.ts",
+    "./catalog/product": "./src/catalog/product.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

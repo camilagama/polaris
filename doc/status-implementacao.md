@@ -242,6 +242,20 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída após correção | A revisão identificou que `maxLength` do HTML limita unidades UTF-16 e poderia truncar nomes com emojis. A documentação Zod 4.6.5 confirma que `.max()` conta code points; o contrato e a UI agora usam validação/contador explícitos alinhados ao domínio. Regressão RPC confirma 100 emojis aceitos e 101 rejeitados. Nenhum outro achado concreto foi reportado. |
 | Draft PR e CI | Concluídos no commit de implementação | [PR #23](https://github.com/camilagama/polaris/pull/23), draft empilhado sobre PR #22. Commit `3b387f5` publicado; GitHub Actions 6/6 passaram, incluindo o gate Playwright. PR permanece draft, sem conflito e sem merge. |
 
+### PR25 — Products (implementado; revisão independente e publicação pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Sequência e regra de variantes | Concluídas | PR25 adiciona a estrutura mínima de product_variants e cria a variante padrão na mesma transação do produto. PR26 foi atualizado para ampliar essa tabela e trocar a variante padrão por combinações atomicamente. Nomes repetidos são permitidos conforme decisão do responsável; não foi inventado limite de comprimento. |
+| Schema e migration 0014 | Concluídos | products e product_variants usam UUIDv7 do PostgreSQL 18; FK composta impede categoria de outra organização; índices compostos são criados antes dos FKs. Migration aplicada na branch Neon descartável gate2-runtime-proof (PostgreSQL 18.6). A primeira tentativa detectou ordem inválida do índice/FK e foi corrigida antes da aplicação final. |
+| Invariantes e RLS | Concluídos | RLS habilitado/forçado, policies e grants restritos; commit sem variante é rejeitado por trigger diferido; categoria arquivada não recebe novos vínculos; tombstone é bloqueado enquanto produtos a referenciam. Gate direto confirmou UUIDv7, isolamento, grants, lifecycle/version, auditoria, rollback e cascade. |
+| RPC, domínio e UI | Concluídos | Criar/listar/editar/arquivar/restaurar com capabilities, optimistic version e auditoria; página de produtos com criação, edição, categorias, status, loading/vazio/erro. Estoque, custo, preço, SKU, opções, mídia, escrita offline e exclusão de produto ficam adiados. |
+| Gate Worker | Concluído em branch descartável | Worker local autenticado provou onboarding, categorias e produtos, duplicatas, variante default, isolamento, lifecycle/version, bloqueio do tombstone e auditoria. A emulação local de Hyperdrive aponta timeout de conexão no SELECT de sessão; o harness usa override de 30 s, enquanto o default fora do gate permanece 5 s. |
+| Verificação local | Concluída | bun run check: 101 testes em 17 arquivos; lint, format, typecheck, boundaries e Knip passaram. bun run build passou nos oito workspaces. db:generate não encontrou drift. |
+| Revisão independente | Pendente | Será concluída antes da publicação do draft. |
+| Draft PR e CI | Pendente | Publicar codex/pr25-products empilhado sobre codex/pr24-categories; nenhum merge ou recurso de produção faz parte da etapa. |
+| Branch Neon descartável | Expiração automática | gate2-runtime-proof (br-autumn-resonance-b6jkwg2y) está no projeto polaris-pr11-rls-gate, PostgreSQL 18.6, São Paulo, e expira em 2026-10-09 13:02 (America/Sao_Paulo). A migration 0014 permanece apenas nessa branch de teste. |
+
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.

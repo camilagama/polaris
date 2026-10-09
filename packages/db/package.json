@@ -15,7 +15,9 @@
     "./tenant-transaction": "./src/tenant-transaction.ts",
     "./tenant-audit": "./src/tenant-audit.ts",
     "./category-schema": "./src/schema/category.ts",
-    "./category-repository": "./src/category-repository.ts"
+    "./category-repository": "./src/category-repository.ts",
+    "./product-schema": "./src/schema/product.ts",
+    "./product-repository": "./src/product-repository.ts"
   },
   "scripts": {
     "build": "bun run typecheck",

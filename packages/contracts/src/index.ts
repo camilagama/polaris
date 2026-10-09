@@ -14,6 +14,8 @@ export const categoryNameSchema = z
     message: "invalid_category_name",
   });
 
+export const productNameSchema = z.string().trim().min(1);
+
 const category = z.object({
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
@@ -27,6 +29,21 @@ const category = z.object({
 
 export type CategoryReadModel = z.infer<typeof category>;
 
+const product = z.object({
+  archivedAt: z.string().nullable(),
+  categoryId: z.string().uuid().nullable(),
+  createdAt: z.string(),
+  description: z.string().nullable(),
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  organizationId: z.string().min(1),
+  status: z.enum(["active", "archived"]),
+  updatedAt: z.string(),
+  version: z.number().int().positive(),
+});
+
+export type ProductReadModel = z.infer<typeof product>;
+
 const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
@@ -36,6 +53,56 @@ const organization = z.object({
 });
 
 export const polarisContract = {
+  product: {
+    create: oc
+      .input(
+        z.object({
+          categoryId: z.string().uuid().nullable().optional(),
+          description: z.string().nullable().optional(),
+          name: productNameSchema,
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(product),
+    list: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z.enum(["active", "archived", "all"]).default("active"),
+        })
+      )
+      .output(z.object({ products: z.array(product) })),
+    update: oc
+      .input(
+        z.object({
+          categoryId: z.string().uuid().nullable(),
+          description: z.string().nullable(),
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          name: productNameSchema,
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+    archive: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+    restore: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+  },
   category: {
     create: oc
       .input(

@@ -150,6 +150,14 @@ async function createTemporaryLogin(
       categoryDelete: boolean;
       categorySelect: boolean;
       categoryUpdate: boolean;
+      productSelect: boolean;
+      productInsert: boolean;
+      productUpdate: boolean;
+      productDelete: boolean;
+      variantSelect: boolean;
+      variantInsert: boolean;
+      variantUpdate: boolean;
+      variantDelete: boolean;
       currentUser: string;
       functionExecute: boolean;
       member: boolean;
@@ -160,6 +168,14 @@ async function createTemporaryLogin(
         "has_table_privilege(current_user, 'public.categories', 'INSERT') AS \"categoryInsert\", " +
         "has_table_privilege(current_user, 'public.categories', 'UPDATE') AS \"categoryUpdate\", " +
         "has_table_privilege(current_user, 'public.categories', 'DELETE') AS \"categoryDelete\", " +
+        "has_table_privilege(current_user, 'public.products', 'SELECT') AS \"productSelect\", " +
+        "has_table_privilege(current_user, 'public.products', 'INSERT') AS \"productInsert\", " +
+        "has_table_privilege(current_user, 'public.products', 'UPDATE') AS \"productUpdate\", " +
+        "has_table_privilege(current_user, 'public.products', 'DELETE') AS \"productDelete\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'SELECT') AS \"variantSelect\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'INSERT') AS \"variantInsert\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'UPDATE') AS \"variantUpdate\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'DELETE') AS \"variantDelete\", " +
         "EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace " +
         "WHERE n.nspname = 'public' AND p.proname = 'create_initial_organization' " +
         "AND has_function_privilege(current_user, p.oid, 'EXECUTE')) AS \"functionExecute\"",
@@ -176,9 +192,31 @@ async function createTemporaryLogin(
           row.categoryInsert,
           row.categoryUpdate,
           row.categoryDelete,
+          row.productSelect,
+          row.productInsert,
+          row.productUpdate,
+          row.productDelete,
+          row.variantSelect,
+          row.variantInsert,
+          row.variantUpdate,
+          row.variantDelete,
           row.functionExecute,
         ],
-        [true, true, true, false, false]
+        [
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          false,
+          false,
+          false,
+        ]
       );
     } else {
       assert.deepEqual(
@@ -187,9 +225,31 @@ async function createTemporaryLogin(
           row.categoryInsert,
           row.categoryUpdate,
           row.categoryDelete,
+          row.productSelect,
+          row.productInsert,
+          row.productUpdate,
+          row.productDelete,
+          row.variantSelect,
+          row.variantInsert,
+          row.variantUpdate,
+          row.variantDelete,
           row.functionExecute,
         ],
-        [false, false, false, false, true]
+        [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          true,
+        ]
       );
     }
   } catch (error) {
@@ -261,6 +321,8 @@ function workerEnvironment(
   }
 
   return {
+    // Local Hyperdrive emulation opens direct Neon connections during cold start.
+    AUTH_DATABASE_CONNECT_TIMEOUT_MS: "30000",
     ...environment,
     BETTER_AUTH_BASE_URL: baseURL,
     BETTER_AUTH_SECRET: secret,
@@ -653,6 +715,161 @@ async function main() {
       "cross-tenant category create must be forbidden"
     );
 
+    const productA = await clientA.product.create({
+      categoryId: categoryA.id,
+      description: "  ",
+      name: "Bolsa",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(productA.description, null);
+    assert.equal(productA.categoryId, categoryA.id);
+    assert.equal(productA.status, "active");
+    assert.equal(productA.version, 1);
+    const duplicateProductA = await clientA.product.create({
+      name: "Bolsa",
+      organizationId: organizationA.organization.id,
+    });
+    const productB = await clientB.product.create({
+      categoryId: sameNameInOtherOrganization.id,
+      name: "Bolsa",
+      organizationId: organizationB.organization.id,
+    });
+    assert.notEqual(productA.id, duplicateProductA.id);
+    assert.equal(productA.name, duplicateProductA.name);
+    assert.equal(productB.name, productA.name);
+
+    const defaultVariants = await pool.query<{
+      product_id: string;
+      variant_count: string;
+      all_default: boolean;
+      id_version: number;
+    }>(
+      "SELECT product_id::text, count(*)::text AS variant_count, " +
+        "bool_and(is_default) AS all_default, " +
+        "min(uuid_extract_version(id)) AS id_version " +
+        "FROM public.product_variants WHERE product_id = ANY($1::uuid[]) " +
+        "GROUP BY product_id ORDER BY product_id",
+      [[productA.id, duplicateProductA.id, productB.id]]
+    );
+    assert.equal(defaultVariants.rows.length, 3);
+    assert.ok(
+      defaultVariants.rows.every(
+        (row) =>
+          row.variant_count === "1" && row.all_default && row.id_version === 7
+      )
+    );
+    console.log("gate2_worker_product_create_default_variant_uuidv7=passed");
+
+    const productsA = await clientA.product.list({
+      organizationId: organizationA.organization.id,
+    });
+    assert.deepEqual(
+      productsA.products.map((product) => product.id).sort(),
+      [productA.id, duplicateProductA.id].sort()
+    );
+    const productsB = await clientB.product.list({
+      organizationId: organizationB.organization.id,
+    });
+    assert.deepEqual(
+      productsB.products.map((product) => product.id),
+      [productB.id]
+    );
+    await assert.rejects(
+      clientA.product.list({
+        organizationId: organizationB.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "cross-tenant product list must be forbidden"
+    );
+    await assert.rejects(
+      clientA.product.create({
+        categoryId: sameNameInOtherOrganization.id,
+        name: "Categoria cruzada",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "product cannot use a category owned by another organization"
+    );
+    console.log(
+      "gate2_worker_product_tenant_isolation_and_duplicate_names=passed"
+    );
+
+    const updatedProduct = await clientA.product.update({
+      categoryId: categoryA.id,
+      description: "Lona resistente",
+      expectedVersion: 1,
+      id: productA.id,
+      name: "Bolsa transversal",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(updatedProduct.changed, true);
+    assert.equal(updatedProduct.product.version, 2);
+    await assert.rejects(
+      clientA.product.update({
+        categoryId: categoryA.id,
+        description: "Concorrência obsoleta",
+        expectedVersion: 1,
+        id: productA.id,
+        name: "Bolsa antiga",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "stale product version must conflict"
+    );
+    const archivedProduct = await clientA.product.archive({
+      expectedVersion: 2,
+      id: productA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(archivedProduct.changed, true);
+    assert.equal(archivedProduct.product.status, "archived");
+    assert.equal(archivedProduct.product.version, 3);
+    const productArchiveRetry = await clientA.product.archive({
+      expectedVersion: 2,
+      id: productA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(productArchiveRetry.changed, false);
+    const archivedProducts = await clientA.product.list({
+      organizationId: organizationA.organization.id,
+      status: "archived",
+    });
+    assert.deepEqual(
+      archivedProducts.products.map((product) => product.id),
+      [productA.id]
+    );
+    const restoredProduct = await clientA.product.restore({
+      expectedVersion: 3,
+      id: productA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(restoredProduct.changed, true);
+    assert.equal(restoredProduct.product.status, "active");
+    assert.equal(restoredProduct.product.version, 4);
+
+    await assert.rejects(
+      clientA.category.delete({
+        id: categoryA.id,
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "category tombstone must be blocked while a product references it"
+    );
+    const unlinkedProduct = await clientA.product.update({
+      categoryId: null,
+      description: "Lona resistente",
+      expectedVersion: 4,
+      id: productA.id,
+      name: "Bolsa transversal",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(unlinkedProduct.changed, true);
+    assert.equal(unlinkedProduct.product.categoryId, null);
+    assert.equal(unlinkedProduct.product.version, 5);
+    console.log(
+      "gate2_worker_product_update_lifecycle_and_tombstone_guard=passed"
+    );
+
     const archivedCategory = await clientA.category.archive({
       id: categoryA.id,
       organizationId: organizationA.organization.id,
@@ -746,6 +963,21 @@ async function main() {
       [categoryA.id]
     );
     assert.equal(lifecycleEvents.rows[0]?.count, "4");
+    const productLifecycleEvents = await pool.query<{
+      event_type: string;
+      count: string;
+    }>(
+      "SELECT event_type, count(*)::text AS count " +
+        "FROM public.tenant_audit_event WHERE entity_id = $1 " +
+        "GROUP BY event_type ORDER BY event_type",
+      [productA.id]
+    );
+    assert.deepEqual(productLifecycleEvents.rows, [
+      { event_type: "product.archived", count: "1" },
+      { event_type: "product.created", count: "1" },
+      { event_type: "product.restored", count: "1" },
+      { event_type: "product.updated", count: "2" },
+    ]);
 
     workerGatePassed = true;
     console.log("gate2_worker_authentication=passed");
@@ -754,6 +986,7 @@ async function main() {
       "gate2_worker_category_rename_lifecycle_and_offline_read=passed"
     );
     console.log("gate2_worker_unique_names_capability_and_audit=passed");
+    console.log("gate2_worker_products_audit_and_tenant_lifecycle=passed");
   } finally {
     try {
       await stopLocalWorker(worker);

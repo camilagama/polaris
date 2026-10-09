@@ -34,6 +34,15 @@ export class CategoryDeletedError extends Error {
   }
 }
 
+export class CategoryInUseError extends Error {
+  readonly code = "category_in_use";
+
+  constructor(options?: ErrorOptions) {
+    super("category_in_use", options);
+    this.name = "CategoryInUseError";
+  }
+}
+
 export type CategoryLifecycle = "active" | "archived" | "deleted";
 export type CategoryLifecycleAction = "archive" | "delete" | "restore";
 

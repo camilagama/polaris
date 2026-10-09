@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CategoryLifecycleError,
+  CategoryInUseError,
   deriveCategoryLifecycle,
   normalizeCategoryName,
   transitionCategoryLifecycle,
@@ -54,5 +55,9 @@ describe("catalog category rules", () => {
       changed: true,
       lifecycle: "deleted",
     });
+  });
+
+  it("represents a category tombstone blocked by dependent products", () => {
+    expect(new CategoryInUseError().code).toBe("category_in_use");
   });
 });

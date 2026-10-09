@@ -4,6 +4,29 @@ import type { WorkerBindings } from "./environment";
 import { TenantRequestContextError } from "./request-context-error";
 
 type Database = ReturnType<typeof createHyperdriveDatabase>["db"];
+const timeoutValuePattern = /^\d+$/;
+
+function authDatabaseConnectionOption(configuredTimeout: string | undefined): {
+  connectionTimeoutMillis?: number;
+} {
+  if (configuredTimeout === undefined) {
+    return {};
+  }
+
+  const value = configuredTimeout.trim();
+  if (!timeoutValuePattern.test(value)) {
+    throw new TenantRequestContextError("authentication_unavailable");
+  }
+  const connectionTimeoutMillis = Number(value);
+  if (
+    !Number.isSafeInteger(connectionTimeoutMillis) ||
+    connectionTimeoutMillis < 1000 ||
+    connectionTimeoutMillis > 30_000
+  ) {
+    throw new TenantRequestContextError("authentication_unavailable");
+  }
+  return { connectionTimeoutMillis };
+}
 
 interface AuthenticatedRequestSession {
   user: { emailVerified?: boolean; id: string };
@@ -53,9 +76,12 @@ export function createAuthenticatedRequestContext(
       throw new TenantRequestContextError("authentication_unavailable");
     }
 
+    const connectionOptions = authDatabaseConnectionOption(
+      input.bindings.AUTH_DATABASE_CONNECT_TIMEOUT_MS
+    );
     const { db, pool } = databaseFactory(
       input.bindings.HYPERDRIVE.connectionString,
-      { maxConnections: 1 }
+      { maxConnections: 1, ...connectionOptions }
     );
 
     try {

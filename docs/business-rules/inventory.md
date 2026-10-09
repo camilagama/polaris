@@ -7,3 +7,4 @@
 - Recebimentos atualizam custo médio móvel. Uma venda confirmada preserva o custo unitário aplicável no momento.
 - Quando a validade da operação depende de vários fatos econômicos, eles são confirmados ou revertidos em conjunto.
 - Em disputa de commands offline, a primeira operação confirmada no servidor vence. A operação rejeitada permanece local para correção; não há merge silencioso.
+- PR25 cria a variante padrão junto com cada produto; até PR26 disponibilizar opções, produtos novos usam essa única variante oculta na UI. Regras completas em [products.md](products.md).

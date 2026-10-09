@@ -42,6 +42,10 @@ export const categories = pgTable(
       table.organizationId,
       sql`lower(btrim(${table.name}))`
     ),
+    uniqueIndex("categories_organization_id_id_unique").on(
+      table.organizationId,
+      table.id
+    ),
     pgPolicy("categories_current_tenant_select", {
       for: "select",
       to: runtimeRole,

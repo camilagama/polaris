@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { CategoriesPage } from "./catalog/categories-page";
+import { ProductsPage } from "./catalog/products-page";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -37,5 +38,11 @@ if (isOfflinePocRoute) {
   };
   loadOfflineLab().catch(() => undefined);
 } else {
-  root.render(<CategoriesPage />);
+  root.render(
+    window.location.pathname === "/products" ? (
+      <ProductsPage />
+    ) : (
+      <CategoriesPage />
+    )
+  );
 }
