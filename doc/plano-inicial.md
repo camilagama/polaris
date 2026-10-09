@@ -1499,10 +1499,12 @@ UI mínima cobre organização existente, criação, listagem, edição, archive
 restore, com estados carregando, vazio, sucesso e erro. Produto sem opções usa a
 variante padrão invisível na UI.
 
-Gate: migration 0014 replayada em branch Neon descartável PostgreSQL 18;
-provar UUIDv7, criação atômica e variante obrigatória, FK de organização,
-bloqueio de categoria tombstone, lifecycle/version, audit, grants/RLS e
-negação cross-tenant. Executar bun run check, bun run build e CI. Publicar
+Gate: aplicar migrations 0014 e 0015 em branch Neon descartável PostgreSQL 18;
+a 0015 inclui o índice composto `(organization_id, category_id)` usado pelo guard de
+tombstone. Provar UUIDv7, criação atômica e variante obrigatória, FK de organização,
+bloqueio de categoria tombstone, lifecycle/version, audit, grants/RLS e negação
+cross-tenant. Executar bun run check, bun run build e CI. Publicar draft PR
+empilhado sobre PR24; não fazer merge nem alterar recursos de produção.
 draft PR empilhado sobre PR24; não fazer merge nem alterar recursos de produção.
 
 ---

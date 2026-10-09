@@ -67,6 +67,10 @@ export const products = pgTable(
       table.name,
       table.id
     ),
+    index("products_organization_category_idx").on(
+      table.organizationId,
+      table.categoryId
+    ),
     uniqueIndex("products_organization_id_id_unique").on(
       table.organizationId,
       table.id
