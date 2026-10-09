@@ -23,11 +23,21 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Produto:** descrição comercial apresentada pelo revendedor ou comprador.
 
+**Categoria de catálogo:** agrupamento opcional de produtos definido pela organização. Não é a categoria usada para classificar despesas.
+
+**Categoria ativa:** categoria disponível para uso no catálogo.
+
 **Variante:** forma vendável de um produto, como modelo, cor ou tamanho.
 
 **Saldo de estoque:** visão atual de quantidade e custo de uma variante.
 
 **Movimento de estoque:** registro de entrada, baixa, inventário, venda, devolução ou outra mudança de estoque.
+
+**Categoria arquivada:** categoria preservada, mas fora das opções ativas do catálogo; pode ser restaurada.
+
+**Categoria removida:** categoria preservada como tombstone para manter histórico e leitura offline; não pode ser restaurada nem apagada fisicamente pela operação normal.
+
+**Tombstone:** registro com `deleted_at` que representa uma remoção lógica e preserva identidade e timestamps para histórico/leitura offline; não é um hard-delete.
 
 **Asset:** mídia armazenada, como uma imagem de produto.
 

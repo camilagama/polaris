@@ -1,12 +1,23 @@
 import { implement, ORPCError } from "@orpc/server";
-import { polarisContract } from "@polaris/contracts";
+import { type CategoryReadModel, polarisContract } from "@polaris/contracts";
 import {
+  archiveCategory,
   createCategory,
+  deleteCategory,
   listCategories,
+  renameCategory,
+  restoreCategory,
 } from "@polaris/db/category-repository";
 import { createDatabase } from "@polaris/db/client";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import { CategoryNameError } from "@polaris/domain/catalog/category";
+import {
+  CategoryDeletedError,
+  CategoryLifecycleError,
+  CategoryNameConflictError,
+  CategoryNameError,
+  CategoryNotFoundError,
+  deriveCategoryLifecycle,
+} from "@polaris/domain/catalog/category";
 import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
@@ -33,10 +44,14 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RpcRouterDependencies {
+  archiveCategory: typeof archiveCategory;
   createCategory: typeof createCategory;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
+  deleteCategory: typeof deleteCategory;
   listCategories: typeof listCategories;
+  renameCategory: typeof renameCategory;
+  restoreCategory: typeof restoreCategory;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
@@ -49,6 +64,27 @@ function organizationStatus(status: string): "active" | "suspended" | "closed" {
 }
 function requestAuditId(requestId: string): string | null {
   return uuidPattern.test(requestId) ? requestId : null;
+}
+
+function categoryReadModel(category: {
+  archivedAt: Date | null;
+  createdAt: Date;
+  deletedAt: Date | null;
+  id: string;
+  name: string;
+  organizationId: string;
+  updatedAt: Date;
+}): CategoryReadModel {
+  return {
+    archivedAt: category.archivedAt?.toISOString() ?? null,
+    createdAt: category.createdAt.toISOString(),
+    deletedAt: category.deletedAt?.toISOString() ?? null,
+    id: category.id,
+    name: category.name,
+    organizationId: category.organizationId,
+    status: deriveCategoryLifecycle(category.archivedAt, category.deletedAt),
+    updatedAt: category.updatedAt.toISOString(),
+  };
 }
 
 function tenantContextErrorCode(
@@ -100,6 +136,18 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
+  if (
+    error instanceof CategoryDeletedError ||
+    error instanceof CategoryNameConflictError ||
+    error instanceof CategoryLifecycleError
+  ) {
+    throw new ORPCError("CONFLICT", { cause: error });
+  }
+
+  if (error instanceof CategoryNotFoundError) {
+    throw new ORPCError("NOT_FOUND", { cause: error });
+  }
+
   if (error instanceof CreateInitialOrganizationError) {
     throw new ORPCError(initialOrganizationErrorCode(error.code), {
       cause: error,
@@ -122,6 +170,10 @@ export function createRpcRouter(
     overrides.createOnboardingDatabase ?? createDatabase;
   const listTenantCategories = overrides.listCategories ?? listCategories;
   const createTenantCategory = overrides.createCategory ?? createCategory;
+  const archiveTenantCategory = overrides.archiveCategory ?? archiveCategory;
+  const restoreTenantCategory = overrides.restoreCategory ?? restoreCategory;
+  const deleteTenantCategory = overrides.deleteCategory ?? deleteCategory;
+  const renameTenantCategory = overrides.renameCategory ?? renameCategory;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
 
@@ -197,7 +249,9 @@ export function createRpcRouter(
         bindings: context.bindings,
         capability: "catalog:read",
         operation: async (transaction, identity) => ({
-          categories: await listTenantCategories(transaction, identity),
+          categories: await listTenantCategories(transaction, identity, {
+            status: input.status,
+          }),
         }),
         request: context.request,
         requestedOrganizationId: input.organizationId,
@@ -206,7 +260,8 @@ export function createRpcRouter(
       }>;
 
       try {
-        return await tenantRequest(tenantInput);
+        const result = await tenantRequest(tenantInput);
+        return { categories: result.categories.map(categoryReadModel) };
       } catch (error) {
         return toRpcError(error);
       }
@@ -230,7 +285,104 @@ export function createRpcRouter(
       >;
 
       try {
-        return await tenantRequest(tenantInput);
+        return categoryReadModel(await tenantRequest(tenantInput));
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const archive = implementContract.category.archive.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "category:manage",
+          operation: (transaction, identity) =>
+            archiveTenantCategory(transaction, identity, {
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          category: categoryReadModel(result.category),
+          changed: result.changed,
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const restore = implementContract.category.restore.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "category:manage",
+          operation: (transaction, identity) =>
+            restoreTenantCategory(transaction, identity, {
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          category: categoryReadModel(result.category),
+          changed: result.changed,
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const rename = implementContract.category.rename.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "category:manage",
+          operation: (transaction, identity) =>
+            renameTenantCategory(transaction, identity, {
+              id: input.id,
+              name: input.name,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          category: categoryReadModel(result.category),
+          changed: result.changed,
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const remove = implementContract.category.delete.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "category:manage",
+          operation: (transaction, identity) =>
+            deleteTenantCategory(transaction, identity, {
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          category: categoryReadModel(result.category),
+          changed: result.changed,
+        };
       } catch (error) {
         return toRpcError(error);
       }
@@ -238,7 +390,7 @@ export function createRpcRouter(
   );
 
   return implementContract.router({
-    category: { create, list },
+    category: { archive, create, delete: remove, list, rename, restore },
     organization: { createInitial },
     system: { ping },
   });

@@ -124,7 +124,9 @@ async function createTemporaryLogin(
   try {
     const result = await rolePool.query<{
       categoryInsert: boolean;
+      categoryDelete: boolean;
       categorySelect: boolean;
+      categoryUpdate: boolean;
       currentUser: string;
       functionExecute: boolean;
       member: boolean;
@@ -133,6 +135,8 @@ async function createTemporaryLogin(
         "pg_has_role(current_user, $1, 'MEMBER') AS member, " +
         "has_table_privilege(current_user, 'public.categories', 'SELECT') AS \"categorySelect\", " +
         "has_table_privilege(current_user, 'public.categories', 'INSERT') AS \"categoryInsert\", " +
+        "has_table_privilege(current_user, 'public.categories', 'UPDATE') AS \"categoryUpdate\", " +
+        "has_table_privilege(current_user, 'public.categories', 'DELETE') AS \"categoryDelete\", " +
         "EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace " +
         "WHERE n.nspname = 'public' AND p.proname = 'create_initial_organization' " +
         "AND has_function_privilege(current_user, p.oid, 'EXECUTE')) AS \"functionExecute\"",
@@ -144,13 +148,25 @@ async function createTemporaryLogin(
     assert.equal(row.member, true);
     if (baseRole === "polaris_pr11_runtime") {
       assert.deepEqual(
-        [row.categorySelect, row.categoryInsert, row.functionExecute],
-        [true, true, false]
+        [
+          row.categorySelect,
+          row.categoryInsert,
+          row.categoryUpdate,
+          row.categoryDelete,
+          row.functionExecute,
+        ],
+        [true, true, true, false, false]
       );
     } else {
       assert.deepEqual(
-        [row.categorySelect, row.categoryInsert, row.functionExecute],
-        [false, false, true]
+        [
+          row.categorySelect,
+          row.categoryInsert,
+          row.categoryUpdate,
+          row.categoryDelete,
+          row.functionExecute,
+        ],
+        [false, false, false, false, true]
       );
     }
   } catch (error) {
@@ -523,10 +539,40 @@ async function main() {
       name: "  Escritório  ",
     });
     assert.equal(categoryA.name, "Escritório");
+    assert.equal(categoryA.status, "active");
+    assert.equal(typeof categoryA.createdAt, "string");
+    await assert.rejects(
+      clientA.category.create({
+        organizationId: organizationA.organization.id,
+        name: "escritório",
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT")
+    );
+    await assert.rejects(
+      clientA.category.rename({
+        id: categoryA.id,
+        name: "outro",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT")
+    );
+    const renamedCategory = await clientA.category.rename({
+      id: categoryA.id,
+      name: "Acessórios",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(renamedCategory.changed, true);
+    assert.equal(renamedCategory.category.name, "Acessórios");
+    const renameRetry = await clientA.category.rename({
+      id: categoryA.id,
+      name: "Acessórios",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(renameRetry.changed, false);
     const categoriesA = await clientA.category.list({
       organizationId: organizationA.organization.id,
     });
-    assert.deepEqual(categoriesA.categories, [categoryA]);
+    assert.deepEqual(categoriesA.categories, [renamedCategory.category]);
     const categoriesB = await clientB.category.list({
       organizationId: organizationB.organization.id,
     });
@@ -546,6 +592,75 @@ async function main() {
       (error: unknown) => hasRpcCode(error, "FORBIDDEN")
     );
 
+    const archivedCategory = await clientA.category.archive({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(archivedCategory.changed, true);
+    assert.equal(archivedCategory.category.status, "archived");
+    const activeAfterArchive = await clientA.category.list({
+      organizationId: organizationA.organization.id,
+    });
+    assert.deepEqual(activeAfterArchive.categories, []);
+    const archivedCategories = await clientA.category.list({
+      organizationId: organizationA.organization.id,
+      status: "archived",
+    });
+    assert.deepEqual(archivedCategories.categories, [
+      archivedCategory.category,
+    ]);
+    const archiveRetry = await clientA.category.archive({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(archiveRetry.changed, false);
+
+    const restoredCategory = await clientA.category.restore({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(restoredCategory.changed, true);
+    assert.equal(restoredCategory.category.status, "active");
+
+    const deletedCategory = await clientA.category.delete({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(deletedCategory.changed, true);
+    assert.equal(deletedCategory.category.status, "deleted");
+    await assert.rejects(
+      clientA.category.restore({
+        id: categoryA.id,
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT")
+    );
+    await assert.rejects(
+      clientA.category.rename({
+        id: categoryA.id,
+        name: "Outro nome",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT")
+    );
+    await assert.rejects(
+      clientA.category.create({
+        organizationId: organizationA.organization.id,
+        name: "acessórios",
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT")
+    );
+    const tombstones = await clientA.category.list({
+      organizationId: organizationA.organization.id,
+      status: "all",
+    });
+    assert.deepEqual(tombstones.categories, [deletedCategory.category]);
+    const deleteRetry = await clientA.category.delete({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(deleteRetry.changed, false);
+
     const organizationEvents = await pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM public.tenant_audit_event " +
         "WHERE event_type = 'organization.created' " +
@@ -559,12 +674,21 @@ async function main() {
       [organizationA.organization.id]
     );
     assert.equal(categoryEvents.rows[0]?.count, "1");
+    const lifecycleEvents = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.tenant_audit_event " +
+        "WHERE event_type IN ('category.renamed', 'category.archived', 'category.restored', 'category.deleted') " +
+        "AND entity_id = $1",
+      [categoryA.id]
+    );
+    assert.equal(lifecycleEvents.rows[0]?.count, "4");
 
     workerGatePassed = true;
     console.log("gate2_worker_authentication=passed");
     console.log("gate2_worker_onboarding_and_retry=passed");
-    console.log("gate2_worker_category_rls_and_capability=passed");
-    console.log("gate2_worker_audit=passed");
+    console.log(
+      "gate2_worker_category_rename_lifecycle_and_offline_read=passed"
+    );
+    console.log("gate2_worker_unique_names_capability_and_audit=passed");
   } finally {
     try {
       await stopLocalWorker(worker);

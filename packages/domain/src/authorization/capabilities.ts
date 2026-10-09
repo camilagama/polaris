@@ -8,6 +8,7 @@ export const CAPABILITIES = Object.freeze([
   "expense:create",
   "organization:manage",
   "category:create",
+  "category:manage",
 ] as const);
 
 export type Capability = (typeof CAPABILITIES)[number];

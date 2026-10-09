@@ -212,7 +212,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída, sem achados Critical/Important | Um achado Minor sobre registro incremental de fixtures foi corrigido; revisão final recomendou seguir. |
 | Check e build finais | Concluídos | `bun run check`: lint, formato, typecheck, boundaries, Knip e 79 testes em 13 arquivos passaram. `bun run build` passou nos oito workspaces. |
 | Draft PR e CI | Concluídos no commit de implementação | Draft PR [#22](https://github.com/camilagama/polaris/pull/22) publicado sobre `codex/pr23-tenant-audit`; CI 6/6 verde no commit `a1de720`. Continua draft e sem merge. |
-| Próxima etapa | Revisão do responsável | Aguardar revisão do PR #22. O PR24 completo — UI, archive/delete e leitura offline — fica adiado até a revisão deste checkpoint; schema e operações mínimos do slice serão reutilizados. |
+| Próxima etapa | PR24 em andamento | O responsável autorizou avançar antes da revisão humana do PR #22. PR24 fica empilhado sobre o PR22 draft; ambos permanecem sem merge até revisão. |
 ### PR23 — checkpoint para revisão
 
 | Subetapa | Status | Evidência / dependência |
@@ -227,6 +227,20 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | [GitHub PR #21](https://github.com/camilagama/polaris/pull/21), draft empilhado sobre PR #20; os seis checks passaram no commit bab4ce7, incluindo o gate de navegador offline. |
 | Revisão do usuário | Pendente | PR #21 aguarda sua revisão; nenhum merge foi feito. |
 | Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |
+
+### PR24 — Categories (em andamento)
+
+| Subetapa | Status | Evidência / trabalho restante |
+| --- | --- | --- |
+| Sequência e worktree | Concluídos | Por autorização do responsável (“prossiga”), branch `codex/pr24-categories` foi criada sobre o head `afe056d` do PR22 antes da revisão humana. PR22 segue draft; PR24 será empilhado nele e nenhum dos dois será mesclado nesta etapa. |
+| Regras de catálogo | Definidas | Nomes únicos por organização ignorando caixa/espaços externos conforme resposta do responsável; rename em ativos/arquivados; archive reversível; tombstone terminal sem hard-delete. Produtos ainda não existem; PR25 deverá bloquear remoção com referência ativa. |
+| Schema e RPC | Implementados localmente | Migration 0013 adiciona lifecycle, índice único, policy/grant UPDATE sem DELETE físico; procedures create/list/rename/archive/restore/delete registram auditoria transacional. Aplicação na branch Neon pendente. |
+| Read contract e UI | Implementados localmente | DTO estável com UUID, organização, nome, estado e timestamps serializados; tela de gestão responsiva com temas claro/escuro. Cache, comandos e sync offline e UI de login permanecem adiados. |
+| Verificação local | Concluída | `bun run check`: lint, format, types, boundaries, Knip e 91 testes em 14 arquivos passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou mudanças adicionais. |
+| Gate Neon PostgreSQL + Worker | Pendente de credencial | A conexão owner atual retornou SQLSTATE `28P01` antes da migration 0013; nenhum SQL foi aplicado. O Worker PR24 ainda não foi executado. É necessária uma URL owner direta válida da branch descartável ou o handoff de rotação manual da senha. |
+| Revisão independente | Concluída após correção | A revisão encontrou divergência entre code points no domínio e unidades UTF-16 no contrato/inputs HTML. Contrato e interface agora contam code points, sem truncar emojis; regressão RPC confirma 100 emojis aceitos e 101 rejeitados. Nenhum outro achado concreto foi reportado. |
+| Draft PR e CI | Em andamento | Publicar draft PR empilhado sobre PR22 e acompanhar CI. O gate remoto Neon permanece pendente; não fazer merge sem instrução explícita. |
+
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.

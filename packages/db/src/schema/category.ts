@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./organization";
@@ -16,6 +17,8 @@ export const categories = pgTable(
   "categories",
   {
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    archivedAt: timestamp("archived_at"),
+    deletedAt: timestamp("deleted_at"),
     id: uuid("id").defaultRandom().primaryKey(),
     name: text("name").notNull(),
     organizationId: text("organization_id")
@@ -34,6 +37,10 @@ export const categories = pgTable(
     index("categories_organization_id_name_idx").on(
       table.organizationId,
       table.name
+    ),
+    uniqueIndex("categories_organization_name_unique").on(
+      table.organizationId,
+      sql`lower(btrim(${table.name}))`
     ),
     pgPolicy("categories_current_tenant_select", {
       for: "select",
@@ -58,6 +65,42 @@ export const categories = pgTable(
     pgPolicy("categories_current_tenant_insert", {
       for: "insert",
       to: runtimeRole,
+      withCheck: sql`
+        ${table.organizationId} = NULLIF(current_setting('app.organization_id', true), '')
+        AND EXISTS (
+          SELECT 1
+          FROM public.memberships AS membership_scope
+          WHERE membership_scope.organization_id = ${table.organizationId}
+            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')
+            AND membership_scope.status = 'active'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM public.organizations AS organization_scope
+          WHERE organization_scope.id = ${table.organizationId}
+            AND organization_scope.status = 'active'
+        )
+      `,
+    }),
+    pgPolicy("categories_current_tenant_update", {
+      for: "update",
+      to: runtimeRole,
+      using: sql`
+        ${table.organizationId} = NULLIF(current_setting('app.organization_id', true), '')
+        AND EXISTS (
+          SELECT 1
+          FROM public.memberships AS membership_scope
+          WHERE membership_scope.organization_id = ${table.organizationId}
+            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')
+            AND membership_scope.status = 'active'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM public.organizations AS organization_scope
+          WHERE organization_scope.id = ${table.organizationId}
+            AND organization_scope.status = 'active'
+        )
+      `,
       withCheck: sql`
         ${table.organizationId} = NULLIF(current_setting('app.organization_id', true), '')
         AND EXISTS (

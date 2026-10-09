@@ -1430,23 +1430,24 @@ Com as duas provas verdes, o Gate 2 está aprovado tecnicamente para este escopo
 
 
 
-Completar o módulo após o Gate 2 aprovado. O slice pré-gate pode já ter criado schema e operações mínimas de leitura/criação; reutilizar esses objetos, sem migrations duplicadas. PR24 completa domínio, regras de archive/delete, contrato de leitura offline e UI mínima.
+Completar o módulo usando a tabela `categories`, o RPC de criação/listagem e o Gate 2 do PR22. Por autorização explícita do responsável (“prossiga”), o PR24 começou empilhado sobre `codex/gate2-runtime-proof` antes da revisão humana do PR22. PR22 permanece draft; este PR também deve permanecer sem merge até revisão.
 
+### Invariantes
 
+- Categoria de catálogo é distinta de categoria de despesas, pertence a uma organização e é opcional para produto.
+- Nome tem no máximo 100 code points, é aparado nas extremidades, preserva a caixa e é único por organização sem distinção de caixa ou espaços externos. A unicidade inclui registros arquivados e tombstones.
+- Lifecycle: `active` → `archived` → `active`; `active`/`archived` → `deleted` (tombstone). Remoção não faz hard-delete; tombstone é terminal e preserva o nome.
+- O tombstone só é permitido quando o domínio não tem referências dependentes. Ainda não existe tabela products nesta etapa; PR25 deverá bloquear a remoção quando adicionar um vínculo opcional de produto.
+- `catalog:read` protege leitura, `category:create` criação e `category:manage` renomear/arquivar/restaurar/remover. RLS continua habilitado e forçado; a role tenant não recebe DELETE.
+- `category.created`, `category.renamed`, `category.archived`, `category.restored` e `category.deleted` são auditados na mesma transação. Repetições idempotentes não duplicam eventos.
+- O read contract contém ID estável, organização, nome, lifecycle e timestamps serializados para futura leitura offline. PR24 não implementa cache local, comandos offline ou sync.
+- UI mínima de gestão cobre organização autenticada, criação, listagem e lifecycle com estados vazio, carregando, sucesso e erro. UI de login/providers reais permanece pré-go-live.
 
-Categoria:
+### Verificação e sequência
 
-
-
-- tenant-scoped;
-
-- opcional para produto;
-
-- archive/delete rules simples.
-
-
-
-Adicionar offline-read compatibility desde o contrato, mas não sync ainda.
+- Gerar migration 0013 via Drizzle e aplicá-la somente a uma branch Neon descartável PostgreSQL 18; provar unicidade concorrente, grants/policy UPDATE, negação de cross-tenant, lifecycle, auditoria, rollback e cascade.
+- Executar o Worker local com sessão fixture para provar RPCs, capabilities e fluxo completo; confirmar cleanup de fixtures e roles.
+- `bun run check`, `bun run build` e revisão independente antes de publicar draft PR empilhado sobre PR22. Nenhum merge ou recurso de produção faz parte desta etapa.
 
 
 

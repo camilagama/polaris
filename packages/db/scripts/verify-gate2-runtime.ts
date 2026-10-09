@@ -3,11 +3,23 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
-import { createCategory, listCategories } from "../src/category-repository";
+import {
+  archiveCategory,
+  createCategory,
+  deleteCategory,
+  listCategories,
+  renameCategory,
+  restoreCategory,
+} from "../src/category-repository";
 import { createDatabase } from "../src/client";
 import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import { categories } from "../src/schema/category";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
+import {
+  CategoryDeletedError,
+  CategoryLifecycleError,
+  CategoryNameConflictError,
+} from "@polaris/domain/catalog/category";
 
 const runtimeRole = "polaris_pr11_runtime";
 const onboardingRole = "polaris_onboarding_runtime";
@@ -96,6 +108,56 @@ async function expectForgedCategoryInsertDenied(
       ),
       "42501",
       "category insert with forged context"
+    );
+  } finally {
+    await client.query("ROLLBACK");
+  }
+}
+
+async function expectForgedCategoryUpdateHidden(
+  client: Client,
+  userId: string,
+  organizationId: string,
+  categoryId: string
+): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    const result = await client.query(
+      "UPDATE public.categories SET archived_at = now() WHERE id = $1",
+      [categoryId]
+    );
+    assert.equal(
+      result.rowCount,
+      0,
+      "forged tenant context must not update rows"
+    );
+  } finally {
+    await client.query("ROLLBACK");
+  }
+}
+
+async function expectCategoryHardDeleteDenied(
+  client: Client,
+  userId: string,
+  organizationId: string,
+  categoryId: string
+): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    await expectSqlState(
+      client.query("DELETE FROM public.categories WHERE id = $1", [categoryId]),
+      "42501",
+      "tenant role cannot physically delete categories"
     );
   } finally {
     await client.query("ROLLBACK");
@@ -249,7 +311,11 @@ async function main() {
     );
     assert.deepEqual(
       categoryPolicies.rows.map((policy) => policy.name),
-      ["categories_current_tenant_insert", "categories_current_tenant_select"]
+      [
+        "categories_current_tenant_insert",
+        "categories_current_tenant_select",
+        "categories_current_tenant_update",
+      ]
     );
     assert.ok(
       categoryPolicies.rows.every(
@@ -267,6 +333,14 @@ async function main() {
     );
     assert.ok(
       categoryPolicies.rows[1]?.usingExpression?.includes("app.organization_id")
+    );
+    assert.equal(categoryPolicies.rows[2]?.command, "UPDATE");
+    assert.ok(
+      categoryPolicies.rows[2]?.usingExpression?.includes("app.user_id")
+    );
+    assert.ok(categoryPolicies.rows[2]?.withCheck?.includes("app.user_id"));
+    assert.ok(
+      categoryPolicies.rows[2]?.withCheck?.includes("app.organization_id")
     );
 
     const grants = await adminPool.query<{
@@ -289,7 +363,7 @@ async function main() {
       categoryDelete: false,
       categoryInsert: true,
       categorySelect: true,
-      categoryUpdate: false,
+      categoryUpdate: true,
       membershipInsert: false,
       organizationInsert: false,
     });
@@ -492,6 +566,69 @@ async function main() {
     );
     assert.equal(categoryA.name, "Escritório");
 
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "category:create",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          createCategory(transaction, identity, {
+            name: "escritório",
+            requestId: randomUUID(),
+          })
+      ),
+      CategoryNameConflictError
+    );
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "category:manage",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          renameCategory(transaction, identity, {
+            id: categoryA.id,
+            name: "outro",
+          })
+      ),
+      CategoryNameConflictError
+    );
+    const renamedCategory = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        renameCategory(transaction, identity, {
+          id: categoryA.id,
+          name: "Acessórios",
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(renamedCategory.changed, true);
+    assert.equal(renamedCategory.category.name, "Acessórios");
+    const renameRetry = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        renameCategory(transaction, identity, {
+          id: categoryA.id,
+          name: " Acessórios ",
+        })
+    );
+    assert.equal(renameRetry.changed, false);
+
     const visibleA = await withAuthorizedTenantTransaction(
       runtimeDb,
       {
@@ -507,13 +644,178 @@ async function main() {
           .where(eq(categories.organizationId, organizationB.organization.id)),
       })
     );
-    assert.deepEqual(visibleA.categories, [categoryA]);
+    assert.deepEqual(visibleA.categories, [renamedCategory.category]);
     assert.deepEqual(visibleA.otherTenantRows, []);
 
     await expectForgedCategoryInsertDenied(
       runtimeClient,
       userA,
       organizationB.organization.id
+    );
+    await expectForgedCategoryUpdateHidden(
+      runtimeClient,
+      userA,
+      organizationB.organization.id,
+      categoryA.id
+    );
+    await expectCategoryHardDeleteDenied(
+      runtimeClient,
+      userA,
+      organizationA.organization.id,
+      categoryA.id
+    );
+
+    const archivedCategory = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        archiveCategory(transaction, identity, {
+          id: categoryA.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(archivedCategory.changed, true);
+    assert.ok(archivedCategory.category.archivedAt instanceof Date);
+    assert.deepEqual(
+      await withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "catalog:read",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) => listCategories(transaction, identity)
+      ),
+      []
+    );
+    assert.deepEqual(
+      await withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "catalog:read",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          listCategories(transaction, identity, { status: "archived" })
+      ),
+      [archivedCategory.category]
+    );
+
+    const archiveRetry = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        archiveCategory(transaction, identity, { id: categoryA.id })
+    );
+    assert.equal(archiveRetry.changed, false);
+
+    const restoredCategory = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        restoreCategory(transaction, identity, {
+          id: categoryA.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(restoredCategory.changed, true);
+    assert.equal(restoredCategory.category.archivedAt, null);
+
+    const deletedCategory = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        deleteCategory(transaction, identity, {
+          id: categoryA.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(deletedCategory.changed, true);
+    assert.ok(deletedCategory.category.deletedAt instanceof Date);
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "category:manage",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          restoreCategory(transaction, identity, { id: categoryA.id })
+      ),
+      CategoryLifecycleError
+    );
+    const deletedRetry = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:manage",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        deleteCategory(transaction, identity, { id: categoryA.id })
+    );
+    assert.equal(deletedRetry.changed, false);
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "category:manage",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          renameCategory(transaction, identity, {
+            id: categoryA.id,
+            name: "Outro nome",
+          })
+      ),
+      CategoryDeletedError
+    );
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "category:create",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          createCategory(transaction, identity, {
+            name: "acessórios",
+          })
+      ),
+      CategoryNameConflictError
+    );
+    assert.deepEqual(
+      await withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "catalog:read",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          listCategories(transaction, identity, { status: "deleted" })
+      ),
+      [deletedCategory.category]
     );
 
     let rolledBackCategoryId: string | undefined;
@@ -564,6 +866,24 @@ async function main() {
     );
     assert.equal(categoryAudit.rows.length, 2);
 
+    const categoryLifecycleAudit = await adminPool.query<{
+      event_type: string;
+    }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 AND event_type <> 'category.created' " +
+        "ORDER BY event_type",
+      [categoryA.id]
+    );
+    assert.deepEqual(
+      categoryLifecycleAudit.rows.map((row) => row.event_type),
+      [
+        "category.archived",
+        "category.deleted",
+        "category.renamed",
+        "category.restored",
+      ]
+    );
+
     await adminPool.query("DELETE FROM public.organizations WHERE id = $1", [
       organizationB.organization.id,
     ]);
@@ -594,6 +914,7 @@ async function main() {
     console.log(
       JSON.stringify({
         categoryIsolationAndAudit: "passed",
+        categoryLifecycleAndUniqueName: "passed",
         directOnboardingDml: "denied",
         onboardingAtomicRetryAndAudit: "passed",
         onboardingRole,
