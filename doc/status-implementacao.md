@@ -313,7 +313,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída | Revisão do commit `464d1c1` sem achados; o revisor confirmou consistência da migration/RLS, versionamento e auditoria atômicos, conflitos de unicidade, limpeza/reuso e bloqueio de perda do SKU padrão. |
 | Draft PR e CI | Concluídos | [PR #26](https://github.com/camilagama/polaris/pull/26) publicado em draft, empilhado sobre PR #25. CI remoto passou 6/6 nos commits `d1d945b` e `bc74545`; sem merge. |
 
-### PR28 — Inventory ledger (em andamento)
+### PR28 — Inventory ledger (implementação e gates concluídos; draft PR #27 aberto; revisão do usuário pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -324,6 +324,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Gate Neon PostgreSQL 18 | Concluído | Migration aplicada e gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`; verificou RLS/grants, rollback atômico, concorrência, saldo não negativo, isolamento, ledger append-only e bloqueio da variante padrão mesmo após saldo voltar a zero. A branch expira automaticamente em 2026-10-10 18:47 BRT; as fixtures são sintéticas e ficam nela até expirar. |
 | Purge físico com histórico | Adiado | ON DELETE RESTRICT e ledger append-only bloqueiam purge físico de organização com movimentos. PR107 precisa definir e validar um caminho privilegiado compatível com retenção/deletion ledger antes do go-live. |
 | Revisão independente | Concluída | Revisor independente sem achados; confirmou as transações, RLS, grants, proteção de histórico, gate PostgreSQL 18 e a dependência de purge registrada para PR107. |
-| Draft PR, CI e revisão final | Pendentes | Depois da revisão, publicar draft empilhado sobre PR #26 e aguardar CI; sem merge até revisão do responsável. |
+| Draft PR e CI remoto | Concluídos | [PR #27](https://github.com/camilagama/polaris/pull/27), draft empilhado sobre PR #26; CI remoto 6/6 passou no commit `5043a51`; sem merge. |
+| Revisão do usuário | Pendente | PR #27 aguarda revisão; não será mergeado sem autorização. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
