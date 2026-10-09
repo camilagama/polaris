@@ -1,8 +1,14 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { ProductReadModel } from "@polaris/contracts";
+import type {
+  ProductReadModel,
+  ProductVariantConfigurationReadModel,
+} from "@polaris/contracts";
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
-import { ProductVersionConflictError } from "@polaris/domain/catalog/product";
+import {
+  ProductVariantConfigurationError,
+  ProductVersionConflictError,
+} from "@polaris/domain/catalog/product";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -58,6 +64,13 @@ function createRpcClient(router = createRpcRouter()) {
         product: ProductReadModel;
       }>;
       create: (input: unknown) => Promise<ProductReadModel>;
+      configureVariants: (input: unknown) => Promise<{
+        configuration: ProductVariantConfigurationReadModel;
+        product: ProductReadModel;
+      }>;
+      getVariants: (
+        input: unknown
+      ) => Promise<ProductVariantConfigurationReadModel>;
       list: (input: unknown) => Promise<{
         products: ProductReadModel[];
       }>;
@@ -84,6 +97,167 @@ function tenantContext(dependencies: {
 }
 
 describe("product RPCs", () => {
+  it("reads product variants with catalog:read", async () => {
+    const configuration: ProductVariantConfigurationReadModel = {
+      configured: false,
+      options: [],
+      productVersion: 1,
+      variants: [
+        {
+          id: "0199c2d0-0000-7000-8000-000000000002",
+          isDefault: true,
+          position: null,
+          values: [],
+        },
+      ],
+    };
+    const getProductVariants = vi.fn(
+      (_transaction: unknown, _identity: typeof identity, id: string) => {
+        expect(id).toBe(productRow.id);
+        return Promise.resolve(configuration);
+      }
+    );
+    let observedCapability = "";
+    const router = createRpcRouter({
+      getProductVariants,
+      withTenantRequestContext: (input: {
+        capability: string;
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => {
+        observedCapability = input.capability;
+        return tenantContext(input);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.getVariants({
+        id: productRow.id,
+        organizationId: identity.organizationId,
+      })
+    ).resolves.toEqual(configuration);
+    expect(observedCapability).toBe("catalog:read");
+    expect(getProductVariants).toHaveBeenCalledTimes(1);
+  });
+
+  it("configures variants with product:update and the optimistic version", async () => {
+    const configuration: ProductVariantConfigurationReadModel = {
+      configured: true,
+      options: [
+        {
+          id: "0199c2d0-0000-7000-8000-000000000003",
+          name: "model",
+          position: 0,
+          values: [
+            {
+              id: "0199c2d0-0000-7000-8000-000000000004",
+              name: "Classic",
+              position: 0,
+            },
+          ],
+        },
+      ],
+      productVersion: 2,
+      variants: [
+        {
+          id: "0199c2d0-0000-7000-8000-000000000005",
+          isDefault: false,
+          position: 0,
+          values: [
+            {
+              optionName: "model",
+              optionValueId: "0199c2d0-0000-7000-8000-000000000004",
+              optionValueName: "Classic",
+            },
+          ],
+        },
+      ],
+    };
+    const configureProductVariants = vi.fn(
+      async (
+        _transaction: unknown,
+        _authorizedIdentity: typeof identity,
+        repositoryInput: {
+          expectedVersion: number;
+          id: string;
+          options: Array<{ name: string; values: string[] }>;
+          requestId: string | null;
+          variants: Array<{ values: { model?: string } }>;
+        }
+      ) => ({
+        configuration,
+        product: {
+          ...productRow,
+          version: repositoryInput.expectedVersion + 1,
+        },
+      })
+    );
+    let observedCapability = "";
+    const router = createRpcRouter({
+      configureProductVariants,
+      withTenantRequestContext: (input: {
+        capability: string;
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => {
+        observedCapability = input.capability;
+        return tenantContext(input);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+    const configureInput = {
+      expectedVersion: 1,
+      id: productRow.id,
+      options: [{ name: "model" as const, values: ["Classic"] }],
+      organizationId: identity.organizationId,
+      variants: [{ values: { model: "Classic" } }],
+    };
+
+    const result = await client.product.configureVariants(configureInput);
+
+    expect(result).toMatchObject({
+      configuration,
+      product: { version: 2 },
+    });
+    expect(observedCapability).toBe("product:update");
+    expect(configureProductVariants).toHaveBeenCalledWith({}, identity, {
+      expectedVersion: configureInput.expectedVersion,
+      id: configureInput.id,
+      options: configureInput.options,
+      requestId: expect.stringMatching(requestIdPattern),
+      variants: configureInput.variants,
+    });
+  });
+
+  it("maps invalid variant combinations to a bad request", async () => {
+    const router = createRpcRouter({
+      configureProductVariants: () =>
+        Promise.reject(new ProductVariantConfigurationError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "model", values: ["Classic"] }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { model: "Missing" } }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("creates products with product:create and preserves duplicate names", async () => {
     const createProduct = vi.fn(
       async (

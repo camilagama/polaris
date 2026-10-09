@@ -214,7 +214,7 @@ async function createTemporaryLogin(
           true,
           true,
           false,
-          false,
+          true,
           false,
         ]
       );
@@ -866,6 +866,72 @@ async function main() {
     assert.equal(unlinkedProduct.changed, true);
     assert.equal(unlinkedProduct.product.categoryId, null);
     assert.equal(unlinkedProduct.product.version, 5);
+
+    const variantProduct = await clientA.product.create({
+      name: "Produto com combinações explícitas",
+      organizationId: organizationA.organization.id,
+    });
+    const variantConfiguration = await clientA.product.configureVariants({
+      expectedVersion: 1,
+      id: variantProduct.id,
+      options: [
+        { name: "color", values: ["Azul", "Preto"] },
+        { name: "size", values: ["P", "M"] },
+      ],
+      organizationId: organizationA.organization.id,
+      variants: [
+        { values: { color: "Azul", size: "P" } },
+        { values: { color: "Azul", size: "M" } },
+        { values: { color: "Preto", size: "M" } },
+      ],
+    });
+    assert.equal(variantConfiguration.product.version, 2);
+    assert.equal(variantConfiguration.configuration.configured, true);
+    assert.equal(variantConfiguration.configuration.variants.length, 3);
+    assert.deepEqual(
+      variantConfiguration.configuration.variants.map((variant) =>
+        variant.values.map((value) => value.optionValueName)
+      ),
+      [
+        ["Azul", "P"],
+        ["Azul", "M"],
+        ["Preto", "M"],
+      ]
+    );
+    const rereadVariants = await clientA.product.getVariants({
+      id: variantProduct.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.deepEqual(rereadVariants, variantConfiguration.configuration);
+    const variantAudit = await pool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 ORDER BY event_type",
+      [variantProduct.id]
+    );
+    assert.deepEqual(
+      variantAudit.rows.map((row) => row.event_type),
+      ["product.created", "product.variants_configured"]
+    );
+    await assert.rejects(
+      clientA.product.configureVariants({
+        expectedVersion: 2,
+        id: variantProduct.id,
+        options: [{ name: "model", values: ["Modelo novo"] }],
+        organizationId: organizationA.organization.id,
+        variants: [{ values: { model: "Modelo novo" } }],
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "configured variants cannot be replaced in PR26"
+    );
+    await assert.rejects(
+      clientB.product.getVariants({
+        id: variantProduct.id,
+        organizationId: organizationB.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "NOT_FOUND"),
+      "cross-tenant product variants are not visible"
+    );
+    console.log("gate2_worker_product_variants_explicit_and_audited=passed");
     console.log(
       "gate2_worker_product_update_lifecycle_and_tombstone_guard=passed"
     );

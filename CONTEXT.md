@@ -29,6 +29,10 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Variante:** forma vendável de um produto, como modelo, cor ou tamanho.
 
+**Opção de variante:** característica escolhida para distinguir formas vendáveis de um produto; nesta etapa, Modelo, Cor ou Tamanho.
+
+**Valor de opção:** escolha concreta de uma opção, como Azul para Cor ou P para Tamanho, atribuída a uma variante.
+
 **Saldo de estoque:** visão atual de quantidade e custo de uma variante.
 
 **Movimento de estoque:** registro de entrada, baixa, inventário, venda, devolução ou outra mudança de estoque.

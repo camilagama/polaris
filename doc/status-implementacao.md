@@ -256,6 +256,23 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI | Concluídos | [PR #24](https://github.com/camilagama/polaris/pull/24) está como draft, empilhado sobre [PR #23](https://github.com/camilagama/polaris/pull/23); CI 6/6 passou no commit `cb60ef7`, incluindo o gate Playwright. Permanece sem merge e aguarda revisão do responsável. |
 | Branch Neon descartável | Expiração automática | `gate2-runtime-proof` (`br-autumn-resonance-b6jkwg2y`) está no projeto `polaris-pr11-rls-gate`, PostgreSQL 18.6, São Paulo, e expira em 2026-10-09 13:02 (America/Sao_Paulo). Migrations 0014/0015 permanecem apenas nessa branch de teste. |
 
+### PR26 — Variants (implementado; publicação pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Regras de domínio | Concluídas | O responsável confirmou subconjuntos de Modelo/Cor/Tamanho; valores aparados, não vazios, preservando caixa e únicos por opção sem distinção de caixa; combinação completa e única; teto 50 no estado final da transação. PR26 configura uma vez; reconfiguração/remoção aguardam regras de preservação dos IDs para SKU/estoque. |
+| Worktree e baseline | Concluídos | Branch `codex/pr26-variants` criada sobre o head `8230577` do PR25. `bun install --frozen-lockfile`, `bun run check` (101 testes) e `bun run build` dos oito workspaces passaram antes da implementação. |
+| Domínio | Concluído | Normalização valida subconjuntos, valores únicos e combinações completas e não repetidas; 7 testes red-first passaram. Configuração inicial versionada e auditada; edição posterior está adiada. |
+| Schema, repositório e migration 0016 | Concluídos em branch descartável | Novas tabelas com FKs compostas tenant/product, RLS/grants mínimos, UUIDv7, posições estáveis e constraints diferidas. Migration aplicada somente à branch Neon `gate2-runtime-proof` (PostgreSQL 18.6). |
+| Contratos e RPC | Concluídos | `product.getVariants` exige `catalog:read`; `product.configureVariants` exige `product:update`, `expectedVersion` e audita a troca inicial do default. Testes RPC confirmam capabilities, versões e erros. |
+| UI | Concluída | Painel acessível seleciona opções, cadastra valores e combinações manualmente e lista variantes após configuração. Sem geração cartesiana; edição posterior adiada por preservação dos IDs. |
+| Verificação local | Concluída | `bun run check`: 111 testes em 18 arquivos; lint, format, typecheck, boundaries, Knip passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou drift. |
+| Gate Neon PostgreSQL 18 | Concluído | PostgreSQL 18.6 após a correção de leitura: RLS/grants, incluindo `FOR SHARE` com o papel runtime, e isolamento; troca default→combinações explícitas (3 de 4 possíveis); UUIDv7 e audit; configuração única; concorrência com um vencedor; teto final 50 aceito e 51 rejeitado; lifecycle, rollback e cascade. |
+| Gate Worker | Concluído | Runtime local autenticado passou onboarding e RPC de variantes: criação, configuração, releitura, audit, negação cross-tenant e conflito ao tentar reconfigurar. Fixtures temporárias limpas. |
+| Revisão independente | Concluída | Revisão sem blockers. O revisor identificou uma corrida entre a leitura do marcador e as consultas das variantes; `getProductVariants` agora trava a linha do produto com `FOR SHARE`, serializando a resposta com a configuração `FOR UPDATE`. O follow-up confirmou grants/RLS, compatibilidade com `READ COMMITTED` e efeito de espera breve sobre alterações concorrentes no produto. |
+| Draft PR e CI | Pendentes | Publicar `codex/pr26-variants` empilhado sobre PR #24, aguardar CI; sem merge. |
+| Branch Neon descartável | Expiração automática | `gate2-runtime-proof` (`br-autumn-resonance-b6jkwg2y`) no projeto `polaris-pr11-rls-gate`, PostgreSQL 18.6, São Paulo, expira em 2026-10-09 13:02 (America/Sao_Paulo). Migration 0016 e fixtures de gate permanecem apenas nessa branch. |
+
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.

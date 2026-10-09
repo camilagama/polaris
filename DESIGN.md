@@ -23,3 +23,11 @@ O PR24 aplica a direção Minimalismo Essencial à primeira interface de catálo
 - Tema escuro: canvas `#111915`, superfície `#1b2520`, texto `#e8f0eb`, linha `#35453c` e acento verde `#7fc7a5`.
 - Erros usam vermelho terroso; estados ativos, arquivados e removidos têm rótulos e cores distintas, sempre com texto além da cor.
 - Tabelas viram cartões em telas estreitas. Controles mantêm foco visível, rótulos explícitos e estados de carregamento, vazio, sucesso e erro.
+
+## Catálogo — Variantes
+
+- O formulário permite selecionar Modelo, Cor e Tamanho, informar valores legíveis e adicionar combinações manualmente.
+- Combinações nunca são geradas automaticamente. Cada linha mostra uma escolha por opção selecionada e o total visível respeita o limite de 50.
+- A lista de variantes mantém a ordem de cadastro, com a variante padrão oculta enquanto o produto não foi configurado.
+- Depois da configuração inicial, a interface apresenta as combinações em leitura; edição ou remoção aguarda regras para preservar referências futuras de SKU e estoque.
+- A configuração deve manter rótulos explícitos, validação junto aos campos e navegação por teclado nos temas claro e escuro.

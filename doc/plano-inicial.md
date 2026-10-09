@@ -1525,11 +1525,22 @@ Opções fixas de UX:
 - Cor;
 - Tamanho.
 
+Cada produto escolhe qualquer subconjunto dessas opções. Valores são aparados,
+não vazios, preservam a grafia exibida e são únicos dentro da opção sem
+distinção de caixa. Cada variante informa exatamente um valor por opção
+selecionada; combinações duplicadas são rejeitadas. Criar combinações somente
+de forma explícita, sem gerar o produto cartesiano.
+
 Cada produto aceita no máximo 50 variantes. Criar combinações explicitamente;
-não gerar produto cartesiano desnecessariamente. Produto sem opções mantém sua
-variante padrão. Ao adicionar combinações configuráveis, inserir as novas
-variantes e seus valores e remover a variante padrão na mesma transação; o
-produto nunca pode ficar sem variante, nem mesmo dentro do commit.
+o teto considera o estado persistido no fim da transação, permitindo substituir
+a variante padrão por até 50 variantes configuráveis. Produto sem opções mantém
+sua variante padrão. Ao configurar combinações, inserir opções, valores,
+variantes e suas associações e remover a variante padrão na mesma transação; o
+produto nunca pode ficar sem variante em um commit.
+
+PR26 permite somente a configuração inicial. Reconfigurar ou remover variantes
+fica adiado até definir como preservar os IDs que SKU e estoque poderão
+referenciar.
 
 Não incluir SKU (PR27), preço, estoque, mídia ou escrita offline.
 

@@ -44,6 +44,46 @@ const product = z.object({
 
 export type ProductReadModel = z.infer<typeof product>;
 
+const productVariantOptionName = z.enum(["model", "color", "size"]);
+
+const productVariantOptionValue = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  position: z.number().int().nonnegative(),
+});
+
+const productVariantOption = z.object({
+  id: z.string().uuid(),
+  name: productVariantOptionName,
+  position: z.number().int().nonnegative(),
+  values: z.array(productVariantOptionValue),
+});
+
+const productVariantOptionAssignment = z.object({
+  optionName: productVariantOptionName,
+  optionValueId: z.string().uuid(),
+  optionValueName: z.string().min(1),
+});
+
+const productVariant = z.object({
+  id: z.string().uuid(),
+  isDefault: z.boolean(),
+  position: z.number().int().nonnegative().nullable(),
+  values: z.array(productVariantOptionAssignment),
+});
+
+const productVariantConfiguration = z.object({
+  configured: z.boolean(),
+  options: z.array(productVariantOption),
+  productVersion: z.number().int().positive(),
+  variants: z.array(productVariant),
+});
+
+export type ProductVariantOptionName = z.infer<typeof productVariantOptionName>;
+export type ProductVariantConfigurationReadModel = z.infer<
+  typeof productVariantConfiguration
+>;
+
 const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
@@ -102,6 +142,51 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
+    getVariants: oc
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(productVariantConfiguration),
+    configureVariants: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          options: z
+            .array(
+              z.object({
+                name: productVariantOptionName,
+                values: z.array(z.string().trim().min(1)).min(1),
+              })
+            )
+            .min(1)
+            .max(3),
+          organizationId: z.string().trim().min(1),
+          variants: z
+            .array(
+              z.object({
+                values: z
+                  .object({
+                    color: z.string().trim().min(1).optional(),
+                    model: z.string().trim().min(1).optional(),
+                    size: z.string().trim().min(1).optional(),
+                  })
+                  .strict(),
+              })
+            )
+            .min(1)
+            .max(50),
+        })
+      )
+      .output(
+        z.object({
+          configuration: productVariantConfiguration,
+          product,
+        })
+      ),
   },
   category: {
     create: oc

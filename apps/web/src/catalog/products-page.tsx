@@ -9,6 +9,7 @@ import {
 } from "react";
 import { orpcClient } from "../lib/orpc";
 import "./categories-page.css";
+import { ProductVariantsPanel } from "./product-variants-panel";
 import "./products-page.css";
 
 type ProductListStatus = "active" | "archived";
@@ -224,6 +225,7 @@ interface ProductListProps {
   isLoading: boolean;
   onArchive: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
+  onManageVariants: (product: ProductReadModel) => void;
   onRestore: (product: ProductReadModel) => void;
   pendingAction: string | null;
   products: ProductReadModel[];
@@ -234,6 +236,7 @@ interface ProductCardProps {
   categoryName: string | null;
   onArchive: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
+  onManageVariants: (product: ProductReadModel) => void;
   onRestore: (product: ProductReadModel) => void;
   pendingAction: string | null;
   product: ProductReadModel;
@@ -243,6 +246,7 @@ function ProductCard({
   categoryName,
   onArchive,
   onEdit,
+  onManageVariants,
   onRestore,
   pendingAction,
   product,
@@ -258,6 +262,10 @@ function ProductCard({
   const handleRestore = useCallback(
     () => onRestore(product),
     [onRestore, product]
+  );
+  const handleManageVariants = useCallback(
+    () => onManageVariants(product),
+    [onManageVariants, product]
   );
 
   return (
@@ -281,6 +289,14 @@ function ProductCard({
         </div>
       </div>
       <div className="product-card-actions">
+        <button
+          className="quiet-button"
+          disabled={isPending}
+          onClick={handleManageVariants}
+          type="button"
+        >
+          Variantes
+        </button>
         <button
           className="quiet-button"
           disabled={isPending}
@@ -322,6 +338,7 @@ function ProductListContent({
   isLoading,
   onArchive,
   onEdit,
+  onManageVariants,
   onRestore,
   pendingAction,
   products,
@@ -357,6 +374,7 @@ function ProductListContent({
               categoryName={categoryName}
               onArchive={onArchive}
               onEdit={onEdit}
+              onManageVariants={onManageVariants}
               onRestore={onRestore}
               pendingAction={pendingAction}
               product={product}
@@ -373,6 +391,7 @@ function ProductList({
   isLoading,
   onArchive,
   onEdit,
+  onManageVariants,
   onRestore,
   pendingAction,
   products,
@@ -403,6 +422,7 @@ function ProductList({
         isLoading={isLoading}
         onArchive={onArchive}
         onEdit={onEdit}
+        onManageVariants={onManageVariants}
         onRestore={onRestore}
         pendingAction={pendingAction}
         products={products}
@@ -420,6 +440,9 @@ export function ProductsPage() {
   const [products, setProducts] = useState<ProductReadModel[]>([]);
   const [categories, setCategories] = useState<CategoryReadModel[]>([]);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [variantsProductId, setVariantsProductId] = useState<string | null>(
+    null
+  );
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -529,6 +552,7 @@ export function ProductsPage() {
   );
 
   const handleEdit = useCallback((product: ProductReadModel) => {
+    setVariantsProductId(null);
     setEditingProductId(product.id);
     setDraft({
       categoryId: product.categoryId ?? "",
@@ -543,6 +567,22 @@ export function ProductsPage() {
     setEditingProductId(null);
     setDraft(emptyDraft);
     setError(null);
+  }, []);
+
+  const handleManageVariants = useCallback((product: ProductReadModel) => {
+    setEditingProductId(null);
+    setDraft(emptyDraft);
+    setVariantsProductId(product.id);
+    setError(null);
+    setNotice(null);
+  }, []);
+
+  const handleCloseVariants = useCallback(() => {
+    setVariantsProductId(null);
+  }, []);
+
+  const handleVariantsUpdated = useCallback((_product: ProductReadModel) => {
+    setRefreshVersion((version) => version + 1);
   }, []);
 
   const handleProductAction = useCallback(
@@ -591,6 +631,7 @@ export function ProductsPage() {
       if (value && isProductListStatus(value)) {
         setStatus(value);
         setEditingProductId(null);
+        setVariantsProductId(null);
         setDraft(emptyDraft);
         setError(null);
         setNotice(null);
@@ -609,6 +650,7 @@ export function ProductsPage() {
     setProducts([]);
     setCategories([]);
     setEditingProductId(null);
+    setVariantsProductId(null);
     setDraft(emptyDraft);
     setNotice("Abra novamente a organização para acessar os produtos.");
     setError(null);
@@ -616,6 +658,8 @@ export function ProductsPage() {
 
   const editingProduct =
     products.find((product) => product.id === editingProductId) ?? null;
+  const variantsProduct =
+    products.find((product) => product.id === variantsProductId) ?? null;
 
   return (
     <div className="categories-page products-page">
@@ -642,9 +686,9 @@ export function ProductsPage() {
                 <p className="categories-eyebrow">Gestão de catálogo</p>
                 <h1>Produtos</h1>
                 <p className="categories-intro-copy">
-                  Cadastre os itens da organização. Cada produto começa com uma
-                  variante padrão; opções e estoque serão definidos em etapas
-                  próprias.
+                  Cadastre os itens da organização e defina combinações
+                  vendáveis explicitamente. O estoque será definido em uma etapa
+                  própria.
                 </p>
               </div>
               <button
@@ -718,10 +762,21 @@ export function ProductsPage() {
             isLoading={isLoading}
             onArchive={handleArchiveProduct}
             onEdit={handleEdit}
+            onManageVariants={handleManageVariants}
             onRestore={handleRestoreProduct}
             pendingAction={pendingAction}
             products={products}
             status={status}
+          />
+        ) : null}
+
+        {organizationId && variantsProduct ? (
+          <ProductVariantsPanel
+            key={variantsProduct.id}
+            onClose={handleCloseVariants}
+            onProductUpdated={handleVariantsUpdated}
+            organizationId={organizationId}
+            product={variantsProduct}
           />
         ) : null}
       </main>

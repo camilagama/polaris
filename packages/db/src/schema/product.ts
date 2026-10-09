@@ -18,7 +18,7 @@ import { organizations } from "./organization";
 
 const runtimeRole = "polaris_pr11_runtime";
 
-const activeTenantScope = (organizationId: AnyPgColumn) => sql`
+export const activeTenantScope = (organizationId: AnyPgColumn) => sql`
   ${organizationId} = NULLIF(current_setting('app.organization_id', true), '')
   AND EXISTS (
     SELECT 1
@@ -48,6 +48,7 @@ export const products = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    variantsConfiguredAt: timestamp("variants_configured_at"),
     version: integer("version").default(1).notNull(),
   },
   (table) => [
@@ -101,6 +102,7 @@ export const productVariants = pgTable(
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     isDefault: boolean("is_default").default(true).notNull(),
     organizationId: text("organization_id").notNull(),
+    position: integer("position"),
     productId: uuid("product_id").notNull(),
   },
   (table) => [
@@ -109,13 +111,25 @@ export const productVariants = pgTable(
       foreignColumns: [products.organizationId, products.id],
       name: "product_variants_organization_product_fk",
     }).onDelete("cascade"),
+    check(
+      "product_variants_position_nonnegative",
+      sql`${table.position} IS NULL OR ${table.position} >= 0`
+    ),
     index("product_variants_organization_product_idx").on(
       table.organizationId,
       table.productId
     ),
+    uniqueIndex("product_variants_organization_product_id_unique").on(
+      table.organizationId,
+      table.productId,
+      table.id
+    ),
     uniqueIndex("product_variants_one_default_per_product_unique")
       .on(table.productId)
       .where(sql`${table.isDefault}`),
+    uniqueIndex("product_variants_product_position_unique")
+      .on(table.productId, table.position)
+      .where(sql`${table.position} IS NOT NULL`),
     pgPolicy("product_variants_current_tenant_select", {
       for: "select",
       to: runtimeRole,
@@ -139,6 +153,22 @@ export const productVariants = pgTable(
           FROM public.products AS product_scope
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.variants_configured_at IS NULL
+        )
+      `,
+    }),
+    pgPolicy("product_variants_current_tenant_delete", {
+      for: "delete",
+      to: runtimeRole,
+      using: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND ${table.isDefault}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.variants_configured_at IS NULL
         )
       `,
     }),

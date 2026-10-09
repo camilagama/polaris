@@ -14,7 +14,9 @@ import {
 } from "@polaris/db/category-repository";
 import {
   archiveProduct,
+  configureProductVariants,
   createProduct,
+  getProductVariants,
   listProducts,
   restoreProduct,
   updateProduct,
@@ -34,8 +36,11 @@ import {
   ProductCategoryUnavailableError,
   ProductNameError,
   ProductNotFoundError,
+  ProductVariantConfigurationError,
+  ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
   deriveProductLifecycle,
+  type ProductVariantValues,
 } from "@polaris/domain/catalog/product";
 import {
   type AuthenticatedRequestContextInput,
@@ -69,7 +74,9 @@ interface RpcRouterDependencies {
   createOnboardingDatabase: typeof createDatabase;
   deleteCategory: typeof deleteCategory;
   archiveProduct: typeof archiveProduct;
+  configureProductVariants: typeof configureProductVariants;
   createProduct: typeof createProduct;
+  getProductVariants: typeof getProductVariants;
   listProducts: typeof listProducts;
   restoreProduct: typeof restoreProduct;
   updateProduct: typeof updateProduct;
@@ -136,6 +143,24 @@ function productReadModel(product: {
   };
 }
 
+function productVariantValues(input: {
+  color?: string | undefined;
+  model?: string | undefined;
+  size?: string | undefined;
+}): ProductVariantValues {
+  const values: ProductVariantValues = {};
+  if (input.model !== undefined) {
+    values.model = input.model;
+  }
+  if (input.color !== undefined) {
+    values.color = input.color;
+  }
+  if (input.size !== undefined) {
+    values.size = input.size;
+  }
+  return values;
+}
+
 function tenantContextErrorCode(
   code: TenantRequestContextError["code"]
 ): "UNAUTHORIZED" | "SERVICE_UNAVAILABLE" | "BAD_REQUEST" {
@@ -189,12 +214,17 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
+  if (error instanceof ProductVariantConfigurationError) {
+    throw new ORPCError("BAD_REQUEST", { cause: error });
+  }
+
   if (
     error instanceof CategoryDeletedError ||
     error instanceof CategoryInUseError ||
     error instanceof CategoryNameConflictError ||
     error instanceof CategoryLifecycleError ||
     error instanceof ProductCategoryUnavailableError ||
+    error instanceof ProductVariantsAlreadyConfiguredError ||
     error instanceof ProductVersionConflictError
   ) {
     throw new ORPCError("CONFLICT", { cause: error });
@@ -236,6 +266,10 @@ export function createRpcRouter(
   const renameTenantCategory = overrides.renameCategory ?? renameCategory;
   const listTenantProducts = overrides.listProducts ?? listProducts;
   const createTenantProduct = overrides.createProduct ?? createProduct;
+  const getTenantProductVariants =
+    overrides.getProductVariants ?? getProductVariants;
+  const configureTenantProductVariants =
+    overrides.configureProductVariants ?? configureProductVariants;
   const updateTenantProduct = overrides.updateProduct ?? updateProduct;
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
   const restoreTenantProduct = overrides.restoreProduct ?? restoreProduct;
@@ -576,12 +610,62 @@ export function createRpcRouter(
     }
   );
 
+  const getProductVariantsRecord =
+    implementContract.product.getVariants.handler(
+      async ({ context, input }) => {
+        try {
+          return await tenantRequest({
+            bindings: context.bindings,
+            capability: "catalog:read",
+            operation: (transaction, identity) =>
+              getTenantProductVariants(transaction, identity, input.id),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
+  const configureProductVariantsRecord =
+    implementContract.product.configureVariants.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "product:update",
+            operation: (transaction, identity) =>
+              configureTenantProductVariants(transaction, identity, {
+                expectedVersion: input.expectedVersion,
+                id: input.id,
+                options: input.options,
+                requestId: requestAuditId(context.requestId),
+                variants: input.variants.map((variant) => ({
+                  values: productVariantValues(variant.values),
+                })),
+              }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            configuration: result.configuration,
+            product: productReadModel(result.product),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     organization: { createInitial },
     product: {
       archive: archiveProductRecord,
+      configureVariants: configureProductVariantsRecord,
       create: createProductRecord,
+      getVariants: getProductVariantsRecord,
       list: listProduct,
       restore: restoreProductRecord,
       update: updateProductRecord,

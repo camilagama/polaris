@@ -13,7 +13,9 @@ import {
 } from "../src/category-repository";
 import {
   archiveProduct,
+  configureProductVariants,
   createProduct,
+  getProductVariants,
   listProducts,
   restoreProduct,
   updateProduct,
@@ -31,6 +33,8 @@ import {
 } from "@polaris/domain/catalog/category";
 import {
   ProductCategoryUnavailableError,
+  ProductVariantConfigurationError,
+  ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 
@@ -40,6 +44,7 @@ const expectedHost = /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 const sqlIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const rollbackMessagePattern = /intentional Gate 2 rollback/;
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
+const errorStackLineBreak = /\r?\n/;
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -254,16 +259,149 @@ async function expectProductVariantDeleteDenied(
         "set_config('app.organization_id', $2, true)",
       [userId, organizationId]
     );
-    await expectSqlState(
-      client.query(
-        "DELETE FROM public.product_variants WHERE product_id = $1",
-        [productId]
-      ),
-      "42501",
-      "tenant role cannot delete the default product variant"
+    const result = await client.query(
+      "DELETE FROM public.product_variants WHERE product_id = $1",
+      [productId]
     );
+    assert.equal(result.rowCount, 0);
   } finally {
     await client.query("ROLLBACK");
+  }
+}
+
+async function expectDefaultVariantRemovalRequiresReplacement(
+  client: Client,
+  userId: string,
+  organizationId: string,
+  productId: string
+): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userId, organizationId]
+    );
+    const deleted = await client.query(
+      "DELETE FROM public.product_variants " +
+        "WHERE product_id = $1 AND is_default = true",
+      [productId]
+    );
+    assert.equal(
+      deleted.rowCount,
+      1,
+      "the unconfigured product default variant should be deletable in the transaction"
+    );
+    await expectSqlState(
+      client.query("SET CONSTRAINTS ALL IMMEDIATE"),
+      "23514",
+      "a default variant cannot be removed without configured replacements"
+    );
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+  }
+}
+
+async function expectProductVariantLimitDenied(
+  pool: ReturnType<typeof createDatabase>["pool"],
+  organizationId: string,
+  productId: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const option = await client.query<{ id: string }>(
+      "INSERT INTO public.product_options " +
+        "(organization_id, product_id, name, position) " +
+        "VALUES ($1, $2, 'model', 0) RETURNING id",
+      [organizationId, productId]
+    );
+    const optionId = option.rows[0]?.id;
+    assert.ok(optionId);
+    await client.query(
+      "INSERT INTO public.product_option_values " +
+        "(organization_id, product_id, option_id, name, position) " +
+        "SELECT $1, $2, $3, 'Modelo ' || series.position::text, series.position " +
+        "FROM generate_series(1, 51) AS series(position)",
+      [organizationId, productId, optionId]
+    );
+    await client.query(
+      "INSERT INTO public.product_variants " +
+        "(organization_id, product_id, is_default, position) " +
+        "SELECT $1, $2, false, series.position - 1 " +
+        "FROM generate_series(1, 51) AS series(position)",
+      [organizationId, productId]
+    );
+    await client.query(
+      "INSERT INTO public.variant_option_values " +
+        "(organization_id, product_id, variant_id, option_id, option_value_id) " +
+        "SELECT $1, $2, variant.id, $3, option_value.id " +
+        "FROM public.product_variants AS variant " +
+        "INNER JOIN public.product_option_values AS option_value " +
+        "ON option_value.organization_id = variant.organization_id " +
+        "AND option_value.product_id = variant.product_id " +
+        "AND option_value.option_id = $3 " +
+        "AND option_value.position = variant.position + 1 " +
+        "WHERE variant.organization_id = $1 AND variant.product_id = $2 " +
+        "AND variant.is_default = false",
+      [organizationId, productId, optionId]
+    );
+    await client.query(
+      "DELETE FROM public.product_variants " +
+        "WHERE organization_id = $1 AND product_id = $2 AND is_default = true",
+      [organizationId, productId]
+    );
+    await client.query(
+      "UPDATE public.products SET variants_configured_at = now() " +
+        "WHERE organization_id = $1 AND id = $2",
+      [organizationId, productId]
+    );
+    await expectSqlState(
+      client.query("SET CONSTRAINTS ALL IMMEDIATE"),
+      "23514",
+      "deferred PostgreSQL guard rejects a persisted 51st variant"
+    );
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
+}
+
+async function expectDuplicateOptionValueDenied(
+  pool: ReturnType<typeof createDatabase>["pool"],
+  organizationId: string,
+  productId: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const option = await client.query<{ id: string }>(
+      "INSERT INTO public.product_options " +
+        "(organization_id, product_id, name, position) " +
+        "VALUES ($1, $2, 'color', 1) RETURNING id",
+      [organizationId, productId]
+    );
+    const optionId = option.rows[0]?.id;
+    assert.ok(optionId);
+    await client.query(
+      "INSERT INTO public.product_option_values " +
+        "(organization_id, product_id, option_id, name, position) " +
+        "VALUES ($1, $2, $3, 'Azul', 0)",
+      [organizationId, productId, optionId]
+    );
+    await expectSqlState(
+      client.query(
+        "INSERT INTO public.product_option_values " +
+          "(organization_id, product_id, option_id, name, position) " +
+          "VALUES ($1, $2, $3, ' azul ', 1)",
+        [organizationId, productId, optionId]
+      ),
+      "23505",
+      "database value uniqueness ignores case and surrounding whitespace"
+    );
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
   }
 }
 
@@ -412,9 +550,12 @@ async function main() {
           "categories",
           "memberships",
           "organizations",
+          "product_option_values",
+          "product_options",
           "product_variants",
           "products",
           "tenant_audit_event",
+          "variant_option_values",
         ],
       ]
     );
@@ -424,9 +565,12 @@ async function main() {
         ["categories", true, true],
         ["memberships", true, true],
         ["organizations", true, true],
+        ["product_option_values", true, true],
+        ["product_options", true, true],
         ["product_variants", true, true],
         ["products", true, true],
         ["tenant_audit_event", true, true],
+        ["variant_option_values", true, true],
       ]
     );
     assert.ok(rls.rows.every((table) => table.owner === ownerName));
@@ -534,6 +678,7 @@ async function main() {
     assert.deepEqual(
       variantPolicies.rows.map((policy) => [policy.name, policy.command]),
       [
+        ["product_variants_current_tenant_delete", "DELETE"],
         ["product_variants_current_tenant_insert", "INSERT"],
         ["product_variants_current_tenant_select", "SELECT"],
       ]
@@ -552,6 +697,70 @@ async function main() {
             policy.withCheck.includes("product_scope")
         )
     );
+    assert.ok(
+      variantPolicies.rows
+        .find((policy) => policy.command === "DELETE")
+        ?.usingExpression?.includes("variants_configured_at IS NULL")
+    );
+
+    const optionPolicies = await adminPool.query<{
+      relation: string;
+      name: string;
+      command: string;
+      roles: string;
+      usingExpression: string | null;
+      withCheck: string | null;
+    }>(
+      "SELECT tablename AS relation, policyname AS name, cmd AS command, roles, " +
+        'qual AS "usingExpression", with_check AS "withCheck" ' +
+        "FROM pg_policies WHERE schemaname = 'public' " +
+        "AND tablename = ANY($1::text[]) ORDER BY tablename, policyname",
+      [["product_option_values", "product_options", "variant_option_values"]]
+    );
+    assert.deepEqual(
+      optionPolicies.rows.map((policy) => [
+        policy.relation,
+        policy.name,
+        policy.command,
+      ]),
+      [
+        [
+          "product_option_values",
+          "product_option_values_current_tenant_insert",
+          "INSERT",
+        ],
+        [
+          "product_option_values",
+          "product_option_values_current_tenant_select",
+          "SELECT",
+        ],
+        ["product_options", "product_options_current_tenant_insert", "INSERT"],
+        ["product_options", "product_options_current_tenant_select", "SELECT"],
+        [
+          "variant_option_values",
+          "variant_option_values_current_tenant_insert",
+          "INSERT",
+        ],
+        [
+          "variant_option_values",
+          "variant_option_values_current_tenant_select",
+          "SELECT",
+        ],
+      ]
+    );
+    assert.ok(
+      optionPolicies.rows.every((policy) => policy.roles === `{${runtimeRole}}`)
+    );
+    assert.ok(
+      optionPolicies.rows
+        .filter((policy) => policy.command === "INSERT")
+        .every(
+          (policy) =>
+            policy.withCheck?.includes("app.user_id") &&
+            policy.withCheck.includes("app.organization_id") &&
+            policy.withCheck.includes("variants_configured_at IS NULL")
+        )
+    );
 
     const productTriggers = await adminPool.query<{
       name: string;
@@ -563,7 +772,16 @@ async function main() {
         "FROM pg_trigger AS t LEFT JOIN pg_constraint AS c ON c.oid = t.tgconstraint " +
         "WHERE NOT t.tgisinternal AND t.tgrelid = ANY($1::regclass[]) " +
         "ORDER BY t.tgname",
-      [["public.categories", "public.products", "public.product_variants"]]
+      [
+        [
+          "public.categories",
+          "public.product_option_values",
+          "public.product_options",
+          "public.product_variants",
+          "public.products",
+          "public.variant_option_values",
+        ],
+      ]
     );
     assert.deepEqual(productTriggers.rows, [
       {
@@ -574,7 +792,42 @@ async function main() {
       {
         deferrable: true,
         initiallyDeferred: true,
+        name: "product_option_values_configuration_guard",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "product_option_values_lock_unconfigured_product",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
+        name: "product_options_configuration_guard",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "product_options_lock_unconfigured_product",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
+        name: "product_variants_configuration_guard",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "product_variants_lock_unconfigured_product",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
         name: "product_variants_preserve_parent",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "products_prevent_variant_configuration_reset",
       },
       {
         deferrable: null,
@@ -585,6 +838,21 @@ async function main() {
         deferrable: true,
         initiallyDeferred: true,
         name: "products_require_variant",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
+        name: "products_variant_configuration_guard",
+      },
+      {
+        deferrable: true,
+        initiallyDeferred: true,
+        name: "variant_option_values_configuration_guard",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "variant_option_values_lock_unconfigured_product",
       },
     ]);
 
@@ -601,6 +869,18 @@ async function main() {
       variantInsert: boolean;
       variantUpdate: boolean;
       variantDelete: boolean;
+      productOptionSelect: boolean;
+      productOptionInsert: boolean;
+      productOptionUpdate: boolean;
+      productOptionDelete: boolean;
+      productOptionValueSelect: boolean;
+      productOptionValueInsert: boolean;
+      productOptionValueUpdate: boolean;
+      productOptionValueDelete: boolean;
+      variantOptionValueSelect: boolean;
+      variantOptionValueInsert: boolean;
+      variantOptionValueUpdate: boolean;
+      variantOptionValueDelete: boolean;
       organizationInsert: boolean;
       membershipInsert: boolean;
     }>(
@@ -616,6 +896,18 @@ async function main() {
         "has_table_privilege($1, 'public.product_variants', 'INSERT') AS \"variantInsert\", " +
         "has_table_privilege($1, 'public.product_variants', 'UPDATE') AS \"variantUpdate\", " +
         "has_table_privilege($1, 'public.product_variants', 'DELETE') AS \"variantDelete\", " +
+        "has_table_privilege($1, 'public.product_options', 'SELECT') AS \"productOptionSelect\", " +
+        "has_table_privilege($1, 'public.product_options', 'INSERT') AS \"productOptionInsert\", " +
+        "has_table_privilege($1, 'public.product_options', 'UPDATE') AS \"productOptionUpdate\", " +
+        "has_table_privilege($1, 'public.product_options', 'DELETE') AS \"productOptionDelete\", " +
+        "has_table_privilege($1, 'public.product_option_values', 'SELECT') AS \"productOptionValueSelect\", " +
+        "has_table_privilege($1, 'public.product_option_values', 'INSERT') AS \"productOptionValueInsert\", " +
+        "has_table_privilege($1, 'public.product_option_values', 'UPDATE') AS \"productOptionValueUpdate\", " +
+        "has_table_privilege($1, 'public.product_option_values', 'DELETE') AS \"productOptionValueDelete\", " +
+        "has_table_privilege($1, 'public.variant_option_values', 'SELECT') AS \"variantOptionValueSelect\", " +
+        "has_table_privilege($1, 'public.variant_option_values', 'INSERT') AS \"variantOptionValueInsert\", " +
+        "has_table_privilege($1, 'public.variant_option_values', 'UPDATE') AS \"variantOptionValueUpdate\", " +
+        "has_table_privilege($1, 'public.variant_option_values', 'DELETE') AS \"variantOptionValueDelete\", " +
         "has_table_privilege($1, 'public.organizations', 'INSERT') AS \"organizationInsert\", " +
         "has_table_privilege($1, 'public.memberships', 'INSERT') AS \"membershipInsert\"",
       [runtimeRole]
@@ -628,11 +920,23 @@ async function main() {
       membershipInsert: false,
       organizationInsert: false,
       productDelete: false,
+      productOptionDelete: false,
+      productOptionInsert: true,
+      productOptionSelect: true,
+      productOptionUpdate: false,
+      productOptionValueDelete: false,
+      productOptionValueInsert: true,
+      productOptionValueSelect: true,
+      productOptionValueUpdate: false,
       productInsert: true,
       productSelect: true,
       productUpdate: true,
-      variantDelete: false,
+      variantDelete: true,
       variantInsert: true,
+      variantOptionValueDelete: false,
+      variantOptionValueInsert: true,
+      variantOptionValueSelect: true,
+      variantOptionValueUpdate: false,
       variantSelect: true,
       variantUpdate: false,
     });
@@ -969,6 +1273,28 @@ async function main() {
     assert.notEqual(productA.id, duplicateProductA.id);
     assert.equal(productA.name, duplicateProductA.name);
     assert.equal(productB.name, productA.name);
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          configureProductVariants(transaction, identity, {
+            expectedVersion: 1,
+            id: duplicateProductA.id,
+            options: [{ name: "color", values: ["Azul"] }],
+            requestId: randomUUID(),
+            variants: [
+              { values: { color: "Azul" } },
+              { values: { color: " azul " } },
+            ],
+          })
+      ),
+      ProductVariantConfigurationError
+    );
 
     const archivedCategoryB = await withAuthorizedTenantTransaction(
       runtimeDb,
@@ -1041,6 +1367,377 @@ async function main() {
         (row) => row.variant_count === "1" && row.all_default
       )
     );
+
+    const configurableProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Gate product variants",
+          requestId: randomUUID(),
+        })
+    );
+    const explicitCombinations = [
+      { values: { color: "Azul", size: "P" } },
+      { values: { color: "Azul", size: "M" } },
+      { values: { color: "Preto", size: "M" } },
+    ];
+    const configuredVariants = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        configureProductVariants(transaction, identity, {
+          expectedVersion: 1,
+          id: configurableProduct.id,
+          options: [
+            { name: "color", values: ["Azul", "Preto"] },
+            { name: "size", values: ["P", "M"] },
+          ],
+          requestId: randomUUID(),
+          variants: explicitCombinations,
+        })
+    );
+    assert.equal(configuredVariants.product.version, 2);
+    assert.equal(configuredVariants.configuration.configured, true);
+    assert.deepEqual(
+      configuredVariants.configuration.options.map((option) => option.name),
+      ["color", "size"]
+    );
+    assert.deepEqual(
+      configuredVariants.configuration.variants.map((variant) =>
+        variant.values.map((value) => value.optionValueName)
+      ),
+      [
+        ["Azul", "P"],
+        ["Azul", "M"],
+        ["Preto", "M"],
+      ]
+    );
+    assert.deepEqual(
+      configuredVariants.configuration.variants.map(
+        (variant) => variant.position
+      ),
+      [0, 1, 2]
+    );
+    assert.ok(
+      configuredVariants.configuration.variants.every(
+        (variant) => !variant.isDefault
+      )
+    );
+    const configuredRead = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        getProductVariants(transaction, identity, configurableProduct.id)
+    );
+    assert.deepEqual(configuredRead, configuredVariants.configuration);
+    const variantEntityUuidVersions = await adminPool.query<{
+      version: number;
+    }>(
+      "SELECT uuid_extract_version(id) AS version " +
+        "FROM public.product_variants WHERE product_id = $1 " +
+        "UNION ALL SELECT uuid_extract_version(id) AS version " +
+        "FROM public.product_options WHERE product_id = $1 " +
+        "UNION ALL SELECT uuid_extract_version(id) AS version " +
+        "FROM public.product_option_values WHERE product_id = $1",
+      [configurableProduct.id]
+    );
+    assert.equal(variantEntityUuidVersions.rows.length, 9);
+    assert.ok(variantEntityUuidVersions.rows.every((row) => row.version === 7));
+
+    const variantConfigurationState = await adminPool.query<{
+      assignmentCount: string;
+      configured: boolean;
+      defaultCount: string;
+      optionCount: string;
+      optionValueCount: string;
+      productVersion: number;
+      variantCount: string;
+    }>(
+      "SELECT product.variants_configured_at IS NOT NULL AS configured, " +
+        'product.version AS "productVersion", ' +
+        "(SELECT count(*)::text FROM public.product_options AS option " +
+        "WHERE option.organization_id = product.organization_id " +
+        'AND option.product_id = product.id) AS "optionCount", ' +
+        "(SELECT count(*)::text FROM public.product_option_values AS value " +
+        "WHERE value.organization_id = product.organization_id " +
+        'AND value.product_id = product.id) AS "optionValueCount", ' +
+        "(SELECT count(*)::text FROM public.product_variants AS variant " +
+        "WHERE variant.organization_id = product.organization_id " +
+        'AND variant.product_id = product.id) AS "variantCount", ' +
+        "(SELECT count(*)::text FROM public.product_variants AS variant " +
+        "WHERE variant.organization_id = product.organization_id " +
+        'AND variant.product_id = product.id AND variant.is_default) AS "defaultCount", ' +
+        "(SELECT count(*)::text FROM public.variant_option_values AS assignment " +
+        "WHERE assignment.organization_id = product.organization_id " +
+        'AND assignment.product_id = product.id) AS "assignmentCount" ' +
+        "FROM public.products AS product WHERE product.id = $1",
+      [configurableProduct.id]
+    );
+    assert.deepEqual(variantConfigurationState.rows[0], {
+      assignmentCount: "6",
+      configured: true,
+      defaultCount: "0",
+      optionCount: "2",
+      optionValueCount: "4",
+      productVersion: 2,
+      variantCount: "3",
+    });
+    const duplicateValueProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Gate duplicate option values",
+          requestId: randomUUID(),
+        })
+    );
+    await expectDuplicateOptionValueDenied(
+      adminPool,
+      organizationA.organization.id,
+      duplicateValueProduct.id
+    );
+
+    const variantAudit = await adminPool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 ORDER BY event_type",
+      [configurableProduct.id]
+    );
+    assert.deepEqual(
+      variantAudit.rows.map((row) => row.event_type),
+      ["product.created", "product.variants_configured"]
+    );
+
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          configureProductVariants(transaction, identity, {
+            expectedVersion: 2,
+            id: configurableProduct.id,
+            options: [{ name: "model", values: ["Reconfiguração"] }],
+            requestId: randomUUID(),
+            variants: [{ values: { model: "Reconfiguração" } }],
+          })
+      ),
+      ProductVariantsAlreadyConfiguredError
+    );
+    await runtimeClient.query("BEGIN");
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userA, organizationA.organization.id]
+    );
+    await expectSqlState(
+      runtimeClient.query(
+        "UPDATE public.products SET variants_configured_at = NULL WHERE id = $1",
+        [configurableProduct.id]
+      ),
+      "23514",
+      "the database prevents resetting the one-time variant configuration marker"
+    );
+    await runtimeClient.query("ROLLBACK");
+    await expectProductVariantDeleteDenied(
+      runtimeClient,
+      userA,
+      organizationA.organization.id,
+      configurableProduct.id
+    );
+
+    const archivedConfiguredProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        archiveProduct(transaction, identity, {
+          expectedVersion: 2,
+          id: configurableProduct.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(archivedConfiguredProduct.product.version, 3);
+    const restoredConfiguredProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        restoreProduct(transaction, identity, {
+          expectedVersion: 3,
+          id: configurableProduct.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(restoredConfiguredProduct.product.version, 4);
+    const restoredVariants = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        getProductVariants(transaction, identity, configurableProduct.id)
+    );
+    assert.deepEqual(
+      restoredVariants.variants.map((variant) => variant.id),
+      configuredVariants.configuration.variants.map((variant) => variant.id)
+    );
+
+    const concurrentVariantProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Gate concurrent variant configuration",
+          requestId: randomUUID(),
+        })
+    );
+    const concurrentConfiguration = () =>
+      withAuthorizedTenantTransaction(
+        adminDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          configureProductVariants(transaction, identity, {
+            expectedVersion: 1,
+            id: concurrentVariantProduct.id,
+            options: [{ name: "model", values: ["A", "B"] }],
+            requestId: randomUUID(),
+            variants: [{ values: { model: "A" } }, { values: { model: "B" } }],
+          })
+      );
+    const concurrentResults = await Promise.allSettled([
+      concurrentConfiguration(),
+      concurrentConfiguration(),
+    ]);
+    assert.equal(
+      concurrentResults.filter((result) => result.status === "fulfilled")
+        .length,
+      1,
+      "exactly one concurrent variant configuration should commit"
+    );
+    const concurrentFailure = concurrentResults.find(
+      (result) => result.status === "rejected"
+    );
+    assert.ok(concurrentFailure && concurrentFailure.status === "rejected");
+    assert.ok(concurrentFailure.reason instanceof ProductVersionConflictError);
+
+    await runtimeClient.query("BEGIN");
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userB, organizationB.organization.id]
+    );
+    assert.deepEqual(
+      (
+        await runtimeClient.query(
+          "SELECT id FROM public.product_options WHERE product_id = $1",
+          [configurableProduct.id]
+        )
+      ).rows,
+      [],
+      "cross-tenant runtime reads cannot see product options"
+    );
+    assert.deepEqual(
+      (
+        await runtimeClient.query(
+          "SELECT variant_id FROM public.variant_option_values WHERE product_id = $1",
+          [configurableProduct.id]
+        )
+      ).rows,
+      [],
+      "cross-tenant runtime reads cannot see variant assignments"
+    );
+    await runtimeClient.query("ROLLBACK");
+
+    const limitedProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Gate product over limit",
+          requestId: randomUUID(),
+        })
+    );
+    await expectProductVariantLimitDenied(
+      adminPool,
+      organizationA.organization.id,
+      limitedProduct.id
+    );
+
+    const fiftyVariantProduct = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Gate product with fifty variants",
+          requestId: randomUUID(),
+        })
+    );
+    const fiftyModels = Array.from(
+      { length: 50 },
+      (_, index) => `Modelo ${index + 1}`
+    );
+    const fiftyVariantResult = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        configureProductVariants(transaction, identity, {
+          expectedVersion: 1,
+          id: fiftyVariantProduct.id,
+          options: [{ name: "model", values: fiftyModels }],
+          requestId: randomUUID(),
+          variants: fiftyModels.map((model) => ({ values: { model } })),
+        })
+    );
+    assert.equal(fiftyVariantResult.configuration.variants.length, 50);
+
     const variantIdVersions = await adminPool.query<{ version: number }>(
       "SELECT uuid_extract_version(id) AS version " +
         "FROM public.product_variants WHERE product_id = ANY($1::uuid[])",
@@ -1052,7 +1749,7 @@ async function main() {
       adminPool,
       organizationA.organization.id
     );
-    await expectProductVariantDeleteDenied(
+    await expectDefaultVariantRemovalRequiresReplacement(
       runtimeClient,
       userA,
       organizationA.organization.id,
@@ -1094,7 +1791,15 @@ async function main() {
     );
     assert.deepEqual(
       productListsA.products.map((product) => product.id).sort(),
-      [productA.id, duplicateProductA.id].sort()
+      [
+        productA.id,
+        duplicateProductA.id,
+        configurableProduct.id,
+        duplicateValueProduct.id,
+        concurrentVariantProduct.id,
+        limitedProduct.id,
+        fiftyVariantProduct.id,
+      ].sort()
     );
     assert.deepEqual(productListsA.otherTenantRows, []);
 
@@ -1213,8 +1918,15 @@ async function main() {
       (transaction, identity) => listProducts(transaction, identity)
     );
     assert.deepEqual(
-      activeProductsAfterArchive.map((product) => product.id),
-      [duplicateProductA.id]
+      activeProductsAfterArchive.map((product) => product.id).sort(),
+      [
+        duplicateProductA.id,
+        configurableProduct.id,
+        duplicateValueProduct.id,
+        concurrentVariantProduct.id,
+        limitedProduct.id,
+        fiftyVariantProduct.id,
+      ].sort()
     );
     const archivedProducts = await withAuthorizedTenantTransaction(
       runtimeDb,
@@ -1579,11 +2291,17 @@ async function main() {
           "categories",
           "memberships",
           "organizations",
+          "product_option_values",
+          "product_options",
           "product_variants",
           "products",
           "tenant_audit_event",
+          "variant_option_values",
         ],
         productAtomicVariantAndUuidV7: "passed",
+        productVariantConfigurationAndAudit: "passed",
+        productVariantsConcurrentConfigurationOneWinner: "passed",
+        productVariantLimit: "passed",
         productLifecycleConcurrencyAndAudit: "passed",
         rollbackAndCascade: "passed",
         status: "passed",
@@ -1660,10 +2378,18 @@ async function main() {
 main().catch((error: unknown) => {
   const connectionString = process.env.POLARIS_GATE2_TEST_DATABASE_URL ?? "";
   const message = error instanceof Error ? error.message : "unknown error";
+  const sourceFrame =
+    error instanceof Error
+      ? error.stack
+          ?.split(errorStackLineBreak)
+          .find((line) => line.includes("verify-gate2-runtime.ts:"))
+          ?.trim()
+      : undefined;
   console.error(
     "gate2_runtime=failed",
     error instanceof Error ? error.name : "UnknownError",
-    message.replaceAll(connectionString, "[redacted]")
+    message.replaceAll(connectionString, "[redacted]"),
+    sourceFrame
   );
   process.exitCode = 1;
 });

@@ -4,9 +4,15 @@ import {
   normalizeProductName,
   ProductCategoryUnavailableError,
   ProductNotFoundError,
+  ProductVariantConfigurationError,
+  ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
+  PRODUCT_VARIANT_OPTION_NAMES,
+  normalizeProductVariantConfiguration,
   transitionProductLifecycle,
   type ProductLifecycleAction,
+  type ProductVariantConfigurationInput,
+  type ProductVariantOptionName,
 } from "@polaris/domain/catalog/product";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -16,6 +22,11 @@ import type {
 } from "./tenant-transaction";
 import { categories } from "./schema/category";
 import { productVariants, products } from "./schema/product";
+import {
+  productOptionValues,
+  productOptions,
+  variantOptionValues,
+} from "./schema/product-variants";
 
 export interface ProductListOptions {
   status?: "active" | "archived" | "all";
@@ -40,6 +51,10 @@ export interface UpdateProductInput extends ProductMutationInput {
   name: string;
 }
 
+export interface ConfigureProductVariantsInput
+  extends ProductMutationInput,
+    ProductVariantConfigurationInput {}
+
 const productColumns = {
   archivedAt: products.archivedAt,
   categoryId: products.categoryId,
@@ -49,6 +64,7 @@ const productColumns = {
   name: products.name,
   organizationId: products.organizationId,
   updatedAt: products.updatedAt,
+  variantsConfiguredAt: products.variantsConfiguredAt,
   version: products.version,
 };
 
@@ -343,4 +359,358 @@ export async function restoreProduct(
   input: ProductMutationInput
 ) {
   return await changeProductLifecycle(transaction, identity, input, "restore");
+}
+
+function productVariantOptionName(value: string): ProductVariantOptionName {
+  if (value === "model" || value === "color" || value === "size") {
+    return value;
+  }
+  throw new ProductVariantConfigurationError();
+}
+
+export async function getProductVariants(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  productId: string
+) {
+  const [product] = await transaction
+    .select({
+      variantsConfiguredAt: products.variantsConfiguredAt,
+      version: products.version,
+    })
+    .from(products)
+    .where(
+      and(
+        eq(products.id, productId),
+        eq(products.organizationId, identity.organizationId)
+      )
+    )
+    .limit(1)
+    .for("share");
+
+  if (!product) {
+    throw new ProductNotFoundError();
+  }
+
+  const optionRows = await transaction
+    .select({
+      id: productOptions.id,
+      name: productOptions.name,
+      position: productOptions.position,
+    })
+    .from(productOptions)
+    .where(
+      and(
+        eq(productOptions.organizationId, identity.organizationId),
+        eq(productOptions.productId, productId)
+      )
+    )
+    .orderBy(asc(productOptions.position), asc(productOptions.id));
+
+  const optionValueRows = await transaction
+    .select({
+      id: productOptionValues.id,
+      name: productOptionValues.name,
+      optionId: productOptionValues.optionId,
+      position: productOptionValues.position,
+    })
+    .from(productOptionValues)
+    .where(
+      and(
+        eq(productOptionValues.organizationId, identity.organizationId),
+        eq(productOptionValues.productId, productId)
+      )
+    )
+    .orderBy(
+      asc(productOptionValues.optionId),
+      asc(productOptionValues.position),
+      asc(productOptionValues.id)
+    );
+
+  const variantRows = await transaction
+    .select({
+      id: productVariants.id,
+      isDefault: productVariants.isDefault,
+      position: productVariants.position,
+    })
+    .from(productVariants)
+    .where(
+      and(
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, productId)
+      )
+    )
+    .orderBy(asc(productVariants.position), asc(productVariants.id));
+
+  const optionValueRowsForVariants = await transaction
+    .select({
+      optionId: variantOptionValues.optionId,
+      optionValueId: variantOptionValues.optionValueId,
+      variantId: variantOptionValues.variantId,
+    })
+    .from(variantOptionValues)
+    .where(
+      and(
+        eq(variantOptionValues.organizationId, identity.organizationId),
+        eq(variantOptionValues.productId, productId)
+      )
+    );
+
+  const optionsById = new Map(optionRows.map((option) => [option.id, option]));
+  const valuesById = new Map(
+    optionValueRows.map((optionValue) => [optionValue.id, optionValue])
+  );
+  const valuesByOptionId = new Map<string, typeof optionValueRows>();
+  for (const optionValue of optionValueRows) {
+    const values = valuesByOptionId.get(optionValue.optionId) ?? [];
+    values.push(optionValue);
+    valuesByOptionId.set(optionValue.optionId, values);
+  }
+
+  const assignmentsByVariantId = new Map<
+    string,
+    Array<{
+      optionName: ProductVariantOptionName;
+      optionPosition: number;
+      optionValueId: string;
+      optionValueName: string;
+    }>
+  >();
+  for (const assignment of optionValueRowsForVariants) {
+    const option = optionsById.get(assignment.optionId);
+    const optionValue = valuesById.get(assignment.optionValueId);
+    if (!(option && optionValue)) {
+      throw new Error("product_variant_configuration_integrity_failed");
+    }
+    const assignments = assignmentsByVariantId.get(assignment.variantId) ?? [];
+    assignments.push({
+      optionName: productVariantOptionName(option.name),
+      optionPosition: option.position,
+      optionValueId: optionValue.id,
+      optionValueName: optionValue.name,
+    });
+    assignmentsByVariantId.set(assignment.variantId, assignments);
+  }
+
+  return {
+    configured: product.variantsConfiguredAt !== null,
+    options: optionRows.map((option) => ({
+      id: option.id,
+      name: productVariantOptionName(option.name),
+      position: option.position,
+      values: (valuesByOptionId.get(option.id) ?? []).map((value) => ({
+        id: value.id,
+        name: value.name,
+        position: value.position,
+      })),
+    })),
+    productVersion: product.version,
+    variants: variantRows.map((variant) => ({
+      id: variant.id,
+      isDefault: variant.isDefault,
+      position: variant.position,
+      values: (assignmentsByVariantId.get(variant.id) ?? [])
+        .sort((left, right) => left.optionPosition - right.optionPosition)
+        .map(
+          ({ optionPosition: _optionPosition, ...assignment }) => assignment
+        ),
+    })),
+  };
+}
+
+export async function configureProductVariants(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: ConfigureProductVariantsInput
+) {
+  const configuration = normalizeProductVariantConfiguration(input);
+  const [existing] = await transaction
+    .select({
+      variantsConfiguredAt: products.variantsConfiguredAt,
+      version: products.version,
+    })
+    .from(products)
+    .where(
+      and(
+        eq(products.id, input.id),
+        eq(products.organizationId, identity.organizationId)
+      )
+    )
+    .for("update");
+
+  if (!existing) {
+    throw new ProductNotFoundError();
+  }
+  if (existing.version !== input.expectedVersion) {
+    throw new ProductVersionConflictError();
+  }
+  if (existing.variantsConfiguredAt) {
+    throw new ProductVariantsAlreadyConfiguredError();
+  }
+
+  const [defaultVariant] = await transaction
+    .select({ id: productVariants.id })
+    .from(productVariants)
+    .where(
+      and(
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, input.id),
+        eq(productVariants.isDefault, true)
+      )
+    );
+  if (!defaultVariant) {
+    throw new ProductVariantConfigurationError();
+  }
+
+  const optionRows = await transaction
+    .insert(productOptions)
+    .values(
+      configuration.options.map((option) => ({
+        name: option.name,
+        organizationId: identity.organizationId,
+        position: PRODUCT_VARIANT_OPTION_NAMES.indexOf(option.name),
+        productId: input.id,
+      }))
+    )
+    .returning({ id: productOptions.id, name: productOptions.name });
+  const optionIdByName = new Map(
+    optionRows.map((option) => [
+      productVariantOptionName(option.name),
+      option.id,
+    ])
+  );
+  const optionNameById = new Map(
+    optionRows.map((option) => [
+      option.id,
+      productVariantOptionName(option.name),
+    ])
+  );
+
+  const valueRows = await transaction
+    .insert(productOptionValues)
+    .values(
+      configuration.options.flatMap((option) => {
+        const optionId = optionIdByName.get(option.name);
+        if (!optionId) {
+          throw new ProductVariantConfigurationError();
+        }
+        return option.values.map((name, position) => ({
+          name,
+          optionId,
+          organizationId: identity.organizationId,
+          position,
+          productId: input.id,
+        }));
+      })
+    )
+    .returning({
+      id: productOptionValues.id,
+      name: productOptionValues.name,
+      optionId: productOptionValues.optionId,
+    });
+
+  const valueIdByOption = new Map<
+    ProductVariantOptionName,
+    Map<string, string>
+  >();
+  for (const value of valueRows) {
+    const optionName = optionNameById.get(value.optionId);
+    if (!optionName) {
+      throw new ProductVariantConfigurationError();
+    }
+    const optionValues = valueIdByOption.get(optionName) ?? new Map();
+    optionValues.set(value.name.toLowerCase(), value.id);
+    valueIdByOption.set(optionName, optionValues);
+  }
+
+  const variantRows = await transaction
+    .insert(productVariants)
+    .values(
+      configuration.variants.map((_, position) => ({
+        isDefault: false,
+        organizationId: identity.organizationId,
+        position,
+        productId: input.id,
+      }))
+    )
+    .returning({ id: productVariants.id, position: productVariants.position });
+  const variantIdByPosition = new Map(
+    variantRows.map((variant) => [variant.position, variant.id])
+  );
+
+  const assignmentRows = configuration.variants.flatMap((variant, position) => {
+    const variantId = variantIdByPosition.get(position);
+    if (!variantId) {
+      throw new ProductVariantConfigurationError();
+    }
+    return Object.entries(variant.values).map(([name, value]) => {
+      const optionName = productVariantOptionName(name);
+      const optionId = optionIdByName.get(optionName);
+      if (typeof value !== "string") {
+        throw new ProductVariantConfigurationError();
+      }
+      const optionValueId = valueIdByOption
+        .get(optionName)
+        ?.get(value.toLowerCase());
+      if (!(optionId && optionValueId)) {
+        throw new ProductVariantConfigurationError();
+      }
+      return {
+        optionId,
+        optionValueId,
+        organizationId: identity.organizationId,
+        productId: input.id,
+        variantId,
+      };
+    });
+  });
+  await transaction.insert(variantOptionValues).values(assignmentRows);
+
+  const [removedDefault] = await transaction
+    .delete(productVariants)
+    .where(
+      and(
+        eq(productVariants.id, defaultVariant.id),
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, input.id),
+        eq(productVariants.isDefault, true)
+      )
+    )
+    .returning({ id: productVariants.id });
+  if (!removedDefault) {
+    throw new ProductVariantConfigurationError();
+  }
+
+  const configuredAt = new Date();
+  const [product] = await transaction
+    .update(products)
+    .set({
+      updatedAt: configuredAt,
+      variantsConfiguredAt: configuredAt,
+      version: sql`${products.version} + 1`,
+    })
+    .where(
+      and(
+        eq(products.id, input.id),
+        eq(products.organizationId, identity.organizationId),
+        eq(products.version, input.expectedVersion),
+        isNull(products.variantsConfiguredAt)
+      )
+    )
+    .returning(productColumns);
+  if (!product) {
+    throw new ProductVersionConflictError();
+  }
+
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: product.id,
+    entityType: "product",
+    eventType: "product.variants_configured",
+    requestId: input.requestId ?? null,
+  });
+
+  return {
+    configuration: await getProductVariants(transaction, identity, product.id),
+    product,
+  };
 }
