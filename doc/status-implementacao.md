@@ -310,7 +310,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Verificação local | Concluída | `bun run check`: 117 testes em 19 arquivos; lint, formatação, tipos, boundaries e Knip passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou drift. |
 | Gate Neon PostgreSQL 18 | Pendente de reexecução | Migration 0017 foi aplicada somente à branch descartável `gate2-runtime-proof`. O gate alcançou as verificações de atribuição inicial, mesma SKU entre organizações e bloqueio da variante padrão; falhou em uma comparação do script de auditoria (`entity_id` textual versus array UUID), já corrigida para `text[]`. A sessão Neon CLI local é de outra organização; reexecutar pela conta que contém a branch. |
 | Gate Worker | Pendente | Executar após o gate PostgreSQL, cobrindo update/leitura RPC, auditoria, unicidade e isolamento entre tenants. |
-| Revisão independente | Pendente | Revisar o diff PR27 antes da publicação. |
+| Revisão independente | Concluída | Revisão do commit `464d1c1` sem achados; o revisor confirmou consistência da migration/RLS, versionamento e auditoria atômicos, conflitos de unicidade, limpeza/reuso e bloqueio de perda do SKU padrão. |
 | Draft PR e CI | Pendentes | Publicar draft empilhado sobre PR #25, aguardar CI; sem merge. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
