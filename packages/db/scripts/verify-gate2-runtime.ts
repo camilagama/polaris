@@ -36,6 +36,17 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
+function redactConnectionDetails(message: string, connectionString: string) {
+  const { password } = new URL(connectionString);
+  const withoutConnection = message.replaceAll(
+    connectionString,
+    "[redacted connection]"
+  );
+  return password
+    ? withoutConnection.replaceAll(password, "[redacted password]")
+    : withoutConnection;
+}
+
 function sqlState(error: unknown): string | undefined {
   const visited = new Set<object>();
   let current: unknown = error;
@@ -560,11 +571,26 @@ async function main() {
       },
       (transaction, identity) =>
         createCategory(transaction, identity, {
-          name: "Outro",
+          name: "Escritório",
           requestId: randomUUID(),
         })
     );
     assert.equal(categoryA.name, "Escritório");
+    assert.equal(categoryB.name, categoryA.name);
+
+    const renameConflictCategory = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "category:create",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        createCategory(transaction, identity, {
+          name: "Outro",
+          requestId: randomUUID(),
+        })
+    );
 
     await assert.rejects(
       withAuthorizedTenantTransaction(
@@ -580,7 +606,8 @@ async function main() {
             requestId: randomUUID(),
           })
       ),
-      CategoryNameConflictError
+      CategoryNameConflictError,
+      "case-insensitive duplicate create in one organization"
     );
     await assert.rejects(
       withAuthorizedTenantTransaction(
@@ -596,8 +623,14 @@ async function main() {
             name: "outro",
           })
       ),
-      CategoryNameConflictError
+      CategoryNameConflictError,
+      "rename conflicts with a category in the same organization"
     );
+    const renameConflictCleanup = await adminPool.query(
+      "DELETE FROM public.categories WHERE id = $1 AND organization_id = $2",
+      [renameConflictCategory.id, organizationA.organization.id]
+    );
+    assert.equal(renameConflictCleanup.rowCount, 1);
     const renamedCategory = await withAuthorizedTenantTransaction(
       runtimeDb,
       {
@@ -986,6 +1019,13 @@ async function main() {
     if (cleanupErrors.length > 0) {
       process.exitCode = 1;
       console.error("gate2_database_cleanup=failed", cleanupErrors.length);
+      for (const error of cleanupErrors) {
+        const message = error instanceof Error ? error.message : "unknown";
+        console.error(
+          "gate2_database_cleanup_error",
+          redactConnectionDetails(message, connectionString)
+        );
+      }
     }
     if (!passed) {
       console.error("gate2_runtime=failed");

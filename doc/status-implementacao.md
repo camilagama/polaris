@@ -228,18 +228,19 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão do usuário | Pendente | PR #21 aguarda sua revisão; nenhum merge foi feito. |
 | Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |
 
-### PR24 — Categories (em andamento; gate remoto pendente)
+### PR24 — Categories (em andamento; revisão humana pendente)
 
 | Subetapa | Status | Evidência / trabalho restante |
 | --- | --- | --- |
 | Sequência e worktree | Concluídos | Por autorização do responsável (“prossiga”), branch `codex/pr24-categories` foi criada sobre o head `afe056d` do PR22 antes da revisão humana. PR22 segue draft; PR24 será empilhado nele e nenhum dos dois será mesclado nesta etapa. |
 | Regras de catálogo | Definidas | Nomes únicos por organização ignorando caixa/espaços externos conforme resposta do responsável; rename em ativos/arquivados; archive reversível; tombstone terminal sem hard-delete. Produtos ainda não existem; PR25 deverá bloquear remoção com referência ativa. |
-| Schema e RPC | Implementados localmente | Migration 0013 adiciona lifecycle, índice único, policy/grant UPDATE sem DELETE físico; procedures create/list/rename/archive/restore/delete registram auditoria transacional. Aplicação na branch Neon pendente. |
+| Schema e RPC | Implementados e aplicados à branch de teste | Migration 0013 adiciona lifecycle, índice único, policy/grant UPDATE sem DELETE físico; procedures create/list/rename/archive/restore/delete registram auditoria transacional. Aplicada na branch descartável `gate2-runtime-proof`, PostgreSQL 18.6. |
 | Read contract e UI | Implementados localmente | DTO estável com UUID, organização, nome, estado e timestamps serializados; tela de gestão responsiva com temas claro/escuro. Cache, comandos e sync offline e UI de login permanecem adiados. |
 | Verificação local | Concluída | `bun run check`: lint, format, types, boundaries, Knip e 91 testes em 14 arquivos passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou mudanças adicionais. |
-| Gate Neon PostgreSQL + Worker | Pendente de credencial | A conexão owner atual retornou SQLSTATE `28P01` antes da migration 0013; nenhum SQL foi aplicado. O Worker PR24 ainda não foi executado. É necessária uma URL owner direta válida da branch descartável ou o handoff de rotação manual da senha. |
+| Gate Neon PostgreSQL + Worker | Concluído | O gate PostgreSQL passou em 18.6: RLS/grants, isolamento cross-tenant, unicidade dentro da organização e nome repetido permitido entre organizações, lifecycle, auditoria, rollback e cascade. O gate Worker local passou autenticação, onboarding idempotente, capabilities, conflito/rename, lifecycle, leitura e auditoria. Produção não foi tocada. Uma primeira fixture de rename usou outra organização e foi corrigida; a falha inicial do Worker não se reproduziu no gate completo posterior. |
+| Cleanup da branch Neon | Pendente de expiração automática | Não restaram categorias, organizações ou memberships dos gates, nem roles temporárias `polaris_g2_*`. Um registro de usuário de teste `Gate 2 unverified` permanece sem memberships, sessões ou accounts, após uma execução anterior com falha de cleanup; a branch descartável expira automaticamente. Nenhum dado de produção foi alterado. |
 | Revisão independente | Concluída após correção | A revisão identificou que `maxLength` do HTML limita unidades UTF-16 e poderia truncar nomes com emojis. A documentação Zod 4.6.5 confirma que `.max()` conta code points; o contrato e a UI agora usam validação/contador explícitos alinhados ao domínio. Regressão RPC confirma 100 emojis aceitos e 101 rejeitados. Nenhum outro achado concreto foi reportado. |
-| Draft PR e CI | Concluídos no commit de implementação | [PR #23](https://github.com/camilagama/polaris/pull/23), draft empilhado sobre PR #22. GitHub Actions 6/6 passaram no commit `325d4d3`. O gate Neon PostgreSQL + Worker segue pendente de credencial owner válida; nenhum merge foi feito. |
+| Draft PR e CI | PR publicado; atualizar após o push dos gates | [PR #23](https://github.com/camilagama/polaris/pull/23), draft empilhado sobre PR #22. GitHub Actions 6/6 passaram no head anterior `80d4b00`; as correções finais dos gates estão locais e aguardam push/CI. Nenhum merge foi feito. |
 
 ## Publicação GitHub
 

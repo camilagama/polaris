@@ -45,6 +45,29 @@ function redact(value: string): string {
   return result;
 }
 
+function summarizeError(error: unknown): string {
+  const visited = new Set<object>();
+  const details: string[] = [];
+  let current = error;
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      break;
+    }
+    visited.add(current);
+    const candidate = current as {
+      cause?: unknown;
+      code?: unknown;
+      message?: unknown;
+      name?: unknown;
+    };
+    details.push(
+      `${String(candidate.name ?? "Error")}[${String(candidate.code ?? "-")}]: ${String(candidate.message ?? "")}`
+    );
+    current = candidate.cause;
+  }
+  return redact(details.join(" <- ")).slice(-2000);
+}
+
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -501,16 +524,27 @@ async function main() {
 
     await assert.rejects(
       anonymousClient.category.list({ organizationId: randomUUID() }),
-      (error: unknown) => hasRpcCode(error, "UNAUTHORIZED")
+      (error: unknown) => hasRpcCode(error, "UNAUTHORIZED"),
+      "anonymous category list must be unauthorized"
     );
+    console.log("gate2_worker_anonymous_denial=passed");
 
-    const organizationA = await clientA.organization.createInitial({
-      name: "Gate 2 Tenant A",
-      timezone: "America/Sao_Paulo",
-    });
+    const organizationA = await clientA.organization
+      .createInitial({
+        name: "Gate 2 Tenant A",
+        timezone: "America/Sao_Paulo",
+      })
+      .catch((error: unknown) => {
+        console.error(
+          "gate2_worker_organization_a_error",
+          summarizeError(error)
+        );
+        throw error;
+      });
     fixtureOrganizations.push(organizationA.organization.id);
     assert.equal(organizationA.created, true);
     assert.equal(organizationA.organization.currency, "BRL");
+    console.log("gate2_worker_organization_a=passed");
 
     const retryA = await clientA.organization.createInitial({
       name: "Changed retry",
@@ -519,20 +553,24 @@ async function main() {
     assert.equal(retryA.created, false);
     assert.equal(retryA.organization.id, organizationA.organization.id);
     assert.equal(retryA.organization.name, "Gate 2 Tenant A");
+    console.log("gate2_worker_onboarding_retry=passed");
 
     const organizationB = await clientB.organization.createInitial({
       name: "Gate 2 Tenant B",
       timezone: "America/Sao_Paulo",
     });
     fixtureOrganizations.push(organizationB.organization.id);
+    console.log("gate2_worker_organization_b=passed");
 
     await assert.rejects(
       unverifiedClient.organization.createInitial({
         name: "Unverified",
         timezone: "America/Sao_Paulo",
       }),
-      (error: unknown) => hasRpcCode(error, "FORBIDDEN")
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "unverified organization onboarding must be forbidden"
     );
+    console.log("gate2_worker_unverified_denial=passed");
 
     const categoryA = await clientA.category.create({
       organizationId: organizationA.organization.id,
@@ -541,12 +579,25 @@ async function main() {
     assert.equal(categoryA.name, "Escritório");
     assert.equal(categoryA.status, "active");
     assert.equal(typeof categoryA.createdAt, "string");
+    console.log("gate2_worker_category_a_create=passed");
+    const sameNameInOtherOrganization = await clientB.category.create({
+      organizationId: organizationB.organization.id,
+      name: "Escritório",
+    });
+    assert.equal(sameNameInOtherOrganization.name, categoryA.name);
+    console.log("gate2_worker_same_name_other_organization=passed");
+    const renameConflictCategory = await clientA.category.create({
+      organizationId: organizationA.organization.id,
+      name: "Outro",
+    });
+    console.log("gate2_worker_same_organization_conflict_fixture=passed");
     await assert.rejects(
       clientA.category.create({
         organizationId: organizationA.organization.id,
         name: "escritório",
       }),
-      (error: unknown) => hasRpcCode(error, "CONFLICT")
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "duplicate category create in one organization must conflict"
     );
     await assert.rejects(
       clientA.category.rename({
@@ -554,8 +605,14 @@ async function main() {
         name: "outro",
         organizationId: organizationA.organization.id,
       }),
-      (error: unknown) => hasRpcCode(error, "CONFLICT")
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "rename to a name in the same organization must conflict"
     );
+    const renameConflictCleanup = await pool.query(
+      "DELETE FROM public.categories WHERE id = $1 AND organization_id = $2",
+      [renameConflictCategory.id, organizationA.organization.id]
+    );
+    assert.equal(renameConflictCleanup.rowCount, 1);
     const renamedCategory = await clientA.category.rename({
       id: categoryA.id,
       name: "Acessórios",
@@ -563,6 +620,7 @@ async function main() {
     });
     assert.equal(renamedCategory.changed, true);
     assert.equal(renamedCategory.category.name, "Acessórios");
+    console.log("gate2_worker_rename=passed");
     const renameRetry = await clientA.category.rename({
       id: categoryA.id,
       name: "Acessórios",
@@ -576,20 +634,23 @@ async function main() {
     const categoriesB = await clientB.category.list({
       organizationId: organizationB.organization.id,
     });
-    assert.deepEqual(categoriesB.categories, []);
+    assert.deepEqual(categoriesB.categories, [sameNameInOtherOrganization]);
+    console.log("gate2_worker_tenant_category_lists=passed");
 
     await assert.rejects(
       clientA.category.list({
         organizationId: organizationB.organization.id,
       }),
-      (error: unknown) => hasRpcCode(error, "FORBIDDEN")
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "cross-tenant category list must be forbidden"
     );
     await assert.rejects(
       clientA.category.create({
         organizationId: organizationB.organization.id,
         name: "Cross-tenant",
       }),
-      (error: unknown) => hasRpcCode(error, "FORBIDDEN")
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "cross-tenant category create must be forbidden"
     );
 
     const archivedCategory = await clientA.category.archive({
@@ -633,7 +694,8 @@ async function main() {
         id: categoryA.id,
         organizationId: organizationA.organization.id,
       }),
-      (error: unknown) => hasRpcCode(error, "CONFLICT")
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "deleted category cannot be restored"
     );
     await assert.rejects(
       clientA.category.rename({
@@ -641,14 +703,16 @@ async function main() {
         name: "Outro nome",
         organizationId: organizationA.organization.id,
       }),
-      (error: unknown) => hasRpcCode(error, "CONFLICT")
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "deleted category cannot be renamed"
     );
     await assert.rejects(
       clientA.category.create({
         organizationId: organizationA.organization.id,
         name: "acessórios",
       }),
-      (error: unknown) => hasRpcCode(error, "CONFLICT")
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "tombstoned category name remains reserved"
     );
     const tombstones = await clientA.category.list({
       organizationId: organizationA.organization.id,
@@ -660,6 +724,7 @@ async function main() {
       organizationId: organizationA.organization.id,
     });
     assert.equal(deleteRetry.changed, false);
+    console.log("gate2_worker_category_lifecycle=passed");
 
     const organizationEvents = await pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM public.tenant_audit_event " +
@@ -673,7 +738,7 @@ async function main() {
         "WHERE event_type = 'category.created' AND organization_id = $1",
       [organizationA.organization.id]
     );
-    assert.equal(categoryEvents.rows[0]?.count, "1");
+    assert.equal(categoryEvents.rows[0]?.count, "2");
     const lifecycleEvents = await pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM public.tenant_audit_event " +
         "WHERE event_type IN ('category.renamed', 'category.archived', 'category.restored', 'category.deleted') " +
