@@ -17,7 +17,9 @@
     "./category-schema": "./src/schema/category.ts",
     "./category-repository": "./src/category-repository.ts",
     "./product-schema": "./src/schema/product.ts",
-    "./product-repository": "./src/product-repository.ts"
+    "./product-repository": "./src/product-repository.ts",
+    "./inventory-schema": "./src/schema/inventory.ts",
+    "./inventory-repository": "./src/inventory-repository.ts"
   },
   "scripts": {
     "build": "bun run typecheck",
@@ -30,6 +32,7 @@
     "poc:rls:verify": "bun scripts/verify-rls-gate.ts",
     "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts",
     "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
+    "poc:inventory:verify": "bun scripts/verify-inventory-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

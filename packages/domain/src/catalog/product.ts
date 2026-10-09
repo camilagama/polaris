@@ -67,6 +67,15 @@ export class ProductDefaultVariantSkuConflictError extends Error {
   }
 }
 
+export class ProductDefaultVariantStockHistoryConflictError extends Error {
+  readonly code = "product_default_variant_stock_history_conflict";
+
+  constructor() {
+    super("product_default_variant_stock_history_conflict");
+    this.name = "ProductDefaultVariantStockHistoryConflictError";
+  }
+}
+
 export interface ProductLifecycleTransition {
   changed: boolean;
   lifecycle: ProductLifecycle;

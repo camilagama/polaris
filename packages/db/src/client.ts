@@ -6,6 +6,7 @@ import { organizationSchema } from "./schema/organization";
 import { dbPocOperations } from "./schema/poc";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
+import { inventoryBalances, stockMovements } from "./schema/inventory";
 
 const databaseSchema = {
   ...authSchema,
@@ -13,6 +14,8 @@ const databaseSchema = {
   authSecurityAuditEvents,
   categories,
   dbPocOperations,
+  inventoryBalances,
+  stockMovements,
   tenantAuditEvents,
 };
 

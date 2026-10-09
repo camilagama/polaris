@@ -313,4 +313,17 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída | Revisão do commit `464d1c1` sem achados; o revisor confirmou consistência da migration/RLS, versionamento e auditoria atômicos, conflitos de unicidade, limpeza/reuso e bloqueio de perda do SKU padrão. |
 | Draft PR e CI | Concluídos | [PR #26](https://github.com/camilagama/polaris/pull/26) publicado em draft, empilhado sobre PR #25. CI remoto passou 6/6 nos commits `d1d945b` e `bc74545`; sem merge. |
 
+### PR28 — Inventory ledger (em andamento)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Regras confirmadas | Concluídas | O responsável confirmou um saldo por organização e variante, sem locais/depósitos; variante sem movimentos lê como quantidade zero. Também confirmou bloquear a configuração inicial depois de qualquer movimento na variante padrão, preservando UUID e histórico sem transferência presumida. |
+| Worktree e baseline | Concluídos | Branch `codex/pr28-inventory` criada sobre `codex/pr27-sku`; `bun install --frozen-lockfile`, `bun run check` (117 testes) e `bun run build` nos oito workspaces passaram antes das mudanças. |
+| Modelo e implementação | Concluídos | Schema, migration 0018, RLS/grants, projeção lazy e primitivo interno de movimento+saldo+audit em transação tenant-scoped; sem UI/RPC nem command genérico. Os commands `receiveStock`, `writeOffStock` e `inventoryCount` seguem para PR29–31; custo médio e rounding para PR29. |
+| Verificação local | Concluída | `bun run check`: 122 testes, lint, formato, typecheck, boundaries e Knip passaram; `bun run build`: oito workspaces passaram. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration aplicada e gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`; verificou RLS/grants, rollback atômico, concorrência, saldo não negativo, isolamento, ledger append-only e bloqueio da variante padrão mesmo após saldo voltar a zero. A branch expira automaticamente em 2026-10-10 18:47 BRT; as fixtures são sintéticas e ficam nela até expirar. |
+| Purge físico com histórico | Adiado | ON DELETE RESTRICT e ledger append-only bloqueiam purge físico de organização com movimentos. PR107 precisa definir e validar um caminho privilegiado compatível com retenção/deletion ledger antes do go-live. |
+| Revisão independente | Concluída | Revisor independente sem achados; confirmou as transações, RLS, grants, proteção de histórico, gate PostgreSQL 18 e a dependência de purge registrada para PR107. |
+| Draft PR, CI e revisão final | Pendentes | Depois da revisão, publicar draft empilhado sobre PR #26 e aguardar CI; sem merge até revisão do responsável. |
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

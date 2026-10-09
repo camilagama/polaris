@@ -1,5 +1,6 @@
 import {
   ProductDefaultVariantSkuConflictError,
+  ProductDefaultVariantStockHistoryConflictError,
   deriveProductLifecycle,
   normalizeProductDescription,
   normalizeProductName,
@@ -31,6 +32,7 @@ import {
   productOptions,
   variantOptionValues,
 } from "./schema/product-variants";
+import { stockMovements } from "./schema/inventory";
 
 export interface ProductListOptions {
   status?: "active" | "archived" | "all";
@@ -701,6 +703,20 @@ export async function configureProductVariants(
   }
   if (defaultVariant.sku !== null) {
     throw new ProductDefaultVariantSkuConflictError();
+  }
+  const [defaultVariantStockMovement] = await transaction
+    .select({ id: stockMovements.id })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, identity.organizationId),
+        eq(stockMovements.productId, input.id),
+        eq(stockMovements.variantId, defaultVariant.id)
+      )
+    )
+    .limit(1);
+  if (defaultVariantStockMovement) {
+    throw new ProductDefaultVariantStockHistoryConflictError();
   }
 
   const optionRows = await transaction

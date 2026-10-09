@@ -5,7 +5,8 @@
   "exports": {
     "./authorization/capabilities": "./src/authorization/capabilities.ts",
     "./catalog/category": "./src/catalog/category.ts",
-    "./catalog/product": "./src/catalog/product.ts"
+    "./catalog/product": "./src/catalog/product.ts",
+    "./inventory/inventory": "./src/inventory/inventory.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

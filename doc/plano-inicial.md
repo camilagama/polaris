@@ -1620,6 +1620,16 @@ Mutation do saldo e ledger na mesma transaction.
 
 
 
+Escopo V1 confirmado: uma organização tem um único saldo por variante, sem local/depósito; se não houver linha em `inventory_balances`, a leitura representa quantidade zero e o primeiro movimento materializa a projeção. O movimento preserva o UUID estável da variante. Se a variante padrão oculta já tiver qualquer movimento, a configuração inicial de opções é recusada; não presumir uma combinação para receber sua história ou quantidade.
+
+
+
+PR28 cria a persistência e um primitivo interno, transacional e tenant-scoped para registrar movimento e atualizar o saldo; não expõe `updateStock` genérico nem UI/RPC de estoque. Os comandos públicos continuam nomeados e chegam em PR29–31. A quantidade é inteira, o delta do ledger é assinado e nenhum commit pode deixar saldo negativo. O runtime lê movimentos e só os insere; UPDATE/DELETE são revogados e o histórico impede hard-delete da variante. O custo médio fica em PostgreSQL `numeric` exato; PR28 não calcula nem arredonda custos. PR29 deve definir precisão/arredondamento antes de implementar o custo médio, conforme `docs/business-rules/money.md`. A deduplicação fica nos commands nomeados, cuja chave identifica uma operação completa e suas linhas.
+
+Limitação registrada: a referência RESTRICT e o ledger append-only também bloqueiam purge físico de uma organização com histórico de estoque. PR107 precisa definir e validar um caminho privilegiado de purge compatível com a retenção e o deletion ledger antes do go-live.
+
+
+
 ---
 
 
