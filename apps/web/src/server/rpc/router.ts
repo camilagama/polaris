@@ -19,6 +19,7 @@ import {
   getProductVariants,
   listProducts,
   restoreProduct,
+  setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
 import { createDatabase } from "@polaris/db/client";
@@ -34,9 +35,12 @@ import {
 } from "@polaris/domain/catalog/category";
 import {
   ProductCategoryUnavailableError,
+  ProductDefaultVariantSkuConflictError,
   ProductNameError,
   ProductNotFoundError,
   ProductVariantConfigurationError,
+  ProductVariantNotFoundError,
+  ProductVariantSkuConflictError,
   ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
   deriveProductLifecycle,
@@ -79,6 +83,7 @@ interface RpcRouterDependencies {
   getProductVariants: typeof getProductVariants;
   listProducts: typeof listProducts;
   restoreProduct: typeof restoreProduct;
+  setProductVariantSku: typeof setProductVariantSku;
   updateProduct: typeof updateProduct;
   listCategories: typeof listCategories;
   renameCategory: typeof renameCategory;
@@ -224,6 +229,8 @@ function toRpcError(error: unknown): never {
     error instanceof CategoryNameConflictError ||
     error instanceof CategoryLifecycleError ||
     error instanceof ProductCategoryUnavailableError ||
+    error instanceof ProductDefaultVariantSkuConflictError ||
+    error instanceof ProductVariantSkuConflictError ||
     error instanceof ProductVariantsAlreadyConfiguredError ||
     error instanceof ProductVersionConflictError
   ) {
@@ -235,6 +242,10 @@ function toRpcError(error: unknown): never {
   }
 
   if (error instanceof ProductNotFoundError) {
+    throw new ORPCError("NOT_FOUND", { cause: error });
+  }
+
+  if (error instanceof ProductVariantNotFoundError) {
     throw new ORPCError("NOT_FOUND", { cause: error });
   }
 
@@ -270,6 +281,8 @@ export function createRpcRouter(
     overrides.getProductVariants ?? getProductVariants;
   const configureTenantProductVariants =
     overrides.configureProductVariants ?? configureProductVariants;
+  const setTenantProductVariantSku =
+    overrides.setProductVariantSku ?? setProductVariantSku;
   const updateTenantProduct = overrides.updateProduct ?? updateProduct;
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
   const restoreTenantProduct = overrides.restoreProduct ?? restoreProduct;
@@ -658,6 +671,35 @@ export function createRpcRouter(
       }
     );
 
+  const setProductVariantSkuRecord =
+    implementContract.product.setVariantSku.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "product:update",
+            operation: (transaction, identity) =>
+              setTenantProductVariantSku(transaction, identity, {
+                expectedVersion: input.expectedVersion,
+                id: input.productId,
+                requestId: requestAuditId(context.requestId),
+                sku: input.sku,
+                variantId: input.variantId,
+              }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            changed: result.changed,
+            configuration: result.configuration,
+            product: productReadModel(result.product),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     organization: { createInitial },
@@ -668,6 +710,7 @@ export function createRpcRouter(
       getVariants: getProductVariantsRecord,
       list: listProduct,
       restore: restoreProductRecord,
+      setVariantSku: setProductVariantSkuRecord,
       update: updateProductRecord,
     },
     system: { ping },

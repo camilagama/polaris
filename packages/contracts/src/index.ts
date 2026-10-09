@@ -69,6 +69,7 @@ const productVariant = z.object({
   id: z.string().uuid(),
   isDefault: z.boolean(),
   position: z.number().int().nonnegative().nullable(),
+  sku: z.string().nullable(),
   values: z.array(productVariantOptionAssignment),
 });
 
@@ -150,6 +151,23 @@ export const polarisContract = {
         })
       )
       .output(productVariantConfiguration),
+    setVariantSku: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          organizationId: z.string().trim().min(1),
+          productId: z.string().uuid(),
+          sku: z.string().nullable(),
+          variantId: z.string().uuid(),
+        })
+      )
+      .output(
+        z.object({
+          changed: z.boolean(),
+          configuration: productVariantConfiguration,
+          product,
+        })
+      ),
     configureVariants: oc
       .input(
         z.object({

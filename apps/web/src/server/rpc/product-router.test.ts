@@ -6,7 +6,9 @@ import type {
 } from "@polaris/contracts";
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
+  ProductDefaultVariantSkuConflictError,
   ProductVariantConfigurationError,
+  ProductVariantSkuConflictError,
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 import { describe, expect, it, vi } from "vitest";
@@ -71,6 +73,11 @@ function createRpcClient(router = createRpcRouter()) {
       getVariants: (
         input: unknown
       ) => Promise<ProductVariantConfigurationReadModel>;
+      setVariantSku: (input: unknown) => Promise<{
+        changed: boolean;
+        configuration: ProductVariantConfigurationReadModel;
+        product: ProductReadModel;
+      }>;
       list: (input: unknown) => Promise<{
         products: ProductReadModel[];
       }>;
@@ -107,6 +114,7 @@ describe("product RPCs", () => {
           id: "0199c2d0-0000-7000-8000-000000000002",
           isDefault: true,
           position: null,
+          sku: null,
           values: [],
         },
       ],
@@ -166,6 +174,7 @@ describe("product RPCs", () => {
           id: "0199c2d0-0000-7000-8000-000000000005",
           isDefault: false,
           position: 0,
+          sku: null,
           values: [
             {
               optionName: "model",
@@ -256,6 +265,125 @@ describe("product RPCs", () => {
         variants: [{ values: { model: "Missing" } }],
       })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("maps a SKU on the default variant to a configuration conflict", async () => {
+    const router = createRpcRouter({
+      configureProductVariants: () =>
+        Promise.reject(new ProductDefaultVariantSkuConflictError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "model", values: ["Classic"] }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { model: "Classic" } }],
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("sets a variant SKU with product:update and the optimistic version", async () => {
+    const configuration: ProductVariantConfigurationReadModel = {
+      configured: false,
+      options: [],
+      productVersion: 2,
+      variants: [
+        {
+          id: "0199c2d0-0000-7000-8000-000000000002",
+          isDefault: true,
+          position: null,
+          sku: "Sku-A1",
+          values: [],
+        },
+      ],
+    };
+    const setProductVariantSku = vi.fn(
+      async (
+        _transaction: unknown,
+        _authorizedIdentity: typeof identity,
+        input: {
+          expectedVersion: number;
+          id: string;
+          requestId: string | null;
+          sku: string | null;
+          variantId: string;
+        }
+      ) => ({
+        changed: true,
+        configuration,
+        product: { ...productRow, version: input.expectedVersion + 1 },
+      })
+    );
+    let observedCapability = "";
+    const router = createRpcRouter({
+      setProductVariantSku,
+      withTenantRequestContext: (input: {
+        capability: string;
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => {
+        observedCapability = input.capability;
+        return tenantContext(input);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    const result = await client.product.setVariantSku({
+      expectedVersion: 1,
+      organizationId: identity.organizationId,
+      productId: productRow.id,
+      sku: "  Sku-A1  ",
+      variantId: "0199c2d0-0000-7000-8000-000000000002",
+    });
+
+    expect(result).toMatchObject({
+      changed: true,
+      configuration,
+      product: { version: 2 },
+    });
+    expect(observedCapability).toBe("product:update");
+    expect(setProductVariantSku).toHaveBeenCalledWith({}, identity, {
+      expectedVersion: 1,
+      id: productRow.id,
+      requestId: expect.stringMatching(requestIdPattern),
+      sku: "  Sku-A1  ",
+      variantId: "0199c2d0-0000-7000-8000-000000000002",
+    });
+  });
+
+  it("maps a duplicate variant SKU to a conflict response", async () => {
+    const router = createRpcRouter({
+      setProductVariantSku: () =>
+        Promise.reject(new ProductVariantSkuConflictError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.setVariantSku({
+        expectedVersion: 1,
+        organizationId: identity.organizationId,
+        productId: productRow.id,
+        sku: "SKU-1",
+        variantId: "0199c2d0-0000-7000-8000-000000000002",
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
   it("creates products with product:create and preserves duplicate names", async () => {

@@ -18,6 +18,7 @@ import {
   getProductVariants,
   listProducts,
   restoreProduct,
+  setProductVariantSku,
   updateProduct,
 } from "../src/product-repository";
 import { createDatabase } from "../src/client";
@@ -32,8 +33,11 @@ import {
   CategoryNameConflictError,
 } from "@polaris/domain/catalog/category";
 import {
+  ProductDefaultVariantSkuConflictError,
   ProductCategoryUnavailableError,
   ProductVariantConfigurationError,
+  ProductVariantNotFoundError,
+  ProductVariantSkuConflictError,
   ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
@@ -681,6 +685,7 @@ async function main() {
         ["product_variants_current_tenant_delete", "DELETE"],
         ["product_variants_current_tenant_insert", "INSERT"],
         ["product_variants_current_tenant_select", "SELECT"],
+        ["product_variants_current_tenant_sku_update", "UPDATE"],
       ]
     );
     assert.ok(
@@ -701,6 +706,15 @@ async function main() {
       variantPolicies.rows
         .find((policy) => policy.command === "DELETE")
         ?.usingExpression?.includes("variants_configured_at IS NULL")
+    );
+    const variantSkuPolicy = variantPolicies.rows.find(
+      (policy) => policy.command === "UPDATE"
+    );
+    assert.ok(
+      variantSkuPolicy?.usingExpression?.includes("app.organization_id") &&
+        variantSkuPolicy.usingExpression.includes("product_scope") &&
+        variantSkuPolicy.withCheck?.includes("app.user_id") &&
+        variantSkuPolicy.withCheck.includes("product_scope")
     );
 
     const optionPolicies = await adminPool.query<{
@@ -827,6 +841,11 @@ async function main() {
       {
         deferrable: null,
         initiallyDeferred: null,
+        name: "product_variants_prevent_default_sku_loss",
+      },
+      {
+        deferrable: null,
+        initiallyDeferred: null,
         name: "products_prevent_variant_configuration_reset",
       },
       {
@@ -881,6 +900,8 @@ async function main() {
       variantOptionValueInsert: boolean;
       variantOptionValueUpdate: boolean;
       variantOptionValueDelete: boolean;
+      variantSkuUpdate: boolean;
+      variantPositionUpdate: boolean;
       organizationInsert: boolean;
       membershipInsert: boolean;
     }>(
@@ -896,6 +917,8 @@ async function main() {
         "has_table_privilege($1, 'public.product_variants', 'INSERT') AS \"variantInsert\", " +
         "has_table_privilege($1, 'public.product_variants', 'UPDATE') AS \"variantUpdate\", " +
         "has_table_privilege($1, 'public.product_variants', 'DELETE') AS \"variantDelete\", " +
+        "has_column_privilege($1, 'public.product_variants', 'sku', 'UPDATE') AS \"variantSkuUpdate\", " +
+        "has_column_privilege($1, 'public.product_variants', 'position', 'UPDATE') AS \"variantPositionUpdate\", " +
         "has_table_privilege($1, 'public.product_options', 'SELECT') AS \"productOptionSelect\", " +
         "has_table_privilege($1, 'public.product_options', 'INSERT') AS \"productOptionInsert\", " +
         "has_table_privilege($1, 'public.product_options', 'UPDATE') AS \"productOptionUpdate\", " +
@@ -939,6 +962,8 @@ async function main() {
       variantOptionValueUpdate: false,
       variantSelect: true,
       variantUpdate: false,
+      variantSkuUpdate: true,
+      variantPositionUpdate: false,
     });
 
     const functionAccess = await adminPool.query<{
@@ -1656,6 +1681,329 @@ async function main() {
     assert.ok(concurrentFailure && concurrentFailure.status === "rejected");
     assert.ok(concurrentFailure.reason instanceof ProductVersionConflictError);
 
+    const concurrentVariantConfiguration =
+      await withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "catalog:read",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          getProductVariants(transaction, identity, concurrentVariantProduct.id)
+      );
+    const [skuVariantA, skuVariantB] = concurrentVariantConfiguration.variants;
+    assert.ok(skuVariantA && skuVariantB);
+    assert.equal(concurrentVariantConfiguration.productVersion, 2);
+
+    const assignedVariantSku = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 2,
+          id: concurrentVariantProduct.id,
+          requestId: randomUUID(),
+          sku: "  sku-Abc  ",
+          variantId: skuVariantA.id,
+        })
+    );
+    assert.equal(assignedVariantSku.changed, true);
+    assert.equal(assignedVariantSku.product.version, 3);
+    assert.equal(assignedVariantSku.configuration.variants[0]?.sku, "sku-Abc");
+
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          setProductVariantSku(transaction, identity, {
+            expectedVersion: 3,
+            id: concurrentVariantProduct.id,
+            requestId: randomUUID(),
+            sku: "SKU-ABC",
+            variantId: skuVariantB.id,
+          })
+      ),
+      ProductVariantSkuConflictError
+    );
+
+    const productBVariants = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userB,
+        capability: "catalog:read",
+        requestedOrganizationId: organizationB.organization.id,
+      },
+      (transaction, identity) =>
+        getProductVariants(transaction, identity, productB.id)
+    );
+    const [defaultVariantB] = productBVariants.variants;
+    assert.ok(defaultVariantB?.isDefault);
+    const sameSkuInOtherOrganization = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userB,
+        capability: "product:update",
+        requestedOrganizationId: organizationB.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 1,
+          id: productB.id,
+          requestId: randomUUID(),
+          sku: "SKU-ABC",
+          variantId: defaultVariantB.id,
+        })
+    );
+    assert.equal(sameSkuInOtherOrganization.changed, true);
+
+    const defaultSkuDeleteClient = await adminPool.connect();
+    try {
+      await defaultSkuDeleteClient.query("BEGIN");
+      await expectSqlState(
+        defaultSkuDeleteClient.query(
+          "DELETE FROM public.product_variants WHERE id = $1",
+          [defaultVariantB.id]
+        ),
+        "23514",
+        "the database prevents losing an SKU on the default variant"
+      );
+    } finally {
+      await defaultSkuDeleteClient.query("ROLLBACK").catch(() => undefined);
+      defaultSkuDeleteClient.release();
+    }
+
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userB,
+          capability: "product:update",
+          requestedOrganizationId: organizationB.organization.id,
+        },
+        (transaction, identity) =>
+          configureProductVariants(transaction, identity, {
+            expectedVersion: 2,
+            id: productB.id,
+            options: [{ name: "model", values: ["Unique"] }],
+            requestId: randomUUID(),
+            variants: [{ values: { model: "Unique" } }],
+          })
+      ),
+      ProductDefaultVariantSkuConflictError
+    );
+
+    const clearedDefaultSku = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userB,
+        capability: "product:update",
+        requestedOrganizationId: organizationB.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 2,
+          id: productB.id,
+          requestId: randomUUID(),
+          sku: null,
+          variantId: defaultVariantB.id,
+        })
+    );
+    assert.equal(clearedDefaultSku.product.version, 3);
+    const configuredAfterDefaultSkuClear =
+      await withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userB,
+          capability: "product:update",
+          requestedOrganizationId: organizationB.organization.id,
+        },
+        (transaction, identity) =>
+          configureProductVariants(transaction, identity, {
+            expectedVersion: 3,
+            id: productB.id,
+            options: [{ name: "model", values: ["Unique"] }],
+            requestId: randomUUID(),
+            variants: [{ values: { model: "Unique" } }],
+          })
+      );
+    assert.equal(configuredAfterDefaultSkuClear.product.version, 4);
+    assert.equal(
+      configuredAfterDefaultSkuClear.configuration.variants[0]?.sku,
+      null
+    );
+
+    const changedSkuCase = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 3,
+          id: concurrentVariantProduct.id,
+          requestId: randomUUID(),
+          sku: "SKU-ABC",
+          variantId: skuVariantA.id,
+        })
+    );
+    assert.equal(changedSkuCase.changed, true);
+    assert.equal(changedSkuCase.product.version, 4);
+    assert.equal(changedSkuCase.configuration.variants[0]?.sku, "SKU-ABC");
+
+    const clearedSku = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 4,
+          id: concurrentVariantProduct.id,
+          requestId: randomUUID(),
+          sku: " \t\n ",
+          variantId: skuVariantA.id,
+        })
+    );
+    assert.equal(clearedSku.changed, true);
+    assert.equal(clearedSku.product.version, 5);
+    assert.equal(clearedSku.configuration.variants[0]?.sku, null);
+
+    const reusedSku = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 5,
+          id: concurrentVariantProduct.id,
+          requestId: randomUUID(),
+          sku: "SKU-ABC",
+          variantId: skuVariantB.id,
+        })
+    );
+    assert.equal(reusedSku.changed, true);
+    assert.equal(reusedSku.product.version, 6);
+    const sameSkuNoop = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "product:update",
+        requestedOrganizationId: organizationA.organization.id,
+      },
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 6,
+          id: concurrentVariantProduct.id,
+          requestId: randomUUID(),
+          sku: " SKU-ABC ",
+          variantId: skuVariantB.id,
+        })
+    );
+    assert.equal(sameSkuNoop.changed, false);
+    assert.equal(sameSkuNoop.product.version, 6);
+
+    await assert.rejects(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          setProductVariantSku(transaction, identity, {
+            expectedVersion: 6,
+            id: concurrentVariantProduct.id,
+            requestId: randomUUID(),
+            sku: "SKU-UNKNOWN",
+            variantId: randomUUID(),
+          })
+      ),
+      ProductVariantNotFoundError
+    );
+
+    await runtimeClient.query("BEGIN");
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userA, organizationA.organization.id]
+    );
+    await expectSqlState(
+      runtimeClient.query(
+        "UPDATE public.product_variants SET position = position " +
+          "WHERE id = $1",
+        [skuVariantB.id]
+      ),
+      "42501",
+      "runtime may update SKU but not other product variant columns"
+    );
+    await runtimeClient.query("ROLLBACK");
+
+    await runtimeClient.query("BEGIN");
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userA, organizationA.organization.id]
+    );
+    await expectSqlState(
+      runtimeClient.query(
+        "UPDATE public.product_variants SET sku = '  ' WHERE id = $1",
+        [skuVariantB.id]
+      ),
+      "23514",
+      "the database rejects noncanonical blank SKUs"
+    );
+    await runtimeClient.query("ROLLBACK");
+
+    await runtimeClient.query("BEGIN");
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', $1, true), " +
+        "set_config('app.organization_id', $2, true)",
+      [userB, organizationB.organization.id]
+    );
+    const crossTenantSkuUpdate = await runtimeClient.query(
+      "UPDATE public.product_variants SET sku = $1 WHERE id = $2 RETURNING id",
+      ["cross-tenant-attempt", skuVariantB.id]
+    );
+    assert.equal(crossTenantSkuUpdate.rowCount, 0);
+    await runtimeClient.query("ROLLBACK");
+
+    const skuAudit = await adminPool.query<{
+      entity_id: string;
+      event_type: string;
+    }>(
+      "SELECT entity_id, event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = ANY($1::text[]) AND event_type = $2 " +
+        "ORDER BY entity_id, created_at",
+      [[skuVariantA.id, skuVariantB.id], "product_variant.sku_changed"]
+    );
+    assert.equal(skuAudit.rows.length, 4);
+    assert.equal(
+      skuAudit.rows.filter((row) => row.entity_id === skuVariantA.id).length,
+      3
+    );
+    assert.equal(
+      skuAudit.rows.filter((row) => row.entity_id === skuVariantB.id).length,
+      1
+    );
+
     await runtimeClient.query("BEGIN");
     await runtimeClient.query(
       "SELECT set_config('app.user_id', $1, true), " +
@@ -2300,6 +2648,7 @@ async function main() {
         ],
         productAtomicVariantAndUuidV7: "passed",
         productVariantConfigurationAndAudit: "passed",
+        productVariantSkuAssignmentUniquenessAndAudit: "passed",
         productVariantsConcurrentConfigurationOneWinner: "passed",
         productVariantLimit: "passed",
         productLifecycleConcurrencyAndAudit: "passed",

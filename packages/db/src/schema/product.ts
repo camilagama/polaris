@@ -104,6 +104,7 @@ export const productVariants = pgTable(
     organizationId: text("organization_id").notNull(),
     position: integer("position"),
     productId: uuid("product_id").notNull(),
+    sku: text("sku"),
   },
   (table) => [
     foreignKey({
@@ -114,6 +115,16 @@ export const productVariants = pgTable(
     check(
       "product_variants_position_nonnegative",
       sql`${table.position} IS NULL OR ${table.position} >= 0`
+    ),
+    check(
+      "product_variants_sku_canonical",
+      sql`
+        ${table.sku} IS NULL OR (
+          ${table.sku} <> ''
+          AND ${table.sku} = btrim(${table.sku})
+          AND ${table.sku} !~ '^[[:space:]]|[[:space:]]$'
+        )
+      `
     ),
     index("product_variants_organization_product_idx").on(
       table.organizationId,
@@ -130,6 +141,9 @@ export const productVariants = pgTable(
     uniqueIndex("product_variants_product_position_unique")
       .on(table.productId, table.position)
       .where(sql`${table.position} IS NOT NULL`),
+    uniqueIndex("product_variants_organization_sku_unique")
+      .on(table.organizationId, sql`lower(btrim(${table.sku}))`)
+      .where(sql`${table.sku} IS NOT NULL`),
     pgPolicy("product_variants_current_tenant_select", {
       for: "select",
       to: runtimeRole,
@@ -169,6 +183,28 @@ export const productVariants = pgTable(
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
             AND product_scope.variants_configured_at IS NULL
+        )
+      `,
+    }),
+    pgPolicy("product_variants_current_tenant_sku_update", {
+      for: "update",
+      to: runtimeRole,
+      using: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+        )
+      `,
+      withCheck: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
         )
       `,
     }),

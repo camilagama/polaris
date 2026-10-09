@@ -296,4 +296,21 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 - A etapa PR23 está como draft no [GitHub PR #21](https://github.com/camilagama/polaris/pull/21), empilhada sobre PR #20; bun run check (75 testes), build em oito workspaces, gate Neon PostgreSQL 18.6 e revisão independente passaram; CI remoto 6/6 passou no commit de código bab4ce7. Retenção/legal hold e leitor do histórico de audit permanecem adiados até antes do go-live; revisão do usuário pendente, sem merge.
 - PR25 Products está publicado como [GitHub PR #24](https://github.com/camilagama/polaris/pull/24), draft empilhado sobre PR #23; migration 0015, gate PostgreSQL 18.6 e revisão independente passaram; CI remoto 6/6 passou no commit `cb60ef7`. O PR aguarda revisão e segue sem merge.
 - PR26 Variants está publicado como [GitHub PR #25](https://github.com/camilagama/polaris/pull/25), draft empilhado sobre PR #24. `bun run check` passou com 111 testes; build dos oito workspaces, gate Neon PostgreSQL 18.6, gate Worker local e revisão independente passaram. CI remoto 6/6 verde no commit de código `e9f9f5a`. Configuração é inicial; edição/remoção aguardam decisão sobre referências de SKU/estoque. O PR segue sem merge.
+
+### PR27 — SKU (regras confirmadas; implementação em andamento)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Escopo documentado | Concluído | PR27 adiciona SKU opcional à variante, único por organização; o mesmo valor em organizações diferentes é permitido. Código de barras segue fora da V1. |
+| Normalização | Concluída | O responsável confirmou aparar espaços, tratar vazio como ausência, preservar a grafia e comparar sem distinção de caixa dentro da organização, sem limite inventado de tamanho/formato. |
+| Worktree e baseline | Concluídos | Branch `codex/pr27-sku` criada sobre o head `3633d3f` do PR26. `bun install --frozen-lockfile`, `bun run check` (111 testes) e `bun run build` nos oito workspaces passaram sem mudanças de código. |
+| Troca/limpeza de SKU | Concluída | O responsável confirmou atribuir, trocar ou limpar o SKU em uma variante existente; mudanças reais usam `expectedVersion` do produto, incrementam a versão, gravam auditoria e preservam o UUID da variante. |
+| SKU na variante padrão | Concluído | O responsável confirmou bloquear configuração de opções enquanto a variante padrão tiver SKU; ele deve ser limpo e atribuído à combinação correta após configurar. A camada de domínio e o banco rejeitam a exclusão que perderia esse SKU. |
+| Implementação | Concluída | Migration 0017, normalização, índice tenant-scoped case-insensitive, update column-level sob RLS, mutation versionada/auditada e edição dos SKUs no painel. Configuração da variante padrão é bloqueada enquanto houver SKU; o SKU precisa ser limpo antes de a configuração inicial substituí-la. |
+| Verificação local | Concluída | `bun run check`: 117 testes em 19 arquivos; lint, formatação, tipos, boundaries e Knip passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou drift. |
+| Gate Neon PostgreSQL 18 | Pendente de reexecução | Migration 0017 foi aplicada somente à branch descartável `gate2-runtime-proof`. O gate alcançou as verificações de atribuição inicial, mesma SKU entre organizações e bloqueio da variante padrão; falhou em uma comparação do script de auditoria (`entity_id` textual versus array UUID), já corrigida para `text[]`. A sessão Neon CLI local é de outra organização; reexecutar pela conta que contém a branch. |
+| Gate Worker | Pendente | Executar após o gate PostgreSQL, cobrindo update/leitura RPC, auditoria, unicidade e isolamento entre tenants. |
+| Revisão independente | Pendente | Revisar o diff PR27 antes da publicação. |
+| Draft PR e CI | Pendentes | Publicar draft empilhado sobre PR #25, aguardar CI; sem merge. |
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

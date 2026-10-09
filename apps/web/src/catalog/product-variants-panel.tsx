@@ -126,6 +126,13 @@ function variantErrorMessage(error: unknown): string {
   return "Não foi possível carregar ou salvar as variantes. Tente novamente.";
 }
 
+function variantSkuErrorMessage(error: unknown): string {
+  if (rpcErrorCode(error) === "CONFLICT") {
+    return "O SKU já está em uso nesta organização ou o produto mudou. Atualize as variantes antes de tentar novamente.";
+  }
+  return variantErrorMessage(error);
+}
+
 function parseOptionValues(lines: string): string[] {
   return lines
     .split(optionValueLineBreak)
@@ -376,6 +383,9 @@ function ProductVariantConfigurationForm({
   const optionNames = selectedOptionNames(selectedOptions);
   const optionValues = productOptionValues(valueLines);
   const validation = validateVariantDrafts(optionNames, optionValues, variants);
+  const defaultVariantHasSku = configuration.variants.some(
+    (variant) => variant.isDefault && variant.sku !== null
+  );
 
   const handleToggleOption = useCallback(
     (name: ProductVariantOptionName, isSelected: boolean) => {
@@ -446,7 +456,7 @@ function ProductVariantConfigurationForm({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!validation.canSubmit) {
+      if (!validation.canSubmit || defaultVariantHasSku) {
         return;
       }
 
@@ -475,6 +485,7 @@ function ProductVariantConfigurationForm({
     },
     [
       configuration.productVersion,
+      defaultVariantHasSku,
       onConflict,
       onConfigured,
       optionNames,
@@ -492,6 +503,12 @@ function ProductVariantConfigurationForm({
         Escolha as opções e cadastre cada combinação vendável. O sistema não
         cria combinações automaticamente.
       </p>
+      {defaultVariantHasSku ? (
+        <p className="product-variants-field-error" role="status">
+          Limpe o SKU da variante padrão acima antes de configurar opções; essa
+          configuração substituirá a variante padrão.
+        </p>
+      ) : null}
 
       <fieldset className="product-variants-option-picker">
         <legend>Opções do produto</legend>
@@ -570,7 +587,7 @@ function ProductVariantConfigurationForm({
         </button>
         <button
           className="primary-button"
-          disabled={!validation.canSubmit || isPending}
+          disabled={!validation.canSubmit || defaultVariantHasSku || isPending}
           type="submit"
         >
           {isPending ? "Salvando…" : "Salvar variantes"}
@@ -588,6 +605,175 @@ function ProductVariantConfigurationForm({
         </p>
       ) : null}
     </form>
+  );
+}
+
+type ProductVariantReadModel =
+  ProductVariantConfigurationReadModel["variants"][number];
+
+interface ProductVariantSkuRowProps {
+  disabled: boolean;
+  label: string;
+  onDraftChange: () => void;
+  onSave: (
+    variantId: string,
+    sku: string
+  ) => Promise<string | null | undefined>;
+  variant: ProductVariantReadModel;
+}
+
+function ProductVariantSkuRow({
+  disabled,
+  label,
+  onDraftChange,
+  onSave,
+  variant,
+}: ProductVariantSkuRowProps) {
+  const [sku, setSku] = useState(variant.sku ?? "");
+
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const savedSku = await onSave(variant.id, sku);
+      if (savedSku !== undefined) {
+        setSku(savedSku ?? "");
+      }
+    },
+    [onSave, sku, variant.id]
+  );
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setSku(event.currentTarget.value);
+      onDraftChange();
+    },
+    [onDraftChange]
+  );
+
+  return (
+    <form className="product-variant-sku-row" onSubmit={handleSubmit}>
+      <label className="product-form-field">
+        <span>SKU — {label}</span>
+        <input
+          autoComplete="off"
+          disabled={disabled}
+          onChange={handleChange}
+          type="text"
+          value={sku}
+        />
+      </label>
+      <button className="quiet-button" disabled={disabled} type="submit">
+        Salvar SKU
+      </button>
+    </form>
+  );
+}
+
+function ProductVariantSkuSection({
+  configuration,
+  onConflict,
+  onUpdated,
+  organizationId,
+  productId,
+}: {
+  configuration: ProductVariantConfigurationReadModel;
+  onConflict: () => void;
+  onUpdated: (
+    configuration: ProductVariantConfigurationReadModel,
+    product: ProductReadModel
+  ) => void;
+  organizationId: string;
+  productId: string;
+}) {
+  const [isPending, setIsPending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [needsReload, setNeedsReload] = useState(false);
+  const labels = new Map(optionChoices.map(([name, label]) => [name, label]));
+
+  const handleSave = useCallback(
+    async (variantId: string, sku: string) => {
+      setIsPending(true);
+      setMessage(null);
+      setNeedsReload(false);
+      try {
+        const result = await orpcClient.product.setVariantSku({
+          expectedVersion: configuration.productVersion,
+          organizationId,
+          productId,
+          sku,
+          variantId,
+        });
+        onUpdated(result.configuration, result.product);
+        setMessage(result.changed ? "SKU salvo." : "O SKU já está atualizado.");
+        return (
+          result.configuration.variants.find(
+            (variant) => variant.id === variantId
+          )?.sku ?? null
+        );
+      } catch (error: unknown) {
+        const code = rpcErrorCode(error);
+        setMessage(variantSkuErrorMessage(error));
+        setNeedsReload(code === "CONFLICT");
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [configuration.productVersion, onUpdated, organizationId, productId]
+  );
+
+  const handleDraftChange = useCallback(() => {
+    setMessage(null);
+    setNeedsReload(false);
+  }, []);
+
+  return (
+    <div className="product-variant-sku-section">
+      <h3>SKU das variantes</h3>
+      <p className="product-variants-help">
+        O SKU é opcional. Deixe o campo vazio para limpar o código; valores
+        repetidos na organização são rejeitados.
+      </p>
+      <ul aria-label="SKU das variantes" className="product-variant-sku-list">
+        {configuration.variants.map((variant, index) => {
+          const label =
+            variant.isDefault && variant.values.length === 0
+              ? "Variante padrão"
+              : variant.values
+                  .map(
+                    (value) =>
+                      `${labels.get(value.optionName) ?? value.optionName}: ${value.optionValueName}`
+                  )
+                  .join(" · ") || `Variante ${index + 1}`;
+          return (
+            <li key={variant.id}>
+              <ProductVariantSkuRow
+                disabled={isPending}
+                label={label}
+                onDraftChange={handleDraftChange}
+                onSave={handleSave}
+                variant={variant}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      {message ? (
+        <p
+          className={
+            needsReload
+              ? "product-variants-field-error"
+              : "product-variants-help"
+          }
+          role={needsReload ? "alert" : "status"}
+        >
+          {message}
+        </p>
+      ) : null}
+      {needsReload ? (
+        <button className="quiet-button" onClick={onConflict} type="button">
+          Atualizar variantes
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -687,6 +873,17 @@ export function ProductVariantsPanel({
     [onProductUpdated]
   );
 
+  const handleSkuUpdated = useCallback(
+    (
+      resultConfiguration: ProductVariantConfigurationReadModel,
+      updatedProduct: ProductReadModel
+    ) => {
+      setConfiguration(resultConfiguration);
+      onProductUpdated(updatedProduct);
+    },
+    [onProductUpdated]
+  );
+
   let content: ReactNode;
   if (isLoading) {
     content = (
@@ -739,6 +936,15 @@ export function ProductVariantsPanel({
         <p className="categories-message is-success" role="status">
           {notice}
         </p>
+      ) : null}
+      {!(isLoading || loadError) && configuration ? (
+        <ProductVariantSkuSection
+          configuration={configuration}
+          onConflict={handleConflict}
+          onUpdated={handleSkuUpdated}
+          organizationId={organizationId}
+          productId={product.id}
+        />
       ) : null}
       {content}
     </section>

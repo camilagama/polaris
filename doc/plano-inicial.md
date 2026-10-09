@@ -1560,6 +1560,18 @@ Adicionar SKU opcional na variante.
 
 
 
+Regra confirmada pelo responsável: aparar espaços externos; valor vazio equivale a SKU não informado; preservar a grafia; comparar sem distinção de maiúsculas/minúsculas dentro da organização; permitir o mesmo SKU em organizações diferentes. Não inventar limite de comprimento ou formato.
+
+
+
+SKU pode ser atribuído, trocado ou limpo em uma variante existente. Cada mudança real exige `expectedVersion` do produto, incrementa a versão e grava auditoria na mesma transação; variantes não são criadas, removidas ou reconfiguradas neste PR.
+
+
+
+Se a variante padrão oculta tiver SKU, bloquear a configuração inicial de opções até esse SKU ser limpo. Não transferir automaticamente o código para uma combinação.
+
+
+
 Unique tenant-scoped.
 
 

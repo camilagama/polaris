@@ -1,13 +1,17 @@
 import {
+  ProductDefaultVariantSkuConflictError,
   deriveProductLifecycle,
   normalizeProductDescription,
   normalizeProductName,
   ProductCategoryUnavailableError,
   ProductNotFoundError,
   ProductVariantConfigurationError,
+  ProductVariantNotFoundError,
+  ProductVariantSkuConflictError,
   ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
   PRODUCT_VARIANT_OPTION_NAMES,
+  normalizeProductVariantSku,
   normalizeProductVariantConfiguration,
   transitionProductLifecycle,
   type ProductLifecycleAction,
@@ -55,6 +59,11 @@ export interface ConfigureProductVariantsInput
   extends ProductMutationInput,
     ProductVariantConfigurationInput {}
 
+export interface SetProductVariantSkuInput extends ProductMutationInput {
+  sku: string | null;
+  variantId: string;
+}
+
 const productColumns = {
   archivedAt: products.archivedAt,
   categoryId: products.categoryId,
@@ -84,6 +93,30 @@ function isUnavailableCategoryConstraint(error: unknown): boolean {
     if (
       candidate.code === "23503" &&
       candidate.constraint === "products_active_category_guard"
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
+}
+
+function isProductVariantSkuConflict(error: unknown): boolean {
+  const visited = new Set<object>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      return false;
+    }
+    visited.add(current);
+    const candidate = current as {
+      cause?: unknown;
+      code?: unknown;
+      constraint?: unknown;
+    };
+    if (
+      candidate.code === "23505" &&
+      candidate.constraint === "product_variants_organization_sku_unique"
     ) {
       return true;
     }
@@ -432,6 +465,7 @@ export async function getProductVariants(
       id: productVariants.id,
       isDefault: productVariants.isDefault,
       position: productVariants.position,
+      sku: productVariants.sku,
     })
     .from(productVariants)
     .where(
@@ -509,12 +543,116 @@ export async function getProductVariants(
       id: variant.id,
       isDefault: variant.isDefault,
       position: variant.position,
+      sku: variant.sku,
       values: (assignmentsByVariantId.get(variant.id) ?? [])
         .sort((left, right) => left.optionPosition - right.optionPosition)
         .map(
           ({ optionPosition: _optionPosition, ...assignment }) => assignment
         ),
     })),
+  };
+}
+
+export async function setProductVariantSku(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: SetProductVariantSkuInput
+) {
+  const sku = normalizeProductVariantSku(input.sku);
+  const [product] = await transaction
+    .select(productColumns)
+    .from(products)
+    .where(
+      and(
+        eq(products.id, input.id),
+        eq(products.organizationId, identity.organizationId)
+      )
+    )
+    .for("update");
+
+  if (!product) {
+    throw new ProductNotFoundError();
+  }
+  if (product.version !== input.expectedVersion) {
+    throw new ProductVersionConflictError();
+  }
+
+  const [variant] = await transaction
+    .select({ id: productVariants.id, sku: productVariants.sku })
+    .from(productVariants)
+    .where(
+      and(
+        eq(productVariants.id, input.variantId),
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, input.id)
+      )
+    )
+    .limit(1);
+
+  if (!variant) {
+    throw new ProductVariantNotFoundError();
+  }
+  if (variant.sku === sku) {
+    return {
+      changed: false,
+      configuration: await getProductVariants(transaction, identity, input.id),
+      product,
+    };
+  }
+
+  try {
+    const [updatedVariant] = await transaction
+      .update(productVariants)
+      .set({ sku })
+      .where(
+        and(
+          eq(productVariants.id, input.variantId),
+          eq(productVariants.organizationId, identity.organizationId),
+          eq(productVariants.productId, input.id)
+        )
+      )
+      .returning({ id: productVariants.id });
+    if (!updatedVariant) {
+      throw new ProductVariantNotFoundError();
+    }
+  } catch (error) {
+    if (isProductVariantSkuConflict(error)) {
+      // biome-ignore lint/style/useErrorCause: ProductVariantSkuConflictError forwards this cause to Error.
+      throw new ProductVariantSkuConflictError({ cause: error });
+    }
+    throw error;
+  }
+
+  const [updatedProduct] = await transaction
+    .update(products)
+    .set({
+      updatedAt: new Date(),
+      version: sql`${products.version} + 1`,
+    })
+    .where(
+      and(
+        eq(products.id, input.id),
+        eq(products.organizationId, identity.organizationId),
+        eq(products.version, input.expectedVersion)
+      )
+    )
+    .returning(productColumns);
+
+  if (!updatedProduct) {
+    throw new ProductVersionConflictError();
+  }
+
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: variant.id,
+    entityType: "product_variant",
+    eventType: "product_variant.sku_changed",
+    requestId: input.requestId ?? null,
+  });
+
+  return {
+    changed: true,
+    configuration: await getProductVariants(transaction, identity, input.id),
+    product: updatedProduct,
   };
 }
 
@@ -549,7 +687,7 @@ export async function configureProductVariants(
   }
 
   const [defaultVariant] = await transaction
-    .select({ id: productVariants.id })
+    .select({ id: productVariants.id, sku: productVariants.sku })
     .from(productVariants)
     .where(
       and(
@@ -560,6 +698,9 @@ export async function configureProductVariants(
     );
   if (!defaultVariant) {
     throw new ProductVariantConfigurationError();
+  }
+  if (defaultVariant.sku !== null) {
+    throw new ProductDefaultVariantSkuConflictError();
   }
 
   const optionRows = await transaction

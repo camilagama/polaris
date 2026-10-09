@@ -40,6 +40,33 @@ export class ProductVariantsAlreadyConfiguredError extends Error {
   }
 }
 
+export class ProductVariantNotFoundError extends Error {
+  readonly code = "product_variant_not_found";
+
+  constructor() {
+    super("product_variant_not_found");
+    this.name = "ProductVariantNotFoundError";
+  }
+}
+
+export class ProductVariantSkuConflictError extends Error {
+  readonly code = "duplicate_sku";
+
+  constructor(options?: ErrorOptions) {
+    super("duplicate_sku", options);
+    this.name = "ProductVariantSkuConflictError";
+  }
+}
+
+export class ProductDefaultVariantSkuConflictError extends Error {
+  readonly code = "product_default_variant_sku_conflict";
+
+  constructor() {
+    super("product_default_variant_sku_conflict");
+    this.name = "ProductDefaultVariantSkuConflictError";
+  }
+}
+
 export interface ProductLifecycleTransition {
   changed: boolean;
   lifecycle: ProductLifecycle;
@@ -191,6 +218,15 @@ export function normalizeProductDescription(
     return null;
   }
   return description.trim() || null;
+}
+
+export function normalizeProductVariantSku(
+  sku: string | null | undefined
+): string | null {
+  if (sku === null || sku === undefined) {
+    return null;
+  }
+  return sku.trim() || null;
 }
 
 export function deriveProductLifecycle(

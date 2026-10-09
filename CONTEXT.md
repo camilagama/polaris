@@ -29,6 +29,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Variante:** forma vendável de um produto, como modelo, cor ou tamanho.
 
+**SKU:** código comercial opcional associado a uma variante, trocável ou removível sem mudar a identidade estável da variante, e único dentro da organização.
+
 **Opção de variante:** característica escolhida para distinguir formas vendáveis de um produto; nesta etapa, Modelo, Cor ou Tamanho.
 
 **Valor de opção:** escolha concreta de uma opção, como Azul para Cor ou P para Tamanho, atribuída a uma variante.

@@ -903,6 +903,52 @@ async function main() {
       organizationId: organizationA.organization.id,
     });
     assert.deepEqual(rereadVariants, variantConfiguration.configuration);
+    const [skuVariant, duplicateSkuVariant] =
+      variantConfiguration.configuration.variants;
+    assert.ok(skuVariant && duplicateSkuVariant);
+    const assignedSku = await clientA.product.setVariantSku({
+      expectedVersion: 2,
+      organizationId: organizationA.organization.id,
+      productId: variantProduct.id,
+      sku: "  sku-AbC  ",
+      variantId: skuVariant.id,
+    });
+    assert.equal(assignedSku.changed, true);
+    assert.equal(assignedSku.product.version, 3);
+    assert.equal(assignedSku.configuration.variants[0]?.sku, "sku-AbC");
+    await assert.rejects(
+      clientA.product.setVariantSku({
+        expectedVersion: 3,
+        organizationId: organizationA.organization.id,
+        productId: variantProduct.id,
+        sku: "SKU-abc",
+        variantId: duplicateSkuVariant.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "SKU uniqueness is case-insensitive within an organization"
+    );
+    const changedSkuCase = await clientA.product.setVariantSku({
+      expectedVersion: 3,
+      organizationId: organizationA.organization.id,
+      productId: variantProduct.id,
+      sku: "SKU-ABC",
+      variantId: skuVariant.id,
+    });
+    assert.equal(changedSkuCase.product.version, 4);
+    assert.equal(changedSkuCase.configuration.variants[0]?.sku, "SKU-ABC");
+    const clearedSku = await clientA.product.setVariantSku({
+      expectedVersion: 4,
+      organizationId: organizationA.organization.id,
+      productId: variantProduct.id,
+      sku: "  ",
+      variantId: skuVariant.id,
+    });
+    assert.equal(clearedSku.product.version, 5);
+    assert.equal(clearedSku.configuration.variants[0]?.sku, null);
+    assert.deepEqual(
+      clearedSku.configuration.variants.map((variant) => variant.id),
+      variantConfiguration.configuration.variants.map((variant) => variant.id)
+    );
     const variantAudit = await pool.query<{ event_type: string }>(
       "SELECT event_type FROM public.tenant_audit_event " +
         "WHERE entity_id = $1 ORDER BY event_type",
@@ -912,9 +958,22 @@ async function main() {
       variantAudit.rows.map((row) => row.event_type),
       ["product.created", "product.variants_configured"]
     );
+    const skuAudit = await pool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 ORDER BY created_at",
+      [skuVariant.id]
+    );
+    assert.deepEqual(
+      skuAudit.rows.map((row) => row.event_type),
+      [
+        "product_variant.sku_changed",
+        "product_variant.sku_changed",
+        "product_variant.sku_changed",
+      ]
+    );
     await assert.rejects(
       clientA.product.configureVariants({
-        expectedVersion: 2,
+        expectedVersion: 5,
         id: variantProduct.id,
         options: [{ name: "model", values: ["Modelo novo"] }],
         organizationId: organizationA.organization.id,
@@ -931,6 +990,18 @@ async function main() {
       (error: unknown) => hasRpcCode(error, "NOT_FOUND"),
       "cross-tenant product variants are not visible"
     );
+    await assert.rejects(
+      clientB.product.setVariantSku({
+        expectedVersion: 5,
+        organizationId: organizationB.organization.id,
+        productId: variantProduct.id,
+        sku: "cross-tenant-attempt",
+        variantId: skuVariant.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "NOT_FOUND"),
+      "cross-tenant SKU updates are not visible"
+    );
+    console.log("gate2_worker_product_variant_sku=passed");
     console.log("gate2_worker_product_variants_explicit_and_audited=passed");
     console.log(
       "gate2_worker_product_update_lifecycle_and_tombstone_guard=passed"
