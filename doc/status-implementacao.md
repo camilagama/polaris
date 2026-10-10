@@ -428,7 +428,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Safari/iPhone | Adiado até haver preview | A conversão HEIC, orientação EXIF, recorte e envio ainda precisam ser verificados manualmente no iPhone 12/iOS 26.6.2. O preview depende de desbloquear o gate Cloudflare/R2; o teste anterior de persistência offline não cobre este fluxo de mídia. |
 | Revisão independente | Concluída | Duas revisões estáticas corrigiram o gesto sem arraste, validação de variante pós-R2, cobertura cross-tenant de `variant_media` e compensação para rejeições determinísticas após storage. A reconciliação de falhas ambíguas permanece agendada para PR35. |
 | Push da branch | Concluído | `codex/pr34-media-upload` publicada em `origin` até o commit `d9f4daa`, sobre `codex/pr33-media-schema`. |
-| Draft PR e CI remoto | Concluídos | [PR #33](https://github.com/camilagama/polaris/pull/33) aberto em draft sobre `codex/pr33-media-schema`. O workflow `38049231703` passou nos seis checks no commit `d9f4daa`: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. Nenhum merge foi feito. |
+| Draft PR e CI remoto | Concluídos | [PR #33](https://github.com/camilagama/polaris/pull/33) aberto em draft sobre `codex/pr33-media-schema`. O workflow `38049607640` passou nos seis checks no commit `985020a`: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. O commit seguinte atualiza somente este registro de CI. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
