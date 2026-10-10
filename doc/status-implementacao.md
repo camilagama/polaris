@@ -359,22 +359,23 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | CI remoto | Concluído na revisão atual | GitHub Actions passou 6/6 no commit `8826a63` (build, Knip, lint/boundaries, typecheck, testes unitários e offline browser gate). |
 | Revisão do usuário | Pendente | Revisar a proposta de valoração em ADR 0010 e o PR draft; decisão sobre custo permanece proposta, não aprovada. |
 
-### PR31 — Inventory count (implementação local concluída; gate remoto, publicação e revisão pendentes)
+### PR31 — Inventory count (implementação e publicação concluídas; CI passou; gate remoto e revisão pendentes)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Base isolada | Concluída | Branch `codex/pr31-inventory-count` criada em clone isolado sobre o commit `8826a63` de PR30; a branch principal permaneceu intacta. |
+| Base isolada | Concluída | Branch `codex/pr31-inventory-count` criada em clone isolado; a branch principal permaneceu intacta. |
 | Contrato e concorrência | Concluídos | `inventory.getBalance` expõe a versão do saldo; `inventoryCount` exige `expectedVersion`, quantidade física absoluta e identidade idempotente. A checagem ocorre sob lock da variante; versões antigas conflitam. |
 | Evento de contagem sem diferença | Concluído | Delta zero é persistido como `inventory_count`, auditado e incrementa a versão do saldo; replay compara quantidade absoluta e versão originais, inclusive após comandos posteriores. |
 | Valoração | Proposta para revisão | Custo conhecido é preservado; custo desconhecido permanece `NULL` salvo `valuationUnitCost` explícito em uma contagem positiva. Custo zero não é presumido; recebimentos continuam bloqueados com saldo positivo sem valoração. Decisão está no ADR 0011, proposto. |
-| Migration 0022 | Implementada localmente | Armazena quantidade física, versão esperada e input de valoração explícita separado do snapshot efetivo; CHECKs `NOT VALID` preservam movimentos `inventory_count` históricos append-only e impedem valoração explícita com quantidade física zero. Aplicação remota ainda pendente. |
+| Migration 0022 | Implementada localmente | Armazena quantidade física, versão esperada e input de valoração explícita separado do snapshot efetivo; CHECKs `NOT VALID` preservam movimentos `inventory_count` históricos append-only e impedem valoração explícita com quantidade física zero. Aplicação em Neon ainda pendente. |
 | Revisão independente | Concluída | O revisor encontrou replay que podia omitir uma valoração explícita; input separado e comparação idempotente foram adicionados. Também identificou e verificou a constraint DB contra valuation explícita com quantidade zero; sem achados restantes no follow-up. |
 | Verificação local | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 154 testes em 25 arquivos. |
-| Build | Concluído | `bun run build` passou nos oito workspaces após a implementação. Wrangler exibiu `EPERM` ao gravar log local, mas o build terminou com exit code 0. |
+| Build local | Concluído | `bun run build` passou nos oito workspaces após a implementação. Wrangler exibiu `EPERM` ao gravar log local, mas o build terminou com exit code 0. |
 | Perfis de CLI | Concluídos | A regra de uso exclusivo do perfil Cloudflare/Neon `junior-pessoal` ligado a `contato.juniordiniz@gmail.com` foi registrada em `AGENTS.md` e `docs/runbooks/cli-profile-policy.md`; Neon plugin conectado não será usado. |
-| Gate Neon PostgreSQL 18 | Pendente | A migration ainda não foi aplicada. A política de segurança do navegador recusou abrir o console Neon; aguarda URL de uma branch descartável nova fornecida pelo usuário ou execução manual. |
+| Gate Neon PostgreSQL 18 | Pendente | Migration 0022 ainda não foi aplicada. A URL de conexão anterior não foi reutilizada; para provar migration, RLS, idempotência e concorrência é necessária uma branch descartável acessível. O caminho pelo console Neon não ficou disponível nesta sessão. |
 | UI de contagem | Adiada | O PR31 no plano define o command e os dados, mas não especifica fluxo/tela de contagem; não inventar interação visual sem critério de aceite. |
-| Push, draft PR e CI remoto | Pendentes por autenticação | Commit local `a3a52a0` pronto. O push devolveu `Repository not found`; `gh auth status --active --hostname github.com` confirmou que a conta CLI ativa está com token inválido. É necessária reautenticação manual com uma conta que tenha escrita em `camilagama/polaris`; CI e PR draft seguem depois. Nenhum merge será feito sem autorização. |
-| Revisão do usuário | Pendente | Revisar ADR 0011 (especialmente a valoração explícita opcional), o gate e o PR draft. |
+| Push e PR draft | Concluídos | Branch `codex/pr31-inventory-count` publicada e [PR #30](https://github.com/camilagama/polaris/pull/30) aberto em draft contra `main`. Nenhum merge foi feito. |
+| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `43c0a61`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. O PR está limpo e mergeable, mas permanece draft. |
+| Revisão do usuário | Pendente | Revisar o PR #30 e ADR 0011, especialmente a proposta de `valuationUnitCost` opcional. Nenhum merge será feito sem autorização. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
