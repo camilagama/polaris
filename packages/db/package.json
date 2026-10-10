@@ -20,6 +20,7 @@
     "./product-repository": "./src/product-repository.ts",
     "./inventory-schema": "./src/schema/inventory.ts",
     "./media-schema": "./src/schema/media.ts",
+    "./media-repository": "./src/media-repository.ts",
     "./inventory-repository": "./src/inventory-repository.ts"
   },
   "scripts": {
@@ -35,6 +36,7 @@
     "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
     "poc:inventory:verify": "bun scripts/verify-inventory-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
+    "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

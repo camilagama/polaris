@@ -1,14 +1,15 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import {
-  useCallback,
-  useEffect,
-  useState,
   type ChangeEvent,
   type FormEvent,
   type MouseEvent,
+  useCallback,
+  useEffect,
+  useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
 import "./categories-page.css";
+import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import "./products-page.css";
 
@@ -225,6 +226,7 @@ interface ProductListProps {
   isLoading: boolean;
   onArchive: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
+  onManageMedia: (product: ProductReadModel) => void;
   onManageVariants: (product: ProductReadModel) => void;
   onRestore: (product: ProductReadModel) => void;
   pendingAction: string | null;
@@ -236,6 +238,7 @@ interface ProductCardProps {
   categoryName: string | null;
   onArchive: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
+  onManageMedia: (product: ProductReadModel) => void;
   onManageVariants: (product: ProductReadModel) => void;
   onRestore: (product: ProductReadModel) => void;
   pendingAction: string | null;
@@ -246,6 +249,7 @@ function ProductCard({
   categoryName,
   onArchive,
   onEdit,
+  onManageMedia,
   onManageVariants,
   onRestore,
   pendingAction,
@@ -266,6 +270,10 @@ function ProductCard({
   const handleManageVariants = useCallback(
     () => onManageVariants(product),
     [onManageVariants, product]
+  );
+  const handleManageMedia = useCallback(
+    () => onManageMedia(product),
+    [onManageMedia, product]
   );
 
   return (
@@ -297,6 +305,16 @@ function ProductCard({
         >
           Variantes
         </button>
+        {product.status === "active" ? (
+          <button
+            className="quiet-button"
+            disabled={isPending}
+            onClick={handleManageMedia}
+            type="button"
+          >
+            Imagens
+          </button>
+        ) : null}
         <button
           className="quiet-button"
           disabled={isPending}
@@ -338,6 +356,7 @@ function ProductListContent({
   isLoading,
   onArchive,
   onEdit,
+  onManageMedia,
   onManageVariants,
   onRestore,
   pendingAction,
@@ -374,6 +393,7 @@ function ProductListContent({
               categoryName={categoryName}
               onArchive={onArchive}
               onEdit={onEdit}
+              onManageMedia={onManageMedia}
               onManageVariants={onManageVariants}
               onRestore={onRestore}
               pendingAction={pendingAction}
@@ -391,6 +411,7 @@ function ProductList({
   isLoading,
   onArchive,
   onEdit,
+  onManageMedia,
   onManageVariants,
   onRestore,
   pendingAction,
@@ -422,6 +443,7 @@ function ProductList({
         isLoading={isLoading}
         onArchive={onArchive}
         onEdit={onEdit}
+        onManageMedia={onManageMedia}
         onManageVariants={onManageVariants}
         onRestore={onRestore}
         pendingAction={pendingAction}
@@ -443,6 +465,7 @@ export function ProductsPage() {
   const [variantsProductId, setVariantsProductId] = useState<string | null>(
     null
   );
+  const [mediaProductId, setMediaProductId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -553,6 +576,7 @@ export function ProductsPage() {
 
   const handleEdit = useCallback((product: ProductReadModel) => {
     setVariantsProductId(null);
+    setMediaProductId(null);
     setEditingProductId(product.id);
     setDraft({
       categoryId: product.categoryId ?? "",
@@ -571,6 +595,7 @@ export function ProductsPage() {
 
   const handleManageVariants = useCallback((product: ProductReadModel) => {
     setEditingProductId(null);
+    setMediaProductId(null);
     setDraft(emptyDraft);
     setVariantsProductId(product.id);
     setError(null);
@@ -579,6 +604,19 @@ export function ProductsPage() {
 
   const handleCloseVariants = useCallback(() => {
     setVariantsProductId(null);
+  }, []);
+
+  const handleManageMedia = useCallback((product: ProductReadModel) => {
+    setEditingProductId(null);
+    setVariantsProductId(null);
+    setDraft(emptyDraft);
+    setMediaProductId(product.id);
+    setError(null);
+    setNotice(null);
+  }, []);
+
+  const handleCloseMedia = useCallback(() => {
+    setMediaProductId(null);
   }, []);
 
   const handleVariantsUpdated = useCallback((_product: ProductReadModel) => {
@@ -632,6 +670,7 @@ export function ProductsPage() {
         setStatus(value);
         setEditingProductId(null);
         setVariantsProductId(null);
+        setMediaProductId(null);
         setDraft(emptyDraft);
         setError(null);
         setNotice(null);
@@ -651,6 +690,7 @@ export function ProductsPage() {
     setCategories([]);
     setEditingProductId(null);
     setVariantsProductId(null);
+    setMediaProductId(null);
     setDraft(emptyDraft);
     setNotice("Abra novamente a organização para acessar os produtos.");
     setError(null);
@@ -660,6 +700,8 @@ export function ProductsPage() {
     products.find((product) => product.id === editingProductId) ?? null;
   const variantsProduct =
     products.find((product) => product.id === variantsProductId) ?? null;
+  const mediaProduct =
+    products.find((product) => product.id === mediaProductId) ?? null;
 
   return (
     <div className="categories-page products-page">
@@ -762,6 +804,7 @@ export function ProductsPage() {
             isLoading={isLoading}
             onArchive={handleArchiveProduct}
             onEdit={handleEdit}
+            onManageMedia={handleManageMedia}
             onManageVariants={handleManageVariants}
             onRestore={handleRestoreProduct}
             pendingAction={pendingAction}
@@ -777,6 +820,14 @@ export function ProductsPage() {
             onProductUpdated={handleVariantsUpdated}
             organizationId={organizationId}
             product={variantsProduct}
+          />
+        ) : null}
+        {organizationId && mediaProduct ? (
+          <ProductMediaPanel
+            key={mediaProduct.id}
+            onClose={handleCloseMedia}
+            organizationId={organizationId}
+            product={mediaProduct}
           />
         ) : null}
       </main>

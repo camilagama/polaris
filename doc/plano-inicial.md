@@ -1801,43 +1801,24 @@ Criar `media_assets`, `product_media` e `variant_media`, com FKs compostas que g
 
 # PR 34 — Upload/crop pipeline
 
+### Decisões de implementação
 
+- O navegador aceita JPEG, PNG e WebP diretamente. HEIC/HEIF é convertido para JPEG no dispositivo, com orientação da imagem preservada, conforme confirmado pelo responsável.
+- O arquivo original tem limite de 20 MB. O servidor valida o formato real decodificado; não confia somente no `Content-Type` informado pelo navegador.
+- O recorte é enviado como coordenadas normalizadas e convertido para pixels usando as dimensões decodificadas da imagem.
+- Cloudflare Images aplica o recorte antes do `scale-down`, preserva a proporção, não amplia imagens menores, limita cada aresta a 1200 px e produz WebP com qualidade 85. A saída é validada antes de ser gravada.
+- O WebP é armazenado no bucket R2 privado. A chave inclui organização, produto, identidade do comando e fingerprint do conteúdo para isolar tentativas concorrentes com payloads diferentes.
+- O banco persiste tamanho, tipo, dimensões, chave de storage, fingerprint e identidade idempotente. Cada asset precisa estar associado a exatamente um produto; associações a variantes só podem apontar para variantes desse produto.
+- Upload, associação e auditoria são tenant-scoped; o runtime recebe somente `SELECT` e `INSERT` nas tabelas de mídia. Repetições idênticas são idempotentes; reutilizar o mesmo comando com outro payload conflita.
+- Erros determinísticos que impedem a criação do registro removem o objeto recém-criado. Falhas ambíguas de commit podem deixar objetos privados sem registro; a reconciliação geral desses objetos fica para PR35.
 
-Implementar:
+### Gate
 
-
-
-```text
-
-upload
-
-→ crop coords
-
-→ Cloudflare Images
-
-→ WebP 1200
-
-→ R2
-
-```
-
-
-
-Testar:
-
-
-
-- arquivo inválido;
-
-- tamanho excessivo;
-
-- orientation;
-
-- crop;
-
-- no-upscale;
-
-- metadata stripped.
+- Cobrir arquivo inválido, MIME divergente, entrada acima de 20 MB, HEIC, orientação, coordenadas de crop, saída WebP, teto de 1200 px, no-upscale e remoção de metadata.
+- No PostgreSQL 18, provar migration, RLS/grants, criação tenant-scoped, idempotência/conflito, posições, associações a variantes, auditoria, vínculo obrigatório de asset, isolamento cross-tenant, tombstone e imutabilidade.
+- Testar a transformação real Cloudflare Images (crop, orientação, WebP e metadata) e o binding R2 privado em um recurso descartável antes de produção. O mock local não comprova esses comportamentos do provedor.
+- Validar manualmente o fluxo HEIC/crop/upload em Safari no iPhone após publicar um preview temporário autorizado.
+- Executar `bun run check`, `bun run build`, CI e revisão independente; publicar draft empilhado sobre `codex/pr33-media-schema`. Não fazer merge nem alterar recursos de produção.
 
 
 

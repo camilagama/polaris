@@ -49,6 +49,40 @@ const product = z.object({
 
 export type ProductReadModel = z.infer<typeof product>;
 
+export const productMediaAssetReadModelSchema = z.object({
+  assetId: z.string().uuid(),
+  byteSize: z.number().int().positive().max(20_000_000),
+  contentType: z.literal("image/webp"),
+  createdAt: z.string().datetime(),
+  height: z.number().int().positive().max(1200),
+  position: z.number().int().nonnegative(),
+  variantIds: z.array(z.string().uuid()),
+  width: z.number().int().positive().max(1200),
+});
+
+export type ProductMediaAssetReadModel = z.infer<
+  typeof productMediaAssetReadModelSchema
+>;
+
+export const productMediaUploadResponseSchema = z.object({
+  asset: productMediaAssetReadModelSchema,
+  replayed: z.boolean(),
+  requestId: z.string().uuid(),
+});
+
+export type ProductMediaUploadResponse = z.infer<
+  typeof productMediaUploadResponseSchema
+>;
+
+export const productMediaListResponseSchema = z.object({
+  media: z.array(productMediaAssetReadModelSchema),
+  requestId: z.string().uuid(),
+});
+
+export type ProductMediaListResponse = z.infer<
+  typeof productMediaListResponseSchema
+>;
+
 const productVariantOptionName = z.enum(["model", "color", "size"]);
 
 const productVariantOptionValue = z.object({
@@ -176,17 +210,31 @@ const organization = z.object({
 });
 
 export const polarisContract = {
-  product: {
-    create: oc
+  category: {
+    archive: oc
       .input(
         z.object({
-          categoryId: z.string().uuid().nullable().optional(),
-          description: z.string().nullable().optional(),
-          name: productNameSchema,
+          id: z.string().uuid(),
           organizationId: z.string().trim().min(1),
         })
       )
-      .output(product),
+      .output(z.object({ category, changed: z.boolean() })),
+    create: oc
+      .input(
+        z.object({
+          name: categoryNameSchema,
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(category),
+    delete: oc
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ category, changed: z.boolean() })),
     list: oc
       .input(
         z.object({
@@ -196,108 +244,24 @@ export const polarisContract = {
             .default("active"),
         })
       )
-      .output(z.object({ products: z.array(product) })),
-    update: oc
+      .output(z.object({ categories: z.array(category) })),
+    rename: oc
       .input(
         z.object({
-          categoryId: z.string().uuid().nullable(),
-          description: z.string().nullable(),
-          expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          name: productNameSchema,
+          name: categoryNameSchema,
           organizationId: z.string().trim().min(1),
         })
       )
-      .output(z.object({ changed: z.boolean(), product })),
-    archive: oc
-      .input(
-        z.object({
-          expectedVersion: z.number().int().positive(),
-          id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(z.object({ changed: z.boolean(), product })),
-    delete: oc
-      .input(
-        z.object({
-          expectedVersion: z.number().int().positive(),
-          id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(z.object({ changed: z.boolean(), product })),
+      .output(z.object({ category, changed: z.boolean() })),
     restore: oc
       .input(
         z.object({
-          expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
           organizationId: z.string().trim().min(1),
         })
       )
-      .output(z.object({ changed: z.boolean(), product })),
-    getVariants: oc
-      .input(
-        z.object({
-          id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(productVariantConfiguration),
-    setVariantSku: oc
-      .input(
-        z.object({
-          expectedVersion: z.number().int().positive(),
-          organizationId: z.string().trim().min(1),
-          productId: z.string().uuid(),
-          sku: z.string().nullable(),
-          variantId: z.string().uuid(),
-        })
-      )
-      .output(
-        z.object({
-          changed: z.boolean(),
-          configuration: productVariantConfiguration,
-          product,
-        })
-      ),
-    configureVariants: oc
-      .input(
-        z.object({
-          expectedVersion: z.number().int().positive(),
-          id: z.string().uuid(),
-          options: z
-            .array(
-              z.object({
-                name: productVariantOptionName,
-                values: z.array(z.string().trim().min(1)).min(1),
-              })
-            )
-            .min(1)
-            .max(3),
-          organizationId: z.string().trim().min(1),
-          variants: z
-            .array(
-              z.object({
-                values: z
-                  .object({
-                    color: z.string().trim().min(1).optional(),
-                    model: z.string().trim().min(1).optional(),
-                    size: z.string().trim().min(1).optional(),
-                  })
-                  .strict(),
-              })
-            )
-            .min(1)
-            .max(50),
-        })
-      )
-      .output(
-        z.object({
-          configuration: productVariantConfiguration,
-          product,
-        })
-      ),
+      .output(z.object({ category, changed: z.boolean() })),
   },
   inventory: {
     getBalance: oc
@@ -308,6 +272,39 @@ export const polarisContract = {
         })
       )
       .output(inventoryBalance),
+    inventoryCount: oc
+      .input(
+        z
+          .object({
+            commandId: z.string().uuid(),
+            commandVersion: z.literal(1),
+            expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
+            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            organizationId: z.string().trim().min(1),
+            physicalQuantity: z.number().int().nonnegative().max(2_147_483_647),
+            valuationUnitCost: z.string().trim().min(1).optional(),
+            variantId: z.string().uuid(),
+          })
+          .superRefine((input, ctx) => {
+            if (
+              input.physicalQuantity === 0 &&
+              input.valuationUnitCost !== undefined
+            ) {
+              ctx.addIssue({
+                code: "custom",
+                message: "inventory_count_zero_cannot_set_unit_cost",
+                path: ["valuationUnitCost"],
+              });
+            }
+          })
+      )
+      .output(
+        z.object({
+          balance: inventoryBalance,
+          movement: inventoryCountMovement,
+          replayed: z.boolean(),
+        })
+      ),
     receiveStock: oc
       .input(
         z.object({
@@ -357,92 +354,6 @@ export const polarisContract = {
           replayed: z.boolean(),
         })
       ),
-    inventoryCount: oc
-      .input(
-        z
-          .object({
-            commandId: z.string().uuid(),
-            commandVersion: z.literal(1),
-            expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
-            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-            organizationId: z.string().trim().min(1),
-            physicalQuantity: z.number().int().nonnegative().max(2_147_483_647),
-            valuationUnitCost: z.string().trim().min(1).optional(),
-            variantId: z.string().uuid(),
-          })
-          .superRefine((input, ctx) => {
-            if (
-              input.physicalQuantity === 0 &&
-              input.valuationUnitCost !== undefined
-            ) {
-              ctx.addIssue({
-                code: "custom",
-                message: "inventory_count_zero_cannot_set_unit_cost",
-                path: ["valuationUnitCost"],
-              });
-            }
-          })
-      )
-      .output(
-        z.object({
-          balance: inventoryBalance,
-          movement: inventoryCountMovement,
-          replayed: z.boolean(),
-        })
-      ),
-  },
-  category: {
-    create: oc
-      .input(
-        z.object({
-          name: categoryNameSchema,
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(category),
-    list: oc
-      .input(
-        z.object({
-          organizationId: z.string().trim().min(1),
-          status: z
-            .enum(["active", "archived", "deleted", "all"])
-            .default("active"),
-        })
-      )
-      .output(z.object({ categories: z.array(category) })),
-    archive: oc
-      .input(
-        z.object({
-          id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(z.object({ category, changed: z.boolean() })),
-    restore: oc
-      .input(
-        z.object({
-          id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(z.object({ category, changed: z.boolean() })),
-    rename: oc
-      .input(
-        z.object({
-          id: z.string().uuid(),
-          name: categoryNameSchema,
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(z.object({ category, changed: z.boolean() })),
-    delete: oc
-      .input(
-        z.object({
-          id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(z.object({ category, changed: z.boolean() })),
   },
   organization: {
     createInitial: oc
@@ -453,6 +364,129 @@ export const polarisContract = {
         })
       )
       .output(z.object({ created: z.boolean(), organization })),
+  },
+  product: {
+    archive: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+    configureVariants: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          options: z
+            .array(
+              z.object({
+                name: productVariantOptionName,
+                values: z.array(z.string().trim().min(1)).min(1),
+              })
+            )
+            .min(1)
+            .max(3),
+          organizationId: z.string().trim().min(1),
+          variants: z
+            .array(
+              z.object({
+                values: z
+                  .object({
+                    color: z.string().trim().min(1).optional(),
+                    model: z.string().trim().min(1).optional(),
+                    size: z.string().trim().min(1).optional(),
+                  })
+                  .strict(),
+              })
+            )
+            .min(1)
+            .max(50),
+        })
+      )
+      .output(
+        z.object({
+          configuration: productVariantConfiguration,
+          product,
+        })
+      ),
+    create: oc
+      .input(
+        z.object({
+          categoryId: z.string().uuid().nullable().optional(),
+          description: z.string().nullable().optional(),
+          name: productNameSchema,
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(product),
+    delete: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+    getVariants: oc
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(productVariantConfiguration),
+    list: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z
+            .enum(["active", "archived", "deleted", "all"])
+            .default("active"),
+        })
+      )
+      .output(z.object({ products: z.array(product) })),
+    restore: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+    setVariantSku: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          organizationId: z.string().trim().min(1),
+          productId: z.string().uuid(),
+          sku: z.string().nullable(),
+          variantId: z.string().uuid(),
+        })
+      )
+      .output(
+        z.object({
+          changed: z.boolean(),
+          configuration: productVariantConfiguration,
+          product,
+        })
+      ),
+    update: oc
+      .input(
+        z.object({
+          categoryId: z.string().uuid().nullable(),
+          description: z.string().nullable(),
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          name: productNameSchema,
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
   },
   system: {
     ping: oc.output(z.object({ message: z.literal("pong") })),

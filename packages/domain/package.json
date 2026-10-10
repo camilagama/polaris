@@ -5,6 +5,7 @@
   "exports": {
     "./authorization/capabilities": "./src/authorization/capabilities.ts",
     "./catalog/category": "./src/catalog/category.ts",
+    "./catalog/media": "./src/catalog/media.ts",
     "./catalog/product": "./src/catalog/product.ts",
     "./inventory/inventory": "./src/inventory/inventory.ts",
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",

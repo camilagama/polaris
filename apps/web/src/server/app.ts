@@ -13,6 +13,7 @@ import {
 import type { ServerEnv, WorkerBindings } from "./environment";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
+import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
 import { rpcRouter as defaultRpcRouter } from "./rpc/router";
 
@@ -93,6 +94,7 @@ export function createServerApp({
   app.post("/api/auth/*", authRoute);
 
   app.route("/", systemRoutes);
+  app.route("/", createMediaRoutes());
 
   app.post("/api/poc/database", async (context) => {
     if (context.env.DB_POC_ENABLED !== "true") {

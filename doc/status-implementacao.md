@@ -412,4 +412,22 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída sem achados | Revisão do diff `d0c6640..caf8824`: nenhum achado Critical, Important ou Minor; migration 0024, RLS/grants, guard de tombstone e gate revisados. |
 | Push, PR draft e CI remoto | Concluídos | Branch `codex/pr33-media-schema` publicada; [PR #32](https://github.com/camilagama/polaris/pull/32) aberto em draft sobre `codex/pr32-archive-catalog` (PR #31). CI passou 6/6 no commit `5e66fba`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar o PR33 draft e ADR 0013 depois da publicação. Nenhum merge será feito sem autorização. |
+
+### PR34 — Upload/crop pipeline (implementação local e gate Neon concluídos; gate Cloudflare aguardando autenticação do perfil)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Branch isolada | Concluída | `codex/pr34-media-upload` criada no clone de trabalho sobre `codex/pr33-media-schema`; `main` permaneceu intacta. |
+| HEIC, recorte e saída | Concluídos localmente | Conversão HEIC/HEIF para JPEG no navegador, com fallback `<img>` para Safari; seleção de recorte por arraste/toque e teclado; recorte normalizado; Cloudflare Images configurado para WebP quality 85, limite de 1200 px e `scale-down` sem ampliação. |
+| Migration 0025 e RLS/grants | Concluídos | Metadados de storage, tamanho, MIME, dimensões, fingerprint e upload command; runtime recebe `SELECT` e `INSERT`, sem `UPDATE`/`DELETE`; asset exige associação ao produto por trigger deferred. Migration aborta com mensagem explícita se `media_assets` já contiver linhas sem metadados migráveis. `bun run db:generate` não encontrou drift. |
+| Rotas, repositório e painel | Concluídos localmente | Upload binário autenticado e tenant-scoped, leitura privada, fingerprint idempotente, posições append-only, auditoria e associação do mesmo asset a variantes do produto. IDs de variante são validados antes do R2. A chave R2 contém organização, produto, comando e fingerprint. Rejeições determinísticas antes do commit removem o objeto recém-criado; falhas ambíguas de commit podem deixar objeto privado órfão, cuja reconciliação geral fica para PR35. |
+| Gate Neon PostgreSQL 18 | Concluído | `0025` aplicada e gate passou em PostgreSQL `18.6` na branch descartável `pr34-media-upload-gate`, projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Verificou RLS/grants, inserts tenant-scoped, replay/conflito, mesma imagem associada a duas variantes do produto, bloqueio de associação do asset a outro produto, auditoria, constraints, asset órfão, cross-tenant em `media_assets`, `product_media` e `variant_media`, tombstone e imutabilidade. A branch expira em `2026-10-11 13:00 BRT`; fixtures sintéticas ficam até a expiração. URLs não foram registradas. |
+| Verificação local | Concluída | `bun run check`: lint, formatação, tipos, boundaries, Knip e 189 testes em 30 arquivos passaram. |
+| Build local | Concluído | `bun run build` passou nos oito workspaces. |
+| Gate real Cloudflare Images/R2 | Aguardando autenticação | `cf auth whoami --profile junior-pessoal` retornou `authenticated: false`. O runbook `docs/runbooks/cli-profile-policy.md` exige parar se a identidade `contato.juniordiniz@gmail.com` não puder ser confirmada; nenhum recurso Cloudflare foi consultado ou alterado após essa resposta. O gate de crop, orientação EXIF, WebP/metadata e R2 continua pendente. |
+| Safari/iPhone | Adiado até haver preview | Conversão HEIC e crop ainda precisam de validação manual no iPhone 12/iOS 26.6.2. O preview temporário depende de autenticação Cloudflare e da existência do bucket remoto `polaris-media`, que ainda não foi verificada. |
+| Revisão independente | Concluída | Duas revisões estáticas corrigiram o gesto sem arraste, validação de variante pós-R2, cobertura cross-tenant de `variant_media` e compensação para rejeições determinísticas após storage. A reconciliação de falhas ambíguas permanece agendada para PR35. |
+| Push, PR draft e CI remoto | Pendente | `gh auth status` neste clone informa token inválido. A autenticação GitHub precisa ser renovada para publicar a branch e abrir o draft. Nenhum merge será feito. |
+| Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

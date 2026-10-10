@@ -13,24 +13,57 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./organization";
-import { activeTenantScope, productVariants, products } from "./product";
+import { activeTenantScope, products, productVariants } from "./product";
 
 const runtimeRole = "polaris_pr11_runtime";
 
 export const mediaAssets = pgTable(
   "media_assets",
   {
+    byteSize: integer("byte_size").notNull(),
+    contentType: text("content_type").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    height: integer("height").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    inputFingerprint: text("input_fingerprint").notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "restrict" }),
+    storageKey: text("storage_key").notNull(),
+    uploadCommandId: uuid("upload_command_id").notNull(),
+    width: integer("width").notNull(),
   },
   (table) => [
+    check(
+      "media_assets_byte_size_valid",
+      sql`${table.byteSize} BETWEEN 1 AND 20000000`
+    ),
+    check(
+      "media_assets_content_type_webp",
+      sql`${table.contentType} = 'image/webp'`
+    ),
+    check(
+      "media_assets_dimensions_valid",
+      sql`${table.width} BETWEEN 1 AND 1200 AND ${table.height} BETWEEN 1 AND 1200`
+    ),
+    check(
+      "media_assets_input_fingerprint_sha256",
+      sql`${table.inputFingerprint} ~ '^[0-9a-f]{64}$'`
+    ),
     uniqueIndex("media_assets_organization_id_unique").on(
       table.organizationId,
       table.id
     ),
+    uniqueIndex("media_assets_organization_upload_command_unique").on(
+      table.organizationId,
+      table.uploadCommandId
+    ),
+    uniqueIndex("media_assets_storage_key_unique").on(table.storageKey),
+    pgPolicy("media_assets_current_tenant_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: activeTenantScope(table.organizationId),
+    }),
     pgPolicy("media_assets_current_tenant_select", {
       for: "select",
       to: runtimeRole,
@@ -83,6 +116,20 @@ export const productMedia = pgTable(
           FROM public.products AS product_scope
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
+        )
+      `,
+    }),
+    pgPolicy("product_media_current_tenant_live_product_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),
@@ -151,6 +198,24 @@ export const variantMedia = pgTable(
            AND variant_scope.product_id = product_scope.id
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
+            AND variant_scope.id = ${table.variantId}
+        )
+      `,
+    }),
+    pgPolicy("variant_media_current_tenant_live_product_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          INNER JOIN public.product_variants AS variant_scope
+            ON variant_scope.organization_id = product_scope.organization_id
+           AND variant_scope.product_id = product_scope.id
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.deleted_at IS NULL
             AND variant_scope.id = ${table.variantId}
         )
       `,

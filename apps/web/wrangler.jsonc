@@ -22,6 +22,15 @@
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
     }
   ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "polaris-media"
+    }
+  ],
   // Reserve unique account-level namespace IDs before deploying these bindings.
   "ratelimits": [
     {
