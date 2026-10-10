@@ -378,22 +378,22 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | CI remoto | Concluído | GitHub Actions passou 6/6 no commit `95dbc20`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. O PR está limpo e mergeable, mas permanece draft. |
 | Revisão do usuário | Pendente | Revisar o PR #30 e ADR 0011, especialmente a proposta de `valuationUnitCost` opcional. Nenhum merge será feito sem autorização. |
 
-### PR32 — Archive/delete catalog (implementação, revisão, verificações locais, publicação e CI concluídos; gate Neon e revisão do usuário pendentes)
+### PR32 — Archive/delete catalog (implementação, revisão estática, verificações locais e remotas, publicação e CI concluídos; revisão do usuário pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Base isolada | Concluída | Branch codex/pr32-archive-catalog criada sobre o head 95dbc20 do PR31; branch principal e PR31 permaneceram intactos. |
-| Correção da identidade Neon | Concluída | Usuário corrigiu a regra: o perfil `junior-pessoal` deve usar `juniordiniz56@gmail.com`. `neon me --profile junior-pessoal` confirmou essa identidade; somente consultas de leitura foram feitas. |
+| Correção da identidade Neon | Concluída | O perfil `junior-pessoal` usa `juniordiniz56@gmail.com`, confirmado por `neon me` antes do gate. As operações de banco ficaram restritas à branch descartável `pr32-archive-catalog-gate`. |
 | Regra de tombstone | Confirmada | Usuário aprovou tombstone terminal com saldo agregado zero, mesmo havendo movimentos históricos; preservar variantes, UUIDs, SKUs, ledger, vínculos e auditoria; saldo positivo bloqueia. |
 | Archive/restore | Reutilizados | Já implementados no PR25. PR32 não os duplica; adiciona somente o comando terminal de remoção lógica. |
 | Domínio e RPC | Implementados localmente | product.delete exige expectedVersion, atualiza lifecycle e auditoria na transação; repetição é idempotente. Produto tombstoned não admite restore, edição, SKU, configuração de variante ou novos movimentos; leitura histórica e replay permanecem válidos. |
-| Migration 0023 | Gerada localmente | deleted_at, policies RLS e triggers para imutabilidade, saldo positivo e bloqueio de novos writes. Migration ainda não foi aplicada em Neon. bun run db:generate não encontrou drift após a geração. |
+| Migration 0023 | Aplicada e validada | `drizzle-kit migrate` aplicou as migrations pendentes 0019–0023 na branch Neon descartável `pr32-archive-catalog-gate`; `bun run db:generate` não encontrou drift. |
 | Gate PostgreSQL | Implementado localmente | verify-inventory-gate.ts agora cobre tombstone com histórico e saldo zero, bloqueio de saldo positivo, proteção SQL direta, replay idempotente e corrida entre recebimento e tombstone. |
 | Verificação local | Concluída | bun run check passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 157 testes em 25 arquivos. O check precisou rodar fora do sandbox devido a paths temporários inacessíveis do Vitest no sandbox do Windows. |
 | Build local | Concluído | bun run build passou nos oito workspaces. |
-| Gate Neon PostgreSQL 18 | Pendente | É necessário aplicar a migration e executar o gate em branch descartável. A URL anterior não será reutilizada; o console Neon não ficou acessível nesta sessão. |
+| Gate Neon PostgreSQL 18 | Concluído | Gate passou em PostgreSQL 18.6 na branch `pr32-archive-catalog-gate`, derivada de `production`, com 26 movimentos e todos os cenários listados aprovados. A branch expira em 2026-10-10 13:00 BRT; fixtures sintéticas permanecem até a expiração. A connection string ficou somente no ambiente do processo. |
 | UI de exclusão | Adiada | O plano não define affordance nem confirmação para uma ação terminal; archive/restore continuam como já implementados. |
-| Revisão independente | Concluída sem achados | Revisão do diff `95dbc20..b3781fd`: nenhum achado crítico, importante ou menor. O gate PostgreSQL 18 continua necessário para confirmar o comportamento real da migration e das corridas. |
+| Revisão independente | Concluída sem achados | Revisão do diff `95dbc20..b3781fd`: nenhum achado crítico, importante ou menor. O gate PostgreSQL 18 passou na branch descartável `pr32-archive-catalog-gate`. |
 | Push e PR draft | Concluídos | Branch `codex/pr32-archive-catalog` publicada; [PR #31](https://github.com/camilagama/polaris/pull/31) aberto em draft sobre `codex/pr31-inventory-count` (PR #30). Nenhum merge foi feito. |
-| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `61b46dd`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
+| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `5c3704a`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
