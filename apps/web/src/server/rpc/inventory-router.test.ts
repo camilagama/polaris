@@ -67,6 +67,37 @@ function createInventoryClient(router = createRpcRouter()) {
         };
         replayed: boolean;
       }>;
+      writeOffStock: (input: unknown) => Promise<{
+        balance: {
+          movingAverageCost: string | null;
+          quantity: number;
+          variantId: string;
+          version: number;
+        };
+        movement: {
+          commandId: string;
+          commandIndex: number;
+          commandVersion: number;
+          createdAt: string;
+          id: string;
+          movementType: "write_off";
+          occurredOn: string;
+          organizationId: string;
+          productId: string;
+          quantityDelta: number;
+          reasonCode:
+            | "damaged"
+            | "expired"
+            | "lost"
+            | "stolen"
+            | "internal_use"
+            | "other";
+          reasonNote: string | null;
+          unitCost: string | null;
+          variantId: string;
+        };
+        replayed: boolean;
+      }>;
     };
   };
 }
@@ -78,6 +109,17 @@ const input = {
   organizationId,
   quantity: 3,
   unitCost: "12.345678",
+  variantId,
+};
+
+const writeOffInput = {
+  commandId: "0199c2d0-0000-7000-8000-000000000005",
+  commandVersion: 1,
+  occurredOn: "2026-10-09",
+  organizationId,
+  quantity: 2,
+  reasonCode: "damaged" as const,
+  reasonNote: "embalagem rasgada",
   variantId,
 };
 
@@ -164,5 +206,107 @@ describe("inventory RPCs", () => {
     await expect(client.inventory.receiveStock(input)).rejects.toMatchObject({
       code: "CONFLICT",
     });
+  });
+
+  it("writes off stock with a structured reason and forwards the audit ID", async () => {
+    const movement = {
+      commandId: writeOffInput.commandId,
+      commandIndex: 0,
+      commandVersion: 1,
+      createdAt: new Date("2026-10-09T12:00:00.000Z"),
+      id: "0199c2d0-0000-7000-8000-000000000006",
+      movementType: "write_off" as const,
+      occurredOn: writeOffInput.occurredOn,
+      organizationId,
+      productId: "0199c2d0-0000-7000-8000-000000000001",
+      quantityDelta: -2,
+      reasonCode: writeOffInput.reasonCode,
+      reasonNote: writeOffInput.reasonNote,
+      unitCost: "12.345678",
+      variantId,
+    };
+    const balance = {
+      movingAverageCost: "12.345678",
+      quantity: 1,
+      variantId,
+      version: 2,
+    };
+    const writeOffStock = vi.fn(
+      async (
+        _transaction: unknown,
+        _authorizedIdentity: typeof identity,
+        _input: {
+          commandId: string;
+          commandVersion: number;
+          occurredOn: string;
+          quantity: number;
+          reasonCode: string;
+          reasonNote: string | null;
+          requestId: string | null;
+          variantId: string;
+        }
+      ) => ({ balance, movement, replayed: false })
+    );
+    let observedCapability = "";
+    const router = createRpcRouter({
+      writeOffStock,
+      withTenantRequestContext: (request: TenantContextRequest) => {
+        observedCapability = request.capability;
+        return request.operation({}, identity);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createInventoryClient(router);
+
+    const result = await client.inventory.writeOffStock(writeOffInput);
+
+    expect(result).toMatchObject({
+      balance,
+      movement: {
+        commandId: writeOffInput.commandId,
+        commandIndex: 0,
+        commandVersion: 1,
+        createdAt: "2026-10-09T12:00:00.000Z",
+        movementType: "write_off",
+        quantityDelta: -2,
+        reasonCode: "damaged",
+        reasonNote: "embalagem rasgada",
+        unitCost: "12.345678",
+      },
+      replayed: false,
+    });
+    expect(observedCapability).toBe("inventory:adjust");
+    expect(writeOffStock).toHaveBeenCalledWith({}, identity, {
+      commandId: writeOffInput.commandId,
+      commandVersion: writeOffInput.commandVersion,
+      occurredOn: writeOffInput.occurredOn,
+      quantity: writeOffInput.quantity,
+      reasonCode: writeOffInput.reasonCode,
+      reasonNote: writeOffInput.reasonNote,
+      requestId: expect.stringMatching(requestIdPattern),
+      variantId: writeOffInput.variantId,
+    });
+  });
+
+  it("requires a note when the structured reason is other", async () => {
+    const client = createInventoryClient();
+
+    await expect(
+      client.inventory.writeOffStock({
+        ...writeOffInput,
+        reasonCode: "other",
+        reasonNote: null,
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects notes longer than 500 Unicode code points at the contract boundary", async () => {
+    const client = createInventoryClient();
+
+    await expect(
+      client.inventory.writeOffStock({
+        ...writeOffInput,
+        reasonNote: "🙂".repeat(501),
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

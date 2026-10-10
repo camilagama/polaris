@@ -22,7 +22,7 @@ import {
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
-import { receiveStock } from "@polaris/db/inventory-repository";
+import { receiveStock, writeOffStock } from "@polaris/db/inventory-repository";
 import { createDatabase } from "@polaris/db/client";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
@@ -64,6 +64,11 @@ import {
   UnsupportedReceiveStockCommandVersionError,
 } from "@polaris/domain/inventory/receive-stock";
 import {
+  InvalidWriteOffStockInputError,
+  isWriteOffReasonCode,
+  UnsupportedWriteOffStockCommandVersionError,
+} from "@polaris/domain/inventory/write-off-stock";
+import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
@@ -101,6 +106,7 @@ interface RpcRouterDependencies {
   listProducts: typeof listProducts;
   restoreProduct: typeof restoreProduct;
   receiveStock: typeof receiveStock;
+  writeOffStock: typeof writeOffStock;
   setProductVariantSku: typeof setProductVariantSku;
   updateProduct: typeof updateProduct;
   listCategories: typeof listCategories;
@@ -242,7 +248,9 @@ function toRpcError(error: unknown): never {
     error instanceof InvalidUnitCostError ||
     error instanceof InventoryCostLimitError ||
     error instanceof InvalidReceiveStockInputError ||
-    error instanceof UnsupportedReceiveStockCommandVersionError
+    error instanceof UnsupportedReceiveStockCommandVersionError ||
+    error instanceof InvalidWriteOffStockInputError ||
+    error instanceof UnsupportedWriteOffStockCommandVersionError
   ) {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
@@ -328,6 +336,7 @@ export function createRpcRouter(
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
   const restoreTenantProduct = overrides.restoreProduct ?? restoreProduct;
   const receiveTenantStock = overrides.receiveStock ?? receiveStock;
+  const writeOffTenantStock = overrides.writeOffStock ?? writeOffStock;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
 
@@ -793,9 +802,64 @@ export function createRpcRouter(
     }
   );
 
+  const writeOffStockRecord = implementContract.inventory.writeOffStock.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "inventory:adjust",
+          operation: (transaction, identity) =>
+            writeOffTenantStock(transaction, identity, {
+              commandId: input.commandId,
+              commandVersion: input.commandVersion,
+              occurredOn: input.occurredOn,
+              quantity: input.quantity,
+              reasonCode: input.reasonCode,
+              reasonNote: input.reasonNote ?? null,
+              requestId: requestAuditId(context.requestId),
+              variantId: input.variantId,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+
+        const { movement } = result;
+        if (
+          movement.commandId === null ||
+          movement.commandVersion === null ||
+          movement.occurredOn === null ||
+          movement.reasonCode === null ||
+          !isWriteOffReasonCode(movement.reasonCode) ||
+          movement.movementType !== "write_off"
+        ) {
+          throw new Error("written_off_stock_movement_metadata_missing");
+        }
+
+        return {
+          balance: result.balance,
+          movement: {
+            ...movement,
+            commandId: movement.commandId,
+            commandVersion: movement.commandVersion,
+            createdAt: movement.createdAt.toISOString(),
+            movementType: "write_off" as const,
+            occurredOn: movement.occurredOn,
+            reasonCode: movement.reasonCode,
+          },
+          replayed: result.replayed,
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
-    inventory: { receiveStock: receiveStockRecord },
+    inventory: {
+      receiveStock: receiveStockRecord,
+      writeOffStock: writeOffStockRecord,
+    },
     organization: { createInitial },
     product: {
       archive: archiveProductRecord,

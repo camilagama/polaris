@@ -8,7 +8,8 @@
     "./catalog/product": "./src/catalog/product.ts",
     "./inventory/inventory": "./src/inventory/inventory.ts",
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",
-    "./inventory/receive-stock": "./src/inventory/receive-stock.ts"
+    "./inventory/receive-stock": "./src/inventory/receive-stock.ts",
+    "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

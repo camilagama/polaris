@@ -15,6 +15,11 @@ import {
   normalizeReceiveStockInput,
   type ReceiveStockCommandInput,
 } from "@polaris/domain/inventory/receive-stock";
+import {
+  normalizeWriteOffStockInput,
+  type WriteOffReasonCode,
+  type WriteOffStockCommandInput,
+} from "@polaris/domain/inventory/write-off-stock";
 import { and, eq, sql } from "drizzle-orm";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import { TenantAuthorizationError } from "./tenant-transaction";
@@ -26,13 +31,18 @@ import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { productVariants, products } from "./schema/product";
 
 export interface RecordStockMovementInput {
-  movementType: Exclude<StockMovementType, "receipt">;
+  movementType: Exclude<StockMovementType, "receipt" | "write_off">;
   quantityDelta: number;
   requestId?: string | null;
   variantId: string;
 }
 
 export interface ReceiveStockRepositoryInput extends ReceiveStockCommandInput {
+  requestId?: string | null;
+}
+
+export interface WriteOffStockRepositoryInput
+  extends WriteOffStockCommandInput {
   requestId?: string | null;
 }
 
@@ -53,7 +63,10 @@ interface StockMovementWriteInput
   commandId?: string | null;
   commandIndex?: number;
   commandVersion?: number | null;
+  captureMovingAverageCost?: boolean;
   occurredOn?: string | null;
+  reasonCode?: WriteOffReasonCode | null;
+  reasonNote?: string | null;
   unitCost?: string | null;
 }
 
@@ -68,6 +81,8 @@ const movementColumns = {
   occurredOn: stockMovements.occurredOn,
   productId: stockMovements.productId,
   quantityDelta: stockMovements.quantityDelta,
+  reasonCode: stockMovements.reasonCode,
+  reasonNote: stockMovements.reasonNote,
   unitCost: stockMovements.unitCost,
   variantId: stockMovements.variantId,
 };
@@ -109,11 +124,14 @@ function commandPayloadMatches(
 ): boolean {
   const unitCost = input.unitCost ?? null;
   const existingUnitCost = existing.unitCost;
-  const costsMatch =
-    unitCost === null
-      ? existingUnitCost === null
-      : existingUnitCost !== null &&
-        normalizeUnitCost(existingUnitCost) === unitCost;
+  let costsMatch = true;
+  if (!input.captureMovingAverageCost) {
+    costsMatch =
+      unitCost === null
+        ? existingUnitCost === null
+        : existingUnitCost !== null &&
+          normalizeUnitCost(existingUnitCost) === unitCost;
+  }
 
   return (
     existing.commandVersion === (input.commandVersion ?? null) &&
@@ -122,6 +140,8 @@ function commandPayloadMatches(
     existing.productId === productId &&
     existing.quantityDelta === input.quantityDelta &&
     existing.occurredOn === (input.occurredOn ?? null) &&
+    existing.reasonCode === (input.reasonCode ?? null) &&
+    existing.reasonNote === (input.reasonNote ?? null) &&
     existing.variantId === variantId &&
     costsMatch
   );
@@ -245,6 +265,8 @@ async function insertStockMovement(
       organizationId: identity.organizationId,
       productId,
       quantityDelta: input.quantityDelta,
+      reasonCode: input.reasonCode ?? null,
+      reasonNote: input.reasonNote ?? null,
       unitCost,
       variantId,
     })
@@ -384,10 +406,15 @@ async function applyStockMovement(
     }) ??
     balance?.movingAverageCost ??
     null;
-  const unitCost =
-    input.unitCost === undefined || input.unitCost === null
-      ? null
-      : normalizeUnitCost(input.unitCost);
+  let unitCost: string | null = null;
+  if (input.unitCost !== undefined && input.unitCost !== null) {
+    unitCost = normalizeUnitCost(input.unitCost);
+  } else if (input.captureMovingAverageCost) {
+    const averageCost = balance?.movingAverageCost;
+    if (averageCost !== null && averageCost !== undefined) {
+      unitCost = normalizeUnitCost(averageCost);
+    }
+  }
 
   const inserted = await insertStockMovement(
     transaction,
@@ -432,7 +459,11 @@ export async function recordStockMovement(
 ) {
   requireInventoryCapability(identity);
   const movementType: string = input.movementType;
-  if (!isStockMovementType(movementType) || movementType === "receipt") {
+  if (
+    !isStockMovementType(movementType) ||
+    movementType === "receipt" ||
+    movementType === "write_off"
+  ) {
     throw new InvalidStockMovementError();
   }
   validateStockMovementType(input.movementType, input.quantityDelta);
@@ -467,6 +498,31 @@ export async function receiveStock(
       quantityDelta: input.quantity,
       requestId: rawInput.requestId ?? null,
       unitCost: input.unitCost,
+      variantId: input.variantId,
+    })
+  );
+}
+
+export async function writeOffStock(
+  outerTransaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  rawInput: WriteOffStockRepositoryInput
+) {
+  requireInventoryCapability(identity);
+  const input = normalizeWriteOffStockInput(rawInput);
+
+  return await outerTransaction.transaction((transaction) =>
+    applyStockMovement(transaction, identity, {
+      captureMovingAverageCost: true,
+      commandId: input.commandId,
+      commandIndex: 0,
+      commandVersion: input.commandVersion,
+      movementType: "write_off",
+      occurredOn: input.occurredOn,
+      quantityDelta: -input.quantity,
+      reasonCode: input.reasonCode,
+      reasonNote: input.reasonNote,
+      requestId: rawInput.requestId ?? null,
       variantId: input.variantId,
     })
   );

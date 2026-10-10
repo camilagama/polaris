@@ -19,6 +19,15 @@ import { activeTenantScope, productVariants } from "./product";
 
 const runtimeRole = "polaris_pr11_runtime";
 
+const writeOffReasonNoteTrimCharacters = sql`
+  ' ' || chr(9) || chr(10) || chr(11) || chr(12) || chr(13) ||
+  chr(160) || chr(5760) ||
+  chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) ||
+  chr(8197) || chr(8198) || chr(8199) || chr(8200) || chr(8201) ||
+  chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) ||
+  chr(12288) || chr(65279)
+`;
+
 const inventoryVariantTenantScope = (table: {
   organizationId: AnyPgColumn;
   productId: AnyPgColumn;
@@ -113,6 +122,8 @@ export const stockMovements = pgTable(
     occurredOn: date("occurred_on", { mode: "string" }),
     productId: uuid("product_id").notNull(),
     quantityDelta: integer("quantity_delta").notNull(),
+    reasonCode: text("reason_code"),
+    reasonNote: text("reason_note"),
     unitCost: numeric("unit_cost"),
     variantId: uuid("variant_id").notNull(),
   },
@@ -174,6 +185,41 @@ export const stockMovements = pgTable(
           ${table.unitCost} >= 0
           AND scale(${table.unitCost}) <= 6
           AND ${table.unitCost} < 1000000000000000000
+        )
+      `
+    ),
+    check(
+      "stock_movements_write_off_reason_valid",
+      sql`
+        (
+          ${table.movementType} <> 'write_off'
+          AND ${table.reasonCode} IS NULL
+          AND ${table.reasonNote} IS NULL
+        )
+        OR (
+          ${table.movementType} = 'write_off'
+          AND ${table.reasonCode} IS NOT NULL
+          AND ${table.reasonCode} IN (
+            'damaged', 'expired', 'lost', 'stolen', 'internal_use', 'other'
+          )
+          AND (
+            ${table.reasonNote} IS NULL
+            OR (
+              ${table.reasonNote} = btrim(
+                ${table.reasonNote},
+                ${writeOffReasonNoteTrimCharacters}
+              )
+              AND btrim(
+                ${table.reasonNote},
+                ${writeOffReasonNoteTrimCharacters}
+              ) <> ''
+              AND char_length(${table.reasonNote}) <= 500
+            )
+          )
+          AND (
+            ${table.reasonCode} <> 'other'
+            OR ${table.reasonNote} IS NOT NULL
+          )
         )
       `
     ),

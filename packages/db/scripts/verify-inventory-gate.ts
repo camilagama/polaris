@@ -10,8 +10,9 @@ import {
 } from "../src/product-repository";
 import {
   getInventoryBalance,
-  recordStockMovement,
   receiveStock,
+  recordStockMovement,
+  writeOffStock,
 } from "../src/inventory-repository";
 import { stockMovements } from "../src/schema/inventory";
 import { productVariants } from "../src/schema/product";
@@ -50,7 +51,7 @@ interface TenantFixture {
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error("Missing PR29 inventory gate configuration.");
+    throw new Error("Missing PR30 inventory gate configuration.");
   }
   return value;
 }
@@ -250,7 +251,7 @@ async function main(): Promise<void> {
   const expectedHostname = requiredEnvironment(
     "POLARIS_INVENTORY_GATE_EXPECTED_HOSTNAME"
   );
-  assert.equal(confirmation, "polaris-pr29-inventory-gate");
+  assert.equal(confirmation, "polaris-pr30-inventory-gate");
 
   const connection = new URL(connectionString);
   assert.equal(connection.protocol, "postgresql:");
@@ -399,9 +400,12 @@ async function main(): Promise<void> {
         });
 
         await assert.rejects(
-          recordStockMovement(transaction, identity, {
-            movementType: "write_off",
-            quantityDelta: -1,
+          writeOffStock(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            occurredOn: "2026-10-09",
+            quantity: 1,
+            reasonCode: "damaged",
             requestId: randomUUID(),
             variantId: emptyVariantId,
           }),
@@ -409,8 +413,8 @@ async function main(): Promise<void> {
         );
         await assert.rejects(
           recordStockMovement(transaction, identity, {
-            movementType: "receipt" as never,
-            quantityDelta: 1,
+            movementType: "write_off" as never,
+            quantityDelta: -1,
             requestId: randomUUID(),
             variantId: emptyVariantId,
           }),
@@ -645,6 +649,82 @@ async function main(): Promise<void> {
       "23514",
       "receipt cost and command metadata check"
     );
+    const writeOffReasonConstraint = await runtime.client.query<{
+      convalidated: boolean;
+    }>(
+      "SELECT convalidated FROM pg_constraint " +
+        "WHERE conrelid = 'public.stock_movements'::regclass " +
+        "AND conname = $1",
+      ["stock_movements_write_off_reason_valid"]
+    );
+    assert.equal(writeOffReasonConstraint.rows.length, 1);
+    assert.equal(writeOffReasonConstraint.rows[0]?.convalidated, false);
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, command_id, command_version, occurred_on) " +
+              "VALUES ($1, $2, $3, 'write_off', -1, $4, 1, $5)",
+            [
+              fixtureA.organizationId,
+              receiptProductId,
+              receiptVariantId,
+              randomUUID(),
+              "2026-10-09",
+            ]
+          )
+      ),
+      "23514",
+      "new write-off requires a structured reason"
+    );
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, command_id, command_version, occurred_on, reason_code, reason_note) " +
+              "VALUES ($1, $2, $3, 'write_off', -1, $4, 1, $5, 'damaged', repeat('x', 501))",
+            [
+              fixtureA.organizationId,
+              receiptProductId,
+              receiptVariantId,
+              randomUUID(),
+              "2026-10-09",
+            ]
+          )
+      ),
+      "23514",
+      "write-off reason note code-point limit"
+    );
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, command_id, command_version, occurred_on, reason_code, reason_note) " +
+              "VALUES ($1, $2, $3, 'write_off', -1, $4, 1, $5, 'damaged', chr(160))",
+            [
+              fixtureA.organizationId,
+              receiptProductId,
+              receiptVariantId,
+              randomUUID(),
+              "2026-10-09",
+            ]
+          )
+      ),
+      "23514",
+      "write-off reason note whitespace normalization"
+    );
     await expectSqlState(
       withRuntimeGucs(
         runtime.client,
@@ -688,18 +768,79 @@ async function main(): Promise<void> {
         });
       }
     );
-    await withTenant(
+    const writeOffInput = {
+      commandId: randomUUID(),
+      commandVersion: 1 as const,
+      occurredOn: "2026-10-09",
+      quantity: 1,
+      reasonCode: "damaged" as const,
+      reasonNote: "gate fixture damage",
+      variantId: historicalVariantId,
+    };
+    const historicalWriteOff = await withTenant(
       runtime.database,
       fixtureA,
       "inventory:adjust",
-      async (transaction, identity) => {
-        await recordStockMovement(transaction, identity, {
-          movementType: "write_off",
-          quantityDelta: -2,
+      (transaction, identity) =>
+        writeOffStock(transaction, identity, {
+          ...writeOffInput,
           requestId: randomUUID(),
-          variantId: historicalVariantId,
-        });
-      }
+        })
+    );
+    assert.equal(historicalWriteOff.replayed, false);
+    assert.equal(historicalWriteOff.movement.reasonCode, "damaged");
+    assert.equal(historicalWriteOff.movement.reasonNote, "gate fixture damage");
+    assert.equal(historicalWriteOff.movement.unitCost, "10.000000");
+    assert.equal(historicalWriteOff.balance.movingAverageCost, "10.000000");
+    assert.equal(historicalWriteOff.balance.quantity, 1);
+
+    const replayedWriteOff = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        writeOffStock(transaction, identity, {
+          ...writeOffInput,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(replayedWriteOff.replayed, true);
+    assert.equal(replayedWriteOff.movement.id, historicalWriteOff.movement.id);
+    assert.equal(replayedWriteOff.balance.quantity, 1);
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          writeOffStock(transaction, identity, {
+            ...writeOffInput,
+            reasonNote: "different payload",
+            requestId: randomUUID(),
+          })
+      ),
+      StockCommandConflictError
+    );
+
+    const finalHistoricalWriteOff = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        writeOffStock(transaction, identity, {
+          ...writeOffInput,
+          commandId: randomUUID(),
+          quantity: 1,
+          reasonCode: "expired",
+          reasonNote: null,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(finalHistoricalWriteOff.movement.reasonCode, "expired");
+    assert.equal(finalHistoricalWriteOff.balance.quantity, 0);
+    assert.equal(
+      finalHistoricalWriteOff.balance.movingAverageCost,
+      "10.000000"
     );
     const historicalBalance = await withTenant(
       runtime.database,
@@ -725,6 +866,47 @@ async function main(): Promise<void> {
       ),
       ProductDefaultVariantStockHistoryConflictError
     );
+
+    const unknownCostProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "write-off-unknown-cost"
+    );
+    const unknownCostVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      unknownCostProductId
+    );
+    await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        recordStockMovement(transaction, identity, {
+          movementType: "inventory_count",
+          quantityDelta: 2,
+          requestId: randomUUID(),
+          variantId: unknownCostVariantId,
+        })
+    );
+    const unknownCostWriteOff = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        writeOffStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 1,
+          reasonCode: "lost",
+          requestId: randomUUID(),
+          variantId: unknownCostVariantId,
+        })
+    );
+    assert.equal(unknownCostWriteOff.balance.quantity, 1);
+    assert.equal(unknownCostWriteOff.balance.movingAverageCost, null);
+    assert.equal(unknownCostWriteOff.movement.unitCost, null);
 
     const concurrentProductId = await createTestProduct(
       runtime.database,
@@ -781,9 +963,13 @@ async function main(): Promise<void> {
             requestedOrganizationId: fixtureA.organizationId,
           },
           (transaction, identity) =>
-            recordStockMovement(transaction, identity, {
-              movementType: "write_off",
-              quantityDelta: -6,
+            writeOffStock(transaction, identity, {
+              commandId: randomUUID(),
+              commandVersion: 1,
+              occurredOn: "2026-10-09",
+              quantity: 6,
+              reasonCode: "damaged",
+              reasonNote: "concurrent gate write-off",
               requestId: randomUUID(),
               variantId: concurrentVariantId,
             })
@@ -971,7 +1157,7 @@ async function main(): Promise<void> {
       .filter((result) => result.status === "rejected")
       .map((result) => result.reason);
     if (closeErrors.length > 0) {
-      console.error("Could not close every PR29 inventory gate connection.");
+      console.error("Could not close every PR30 inventory gate connection.");
       process.exitCode = 1;
     }
     if (runtimeRoleMembershipGrantAttempted && adminRoleName) {
@@ -1002,6 +1188,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : "unknown error";
-  console.error("PR29 inventory gate failed:", message);
+  console.error("PR30 inventory gate failed:", message);
   process.exitCode = 1;
 });

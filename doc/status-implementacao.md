@@ -343,4 +343,19 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | CI remoto | Concluído | GitHub Actions run #70 passou 6/6 no commit `d3113cc`: build, Knip, lint/boundaries, typecheck, 135 unit tests e offline persistence browser gate. |
 | Revisão do usuário | Pendente | PR #28 segue em draft e aguarda revisão; nenhum merge será feito sem autorização. |
 
+### PR30 — Write-off stock (implementação e validação local concluídas; gate Neon pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Worktree e baseline | Concluídos | Worktree isolado `D:\2 - Dev\2 - Worktree\pr30-write-off\polaris`, branch `codex/pr30-write-off-stock` baseada no commit `5ed1f5d` do PR #28; dependências instaladas do lockfile. O CI de base passou 6/6. |
+| Motivo estruturado | Concluído | Usuário confirmou a lista fechada `damaged`, `expired`, `lost`, `stolen`, `internal_use`, `other`, com nota obrigatória para `other`. |
+| Data de ocorrência | Concluída | Usuário confirmou `occurredOn` obrigatório como data de calendário da organização, seguindo `receiveStock`. |
+| Valoração da baixa | Proposta para revisão | Implementação proposta preserva a média móvel, captura o snapshot unitário quando conhecido, permite baixar saldo sem custo conhecido com snapshot nulo e não cria lançamento de despesa. Decisão está em ADR 0010. |
+| Implementação | Concluída | `writeOffStock` nomeado grava ledger, saldo, audit e metadados na transação tenant-scoped; writer genérico rejeita write-offs. Contrato RPC, validação/versionamento, idempotência, motivo estruturado, snapshot de custo e compatibilidade append-only estão cobertos. Migration 0021 adiciona motivo/nota e constraint `NOT VALID`, preservando baixas históricas sem metadados. |
+| Revisão independente | Concluída | Sem achados restantes após fechar limite de nota em 500 pontos de código, equivalência do trimming Unicode entre JS e PostgreSQL e status proposto da valoração no ADR. |
+| Verificação local | Concluída | `bun run db:generate` não encontrou drift; `bun run check` passou com 144 testes; `bun run build` passou nos oito workspaces. O build foi repetido isoladamente após uma corrida transitória com a fixture temporária de boundaries do check. |
+| Gate Neon PostgreSQL 18 | Pendente | Aguardando execução do helper de uso único contra `pr28-inventory-gate`, branch descartável confirmada no Console; migrations e gate ainda não foram aplicados/executados nesta etapa. |
+| Push e PR draft | Pendentes | A publicar depois do gate remoto; alvo é draft empilhado sobre PR #28. Não fazer merge sem autorização. |
+| Revisão do usuário | Pendente | Revisar a proposta de valoração em ADR 0010 e o PR draft; decisão sobre custo permanece proposta, não aprovada. |
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

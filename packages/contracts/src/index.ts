@@ -1,5 +1,9 @@
 import type { ContractRouterClient } from "@orpc/contract";
 import { oc } from "@orpc/contract";
+import {
+  MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS,
+  WRITE_OFF_REASON_CODES,
+} from "@polaris/domain/inventory/write-off-stock";
 import { z } from "zod";
 
 export function categoryNameCodePointLength(name: string): number {
@@ -86,6 +90,13 @@ export type ProductVariantConfigurationReadModel = z.infer<
 >;
 
 const normalizedBrlCost = z.string().regex(/^\d{1,18}\.\d{6}$/);
+const writeOffReasonNote = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((note) => [...note].length <= MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS, {
+    message: "invalid_write_off_reason_note",
+  });
 
 const inventoryBalance = z.object({
   movingAverageCost: normalizedBrlCost.nullable(),
@@ -109,9 +120,29 @@ const stockReceiptMovement = z.object({
   variantId: z.string().uuid(),
 });
 
+const stockWriteOffMovement = z.object({
+  commandId: z.string().uuid(),
+  commandIndex: z.number().int().nonnegative(),
+  commandVersion: z.number().int().positive(),
+  createdAt: z.string(),
+  id: z.string().uuid(),
+  movementType: z.literal("write_off"),
+  occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  organizationId: z.string().trim().min(1),
+  productId: z.string().uuid(),
+  quantityDelta: z.number().int().negative().min(-2_147_483_647),
+  reasonCode: z.enum(WRITE_OFF_REASON_CODES),
+  reasonNote: writeOffReasonNote.nullable(),
+  unitCost: normalizedBrlCost.nullable(),
+  variantId: z.string().uuid(),
+});
+
 export type InventoryBalanceReadModel = z.infer<typeof inventoryBalance>;
 export type StockReceiptMovementReadModel = z.infer<
   typeof stockReceiptMovement
+>;
+export type StockWriteOffMovementReadModel = z.infer<
+  typeof stockWriteOffMovement
 >;
 
 const organization = z.object({
@@ -252,6 +283,36 @@ export const polarisContract = {
         z.object({
           balance: inventoryBalance,
           movement: stockReceiptMovement,
+          replayed: z.boolean(),
+        })
+      ),
+    writeOffStock: oc
+      .input(
+        z
+          .object({
+            commandId: z.string().uuid(),
+            commandVersion: z.literal(1),
+            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            organizationId: z.string().trim().min(1),
+            quantity: z.number().int().positive().max(2_147_483_647),
+            reasonCode: z.enum(WRITE_OFF_REASON_CODES),
+            reasonNote: writeOffReasonNote.nullable().optional(),
+            variantId: z.string().uuid(),
+          })
+          .superRefine((input, ctx) => {
+            if (input.reasonCode === "other" && !input.reasonNote) {
+              ctx.addIssue({
+                code: "custom",
+                message: "write_off_reason_note_required",
+                path: ["reasonNote"],
+              });
+            }
+          })
+      )
+      .output(
+        z.object({
+          balance: inventoryBalance,
+          movement: stockWriteOffMovement,
           replayed: z.boolean(),
         })
       ),

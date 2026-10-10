@@ -39,6 +39,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Movimento de estoque:** registro de entrada, baixa, inventário, venda, devolução ou outra mudança de estoque.
 
+**Motivo da baixa:** classificação que explica por que uma quantidade deixou de estar disponível para venda.
+
 **Categoria arquivada:** categoria preservada, mas fora das opções ativas do catálogo; pode ser restaurada.
 
 **Categoria removida:** categoria preservada como tombstone para manter histórico e leitura offline; não pode ser restaurada nem apagada fisicamente pela operação normal.
