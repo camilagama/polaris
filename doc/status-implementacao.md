@@ -427,7 +427,8 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Gate real Cloudflare Images/R2 | Aguardando autenticação | `cf auth whoami --profile junior-pessoal` retornou `authenticated: false`. O runbook `docs/runbooks/cli-profile-policy.md` exige parar se a identidade `contato.juniordiniz@gmail.com` não puder ser confirmada; nenhum recurso Cloudflare foi consultado ou alterado após essa resposta. O gate de crop, orientação EXIF, WebP/metadata e R2 continua pendente. |
 | Safari/iPhone | Adiado até haver preview | Conversão HEIC e crop ainda precisam de validação manual no iPhone 12/iOS 26.6.2. O preview temporário depende de autenticação Cloudflare e da existência do bucket remoto `polaris-media`, que ainda não foi verificada. |
 | Revisão independente | Concluída | Duas revisões estáticas corrigiram o gesto sem arraste, validação de variante pós-R2, cobertura cross-tenant de `variant_media` e compensação para rejeições determinísticas após storage. A reconciliação de falhas ambíguas permanece agendada para PR35. |
-| Push, PR draft e CI remoto | Pendente | `gh auth status` neste clone informa token inválido. A autenticação GitHub precisa ser renovada para publicar a branch e abrir o draft. Nenhum merge será feito. |
+| Push da branch | Concluído | `codex/pr34-media-upload` publicada em `origin` no commit `bb5db47`, sobre `codex/pr33-media-schema`. |
+| Draft PR e CI remoto | Aguardando autenticação GitHub | `gh auth status --active --hostname github.com` neste clone informa token inválido. O draft e CI dependem de renovar a autenticação da conta `juniordinizm`; nenhum merge será feito. |
 | Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
