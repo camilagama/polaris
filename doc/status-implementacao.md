@@ -447,7 +447,8 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Observação do preview | Registrada | Deploy comum retornou HTTP 1042 quando a rota `workers.dev` não estava ativa; o Preview temporário serviu os endpoints autenticados do gate. A URL raiz `/health` do preview mínimo serviu a página estática 404; `/gate?stage=image`, `r2`, `database` e o fluxo completo responderam 200. |
 | Verificação local final | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, import boundaries, Knip e 203 testes em 31 arquivos. `bun run build` passou nos oito workspaces; `bun run --filter @polaris/db db:generate` confirmou que não há drift. |
 | Revisão independente | Concluída sem achados | Revisão estática do diff `87cbc27..1f7262a`; nenhum achado acionável no escopo de derivados privados, RLS, grants, cleanup concorrente, idempotência, cache e configuração. |
-| Push, draft PR e CI remoto | Pendente | Commit local `1f7262a` pronto para publicação na branch `codex/pr35-media-derivatives`, com PR draft empilhado sobre `codex/pr34-media-upload`. Nenhum merge nem deploy de produção será feito. |
+| Push e PR draft | Concluídos | Branch `codex/pr35-media-derivatives` publicada; [PR #34](https://github.com/camilagama/polaris/pull/34) aberto em draft sobre `codex/pr34-media-upload` (PR #33). Nenhum merge nem deploy de produção foi feito. |
+| CI remoto | Concluído | GitHub Actions run `38094938994` passou 6/6 no commit `2332291`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
 | Revisão do usuário | Pendente | Revisar o diff, ADR 0014, migration 0026 e evidências dos gates antes de qualquer merge. |
 
 
