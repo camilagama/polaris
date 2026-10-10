@@ -34,6 +34,7 @@ import type {
   TenantRequestIdentity,
   TenantRequestTransaction,
 } from "./tenant-transaction";
+import { ProductDeletedError } from "@polaris/domain/catalog/product";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { productVariants, products } from "./schema/product";
 
@@ -289,7 +290,7 @@ async function lockVariantProduct(
   }
 
   const [product] = await transaction
-    .select({ id: products.id })
+    .select({ deletedAt: products.deletedAt, id: products.id })
     .from(products)
     .where(
       and(
@@ -318,7 +319,11 @@ async function lockVariantProduct(
     throw new InventoryVariantNotFoundError();
   }
 
-  return { productId: product.id, variantId: variant.id };
+  return {
+    deletedAt: product.deletedAt,
+    productId: product.id,
+    variantId: variant.id,
+  };
 }
 
 async function insertStockMovement(
@@ -554,6 +559,9 @@ async function applyStockMovement(
   );
   if (existingCommand) {
     return existingCommand;
+  }
+  if (variant.deletedAt) {
+    throw new ProductDeletedError();
   }
 
   const [balance] = await transaction

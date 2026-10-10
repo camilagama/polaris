@@ -1,6 +1,6 @@
-export type ProductLifecycle = "active" | "archived";
+export type ProductLifecycle = "active" | "archived" | "deleted";
 
-export type ProductLifecycleAction = "archive" | "restore";
+export type ProductLifecycleAction = "archive" | "delete" | "restore";
 
 export const PRODUCT_VARIANT_OPTION_NAMES = ["model", "color", "size"] as const;
 export const MAX_PRODUCT_VARIANTS = 50;
@@ -97,6 +97,38 @@ export class ProductNotFoundError extends Error {
     super("product_not_found");
     this.name = "ProductNotFoundError";
   }
+}
+
+export class ProductDeletedError extends Error {
+  readonly code = "product_deleted";
+
+  constructor() {
+    super("product_deleted");
+    this.name = "ProductDeletedError";
+  }
+}
+
+export class ProductStockNotEmptyError extends Error {
+  readonly code = "product_stock_not_empty";
+
+  constructor(options?: ErrorOptions) {
+    super("product_stock_not_empty", options);
+    this.name = "ProductStockNotEmptyError";
+  }
+}
+
+export class ProductLifecycleError extends Error {
+  readonly code = "product_lifecycle_conflict";
+
+  constructor(action: ProductLifecycleAction, lifecycle: ProductLifecycle) {
+    super("product_lifecycle_conflict");
+    this.action = action;
+    this.lifecycle = lifecycle;
+    this.name = "ProductLifecycleError";
+  }
+
+  readonly action: ProductLifecycleAction;
+  readonly lifecycle: ProductLifecycle;
 }
 
 export class ProductVersionConflictError extends Error {
@@ -239,8 +271,12 @@ export function normalizeProductVariantSku(
 }
 
 export function deriveProductLifecycle(
-  archivedAt: Date | null
+  archivedAt: Date | null,
+  deletedAt: Date | null
 ): ProductLifecycle {
+  if (deletedAt !== null) {
+    return "deleted";
+  }
   return archivedAt === null ? "active" : "archived";
 }
 
@@ -248,13 +284,24 @@ export function transitionProductLifecycle(
   current: ProductLifecycle,
   action: ProductLifecycleAction
 ): ProductLifecycleTransition {
-  if (action === "archive") {
-    return current === "archived"
-      ? { changed: false, lifecycle: current }
-      : { changed: true, lifecycle: "archived" };
+  if (current === "deleted") {
+    if (action === "delete") {
+      return { changed: false, lifecycle: current };
+    }
+    throw new ProductLifecycleError(action, current);
   }
 
-  return current === "active"
-    ? { changed: false, lifecycle: current }
-    : { changed: true, lifecycle: "active" };
+  if (action === "delete") {
+    return { changed: true, lifecycle: "deleted" };
+  }
+
+  if (action === "archive") {
+    return current === "active"
+      ? { changed: true, lifecycle: "archived" }
+      : { changed: false, lifecycle: current };
+  }
+
+  return current === "archived"
+    ? { changed: true, lifecycle: "active" }
+    : { changed: false, lifecycle: current };
 }

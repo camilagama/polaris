@@ -79,6 +79,7 @@ export const productOptions = pgTable(
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
             AND product_scope.variants_configured_at IS NULL
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),
@@ -158,6 +159,7 @@ export const productOptionValues = pgTable(
             AND option_scope.organization_id = ${table.organizationId}
             AND option_scope.product_id = ${table.productId}
             AND product_scope.variants_configured_at IS NULL
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),
@@ -244,6 +246,7 @@ export const variantOptionValues = pgTable(
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
             AND product_scope.variants_configured_at IS NULL
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),

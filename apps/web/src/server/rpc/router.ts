@@ -16,6 +16,7 @@ import {
   archiveProduct,
   configureProductVariants,
   createProduct,
+  deleteProduct,
   getProductVariants,
   listProducts,
   restoreProduct,
@@ -41,8 +42,11 @@ import {
 } from "@polaris/domain/catalog/category";
 import {
   ProductCategoryUnavailableError,
+  ProductDeletedError,
   ProductDefaultVariantSkuConflictError,
+  ProductLifecycleError,
   ProductNameError,
+  ProductStockNotEmptyError,
   ProductNotFoundError,
   ProductVariantConfigurationError,
   ProductVariantNotFoundError,
@@ -100,6 +104,11 @@ export interface PolarisRpcContext {
   request: Request;
   requestId: string;
 }
+interface ProductLifecycleInput {
+  expectedVersion: number;
+  id: string;
+  organizationId: string;
+}
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -111,6 +120,7 @@ interface RpcRouterDependencies {
   createOnboardingDatabase: typeof createDatabase;
   deleteCategory: typeof deleteCategory;
   archiveProduct: typeof archiveProduct;
+  deleteProduct: typeof deleteProduct;
   configureProductVariants: typeof configureProductVariants;
   createProduct: typeof createProduct;
   getProductVariants: typeof getProductVariants;
@@ -164,6 +174,7 @@ function productReadModel(product: {
   archivedAt: Date | null;
   categoryId: string | null;
   createdAt: Date;
+  deletedAt: Date | null;
   description: string | null;
   id: string;
   name: string;
@@ -175,11 +186,12 @@ function productReadModel(product: {
     archivedAt: product.archivedAt?.toISOString() ?? null,
     categoryId: product.categoryId,
     createdAt: product.createdAt.toISOString(),
+    deletedAt: product.deletedAt?.toISOString() ?? null,
     description: product.description,
     id: product.id,
     name: product.name,
     organizationId: product.organizationId,
-    status: deriveProductLifecycle(product.archivedAt),
+    status: deriveProductLifecycle(product.archivedAt, product.deletedAt),
     updatedAt: product.updatedAt.toISOString(),
     version: product.version,
   };
@@ -290,6 +302,9 @@ function toRpcError(error: unknown): never {
     error instanceof CategoryNameConflictError ||
     error instanceof CategoryLifecycleError ||
     error instanceof ProductCategoryUnavailableError ||
+    error instanceof ProductDeletedError ||
+    error instanceof ProductLifecycleError ||
+    error instanceof ProductStockNotEmptyError ||
     error instanceof ProductDefaultVariantSkuConflictError ||
     error instanceof ProductVariantSkuConflictError ||
     error instanceof ProductVariantsAlreadyConfiguredError ||
@@ -322,6 +337,34 @@ function toRpcError(error: unknown): never {
 
   throw error;
 }
+async function productLifecycleCommand(
+  context: PolarisRpcContext,
+  input: ProductLifecycleInput,
+  tenantRequest: RpcRouterDependencies["withTenantRequestContext"],
+  mutateProduct?: RpcRouterDependencies["archiveProduct"]
+) {
+  const command = mutateProduct ?? deleteProduct;
+  try {
+    const result = await tenantRequest({
+      bindings: context.bindings,
+      capability: "product:update",
+      operation: (transaction, identity) =>
+        command(transaction, identity, {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          requestId: requestAuditId(context.requestId),
+        }),
+      request: context.request,
+      requestedOrganizationId: input.organizationId,
+    });
+    return {
+      changed: result.changed,
+      product: productReadModel(result.product),
+    };
+  } catch (error) {
+    return toRpcError(error);
+  }
+}
 export function createRpcRouter(
   overrides: Partial<RpcRouterDependencies> = {}
 ) {
@@ -350,6 +393,7 @@ export function createRpcRouter(
     overrides.setProductVariantSku ?? setProductVariantSku;
   const updateTenantProduct = overrides.updateProduct ?? updateProduct;
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
+
   const restoreTenantProduct = overrides.restoreProduct ?? restoreProduct;
   const receiveTenantStock = overrides.receiveStock ?? receiveStock;
   const writeOffTenantStock = overrides.writeOffStock ?? writeOffStock;
@@ -650,55 +694,34 @@ export function createRpcRouter(
   );
 
   const archiveProductRecord = implementContract.product.archive.handler(
-    async ({ context, input }) => {
-      try {
-        const result = await tenantRequest({
-          bindings: context.bindings,
-          capability: "product:update",
-          operation: (transaction, identity) =>
-            archiveTenantProduct(transaction, identity, {
-              expectedVersion: input.expectedVersion,
-              id: input.id,
-              requestId: requestAuditId(context.requestId),
-            }),
-          request: context.request,
-          requestedOrganizationId: input.organizationId,
-        });
-        return {
-          changed: result.changed,
-          product: productReadModel(result.product),
-        };
-      } catch (error) {
-        return toRpcError(error);
-      }
-    }
+    ({ context, input }) =>
+      productLifecycleCommand(
+        context,
+        input,
+        tenantRequest,
+        archiveTenantProduct
+      )
+  );
+
+  const deleteProductRecord = implementContract.product.delete.handler(
+    ({ context, input }) =>
+      productLifecycleCommand(
+        context,
+        input,
+        tenantRequest,
+        overrides.deleteProduct
+      )
   );
 
   const restoreProductRecord = implementContract.product.restore.handler(
-    async ({ context, input }) => {
-      try {
-        const result = await tenantRequest({
-          bindings: context.bindings,
-          capability: "product:update",
-          operation: (transaction, identity) =>
-            restoreTenantProduct(transaction, identity, {
-              expectedVersion: input.expectedVersion,
-              id: input.id,
-              requestId: requestAuditId(context.requestId),
-            }),
-          request: context.request,
-          requestedOrganizationId: input.organizationId,
-        });
-        return {
-          changed: result.changed,
-          product: productReadModel(result.product),
-        };
-      } catch (error) {
-        return toRpcError(error);
-      }
-    }
+    ({ context, input }) =>
+      productLifecycleCommand(
+        context,
+        input,
+        tenantRequest,
+        restoreTenantProduct
+      )
   );
-
   const getProductVariantsRecord =
     implementContract.product.getVariants.handler(
       async ({ context, input }) => {
@@ -892,6 +915,7 @@ export function createRpcRouter(
       archive: archiveProductRecord,
       configureVariants: configureProductVariantsRecord,
       create: createProductRecord,
+      delete: deleteProductRecord,
       getVariants: getProductVariantsRecord,
       list: listProduct,
       restore: restoreProductRecord,

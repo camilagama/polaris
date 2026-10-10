@@ -37,11 +37,12 @@ const product = z.object({
   archivedAt: z.string().nullable(),
   categoryId: z.string().uuid().nullable(),
   createdAt: z.string(),
+  deletedAt: z.string().nullable(),
   description: z.string().nullable(),
   id: z.string().uuid(),
   name: z.string().min(1),
   organizationId: z.string().min(1),
-  status: z.enum(["active", "archived"]),
+  status: z.enum(["active", "archived", "deleted"]),
   updatedAt: z.string(),
   version: z.number().int().positive(),
 });
@@ -190,7 +191,9 @@ export const polarisContract = {
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
-          status: z.enum(["active", "archived", "all"]).default("active"),
+          status: z
+            .enum(["active", "archived", "deleted", "all"])
+            .default("active"),
         })
       )
       .output(z.object({ products: z.array(product) })),
@@ -207,6 +210,15 @@ export const polarisContract = {
       )
       .output(z.object({ changed: z.boolean(), product })),
     archive: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), product })),
+    delete: oc
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),

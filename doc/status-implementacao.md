@@ -375,7 +375,23 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Gate Neon PostgreSQL 18 | Pendente | Migration 0022 ainda não foi aplicada. A URL de conexão anterior não foi reutilizada; para provar migration, RLS, idempotência e concorrência é necessária uma branch descartável acessível. O caminho pelo console Neon não ficou disponível nesta sessão. |
 | UI de contagem | Adiada | O PR31 no plano define o command e os dados, mas não especifica fluxo/tela de contagem; não inventar interação visual sem critério de aceite. |
 | Push e PR draft | Concluídos | Branch `codex/pr31-inventory-count` publicada e [PR #30](https://github.com/camilagama/polaris/pull/30) aberto em draft contra `main`. Nenhum merge foi feito. |
-| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `43c0a61`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. O PR está limpo e mergeable, mas permanece draft. |
+| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `95dbc20`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. O PR está limpo e mergeable, mas permanece draft. |
 | Revisão do usuário | Pendente | Revisar o PR #30 e ADR 0011, especialmente a proposta de `valuationUnitCost` opcional. Nenhum merge será feito sem autorização. |
 
+### PR32 — Archive/delete catalog (implementação e verificação local concluídas; gate Neon, revisão e publicação pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base isolada | Concluída | Branch codex/pr32-archive-catalog criada sobre o head 95dbc20 do PR31; branch principal e PR31 permaneceram intactos. |
+| Regra de tombstone | Confirmada | Usuário aprovou tombstone terminal com saldo agregado zero, mesmo havendo movimentos históricos; preservar variantes, UUIDs, SKUs, ledger, vínculos e auditoria; saldo positivo bloqueia. |
+| Archive/restore | Reutilizados | Já implementados no PR25. PR32 não os duplica; adiciona somente o comando terminal de remoção lógica. |
+| Domínio e RPC | Implementados localmente | product.delete exige expectedVersion, atualiza lifecycle e auditoria na transação; repetição é idempotente. Produto tombstoned não admite restore, edição, SKU, configuração de variante ou novos movimentos; leitura histórica e replay permanecem válidos. |
+| Migration 0023 | Gerada localmente | deleted_at, policies RLS e triggers para imutabilidade, saldo positivo e bloqueio de novos writes. Migration ainda não foi aplicada em Neon. bun run db:generate não encontrou drift após a geração. |
+| Gate PostgreSQL | Implementado localmente | verify-inventory-gate.ts agora cobre tombstone com histórico e saldo zero, bloqueio de saldo positivo, proteção SQL direta, replay idempotente e corrida entre recebimento e tombstone. |
+| Verificação local | Concluída | bun run check passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 157 testes em 25 arquivos. O check precisou rodar fora do sandbox devido a paths temporários inacessíveis do Vitest no sandbox do Windows. |
+| Build local | Concluído | bun run build passou nos oito workspaces. |
+| Gate Neon PostgreSQL 18 | Pendente | É necessário aplicar a migration e executar o gate em branch descartável. A URL anterior não será reutilizada; o console Neon não ficou acessível nesta sessão. |
+| UI de exclusão | Adiada | O plano não define affordance nem confirmação para uma ação terminal; archive/restore continuam como já implementados. |
+| Revisão independente | Pendente | Revisar migration, locks compartilhados, triggers/RLS, contrato RPC e testes do gate. |
+| Push, PR draft e CI remoto | Pendentes | Depois da revisão, publicar branch e abrir draft empilhado sobre codex/pr31-inventory-count. Nenhum merge será feito sem autorização. |
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

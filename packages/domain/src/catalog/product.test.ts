@@ -3,6 +3,7 @@ import {
   deriveProductLifecycle,
   normalizeProductDescription,
   normalizeProductName,
+  ProductLifecycleError,
   ProductNameError,
   transitionProductLifecycle,
 } from "./product";
@@ -21,9 +22,13 @@ describe("product rules", () => {
     expect(normalizeProductDescription(null)).toBeNull();
   });
 
-  it("derives and changes the reversible lifecycle", () => {
-    expect(deriveProductLifecycle(null)).toBe("active");
-    expect(deriveProductLifecycle(new Date())).toBe("archived");
+  it("derives active, archived, and terminal deleted lifecycle states", () => {
+    expect(deriveProductLifecycle(null, null)).toBe("active");
+    expect(deriveProductLifecycle(new Date(), null)).toBe("archived");
+    expect(deriveProductLifecycle(new Date(), new Date())).toBe("deleted");
+  });
+
+  it("supports reversible archive and restore before terminal deletion", () => {
     expect(transitionProductLifecycle("active", "archive")).toEqual({
       changed: true,
       lifecycle: "archived",
@@ -40,5 +45,23 @@ describe("product rules", () => {
       changed: false,
       lifecycle: "active",
     });
+    expect(transitionProductLifecycle("active", "delete")).toEqual({
+      changed: true,
+      lifecycle: "deleted",
+    });
+    expect(transitionProductLifecycle("archived", "delete")).toEqual({
+      changed: true,
+      lifecycle: "deleted",
+    });
+    expect(transitionProductLifecycle("deleted", "delete")).toEqual({
+      changed: false,
+      lifecycle: "deleted",
+    });
+    expect(() => transitionProductLifecycle("deleted", "restore")).toThrow(
+      ProductLifecycleError
+    );
+    expect(() => transitionProductLifecycle("deleted", "archive")).toThrow(
+      ProductLifecycleError
+    );
   });
 });

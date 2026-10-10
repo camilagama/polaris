@@ -7,6 +7,10 @@ import { createDatabase } from "../src/client";
 import {
   configureProductVariants,
   createProduct,
+  deleteProduct,
+  listProducts,
+  restoreProduct,
+  setProductVariantSku,
 } from "../src/product-repository";
 import {
   getInventoryBalance,
@@ -24,7 +28,12 @@ import {
   StockCommandConflictError,
 } from "@polaris/domain/inventory/inventory";
 import { InvalidInventoryCountInputError } from "@polaris/domain/inventory/inventory-count";
-import { ProductDefaultVariantStockHistoryConflictError } from "@polaris/domain/catalog/product";
+import {
+  ProductDefaultVariantStockHistoryConflictError,
+  ProductDeletedError,
+  ProductLifecycleError,
+  ProductStockNotEmptyError,
+} from "@polaris/domain/catalog/product";
 import {
   withAuthorizedTenantTransaction,
   type TenantRequestIdentity,
@@ -54,7 +63,7 @@ interface TenantFixture {
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error("Missing PR31 inventory gate configuration.");
+    throw new Error("Missing PR32 product tombstone gate configuration.");
   }
   return value;
 }
@@ -1385,6 +1394,394 @@ async function main(): Promise<void> {
         )
     );
 
+    const tombstoneProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "zero-stock-tombstone"
+    );
+    const tombstoneVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      tombstoneProductId
+    );
+    const tombstoneSku = `PR32-${randomUUID()}`;
+    const skuUpdate = await withTenant(
+      runtime.database,
+      fixtureA,
+      "product:update",
+      (transaction, identity) =>
+        setProductVariantSku(transaction, identity, {
+          expectedVersion: 1,
+          id: tombstoneProductId,
+          requestId: randomUUID(),
+          sku: tombstoneSku,
+          variantId: tombstoneVariantId,
+        })
+    );
+    assert.equal(skuUpdate.product.version, 2);
+
+    const tombstoneReceiptCommandId = randomUUID();
+    const tombstoneReceipt = {
+      commandId: tombstoneReceiptCommandId,
+      commandVersion: 1 as const,
+      occurredOn: "2026-10-09",
+      quantity: 2,
+      unitCost: "10.00",
+      variantId: tombstoneVariantId,
+    };
+    await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          ...tombstoneReceipt,
+          requestId: randomUUID(),
+        })
+    );
+    const tombstoneWriteOff = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        writeOffStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 2,
+          reasonCode: "lost",
+          requestId: randomUUID(),
+          variantId: tombstoneVariantId,
+        })
+    );
+    assert.equal(tombstoneWriteOff.balance.quantity, 0);
+
+    const deletedProduct = await withTenant(
+      runtime.database,
+      fixtureA,
+      "product:update",
+      (transaction, identity) =>
+        deleteProduct(transaction, identity, {
+          expectedVersion: 2,
+          id: tombstoneProductId,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(deletedProduct.changed, true);
+    assert.ok(deletedProduct.product.deletedAt instanceof Date);
+    assert.equal(deletedProduct.product.version, 3);
+    const repeatedDelete = await withTenant(
+      runtime.database,
+      fixtureA,
+      "product:update",
+      (transaction, identity) =>
+        deleteProduct(transaction, identity, {
+          expectedVersion: 2,
+          id: tombstoneProductId,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(repeatedDelete.changed, false);
+
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "product:update",
+        (transaction, identity) =>
+          restoreProduct(transaction, identity, {
+            expectedVersion: 3,
+            id: tombstoneProductId,
+            requestId: randomUUID(),
+          })
+      ),
+      ProductLifecycleError
+    );
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "product:update",
+        (transaction, identity) =>
+          setProductVariantSku(transaction, identity, {
+            expectedVersion: 3,
+            id: tombstoneProductId,
+            requestId: randomUUID(),
+            sku: null,
+            variantId: tombstoneVariantId,
+          })
+      ),
+      ProductDeletedError
+    );
+
+    const activeProductsAfterTombstone = await withTenant(
+      runtime.database,
+      fixtureA,
+      "catalog:read",
+      (transaction, identity) => listProducts(transaction, identity)
+    );
+    const deletedProducts = await withTenant(
+      runtime.database,
+      fixtureA,
+      "catalog:read",
+      (transaction, identity) =>
+        listProducts(transaction, identity, { status: "deleted" })
+    );
+    assert.equal(
+      activeProductsAfterTombstone.some(
+        (product) => product.id === tombstoneProductId
+      ),
+      false
+    );
+    assert.ok(
+      deletedProducts.some((product) => product.id === tombstoneProductId)
+    );
+
+    const tombstoneBalance = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:read",
+      (transaction, identity) =>
+        getInventoryBalance(transaction, identity, tombstoneVariantId)
+    );
+    assert.equal(tombstoneBalance.quantity, 0);
+    const replayAfterTombstone = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          ...tombstoneReceipt,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(replayAfterTombstone.replayed, true);
+    assert.equal(replayAfterTombstone.balance.quantity, 0);
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          receiveStock(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            occurredOn: "2026-10-10",
+            quantity: 1,
+            requestId: randomUUID(),
+            unitCost: "10.00",
+            variantId: tombstoneVariantId,
+          })
+      ),
+      ProductDeletedError
+    );
+
+    const retainedSku = await admin.pool.query<{ sku: string | null }>(
+      "SELECT sku FROM public.product_variants WHERE id = $1",
+      [tombstoneVariantId]
+    );
+    assert.equal(retainedSku.rows[0]?.sku, tombstoneSku);
+    const retainedHistory = await admin.pool.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.stock_movements WHERE organization_id = $1 AND product_id = $2",
+      [fixtureA.organizationId, tombstoneProductId]
+    );
+    assert.equal(retainedHistory.rows[0]?.count, 2);
+
+    await withRuntimeGucs(
+      runtime.client,
+      fixtureA.userId,
+      fixtureA.organizationId,
+      () =>
+        expectSqlState(
+          runtime.client.query(
+            "UPDATE public.inventory_balances SET quantity = 1 WHERE organization_id = $1 AND product_id = $2",
+            [fixtureA.organizationId, tombstoneProductId]
+          ),
+          "23514",
+          "runtime balance update after product tombstone"
+        )
+    );
+    await withRuntimeGucs(
+      runtime.client,
+      fixtureA.userId,
+      fixtureA.organizationId,
+      () =>
+        expectSqlState(
+          runtime.client.query(
+            "INSERT INTO public.stock_movements (organization_id, product_id, variant_id, movement_type, quantity_delta, command_id, command_version, occurred_on, reason_code) VALUES ($1, $2, $3, 'write_off', -1, $4, 1, $5, 'lost')",
+            [
+              fixtureA.organizationId,
+              tombstoneProductId,
+              tombstoneVariantId,
+              randomUUID(),
+              "2026-10-10",
+            ]
+          ),
+          "23514",
+          "runtime movement insert after product tombstone"
+        )
+    );
+    await withRuntimeGucs(
+      runtime.client,
+      fixtureA.userId,
+      fixtureA.organizationId,
+      () =>
+        expectSqlState(
+          runtime.client.query(
+            "UPDATE public.products SET name = $1 WHERE id = $2",
+            ["Renamed tombstone", tombstoneProductId]
+          ),
+          "23514",
+          "runtime update of tombstoned product"
+        )
+    );
+
+    const positiveStockProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "positive-stock-tombstone"
+    );
+    const positiveStockVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      positiveStockProductId
+    );
+    await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 1,
+          requestId: randomUUID(),
+          unitCost: "10.00",
+          variantId: positiveStockVariantId,
+        })
+    );
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "product:update",
+        (transaction, identity) =>
+          deleteProduct(transaction, identity, {
+            expectedVersion: 1,
+            id: positiveStockProductId,
+            requestId: randomUUID(),
+          })
+      ),
+      ProductStockNotEmptyError
+    );
+    await withRuntimeGucs(
+      runtime.client,
+      fixtureA.userId,
+      fixtureA.organizationId,
+      () =>
+        expectSqlState(
+          runtime.client.query(
+            "UPDATE public.products SET deleted_at = now(), version = version + 1, updated_at = now() WHERE id = $1",
+            [positiveStockProductId]
+          ),
+          "23514",
+          "database blocks direct tombstone while stock is positive"
+        )
+    );
+
+    const racingProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "tombstone-race"
+    );
+    const racingVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      racingProductId
+    );
+    const [raceDeleteSession, raceInventorySession] = await Promise.all([
+      createRuntimeSession(connectionString),
+      createRuntimeSession(connectionString),
+    ]);
+    runtimeSessions.push(raceDeleteSession, raceInventorySession);
+    const raceResults = await Promise.allSettled([
+      withAuthorizedTenantTransaction(
+        raceDeleteSession.database,
+        {
+          authenticatedUserId: fixtureA.userId,
+          capability: "product:update",
+          requestedOrganizationId: fixtureA.organizationId,
+        },
+        (transaction, identity) =>
+          deleteProduct(transaction, identity, {
+            expectedVersion: 1,
+            id: racingProductId,
+            requestId: randomUUID(),
+          })
+      ),
+      withAuthorizedTenantTransaction(
+        raceInventorySession.database,
+        {
+          authenticatedUserId: fixtureA.userId,
+          capability: "inventory:adjust",
+          requestedOrganizationId: fixtureA.organizationId,
+        },
+        (transaction, identity) =>
+          receiveStock(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            occurredOn: "2026-10-10",
+            quantity: 1,
+            requestId: randomUUID(),
+            unitCost: "10.00",
+            variantId: racingVariantId,
+          })
+      ),
+    ]);
+    const [deleteResult, receiptResult] = raceResults;
+    assert.equal(
+      [deleteResult, receiptResult].filter(
+        (result) => result.status === "fulfilled"
+      ).length,
+      1
+    );
+    assert.equal(
+      [deleteResult, receiptResult].filter(
+        (result) => result.status === "rejected"
+      ).length,
+      1
+    );
+    const racingProduct = await withTenant(
+      runtime.database,
+      fixtureA,
+      "catalog:read",
+      async (transaction, identity) =>
+        (await listProducts(transaction, identity, { status: "all" })).find(
+          (product) => product.id === racingProductId
+        )
+    );
+    assert.ok(racingProduct);
+    const racingBalance = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:read",
+      (transaction, identity) =>
+        getInventoryBalance(transaction, identity, racingVariantId)
+    );
+    if (racingProduct.deletedAt === null) {
+      assert.equal(racingBalance.quantity, 1);
+      assert.equal(deleteResult.status, "rejected");
+      if (deleteResult.status === "rejected") {
+        assert.ok(deleteResult.reason instanceof ProductStockNotEmptyError);
+      }
+    } else {
+      assert.equal(racingBalance.quantity, 0);
+      assert.equal(receiptResult.status, "rejected");
+      if (receiptResult.status === "rejected") {
+        assert.ok(receiptResult.reason instanceof ProductDeletedError);
+      }
+    }
     const auditCount = await admin.pool.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM public.tenant_audit_event " +
         "WHERE organization_id = $1 AND event_type = 'inventory.movement_recorded'",
@@ -1400,14 +1797,14 @@ async function main(): Promise<void> {
     console.log(
       JSON.stringify(
         {
-          branch: "pr31-inventory-gate",
+          branch: "pr32-product-tombstone-gate",
           database: server.current_database,
           fixtures: "synthetic fixtures retained until branch auto-expiry",
           movementCount: movementCount.rows[0]?.count,
           serverVersion: server.server_version,
           status: "passed",
           tests: [
-            "PostgreSQL 18 and PR28–31 inventory migrations applied",
+            "PostgreSQL 18 and PR28–32 catalog and inventory migrations applied",
             "FORCE RLS and least-privilege grants",
             "absent balance reads as zero",
             "negative stock rejected without ledger writes",
@@ -1439,6 +1836,12 @@ async function main(): Promise<void> {
             "cross-tenant reads and writes denied",
             "runtime cannot update or delete ledger rows",
             "variant with ledger history cannot be hard-deleted",
+            "product tombstones require zero balance but preserve SKU and movement history",
+            "product tombstone is terminal, listed explicitly, and idempotent",
+            "historical command replay remains idempotent after product tombstone",
+            "new inventory and product writes are blocked after tombstone",
+            "database blocks direct tombstone while stock is positive",
+            "concurrent receipt and tombstone serialize to one valid outcome",
             "inventory movement audit is written for each committed movement",
           ],
         },

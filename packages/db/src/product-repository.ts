@@ -1,6 +1,8 @@
 import {
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
+  ProductDeletedError,
+  ProductStockNotEmptyError,
   deriveProductLifecycle,
   normalizeProductDescription,
   normalizeProductName,
@@ -19,7 +21,7 @@ import {
   type ProductVariantConfigurationInput,
   type ProductVariantOptionName,
 } from "@polaris/domain/catalog/product";
-import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import type {
   TenantRequestIdentity,
@@ -27,6 +29,7 @@ import type {
 } from "./tenant-transaction";
 import { categories } from "./schema/category";
 import { productVariants, products } from "./schema/product";
+import { inventoryBalances } from "./schema/inventory";
 import {
   productOptionValues,
   productOptions,
@@ -35,7 +38,7 @@ import {
 import { stockMovements } from "./schema/inventory";
 
 export interface ProductListOptions {
-  status?: "active" | "archived" | "all";
+  status?: "active" | "archived" | "deleted" | "all";
 }
 
 export interface ProductMutationInput {
@@ -68,6 +71,7 @@ export interface SetProductVariantSkuInput extends ProductMutationInput {
 
 const productColumns = {
   archivedAt: products.archivedAt,
+  deletedAt: products.deletedAt,
   categoryId: products.categoryId,
   createdAt: products.createdAt,
   description: products.description,
@@ -160,10 +164,16 @@ export async function listProducts(
   const conditions = [eq(products.organizationId, identity.organizationId)];
   switch (options.status ?? "active") {
     case "active":
-      conditions.push(isNull(products.archivedAt));
+      conditions.push(isNull(products.archivedAt), isNull(products.deletedAt));
       break;
     case "archived":
-      conditions.push(isNotNull(products.archivedAt));
+      conditions.push(
+        isNotNull(products.archivedAt),
+        isNull(products.deletedAt)
+      );
+      break;
+    case "deleted":
+      conditions.push(isNotNull(products.deletedAt));
       break;
     case "all":
       break;
@@ -252,6 +262,9 @@ export async function updateProduct(
   if (!existing) {
     throw new ProductNotFoundError();
   }
+  if (existing.deletedAt) {
+    throw new ProductDeletedError();
+  }
   if (existing.version !== input.expectedVersion) {
     throw new ProductVersionConflictError();
   }
@@ -336,7 +349,7 @@ async function changeProductLifecycle(
   }
 
   const transition = transitionProductLifecycle(
-    deriveProductLifecycle(existing.archivedAt),
+    deriveProductLifecycle(existing.archivedAt, existing.deletedAt),
     action
   );
   if (!transition.changed) {
@@ -346,14 +359,38 @@ async function changeProductLifecycle(
     throw new ProductVersionConflictError();
   }
 
-  const archivedAt =
-    transition.lifecycle === "archived"
-      ? (existing.archivedAt ?? new Date())
-      : null;
+  if (action === "delete") {
+    const [positiveBalance] = await transaction
+      .select({ variantId: inventoryBalances.variantId })
+      .from(inventoryBalances)
+      .where(
+        and(
+          eq(inventoryBalances.organizationId, identity.organizationId),
+          eq(inventoryBalances.productId, input.id),
+          gt(inventoryBalances.quantity, 0)
+        )
+      )
+      .limit(1);
+    if (positiveBalance) {
+      throw new ProductStockNotEmptyError();
+    }
+  }
+
+  let { archivedAt } = existing;
+  if (transition.lifecycle === "archived") {
+    archivedAt ??= new Date();
+  } else if (transition.lifecycle === "active") {
+    archivedAt = null;
+  }
+  const deletedAt =
+    transition.lifecycle === "deleted"
+      ? (existing.deletedAt ?? new Date())
+      : existing.deletedAt;
   const [product] = await transaction
     .update(products)
     .set({
       archivedAt,
+      deletedAt,
       updatedAt: new Date(),
       version: sql`${products.version} + 1`,
     })
@@ -370,10 +407,15 @@ async function changeProductLifecycle(
     throw new ProductVersionConflictError();
   }
 
+  const productAuditEvent = {
+    archive: "product.archived",
+    delete: "product.deleted",
+    restore: "product.restored",
+  }[action];
   await recordTenantAuditEvent(transaction, identity, {
     entityId: product.id,
     entityType: "product",
-    eventType: action === "archive" ? "product.archived" : "product.restored",
+    eventType: productAuditEvent,
     requestId: input.requestId ?? null,
   });
 
@@ -396,6 +438,14 @@ export async function restoreProduct(
   return await changeProductLifecycle(transaction, identity, input, "restore");
 }
 
+export async function deleteProduct(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: ProductMutationInput
+) {
+  return await changeProductLifecycle(transaction, identity, input, "delete");
+}
+
 function productVariantOptionName(value: string): ProductVariantOptionName {
   if (value === "model" || value === "color" || value === "size") {
     return value;
@@ -410,6 +460,7 @@ export async function getProductVariants(
 ) {
   const [product] = await transaction
     .select({
+      deletedAt: products.deletedAt,
       variantsConfiguredAt: products.variantsConfiguredAt,
       version: products.version,
     })
@@ -575,6 +626,9 @@ export async function setProductVariantSku(
   if (!product) {
     throw new ProductNotFoundError();
   }
+  if (product.deletedAt) {
+    throw new ProductDeletedError();
+  }
   if (product.version !== input.expectedVersion) {
     throw new ProductVersionConflictError();
   }
@@ -666,6 +720,7 @@ export async function configureProductVariants(
   const configuration = normalizeProductVariantConfiguration(input);
   const [existing] = await transaction
     .select({
+      deletedAt: products.deletedAt,
       variantsConfiguredAt: products.variantsConfiguredAt,
       version: products.version,
     })
@@ -680,6 +735,9 @@ export async function configureProductVariants(
 
   if (!existing) {
     throw new ProductNotFoundError();
+  }
+  if (existing.deletedAt) {
+    throw new ProductDeletedError();
   }
   if (existing.version !== input.expectedVersion) {
     throw new ProductVersionConflictError();

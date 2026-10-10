@@ -7,6 +7,7 @@ import type {
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
   ProductDefaultVariantSkuConflictError,
+  ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantSkuConflictError,
   ProductVersionConflictError,
@@ -40,6 +41,7 @@ const productRow = {
   archivedAt: null,
   categoryId: null,
   createdAt: new Date("2026-10-08T12:00:00.000Z"),
+  deletedAt: null,
   description: "Lona resistente",
   id: "0199c2d0-0000-7000-8000-000000000001",
   name: "Bolsa",
@@ -62,6 +64,10 @@ function createRpcClient(router = createRpcRouter()) {
     };
     product: {
       archive: (input: unknown) => Promise<{
+        changed: boolean;
+        product: ProductReadModel;
+      }>;
+      delete: (input: unknown) => Promise<{
         changed: boolean;
         product: ProductReadModel;
       }>;
@@ -505,6 +511,76 @@ describe("product RPCs", () => {
         expectedVersion: 1,
         id: productRow.id,
         name: "Bolsa",
+        organizationId: identity.organizationId,
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("tombstones a product with product:update and expectedVersion", async () => {
+    const deleteProduct = vi.fn(
+      async (
+        _transaction: unknown,
+        _authorizedIdentity: typeof identity,
+        input: { expectedVersion: number }
+      ) => ({
+        changed: true,
+        product: {
+          ...productRow,
+          deletedAt: new Date("2026-10-10T12:00:00.000Z"),
+          version: input.expectedVersion + 1,
+        },
+      })
+    );
+    let observedCapability = "";
+    const router = createRpcRouter({
+      deleteProduct,
+      withTenantRequestContext: (input: {
+        capability: string;
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => {
+        observedCapability = input.capability;
+        return tenantContext(input);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    const result = await client.product.delete({
+      expectedVersion: 1,
+      id: productRow.id,
+      organizationId: identity.organizationId,
+    });
+
+    expect(result).toMatchObject({
+      changed: true,
+      product: { status: "deleted", version: 2 },
+    });
+    expect(observedCapability).toBe("product:update");
+    expect(deleteProduct).toHaveBeenCalledWith({}, identity, {
+      expectedVersion: 1,
+      id: productRow.id,
+      requestId: expect.stringMatching(requestIdPattern),
+    });
+  });
+
+  it("maps blocked product tombstones to a conflict", async () => {
+    const router = createRpcRouter({
+      deleteProduct: () => Promise.reject(new ProductStockNotEmptyError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.delete({
+        expectedVersion: 1,
+        id: productRow.id,
         organizationId: identity.organizationId,
       })
     ).rejects.toMatchObject({ code: "CONFLICT" });

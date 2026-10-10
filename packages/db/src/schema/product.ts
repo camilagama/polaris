@@ -39,6 +39,7 @@ export const products = pgTable(
   "products",
   {
     archivedAt: timestamp("archived_at"),
+    deletedAt: timestamp("deleted_at"),
     categoryId: uuid("category_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     description: text("description"),
@@ -168,6 +169,7 @@ export const productVariants = pgTable(
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
             AND product_scope.variants_configured_at IS NULL
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),
@@ -183,6 +185,7 @@ export const productVariants = pgTable(
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
             AND product_scope.variants_configured_at IS NULL
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),
@@ -196,6 +199,7 @@ export const productVariants = pgTable(
           FROM public.products AS product_scope
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
+          AND product_scope.deleted_at IS NULL
         )
       `,
       withCheck: sql`
@@ -205,6 +209,7 @@ export const productVariants = pgTable(
           FROM public.products AS product_scope
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
+          AND product_scope.deleted_at IS NULL
         )
       `,
     }),

@@ -1758,33 +1758,25 @@ Não permitir mutation direta do balance.
 
 # PR 32 — Archive/delete catalog
 
+O lifecycle de produto active/archived, com archive e restore reversíveis, já foi implementado no PR25. Este PR acrescenta o tombstone terminal do produto; não duplica as operações existentes.
 
+### Regras de domínio
 
-Implementar:
+- Produto active ou archived pode transicionar para deleted; repetir delete é idempotente. Tombstone é terminal: archive, restore, edição, SKU, configuração de variante e novos movimentos de estoque são rejeitados depois dele.
+- O tombstone só é permitido quando o saldo agregado atual de todas as variantes é zero. Variante sem linha materializada de saldo conta como zero; saldo positivo em qualquer variante bloqueia a operação.
+- Histórico de movimentos não bloqueia o tombstone quando o saldo é zero. Produto, variantes, UUIDs, SKUs, saldos materializados, movimentos, vínculos de categoria e auditoria permanecem; nenhuma operação normal faz hard-delete. SKUs continuam reservados pela unicidade existente.
+- Leituras do produto removido e do saldo/histórico permanecem disponíveis; listagem normal o omite e status "deleted" o encontra.
+- product.delete exige expectedVersion, bloqueia a linha do produto, atualiza deleted_at e version e grava product.deleted na mesma transação. Repetições não duplicam auditoria.
+- Tombstone e comandos de estoque usam o mesmo lock de produto. Triggers de banco repetem a proteção contra saldo positivo e bloqueiam writes diretos de saldo/movimento depois do tombstone.
+- Categoria tombstone continua bloqueado enquanto qualquer produto a referencia; tombstonar o produto preserva o vínculo e não apaga a referência histórica.
+- A UI de exclusão não está especificada neste PR. A operação é exposta pelo RPC; confirmação e affordance visual ficam adiadas até haver critério de interação.
 
+### Gate e sequência
 
-
-- archive;
-
-- restore;
-
-- tombstone delete.
-
-
-
-Delete só quando domínio permitir.
-
-
-
-Sem hard-delete operacional.
-
-
-
----
-
-
-
-# PR 33 — Media schema
+- Aplicar migration 0023 em branch Neon descartável PostgreSQL 18. Provar tombstone permitido com saldo zero e histórico/SKU preservados; bloqueio com saldo positivo tanto pelo repositório quanto pelo banco; lifecycle terminal, idempotência, auditoria, RLS, ausência de hard-delete e writes recusados após o tombstone.
+- Correr em paralelo recebimento e tombstone na mesma variante: um único resultado deve confirmar; nunca pode existir produto tombstoned com saldo positivo.
+- Provar replay de command de estoque existente depois do tombstone e rejeição de um command novo. A branch Neon de produção permanece intacta.
+- Executar bun run check, bun run build, CI e revisão independente. Publicar PR draft empilhado sobre codex/pr31-inventory-count; não fazer merge nem alterar recursos de produção.# PR 33 — Media schema
 
 
 

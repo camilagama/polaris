@@ -162,6 +162,13 @@
       "when": 1791613715939,
       "tag": "0022_married_dark_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791618553291,
+      "tag": "0023_glorious_the_stranger",
+      "breakpoints": true
     }
   ]
 }
