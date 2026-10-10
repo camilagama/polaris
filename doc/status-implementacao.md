@@ -413,7 +413,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Push, PR draft e CI remoto | Concluídos | Branch `codex/pr33-media-schema` publicada; [PR #32](https://github.com/camilagama/polaris/pull/32) aberto em draft sobre `codex/pr32-archive-catalog` (PR #31). CI passou 6/6 no commit `5e66fba`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar o PR33 draft e ADR 0013 depois da publicação. Nenhum merge será feito sem autorização. |
 
-### PR34 — Upload/crop pipeline (implementação local e gate Neon concluídos; gate Cloudflare aguardando autenticação do perfil)
+### PR34 — Upload/crop pipeline (implementação, gate Neon, publicação e CI concluídos; gate Cloudflare e validação no iPhone pendentes)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -424,11 +424,11 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Gate Neon PostgreSQL 18 | Concluído | `0025` aplicada e gate passou em PostgreSQL `18.6` na branch descartável `pr34-media-upload-gate`, projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Verificou RLS/grants, inserts tenant-scoped, replay/conflito, mesma imagem associada a duas variantes do produto, bloqueio de associação do asset a outro produto, auditoria, constraints, asset órfão, cross-tenant em `media_assets`, `product_media` e `variant_media`, tombstone e imutabilidade. A branch expira em `2026-10-11 13:00 BRT`; fixtures sintéticas ficam até a expiração. URLs não foram registradas. |
 | Verificação local | Concluída | `bun run check`: lint, formatação, tipos, boundaries, Knip e 189 testes em 30 arquivos passaram. |
 | Build local | Concluído | `bun run build` passou nos oito workspaces. |
-| Gate real Cloudflare Images/R2 | Aguardando autenticação | `cf auth whoami --profile junior-pessoal` retornou `authenticated: false`. O runbook `docs/runbooks/cli-profile-policy.md` exige parar se a identidade `contato.juniordiniz@gmail.com` não puder ser confirmada; nenhum recurso Cloudflare foi consultado ou alterado após essa resposta. O gate de crop, orientação EXIF, WebP/metadata e R2 continua pendente. |
-| Safari/iPhone | Adiado até haver preview | Conversão HEIC e crop ainda precisam de validação manual no iPhone 12/iOS 26.6.2. O preview temporário depende de autenticação Cloudflare e da existência do bucket remoto `polaris-media`, que ainda não foi verificada. |
+| Gate real Cloudflare Images/R2 | Pendente por serviço indisponível | A saída enviada pelo responsável confirma o perfil Cloudflare `junior-pessoal` na conta `contato.juniordiniz@gmail.com`. Com esse perfil, `cf r2 buckets list` respondeu erro 10042: R2 precisa ser habilitado pelo Dashboard. A tentativa isolada com `cf dev --remote` também terminou em `spawn EFTYPE` no Windows; nenhum Worker ou bucket foi criado/publicado. Crop, orientação EXIF, resposta WebP/metadata e persistência privada em R2 ainda precisam do gate real. |
+| Safari/iPhone | Adiado até haver preview | A conversão HEIC, orientação EXIF, recorte e envio ainda precisam ser verificados manualmente no iPhone 12/iOS 26.6.2. O preview depende de desbloquear o gate Cloudflare/R2; o teste anterior de persistência offline não cobre este fluxo de mídia. |
 | Revisão independente | Concluída | Duas revisões estáticas corrigiram o gesto sem arraste, validação de variante pós-R2, cobertura cross-tenant de `variant_media` e compensação para rejeições determinísticas após storage. A reconciliação de falhas ambíguas permanece agendada para PR35. |
-| Push da branch | Concluído | `codex/pr34-media-upload` publicada em `origin` no commit `bb5db47`, sobre `codex/pr33-media-schema`. |
-| Draft PR e CI remoto | Aguardando autenticação GitHub | `gh auth status --active --hostname github.com` neste clone informa token inválido. O draft e CI dependem de renovar a autenticação da conta `juniordinizm`; nenhum merge será feito. |
+| Push da branch | Concluído | `codex/pr34-media-upload` publicada em `origin` até o commit `926ad9a`, sobre `codex/pr33-media-schema`. |
+| Draft PR e CI remoto | Concluídos | [PR #33](https://github.com/camilagama/polaris/pull/33) aberto em draft sobre `codex/pr33-media-schema`. O workflow `38049033738` passou nos seis checks: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
