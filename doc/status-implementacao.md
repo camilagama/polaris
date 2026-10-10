@@ -374,7 +374,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Perfis de CLI | Concluídos | A regra de uso exclusivo do perfil Cloudflare/Neon `junior-pessoal` ligado a `contato.juniordiniz@gmail.com` foi registrada em `AGENTS.md` e `docs/runbooks/cli-profile-policy.md`; Neon plugin conectado não será usado. |
 | Gate Neon PostgreSQL 18 | Pendente | A migration ainda não foi aplicada. A política de segurança do navegador recusou abrir o console Neon; aguarda URL de uma branch descartável nova fornecida pelo usuário ou execução manual. |
 | UI de contagem | Adiada | O PR31 no plano define o command e os dados, mas não especifica fluxo/tela de contagem; não inventar interação visual sem critério de aceite. |
-| Push, draft PR e CI remoto | Pendentes | Serão atualizados após o gate PostgreSQL e revisão do código. Nenhum merge será feito sem autorização. |
+| Push, draft PR e CI remoto | Pendentes por autenticação | Commit local `a3a52a0` pronto. O push devolveu `Repository not found`; `gh auth status --active --hostname github.com` confirmou que a conta CLI ativa está com token inválido. É necessária reautenticação manual com uma conta que tenha escrita em `camilagama/polaris`; CI e PR draft seguem depois. Nenhum merge será feito sem autorização. |
 | Revisão do usuário | Pendente | Revisar ADR 0011 (especialmente a valoração explícita opcional), o gate e o PR draft. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
