@@ -47,7 +47,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Tombstone:** registro com `deleted_at` que representa uma remoção lógica e preserva identidade e timestamps para histórico/leitura offline; não é um hard-delete.
 
-**Asset:** mídia armazenada, como uma imagem de produto.
+**Asset de mídia (asset):** imagem pertencente a uma organização e vinculada a um produto; pode ser associada a várias variantes desse produto sem duplicar o asset.
 
 ## Vendas e clientes
 

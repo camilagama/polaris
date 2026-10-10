@@ -7,6 +7,7 @@ import { dbPocOperations } from "./schema/poc";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
+import { mediaAssets, productMedia, variantMedia } from "./schema/media";
 
 const databaseSchema = {
   ...authSchema,
@@ -15,7 +16,10 @@ const databaseSchema = {
   categories,
   dbPocOperations,
   inventoryBalances,
+  mediaAssets,
+  productMedia,
   stockMovements,
+  variantMedia,
   tenantAuditEvents,
 };
 

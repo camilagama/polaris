@@ -169,6 +169,13 @@
       "when": 1791618553291,
       "tag": "0023_glorious_the_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791623255620,
+      "tag": "0024_rapid_reaper",
+      "breakpoints": true
     }
   ]
 }

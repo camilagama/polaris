@@ -1,6 +1,6 @@
 # Polaris — acompanhamento da implementação
 
-Atualizado em 8 de outubro de 2026.
+Atualizado em 10 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -396,4 +396,20 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída sem achados | Revisão do diff `95dbc20..b3781fd`: nenhum achado crítico, importante ou menor. O gate PostgreSQL 18 passou na branch descartável `pr32-archive-catalog-gate`. |
 | Push e PR draft | Concluídos | Branch `codex/pr32-archive-catalog` publicada; [PR #31](https://github.com/camilagama/polaris/pull/31) aberto em draft sobre `codex/pr31-inventory-count` (PR #30). Nenhum merge foi feito. |
 | CI remoto | Concluído | GitHub Actions passou 6/6 no commit `5c3704a`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
+### PR33 — Media schema (implementação, checks locais e gate Neon concluídos; revisão independente, CI, publicação e revisão do usuário pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Branch isolada | Concluída | `codex/pr33-media-schema` foi criada sobre o head `d0c6640` do PR32; ainda local, sem push. |
+| Decisões de domínio | Confirmadas | Assets são por organização e vinculam a no máximo um produto; `variant_media` reutiliza o asset do mesmo produto. As tabelas de associação têm `position` ordenada, sem semântica separada de capa. |
+| Migration 0024 | Implementada e aplicada | `media_assets`, `product_media` e `variant_media` com UUIDv7, FKs compostas, unicidade por produto/posição e `ON DELETE RESTRICT`. Storage/provider metadata e upload ficam para PR34. |
+| RLS e grants | Concluídos | FORCE RLS nas três tabelas; runtime recebe somente SELECT neste schema-only PR. Triggers sincronizam escrita de associações com a linha do produto e bloqueiam mutações após tombstone. |
+| Gate Neon PostgreSQL 18 | Concluído | Gate passou em PostgreSQL 18.6 na branch descartável `pr33-media-schema-gate`, derivada de `production`; oito grupos de cenário passaram. A branch expira em 2026-10-11 às 13:00 BRT; fixtures são sintéticas e permanecem até a expiração. URLs ficaram somente no ambiente dos processos. |
+| Verificação local | Concluída | `bun run check` passou com 157 testes em 25 arquivos; lint, formato, typecheck, boundaries e Knip também passaram. `bun run db:generate` não encontrou drift. |
+| Build local | Concluído | `bun run build` passou nos oito workspaces (exit code 0). Wrangler mostrou `EPERM` somente ao gravar log fora do repositório. |
+| Upload, locator e metadata | Adiados | PR33 não faz upload e não persiste provider-specific fields; pipeline Cloudflare Images → WebP → R2 fica para PR34; derivados e cleanup para PR35. R2 permanece privado. |
+| Quotas Free/Pro | Adiadas | `PRODUCT.md` classifica os limites como hipóteses ajustáveis; PR33 não fixa contagens em constraints. Enforcement fica no modelo de entitlements. |
+| Revisão independente | Pendente | Revisar migration 0024, RLS/grants, guard de tombstone e gate antes da publicação. |
+| Push, PR draft e CI remoto | Pendentes | Publicar após a revisão e abrir draft empilhado sobre `codex/pr32-archive-catalog` (PR #31). Nenhum merge será feito sem autorização. |
+| Revisão do usuário | Pendente | Revisar o PR33 draft e ADR 0013 depois da publicação. Nenhum merge será feito sem autorização. |
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

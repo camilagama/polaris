@@ -1776,37 +1776,28 @@ O lifecycle de produto active/archived, com archive e restore reversíveis, já 
 - Aplicar migration 0023 em branch Neon descartável PostgreSQL 18. Provar tombstone permitido com saldo zero e histórico/SKU preservados; bloqueio com saldo positivo tanto pelo repositório quanto pelo banco; lifecycle terminal, idempotência, auditoria, RLS, ausência de hard-delete e writes recusados após o tombstone.
 - Correr em paralelo recebimento e tombstone na mesma variante: um único resultado deve confirmar; nunca pode existir produto tombstoned com saldo positivo.
 - Provar replay de command de estoque existente depois do tombstone e rejeição de um command novo. A branch Neon de produção permanece intacta.
-- Executar bun run check, bun run build, CI e revisão independente. Publicar PR draft empilhado sobre codex/pr31-inventory-count; não fazer merge nem alterar recursos de produção.# PR 33 — Media schema
+- Executar bun run check, bun run build, CI e revisão independente. Publicar PR draft empilhado sobre codex/pr31-inventory-count; não fazer merge nem alterar recursos de produção.
 
+# PR 33 — Media schema
 
+### Decisões confirmadas
 
-Criar:
+- Asset pertence a uma organização e se associa a no máximo um produto por `product_media`.
+- `variant_media` reutiliza o asset de `product_media` desse mesmo produto; uma imagem pode servir várias variantes sem duplicação.
+- `position` é não negativa e única por produto ou variante. Ordena imagens e não cria regra especial de capa.
+- Tombstone preserva vínculos de mídia e bloqueia mudanças posteriores nas associações. Hard-delete e purge permanecem fora do fluxo normal.
+- Esta etapa persiste identidade UUIDv7, organização, timestamps e associações. Upload, locator/provider e metadados do arquivo ficam para PR34.
+- Limites de imagens Free/Pro seguem como hipóteses em `PRODUCT.md`; PR33 não os impõe no banco.
 
+### Escopo
 
+Criar `media_assets`, `product_media` e `variant_media`, com FKs compostas que garantem mesmo tenant, vínculo de variante ao produto proprietário do asset, RLS forçada e leitura tenant-scoped. Sem upload, URLs públicas ou rotas de mídia.
 
-```text
+### Gate
 
-media_assets
-
-product_media
-
-variant_media
-
-```
-
-
-
-Sem upload ainda.
-
-
-
-Separar asset de produto/variante.
-
-
-
----
-
-
+- Provar no PostgreSQL 18 criação das três tabelas, FKs, unicidade do asset por produto, associação do asset a várias variantes do mesmo produto, posições e rejeição de valores/associações inválidos.
+- Provar isolamento RLS, privilégio runtime somente leitura nesta etapa e preservação de associações no tombstone; owner SQL não pode criar, reordenar nem remover vínculos após o tombstone.
+- Executar `bun run check`, `bun run build`, CI e revisão independente; publicar draft empilhado sobre `codex/pr32-archive-catalog`. Não fazer merge nem alterar recursos de produção.
 
 # PR 34 — Upload/crop pipeline
 
