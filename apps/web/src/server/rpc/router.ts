@@ -22,7 +22,12 @@ import {
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
-import { receiveStock, writeOffStock } from "@polaris/db/inventory-repository";
+import {
+  getInventoryBalance,
+  inventoryCount,
+  receiveStock,
+  writeOffStock,
+} from "@polaris/db/inventory-repository";
 import { createDatabase } from "@polaris/db/client";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
@@ -51,9 +56,14 @@ import {
   InsufficientStockError,
   InventoryQuantityLimitError,
   InventoryVariantNotFoundError,
+  InventoryVersionConflictError,
   InvalidStockMovementError,
   StockCommandConflictError,
 } from "@polaris/domain/inventory/inventory";
+import {
+  InvalidInventoryCountInputError,
+  UnsupportedInventoryCountCommandVersionError,
+} from "@polaris/domain/inventory/inventory-count";
 import {
   InventoryCostLimitError,
   InventoryCostUnavailableError,
@@ -73,6 +83,7 @@ import {
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
+import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -106,6 +117,8 @@ interface RpcRouterDependencies {
   listProducts: typeof listProducts;
   restoreProduct: typeof restoreProduct;
   receiveStock: typeof receiveStock;
+  getInventoryBalance: typeof getInventoryBalance;
+  inventoryCount: typeof inventoryCount;
   writeOffStock: typeof writeOffStock;
   setProductVariantSku: typeof setProductVariantSku;
   updateProduct: typeof updateProduct;
@@ -249,6 +262,8 @@ function toRpcError(error: unknown): never {
     error instanceof InventoryCostLimitError ||
     error instanceof InvalidReceiveStockInputError ||
     error instanceof UnsupportedReceiveStockCommandVersionError ||
+    error instanceof InvalidInventoryCountInputError ||
+    error instanceof UnsupportedInventoryCountCommandVersionError ||
     error instanceof InvalidWriteOffStockInputError ||
     error instanceof UnsupportedWriteOffStockCommandVersionError
   ) {
@@ -259,7 +274,8 @@ function toRpcError(error: unknown): never {
     error instanceof InsufficientStockError ||
     error instanceof InventoryQuantityLimitError ||
     error instanceof InventoryCostUnavailableError ||
-    error instanceof StockCommandConflictError
+    error instanceof StockCommandConflictError ||
+    error instanceof InventoryVersionConflictError
   ) {
     throw new ORPCError("CONFLICT", { cause: error });
   }
@@ -339,6 +355,15 @@ export function createRpcRouter(
   const writeOffTenantStock = overrides.writeOffStock ?? writeOffStock;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
+  const inventoryHandlers = createInventoryRpcHandlers({
+    defaultGetInventoryBalance: getInventoryBalance,
+    defaultInventoryCount: inventoryCount,
+    getInventoryBalance: overrides.getInventoryBalance,
+    inventoryCount: overrides.inventoryCount,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
 
   const ping = implementContract.system.ping.handler(() => pingSystem());
 
@@ -857,6 +882,8 @@ export function createRpcRouter(
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     inventory: {
+      getBalance: inventoryHandlers.getBalance,
+      inventoryCount: inventoryHandlers.count,
       receiveStock: receiveStockRecord,
       writeOffStock: writeOffStockRecord,
     },

@@ -120,11 +120,14 @@ export const stockMovements = pgTable(
     movementType: text("movement_type").notNull(),
     organizationId: text("organization_id").notNull(),
     occurredOn: date("occurred_on", { mode: "string" }),
+    expectedVersion: integer("expected_version"),
+    physicalQuantity: integer("physical_quantity"),
     productId: uuid("product_id").notNull(),
     quantityDelta: integer("quantity_delta").notNull(),
     reasonCode: text("reason_code"),
     reasonNote: text("reason_note"),
     unitCost: numeric("unit_cost"),
+    valuationUnitCost: numeric("valuation_unit_cost"),
     variantId: uuid("variant_id").notNull(),
   },
   (table) => [
@@ -134,14 +137,14 @@ export const stockMovements = pgTable(
     ),
     check(
       "stock_movements_quantity_delta_nonzero",
-      sql`${table.quantityDelta} <> 0`
+      sql`${table.quantityDelta} <> 0 OR ${table.movementType} = 'inventory_count'`
     ),
     check(
       "stock_movements_type_direction",
       sql`
         (${table.movementType} = 'receipt' AND ${table.quantityDelta} > 0)
         OR (${table.movementType} = 'write_off' AND ${table.quantityDelta} < 0)
-        OR (${table.movementType} = 'inventory_count' AND ${table.quantityDelta} <> 0)
+        OR (${table.movementType} = 'inventory_count')
         OR (${table.movementType} = 'sale' AND ${table.quantityDelta} < 0)
         OR (${table.movementType} = 'sale_cancellation' AND ${table.quantityDelta} > 0)
         OR (${table.movementType} = 'sale_return' AND ${table.quantityDelta} > 0)
@@ -169,6 +172,31 @@ export const stockMovements = pgTable(
       `
     ),
     check(
+      "stock_movements_inventory_count_payload_valid",
+      sql`
+        (
+          ${table.movementType} = 'inventory_count'
+          AND ${table.commandId} IS NOT NULL
+          AND ${table.commandVersion} IS NOT NULL
+          AND ${table.occurredOn} IS NOT NULL
+          AND ${table.expectedVersion} IS NOT NULL
+          AND ${table.expectedVersion} >= 0
+          AND ${table.physicalQuantity} IS NOT NULL
+          AND ${table.physicalQuantity} >= 0
+          AND (
+            ${table.valuationUnitCost} IS NULL
+            OR ${table.physicalQuantity} > 0
+          )
+        )
+        OR (
+          ${table.movementType} <> 'inventory_count'
+          AND ${table.expectedVersion} IS NULL
+          AND ${table.physicalQuantity} IS NULL
+          AND ${table.valuationUnitCost} IS NULL
+        )
+      `
+    ),
+    check(
       "stock_movements_receipt_cost_and_command_required",
       sql`
         ${table.movementType} <> 'receipt'
@@ -185,6 +213,16 @@ export const stockMovements = pgTable(
           ${table.unitCost} >= 0
           AND scale(${table.unitCost}) <= 6
           AND ${table.unitCost} < 1000000000000000000
+        )
+      `
+    ),
+    check(
+      "stock_movements_valuation_unit_cost_allowed",
+      sql`
+        ${table.valuationUnitCost} IS NULL OR (
+          ${table.valuationUnitCost} >= 0
+          AND scale(${table.valuationUnitCost}) <= 6
+          AND ${table.valuationUnitCost} < 1000000000000000000
         )
       `
     ),

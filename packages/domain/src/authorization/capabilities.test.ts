@@ -11,6 +11,7 @@ describe("tenant capability map", () => {
       "catalog:read",
       "product:create",
       "product:update",
+      "inventory:read",
       "inventory:adjust",
       "sale:create",
       "customer:update",

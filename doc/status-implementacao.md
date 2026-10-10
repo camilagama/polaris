@@ -356,7 +356,25 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Verificação local | Concluída | `bun run db:generate` não encontrou drift; `bun run check` passou com 144 testes; `bun run build` passou nos oito workspaces. O build foi repetido isoladamente após uma corrida transitória com a fixture temporária de boundaries do check. |
 | Gate Neon PostgreSQL 18 | Concluído | Migration 0021 aplicada; gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`. Verificou RLS/grants, motivo/data/nota, limite e trimming Unicode, snapshot de custo, replay/conflito, saldo não negativo, custo desconhecido, concorrência, isolamento e audit. Resultado: 18 movimentos; fixtures sintéticas permanecem até a expiração automática da branch em 2026-10-10 18:47 BRT. |
 | Push e PR draft | Concluídos | Branch `codex/pr30-write-off-stock` publicada; [PR #29](https://github.com/camilagama/polaris/pull/29) aberto em draft, empilhado sobre PR #28. |
-| CI remoto | Concluído na revisão atual | GitHub Actions passou 6/6 no commit `dcebbea` (build, Knip, lint/boundaries, typecheck, testes unitários e offline browser gate). |
+| CI remoto | Concluído na revisão atual | GitHub Actions passou 6/6 no commit `8826a63` (build, Knip, lint/boundaries, typecheck, testes unitários e offline browser gate). |
 | Revisão do usuário | Pendente | Revisar a proposta de valoração em ADR 0010 e o PR draft; decisão sobre custo permanece proposta, não aprovada. |
+
+### PR31 — Inventory count (implementação local concluída; gate remoto, publicação e revisão pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base isolada | Concluída | Branch `codex/pr31-inventory-count` criada em clone isolado sobre o commit `8826a63` de PR30; a branch principal permaneceu intacta. |
+| Contrato e concorrência | Concluídos | `inventory.getBalance` expõe a versão do saldo; `inventoryCount` exige `expectedVersion`, quantidade física absoluta e identidade idempotente. A checagem ocorre sob lock da variante; versões antigas conflitam. |
+| Evento de contagem sem diferença | Concluído | Delta zero é persistido como `inventory_count`, auditado e incrementa a versão do saldo; replay compara quantidade absoluta e versão originais, inclusive após comandos posteriores. |
+| Valoração | Proposta para revisão | Custo conhecido é preservado; custo desconhecido permanece `NULL` salvo `valuationUnitCost` explícito em uma contagem positiva. Custo zero não é presumido; recebimentos continuam bloqueados com saldo positivo sem valoração. Decisão está no ADR 0011, proposto. |
+| Migration 0022 | Implementada localmente | Armazena quantidade física, versão esperada e input de valoração explícita separado do snapshot efetivo; CHECKs `NOT VALID` preservam movimentos `inventory_count` históricos append-only e impedem valoração explícita com quantidade física zero. Aplicação remota ainda pendente. |
+| Revisão independente | Concluída | O revisor encontrou replay que podia omitir uma valoração explícita; input separado e comparação idempotente foram adicionados. Também identificou e verificou a constraint DB contra valuation explícita com quantidade zero; sem achados restantes no follow-up. |
+| Verificação local | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 154 testes em 25 arquivos. |
+| Build | Concluído | `bun run build` passou nos oito workspaces após a implementação. Wrangler exibiu `EPERM` ao gravar log local, mas o build terminou com exit code 0. |
+| Perfis de CLI | Concluídos | A regra de uso exclusivo do perfil Cloudflare/Neon `junior-pessoal` ligado a `contato.juniordiniz@gmail.com` foi registrada em `AGENTS.md` e `docs/runbooks/cli-profile-policy.md`; Neon plugin conectado não será usado. |
+| Gate Neon PostgreSQL 18 | Pendente | A migration ainda não foi aplicada. A política de segurança do navegador recusou abrir o console Neon; aguarda URL de uma branch descartável nova fornecida pelo usuário ou execução manual. |
+| UI de contagem | Adiada | O PR31 no plano define o command e os dados, mas não especifica fluxo/tela de contagem; não inventar interação visual sem critério de aceite. |
+| Push, draft PR e CI remoto | Pendentes | Serão atualizados após o gate PostgreSQL e revisão do código. Nenhum merge será feito sem autorização. |
+| Revisão do usuário | Pendente | Revisar ADR 0011 (especialmente a valoração explícita opcional), o gate e o PR draft. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

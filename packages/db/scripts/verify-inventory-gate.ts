@@ -10,6 +10,7 @@ import {
 } from "../src/product-repository";
 import {
   getInventoryBalance,
+  inventoryCount,
   receiveStock,
   recordStockMovement,
   writeOffStock,
@@ -18,9 +19,11 @@ import { stockMovements } from "../src/schema/inventory";
 import { productVariants } from "../src/schema/product";
 import {
   InsufficientStockError,
+  InventoryVersionConflictError,
   InvalidStockMovementError,
   StockCommandConflictError,
 } from "@polaris/domain/inventory/inventory";
+import { InvalidInventoryCountInputError } from "@polaris/domain/inventory/inventory-count";
 import { ProductDefaultVariantStockHistoryConflictError } from "@polaris/domain/catalog/product";
 import {
   withAuthorizedTenantTransaction,
@@ -51,7 +54,7 @@ interface TenantFixture {
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error("Missing PR30 inventory gate configuration.");
+    throw new Error("Missing PR31 inventory gate configuration.");
   }
   return value;
 }
@@ -120,11 +123,11 @@ async function createTenantFixture(
   await adminPool.query(
     'INSERT INTO public."user" (id, name, email, email_verified) ' +
       "VALUES ($1, $2, $3, true)",
-    [userId, `PR28 inventory gate ${label}`, `pr28-${userId}@example.invalid`]
+    [userId, `PR31 inventory gate ${label}`, `pr31-${userId}@example.invalid`]
   );
   await adminPool.query(
     "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, $2, $3)",
-    [organizationId, `PR28 inventory gate ${label}`, "America/Sao_Paulo"]
+    [organizationId, `PR31 inventory gate ${label}`, "America/Sao_Paulo"]
   );
   await adminPool.query(
     "INSERT INTO public.memberships (organization_id, user_id, role, status) " +
@@ -251,7 +254,7 @@ async function main(): Promise<void> {
   const expectedHostname = requiredEnvironment(
     "POLARIS_INVENTORY_GATE_EXPECTED_HOSTNAME"
   );
-  assert.equal(confirmation, "polaris-pr30-inventory-gate");
+  assert.equal(confirmation, "polaris-pr31-inventory-gate");
 
   const connection = new URL(connectionString);
   assert.equal(connection.protocol, "postgresql:");
@@ -741,6 +744,50 @@ async function main(): Promise<void> {
       "23514",
       "inventory average-cost scale check"
     );
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, command_id, command_version, occurred_on) " +
+              "VALUES ($1, $2, $3, 'inventory_count', 0, $4, 1, $5)",
+            [
+              fixtureA.organizationId,
+              receiptProductId,
+              receiptVariantId,
+              randomUUID(),
+              "2026-10-09",
+            ]
+          )
+      ),
+      "23514",
+      "inventory count requires the absolute count and expected version"
+    );
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, command_id, command_version, occurred_on, expected_version, physical_quantity, valuation_unit_cost) " +
+              "VALUES ($1, $2, $3, 'inventory_count', 0, $4, 1, $5, 0, 0, 1.00)",
+            [
+              fixtureA.organizationId,
+              receiptProductId,
+              receiptVariantId,
+              randomUUID(),
+              "2026-10-09",
+            ]
+          )
+      ),
+      "23514",
+      "zero physical counts cannot set an explicit valuation"
+    );
 
     const historicalProductId = await createTestProduct(
       runtime.database,
@@ -850,6 +897,240 @@ async function main(): Promise<void> {
         getInventoryBalance(transaction, identity, historicalVariantId)
     );
     assert.equal(historicalBalance.quantity, 0);
+
+    const countedProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "inventory-count"
+    );
+    const countedVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      countedProductId
+    );
+    const initialCountInput = {
+      commandId: randomUUID(),
+      commandVersion: 1 as const,
+      expectedVersion: 0,
+      occurredOn: "2026-10-09",
+      physicalQuantity: 5,
+      valuationUnitCost: "3.25",
+      variantId: countedVariantId,
+    };
+    const initialCount = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          ...initialCountInput,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(initialCount.replayed, false);
+    assert.equal(initialCount.movement.quantityDelta, 5);
+    assert.equal(initialCount.movement.physicalQuantity, 5);
+    assert.equal(initialCount.movement.expectedVersion, 0);
+    assert.equal(initialCount.movement.unitCost, "3.250000");
+    assert.equal(initialCount.balance.quantity, 5);
+    assert.equal(initialCount.balance.movingAverageCost, "3.250000");
+    assert.equal(initialCount.balance.version, 1);
+
+    const replayedInitialCount = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          ...initialCountInput,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(replayedInitialCount.replayed, true);
+    assert.equal(replayedInitialCount.movement.id, initialCount.movement.id);
+    assert.equal(replayedInitialCount.balance.version, 1);
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          inventoryCount(transaction, identity, {
+            ...initialCountInput,
+            requestId: randomUUID(),
+            valuationUnitCost: null,
+          })
+      ),
+      StockCommandConflictError
+    );
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          inventoryCount(transaction, identity, {
+            ...initialCountInput,
+            physicalQuantity: 4,
+            requestId: randomUUID(),
+          })
+      ),
+      StockCommandConflictError
+    );
+
+    const zeroDeltaCount = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: 1,
+          occurredOn: "2026-10-09",
+          physicalQuantity: 5,
+          requestId: randomUUID(),
+          variantId: countedVariantId,
+        })
+    );
+    assert.equal(zeroDeltaCount.movement.quantityDelta, 0);
+    assert.equal(zeroDeltaCount.movement.unitCost, "3.250000");
+    assert.equal(zeroDeltaCount.balance.version, 2);
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          inventoryCount(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            expectedVersion: 1,
+            occurredOn: "2026-10-09",
+            physicalQuantity: 5,
+            requestId: randomUUID(),
+            variantId: countedVariantId,
+          })
+      ),
+      InventoryVersionConflictError
+    );
+
+    const reducedCount = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: 2,
+          occurredOn: "2026-10-09",
+          physicalQuantity: 3,
+          requestId: randomUUID(),
+          variantId: countedVariantId,
+        })
+    );
+    assert.equal(reducedCount.movement.quantityDelta, -2);
+    assert.equal(reducedCount.movement.unitCost, "3.250000");
+    assert.equal(reducedCount.balance.quantity, 3);
+    assert.equal(reducedCount.balance.movingAverageCost, "3.250000");
+    assert.equal(reducedCount.balance.version, 3);
+
+    const replayAfterLaterCount = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          ...initialCountInput,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(replayAfterLaterCount.replayed, true);
+    assert.equal(replayAfterLaterCount.balance.quantity, 3);
+    assert.equal(replayAfterLaterCount.balance.version, 3);
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          inventoryCount(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            expectedVersion: 3,
+            occurredOn: "2026-10-09",
+            physicalQuantity: 3,
+            requestId: randomUUID(),
+            valuationUnitCost: "4.00",
+            variantId: countedVariantId,
+          })
+      ),
+      InvalidInventoryCountInputError
+    );
+
+    const raceCountProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "inventory-count-race"
+    );
+    const raceCountVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      raceCountProductId
+    );
+    await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: 0,
+          occurredOn: "2026-10-09",
+          physicalQuantity: 6,
+          requestId: randomUUID(),
+          variantId: raceCountVariantId,
+        })
+    );
+    const countRaceSessions = await Promise.all([
+      createRuntimeSession(connectionString),
+      createRuntimeSession(connectionString),
+    ]);
+    runtimeSessions.push(...countRaceSessions);
+    const countRaceResults = await Promise.allSettled(
+      countRaceSessions.map((session) =>
+        withAuthorizedTenantTransaction(
+          session.database,
+          {
+            authenticatedUserId: fixtureA.userId,
+            capability: "inventory:adjust",
+            requestedOrganizationId: fixtureA.organizationId,
+          },
+          (transaction, identity) =>
+            inventoryCount(transaction, identity, {
+              commandId: randomUUID(),
+              commandVersion: 1,
+              expectedVersion: 1,
+              occurredOn: "2026-10-09",
+              physicalQuantity: 6,
+              requestId: randomUUID(),
+              variantId: raceCountVariantId,
+            })
+        )
+      )
+    );
+    assert.equal(
+      countRaceResults.filter((result) => result.status === "fulfilled").length,
+      1
+    );
+    const staleCountResult = countRaceResults.find(
+      (result) => result.status === "rejected"
+    );
+    assert.ok(staleCountResult && staleCountResult.status === "rejected");
+    assert.ok(staleCountResult.reason instanceof InventoryVersionConflictError);
+
     await assert.rejects(
       withTenant(
         runtime.database,
@@ -882,9 +1163,12 @@ async function main(): Promise<void> {
       fixtureA,
       "inventory:adjust",
       (transaction, identity) =>
-        recordStockMovement(transaction, identity, {
-          movementType: "inventory_count",
-          quantityDelta: 2,
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: 0,
+          occurredOn: "2026-10-09",
+          physicalQuantity: 2,
           requestId: randomUUID(),
           variantId: unknownCostVariantId,
         })
@@ -1116,14 +1400,14 @@ async function main(): Promise<void> {
     console.log(
       JSON.stringify(
         {
-          branch: "pr28-inventory-gate",
+          branch: "pr31-inventory-gate",
           database: server.current_database,
           fixtures: "synthetic fixtures retained until branch auto-expiry",
           movementCount: movementCount.rows[0]?.count,
           serverVersion: server.server_version,
           status: "passed",
           tests: [
-            "PostgreSQL 18 and PR28–30 inventory migrations applied",
+            "PostgreSQL 18 and PR28–31 inventory migrations applied",
             "FORCE RLS and least-privilege grants",
             "absent balance reads as zero",
             "negative stock rejected without ledger writes",
@@ -1140,6 +1424,15 @@ async function main(): Promise<void> {
             "writeOffStock persists occurrence date, reason, note, and known unit cost",
             "write-off replay is idempotent and payload mismatches conflict",
             "write-offs preserve average cost and allow unknown-cost balances",
+            "inventoryCount stores absolute quantity, expected version, and signed delta",
+            "inventory count replay is idempotent after later commands and payload mismatch conflicts",
+            "valuationUnitCost input is included in the idempotent payload",
+            "zero-delta counts persist as audit events and advance the balance version",
+            "stale count versions conflict and concurrent counts serialize with one winner",
+            "explicit valuation initializes an unknown average and known averages cannot be revalued by count",
+            "explicit valuation cannot be attached to a zero physical count at the database boundary",
+            "unknown-cost counts preserve null valuation without inventing zero cost",
+            "database rejects new inventory_count rows without count payload metadata",
             "default variant configuration blocked after history even at zero",
             "concurrent receipts serialize into the materialized balance",
             "concurrent write-offs cannot commit a negative balance",
@@ -1162,7 +1455,7 @@ async function main(): Promise<void> {
       .filter((result) => result.status === "rejected")
       .map((result) => result.reason);
     if (closeErrors.length > 0) {
-      console.error("Could not close every PR30 inventory gate connection.");
+      console.error("Could not close every PR31 inventory gate connection.");
       process.exitCode = 1;
     }
     if (runtimeRoleMembershipGrantAttempted && adminRoleName) {
@@ -1193,6 +1486,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : "unknown error";
-  console.error("PR30 inventory gate failed:", message);
+  console.error("PR31 inventory gate failed:", message);
   process.exitCode = 1;
 });

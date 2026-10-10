@@ -1742,6 +1742,10 @@ physical quantity = X
 
 Servidor calcula diferença e cria movimento.
 
+O command exige `commandId`, `commandVersion`, `occurredOn` e `expectedVersion` obtida de `inventory.getBalance`; o servidor compara a versão novamente dentro do lock da variante e rejeita contagem baseada em saldo antigo. A linha do ledger guarda a quantidade física absoluta e a versão lida para replay idempotente. Delta zero continua sendo evento de contagem auditável e avança a versão.
+
+O custo médio conhecido é preservado. Se ainda é desconhecido, a quantidade pode ser corrigida mantendo `NULL`; opcionalmente, `valuationUnitCost` explícito pode iniciar a média quando a contagem física é positiva. Não inferir custo zero. A decisão de valoração está registrada como proposta em [ADR 0011](../docs/adr/0011-inventory-count.md); sem custo conhecido, recebimentos seguem bloqueados até valoração explícita.
+
 
 
 Não permitir mutation direta do balance.

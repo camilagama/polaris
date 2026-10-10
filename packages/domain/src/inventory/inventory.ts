@@ -57,6 +57,15 @@ export class StockCommandConflictError extends Error {
   }
 }
 
+export class InventoryVersionConflictError extends Error {
+  readonly code = "inventory_version_conflict";
+
+  constructor() {
+    super("inventory_version_conflict");
+    this.name = "InventoryVersionConflictError";
+  }
+}
+
 export function isStockMovementType(value: string): value is StockMovementType {
   return STOCK_MOVEMENT_TYPES.some((movementType) => movementType === value);
 }
@@ -66,6 +75,8 @@ export function validateStockMovementType(
   quantityDelta: number
 ): void {
   if (
+    !Number.isInteger(quantityDelta) ||
+    (quantityDelta === 0 && movementType !== "inventory_count") ||
     (movementType === "receipt" && quantityDelta < 1) ||
     (movementType === "write_off" && quantityDelta > -1) ||
     (movementType === "sale" && quantityDelta > -1) ||
@@ -74,6 +85,33 @@ export function validateStockMovementType(
   ) {
     throw new InvalidStockMovementError();
   }
+}
+
+/**
+ * Projects an absolute physical count against the serialized current balance.
+ * A zero delta is valid here because the count event itself remains auditable.
+ */
+export function projectInventoryCount(
+  currentQuantity: number,
+  physicalQuantity: number
+): { quantity: number; quantityDelta: number } {
+  if (
+    !Number.isInteger(currentQuantity) ||
+    currentQuantity < 0 ||
+    currentQuantity > MAX_INVENTORY_QUANTITY ||
+    !Number.isInteger(physicalQuantity) ||
+    physicalQuantity < 0
+  ) {
+    throw new InvalidStockMovementError();
+  }
+  if (physicalQuantity > MAX_INVENTORY_QUANTITY) {
+    throw new InventoryQuantityLimitError();
+  }
+
+  return {
+    quantity: physicalQuantity,
+    quantityDelta: physicalQuantity - currentQuantity,
+  };
 }
 
 /**

@@ -38,6 +38,7 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 
 - Usar migrations revisadas e reproduzíveis. Não usar schema push como processo de migration de produção.
 - Manter query caching SQL do Hyperdrive desabilitado para dados tenant/Admin; o gate RLS remoto precisa provar contexto transacional e reuso de conexão.
+- Para qualquer acesso via CLI Cloudflare ou Neon, siga [CLI profile policy](./docs/runbooks/cli-profile-policy.md). Não execute o CLI se não puder confirmar o perfil e a identidade permitidos; não use o plugin Neon conectado.
 - Provisionar ou alterar recursos de produção, fazer deploy, processar pagamentos reais ou apagar dados de produção somente quando o usuário pedir explicitamente.
 
 ## Verificação

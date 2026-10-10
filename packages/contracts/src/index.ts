@@ -102,7 +102,7 @@ const inventoryBalance = z.object({
   movingAverageCost: normalizedBrlCost.nullable(),
   quantity: z.number().int().nonnegative().max(2_147_483_647),
   variantId: z.string().uuid(),
-  version: z.number().int().positive(),
+  version: z.number().int().nonnegative().max(2_147_483_647),
 });
 
 const stockReceiptMovement = z.object({
@@ -143,6 +143,27 @@ export type StockReceiptMovementReadModel = z.infer<
 >;
 export type StockWriteOffMovementReadModel = z.infer<
   typeof stockWriteOffMovement
+>;
+
+const inventoryCountMovement = z.object({
+  commandId: z.string().uuid(),
+  commandIndex: z.number().int().nonnegative(),
+  commandVersion: z.number().int().positive(),
+  createdAt: z.string(),
+  expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
+  id: z.string().uuid(),
+  movementType: z.literal("inventory_count"),
+  occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  organizationId: z.string().trim().min(1),
+  physicalQuantity: z.number().int().nonnegative().max(2_147_483_647),
+  productId: z.string().uuid(),
+  quantityDelta: z.number().int().min(-2_147_483_647).max(2_147_483_647),
+  unitCost: normalizedBrlCost.nullable(),
+  variantId: z.string().uuid(),
+});
+
+export type InventoryCountMovementReadModel = z.infer<
+  typeof inventoryCountMovement
 >;
 
 const organization = z.object({
@@ -267,6 +288,14 @@ export const polarisContract = {
       ),
   },
   inventory: {
+    getBalance: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          variantId: z.string().uuid(),
+        })
+      )
+      .output(inventoryBalance),
     receiveStock: oc
       .input(
         z.object({
@@ -313,6 +342,39 @@ export const polarisContract = {
         z.object({
           balance: inventoryBalance,
           movement: stockWriteOffMovement,
+          replayed: z.boolean(),
+        })
+      ),
+    inventoryCount: oc
+      .input(
+        z
+          .object({
+            commandId: z.string().uuid(),
+            commandVersion: z.literal(1),
+            expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
+            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            organizationId: z.string().trim().min(1),
+            physicalQuantity: z.number().int().nonnegative().max(2_147_483_647),
+            valuationUnitCost: z.string().trim().min(1).optional(),
+            variantId: z.string().uuid(),
+          })
+          .superRefine((input, ctx) => {
+            if (
+              input.physicalQuantity === 0 &&
+              input.valuationUnitCost !== undefined
+            ) {
+              ctx.addIssue({
+                code: "custom",
+                message: "inventory_count_zero_cannot_set_unit_cost",
+                path: ["valuationUnitCost"],
+              });
+            }
+          })
+      )
+      .output(
+        z.object({
+          balance: inventoryBalance,
+          movement: inventoryCountMovement,
           replayed: z.boolean(),
         })
       ),

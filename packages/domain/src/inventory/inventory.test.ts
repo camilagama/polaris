@@ -3,6 +3,7 @@ import {
   InsufficientStockError,
   InventoryQuantityLimitError,
   InvalidStockMovementError,
+  projectInventoryCount,
   projectInventoryQuantity,
   validateStockMovementType,
 } from "./inventory";
@@ -38,6 +39,30 @@ describe("inventory quantity projection", () => {
     );
   });
 
+  it("projects a physical count as an absolute quantity, including no change", () => {
+    expect(projectInventoryCount(5, 8)).toEqual({
+      quantity: 8,
+      quantityDelta: 3,
+    });
+    expect(projectInventoryCount(5, 2)).toEqual({
+      quantity: 2,
+      quantityDelta: -3,
+    });
+    expect(projectInventoryCount(0, 0)).toEqual({
+      quantity: 0,
+      quantityDelta: 0,
+    });
+  });
+
+  it("limits invalid physical counts without permitting negative quantities", () => {
+    expect(() => projectInventoryCount(0, 2_147_483_648)).toThrow(
+      InventoryQuantityLimitError
+    );
+    expect(() => projectInventoryCount(0, -1)).toThrow(
+      InvalidStockMovementError
+    );
+  });
+
   it("requires movement direction to match its named operation", () => {
     expect(() => validateStockMovementType("receipt", 2)).not.toThrow();
     expect(() => validateStockMovementType("receipt", -2)).toThrow(
@@ -49,5 +74,9 @@ describe("inventory quantity projection", () => {
     expect(() =>
       validateStockMovementType("inventory_count", -2)
     ).not.toThrow();
+    expect(() => validateStockMovementType("inventory_count", 0)).not.toThrow();
+    expect(() => validateStockMovementType("sale", 0)).toThrow(
+      InvalidStockMovementError
+    );
   });
 });

@@ -6,4 +6,6 @@ A fundação atual não provisiona recursos de produção nem dados de clientes 
 
 Para configurar a proteção das rotas de autenticação, consulte [Auth abuse protection](./auth-abuse-protection.md).
 
+Antes de qualquer comando Cloudflare ou Neon, siga [CLI profile policy](./cli-profile-policy.md) para confirmar a identidade autorizada.
+
 Cada runbook deve registrar gatilho, pré-requisitos de acesso, alvo seguro, passos, verificação, rollback ou forward-fix e responsável por escalonamento. Não documente ação de produção como comando executável antes de testá-la em ambiente descartável ou staging.

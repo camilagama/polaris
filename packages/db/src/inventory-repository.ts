@@ -1,12 +1,19 @@
 import {
   InventoryVariantNotFoundError,
+  InventoryVersionConflictError,
   InvalidStockMovementError,
   isStockMovementType,
+  projectInventoryCount,
   projectInventoryQuantity,
   StockCommandConflictError,
   validateStockMovementType,
   type StockMovementType,
 } from "@polaris/domain/inventory/inventory";
+import {
+  InvalidInventoryCountInputError,
+  normalizeInventoryCountInput,
+  type InventoryCountCommandInput,
+} from "@polaris/domain/inventory/inventory-count";
 import {
   calculateMovingAverageCost as calculateMovingAverageCostDomain,
   normalizeUnitCost,
@@ -31,7 +38,10 @@ import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { productVariants, products } from "./schema/product";
 
 export interface RecordStockMovementInput {
-  movementType: Exclude<StockMovementType, "receipt" | "write_off">;
+  movementType: Exclude<
+    StockMovementType,
+    "receipt" | "write_off" | "inventory_count"
+  >;
   quantityDelta: number;
   requestId?: string | null;
   variantId: string;
@@ -46,6 +56,11 @@ export interface WriteOffStockRepositoryInput
   requestId?: string | null;
 }
 
+export interface InventoryCountRepositoryInput
+  extends InventoryCountCommandInput {
+  requestId?: string | null;
+}
+
 export interface InventoryBalance {
   movingAverageCost: string | null;
   quantity: number;
@@ -54,8 +69,9 @@ export interface InventoryBalance {
 }
 
 interface StockMovementWriteInput
-  extends Omit<RecordStockMovementInput, "movementType"> {
+  extends Omit<RecordStockMovementInput, "movementType" | "quantityDelta"> {
   movementType: StockMovementType;
+  quantityDelta?: number;
   calculateMovingAverageCost?: (balance: {
     currentAverageCost: string | null;
     currentQuantity: number;
@@ -65,9 +81,12 @@ interface StockMovementWriteInput
   commandVersion?: number | null;
   captureMovingAverageCost?: boolean;
   occurredOn?: string | null;
+  expectedVersion?: number | null;
+  physicalQuantity?: number | null;
   reasonCode?: WriteOffReasonCode | null;
   reasonNote?: string | null;
   unitCost?: string | null;
+  valuationUnitCost?: string | null;
 }
 
 const movementColumns = {
@@ -75,15 +94,18 @@ const movementColumns = {
   commandIndex: stockMovements.commandIndex,
   commandVersion: stockMovements.commandVersion,
   createdAt: stockMovements.createdAt,
+  expectedVersion: stockMovements.expectedVersion,
   id: stockMovements.id,
   movementType: stockMovements.movementType,
   organizationId: stockMovements.organizationId,
   occurredOn: stockMovements.occurredOn,
+  physicalQuantity: stockMovements.physicalQuantity,
   productId: stockMovements.productId,
   quantityDelta: stockMovements.quantityDelta,
   reasonCode: stockMovements.reasonCode,
   reasonNote: stockMovements.reasonNote,
   unitCost: stockMovements.unitCost,
+  valuationUnitCost: stockMovements.valuationUnitCost,
   variantId: stockMovements.variantId,
 };
 
@@ -100,20 +122,84 @@ function requireInventoryCapability(identity: TenantRequestIdentity): void {
   }
 }
 
+function requireInventoryReadCapability(identity: TenantRequestIdentity): void {
+  if (
+    identity.capability !== "inventory:read" &&
+    identity.capability !== "inventory:adjust"
+  ) {
+    throw new TenantAuthorizationError("capability_denied");
+  }
+}
+
 function validateCommandMetadata(input: StockMovementWriteInput): void {
   const commandId = input.commandId ?? null;
   const commandVersion = input.commandVersion ?? null;
   const commandIndex = input.commandIndex ?? 0;
   const occurredOn = input.occurredOn ?? null;
+  const isInventoryCount = input.movementType === "inventory_count";
   if (
     !Number.isInteger(commandIndex) ||
     commandIndex < 0 ||
     (commandId !== null &&
       (!commandVersion || commandVersion < 1 || occurredOn === null)) ||
-    (commandId === null && (commandVersion !== null || occurredOn !== null))
+    (commandId === null && (commandVersion !== null || occurredOn !== null)) ||
+    (isInventoryCount &&
+      (commandId === null ||
+        commandVersion === null ||
+        occurredOn === null ||
+        input.expectedVersion === undefined ||
+        input.expectedVersion === null ||
+        input.physicalQuantity === undefined ||
+        input.physicalQuantity === null)) ||
+    (!isInventoryCount &&
+      (input.expectedVersion !== undefined ||
+        input.physicalQuantity !== undefined))
   ) {
     throw new InvalidStockMovementError();
   }
+}
+
+function costValueMatches(
+  existingCost: string | null,
+  expectedCost: string | null
+): boolean {
+  return expectedCost === null
+    ? existingCost === null
+    : existingCost !== null && normalizeUnitCost(existingCost) === expectedCost;
+}
+
+function commandCostPayloadMatches(
+  existing: typeof stockMovements.$inferSelect,
+  input: StockMovementWriteInput
+): boolean {
+  const expectedSnapshotCost =
+    input.movementType === "inventory_count"
+      ? (input.valuationUnitCost ?? null)
+      : (input.unitCost ?? null);
+  const snapshotMatches =
+    input.captureMovingAverageCost ||
+    costValueMatches(existing.unitCost, expectedSnapshotCost);
+  const valuationInputMatches =
+    input.movementType !== "inventory_count" ||
+    costValueMatches(
+      existing.valuationUnitCost,
+      input.valuationUnitCost ?? null
+    );
+
+  return snapshotMatches && valuationInputMatches;
+}
+
+function commandQuantityPayloadMatches(
+  existing: typeof stockMovements.$inferSelect,
+  input: StockMovementWriteInput
+): boolean {
+  if (input.movementType !== "inventory_count") {
+    return existing.quantityDelta === (input.quantityDelta ?? null);
+  }
+  return (
+    existing.physicalQuantity === (input.physicalQuantity ?? null) &&
+    existing.expectedVersion === (input.expectedVersion ?? null)
+  );
 }
 
 function commandPayloadMatches(
@@ -122,28 +208,17 @@ function commandPayloadMatches(
   productId: string,
   variantId: string
 ): boolean {
-  const unitCost = input.unitCost ?? null;
-  const existingUnitCost = existing.unitCost;
-  let costsMatch = true;
-  if (!input.captureMovingAverageCost) {
-    costsMatch =
-      unitCost === null
-        ? existingUnitCost === null
-        : existingUnitCost !== null &&
-          normalizeUnitCost(existingUnitCost) === unitCost;
-  }
-
   return (
     existing.commandVersion === (input.commandVersion ?? null) &&
     existing.commandIndex === (input.commandIndex ?? 0) &&
     existing.movementType === input.movementType &&
     existing.productId === productId &&
-    existing.quantityDelta === input.quantityDelta &&
+    commandQuantityPayloadMatches(existing, input) &&
     existing.occurredOn === (input.occurredOn ?? null) &&
     existing.reasonCode === (input.reasonCode ?? null) &&
     existing.reasonNote === (input.reasonNote ?? null) &&
     existing.variantId === variantId &&
-    costsMatch
+    commandCostPayloadMatches(existing, input)
   );
 }
 
@@ -249,7 +324,7 @@ async function lockVariantProduct(
 async function insertStockMovement(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
-  input: StockMovementWriteInput,
+  input: StockMovementWriteInput & { quantityDelta: number },
   productId: string,
   variantId: string,
   unitCost: string | null
@@ -262,12 +337,15 @@ async function insertStockMovement(
       commandVersion: input.commandVersion ?? null,
       movementType: input.movementType,
       occurredOn: input.occurredOn ?? null,
+      expectedVersion: input.expectedVersion ?? null,
       organizationId: identity.organizationId,
+      physicalQuantity: input.physicalQuantity ?? null,
       productId,
       quantityDelta: input.quantityDelta,
       reasonCode: input.reasonCode ?? null,
       reasonNote: input.reasonNote ?? null,
       unitCost,
+      valuationUnitCost: input.valuationUnitCost ?? null,
       variantId,
     })
     .onConflictDoNothing({
@@ -351,17 +429,116 @@ async function writeInventoryBalance(
   return created;
 }
 
+interface InventoryBalanceSnapshot {
+  movingAverageCost: string | null;
+  quantity: number;
+  version: number;
+}
+
+function validateStockMovementWriteInput(input: StockMovementWriteInput): void {
+  if (!isStockMovementType(input.movementType)) {
+    throw new InvalidStockMovementError();
+  }
+  if (input.movementType === "inventory_count") {
+    if (input.quantityDelta !== undefined) {
+      throw new InvalidStockMovementError();
+    }
+  } else {
+    if (
+      input.quantityDelta === undefined ||
+      input.valuationUnitCost !== undefined
+    ) {
+      throw new InvalidStockMovementError();
+    }
+    validateStockMovementType(input.movementType, input.quantityDelta);
+  }
+  validateCommandMetadata(input);
+}
+
+function projectStockMovement(
+  input: StockMovementWriteInput,
+  balance: InventoryBalanceSnapshot | undefined
+): { quantity: number; quantityDelta: number } {
+  const currentQuantity = balance?.quantity ?? 0;
+  if (input.movementType === "inventory_count") {
+    if ((balance?.version ?? 0) !== input.expectedVersion) {
+      throw new InventoryVersionConflictError();
+    }
+    if (
+      input.physicalQuantity === undefined ||
+      input.physicalQuantity === null
+    ) {
+      throw new InvalidStockMovementError();
+    }
+    return projectInventoryCount(currentQuantity, input.physicalQuantity);
+  }
+  if (input.quantityDelta === undefined) {
+    throw new InvalidStockMovementError();
+  }
+  return {
+    quantity: projectInventoryQuantity(currentQuantity, input.quantityDelta),
+    quantityDelta: input.quantityDelta,
+  };
+}
+
+function projectMovingAverageCost(
+  input: StockMovementWriteInput,
+  balance: InventoryBalanceSnapshot | undefined
+): string | null {
+  const currentAverageCost = balance?.movingAverageCost ?? null;
+  let movingAverageCost =
+    input.calculateMovingAverageCost?.({
+      currentAverageCost,
+      currentQuantity: balance?.quantity ?? 0,
+    }) ?? currentAverageCost;
+
+  if (
+    input.valuationUnitCost !== undefined &&
+    input.valuationUnitCost !== null
+  ) {
+    if (
+      input.movementType !== "inventory_count" ||
+      currentAverageCost !== null ||
+      input.physicalQuantity === 0
+    ) {
+      throw new InvalidInventoryCountInputError();
+    }
+    movingAverageCost = normalizeUnitCost(input.valuationUnitCost);
+  }
+
+  return movingAverageCost;
+}
+
+function movementUnitCost(
+  input: StockMovementWriteInput,
+  balance: InventoryBalanceSnapshot | undefined
+): string | null {
+  if (input.unitCost !== undefined && input.unitCost !== null) {
+    return normalizeUnitCost(input.unitCost);
+  }
+  if (
+    input.valuationUnitCost !== undefined &&
+    input.valuationUnitCost !== null
+  ) {
+    return normalizeUnitCost(input.valuationUnitCost);
+  }
+  if (
+    input.captureMovingAverageCost &&
+    balance?.movingAverageCost !== undefined &&
+    balance.movingAverageCost !== null
+  ) {
+    return normalizeUnitCost(balance.movingAverageCost);
+  }
+  return null;
+}
+
 async function applyStockMovement(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   input: StockMovementWriteInput
 ) {
   requireInventoryCapability(identity);
-  if (!isStockMovementType(input.movementType)) {
-    throw new InvalidStockMovementError();
-  }
-  validateStockMovementType(input.movementType, input.quantityDelta);
-  validateCommandMetadata(input);
+  validateStockMovementWriteInput(input);
 
   const variant = await lockVariantProduct(
     transaction,
@@ -383,6 +560,7 @@ async function applyStockMovement(
     .select({
       movingAverageCost: inventoryBalances.movingAverageCost,
       quantity: inventoryBalances.quantity,
+      version: inventoryBalances.version,
     })
     .from(inventoryBalances)
     .where(
@@ -394,32 +572,16 @@ async function applyStockMovement(
     .for("update")
     .limit(1);
 
-  const currentQuantity = balance?.quantity ?? 0;
-  const quantity = projectInventoryQuantity(
-    currentQuantity,
-    input.quantityDelta
-  );
-  const movingAverageCost =
-    input.calculateMovingAverageCost?.({
-      currentAverageCost: balance?.movingAverageCost ?? null,
-      currentQuantity,
-    }) ??
-    balance?.movingAverageCost ??
-    null;
-  let unitCost: string | null = null;
-  if (input.unitCost !== undefined && input.unitCost !== null) {
-    unitCost = normalizeUnitCost(input.unitCost);
-  } else if (input.captureMovingAverageCost) {
-    const averageCost = balance?.movingAverageCost;
-    if (averageCost !== null && averageCost !== undefined) {
-      unitCost = normalizeUnitCost(averageCost);
-    }
-  }
+  const { quantity, quantityDelta } = projectStockMovement(input, balance);
+  const movingAverageCost = projectMovingAverageCost(input, balance);
+  const unitCost = movementUnitCost(input, balance);
+
+  const resolvedInput = { ...input, quantityDelta };
 
   const inserted = await insertStockMovement(
     transaction,
     identity,
-    input,
+    resolvedInput,
     variant.productId,
     variant.variantId,
     unitCost
@@ -462,7 +624,8 @@ export async function recordStockMovement(
   if (
     !isStockMovementType(movementType) ||
     movementType === "receipt" ||
-    movementType === "write_off"
+    movementType === "write_off" ||
+    movementType === "inventory_count"
   ) {
     throw new InvalidStockMovementError();
   }
@@ -528,6 +691,31 @@ export async function writeOffStock(
   );
 }
 
+export async function inventoryCount(
+  outerTransaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  rawInput: InventoryCountRepositoryInput
+) {
+  requireInventoryCapability(identity);
+  const input = normalizeInventoryCountInput(rawInput);
+
+  return await outerTransaction.transaction((transaction) =>
+    applyStockMovement(transaction, identity, {
+      captureMovingAverageCost: input.valuationUnitCost === null,
+      commandId: input.commandId,
+      commandIndex: 0,
+      commandVersion: input.commandVersion,
+      expectedVersion: input.expectedVersion,
+      movementType: "inventory_count",
+      occurredOn: input.occurredOn,
+      physicalQuantity: input.physicalQuantity,
+      requestId: rawInput.requestId ?? null,
+      valuationUnitCost: input.valuationUnitCost,
+      variantId: input.variantId,
+    })
+  );
+}
+
 /**
  * A variant with no movements has no materialized balance row and reads as
  * quantity zero, with no moving cost and an initial projection version of 0.
@@ -537,6 +725,7 @@ export async function getInventoryBalance(
   identity: TenantRequestIdentity,
   variantId: string
 ): Promise<InventoryBalance> {
+  requireInventoryReadCapability(identity);
   const [variant] = await transaction
     .select({ id: productVariants.id })
     .from(productVariants)
