@@ -355,7 +355,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída | Sem achados restantes após fechar limite de nota em 500 pontos de código, equivalência do trimming Unicode entre JS e PostgreSQL e status proposto da valoração no ADR. |
 | Verificação local | Concluída | `bun run db:generate` não encontrou drift; `bun run check` passou com 144 testes; `bun run build` passou nos oito workspaces. O build foi repetido isoladamente após uma corrida transitória com a fixture temporária de boundaries do check. |
 | Gate Neon PostgreSQL 18 | Pendente | Aguardando execução do helper de uso único contra `pr28-inventory-gate`, branch descartável confirmada no Console; migrations e gate ainda não foram aplicados/executados nesta etapa. |
-| Push e PR draft | Pendentes | A publicar depois do gate remoto; alvo é draft empilhado sobre PR #28. Não fazer merge sem autorização. |
+| Push e PR draft | Concluídos | Branch `codex/pr30-write-off-stock` publicada; [PR #29](https://github.com/camilagama/polaris/pull/29) aberto em draft sobre PR #28 no commit `2007507`. CI remoto está em andamento. |
 | Revisão do usuário | Pendente | Revisar a proposta de valoração em ADR 0010 e o PR draft; decisão sobre custo permanece proposta, não aprovada. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
