@@ -371,7 +371,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída | O revisor encontrou replay que podia omitir uma valoração explícita; input separado e comparação idempotente foram adicionados. Também identificou e verificou a constraint DB contra valuation explícita com quantidade zero; sem achados restantes no follow-up. |
 | Verificação local | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 154 testes em 25 arquivos. |
 | Build local | Concluído | `bun run build` passou nos oito workspaces após a implementação. Wrangler exibiu `EPERM` ao gravar log local, mas o build terminou com exit code 0. |
-| Perfis de CLI | Concluídos | A regra de uso exclusivo do perfil Cloudflare/Neon `junior-pessoal` ligado a `contato.juniordiniz@gmail.com` foi registrada em `AGENTS.md` e `docs/runbooks/cli-profile-policy.md`; Neon plugin conectado não será usado. |
+| Perfis de CLI | Corrigidos | A política separa as identidades: Cloudflare `junior-pessoal` → `contato.juniordiniz@gmail.com`; Neon `junior-pessoal` → `juniordiniz56@gmail.com`. O runbook em `docs/runbooks/cli-profile-policy.md` é a fonte autoritativa; Neon plugin conectado continua fora de uso. |
 | Gate Neon PostgreSQL 18 | Pendente | Migration 0022 ainda não foi aplicada. A URL de conexão anterior não foi reutilizada; para provar migration, RLS, idempotência e concorrência é necessária uma branch descartável acessível. O caminho pelo console Neon não ficou disponível nesta sessão. |
 | UI de contagem | Adiada | O PR31 no plano define o command e os dados, mas não especifica fluxo/tela de contagem; não inventar interação visual sem critério de aceite. |
 | Push e PR draft | Concluídos | Branch `codex/pr31-inventory-count` publicada e [PR #30](https://github.com/camilagama/polaris/pull/30) aberto em draft contra `main`. Nenhum merge foi feito. |
@@ -383,6 +383,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Base isolada | Concluída | Branch codex/pr32-archive-catalog criada sobre o head 95dbc20 do PR31; branch principal e PR31 permaneceram intactos. |
+| Correção da identidade Neon | Concluída | Usuário corrigiu a regra: o perfil `junior-pessoal` deve usar `juniordiniz56@gmail.com`. `neon me --profile junior-pessoal` confirmou essa identidade; somente consultas de leitura foram feitas. |
 | Regra de tombstone | Confirmada | Usuário aprovou tombstone terminal com saldo agregado zero, mesmo havendo movimentos históricos; preservar variantes, UUIDs, SKUs, ledger, vínculos e auditoria; saldo positivo bloqueia. |
 | Archive/restore | Reutilizados | Já implementados no PR25. PR32 não os duplica; adiciona somente o comando terminal de remoção lógica. |
 | Domínio e RPC | Implementados localmente | product.delete exige expectedVersion, atualiza lifecycle e auditoria na transação; repetição é idempotente. Produto tombstoned não admite restore, edição, SKU, configuração de variante ou novos movimentos; leitura histórica e replay permanecem válidos. |
