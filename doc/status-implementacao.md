@@ -378,7 +378,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | CI remoto | Concluído | GitHub Actions passou 6/6 no commit `95dbc20`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. O PR está limpo e mergeable, mas permanece draft. |
 | Revisão do usuário | Pendente | Revisar o PR #30 e ADR 0011, especialmente a proposta de `valuationUnitCost` opcional. Nenhum merge será feito sem autorização. |
 
-### PR32 — Archive/delete catalog (implementação e verificação local concluídas; gate Neon, revisão e publicação pendentes)
+### PR32 — Archive/delete catalog (implementação, revisão estática e verificações locais concluídas; gate Neon, publicação e revisão do usuário pendentes)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -392,6 +392,6 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Build local | Concluído | bun run build passou nos oito workspaces. |
 | Gate Neon PostgreSQL 18 | Pendente | É necessário aplicar a migration e executar o gate em branch descartável. A URL anterior não será reutilizada; o console Neon não ficou acessível nesta sessão. |
 | UI de exclusão | Adiada | O plano não define affordance nem confirmação para uma ação terminal; archive/restore continuam como já implementados. |
-| Revisão independente | Pendente | Revisar migration, locks compartilhados, triggers/RLS, contrato RPC e testes do gate. |
+| Revisão independente | Concluída sem achados | Revisão do diff `95dbc20..b3781fd`: nenhum achado crítico, importante ou menor. O gate PostgreSQL 18 continua necessário para confirmar o comportamento real da migration e das corridas. |
 | Push, PR draft e CI remoto | Pendentes | Depois da revisão, publicar branch e abrir draft empilhado sobre codex/pr31-inventory-count. Nenhum merge será feito sem autorização. |
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
