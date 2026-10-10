@@ -2,7 +2,12 @@ import type { NormalizedMediaCropRect } from "@polaris/domain/catalog/media";
 
 const uuidV4Pattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fingerprintPattern = /^[0-9a-f]{64}$/;
+const derivativeSizes = new Set([320, 640]);
+
+export type MediaDerivativeSize = 320 | 640;
 
 export interface MediaUploadFingerprintInput {
   crop: NormalizedMediaCropRect;
@@ -51,7 +56,8 @@ export function mediaObjectKey(
   organizationId: string,
   productId: string,
   uploadCommandId: string,
-  inputFingerprint: string
+  inputFingerprint: string,
+  attemptId: string
 ): string {
   const validCommandId = parseUploadCommandId(uploadCommandId);
   const normalizedProductId = productId.trim();
@@ -69,7 +75,57 @@ export function mediaObjectKey(
   if (!fingerprintPattern.test(inputFingerprint)) {
     throw new Error("invalid_media_upload_fingerprint");
   }
-  return `media/${encodeURIComponent(organizationId)}/${productId}/${validCommandId}/${inputFingerprint}.webp`;
+  if (!uuidV4Pattern.test(attemptId)) {
+    throw new Error("invalid_media_attempt_id");
+  }
+  return `media/v2/${encodeURIComponent(organizationId)}/${normalizedProductId}/${validCommandId}/${inputFingerprint}/${attemptId.toLowerCase()}.webp`;
+}
+
+export function mediaStagingMarkerKey(
+  attemptId: string,
+  createdAt: Date
+): string {
+  if (
+    !(uuidV4Pattern.test(attemptId) && Number.isFinite(createdAt.getTime()))
+  ) {
+    throw new Error("invalid_media_staging_marker");
+  }
+  const [date, hour] = createdAt.toISOString().split("T");
+  const [year, month, day] = date?.split("-") ?? [];
+  if (!(year && month && day && hour)) {
+    throw new Error("invalid_media_staging_marker");
+  }
+  return `media/staging/v1/${year}/${month}/${day}/${hour.slice(0, 2)}/${attemptId.toLowerCase()}.json`;
+}
+
+export function mediaDerivativeKey(
+  assetId: string,
+  size: MediaDerivativeSize
+): string {
+  if (!(uuidPattern.test(assetId) && derivativeSizes.has(size))) {
+    throw new Error("invalid_media_derivative");
+  }
+  return `media/derivatives/v1/${assetId.toLowerCase()}/${size}.webp`;
+}
+
+export function isMediaObjectKey(value: string): boolean {
+  const segments = value.split("/");
+  if (
+    segments.length !== 7 ||
+    segments[0] !== "media" ||
+    segments[1] !== "v2" ||
+    !segments[2] ||
+    !uuidPattern.test(segments[3] ?? "") ||
+    !uuidV4Pattern.test(segments[4] ?? "") ||
+    !fingerprintPattern.test(segments[5] ?? "")
+  ) {
+    return false;
+  }
+  const attemptFile = segments[6] ?? "";
+  return (
+    attemptFile.toLowerCase().endsWith(".webp") &&
+    uuidV4Pattern.test(attemptFile.slice(0, -5))
+  );
 }
 
 export function parseUploadCommandId(value: string): string {

@@ -26,10 +26,15 @@ import {
 import { type Context, Hono } from "hono";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
 import type { ProcessedMediaImage } from "../media-image-pipeline";
-import { processMediaImage } from "../media-image-pipeline";
+import {
+  processMediaDerivative,
+  processMediaImage,
+} from "../media-image-pipeline";
 import {
   InvalidMediaUploadCommandIdError,
+  mediaDerivativeKey,
   mediaObjectKey,
+  mediaStagingMarkerKey,
   mediaUploadFingerprint,
   parseUploadCommandId,
 } from "../media-upload-command";
@@ -38,6 +43,7 @@ import { withTenantRequestContext } from "../tenant-request-context";
 
 type TenantRunner = typeof withTenantRequestContext;
 type ImageProcessor = typeof processMediaImage;
+type DerivativeProcessor = typeof processMediaDerivative;
 
 export interface MediaRouteDependencies {
   assertProductCanReceiveMedia: typeof assertProductCanReceiveMedia;
@@ -46,6 +52,7 @@ export interface MediaRouteDependencies {
   getMediaAssetForDelivery: typeof getMediaAssetForDelivery;
   listProductMedia: typeof listProductMedia;
   processMediaImage: ImageProcessor;
+  processMediaDerivative: DerivativeProcessor;
   withTenantRequestContext: TenantRunner;
 }
 
@@ -346,6 +353,35 @@ async function findUploadPreflight(
   });
 }
 
+async function storeMediaStagingMarker(
+  mediaBucket: MediaBucketBinding,
+  stagingKey: string,
+  storageKey: string
+): Promise<void> {
+  try {
+    const stored = await mediaBucket.put(
+      stagingKey,
+      new TextEncoder().encode(JSON.stringify({ storageKey, version: 1 })),
+      {
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: "application/json",
+        },
+        onlyIf: new Headers({ "If-None-Match": "*" }),
+      }
+    );
+    if (stored === null) {
+      throw new MediaImageProcessingError();
+    }
+  } catch (cause: unknown) {
+    if (cause instanceof MediaImageProcessingError) {
+      throw cause;
+    }
+    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+}
+
 async function storeMediaObject(
   mediaBucket: MediaBucketBinding,
   storageKey: string,
@@ -452,12 +488,16 @@ async function handleMediaUpload(
     sourceBytes,
     ...(declaredContentType === undefined ? {} : { declaredContentType }),
   });
+  const attemptId = crypto.randomUUID();
   const storageKey = mediaObjectKey(
     target.organizationId,
     target.productId,
     target.uploadCommandId,
-    inputFingerprint
+    inputFingerprint,
+    attemptId
   );
+  const stagingKey = mediaStagingMarkerKey(attemptId, new Date());
+  await storeMediaStagingMarker(mediaBucket, stagingKey, storageKey);
   const objectCreated = await storeMediaObject(
     mediaBucket,
     storageKey,
@@ -485,15 +525,24 @@ async function handleMediaUpload(
       requestedOrganizationId: target.organizationId,
     });
   } catch (error: unknown) {
-    if (objectCreated && canCompensateRejectedMediaWrite(error)) {
-      try {
-        await mediaBucket.delete(storageKey);
-      } catch {
-        // PR35 will reconcile private objects left by failed compensation.
-      }
+    if (canCompensateRejectedMediaWrite(error)) {
+      await cleanupRejectedMediaAttempt({
+        mediaBucket,
+        objectCreated,
+        stagingKey,
+        storageKey,
+      });
     }
     throw error;
   }
+
+  await cleanupSuccessfulMediaAttempt({
+    mediaBucket,
+    objectCreated,
+    replayed: result.replayed,
+    stagingKey,
+    storageKey,
+  });
 
   return jsonAssetResponse(
     context,
@@ -501,6 +550,270 @@ async function handleMediaUpload(
     result.replayed,
     result.replayed ? 200 : 201
   );
+}
+
+type MediaDerivativeRequestSize = 320 | 640 | null;
+type ParsedMediaDerivativeRequestSize = MediaDerivativeRequestSize | "invalid";
+interface MediaDeliveryPayload {
+  body: ReadableStream<Uint8Array> | ArrayBuffer;
+  byteLength: number;
+}
+type StoredMediaObject = NonNullable<
+  Awaited<ReturnType<MediaBucketBinding["get"]>>
+>;
+
+function parseMediaDerivativeSize(
+  value: string | undefined
+): ParsedMediaDerivativeRequestSize {
+  if (value === undefined) {
+    return null;
+  }
+  if (value === "320") {
+    return 320;
+  }
+  if (value === "640") {
+    return 640;
+  }
+  return "invalid";
+}
+
+async function getMediaObject(
+  bucket: MediaBucketBinding,
+  key: string
+): Promise<StoredMediaObject | null> {
+  try {
+    return await bucket.get(key);
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve storage details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+}
+
+async function putMediaDerivative(
+  bucket: MediaBucketBinding,
+  key: string,
+  bytes: Uint8Array
+): Promise<{ etag: string } | null> {
+  try {
+    return await bucket.put(key, bytes, {
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "image/webp",
+      },
+      onlyIf: new Headers({ "If-None-Match": "*" }),
+    });
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve storage details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+}
+
+async function readStoredMediaBytes(
+  object: StoredMediaObject
+): Promise<Uint8Array> {
+  try {
+    return new Uint8Array(await object.arrayBuffer());
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve storage details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+}
+
+async function createOrReadMediaDerivative(input: {
+  asset: NonNullable<Awaited<ReturnType<typeof getMediaAssetForDelivery>>>;
+  derivativeProcessor: DerivativeProcessor;
+  mediaBucket: MediaBucketBinding;
+  size: 320 | 640;
+  images: NonNullable<ServerEnv["Bindings"]["IMAGES"]>;
+}): Promise<MediaDeliveryPayload | null> {
+  const derivativeKey = mediaDerivativeKey(input.asset.assetId, input.size);
+  const cached = await getMediaObject(input.mediaBucket, derivativeKey);
+  if (cached) {
+    return { body: cached.body, byteLength: cached.size };
+  }
+
+  const master = await getMediaObject(
+    input.mediaBucket,
+    input.asset.storageKey
+  );
+  if (!master) {
+    return null;
+  }
+
+  const derivative = await input.derivativeProcessor({
+    images: input.images,
+    maxEdge: input.size,
+    sourceBytes: await readStoredMediaBytes(master),
+  });
+  const stored = await putMediaDerivative(
+    input.mediaBucket,
+    derivativeKey,
+    derivative.bytes
+  );
+  if (stored !== null) {
+    return {
+      body: derivative.bytes.slice().buffer as ArrayBuffer,
+      byteLength: derivative.byteLength,
+    };
+  }
+
+  const raced = await getMediaObject(input.mediaBucket, derivativeKey);
+  if (!raced) {
+    throw new MediaImageProcessingError();
+  }
+  return { body: raced.body, byteLength: raced.size };
+}
+
+async function resolveMediaDeliveryPayload(input: {
+  asset: NonNullable<Awaited<ReturnType<typeof getMediaAssetForDelivery>>>;
+  derivativeProcessor: DerivativeProcessor;
+  mediaBucket: MediaBucketBinding;
+  size: MediaDerivativeRequestSize;
+  images: ServerEnv["Bindings"]["IMAGES"];
+}): Promise<MediaDeliveryPayload | null> {
+  if (input.size === null) {
+    const master = await getMediaObject(
+      input.mediaBucket,
+      input.asset.storageKey
+    );
+    return master
+      ? { body: master.body, byteLength: input.asset.byteSize }
+      : null;
+  }
+  if (!input.images) {
+    throw new MediaImageProcessingError();
+  }
+  return await createOrReadMediaDerivative({
+    asset: input.asset,
+    derivativeProcessor: input.derivativeProcessor,
+    images: input.images,
+    mediaBucket: input.mediaBucket,
+    size: input.size,
+  });
+}
+
+async function getTenantMediaAsset(input: {
+  context: Context<ServerEnv>;
+  getAsset: typeof getMediaAssetForDelivery;
+  organizationId: string;
+  tenantRequest: TenantRunner;
+}) {
+  return await input.tenantRequest({
+    bindings: input.context.env,
+    capability: "catalog:read",
+    operation: (transaction, identity) =>
+      input.getAsset(
+        transaction,
+        identity.organizationId,
+        input.context.req.param("assetId") ?? ""
+      ),
+    request: input.context.req.raw,
+    requestedOrganizationId: input.organizationId,
+  });
+}
+
+function mediaNotFoundResponse(context: Context<ServerEnv>): Response {
+  return context.json(
+    { error: { code: "not_found" }, requestId: context.get("requestId") },
+    404
+  );
+}
+
+function mediaDeliveryResponse(
+  context: Context<ServerEnv>,
+  payload: MediaDeliveryPayload
+): Response {
+  return context.body(payload.body, 200, {
+    "Cache-Control": "private, no-store",
+    "Content-Length": String(payload.byteLength),
+    "Content-Type": "image/webp",
+    "X-Content-Type-Options": "nosniff",
+  });
+}
+
+async function handleMediaDelivery(
+  context: Context<ServerEnv>,
+  dependencies: {
+    derivativeProcessor: DerivativeProcessor;
+    getAsset: typeof getMediaAssetForDelivery;
+    tenantRequest: TenantRunner;
+  }
+): Promise<Response> {
+  const organizationId =
+    context.req.query("organizationId") ??
+    context.req.header("x-organization-id") ??
+    "";
+  if (!organizationId.trim() || organizationId !== organizationId.trim()) {
+    return errorResponse(context, new InvalidMediaUploadRequestError());
+  }
+  const size = parseMediaDerivativeSize(context.req.query("size"));
+  if (size === "invalid") {
+    return errorResponse(context, new InvalidMediaUploadRequestError());
+  }
+  const mediaBucket = context.env.MEDIA_BUCKET;
+  if (!mediaBucket) {
+    return errorResponse(context, new MediaImageProcessingError());
+  }
+
+  try {
+    const asset = await getTenantMediaAsset({
+      context,
+      getAsset: dependencies.getAsset,
+      organizationId,
+      tenantRequest: dependencies.tenantRequest,
+    });
+    if (!asset) {
+      return mediaNotFoundResponse(context);
+    }
+    const payload = await resolveMediaDeliveryPayload({
+      asset,
+      derivativeProcessor: dependencies.derivativeProcessor,
+      images: context.env.IMAGES,
+      mediaBucket,
+      size,
+    });
+    return payload
+      ? mediaDeliveryResponse(context, payload)
+      : mediaNotFoundResponse(context);
+  } catch (error) {
+    return errorResponse(context, error);
+  }
+}
+
+async function cleanupRejectedMediaAttempt(input: {
+  mediaBucket: MediaBucketBinding;
+  objectCreated: boolean;
+  stagingKey: string;
+  storageKey: string;
+}): Promise<void> {
+  if (!input.objectCreated) {
+    return;
+  }
+  try {
+    await input.mediaBucket.delete(input.storageKey);
+    await input.mediaBucket.delete(input.stagingKey);
+  } catch {
+    // Keep the staging marker so the reconciler can retry both deletions.
+  }
+}
+
+async function cleanupSuccessfulMediaAttempt(input: {
+  mediaBucket: MediaBucketBinding;
+  objectCreated: boolean;
+  replayed: boolean;
+  stagingKey: string;
+  storageKey: string;
+}): Promise<void> {
+  try {
+    if (input.replayed && input.objectCreated) {
+      await input.mediaBucket.delete(input.storageKey);
+    }
+    if (!input.replayed || input.objectCreated) {
+      await input.mediaBucket.delete(input.stagingKey);
+    }
+  } catch {
+    // The marker lets the reconciler distinguish referenced and orphan objects.
+  }
 }
 
 export function createMediaRoutes(
@@ -515,6 +828,8 @@ export function createMediaRoutes(
     overrides.getMediaAssetForDelivery ?? getMediaAssetForDelivery;
   const listMedia = overrides.listProductMedia ?? listProductMedia;
   const imageProcessor = overrides.processMediaImage ?? processMediaImage;
+  const derivativeProcessor =
+    overrides.processMediaDerivative ?? processMediaDerivative;
   const tenantRequest =
     overrides.withTenantRequestContext ?? withTenantRequestContext;
 
@@ -559,62 +874,15 @@ export function createMediaRoutes(
     }
   });
 
-  app.get("/api/media/:assetId", async (context) => {
-    const organizationId =
-      context.req.query("organizationId") ??
-      context.req.header("x-organization-id") ??
-      "";
-    if (!organizationId.trim() || organizationId !== organizationId.trim()) {
-      return errorResponse(context, new InvalidMediaUploadRequestError());
-    }
-    const { MEDIA_BUCKET: mediaBucket } = context.env;
-    if (!mediaBucket) {
-      return errorResponse(context, new MediaImageProcessingError());
-    }
-
-    try {
-      const asset = await tenantRequest({
-        bindings: context.env,
-        capability: "catalog:read",
-        operation: (transaction, identity) =>
-          getAsset(
-            transaction,
-            identity.organizationId,
-            context.req.param("assetId")
-          ),
-        request: context.req.raw,
-        requestedOrganizationId: organizationId,
-      });
-      if (!asset) {
-        return context.json(
-          { error: { code: "not_found" }, requestId: context.get("requestId") },
-          404
-        );
-      }
-
-      let object: Awaited<ReturnType<MediaBucketBinding["get"]>>;
-      try {
-        object = await mediaBucket.get(asset.storageKey);
-      } catch (cause: unknown) {
-        // biome-ignore lint/style/useErrorCause: Preserve storage details internally while returning a stable processing error.
-        throw new MediaImageProcessingError({ cause });
-      }
-      if (!object) {
-        return context.json(
-          { error: { code: "not_found" }, requestId: context.get("requestId") },
-          404
-        );
-      }
-      return context.body(object.body, 200, {
-        "Cache-Control": "private, no-store",
-        "Content-Length": String(asset.byteSize),
-        "Content-Type": "image/webp",
-        "X-Content-Type-Options": "nosniff",
-      });
-    } catch (error) {
-      return errorResponse(context, error);
-    }
-  });
+  app.get(
+    "/api/media/:assetId",
+    async (context) =>
+      await handleMediaDelivery(context, {
+        derivativeProcessor,
+        getAsset,
+        tenantRequest,
+      })
+  );
 
   return app;
 }

@@ -11,6 +11,7 @@ import { createMediaRoutes, type MediaRouteDependencies } from "./media";
 const organizationId = "org/with space";
 const productId = "0199c2d0-0000-7000-8000-000000000001";
 const uploadCommandId = "de305d54-75b4-431b-adb2-eb6b9e546014";
+const stagingKeyPattern = /^media\/staging\/v1\//;
 interface TestIdentity {
   capability: string;
   organizationId: string;
@@ -49,9 +50,15 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
         body: new Response(bodyBuffer(bytes))
           .body as ReadableStream<Uint8Array>,
         httpEtag: '"test-etag"',
+        size: bytes.byteLength,
+        uploaded: new Date("2026-10-10T12:00:00.000Z"),
       });
     }),
-    put: vi.fn((key, value) => {
+    list: vi.fn(() => Promise.resolve({ objects: [], truncated: false })),
+    put: vi.fn((key, value, options) => {
+      if (options?.onlyIf?.get("if-none-match") === "*" && stored.has(key)) {
+        return Promise.resolve(null);
+      }
       stored.set(key, new Uint8Array(value));
       return Promise.resolve({ etag: "test-etag" });
     }),
@@ -80,6 +87,15 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
         contentType: "image/webp" as const,
         height: 200,
         width: 600,
+      })
+    ),
+    processMediaDerivative: vi.fn(({ maxEdge }: { maxEdge: 320 | 640 }) =>
+      Promise.resolve({
+        byteLength: 4,
+        bytes: new Uint8Array([82, 73, 70, 70]),
+        contentType: "image/webp" as const,
+        height: maxEdge / 2,
+        width: maxEdge,
       })
     ),
     withTenantRequestContext: vi.fn(
@@ -147,9 +163,16 @@ describe("media upload route", () => {
       asset: mediaAsset,
       replayed: false,
     });
-    expect(mediaBucket.put).toHaveBeenCalledTimes(1);
-    const [key, , options] = vi.mocked(mediaBucket.put).mock.calls[0] ?? [];
-    expect(key).toContain(encodeURIComponent(organizationId));
+    expect(mediaBucket.put).toHaveBeenCalledTimes(2);
+    const [stagingKey, , stagingOptions] =
+      vi.mocked(mediaBucket.put).mock.calls[0] ?? [];
+    const [key, , options] = vi.mocked(mediaBucket.put).mock.calls[1] ?? [];
+    expect(stagingKey).toMatch(stagingKeyPattern);
+    expect(stagingOptions?.httpMetadata).toEqual({
+      cacheControl: "private, no-store",
+      contentType: "application/json",
+    });
+    expect(key).toContain(`media/v2/${encodeURIComponent(organizationId)}/`);
     expect(options?.httpMetadata).toEqual({
       cacheControl: "private, no-store",
       contentType: "image/webp",
@@ -230,8 +253,118 @@ describe("media upload route", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(mediaBucket.put).toHaveBeenCalledTimes(1);
-    expect(mediaBucket.delete).toHaveBeenCalledTimes(1);
+    expect(mediaBucket.put).toHaveBeenCalledTimes(2);
+    expect(mediaBucket.delete).toHaveBeenCalledTimes(2);
     expect(stored.size).toBe(0);
+  });
+
+  it("deletes an unreferenced physical attempt after an idempotent replay", async () => {
+    const { app, bindings, mediaBucket, stored } = createTestApp({
+      createProductMediaAsset: vi.fn(() =>
+        Promise.resolve({ asset: mediaAsset, replayed: true })
+      ),
+    });
+
+    const response = await app.fetch(
+      uploadRequest({ body: new Uint8Array([1, 2, 3]) }),
+      bindings
+    );
+
+    expect(response.status).toBe(200);
+    expect(mediaBucket.put).toHaveBeenCalledTimes(2);
+    expect(mediaBucket.delete).toHaveBeenCalledTimes(2);
+    expect(stored.size).toBe(0);
+  });
+
+  it.each([320, 640] as const)(
+    "generates and privately caches the %i-pixel derivative after tenant authorization",
+    async (size) => {
+      const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+      const { app, bindings, dependencies, mediaBucket, stored } =
+        createTestApp({
+          getMediaAssetForDelivery: vi.fn(() =>
+            Promise.resolve({
+              assetId: mediaAsset.assetId,
+              byteSize: 4,
+              contentType: "image/webp" as const,
+              height: 200,
+              storageKey,
+              width: 600,
+            })
+          ),
+        });
+      stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
+
+      const response = await app.fetch(
+        new Request(
+          `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=${size}`
+        ),
+        bindings
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("content-type")).toBe("image/webp");
+      expect(dependencies.processMediaDerivative).toHaveBeenCalledWith({
+        images: bindings.IMAGES,
+        maxEdge: size,
+        sourceBytes: new Uint8Array([82, 73, 70, 70]),
+      });
+      expect(mediaBucket.put).toHaveBeenCalledWith(
+        `media/derivatives/v1/${mediaAsset.assetId}/${size}.webp`,
+        expect.any(Uint8Array),
+        expect.objectContaining({
+          httpMetadata: {
+            cacheControl: "private, no-store",
+            contentType: "image/webp",
+          },
+        })
+      );
+    }
+  );
+
+  it("serves a cached derivative without reprocessing", async () => {
+    const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+    const { app, bindings, dependencies, stored } = createTestApp({
+      getMediaAssetForDelivery: vi.fn(() =>
+        Promise.resolve({
+          assetId: mediaAsset.assetId,
+          byteSize: 4,
+          contentType: "image/webp" as const,
+          height: 200,
+          storageKey,
+          width: 600,
+        })
+      ),
+    });
+    stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
+    stored.set(
+      `media/derivatives/v1/${mediaAsset.assetId}/320.webp`,
+      new Uint8Array([82, 73, 70, 70])
+    );
+
+    const response = await app.fetch(
+      new Request(
+        `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+      ),
+      bindings
+    );
+
+    expect(response.status).toBe(200);
+    expect(dependencies.processMediaDerivative).not.toHaveBeenCalled();
+  });
+
+  it("rejects derivative sizes outside the supported set", async () => {
+    const { app, bindings, dependencies, mediaBucket } = createTestApp();
+    const response = await app.fetch(
+      new Request(
+        `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=800`
+      ),
+      bindings
+    );
+
+    expect(response.status).toBe(400);
+    expect(dependencies.getMediaAssetForDelivery).not.toHaveBeenCalled();
+    expect(mediaBucket.get).not.toHaveBeenCalled();
   });
 });

@@ -224,3 +224,88 @@ export async function processMediaImage({
     ...outputDimensions,
   };
 }
+
+export async function processMediaDerivative(input: {
+  images: MediaImagesBinding;
+  maxEdge: 320 | 640;
+  sourceBytes: Uint8Array;
+}): Promise<ProcessedMediaImage> {
+  if (
+    input.sourceBytes.byteLength === 0 ||
+    input.sourceBytes.byteLength > MAX_MEDIA_INPUT_BYTES
+  ) {
+    throw new MediaImageProcessingError();
+  }
+
+  const sourceInfo = await readImageInfo(input.images, input.sourceBytes);
+  if (normalizedImageFormat(sourceInfo.format) !== "image/webp") {
+    throw new UnsupportedMediaImageError();
+  }
+  const sourceDimensions = validatedDimensions(sourceInfo);
+
+  let transformed: ImageTransformation;
+  try {
+    transformed = await input.images
+      .input(byteStream(input.sourceBytes))
+      .transform({
+        fit: "scale-down",
+        height: input.maxEdge,
+        width: input.maxEdge,
+      })
+      .output({ format: "image/webp", quality: 85 });
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+
+  let response: Response;
+  try {
+    response = transformed.response();
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+  if (!response.ok || response.body === null) {
+    throw new MediaImageProcessingError();
+  }
+
+  const contentType = response.headers
+    .get("content-type")
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  if (contentType !== "image/webp") {
+    throw new UnsupportedMediaImageError();
+  }
+
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await response.arrayBuffer());
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
+    throw new MediaImageProcessingError({ cause });
+  }
+  if (bytes.byteLength === 0) {
+    throw new MediaImageProcessingError();
+  }
+
+  const outputInfo = await readImageInfo(input.images, bytes);
+  const outputContentType = normalizedImageFormat(outputInfo.format);
+  const outputDimensions = validatedDimensions(outputInfo);
+  if (
+    outputContentType !== "image/webp" ||
+    outputDimensions.width > input.maxEdge ||
+    outputDimensions.height > input.maxEdge ||
+    outputDimensions.width > sourceDimensions.width ||
+    outputDimensions.height > sourceDimensions.height
+  ) {
+    throw new UnsupportedMediaImageError();
+  }
+
+  return {
+    byteLength: bytes.byteLength,
+    bytes,
+    contentType: "image/webp",
+    ...outputDimensions,
+  };
+}

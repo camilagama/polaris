@@ -35,5 +35,5 @@ Mutations offline usam commands idempotentes e versionados. O servidor valida ca
 
 ## Infraestrutura posterior
 
-Mídia no R2 permanece privada por padrão; o catálogo público só expõe conteúdo autorizado pela aplicação. Queues, Workflows, Staging, release automation e recovery entram quando as respectivas milestones exigirem esses mecanismos.
+Mídia no R2 permanece privada por padrão; o catálogo público só expõe conteúdo autorizado pela aplicação. O master WebP de até 1200 px é fonte imutável; derivados 320/640 são cache regenerável e também passam pela autorização tenant. O cron horário reconcilia markers de staging e masters órfãos com uma role Hyperdrive dedicada, sem query caching. Nenhuma mídia é servida por bucket público. Queues, Workflows, release automation e recovery entram quando as respectivas milestones exigirem esses mecanismos.
 Mutações tenant críticas escrevem `tenant_audit_event` na mesma transação da mutação, usando a identidade já autorizada. O runtime só pode inserir eventos e não pode consultá-los ou alterá-los nesta etapa; payload livre e snapshots não são armazenados. A política de retenção continua pendente para go-live, e a purga física da organização remove seus eventos.

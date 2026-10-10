@@ -5,7 +5,10 @@ import {
   UnsupportedMediaImageError,
 } from "@polaris/domain/catalog/media";
 import { describe, expect, it, vi } from "vitest";
-import { processMediaImage } from "./media-image-pipeline";
+import {
+  processMediaDerivative,
+  processMediaImage,
+} from "./media-image-pipeline";
 
 function imageBinding(
   options: {
@@ -196,6 +199,60 @@ describe("processMediaImage", () => {
         crop: { height: 1, width: 1, x: 0, y: 0 },
         declaredContentType: "image/jpeg",
         images: tooLarge.binding,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      })
+    ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+  });
+});
+
+describe("processMediaDerivative", () => {
+  it.each([320, 640] as const)(
+    "scales a WebP master down within %i pixels without upscaling",
+    async (maxEdge) => {
+      const { binding, transforms } = imageBinding({
+        decoded: { format: "image/webp", height: 900, width: 1600 },
+        output: {
+          bytes: new Uint8Array([82, 73, 70, 70]),
+          format: "image/webp",
+          height: maxEdge / 2,
+          width: maxEdge,
+        },
+      });
+
+      const result = await processMediaDerivative({
+        images: binding,
+        maxEdge,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      });
+
+      expect(transforms).toEqual([
+        { fit: "scale-down", height: maxEdge, width: maxEdge },
+        { format: "image/webp", quality: 85 },
+      ]);
+      expect(result).toMatchObject({
+        byteLength: 4,
+        contentType: "image/webp",
+        height: maxEdge / 2,
+        width: maxEdge,
+      });
+    }
+  );
+
+  it("rejects provider output larger than the source or requested bound", async () => {
+    const { binding } = imageBinding({
+      decoded: { format: "image/webp", height: 160, width: 240 },
+      output: {
+        bytes: new Uint8Array([82, 73, 70, 70]),
+        format: "image/webp",
+        height: 160,
+        width: 320,
+      },
+    });
+
+    await expect(
+      processMediaDerivative({
+        images: binding,
+        maxEdge: 320,
         sourceBytes: new Uint8Array([1, 2, 3]),
       })
     ).rejects.toBeInstanceOf(UnsupportedMediaImageError);

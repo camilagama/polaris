@@ -1828,32 +1828,33 @@ Criar `media_assets`, `product_media` e `variant_media`, com FKs compostas que g
 
 # PR 35 — Derivatives e media cleanup
 
+## Escopo
 
+- Gerar sob demanda e persistir no R2 privado derivados WebP com caixas máximas de 320×320 e 640×640.
+- Usar `scale-down`, manter proporção e nunca ampliar imagens menores. As rotas só geram ou entregam um derivado depois da autorização tenant-scoped.
+- Chaves de cache são versionadas por transform e asset ID; o cache é regenerável e não exige colunas duplicadas no banco. Respostas permanecem `private, no-store`.
+- Escrever marker privado de staging antes do master. Removê-lo após commit confirmado; manter em caso de falha ou resultado ambíguo.
+- Reter markers por pelo menos 24 horas, usando o timestamp real `R2Object.uploaded`; o prefixo UTC ordenável serve à paginação, não substitui a verificação de idade.
+- Executar reconciliador horário (minuto 17 UTC) em páginas R2; masters sem referência são excluídos somente após claim no banco. Assets referenciados mantêm o master e perdem apenas o marker.
+- Manter R2 privado. Nenhum bucket público, URL pública ou cache compartilhado é introduzido.
 
-Gerar/cachear:
+## Concorrência e privilégios
 
+- Cada tentativa física recebe um UUID próprio na chave master v2. Uploads concorrentes/replays nunca reutilizam um objeto físico; o banco continua determinando o asset canônico.
+- Migration 0026 adiciona tombstones internos com FORCE RLS, função SECURITY DEFINER de `search_path` fixo e uma role cleanup sem login/BYPASSRLS. A role tenant não pode executar a função nem ler as tabelas de cleanup.
+- O trigger BEFORE INSERT em `media_assets` e o claim do reconciliador obtêm o mesmo advisory transaction lock por chave. O reconciliador obtém o lock e consulta/reivindica em comandos SQL separados sob READ COMMITTED; o trigger rejeita uma referência nova para chave tombstoned.
+- A Worker binding cleanup usa Hyperdrive próprio com cache desabilitado e uma role login NOBYPASSRLS membro apenas do grupo de cleanup. Sem a binding, o cron falha explicitamente.
+- Derivados só existem para assets persistidos e o domínio atual não oferece hard-delete de mídia. A futura purge física de privacidade deve remover também `media/derivatives/v1/{assetId}/`; essa remoção permanece no fluxo de purge, fora do reconciliador de upload do PR35.
 
+## Gate de aceitação
 
-- 320;
-
-- 640.
-
-
-
-Staging lifecycle.
-
-
-
-Orphan reconciler.
-
-
-
-Sem bucket público.
-
-
+- Verificação local: derivados preservam formato/proporção, respeitam os limites e não ampliam fontes pequenas; rotas preservam autenticação tenant e cache privado; reconciliador trata markers recentes, referenciados, órfãos, inválidos e falhas de storage/DB.
+- Neon PostgreSQL 18: migration reproduzível; FORCE RLS/grants; role cleanup sem acesso direto; função indisponível à role tenant; inserção bloqueada após claim; corrida real entre insert em andamento e claim deve aguardar e observar o commit.
+- Cloudflare descartável: Images gera master e derivados 320/640, R2 passa put/get/delete e o reconciliador apaga master/marker órfãos pelo Hyperdrive dedicado. Confirmar que os prefixes temporários ficam vazios.
+- Rodar `bun run check`, `bun run build`, CI e revisão independente. Publicar draft empilhado sobre PR34; não fazer merge nem alterar recursos de produção.
+- Após as verificações, documentar fixtures sintéticas e a expiração automática da branch Neon; nenhum segredo ou URL de conexão deve aparecer nos logs.
 
 ---
-
 
 
 # GATE 3

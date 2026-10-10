@@ -20,6 +20,11 @@
       "binding": "ONBOARDING_HYPERDRIVE",
       "id": "local-only",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "MEDIA_CLEANUP_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
     }
   ],
   "images": {
@@ -44,6 +49,9 @@
       "simple": { "limit": 3, "period": 60 }
     }
   ],
+  "triggers": {
+    "crons": ["17 * * * *"]
+  },
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*"]

@@ -432,4 +432,22 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | O workflow `38072317058` passou 6/6 no commit `a4d8708`: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. Este checkpoint só altera documentação; PR #33 permanece draft e nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
 
+### PR35 — Derivatives e media cleanup (implementação e gates remotos concluídos; publicação pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Branch/worktree isolada | Concluída localmente | Worktree `D:\\2 - Dev\\2 - Worktree\\pr35-media-derivatives\\polaris`, branch `codex/pr35-media-derivatives`, baseada no head `87cbc27` do PR34. O checkout principal permaneceu intacto. |
+| Derivados 320/640 | Implementados | Derivação sob demanda via Cloudflare Images, `scale-down`, sem upscale, WebP quality 85; keys `media/derivatives/v1/{assetId}/{size}.webp`. A rota continua tenant-authorized e entrega privada `no-store`. O painel atual solicita o derivado 320. |
+| Tentativas físicas e staging | Implementados | Chave master v2 inclui UUID exclusivo por tentativa. Marker privado `media/staging/v1/{UTC}/{attemptId}.json` é gravado antes do master e removido após commit confirmado; falhas mantêm o marker. |
+| Migration 0026, lock e grants | Concluídos | `media_cleanup_claims` com FORCE RLS, função SECURITY DEFINER de search_path fixo, trigger de inserção e advisory transaction lock compartilhado. Runtime tenant não executa a função. O login cleanup foi provado sem SUPERUSER, CREATEROLE ou BYPASSRLS e sem SELECT direto. |
+| Escopo de purge futuro | Adiado | PR35 não adiciona hard-delete de assets. A futura purge física deve remover também `media/derivatives/v1/{assetId}/`; o tombstone de produto atual preserva assets. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration 0026 aplicada e verificador passou em PostgreSQL 18.6 na branch descartável `pr35-media-derivatives-gate` (projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`). Dez verificações passaram, incluindo FORCE RLS, função, grants, claim idempotente, bloqueio de insert depois de claim e concorrência entre insert não confirmado e reconciliador. Branch expira em `2026-10-11 15:00 UTC` (12:00 BRT); fixtures são sintéticas e permanecem até expiração automática. Não foram registrados URLs de conexão. |
+| Gate Cloudflare Images/R2/Hyperdrive | Concluído | Perfil `junior-pessoal` confirmado como `contato.juniordiniz@gmail.com`; comandos usaram o perfil explicitamente. Um JPEG sintético 1600×1200 virou master WebP 1200×900 e derivados 320×240 e 640×480; os dois caches passaram put/get com bytes iguais. O reconciliador remoto apagou um master órfão e seu marker via Hyperdrive cleanup, sem falhas. |
+| Teardown remoto | Concluído e verificado | Worker e preview removidos; `cf workers list` e a lista de previews voltaram vazias. Hyperdrive temporário foi removido; a lista mantém somente a configuração anterior do PR11. As roles/login de cleanup de teste foram removidas da branch Neon. Os prefixes R2 `media/staging/v1/`, `media/derivatives/v1/` e `media/v2/` estão vazios; o bucket privado permanente permanece criado. |
+| Observação do preview | Registrada | Deploy comum retornou HTTP 1042 quando a rota `workers.dev` não estava ativa; o Preview temporário serviu os endpoints autenticados do gate. A URL raiz `/health` do preview mínimo serviu a página estática 404; `/gate?stage=image`, `r2`, `database` e o fluxo completo responderam 200. |
+| Verificação local final | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, import boundaries, Knip e 203 testes em 31 arquivos. `bun run build` passou nos oito workspaces; `bun run --filter @polaris/db db:generate` confirmou que não há drift. |
+| Push, draft PR e CI remoto | Pendente | Próximo passo: commit/push de `codex/pr35-media-derivatives` e draft empilhado sobre PR34. Nenhum merge nem deploy de produção será feito. |
+| Revisão independente e revisão do usuário | Pendente | Revisar o diff, ADR 0014, migration 0026 e resultados dos gates antes de qualquer merge. |
+
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

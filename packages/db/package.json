@@ -21,6 +21,7 @@
     "./inventory-schema": "./src/schema/inventory.ts",
     "./media-schema": "./src/schema/media.ts",
     "./media-repository": "./src/media-repository.ts",
+    "./media-cleanup": "./src/media-cleanup.ts",
     "./inventory-repository": "./src/inventory-repository.ts"
   },
   "scripts": {
@@ -37,6 +38,7 @@
     "poc:inventory:verify": "bun scripts/verify-inventory-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
     "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
+    "poc:media:derivatives:verify": "bun scripts/verify-media-derivatives-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

@@ -149,13 +149,17 @@ export async function listProductMedia(
 export function productMediaAssetUrl(
   asset: Pick<ProductMediaAssetReadModel, "assetId">,
   organizationId: string,
-  origin?: string
+  origin?: string,
+  size?: 320 | 640
 ): string {
   const url = new URL(
     `/api/media/${encodeURIComponent(asset.assetId)}`,
     origin || globalThis.location?.origin || "http://localhost"
   );
   url.searchParams.set("organizationId", organizationId);
+  if (size !== undefined) {
+    url.searchParams.set("size", String(size));
+  }
   return url.toString();
 }
 

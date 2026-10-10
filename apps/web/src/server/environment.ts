@@ -13,11 +13,24 @@ interface MediaBucketObject {
   arrayBuffer: () => Promise<ArrayBuffer>;
   body: ReadableStream<Uint8Array>;
   httpEtag: string;
+  size: number;
+  uploaded: Date;
+}
+
+interface MediaBucketListResult {
+  cursor?: string;
+  objects: Array<{ key: string; uploaded: Date }>;
+  truncated: boolean;
 }
 
 export interface MediaBucketBinding {
   delete: (key: string) => Promise<void>;
   get: (key: string) => Promise<MediaBucketObject | null>;
+  list: (options: {
+    cursor?: string;
+    limit: number;
+    prefix: string;
+  }) => Promise<MediaBucketListResult>;
   put: (
     key: string,
     value: Uint8Array,
@@ -43,6 +56,7 @@ export interface WorkerBindings {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
+  MEDIA_CLEANUP_HYPERDRIVE?: HyperdriveBinding;
   IMAGES?: MediaImagesBinding;
   MEDIA_BUCKET?: MediaBucketBinding;
   ONBOARDING_HYPERDRIVE?: HyperdriveBinding;

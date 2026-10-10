@@ -193,7 +193,7 @@ function ProductMediaList({
             alt={`${productName}, imagem ${index + 1}`}
             height={asset.height}
             loading="lazy"
-            src={productMediaAssetUrl(asset, organizationId)}
+            src={productMediaAssetUrl(asset, organizationId, undefined, 320)}
             width={asset.width}
           />
           <div className="product-media-item-copy">

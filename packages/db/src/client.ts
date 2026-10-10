@@ -8,6 +8,7 @@ import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { mediaAssets, productMedia, variantMedia } from "./schema/media";
+import { mediaCleanupClaims } from "./schema/media-cleanup";
 
 const databaseSchema = {
   ...authSchema,
@@ -17,6 +18,7 @@ const databaseSchema = {
   dbPocOperations,
   inventoryBalances,
   mediaAssets,
+  mediaCleanupClaims,
   productMedia,
   stockMovements,
   variantMedia,

@@ -183,6 +183,13 @@
       "when": 1791627270420,
       "tag": "0025_grey_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791656673456,
+      "tag": "0026_stale_archangel",
+      "breakpoints": true
     }
   ]
 }
