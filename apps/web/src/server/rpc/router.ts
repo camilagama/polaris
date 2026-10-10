@@ -22,6 +22,7 @@ import {
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
+import { receiveStock } from "@polaris/db/inventory-repository";
 import { createDatabase } from "@polaris/db/client";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
@@ -46,6 +47,22 @@ import {
   deriveProductLifecycle,
   type ProductVariantValues,
 } from "@polaris/domain/catalog/product";
+import {
+  InsufficientStockError,
+  InventoryQuantityLimitError,
+  InventoryVariantNotFoundError,
+  InvalidStockMovementError,
+  StockCommandConflictError,
+} from "@polaris/domain/inventory/inventory";
+import {
+  InventoryCostLimitError,
+  InventoryCostUnavailableError,
+  InvalidUnitCostError,
+} from "@polaris/domain/inventory/inventory-cost";
+import {
+  InvalidReceiveStockInputError,
+  UnsupportedReceiveStockCommandVersionError,
+} from "@polaris/domain/inventory/receive-stock";
 import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
@@ -83,6 +100,7 @@ interface RpcRouterDependencies {
   getProductVariants: typeof getProductVariants;
   listProducts: typeof listProducts;
   restoreProduct: typeof restoreProduct;
+  receiveStock: typeof receiveStock;
   setProductVariantSku: typeof setProductVariantSku;
   updateProduct: typeof updateProduct;
   listCategories: typeof listCategories;
@@ -219,6 +237,25 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
+  if (
+    error instanceof InvalidStockMovementError ||
+    error instanceof InvalidUnitCostError ||
+    error instanceof InventoryCostLimitError ||
+    error instanceof InvalidReceiveStockInputError ||
+    error instanceof UnsupportedReceiveStockCommandVersionError
+  ) {
+    throw new ORPCError("BAD_REQUEST", { cause: error });
+  }
+
+  if (
+    error instanceof InsufficientStockError ||
+    error instanceof InventoryQuantityLimitError ||
+    error instanceof InventoryCostUnavailableError ||
+    error instanceof StockCommandConflictError
+  ) {
+    throw new ORPCError("CONFLICT", { cause: error });
+  }
+
   if (error instanceof ProductVariantConfigurationError) {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
@@ -246,6 +283,10 @@ function toRpcError(error: unknown): never {
   }
 
   if (error instanceof ProductVariantNotFoundError) {
+    throw new ORPCError("NOT_FOUND", { cause: error });
+  }
+
+  if (error instanceof InventoryVariantNotFoundError) {
     throw new ORPCError("NOT_FOUND", { cause: error });
   }
 
@@ -286,6 +327,7 @@ export function createRpcRouter(
   const updateTenantProduct = overrides.updateProduct ?? updateProduct;
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
   const restoreTenantProduct = overrides.restoreProduct ?? restoreProduct;
+  const receiveTenantStock = overrides.receiveStock ?? receiveStock;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
 
@@ -700,8 +742,60 @@ export function createRpcRouter(
       }
     );
 
+  const receiveStockRecord = implementContract.inventory.receiveStock.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "inventory:adjust",
+          operation: (transaction, identity) =>
+            receiveTenantStock(transaction, identity, {
+              commandId: input.commandId,
+              commandVersion: input.commandVersion,
+              occurredOn: input.occurredOn,
+              quantity: input.quantity,
+              requestId: requestAuditId(context.requestId),
+              unitCost: input.unitCost,
+              variantId: input.variantId,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+
+        const { movement } = result;
+        if (
+          movement.commandId === null ||
+          movement.commandVersion === null ||
+          movement.occurredOn === null ||
+          movement.unitCost === null ||
+          movement.movementType !== "receipt"
+        ) {
+          throw new Error("received_stock_movement_metadata_missing");
+        }
+
+        return {
+          balance: result.balance,
+          movement: {
+            ...movement,
+            // The guard above proves these receipt-only nullable DB columns.
+            commandId: movement.commandId as string,
+            commandVersion: movement.commandVersion as number,
+            createdAt: movement.createdAt.toISOString(),
+            movementType: "receipt" as const,
+            occurredOn: movement.occurredOn as string,
+            unitCost: movement.unitCost as string,
+          },
+          replayed: result.replayed,
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
+    inventory: { receiveStock: receiveStockRecord },
     organization: { createInitial },
     product: {
       archive: archiveProductRecord,

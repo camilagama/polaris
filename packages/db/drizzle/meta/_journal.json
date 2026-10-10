@@ -134,6 +134,20 @@
       "when": 1791582193495,
       "tag": "0018_whole_alice",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791600839917,
+      "tag": "0019_cynical_supreme_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791601348362,
+      "tag": "0020_heavy_silverclaw",
+      "breakpoints": true
     }
   ]
 }

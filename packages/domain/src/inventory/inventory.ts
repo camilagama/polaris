@@ -48,6 +48,15 @@ export class InventoryVariantNotFoundError extends Error {
   }
 }
 
+export class StockCommandConflictError extends Error {
+  readonly code = "stock_command_conflict";
+
+  constructor() {
+    super("stock_command_conflict");
+    this.name = "StockCommandConflictError";
+  }
+}
+
 export function isStockMovementType(value: string): value is StockMovementType {
   return STOCK_MOVEMENT_TYPES.some((movementType) => movementType === value);
 }

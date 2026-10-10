@@ -1672,6 +1672,14 @@ Criar testes matemáticos/property-based.
 
 
 
+Política PR29 V1: custo unitário não negativo em string decimal BRL, até 18 dígitos inteiros e 6 casas; custo médio em numeric exato com 6 casas. Recalcular após cada recebimento e arredondar half-up para 6 casas usando aritmética decimal/inteira, sem IEEE-754. A faixa é política interna, não escala exigida pelo CPC 16(R1). Custo zero é válido. Saldo positivo com média nula representa custo desconhecido e bloqueia recebimento até regra de valoração ser definida; PR31 deve definir como uma contagem inicial com quantidade positiva recebe valor.
+
+
+
+O command recebe commandId UUID e versão 1. A primeira aplicação grava o movimento; replay idêntico não altera saldo nem ledger; payload diferente para o mesmo commandId conflita. occurredOn é uma data de calendário da organização, registrada para histórico; a média muda na ordem de confirmação do servidor e recebimentos retroativos não reprecificam vendas já confirmadas.
+
+
+
 ---
 
 

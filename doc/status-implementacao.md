@@ -327,4 +327,18 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | [PR #27](https://github.com/camilagama/polaris/pull/27), draft empilhado sobre PR #26; CI remoto 6/6 passou no commit `5043a51`; sem merge. |
 | Revisão do usuário | Pendente | PR #27 aguarda revisão; não será mergeado sem autorização. |
 
+### PR29 — Receive stock (implementação local concluída; gate Neon e PR remoto pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base isolada | Concluída | Branch local codex/pr29-recovery baseada no head c9f94a1 do PR #27; alterações de PR29 isoladas da branch principal. |
+| Política monetária e data de ocorrência | Concluída | Custo unitário/médio com até 18 dígitos inteiros e 6 casas, aritmética decimal exata e half-up após cada recebimento; occurredOn é data de calendário e a média segue a ordem de confirmação no servidor. ADR 0008 registra a escolha. |
+| Compatibilidade de histórico anterior | Concluída | PR28 podia criar receipts internos sem custo; a migration 0020 usa CHECK NOT VALID para preservar linhas append-only existentes sem inventar valoração. PostgreSQL ainda aplica a constraint aos novos writes. ADR 0009 documenta o comportamento. |
+| Implementação | Concluída | receiveStock valida data/custo/quantidade, calcula custo médio exato, persiste custo e metadados idempotentes, grava ledger+saldo+audit na mesma transação e exige inventory:adjust. O writer genérico rejeita receipts; migrations 0019–0020 acrescentam campos e constraints. |
+| Verificação local | Concluída | bun run check: lint, formato, typecheck nos oito workspaces, boundaries, Knip e 135 testes passaram. bun run build: oito workspaces passaram; Wrangler emitiu aviso EPERM ao gravar log local, mas o build terminou com exit code 0. |
+| Revisão independente | Concluída | A revisão encontrou risco de compatibilidade com receipts PR28 sem custo; migration 0020 foi alterada para NOT VALID e o gate agora prova compatibilidade do histórico e rejeição de novos receipts inválidos. Revisor não encontrou outros achados críticos/importantes. |
+| Gate Neon PostgreSQL 18 | Pendente | Branch descartável pr28-inventory-gate contém schema e histórico PR28 com fixtures sintéticas e expira em 2026-10-10 18:47 BRT. A migration 0020 preserva esses receipts legados. É necessário fornecer a URL dessa branch pelo prompt mascarado para executar migrations 0019–0020 e o gate PR29. Uma branch schema-only PR29 também foi criada a partir de production, sem copiar dados, e expira automaticamente em 2026-10-10 23:58 BRT. |
+| Saldo positivo com custo desconhecido | Adiada | receiveStock bloqueia o recebimento se o saldo for positivo e o custo médio nulo. PR31 deve definir a valoração da contagem inicial; nenhum custo histórico é presumido. |
+| PR draft, push e CI remoto | Pendente | O push e a abertura do PR29 em draft dependem de recuperar autenticação GitHub segura; nenhum merge será feito sem autorização. |
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

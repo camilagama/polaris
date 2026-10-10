@@ -6,10 +6,14 @@
 - Histórico de movimentos é evidência imutável. O saldo atual é uma projeção; saldo e movimento correspondente mudam juntos.
 - Um movimento preserva o UUID estável da variante. Se a variante padrão oculta já tiver qualquer movimento, a configuração inicial de opções é bloqueada; o sistema não transfere seu histórico nem sua quantidade para uma combinação presumida.
 - O ledger classifica movimentos como recebimento, baixa, ajuste de contagem, venda, cancelamento de venda ou devolução de venda. O tipo não altera a regra de quantidade: o delta é explícito, inteiro e assinado.
-- PR28 mantém o saldo médio como `numeric` exato, sem calcular ou arredondar custos. Não há comando público de estoque nesta etapa; a idempotência é aplicada pelo command nomeado que aceitar cada movimento.
+- PR28 mantém o custo médio em `numeric` exato. PR29 expõe somente o command nomeado `receiveStock` para recebimentos; baixa e contagem seguem para PR30–31. Não existe command público genérico de estoque.
 - O ledger impede remoção física de variante e organização enquanto existir histórico. A política de retenção e o caminho privilegiado de purge seguem adiados para PR107, antes do go-live.
 - Receber, baixar, contar, vender, cancelar e devolver são commands nomeados. Nenhuma mudança de quantidade é válida sem seu movimento correspondente.
 - Recebimentos atualizam custo médio móvel. Uma venda confirmada preserva o custo unitário aplicável no momento.
 - Quando a validade da operação depende de vários fatos econômicos, eles são confirmados ou revertidos em conjunto.
 - Em disputa de commands offline, a primeira operação confirmada no servidor vence. A operação rejeitada permanece local para correção; não há merge silencioso.
 - PR25 cria a variante padrão junto com cada produto; até PR26 disponibilizar opções, produtos novos usam essa única variante oculta na UI. Regras completas em [products.md](products.md).
+- PR29 recebe custo unitário BRL não negativo em string decimal, até 18 dígitos inteiros e 6 casas fracionárias, e recalcula a média móvel após cada recebimento usando aritmética decimal exata e arredondamento half-up a 6 casas. Custo zero é válido; saldo positivo com custo médio desconhecido não é tratado como custo zero.
+- Todo novo recebimento registra custo unitário e commandId/version/occurredOn. O banco rejeita novos receipts sem esses dados; o writer interno genérico não pode criar receipts. Histórico legado sem custo permanece imutável e com valoração desconhecida, sem custo presumido; compatibilidade da migration está em [ADR 0009](../adr/0009-legacy-receipt-compatibility.md).
+- A data de ocorrência é uma data de calendário da organização. Ela documenta quando o recebimento ocorreu; a média evolui na ordem em que os commands são confirmados no servidor e um recebimento retroativo não reescreve snapshots de custo de vendas anteriores.
+- Cada recebimento exige commandId UUID versionado. Repetir a mesma versão e payload não lança novo movimento; reutilizar o commandId com payload diferente é conflito.

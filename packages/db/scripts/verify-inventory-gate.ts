@@ -11,10 +11,15 @@ import {
 import {
   getInventoryBalance,
   recordStockMovement,
+  receiveStock,
 } from "../src/inventory-repository";
 import { stockMovements } from "../src/schema/inventory";
 import { productVariants } from "../src/schema/product";
-import { InsufficientStockError } from "@polaris/domain/inventory/inventory";
+import {
+  InsufficientStockError,
+  InvalidStockMovementError,
+  StockCommandConflictError,
+} from "@polaris/domain/inventory/inventory";
 import { ProductDefaultVariantStockHistoryConflictError } from "@polaris/domain/catalog/product";
 import {
   withAuthorizedTenantTransaction,
@@ -45,7 +50,7 @@ interface TenantFixture {
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error("Missing PR28 inventory gate configuration.");
+    throw new Error("Missing PR29 inventory gate configuration.");
   }
   return value;
 }
@@ -245,7 +250,7 @@ async function main(): Promise<void> {
   const expectedHostname = requiredEnvironment(
     "POLARIS_INVENTORY_GATE_EXPECTED_HOSTNAME"
   );
-  assert.equal(confirmation, "polaris-pr28-inventory-gate");
+  assert.equal(confirmation, "polaris-pr29-inventory-gate");
 
   const connection = new URL(connectionString);
   assert.equal(connection.protocol, "postgresql:");
@@ -341,7 +346,16 @@ async function main(): Promise<void> {
     const migrationCount = await admin.pool.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok((migrationCount.rows[0]?.count ?? 0) >= 19);
+    assert.ok((migrationCount.rows[0]?.count ?? 0) >= 3);
+    const legacyReceiptConstraint = await admin.pool.query<{
+      convalidated: boolean;
+    }>(
+      "SELECT convalidated FROM pg_catalog.pg_constraint " +
+        "WHERE conname = $1 AND conrelid = 'public.stock_movements'::regclass",
+      ["stock_movements_receipt_cost_and_command_required"]
+    );
+    assert.equal(legacyReceiptConstraint.rows.length, 1);
+    assert.equal(legacyReceiptConstraint.rows[0]?.convalidated, false);
 
     const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
       await ensureRuntimeRoleCanBeSet(admin.pool);
@@ -393,6 +407,15 @@ async function main(): Promise<void> {
           }),
           InsufficientStockError
         );
+        await assert.rejects(
+          recordStockMovement(transaction, identity, {
+            movementType: "receipt" as never,
+            quantityDelta: 1,
+            requestId: randomUUID(),
+            variantId: emptyVariantId,
+          }),
+          InvalidStockMovementError
+        );
         const noMovement = await transaction
           .select({ id: stockMovements.id })
           .from(stockMovements)
@@ -407,10 +430,13 @@ async function main(): Promise<void> {
       "product:update",
       async (transaction, identity) => {
         await assert.rejects(
-          recordStockMovement(transaction, identity, {
-            movementType: "receipt",
-            quantityDelta: 1,
+          receiveStock(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            occurredOn: "2026-10-09",
+            quantity: 1,
             requestId: randomUUID(),
+            unitCost: "1.00",
             variantId: emptyVariantId,
           }),
           (error: unknown) =>
@@ -428,10 +454,13 @@ async function main(): Promise<void> {
       "inventory:adjust",
       async (transaction, identity) => {
         await assert.rejects(
-          recordStockMovement(transaction, identity, {
-            movementType: "receipt",
-            quantityDelta: 5,
+          receiveStock(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            occurredOn: "2026-10-09",
+            quantity: 5,
             requestId: "invalid-request-id",
+            unitCost: "1.00",
             variantId: emptyVariantId,
           }),
           (error: unknown) =>
@@ -454,6 +483,185 @@ async function main(): Promise<void> {
       }
     );
 
+    const receiptProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "receipt-cost"
+    );
+    const receiptVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      receiptProductId
+    );
+    const receiptInput = {
+      commandId: randomUUID(),
+      commandVersion: 1 as const,
+      occurredOn: "2026-10-09",
+      quantity: 2,
+      unitCost: "10.00",
+      variantId: receiptVariantId,
+    };
+    const firstReceipt = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          ...receiptInput,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(firstReceipt.replayed, false);
+    assert.equal(firstReceipt.balance.quantity, 2);
+    assert.equal(firstReceipt.balance.movingAverageCost, "10.000000");
+    assert.equal(firstReceipt.movement.unitCost, "10.000000");
+    assert.equal(firstReceipt.movement.occurredOn, receiptInput.occurredOn);
+    assert.equal(firstReceipt.movement.commandId, receiptInput.commandId);
+
+    const replayedReceipt = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          ...receiptInput,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(replayedReceipt.replayed, true);
+    assert.equal(replayedReceipt.movement.id, firstReceipt.movement.id);
+    assert.equal(replayedReceipt.balance.quantity, 2);
+
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          receiveStock(transaction, identity, {
+            ...receiptInput,
+            quantity: 3,
+            requestId: randomUUID(),
+          })
+      ),
+      StockCommandConflictError
+    );
+
+    const secondReceipt = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 1,
+          requestId: randomUUID(),
+          unitCost: "10.000001",
+          variantId: receiptVariantId,
+        })
+    );
+    assert.equal(secondReceipt.balance.quantity, 3);
+    assert.equal(secondReceipt.balance.movingAverageCost, "10.000000");
+
+    const tieProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "receipt-rounding-tie"
+    );
+    const tieVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      tieProductId
+    );
+    await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 1,
+          requestId: randomUUID(),
+          unitCost: "0",
+          variantId: tieVariantId,
+        })
+    );
+    const roundedTie = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 1,
+          requestId: randomUUID(),
+          unitCost: "0.000001",
+          variantId: tieVariantId,
+        })
+    );
+    assert.equal(roundedTie.balance.movingAverageCost, "0.000001");
+
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, unit_cost, command_id, command_version, occurred_on) " +
+              "VALUES ($1, $2, $3, 'receipt', 1, 1.1234567, $4, 1, $5)",
+            [
+              fixtureA.organizationId,
+              receiptProductId,
+              receiptVariantId,
+              randomUUID(),
+              "2026-10-09",
+            ]
+          )
+      ),
+      "23514",
+      "stock unit-cost scale check"
+    );
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "INSERT INTO public.stock_movements " +
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta) " +
+              "VALUES ($1, $2, $3, 'receipt', 1)",
+            [fixtureA.organizationId, receiptProductId, receiptVariantId]
+          )
+      ),
+      "23514",
+      "receipt cost and command metadata check"
+    );
+    await expectSqlState(
+      withRuntimeGucs(
+        runtime.client,
+        fixtureA.userId,
+        fixtureA.organizationId,
+        () =>
+          runtime.client.query(
+            "UPDATE public.inventory_balances " +
+              "SET moving_average_cost = 1.1234567 " +
+              "WHERE organization_id = $1 AND variant_id = $2",
+            [fixtureA.organizationId, receiptVariantId]
+          )
+      ),
+      "23514",
+      "inventory average-cost scale check"
+    );
+
     const historicalProductId = await createTestProduct(
       runtime.database,
       fixtureA,
@@ -469,10 +677,13 @@ async function main(): Promise<void> {
       fixtureA,
       "inventory:adjust",
       async (transaction, identity) => {
-        await recordStockMovement(transaction, identity, {
-          movementType: "receipt",
-          quantityDelta: 2,
+        await receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 2,
           requestId: randomUUID(),
+          unitCost: "10.00",
           variantId: historicalVariantId,
         });
       }
@@ -539,10 +750,13 @@ async function main(): Promise<void> {
             requestedOrganizationId: fixtureA.organizationId,
           },
           (transaction, identity) =>
-            recordStockMovement(transaction, identity, {
-              movementType: "receipt",
-              quantityDelta: 1,
+            receiveStock(transaction, identity, {
+              commandId: randomUUID(),
+              commandVersion: 1,
+              occurredOn: "2026-10-09",
+              quantity: 1,
               requestId: randomUUID(),
+              unitCost: "10.00",
               variantId: concurrentVariantId,
             })
         )
@@ -610,10 +824,13 @@ async function main(): Promise<void> {
       fixtureB,
       "inventory:adjust",
       async (transaction, identity) => {
-        const result = await recordStockMovement(transaction, identity, {
-          movementType: "receipt",
-          quantityDelta: 1,
+        const result = await receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-09",
+          quantity: 1,
           requestId: randomUUID(),
+          unitCost: "1.00",
           variantId: variantB,
         });
         return result.movement.id;
@@ -640,9 +857,15 @@ async function main(): Promise<void> {
         () =>
           runtime.client.query(
             "INSERT INTO public.stock_movements " +
-              "(organization_id, product_id, variant_id, movement_type, quantity_delta) " +
-              "VALUES ($1, $2, $3, 'receipt', 1)",
-            [fixtureB.organizationId, productB, variantB]
+              "(organization_id, product_id, variant_id, movement_type, quantity_delta, unit_cost, command_id, command_version, occurred_on) " +
+              "VALUES ($1, $2, $3, 'receipt', 1, 1.00, $4, 1, $5)",
+            [
+              fixtureB.organizationId,
+              productB,
+              variantB,
+              randomUUID(),
+              "2026-10-09",
+            ]
           )
       ),
       "42501",
@@ -714,12 +937,18 @@ async function main(): Promise<void> {
           serverVersion: server.server_version,
           status: "passed",
           tests: [
-            "PostgreSQL 18 and Drizzle migrations applied",
+            "PostgreSQL 18 and PR28–29 inventory migrations applied",
             "FORCE RLS and least-privilege grants",
             "absent balance reads as zero",
             "negative stock rejected without ledger writes",
             "nested savepoint rolls ledger and balance back together",
             "inventory capability enforced at repository boundary",
+            "receipt records normalized unit cost and organization date",
+            "receipt replay is idempotent and payload mismatch conflicts",
+            "moving average updates with six-place half-up rounding",
+            "database rejects unit-cost and average-cost scales above six",
+            "every receipt requires command identity and unit cost",
+            "legacy receipt constraint is NOT VALID but enforced for new rows",
             "default variant configuration blocked after history even at zero",
             "concurrent receipts serialize into the materialized balance",
             "concurrent write-offs cannot commit a negative balance",
@@ -742,7 +971,7 @@ async function main(): Promise<void> {
       .filter((result) => result.status === "rejected")
       .map((result) => result.reason);
     if (closeErrors.length > 0) {
-      console.error("Could not close every PR28 inventory gate connection.");
+      console.error("Could not close every PR29 inventory gate connection.");
       process.exitCode = 1;
     }
     if (runtimeRoleMembershipGrantAttempted && adminRoleName) {
@@ -773,6 +1002,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : "unknown error";
-  console.error("PR28 inventory gate failed:", message);
+  console.error("PR29 inventory gate failed:", message);
   process.exitCode = 1;
 });

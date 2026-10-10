@@ -85,6 +85,35 @@ export type ProductVariantConfigurationReadModel = z.infer<
   typeof productVariantConfiguration
 >;
 
+const normalizedBrlCost = z.string().regex(/^\d{1,18}\.\d{6}$/);
+
+const inventoryBalance = z.object({
+  movingAverageCost: normalizedBrlCost.nullable(),
+  quantity: z.number().int().nonnegative().max(2_147_483_647),
+  variantId: z.string().uuid(),
+  version: z.number().int().positive(),
+});
+
+const stockReceiptMovement = z.object({
+  commandId: z.string().uuid(),
+  commandIndex: z.number().int().nonnegative(),
+  commandVersion: z.number().int().positive(),
+  createdAt: z.string(),
+  id: z.string().uuid(),
+  movementType: z.literal("receipt"),
+  occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  organizationId: z.string().trim().min(1),
+  productId: z.string().uuid(),
+  quantityDelta: z.number().int().positive().max(2_147_483_647),
+  unitCost: normalizedBrlCost,
+  variantId: z.string().uuid(),
+});
+
+export type InventoryBalanceReadModel = z.infer<typeof inventoryBalance>;
+export type StockReceiptMovementReadModel = z.infer<
+  typeof stockReceiptMovement
+>;
+
 const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
@@ -203,6 +232,27 @@ export const polarisContract = {
         z.object({
           configuration: productVariantConfiguration,
           product,
+        })
+      ),
+  },
+  inventory: {
+    receiveStock: oc
+      .input(
+        z.object({
+          commandId: z.string().uuid(),
+          commandVersion: z.literal(1),
+          occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          organizationId: z.string().trim().min(1),
+          quantity: z.number().int().positive().max(2_147_483_647),
+          unitCost: z.string().trim().min(1),
+          variantId: z.string().uuid(),
+        })
+      )
+      .output(
+        z.object({
+          balance: inventoryBalance,
+          movement: stockReceiptMovement,
+          replayed: z.boolean(),
         })
       ),
   },
