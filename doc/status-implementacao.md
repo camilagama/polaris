@@ -327,7 +327,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | [PR #27](https://github.com/camilagama/polaris/pull/27), draft empilhado sobre PR #26; CI remoto 6/6 passou no commit `5043a51`; sem merge. |
 | Revisão do usuário | Pendente | PR #27 aguarda revisão; não será mergeado sem autorização. |
 
-### PR29 — Receive stock (implementação e gates concluídos; PR #28 draft aberto; CI/revisão pendentes)
+### PR29 — Receive stock (implementação, gates e CI concluídos; PR #28 draft; revisão pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -340,7 +340,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Gate Neon PostgreSQL 18 | Concluído | O gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`; migrations 0019–0020 aplicadas e 19 verificações passaram, incluindo RLS/grants, rollback atômico, idempotência, custo médio half-up, concorrência sem saldo negativo, append-only, proteção de variantes com histórico e auditoria. O resultado reportou 15 movimentos; fixtures sintéticas permanecem até a expiração automática da branch em 2026-10-10 18:47 BRT. A branch schema-only `pr29-receive-stock-gate`, sem dados, também permanece até 2026-10-10 23:58 BRT e não foi usada neste gate. |
 | Saldo positivo com custo desconhecido | Adiada | receiveStock bloqueia o recebimento se o saldo for positivo e o custo médio nulo. PR31 deve definir a valoração da contagem inicial; nenhum custo histórico é presumido. |
 | Push e PR draft | Concluídos | Branch `codex/pr29-receive-stock` publicada e [PR #28](https://github.com/camilagama/polaris/pull/28) aberto em draft contra `codex/pr28-inventory` (PR #27); os dois commits locais estão no PR. Nenhum merge foi feito. |
-| CI remoto | Pendente | Os seis checks GitHub Actions do PR #28 foram enfileirados; registrar o resultado depois da conclusão. |
+| CI remoto | Concluído | GitHub Actions run #70 passou 6/6 no commit `d3113cc`: build, Knip, lint/boundaries, typecheck, 135 unit tests e offline persistence browser gate. |
 | Revisão do usuário | Pendente | PR #28 segue em draft e aguarda revisão; nenhum merge será feito sem autorização. |
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
