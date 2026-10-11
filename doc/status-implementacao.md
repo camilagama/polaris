@@ -456,7 +456,7 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 
 
 
-### PR36 — Customers (implementação, gates local/Neon e revisão independente concluídos; draft PR #35 publicado; CI remoto em andamento; revisão do usuário pendente)
+### PR36 — Customers (implementação, gates local/Neon, revisão independente e CI concluídos; draft PR #35 publicado; revisão do usuário pendente)
 
 
 
@@ -469,5 +469,5 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Gates local e Neon | Concluídos | `bun run check` passou no head `ae9a88d` com 212 testes em 33 arquivos; `bun run build` passou nos oito workspaces. Gate em Neon PostgreSQL 18.6 passou os nove grupos de cenários de migration/ACL, RLS, duplicatas, isolamento, invariantes, versionamento, lifecycle, auditoria e cleanup do role temporário. Fixtures sintéticas permanecem na branch schema-only até a expiração automática `2026-10-11 15:00 UTC`. |
 | Revisão independente | Concluída sem blockers | O review identificou respostas antigas da lista aparecendo após erro ou corrida entre filtros; fix em `ae9a88d` limpa resultados durante load e descarta respostas obsoletas. O uso V1 de `customer:update` em leitura/criação foi mantido: o mapa atual só tem `owner`, não tem `customer:read`, e isso não muda o acesso atual. Refinar capabilities fica para quando papéis por operação forem definidos. |
 | Push e PR draft | Concluídos | Branch `codex/pr36-customers` publicada; [PR #35](https://github.com/camilagama/polaris/pull/35) aberto em draft sobre `codex/pr35-media-derivatives` (PR #34). Nenhum merge ou deploy de produção foi feito. |
-| CI remoto | Em andamento | Acompanhar os seis checks do draft PR #35. |
+| CI remoto | Concluído | GitHub Actions run `38139231475` passou 6/6 no head `8eaed53`: build, Knip, lint/boundaries, typecheck, unit tests e offline persistence browser gate. |
 | Revisão do usuário | Pendente | Revisar a etapa PR36 e seus gates antes de avançar para PR37. |
