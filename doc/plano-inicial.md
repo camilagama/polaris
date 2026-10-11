@@ -2062,6 +2062,12 @@ DecimalAmount
 
 Usar decimal exato.
 
+`Money` representa BRL com duas casas e até 18 dígitos inteiros. `Percentage`
+usa pontos percentuais e aceita até seis casas fracionárias. `DecimalAmount`
+preserva até dez casas em intermediários exatos; aplicar percentual não arredonda.
+Cada operação escolhe explicitamente quando converter o resultado para `Money`
+com arredondamento half-up.
+
 
 
 Adicionar property tests:

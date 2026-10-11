@@ -67,6 +67,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Moeda:** unidade monetária usada para expressar valores econômicos; a V1 opera em BRL.<br>
 **Money:** valor econômico expresso na moeda usada pelo negócio.
+**Percentual:** taxa expressa em pontos percentuais; por exemplo, `2,5` representa `2,5%`.
 
 **Competência:** período ao qual uma despesa ou resultado pertence, independentemente da data em que o dinheiro foi pago.<br>
 **Fuso horário da organização:** zona IANA usada para interpretar datas de negócio daquela organização; instantes técnicos são UTC.

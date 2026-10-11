@@ -510,3 +510,17 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Revisão independente | Concluída sem blockers | A revisão apontou que grants de INSERT permitiriam confirmar cabeçalho sem itens e inserir itens em commits posteriores. A migration `0030` revoga a escrita do runtime até PR43; follow-up confirmou o isolamento do role temporário no gate e sem blockers. O cleanup também só tenta remover login se `CREATE ROLE` teve sucesso. |
 | Push e PR draft | Pendente | A sessão local do GitHub CLI segue inválida após rotação; device flow iniciado, aguardando conclusão pelo responsável. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar o PR38 draft depois da publicação. |
+
+### PR39 — Money library (implementação, revisão independente e checks concluídos; revisão do responsável e publicação pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Worktree e base | Concluídas | Branch `codex/pr39-money-library`, isolada em `D:\2 - Dev\2 - Worktree\pr39-money-library\polaris`, parte do commit PR38 `6a2f5c9`. Baseline passou com 221 testes/34 arquivos e build dos oito workspaces. |
+| Regras monetárias | Confirmadas com convenção técnica registrada | BRL tem 2 casas e até 18 dígitos inteiros; custo mantém 6 casas; percentual aceita até 6 casas. A implementação representa percentual em pontos percentuais (`2.5` = `2,5%`) e usa a direção do tipo de operação. Intermediários não arredondam até a conversão half-up escolhida pela operação. |
+| Primitives | Concluídas | `Money` usa centavos BigInt; `Percentage` usa pontos percentuais; `DecimalAmount` preserva valores exatos com até 10 casas intermediárias e arredonda somente quando solicitado. O pacote exporta `money/money`. |
+| Testes de propriedade | Concluídos | 14 testes financeiros passaram; oito properties executam 300 casos cada para soma, desconto, quantidade, soma/subtração de intermediários, arredondamento half-up e aplicação exata de percentual. Há também casos de limite, escala, entrada inválida e ties negativos. |
+| Verificação local | Concluída | `bun install --frozen-lockfile` não alterou dependências; `bun run check` passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 235 testes em 35 arquivos. `bun run build` passou nos oito workspaces. |
+| Gate Neon | Adiado até PR43 | PR39 é aritmética de domínio, sem schema, migration, grants ou gravação no banco. O gate de persistência e atomicidade será executado junto do comando transacional de PR43. |
+| Revisão independente | Concluída sem blockers | A revisão confirmou precisão BigInt, escalas, arredondamento assinado, aplicação percentual sem arredondamento antecipado e limite inteiro de quantity. Não foi inferido teto inteiro para `DecimalAmount`/`Percentage`, pois a documentação não o define. |
+| Revisão do responsável | Pendente | Revisar especialmente a convenção percentual em pontos percentuais (`2.5` representa `2,5%`), registrada em `CONTEXT.md` e `docs/business-rules/money.md`. |
+| Publicação | Pendente | Requer sessão GitHub CLI válida. Nenhum push ou merge foi feito. |
