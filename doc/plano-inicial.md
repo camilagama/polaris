@@ -1841,7 +1841,7 @@ Criar `media_assets`, `product_media` e `variant_media`, com FKs compostas que g
 ## Concorrência e privilégios
 
 - Cada tentativa física recebe um UUID próprio na chave master v2. Uploads concorrentes/replays nunca reutilizam um objeto físico; o banco continua determinando o asset canônico.
-- Migration 0026 adiciona tombstones internos com FORCE RLS, função SECURITY DEFINER de `search_path` fixo e uma role cleanup sem login/BYPASSRLS. A role tenant não pode executar a função nem ler as tabelas de cleanup.
+- Migration 0026 adiciona tombstones internos com FORCE RLS, função SECURITY DEFINER de `search_path` fixo e uma role cleanup sem login/BYPASSRLS. Para transferir ownership no PostgreSQL, a migration concede `SET ROLE` temporário ao executor CREATEROLE; como owner, a role cleanup remove EXECUTE de `PUBLIC` e da role tenant e concede somente EXECUTE de claim ao grupo cleanup. A migration executa `RESET ROLE` e revoga a membership SET explícita; runtime e login cleanup não são membros do owner.
 - O trigger BEFORE INSERT em `media_assets` e o claim do reconciliador obtêm o mesmo advisory transaction lock por chave. O reconciliador obtém o lock e consulta/reivindica em comandos SQL separados sob READ COMMITTED; o trigger rejeita uma referência nova para chave tombstoned.
 - A Worker binding cleanup usa Hyperdrive próprio com cache desabilitado e uma role login NOBYPASSRLS membro apenas do grupo de cleanup. Sem a binding, o cron falha explicitamente.
 - Derivados só existem para assets persistidos e o domínio atual não oferece hard-delete de mídia. A futura purge física de privacidade deve remover também `media/derivatives/v1/{assetId}/`; essa remoção permanece no fluxo de purge, fora do reconciliador de upload do PR35.

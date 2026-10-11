@@ -10,7 +10,10 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 
-const expectedBranch = "pr35-media-derivatives-gate";
+const allowedGateBranches = new Set([
+  "pr35-media-derivatives-gate",
+  "pr36-customers-gate",
+]);
 const tenantRole = "polaris_pr11_runtime";
 const cleanupLoginRole = "polaris_media_cleanup_gate_login";
 const cleanupRuntimeRole = "polaris_media_cleanup_runtime";
@@ -195,7 +198,7 @@ async function main(): Promise<void> {
   const branchName = requiredEnvironment(
     "POLARIS_MEDIA_DERIVATIVES_GATE_BRANCH"
   );
-  assert.equal(branchName, expectedBranch);
+  assert.ok(allowedGateBranches.has(branchName));
   const adminConnectionString = requiredEnvironment(
     "POLARIS_MEDIA_DERIVATIVES_GATE_DATABASE_URL"
   );
@@ -422,7 +425,7 @@ async function main(): Promise<void> {
 
     console.log(
       JSON.stringify({
-        branch: expectedBranch,
+        branch: branchName,
         database: "neondb",
         movement: "synthetic fixtures retained until branch auto-expiry",
         serverVersion: serverInfo.server_version,

@@ -50,12 +50,15 @@ BEGIN
   RETURN NEW;
 END;
 $function$;--> statement-breakpoint
+GRANT polaris_media_cleanup_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 ALTER FUNCTION public.guard_media_storage_key_cleanup_claim() OWNER TO polaris_media_cleanup_owner;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.guard_media_storage_key_cleanup_claim() FROM PUBLIC, polaris_pr11_runtime, polaris_media_cleanup_runtime;--> statement-breakpoint
 CREATE TRIGGER media_assets_storage_key_cleanup_guard
 BEFORE INSERT ON public.media_assets
 FOR EACH ROW
 EXECUTE FUNCTION public.guard_media_storage_key_cleanup_claim();--> statement-breakpoint
+SET ROLE polaris_media_cleanup_owner;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.guard_media_storage_key_cleanup_claim() FROM PUBLIC, polaris_pr11_runtime, polaris_media_cleanup_runtime;--> statement-breakpoint
+RESET ROLE;--> statement-breakpoint
 CREATE FUNCTION public.claim_media_storage_key_for_cleanup(p_storage_key text)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -84,6 +87,9 @@ BEGIN
 END;
 $function$;--> statement-breakpoint
 ALTER FUNCTION public.claim_media_storage_key_for_cleanup(text) OWNER TO polaris_media_cleanup_owner;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.claim_media_storage_key_for_cleanup(text) FROM PUBLIC, polaris_pr11_runtime;--> statement-breakpoint
+SET ROLE polaris_media_cleanup_owner;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.claim_media_storage_key_for_cleanup(text) FROM PUBLIC, polaris_pr11_runtime, polaris_media_cleanup_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.claim_media_storage_key_for_cleanup(text) TO polaris_media_cleanup_runtime;--> statement-breakpoint
+RESET ROLE;--> statement-breakpoint
+REVOKE polaris_media_cleanup_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_media_cleanup_owner;
