@@ -717,6 +717,7 @@ export function ProductsPage() {
           <a aria-current="page" href="/products">
             Produtos
           </a>
+          <a href="/customers">Clientes</a>
         </nav>
       </header>
 

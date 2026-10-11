@@ -882,6 +882,7 @@ export function CategoriesPage() {
             Categorias
           </a>
           <a href="/products">Produtos</a>
+          <a href="/customers">Clientes</a>
         </nav>
       </header>
 

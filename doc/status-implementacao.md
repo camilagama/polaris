@@ -1,6 +1,6 @@
 # Polaris — acompanhamento da implementação
 
-Atualizado em 10 de outubro de 2026.
+Atualizado em 11 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -432,7 +432,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | O workflow `38072317058` passou 6/6 no commit `a4d8708`: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. Este checkpoint só altera documentação; PR #33 permanece draft e nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
 
-### PR35 — Derivatives e media cleanup (PR #34 em draft; correção da migration e gate PG18 concluídos; review/CI pendentes)
+### PR35 — Derivatives e media cleanup (correção de migration/gate publicada; review, checks locais e CI concluídos; revisão do usuário pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -441,15 +441,32 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Tentativas físicas e staging | Implementados | Chave master v2 inclui UUID exclusivo por tentativa. Marker privado `media/staging/v1/{UTC}/{attemptId}.json` é gravado antes do master e removido após commit confirmado; falhas mantêm o marker. |
 | Migration 0026, lock e grants | Corrigida; replay PG18 passou | O replay Neon revelou que `ALTER FUNCTION OWNER` exige SET ROLE, os REVOKEs precisam executar como owner e o trigger precisa ser criado antes de retirar EXECUTE do migrator. A migration agora concede SET temporário, transfere ownership, instala o trigger na mesma transação, usa `SET ROLE polaris_media_cleanup_owner` para revogar PUBLIC/tenant e conceder claim só ao cleanup, depois reseta e revoga o SET explícito. ACL pós-migration verificada: tenant/PUBLIC sem EXECUTE, cleanup só no claim, owner sem SET residual. |
 | Escopo de purge futuro | Adiado | PR35 não adiciona hard-delete de assets. A futura purge física deve remover também `media/derivatives/v1/{assetId}/`; o tombstone de produto atual preserva assets. |
-| Gate Neon PostgreSQL 18 | Concluído após correção | Replay 0000–0026 e verificador passaram em PostgreSQL 18.6 na branch schema-only `pr36-customers-gate`, projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Dez verificações confirmaram FORCE RLS, owner/ACLs sem EXECUTE de PUBLIC/tenant, claim só no cleanup runtime, idempotência, bloqueio de insert após claim e corrida real insert/cleanup. Login de teste removido; fixtures sintéticas permanecem até expiração automática `2026-10-11 15:00 UTC`. |
+| Gate Neon PostgreSQL 18 | Concluído após correção | Replay 0000–0026 e verificador passaram em PostgreSQL 18.6 na branch schema-only `pr36-customers-gate`, projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Onze verificações confirmaram FORCE RLS, owner/ACLs, ausência de EXECUTE para PUBLIC/tenant/roles de limpeza na função de trigger, claim executável só pelo cleanup runtime, idempotência, bloqueio de insert após claim e corrida real insert/cleanup. Login temporário removido; fixtures sintéticas permanecem até expiração automática `2026-10-11 15:00 UTC`. URLs de conexão não foram registradas. |
 | Gate Cloudflare Images/R2/Hyperdrive | Concluído | Perfil `junior-pessoal` confirmado como `contato.juniordiniz@gmail.com`; comandos usaram o perfil explicitamente. Um JPEG sintético 1600×1200 virou master WebP 1200×900 e derivados 320×240 e 640×480; os dois caches passaram put/get com bytes iguais. O reconciliador remoto apagou um master órfão e seu marker via Hyperdrive cleanup, sem falhas. |
 | Teardown remoto | Concluído e verificado | Worker e preview removidos; `cf workers list` e a lista de previews voltaram vazias. Hyperdrive temporário foi removido; a lista mantém somente a configuração anterior do PR11. As roles/login de cleanup de teste foram removidas da branch Neon. Os prefixes R2 `media/staging/v1/`, `media/derivatives/v1/` e `media/v2/` estão vazios; o bucket privado permanente permanece criado. |
 | Observação do preview | Registrada | Deploy comum retornou HTTP 1042 quando a rota `workers.dev` não estava ativa; o Preview temporário serviu os endpoints autenticados do gate. A URL raiz `/health` do preview mínimo serviu a página estática 404; `/gate?stage=image`, `r2`, `database` e o fluxo completo responderam 200. |
 | Verificação local final | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, import boundaries, Knip e 203 testes em 31 arquivos. `bun run build` passou nos oito workspaces; `bun run --filter @polaris/db db:generate` confirmou que não há drift. |
-| Revisão independente | Repetir após correção | A revisão do diff `87cbc27..1f7262a` foi limpa, mas precede a correção de owner/ACL da migration 0026. |
-| Push e PR draft | PR existente; follow-up local | Branch `codex/pr35-media-derivatives` e [PR #34](https://github.com/camilagama/polaris/pull/34) continuam em draft sobre `codex/pr34-media-upload` (PR #33). O follow-up da migration ainda não foi publicado; sem merge ou deploy de produção. |
-| CI remoto | Nova execução pendente | Os runs `38094938994` e `38095066531` passaram 6/6 no código anterior. O novo fix ainda precisa ser revisado, enviado e validado pelo CI. |
+| Revisão independente | Concluída sem achados | Revisão estática do follow-up `181a3c5..681bcd6`; sem achados Critical, Important ou Minor. A semântica de `acldefault`/`aclexplode` e dos privilégios efetivos foi conferida contra PostgreSQL 18; o gate real passou na branch Neon descartável. |
+| Push e PR draft | Concluídos | Branch `codex/pr35-media-derivatives` atualizada até `e70aa23`; [PR #34](https://github.com/camilagama/polaris/pull/34) segue em draft sobre `codex/pr34-media-upload` (PR #33). Nenhum merge nem deploy de produção foi feito. |
+| CI remoto | Concluído | Workflow `38138069207` passou 6/6 no head `e70aa23`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
 | Revisão do usuário | Pendente | Revisar o diff, ADR 0014, migration 0026 e evidências dos gates antes de qualquer merge. |
 
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
+
+
+
+### PR36 — Customers (implementação e gates local/Neon concluídos; revisão independente e publicação pendentes)
+
+
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Worktree e base | Concluídos | Worktree isolado `D:\\2 - Dev\\2 - Worktree\\pr36-customers\\polaris`, branch `codex/pr36-customers`, rebased sobre o head publicado `e70aa23` do PR35; as alterações locais do PR36 foram preservadas. `main` e PR35 permanecem intactos. |
+| Regra de identificação | Confirmada | Usuário definiu nome obrigatório e ao menos um contato (telefone ou email); contatos repetidos são permitidos. Não aplicar unicidade rígida nem mesclagem automática. |
+| Schema e migration 0027 | Concluídos | `db:generate` não encontrou drift; migration 0027 foi aplicada na branch schema-only `pr36-customers-gate`. Customers usa FORCE RLS, exige nome e telefone/email, aceita contatos repetidos e não concede DELETE ao runtime. |
+| Commands, RPC e interface | Concluídos localmente | Create/list/update/archive/restore com `expectedVersion`, auditoria sem PII e tela Clientes; capacidades V1 usam `customer:update`. Associação a vendas e possíveis duplicados ficam para etapas posteriores. |
+| Gates local e Neon | Concluídos | `bun run check` passou com 212 testes em 33 arquivos; `bun run build` passou nos oito workspaces. Gate em Neon PostgreSQL 18.6 passou os nove grupos de cenários de migration/ACL, RLS, duplicatas, isolamento, invariantes, versionamento, lifecycle, auditoria e cleanup do role temporário. Fixtures sintéticas permanecem na branch schema-only até a expiração automática `2026-10-11 15:00 UTC`. |
+| Revisão independente | Pendente | Revisar o diff final, migration/RLS, regras PII e tela antes de publicar. |
+| Push e PR draft | Pendente | Publicar branch empilhada sobre `codex/pr35-media-derivatives`; sem merge ou deploy de produção. |
+| Revisão do usuário | Pendente | Revisar a etapa PR36 e seus gates antes de avançar para PR37. |

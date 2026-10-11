@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
+import { customers } from "./schema/customer";
 import { organizationSchema } from "./schema/organization";
 import { dbPocOperations } from "./schema/poc";
 import { authSecurityAuditEvents } from "./schema/security-audit";
@@ -15,6 +16,7 @@ const databaseSchema = {
   ...organizationSchema,
   authSecurityAuditEvents,
   categories,
+  customers,
   dbPocOperations,
   inventoryBalances,
   mediaAssets,

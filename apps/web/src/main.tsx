@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { CategoriesPage } from "./catalog/categories-page";
+import { CustomersPage } from "./customers/customers-page";
 import { ProductsPage } from "./catalog/products-page";
 import "./styles.css";
 
@@ -38,11 +39,14 @@ if (isOfflinePocRoute) {
   };
   loadOfflineLab().catch(() => undefined);
 } else {
-  root.render(
-    window.location.pathname === "/products" ? (
-      <ProductsPage />
-    ) : (
-      <CategoriesPage />
-    )
-  );
+  switch (window.location.pathname) {
+    case "/products":
+      root.render(<ProductsPage />);
+      break;
+    case "/customers":
+      root.render(<CustomersPage />);
+      break;
+    default:
+      root.render(<CategoriesPage />);
+  }
 }

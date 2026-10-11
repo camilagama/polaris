@@ -49,6 +49,44 @@ const product = z.object({
 
 export type ProductReadModel = z.infer<typeof product>;
 
+const customerProfileFields = z.object({
+  email: z
+    .union([z.string().trim().email(), z.string().trim().length(0)])
+    .nullable(),
+  name: z.string().trim().min(1),
+  notes: z.string().trim().nullable(),
+  phone: z.string().trim().nullable(),
+});
+
+function requireCustomerContact(
+  input: z.infer<typeof customerProfileFields>,
+  ctx: z.RefinementCtx
+) {
+  if (!(input.phone || input.email)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "customer_contact_required",
+      path: ["phone"],
+    });
+  }
+}
+
+const customer = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  email: z.string().nullable(),
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  notes: z.string().nullable(),
+  organizationId: z.string().min(1),
+  phone: z.string().nullable(),
+  status: z.enum(["active", "archived"]),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+
+export type CustomerReadModel = z.infer<typeof customer>;
+
 export const productMediaAssetReadModelSchema = z.object({
   assetId: z.string().uuid(),
   byteSize: z.number().int().positive().max(20_000_000),
@@ -262,6 +300,52 @@ export const polarisContract = {
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
+  },
+  customer: {
+    archive: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), customer })),
+    create: oc
+      .input(
+        customerProfileFields
+          .extend({ organizationId: z.string().trim().min(1) })
+          .superRefine(requireCustomerContact)
+      )
+      .output(customer),
+    list: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z.enum(["active", "archived", "all"]).default("active"),
+        })
+      )
+      .output(z.object({ customers: z.array(customer) })),
+    restore: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), customer })),
+    update: oc
+      .input(
+        customerProfileFields
+          .extend({
+            expectedVersion: z.number().int().positive(),
+            id: z.string().uuid(),
+            organizationId: z.string().trim().min(1),
+          })
+          .superRefine(requireCustomerContact)
+      )
+      .output(z.object({ changed: z.boolean(), customer })),
   },
   inventory: {
     getBalance: oc

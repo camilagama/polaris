@@ -1941,6 +1941,16 @@ Não unique rígido em email/telefone.
 
 
 
+Critérios da implementação V1:
+
+- Nome obrigatório e aparado; pelo menos telefone ou email obrigatório. Observações não contam como identificador. Email/telefone são aparados e não têm unicidade rígida; telefone não recebe normalização nacional presumida.
+- Criar/listar/editar clientes, com lifecycle reversível `active`/`archived`; no banco, archive é representado por `archived_at`. Não há hard-delete nem associação de cliente a venda nesta etapa.
+- Mutação usa `expectedVersion` e auditoria transacional sem PII. RLS usa contexto tenant ativo; runtime pode ler, inserir e atualizar, mas não excluir.
+- A V1 usa `customer:update` para leitura e mutação, pois só existe o papel `owner` e o mapa ainda não tem `customer:read`. PR37 adiciona consulta de possíveis duplicados; nenhum merge automático.
+- Validar a migration em PostgreSQL 18 descartável: FORCE RLS/grants, isolamento entre organizações, contato obrigatório, contatos repetidos permitidos, optimistic concurrency, archive/restore, idempotência de lifecycle e auditoria sem PII.
+
+
+
 ---
 
 

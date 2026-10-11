@@ -1,9 +1,17 @@
 import { implement, ORPCError } from "@orpc/server";
 import {
   type CategoryReadModel,
+  type CustomerReadModel,
   type ProductReadModel,
   polarisContract,
 } from "@polaris/contracts";
+import {
+  archiveCustomer,
+  createCustomer,
+  listCustomers,
+  restoreCustomer,
+  updateCustomer,
+} from "@polaris/db/customer-repository";
 import {
   archiveCategory,
   createCategory,
@@ -40,6 +48,11 @@ import {
   CategoryNotFoundError,
   deriveCategoryLifecycle,
 } from "@polaris/domain/catalog/category";
+import {
+  CustomerNotFoundError,
+  CustomerVersionConflictError,
+  InvalidCustomerProfileError,
+} from "@polaris/domain/customers/customer";
 import {
   ProductCategoryUnavailableError,
   ProductDeletedError,
@@ -110,12 +123,20 @@ interface ProductLifecycleInput {
   organizationId: string;
 }
 
+interface CustomerLifecycleInput {
+  expectedVersion: number;
+  id: string;
+  organizationId: string;
+}
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RpcRouterDependencies {
+  archiveCustomer: typeof archiveCustomer;
   archiveCategory: typeof archiveCategory;
   createCategory: typeof createCategory;
+  createCustomer: typeof createCustomer;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   deleteCategory: typeof deleteCategory;
@@ -132,9 +153,12 @@ interface RpcRouterDependencies {
   writeOffStock: typeof writeOffStock;
   setProductVariantSku: typeof setProductVariantSku;
   updateProduct: typeof updateProduct;
+  updateCustomer: typeof updateCustomer;
   listCategories: typeof listCategories;
+  listCustomers: typeof listCustomers;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
+  restoreCustomer: typeof restoreCustomer;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
@@ -194,6 +218,33 @@ function productReadModel(product: {
     status: deriveProductLifecycle(product.archivedAt, product.deletedAt),
     updatedAt: product.updatedAt.toISOString(),
     version: product.version,
+  };
+}
+
+function customerReadModel(customer: {
+  archivedAt: Date | null;
+  createdAt: Date;
+  email: string | null;
+  id: string;
+  name: string;
+  notes: string | null;
+  organizationId: string;
+  phone: string | null;
+  updatedAt: Date;
+  version: number;
+}): CustomerReadModel {
+  return {
+    archivedAt: customer.archivedAt?.toISOString() ?? null,
+    createdAt: customer.createdAt.toISOString(),
+    email: customer.email,
+    id: customer.id,
+    name: customer.name,
+    notes: customer.notes,
+    organizationId: customer.organizationId,
+    phone: customer.phone,
+    status: customer.archivedAt === null ? "active" : "archived",
+    updatedAt: customer.updatedAt.toISOString(),
+    version: customer.version,
   };
 }
 
@@ -268,6 +319,10 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
+  if (error instanceof InvalidCustomerProfileError) {
+    throw new ORPCError("BAD_REQUEST", { cause: error });
+  }
+
   if (
     error instanceof InvalidStockMovementError ||
     error instanceof InvalidUnitCostError ||
@@ -308,7 +363,8 @@ function toRpcError(error: unknown): never {
     error instanceof ProductDefaultVariantSkuConflictError ||
     error instanceof ProductVariantSkuConflictError ||
     error instanceof ProductVariantsAlreadyConfiguredError ||
-    error instanceof ProductVersionConflictError
+    error instanceof ProductVersionConflictError ||
+    error instanceof CustomerVersionConflictError
   ) {
     throw new ORPCError("CONFLICT", { cause: error });
   }
@@ -318,6 +374,10 @@ function toRpcError(error: unknown): never {
   }
 
   if (error instanceof ProductNotFoundError) {
+    throw new ORPCError("NOT_FOUND", { cause: error });
+  }
+
+  if (error instanceof CustomerNotFoundError) {
     throw new ORPCError("NOT_FOUND", { cause: error });
   }
 
@@ -365,6 +425,154 @@ async function productLifecycleCommand(
     return toRpcError(error);
   }
 }
+
+async function customerLifecycleCommand(
+  context: PolarisRpcContext,
+  input: CustomerLifecycleInput,
+  tenantRequest: RpcRouterDependencies["withTenantRequestContext"],
+  command: RpcRouterDependencies["archiveCustomer"]
+) {
+  try {
+    const result = await tenantRequest({
+      bindings: context.bindings,
+      capability: "customer:update",
+      operation: (transaction, identity) =>
+        command(transaction, identity, {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          requestId: requestAuditId(context.requestId),
+        }),
+      request: context.request,
+      requestedOrganizationId: input.organizationId,
+    });
+    return {
+      changed: result.changed,
+      customer: customerReadModel(result.customer),
+    };
+  } catch (error) {
+    return toRpcError(error);
+  }
+}
+
+function createCustomerRpcHandlers(
+  dependencies: Partial<
+    Pick<
+      RpcRouterDependencies,
+      | "archiveCustomer"
+      | "createCustomer"
+      | "listCustomers"
+      | "restoreCustomer"
+      | "updateCustomer"
+    >
+  > &
+    Pick<RpcRouterDependencies, "withTenantRequestContext">
+) {
+  const archiveTenantCustomer = dependencies.archiveCustomer ?? archiveCustomer;
+  const createTenantCustomer = dependencies.createCustomer ?? createCustomer;
+  const listTenantCustomers = dependencies.listCustomers ?? listCustomers;
+  const restoreTenantCustomer = dependencies.restoreCustomer ?? restoreCustomer;
+  const updateTenantCustomer = dependencies.updateCustomer ?? updateCustomer;
+  const tenantRequest = dependencies.withTenantRequestContext;
+  const implementContract =
+    implement(polarisContract).$context<PolarisRpcContext>();
+
+  const list = implementContract.customer.list.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "customer:update",
+          operation: async (transaction, identity) => ({
+            customers: await listTenantCustomers(transaction, identity, {
+              status: input.status,
+            }),
+          }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return { customers: result.customers.map(customerReadModel) };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const create = implementContract.customer.create.handler(
+    async ({ context, input }) => {
+      try {
+        const customer = await tenantRequest({
+          bindings: context.bindings,
+          capability: "customer:update",
+          operation: (transaction, identity) =>
+            createTenantCustomer(transaction, identity, {
+              email: input.email,
+              name: input.name,
+              notes: input.notes,
+              phone: input.phone,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return customerReadModel(customer);
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const update = implementContract.customer.update.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "customer:update",
+          operation: (transaction, identity) =>
+            updateTenantCustomer(transaction, identity, {
+              email: input.email,
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              name: input.name,
+              notes: input.notes,
+              phone: input.phone,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          customer: customerReadModel(result.customer),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const archive = implementContract.customer.archive.handler(
+    ({ context, input }) =>
+      customerLifecycleCommand(
+        context,
+        input,
+        tenantRequest,
+        archiveTenantCustomer
+      )
+  );
+
+  const restore = implementContract.customer.restore.handler(
+    ({ context, input }) =>
+      customerLifecycleCommand(
+        context,
+        input,
+        tenantRequest,
+        restoreTenantCustomer
+      )
+  );
+
+  return { archive, create, list, restore, update };
+}
+
 export function createRpcRouter(
   overrides: Partial<RpcRouterDependencies> = {}
 ) {
@@ -406,6 +614,10 @@ export function createRpcRouter(
     inventoryCount: overrides.inventoryCount,
     requestAuditId,
     toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const customerHandlers = createCustomerRpcHandlers({
+    ...overrides,
     withTenantRequestContext: tenantRequest,
   });
 
@@ -904,6 +1116,7 @@ export function createRpcRouter(
 
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
+    customer: customerHandlers,
     inventory: {
       getBalance: inventoryHandlers.getBalance,
       inventoryCount: inventoryHandlers.count,
