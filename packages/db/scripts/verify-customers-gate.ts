@@ -6,6 +6,7 @@ import { createDatabase } from "../src/client";
 import {
   archiveCustomer,
   createCustomer,
+  findPossibleCustomerDuplicates,
   listCustomers,
   restoreCustomer,
   updateCustomer,
@@ -22,6 +23,10 @@ const cleanupOwnerRole = "polaris_media_cleanup_owner";
 const cleanupRuntimeRole = "polaris_media_cleanup_runtime";
 const poolerPattern = /pooler/i;
 const customerContactUniqueIndexPattern = /\((?:.*\bemail\b|.*\bphone\b)/i;
+const customerEmailDuplicateIndexPattern =
+  /using btree \(organization_id, lower\(email\)\) where \(email is not null\)$/;
+const customerPhoneDuplicateIndexPattern =
+  /using btree \(organization_id, phone\) where \(phone is not null\)$/;
 const disposableHostPattern =
   /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 
@@ -257,8 +262,45 @@ async function run() {
       ),
       false
     );
+    const duplicateLookupIndexes = await admin.pool.query<{
+      indexdef: string;
+      indexname: string;
+    }>(
+      "SELECT indexname, indexdef FROM pg_catalog.pg_indexes WHERE schemaname = 'public' AND tablename = 'customers' AND indexname IN ('customers_organization_email_lower_idx', 'customers_organization_phone_idx') ORDER BY indexname"
+    );
+    assert.deepEqual(
+      duplicateLookupIndexes.rows.map((row) => row.indexname),
+      [
+        "customers_organization_email_lower_idx",
+        "customers_organization_phone_idx",
+      ]
+    );
+    assert.ok(
+      duplicateLookupIndexes.rows.every(
+        (row) => !row.indexdef.toLowerCase().startsWith("create unique index")
+      )
+    );
+    const emailLookupIndex = duplicateLookupIndexes.rows.find(
+      (row) => row.indexname === "customers_organization_email_lower_idx"
+    )?.indexdef;
+    const phoneLookupIndex = duplicateLookupIndexes.rows.find(
+      (row) => row.indexname === "customers_organization_phone_idx"
+    )?.indexdef;
+    assert.ok(emailLookupIndex);
+    assert.ok(phoneLookupIndex);
+    assert.match(
+      emailLookupIndex.toLowerCase().replaceAll('"', ""),
+      customerEmailDuplicateIndexPattern
+    );
+    assert.match(
+      phoneLookupIndex.toLowerCase().replaceAll('"', ""),
+      customerPhoneDuplicateIndexPattern
+    );
     tests.push("FORCE RLS and least-privilege runtime grants are installed");
     tests.push("customer contact values have no hard unique index");
+    tests.push(
+      "duplicate lookup indexes have the expected non-unique organization/email and organization/phone definitions"
+    );
 
     const tenantA = await createTenantFixture(admin.pool, "A");
     const tenantB = await createTenantFixture(admin.pool, "B");
@@ -328,6 +370,120 @@ async function run() {
     );
     tests.push(
       "same organization permits duplicate emails/phones and either contact field"
+    );
+
+    const archivedDuplicate = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        createCustomer(transaction, identity, {
+          email: "Shared@example.test",
+          name: "Cadastro arquivado",
+          notes: null,
+          phone: null,
+          requestId: randomUUID(),
+        })
+    );
+    const archivedDuplicateState = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        archiveCustomer(transaction, identity, {
+          expectedVersion: archivedDuplicate.version,
+          id: archivedDuplicate.id,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(archivedDuplicateState.changed, true);
+
+    const sameNameDifferentContacts = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        createCustomer(transaction, identity, {
+          email: "unique-name@example.test",
+          name: "Ana Silva",
+          notes: null,
+          phone: null,
+          requestId: randomUUID(),
+        })
+    );
+    const formattedPhone = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        createCustomer(transaction, identity, {
+          email: "formatted-phone@example.test",
+          name: "Telefone formatado",
+          notes: null,
+          phone: "+55 (11) 98888-0000",
+          requestId: randomUUID(),
+        })
+    );
+    const tenantBContactMatch = await withTenant(
+      runtime.db,
+      tenantB,
+      (transaction, identity) =>
+        createCustomer(transaction, identity, {
+          email: "shared@example.test",
+          name: "Outro tenant",
+          notes: null,
+          phone: null,
+          requestId: randomUUID(),
+        })
+    );
+
+    const matches = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        findPossibleCustomerDuplicates(transaction, identity, {
+          email: " Shared@example.test ",
+          phone: " +5511999990000 ",
+        })
+    );
+    const matchesById = new Map(
+      matches.map((match) => [match.customer.id, match.matchedBy])
+    );
+    assert.deepEqual(
+      [...matchesById.keys()].sort(),
+      [first.id, second.id, third.id, archivedDuplicate.id].sort()
+    );
+    assert.deepEqual(matchesById.get(first.id), ["email", "phone"]);
+    assert.deepEqual(matchesById.get(second.id), ["email"]);
+    assert.deepEqual(matchesById.get(third.id), ["phone"]);
+    assert.deepEqual(matchesById.get(archivedDuplicate.id), ["email"]);
+    assert.equal(
+      matches.find((match) => match.customer.id === archivedDuplicate.id)
+        ?.customer.archivedAt instanceof Date,
+      true
+    );
+    assert.equal(matchesById.has(sameNameDifferentContacts.id), false);
+    assert.equal(matchesById.has(tenantBContactMatch.id), false);
+
+    const exactFormattedPhone = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        findPossibleCustomerDuplicates(transaction, identity, {
+          phone: " +55 (11) 98888-0000 ",
+        })
+    );
+    assert.deepEqual(
+      exactFormattedPhone.map((match) => match.customer.id),
+      [formattedPhone.id]
+    );
+    const differentlyFormattedPhone = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        findPossibleCustomerDuplicates(transaction, identity, {
+          phone: "+5511988880000",
+        })
+    );
+    assert.deepEqual(differentlyFormattedPhone, []);
+    tests.push(
+      "case-insensitive exact email and trimmed exact phone matches include archived rows, return every candidate, ignore name/formatting, and stay tenant-scoped"
     );
 
     const crossTenantRows = await withRuntimeSqlContext(

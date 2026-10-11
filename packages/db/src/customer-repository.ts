@@ -1,12 +1,14 @@
 import {
   CustomerNotFoundError,
   CustomerVersionConflictError,
+  normalizeCustomerDuplicateSearch,
   normalizeCustomerProfile,
   transitionCustomerLifecycle,
+  type CustomerDuplicateSearchInput,
   type CustomerLifecycleAction,
   type CustomerProfileInput,
 } from "@polaris/domain/customers/customer";
-import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { customers } from "./schema/customer";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import type {
@@ -69,6 +71,51 @@ export async function listCustomers(
     .from(customers)
     .where(and(...conditions))
     .orderBy(asc(customers.name), asc(customers.id));
+}
+
+export async function findPossibleCustomerDuplicates(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: CustomerDuplicateSearchInput
+) {
+  const normalized = normalizeCustomerDuplicateSearch(input);
+
+  const emailCondition = normalized.email
+    ? sql`lower(${customers.email}) = lower(${normalized.email})`
+    : undefined;
+  const phoneCondition = normalized.phone
+    ? eq(customers.phone, normalized.phone)
+    : undefined;
+
+  const rows = await transaction
+    .select({
+      ...customerColumns,
+      emailMatched: normalized.email
+        ? sql<boolean>`
+            ${customers.email} IS NOT NULL
+            AND lower(${customers.email}) = lower(${normalized.email})
+          `
+        : sql<boolean>`false`,
+      phoneMatched: normalized.phone
+        ? sql<boolean>`${customers.phone} = ${normalized.phone}`
+        : sql<boolean>`false`,
+    })
+    .from(customers)
+    .where(
+      and(
+        eq(customers.organizationId, identity.organizationId),
+        or(emailCondition, phoneCondition)
+      )
+    )
+    .orderBy(asc(customers.name), asc(customers.id));
+
+  return rows.map(({ emailMatched, phoneMatched, ...customer }) => ({
+    customer,
+    matchedBy: [
+      ...(emailMatched ? (["email"] as const) : []),
+      ...(phoneMatched ? (["phone"] as const) : []),
+    ],
+  }));
 }
 
 export async function createCustomer(

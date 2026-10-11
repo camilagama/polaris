@@ -73,6 +73,12 @@ export const customers = pgTable(
         table.name,
         table.id
       ),
+      index("customers_organization_email_lower_idx")
+        .on(table.organizationId, sql`lower(${table.email})`)
+        .where(sql`${table.email} IS NOT NULL`),
+      index("customers_organization_phone_idx")
+        .on(table.organizationId, table.phone)
+        .where(sql`${table.phone} IS NOT NULL`),
       uniqueIndex("customers_organization_id_id_unique").on(
         table.organizationId,
         table.id

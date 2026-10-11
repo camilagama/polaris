@@ -59,7 +59,10 @@ const customerProfileFields = z.object({
 });
 
 function requireCustomerContact(
-  input: z.infer<typeof customerProfileFields>,
+  input: {
+    email?: string | null | undefined;
+    phone?: string | null | undefined;
+  },
   ctx: z.RefinementCtx
 ) {
   if (!(input.phone || input.email)) {
@@ -86,6 +89,22 @@ const customer = z.object({
 });
 
 export type CustomerReadModel = z.infer<typeof customer>;
+
+const customerDuplicateSearchFields = z
+  .object({
+    email: customerProfileFields.shape.email.optional(),
+    phone: customerProfileFields.shape.phone.optional(),
+  })
+  .superRefine(requireCustomerContact);
+
+const customerDuplicateMatch = z.object({
+  customer,
+  matchedBy: z.array(z.enum(["email", "phone"])).min(1),
+});
+
+export type CustomerDuplicateMatchReadModel = z.infer<
+  typeof customerDuplicateMatch
+>;
 
 export const productMediaAssetReadModelSchema = z.object({
   assetId: z.string().uuid(),
@@ -318,6 +337,13 @@ export const polarisContract = {
           .superRefine(requireCustomerContact)
       )
       .output(customer),
+    findPossibleDuplicates: oc
+      .input(
+        customerDuplicateSearchFields.extend({
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ matches: z.array(customerDuplicateMatch) })),
     list: oc
       .input(
         z.object({

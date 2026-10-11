@@ -1,4 +1,7 @@
-import type { CustomerReadModel } from "@polaris/contracts";
+import type {
+  CustomerDuplicateMatchReadModel,
+  CustomerReadModel,
+} from "@polaris/contracts";
 import {
   useCallback,
   useEffect,
@@ -61,7 +64,7 @@ function rpcErrorCode(error: unknown): string | undefined {
 
 function errorMessage(
   error: unknown,
-  action?: CustomerAction | "load" | "save"
+  action?: CustomerAction | "duplicate-check" | "load" | "save"
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
@@ -70,7 +73,10 @@ function errorMessage(
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
   }
-  if (code === "BAD_REQUEST" && action === "save") {
+  if (
+    code === "BAD_REQUEST" &&
+    (action === "save" || action === "duplicate-check")
+  ) {
     return "Confira o nome e informe ao menos um telefone ou email válido.";
   }
   if (code === "CONFLICT") {
@@ -78,6 +84,9 @@ function errorMessage(
   }
   if (code === "NOT_FOUND") {
     return "O cliente não existe mais nesta organização.";
+  }
+  if (code === "SERVICE_UNAVAILABLE" && action === "duplicate-check") {
+    return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "A lista de clientes está temporariamente indisponível. Tente novamente.";
@@ -90,6 +99,10 @@ function errorMessage(
 
 function formatDate(value: string): string {
   return dateFormatter.format(new Date(value));
+}
+
+function hasCustomerContact(draft: CustomerDraft): boolean {
+  return Boolean(draft.phone.trim() || draft.email.trim());
 }
 
 function isCustomerListStatus(value: string): value is CustomerListStatus {
@@ -108,11 +121,71 @@ function customerStatusFromEvent(
 
 interface CustomerFormProps {
   draft: CustomerDraft;
+  duplicateMatches: CustomerDuplicateMatchReadModel[];
   editingCustomer: CustomerReadModel | null;
   isPending: boolean;
   onCancel: () => void;
   onChange: (field: keyof CustomerDraft, value: string) => void;
+  onCreateAnyway: () => void;
+  onUseExisting: (customer: CustomerReadModel) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+interface CustomerDuplicateCandidateProps {
+  customer: CustomerReadModel;
+  disabled: boolean;
+  matchedBy: Array<"email" | "phone">;
+  onUseExisting: (customer: CustomerReadModel) => void;
+}
+
+function CustomerDuplicateCandidate({
+  customer,
+  disabled,
+  matchedBy,
+  onUseExisting,
+}: CustomerDuplicateCandidateProps) {
+  const handleUseExisting = useCallback(
+    () => onUseExisting(customer),
+    [customer, onUseExisting]
+  );
+
+  return (
+    <li className="customer-duplicate-item">
+      <div className="customer-duplicate-details">
+        <div className="customer-duplicate-title-row">
+          <strong>{customer.name}</strong>
+          <span className={`category-status status-${customer.status}`}>
+            {customer.status === "active" ? "Ativo" : "Arquivado"}
+          </span>
+        </div>
+        <div className="customer-duplicate-contacts">
+          {customer.phone ? <span>{customer.phone}</span> : null}
+          {customer.email ? <span>{customer.email}</span> : null}
+        </div>
+        <p>
+          Correspondência por{" "}
+          {matchedBy
+            .map((field) => (field === "email" ? "email" : "telefone"))
+            .join(" e ")}
+          .
+        </p>
+        {customer.status === "archived" ? (
+          <p className="customer-duplicate-archived-note">
+            Selecionar este cadastro não o restaura.
+          </p>
+        ) : null}
+      </div>
+      <button
+        aria-label={`Usar cadastro existente de ${customer.name}`}
+        className="quiet-button"
+        disabled={disabled}
+        onClick={handleUseExisting}
+        type="button"
+      >
+        Usar existente
+      </button>
+    </li>
+  );
 }
 
 function customerSubmitLabel(
@@ -130,10 +203,13 @@ function customerSubmitLabel(
 
 function CustomerForm({
   draft,
+  duplicateMatches,
   editingCustomer,
   isPending,
   onCancel,
   onChange,
+  onCreateAnyway,
+  onUseExisting,
   onSubmit,
 }: CustomerFormProps) {
   const handleNameChange = useCallback(
@@ -190,6 +266,7 @@ function CustomerForm({
           </label>
           <input
             autoComplete="name"
+            disabled={isPending}
             id="customer-name"
             onChange={handleNameChange}
             required
@@ -212,6 +289,7 @@ function CustomerForm({
               </label>
               <input
                 autoComplete="tel"
+                disabled={isPending}
                 id="customer-phone"
                 onChange={handlePhoneChange}
                 type="tel"
@@ -224,6 +302,7 @@ function CustomerForm({
               </label>
               <input
                 autoComplete="email"
+                disabled={isPending}
                 id="customer-email"
                 onChange={handleEmailChange}
                 type="email"
@@ -236,11 +315,50 @@ function CustomerForm({
           </p>
         </fieldset>
 
+        {duplicateMatches.length > 0 ? (
+          <section
+            aria-labelledby="customer-duplicate-heading"
+            className="customer-duplicate-panel"
+          >
+            <div className="customer-duplicate-intro">
+              <h3 id="customer-duplicate-heading">
+                Encontramos possíveis clientes existentes
+              </h3>
+              <p>
+                Revise os cadastros por email ou telefone. Nenhum dado será
+                mesclado automaticamente.
+              </p>
+            </div>
+            <ul className="customer-duplicate-list">
+              {duplicateMatches.map(({ customer, matchedBy }) => (
+                <CustomerDuplicateCandidate
+                  customer={customer}
+                  disabled={isPending}
+                  key={customer.id}
+                  matchedBy={matchedBy}
+                  onUseExisting={onUseExisting}
+                />
+              ))}
+            </ul>
+            <div className="customer-duplicate-actions">
+              <button
+                className="primary-button"
+                disabled={isPending}
+                onClick={onCreateAnyway}
+                type="button"
+              >
+                Criar mesmo assim
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <div className="customer-form-field customer-notes-field">
           <label className="field-label" htmlFor="customer-notes">
             Observações <span className="field-optional">Opcional</span>
           </label>
           <textarea
+            disabled={isPending}
             id="customer-notes"
             onChange={handleNotesChange}
             rows={3}
@@ -349,6 +467,7 @@ function CustomerCard({
 interface CustomerWorkspaceProps {
   customers: CustomerReadModel[];
   draft: CustomerDraft;
+  duplicateMatches: CustomerDuplicateMatchReadModel[];
   editingCustomer: CustomerReadModel | null;
   error: string | null;
   isLoading: boolean;
@@ -356,11 +475,13 @@ interface CustomerWorkspaceProps {
   onArchive: (customer: CustomerReadModel) => void;
   onCancelEdit: () => void;
   onChange: (field: keyof CustomerDraft, value: string) => void;
+  onCreateAnyway: () => void;
   onEdit: (customer: CustomerReadModel) => void;
   onResetOrganization: () => void;
   onRestore: (customer: CustomerReadModel) => void;
   onStatusClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUseExisting: (customer: CustomerReadModel) => void;
   pendingAction: string | null;
   status: CustomerListStatus;
 }
@@ -368,6 +489,7 @@ interface CustomerWorkspaceProps {
 function CustomerWorkspace({
   customers,
   draft,
+  duplicateMatches,
   editingCustomer,
   error,
   isLoading,
@@ -375,11 +497,13 @@ function CustomerWorkspace({
   onArchive,
   onCancelEdit,
   onChange,
+  onCreateAnyway,
   onEdit,
   onResetOrganization,
   onRestore,
   onStatusClick,
   onSubmit,
+  onUseExisting,
   pendingAction,
   status,
 }: CustomerWorkspaceProps) {
@@ -396,6 +520,7 @@ function CustomerWorkspace({
         </div>
         <button
           className="quiet-button"
+          disabled={pendingAction !== null}
           onClick={onResetOrganization}
           type="button"
         >
@@ -417,10 +542,13 @@ function CustomerWorkspace({
       {status === "active" || editingCustomer ? (
         <CustomerForm
           draft={draft}
+          duplicateMatches={duplicateMatches}
           editingCustomer={editingCustomer}
           isPending={pendingAction !== null}
           onCancel={onCancelEdit}
           onChange={onChange}
+          onCreateAnyway={onCreateAnyway}
+          onUseExisting={onUseExisting}
           onSubmit={onSubmit}
         />
       ) : null}
@@ -445,6 +573,7 @@ function CustomerWorkspace({
                   status === value ? "category-tab is-selected" : "category-tab"
                 }
                 data-customer-status={value}
+                disabled={pendingAction !== null}
                 key={value}
                 onClick={onStatusClick}
                 type="button"
@@ -495,9 +624,11 @@ export function CustomersPage() {
   const [status, setStatus] = useState<CustomerListStatus>("active");
   const [customers, setCustomers] = useState<CustomerReadModel[]>([]);
   const [draft, setDraft] = useState<CustomerDraft>(emptyDraft);
-  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(
-    null
-  );
+  const [editingCustomer, setEditingCustomer] =
+    useState<CustomerReadModel | null>(null);
+  const [duplicateMatches, setDuplicateMatches] = useState<
+    CustomerDuplicateMatchReadModel[]
+  >([]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(organizationId));
   const [error, setError] = useState<string | null>(null);
@@ -546,12 +677,12 @@ export function CustomersPage() {
     };
   }, [loadCustomers, organizationId, status]);
 
-  const editingCustomer =
-    customers.find((customer) => customer.id === editingCustomerId) ?? null;
-
   const handleDraftChange = useCallback(
     (field: keyof CustomerDraft, value: string) => {
       setDraft((current) => ({ ...current, [field]: value }));
+      setDuplicateMatches([]);
+      setError(null);
+      setNotice(null);
     },
     []
   );
@@ -567,78 +698,155 @@ export function CustomersPage() {
       setIsLoading(true);
       setError(null);
       setStatus(nextStatus);
-      setEditingCustomerId(null);
+      setEditingCustomer(null);
       setDraft(emptyDraft);
-      setError(null);
+      setDuplicateMatches([]);
       setNotice(null);
     },
     [status]
   );
 
   const handleEdit = useCallback((customer: CustomerReadModel) => {
-    setEditingCustomerId(customer.id);
+    setEditingCustomer(customer);
     setDraft({
       email: customer.email ?? "",
       name: customer.name,
       notes: customer.notes ?? "",
       phone: customer.phone ?? "",
     });
+    setDuplicateMatches([]);
     setError(null);
     setNotice(null);
   }, []);
 
-  const handleCancelEdit = useCallback(() => {
-    setEditingCustomerId(null);
-    setDraft(emptyDraft);
+  const handleUseExisting = useCallback((customer: CustomerReadModel) => {
+    setStatus(customer.status);
+    setEditingCustomer(customer);
+    setDraft({
+      email: customer.email ?? "",
+      name: customer.name,
+      notes: customer.notes ?? "",
+      phone: customer.phone ?? "",
+    });
+    setDuplicateMatches([]);
     setError(null);
+    setNotice(
+      customer.status === "archived"
+        ? "Cadastro existente selecionado. Ele continua arquivado até você restaurá-lo."
+        : "Cadastro existente selecionado para revisão. Nenhum dado foi mesclado."
+    );
   }, []);
 
-  const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
+  const handleCancelEdit = useCallback(() => {
+    setEditingCustomer(null);
+    setDraft(emptyDraft);
+    setDuplicateMatches([]);
+    setError(null);
+    setNotice(null);
+  }, []);
+
+  const findDraftDuplicates = useCallback(async () => {
+    if (!organizationId) {
+      return [];
+    }
+    const result = await orpcClient.customer.findPossibleDuplicates({
+      email: draft.email,
+      organizationId,
+      phone: draft.phone,
+    });
+    return result.matches;
+  }, [draft.email, draft.phone, organizationId]);
+
+  const persistCustomer = useCallback(async () => {
+    if (!organizationId) {
+      return "";
+    }
+    const profile = {
+      email: draft.email,
+      name: draft.name,
+      notes: draft.notes,
+      organizationId,
+      phone: draft.phone,
+    };
+    if (editingCustomer) {
+      await orpcClient.customer.update({
+        ...profile,
+        expectedVersion: editingCustomer.version,
+        id: editingCustomer.id,
+      });
+      return "Dados do cliente atualizados.";
+    }
+    await orpcClient.customer.create(profile);
+    return "Cliente cadastrado.";
+  }, [draft, editingCustomer, organizationId]);
+
+  const saveCustomer = useCallback(
+    async (allowPossibleDuplicates = false) => {
       if (!organizationId) {
         return;
       }
-      if (!(draft.phone.trim() || draft.email.trim())) {
+      if (!hasCustomerContact(draft)) {
         setError("Informe ao menos um telefone ou email para o cliente.");
         setNotice(null);
         return;
       }
 
-      setPendingAction(
-        editingCustomer ? `update:${editingCustomer.id}` : "create"
-      );
+      const needsDuplicateCheck = !(editingCustomer || allowPossibleDuplicates);
+      if (editingCustomer) {
+        setPendingAction(`update:${editingCustomer.id}`);
+      } else if (allowPossibleDuplicates) {
+        setPendingAction("create");
+      } else {
+        setPendingAction("duplicate-check");
+      }
       setError(null);
       setNotice(null);
+      setDuplicateMatches([]);
+      let failureAction: "duplicate-check" | "save" = "save";
+      if (needsDuplicateCheck) {
+        failureAction = "duplicate-check";
+      }
       try {
-        const profile = {
-          email: draft.email,
-          name: draft.name,
-          notes: draft.notes,
-          organizationId,
-          phone: draft.phone,
-        };
-        if (editingCustomer) {
-          await orpcClient.customer.update({
-            ...profile,
-            expectedVersion: editingCustomer.version,
-            id: editingCustomer.id,
-          });
-          setNotice("Dados do cliente atualizados.");
-        } else {
-          await orpcClient.customer.create(profile);
-          setNotice("Cliente cadastrado.");
+        if (needsDuplicateCheck) {
+          const matches = await findDraftDuplicates();
+          if (matches.length > 0) {
+            setDuplicateMatches(matches);
+            return;
+          }
+          failureAction = "save";
         }
-        setEditingCustomerId(null);
+        setNotice(await persistCustomer());
+        setEditingCustomer(null);
         setDraft(emptyDraft);
         await loadCustomers(organizationId, status);
       } catch (caughtError) {
-        setError(errorMessage(caughtError, "save"));
+        setError(errorMessage(caughtError, failureAction));
       } finally {
         setPendingAction(null);
       }
     },
-    [draft, editingCustomer, loadCustomers, organizationId, status]
+    [
+      draft,
+      editingCustomer,
+      findDraftDuplicates,
+      loadCustomers,
+      organizationId,
+      persistCustomer,
+      status,
+    ]
+  );
+
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      await saveCustomer();
+    },
+    [saveCustomer]
+  );
+
+  const handleCreateAnyway = useCallback(
+    () => saveCustomer(true),
+    [saveCustomer]
   );
 
   const handleLifecycle = useCallback(
@@ -662,8 +870,8 @@ export function CustomersPage() {
           await orpcClient.customer.restore(input);
           setNotice("Cliente restaurado.");
         }
-        if (editingCustomerId === customer.id) {
-          setEditingCustomerId(null);
+        if (editingCustomer?.id === customer.id) {
+          setEditingCustomer(null);
           setDraft(emptyDraft);
         }
         await loadCustomers(organizationId, status);
@@ -673,7 +881,7 @@ export function CustomersPage() {
         setPendingAction(null);
       }
     },
-    [editingCustomerId, loadCustomers, organizationId, status]
+    [editingCustomer, loadCustomers, organizationId, status]
   );
 
   const handleArchive = useCallback(
@@ -691,8 +899,9 @@ export function CustomersPage() {
     setOrganizationId(null);
     setCustomers([]);
     setIsLoading(false);
-    setEditingCustomerId(null);
+    setEditingCustomer(null);
     setDraft(emptyDraft);
+    setDuplicateMatches([]);
     setNotice("Abra novamente uma organização para acessar os clientes.");
     setError(null);
   }, []);
@@ -720,6 +929,7 @@ export function CustomersPage() {
           <CustomerWorkspace
             customers={customers}
             draft={draft}
+            duplicateMatches={duplicateMatches}
             editingCustomer={editingCustomer}
             error={error}
             isLoading={isLoading}
@@ -727,11 +937,13 @@ export function CustomersPage() {
             onArchive={handleArchive}
             onCancelEdit={handleCancelEdit}
             onChange={handleDraftChange}
+            onCreateAnyway={handleCreateAnyway}
             onEdit={handleEdit}
             onResetOrganization={handleResetOrganization}
             onRestore={handleRestore}
             onStatusClick={handleStatusClick}
             onSubmit={handleSubmit}
+            onUseExisting={handleUseExisting}
             pendingAction={pendingAction}
             status={status}
           />

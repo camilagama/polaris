@@ -67,6 +67,12 @@ function createRpcClient(router = createRpcRouter()) {
         customer: CustomerReadModel;
       }>;
       create: (input: unknown) => Promise<CustomerReadModel>;
+      findPossibleDuplicates: (input: unknown) => Promise<{
+        matches: Array<{
+          customer: CustomerReadModel;
+          matchedBy: Array<"email" | "phone">;
+        }>;
+      }>;
       list: (input: unknown) => Promise<{ customers: CustomerReadModel[] }>;
       restore: (input: unknown) => Promise<{
         changed: boolean;
@@ -175,6 +181,70 @@ describe("customer RPCs", () => {
     expect(listCustomers).toHaveBeenCalledWith({}, identity, {
       status: "active",
     });
+  });
+
+  it("searches possible duplicates inside the authorized organization", async () => {
+    let observedCapability = "";
+    const findPossibleCustomerDuplicates = vi.fn(async () => [
+      {
+        customer: {
+          ...customerRow,
+          archivedAt: new Date("2026-10-10T12:00:00.000Z"),
+          email: "Ana@Example.com",
+        },
+        matchedBy: ["email"] as Array<"email" | "phone">,
+      },
+    ]);
+    const router = createRpcRouter({
+      findPossibleCustomerDuplicates,
+      withTenantRequestContext: createTenantRequestStub((capability) => {
+        observedCapability = capability;
+      }),
+    });
+    const client = createRpcClient(router);
+
+    await expect(
+      client.customer.findPossibleDuplicates({
+        email: " Ana@Example.com ",
+        organizationId: "requested-org",
+        phone: " +55 (11) 99999-0000 ",
+      })
+    ).resolves.toMatchObject({
+      matches: [
+        {
+          customer: {
+            email: "Ana@Example.com",
+            organizationId,
+            status: "archived",
+          },
+          matchedBy: ["email"],
+        },
+      ],
+    });
+    expect(observedCapability).toBe("customer:update");
+    expect(findPossibleCustomerDuplicates).toHaveBeenCalledWith({}, identity, {
+      email: "Ana@Example.com",
+      phone: "+55 (11) 99999-0000",
+    });
+  });
+
+  it("rejects duplicate searches without contacts before opening tenant context", async () => {
+    const withTenantRequestContext = vi.fn(createTenantRequestStub());
+    const client = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext:
+          withTenantRequestContext as unknown as TenantRequestRunner,
+      })
+    );
+
+    await expect(
+      client.customer.findPossibleDuplicates({
+        email: "  ",
+        organizationId,
+        phone: " ",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(withTenantRequestContext).not.toHaveBeenCalled();
   });
 
   it("maps stale versions and missing customers to safe RPC errors", async () => {

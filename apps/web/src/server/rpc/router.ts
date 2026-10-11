@@ -8,6 +8,7 @@ import {
 import {
   archiveCustomer,
   createCustomer,
+  findPossibleCustomerDuplicates,
   listCustomers,
   restoreCustomer,
   updateCustomer,
@@ -49,6 +50,7 @@ import {
   deriveCategoryLifecycle,
 } from "@polaris/domain/catalog/category";
 import {
+  InvalidCustomerDuplicateSearchError,
   CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerProfileError,
@@ -137,6 +139,7 @@ interface RpcRouterDependencies {
   archiveCategory: typeof archiveCategory;
   createCategory: typeof createCategory;
   createCustomer: typeof createCustomer;
+  findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   deleteCategory: typeof deleteCategory;
@@ -319,7 +322,10 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
-  if (error instanceof InvalidCustomerProfileError) {
+  if (
+    error instanceof InvalidCustomerProfileError ||
+    error instanceof InvalidCustomerDuplicateSearchError
+  ) {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
@@ -460,6 +466,7 @@ function createCustomerRpcHandlers(
       RpcRouterDependencies,
       | "archiveCustomer"
       | "createCustomer"
+      | "findPossibleCustomerDuplicates"
       | "listCustomers"
       | "restoreCustomer"
       | "updateCustomer"
@@ -469,6 +476,9 @@ function createCustomerRpcHandlers(
 ) {
   const archiveTenantCustomer = dependencies.archiveCustomer ?? archiveCustomer;
   const createTenantCustomer = dependencies.createCustomer ?? createCustomer;
+  const findTenantCustomerDuplicates =
+    dependencies.findPossibleCustomerDuplicates ??
+    findPossibleCustomerDuplicates;
   const listTenantCustomers = dependencies.listCustomers ?? listCustomers;
   const restoreTenantCustomer = dependencies.restoreCustomer ?? restoreCustomer;
   const updateTenantCustomer = dependencies.updateCustomer ?? updateCustomer;
@@ -521,6 +531,38 @@ function createCustomerRpcHandlers(
     }
   );
 
+  const findPossibleDuplicates =
+    implementContract.customer.findPossibleDuplicates.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "customer:update",
+            operation: async (transaction, identity) => ({
+              matches: await findTenantCustomerDuplicates(
+                transaction,
+                identity,
+                {
+                  email: input.email,
+                  phone: input.phone,
+                }
+              ),
+            }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            matches: result.matches.map(({ customer, matchedBy }) => ({
+              customer: customerReadModel(customer),
+              matchedBy,
+            })),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
   const update = implementContract.customer.update.handler(
     async ({ context, input }) => {
       try {
@@ -570,7 +612,7 @@ function createCustomerRpcHandlers(
       )
   );
 
-  return { archive, create, list, restore, update };
+  return { archive, create, findPossibleDuplicates, list, restore, update };
 }
 
 export function createRpcRouter(

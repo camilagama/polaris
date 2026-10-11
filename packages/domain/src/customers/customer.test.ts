@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  InvalidCustomerDuplicateSearchError,
   InvalidCustomerProfileError,
   deriveCustomerLifecycle,
+  normalizeCustomerDuplicateSearch,
   normalizeCustomerProfile,
   transitionCustomerLifecycle,
 } from "./customer";
@@ -39,6 +41,26 @@ describe("normalizeCustomerProfile", () => {
     expect(
       normalizeCustomerProfile({ name: "Ana", phone: "+5511999990000" })
     ).toMatchObject({ email: null, phone: "+5511999990000" });
+  });
+});
+
+describe("normalizeCustomerDuplicateSearch", () => {
+  it("trims search contacts without normalizing phone punctuation or email case", () => {
+    expect(
+      normalizeCustomerDuplicateSearch({
+        email: " Ana@Example.com ",
+        phone: " +55 (11) 99999-0000 ",
+      })
+    ).toEqual({
+      email: "Ana@Example.com",
+      phone: "+55 (11) 99999-0000",
+    });
+  });
+
+  it("rejects a duplicate search without any usable contact", () => {
+    expect(() =>
+      normalizeCustomerDuplicateSearch({ email: "  ", phone: null })
+    ).toThrow(InvalidCustomerDuplicateSearchError);
   });
 });
 

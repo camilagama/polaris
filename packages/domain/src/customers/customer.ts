@@ -8,6 +8,16 @@ export interface CustomerProfileInput {
   phone?: string | null;
 }
 
+export interface CustomerDuplicateSearchInput {
+  email?: string | null | undefined;
+  phone?: string | null | undefined;
+}
+
+export interface NormalizedCustomerDuplicateSearch {
+  email: string | null;
+  phone: string | null;
+}
+
 export interface NormalizedCustomerProfile {
   email: string | null;
   name: string;
@@ -21,6 +31,15 @@ export class InvalidCustomerProfileError extends Error {
   constructor() {
     super("invalid_customer_profile");
     this.name = "InvalidCustomerProfileError";
+  }
+}
+
+export class InvalidCustomerDuplicateSearchError extends Error {
+  readonly code = "invalid_customer_duplicate_search";
+
+  constructor() {
+    super("invalid_customer_duplicate_search");
+    this.name = "InvalidCustomerDuplicateSearchError";
   }
 }
 
@@ -60,6 +79,19 @@ export function normalizeCustomerProfile(
   }
 
   return { email, name, notes, phone };
+}
+
+export function normalizeCustomerDuplicateSearch(
+  input: CustomerDuplicateSearchInput
+): NormalizedCustomerDuplicateSearch {
+  const email = optionalText(input.email);
+  const phone = optionalText(input.phone);
+
+  if (!(email || phone)) {
+    throw new InvalidCustomerDuplicateSearchError();
+  }
+
+  return { email, phone };
 }
 
 export function deriveCustomerLifecycle(

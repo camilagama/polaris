@@ -396,7 +396,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída sem achados | Revisão do diff `95dbc20..b3781fd`: nenhum achado crítico, importante ou menor. O gate PostgreSQL 18 passou na branch descartável `pr32-archive-catalog-gate`. |
 | Push e PR draft | Concluídos | Branch `codex/pr32-archive-catalog` publicada; [PR #31](https://github.com/camilagama/polaris/pull/31) aberto em draft sobre `codex/pr31-inventory-count` (PR #30). Nenhum merge foi feito. |
 | CI remoto | Concluído | GitHub Actions passou 6/6 no commit `5c3704a`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
-### PR33 — Media schema (implementação, revisão independente, checks locais, gate Neon, publicação e CI concluídos; revisão do usuário pendente)
+### PR33 — Media schema (implementação, revisão independente, checks locais, gate Neon, publicação e CI concluídos; revisão do usuário autorizada)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -411,9 +411,9 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Quotas Free/Pro | Adiadas | `PRODUCT.md` classifica os limites como hipóteses ajustáveis; PR33 não fixa contagens em constraints. Enforcement fica no modelo de entitlements. |
 | Revisão independente | Concluída sem achados | Revisão do diff `d0c6640..caf8824`: nenhum achado Critical, Important ou Minor; migration 0024, RLS/grants, guard de tombstone e gate revisados. |
 | Push, PR draft e CI remoto | Concluídos | Branch `codex/pr33-media-schema` publicada; [PR #32](https://github.com/camilagama/polaris/pull/32) aberto em draft sobre `codex/pr32-archive-catalog` (PR #31). CI passou 6/6 no commit `5e66fba`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. Nenhum merge foi feito. |
-| Revisão do usuário | Pendente | Revisar o PR33 draft e ADR 0013 depois da publicação. Nenhum merge será feito sem autorização. |
+| Revisão do usuário | Autorizada em 2026-10-11 | O responsável confirmou que os PRs revisados estão autorizados a prosseguir. PR #32 continua draft; nenhum merge foi feito. |
 
-### PR34 — Upload/crop pipeline (implementação, gates, preview e validação no iPhone concluídos; revisão do PR pendente)
+### PR34 — Upload/crop pipeline (implementação, gates, preview e validação no iPhone concluídos; revisão do PR autorizada)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -430,9 +430,9 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída | Duas revisões estáticas corrigiram o gesto sem arraste, validação de variante pós-R2, cobertura cross-tenant de `variant_media` e compensação para rejeições determinísticas após storage. A reconciliação de falhas ambíguas permanece agendada para PR35. |
 | Push da branch | Concluído | `codex/pr34-media-upload` publicada em `origin` sobre `codex/pr33-media-schema`; [PR #33](https://github.com/camilagama/polaris/pull/33) permanece em draft. |
 | Draft PR e CI remoto | Concluídos | O workflow `38072317058` passou 6/6 no commit `a4d8708`: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. Este checkpoint só altera documentação; PR #33 permanece draft e nenhum merge foi feito. |
-| Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
+| Revisão do usuário | Autorizada em 2026-10-11 | O responsável confirmou que os PRs revisados estão autorizados a prosseguir. PR #33 continua draft; nenhum merge foi feito. |
 
-### PR35 — Derivatives e media cleanup (correção de migration/gate publicada; review, checks locais e CI concluídos; revisão do usuário pendente)
+### PR35 — Derivatives e media cleanup (correção de migration/gate publicada; review, checks locais e CI concluídos; revisão do usuário autorizada)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -449,14 +449,14 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída sem achados | Revisão estática do follow-up `181a3c5..681bcd6`; sem achados Critical, Important ou Minor. A semântica de `acldefault`/`aclexplode` e dos privilégios efetivos foi conferida contra PostgreSQL 18; o gate real passou na branch Neon descartável. |
 | Push e PR draft | Concluídos | Branch `codex/pr35-media-derivatives` atualizada até `e70aa23`; [PR #34](https://github.com/camilagama/polaris/pull/34) segue em draft sobre `codex/pr34-media-upload` (PR #33). Nenhum merge nem deploy de produção foi feito. |
 | CI remoto | Concluído | Workflow `38138069207` passou 6/6 no head `e70aa23`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
-| Revisão do usuário | Pendente | Revisar o diff, ADR 0014, migration 0026 e evidências dos gates antes de qualquer merge. |
+| Revisão do usuário | Autorizada em 2026-10-11 | O responsável confirmou que os PRs revisados estão autorizados a prosseguir. PR #34 continua draft; nenhum merge foi feito. |
 
 
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.
 
 
 
-### PR36 — Customers (implementação, gates local/Neon, revisão independente e CI concluídos; draft PR #35 publicado; revisão do usuário pendente)
+### PR36 — Customers (implementação, gates local/Neon, revisão independente e CI concluídos; draft PR #35 publicado; revisão do usuário autorizada)
 
 
 
@@ -469,5 +469,29 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Gates local e Neon | Concluídos | `bun run check` passou no head `ae9a88d` com 212 testes em 33 arquivos; `bun run build` passou nos oito workspaces. Gate em Neon PostgreSQL 18.6 passou os nove grupos de cenários de migration/ACL, RLS, duplicatas, isolamento, invariantes, versionamento, lifecycle, auditoria e cleanup do role temporário. Fixtures sintéticas permanecem na branch schema-only até a expiração automática `2026-10-11 15:00 UTC`. |
 | Revisão independente | Concluída sem blockers | O review identificou respostas antigas da lista aparecendo após erro ou corrida entre filtros; fix em `ae9a88d` limpa resultados durante load e descarta respostas obsoletas. O uso V1 de `customer:update` em leitura/criação foi mantido: o mapa atual só tem `owner`, não tem `customer:read`, e isso não muda o acesso atual. Refinar capabilities fica para quando papéis por operação forem definidos. |
 | Push e PR draft | Concluídos | Branch `codex/pr36-customers` publicada; [PR #35](https://github.com/camilagama/polaris/pull/35) aberto em draft sobre `codex/pr35-media-derivatives` (PR #34). Nenhum merge ou deploy de produção foi feito. |
-| CI remoto | Concluído | GitHub Actions run `38139231475` passou 6/6 no head `8eaed53`: build, Knip, lint/boundaries, typecheck, unit tests e offline persistence browser gate. |
-| Revisão do usuário | Pendente | Revisar a etapa PR36 e seus gates antes de avançar para PR37. |
+| CI remoto | Concluído | GitHub Actions run `38139378431` passou 6/6 no head `d3861f3`: build, Knip, lint/boundaries, typecheck, unit tests e offline persistence browser gate. |
+| Revisão do usuário | Autorizada em 2026-10-11 | O responsável confirmou que os PRs revisados estão autorizados a prosseguir. PR #35 continua draft; nenhum merge foi feito. |
+
+### PR37 — Possible duplicates (implementação, gates e revisão independente concluídos; publicação pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Worktree e base | Concluídos | Branch local `codex/pr37-possible-duplicates`, isolada em `.codex-worktrees/pr37-possible-duplicates`, sobre o head PR36 `d3861f3`. O branch `main` não foi alterado. |
+| Regra de correspondência | Confirmada | Email exato sem distinção de caixa após trim; telefone exato após trim; sem normalização de pontuação e sem busca por nome. Incluir ativos e arquivados, usar OR entre contatos e apresentar todos os candidatos; nunca mesclar automaticamente. |
+| Contrato, repository e RPC | Concluídos | Consulta exige ao menos um contato, usa capability `customer:update`, autorização e organização definidas no servidor, filtro explícito de organização e retorna os campos que coincidiram. |
+| UI de cadastro | Concluída localmente | A criação consulta possíveis duplicados antes de gravar. A pessoa pode abrir o registro existente para revisão/edição ou criar mesmo assim. A busca falhando bloqueia a criação até nova tentativa. Escolher registro arquivado não restaura automaticamente. |
+| Migration 0028 | Concluída | Índices parciais não únicos para `(organization_id, lower(email))` e `(organization_id, phone)`; `bun run db:generate` reportou “No schema changes”. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration 0028 aplicada e gate passou em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, projeto `green-tooth-16857010`, CLI perfil `junior-pessoal` / `juniordiniz56@gmail.com`. O gate comprovou definição dos índices, contatos repetidos, email case-insensitive, telefone exato após trim, inclusão de arquivados, exclusão de nome/pontuação, retorno de todos os candidatos e isolamento tenant. A branch contém apenas fixtures sintéticas e expira em `2026-10-11 15:00 UTC`; URLs não foram registradas. Uma branch schema-only criada durante a preparação ficou sem alterações e expira em `2026-10-11 16:00 UTC`. |
+| Verificação local | Concluída | `bun run check` passou com lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 216 testes em 33 arquivos. `bun run db:generate` confirmou ausência de drift. |
+| Build local | Concluído com observação | `bun run build` terminou com exit code 0 nos oito workspaces. Wrangler registrou `EPERM` transitório ao abrir arquivo de log no perfil local e, em seguida, informou que os logs foram gravados; o build concluiu normalmente. |
+| Revisão independente | Concluída sem blockers | A revisão identificou falta de asserção sobre expressões/predicados dos índices. O gate agora valida o DDL esperado e passou novamente no PostgreSQL 18.6. |
+| Push e PR draft | Pendente | Após a confirmação da rotação do token GitHub, ainda falta publicar `codex/pr37-possible-duplicates` sobre `codex/pr36-customers` e abrir o draft PR. Nenhum merge foi feito. |
+| Revisão do usuário | Pendente | Revisar o PR37 draft e os gates depois da publicação. |
+
+### PR38 — decisões confirmadas para a próxima etapa
+
+| Decisão | Status | Regra |
+| --- | --- | --- |
+| Origem de preço | Confirmada | Capturar no comando da venda preço de tabela e preço cobrado; não adicionar preço ao catálogo nesta etapa. |
+| Custo desconhecido | Confirmada | Permitir a venda, registrar custo desconhecido e exibir margem indeterminada; não substituir ausência por zero. |
+| Quantidade | Confirmada | Quantidade inteira positiva, limitada atomicamente ao saldo disponível, sem teto arbitrário adicional. |
