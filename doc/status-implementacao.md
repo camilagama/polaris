@@ -456,7 +456,7 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 
 
 
-### PR36 — Customers (implementação e gates local/Neon concluídos; revisão independente e publicação pendentes)
+### PR36 — Customers (implementação, gates local/Neon e revisão independente concluídos; publicação pendente; revisão do usuário pendente)
 
 
 
@@ -466,7 +466,8 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Regra de identificação | Confirmada | Usuário definiu nome obrigatório e ao menos um contato (telefone ou email); contatos repetidos são permitidos. Não aplicar unicidade rígida nem mesclagem automática. |
 | Schema e migration 0027 | Concluídos | `db:generate` não encontrou drift; migration 0027 foi aplicada na branch schema-only `pr36-customers-gate`. Customers usa FORCE RLS, exige nome e telefone/email, aceita contatos repetidos e não concede DELETE ao runtime. |
 | Commands, RPC e interface | Concluídos localmente | Create/list/update/archive/restore com `expectedVersion`, auditoria sem PII e tela Clientes; capacidades V1 usam `customer:update`. Associação a vendas e possíveis duplicados ficam para etapas posteriores. |
-| Gates local e Neon | Concluídos | `bun run check` passou com 212 testes em 33 arquivos; `bun run build` passou nos oito workspaces. Gate em Neon PostgreSQL 18.6 passou os nove grupos de cenários de migration/ACL, RLS, duplicatas, isolamento, invariantes, versionamento, lifecycle, auditoria e cleanup do role temporário. Fixtures sintéticas permanecem na branch schema-only até a expiração automática `2026-10-11 15:00 UTC`. |
-| Revisão independente | Pendente | Revisar o diff final, migration/RLS, regras PII e tela antes de publicar. |
+| Gates local e Neon | Concluídos | `bun run check` passou no head `ae9a88d` com 212 testes em 33 arquivos; `bun run build` passou nos oito workspaces. Gate em Neon PostgreSQL 18.6 passou os nove grupos de cenários de migration/ACL, RLS, duplicatas, isolamento, invariantes, versionamento, lifecycle, auditoria e cleanup do role temporário. Fixtures sintéticas permanecem na branch schema-only até a expiração automática `2026-10-11 15:00 UTC`. |
+| Revisão independente | Concluída sem blockers | O review identificou respostas antigas da lista aparecendo após erro ou corrida entre filtros; fix em `ae9a88d` limpa resultados durante load e descarta respostas obsoletas. O uso V1 de `customer:update` em leitura/criação foi mantido: o mapa atual só tem `owner`, não tem `customer:read`, e isso não muda o acesso atual. Refinar capabilities fica para quando papéis por operação forem definidos. |
 | Push e PR draft | Pendente | Publicar branch empilhada sobre `codex/pr35-media-derivatives`; sem merge ou deploy de produção. |
+| CI remoto | Pendente | Criar o PR draft empilhado e acompanhar os checks do head publicado. |
 | Revisão do usuário | Pendente | Revisar a etapa PR36 e seus gates antes de avançar para PR37. |
