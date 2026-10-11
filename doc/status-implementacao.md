@@ -524,3 +524,17 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Revisão independente | Concluída sem blockers | A revisão confirmou precisão BigInt, escalas, arredondamento assinado, aplicação percentual sem arredondamento antecipado e limite inteiro de quantity. Não foi inferido teto inteiro para `DecimalAmount`/`Percentage`, pois a documentação não o define. |
 | Revisão do responsável | Pendente | Revisar especialmente a convenção percentual em pontos percentuais (`2.5` representa `2,5%`), registrada em `CONTEXT.md` e `docs/business-rules/money.md`. |
 | Publicação | Pendente | Requer sessão GitHub CLI válida. Nenhum push ou merge foi feito. |
+
+### PR40 — Sale adjustments (implementação, checks e gate concluídos; revisão pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base e worktree | Concluídas | Branch `codex/pr40-sale-adjustments`, isolada em `D:\2 - Dev\2 - Worktree\pr40-sale-adjustments\polaris`, sobre PR39 `5740ff7`. Baseline passou com 235 testes/35 arquivos e build dos oito workspaces. |
+| Regras de ajuste | Confirmadas | Negociação por item permanece em `charged_unit_price` versus `listed_unit_price`; ajustes são de venda. Desconto/acréscimo aceitam valor fixo ou percentual; frete e sobretaxa de pagamento são fixos. Percentuais usam o mesmo subtotal, sem composição, arredondam half-up uma vez por ajuste e desconto total não excede o subtotal. |
+| Sobretaxa de pagamento | Confirmada | Soma ao total devido pelo comprador; taxas do processador e de antecipação são custos separados de PR42. |
+| Domínio | Concluído localmente | `calculateSaleAdjustments` calcula subtotal pelo preço cobrado, ajusta valor fixo ou percentual e retorna totais separados. Percentuais compartilham a base negociada, são arredondados half-up uma vez cada e não compõem; desconto agregado acima do subtotal é rejeitado. |
+| Migration 0031 e RLS | Concluídas localmente | `sale_adjustments` guarda tipo, modo fixo/percentual, percentual de entrada e valor monetário calculado, vinculados por FK composta à venda e posição única. FORCE RLS; runtime tem SELECT somente até PR43. `db:generate` não encontra drift. |
+| Verificação local | Concluída | `bun run check` passou com 244 testes em 36 arquivos, lint, formato, tipos, boundaries e Knip. `bun run build` passou nos oito workspaces; `bun run db:generate` não encontrou drift. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration 0031 aplicada; gate passou em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Nove grupos verificaram FORCE RLS/runtime read-only, snapshots, tipo/escala/modo/posição, FKs compostas, isolamento tenant e imutabilidade. O gate criou fixtures e policies de teste temporárias e as removeu; a branch expira em `2026-10-11 15:00 UTC`. |
+| Revisão independente | Concluída sem blockers | A revisão confirmou coerência do cálculo, schema, migration e gate. Follow-up confirmou que arrays esparsos são rejeitados e que arrays válidos mantêm o cálculo. |
+| Revisão do responsável e publicação | Pendente | Revisar regras e PR draft; publicação aguarda sessão GitHub CLI válida. Nenhum merge será feito. |

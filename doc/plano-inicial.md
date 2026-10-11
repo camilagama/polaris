@@ -2122,6 +2122,13 @@ Tipos:
 
 Permitir também negociação por item.
 
+Decisões de implementação V1:
+
+- a negociação por item fica no preço cobrado do item; `sale_adjustments` não repete essa diferença;
+- desconto/acréscimo pode ser valor fixo ou percentual; frete e sobretaxa de pagamento são valores fixos;
+- todos os percentuais usam o subtotal pelo preço cobrado, sem composição; cada ajuste percentual arredonda half-up uma vez para centavos;
+- descontos somados não podem superar o subtotal; frete e sobretaxa de pagamento aumentam o valor devido; taxa de processamento/antecipação fica separada para PR42.
+
 
 
 ---

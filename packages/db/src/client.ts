@@ -5,7 +5,7 @@ import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
 import { organizationSchema } from "./schema/organization";
 import { dbPocOperations } from "./schema/poc";
-import { saleItems, sales } from "./schema/sale";
+import { saleAdjustments, saleItems, sales } from "./schema/sale";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
@@ -23,6 +23,7 @@ const databaseSchema = {
   mediaAssets,
   mediaCleanupClaims,
   productMedia,
+  saleAdjustments,
   saleItems,
   sales,
   stockMovements,

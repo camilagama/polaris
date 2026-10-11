@@ -53,7 +53,10 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Venda:** transação comercial registrada pelo revendedor, com seus próprios itens e fatos econômicos.
 
-**Ajuste de venda:** desconto, acréscimo, frete cobrado ou outro ajuste comercial explícito.
+**Negociação por item:** preço cobrado registrado no próprio item em relação ao preço de tabela; não cria um segundo desconto para a mesma diferença.
+**Subtotal da venda:** soma dos valores dos itens pelo preço cobrado, antes dos ajustes da venda.
+**Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
+**Sobretaxa de pagamento:** valor cobrado do comprador por um meio de pagamento; é distinto das taxas de processamento e antecipação pagas pelo negócio.
 
 **Devolução:** registro de itens devolvidos e da quantidade que volta ao estoque vendável.
 

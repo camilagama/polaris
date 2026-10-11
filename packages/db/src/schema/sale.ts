@@ -135,3 +135,68 @@ export const saleItems = pgTable(
     }),
   ]
 ).enableRLS();
+
+export const saleAdjustments = pgTable(
+  "sale_adjustments",
+  {
+    amount: numeric("amount").notNull(),
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    kind: text("kind").notNull(),
+    organizationId: text("organization_id").notNull(),
+    percentage: numeric("percentage"),
+    position: integer("position").notNull(),
+    saleId: uuid("sale_id").notNull(),
+    valueType: text("value_type").notNull(),
+  },
+  (table) => [
+    check(
+      "sale_adjustments_kind_allowed",
+      sql`${table.kind} IN ('discount', 'surcharge', 'freight', 'payment_surcharge')`
+    ),
+    check(
+      "sale_adjustments_value_type_allowed",
+      sql`${table.valueType} IN ('fixed', 'percentage')`
+    ),
+    check("sale_adjustments_position_nonnegative", sql`${table.position} >= 0`),
+    check(
+      "sale_adjustments_amount_allowed",
+      sql`
+        ${table.amount} >= 0
+        AND scale(${table.amount}) <= 2
+        AND ${table.amount} < 1000000000000000000
+      `
+    ),
+    check(
+      "sale_adjustments_value_allowed",
+      sql`
+        (
+          ${table.valueType} = 'fixed'
+          AND ${table.percentage} IS NULL
+        )
+        OR (
+          ${table.valueType} = 'percentage'
+          AND ${table.kind} IN ('discount', 'surcharge')
+          AND ${table.percentage} IS NOT NULL
+          AND ${table.percentage} >= 0
+          AND scale(${table.percentage}) <= 6
+          AND ${table.percentage} < 'Infinity'
+        )
+      `
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.saleId],
+      foreignColumns: [sales.organizationId, sales.id],
+      name: "sale_adjustments_organization_sale_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("sale_adjustments_organization_sale_position_unique").on(
+      table.organizationId,
+      table.saleId,
+      table.position
+    ),
+    pgPolicy("sale_adjustments_current_tenant_select", {
+      for: "select",
+      to: runtimeRole,
+      using: activeTenantScope(table.organizationId),
+    }),
+  ]
+).enableRLS();
