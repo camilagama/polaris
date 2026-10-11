@@ -566,4 +566,12 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Gate Neon PostgreSQL 18 | Concluído | 24 cenários passaram em PostgreSQL 18.6 na branch schema-only `pr42-payment-profiles-gate`, database `polaris_pr42_gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Cobre CRUD/RLS/ACL, cross-tenant, taxas/precisão/arredondamento, modalidade, antecipação, snapshot, concorrência de versão e preservação de regras antigas. Fixtures são sintéticas; a branch expira `2026-10-12 15:45 UTC`. Nenhum dado de produção foi copiado. |
 | Verificação local | Concluída | `bun run check` passou: lint, formato, tipos dos oito workspaces, boundaries, Knip e 267 testes em 39 arquivos. `bun run build` passou nos oito workspaces; `bun run --filter @polaris/db db:generate` confirmou ausência de drift. |
 | Revisão independente | Concluída sem blockers | O reviewer inicialmente apontou a seleção por venda como possível lacuna; após formalizar no plano sua conexão obrigatória no PR43 (que cria a transação e o pagamento), confirmou a divisão e não encontrou outros achados Critical/Important no escopo PR42. |
-| Publicação | Concluída | Commit `cee49e5`; branch `codex/pr42-payment-profiles` publicada; [GitHub PR #41](https://github.com/camilagama/polaris/pull/41) em draft sobre `codex/pr41-sale-payment`. CI passou 6/6. Nenhum merge será feito. |
+| Publicação | Concluída | Commit `cee49e5`; branch `codex/pr42-payment-profiles` publicada; [GitHub PR #41](https://github.com/camilagama/polaris/pull/41) em draft sobre `codex/pr41-sale-payment`. CI passou 6/6 no head `1ca6330`; o handoff documental terá CI próprio. Nenhum merge foi necessário para a continuidade; a cadeia permanece em draft. |
+
+### Handoff para continuação por outro desenvolvedor
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Documento de passagem PR42 → PR43 | Concluído | [`doc/handoff-pr43.md`](handoff-pr43.md) registra o head exato, cadeia de PRs, decisões, artefatos, segurança das CLIs, sequência do PR43, verificações e documentos que devem continuar atualizados. |
+| Merge para habilitar o handoff | Não necessário | O PR42 já está publicado no branch remoto e é a base cumulativa para PR43. Integrar ao `main` exigiria decidir e processar a cadeia anterior de PRs; o novo desenvolvedor pode iniciar sobre `origin/codex/pr42-payment-profiles`. |
+| Próxima etapa | Aguardando execução | Criar worktree/branch `codex/pr43-sale-transaction` sobre o head do PR42 e implementar a confirmação transacional completa da venda conforme `doc/plano-inicial.md`. |
