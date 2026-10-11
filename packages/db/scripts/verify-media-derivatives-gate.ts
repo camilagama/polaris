@@ -327,6 +327,32 @@ async function main(): Promise<void> {
     assert.equal(functionRow.cleanup_can_read_claims, false);
     assert.equal(functionRow.cleanup_can_read_media_keys, false);
 
+    const triggerFunctionInfo = await admin.pool.query<{
+      function_owner: string;
+      public_can_execute: boolean;
+      tenant_can_execute: boolean;
+      cleanup_login_can_execute: boolean;
+      cleanup_runtime_can_execute: boolean;
+    }>(
+      "SELECT owner.rolname AS function_owner, " +
+        "EXISTS (SELECT 1 FROM aclexplode(COALESCE(function.proacl, acldefault('f', function.proowner))) AS acl " +
+        "WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE') AS public_can_execute, " +
+        "has_function_privilege($1, function.oid, 'EXECUTE') AS tenant_can_execute, " +
+        "has_function_privilege($2, function.oid, 'EXECUTE') AS cleanup_login_can_execute, " +
+        "has_function_privilege($3, function.oid, 'EXECUTE') AS cleanup_runtime_can_execute " +
+        "FROM pg_proc AS function " +
+        "JOIN pg_roles AS owner ON owner.oid = function.proowner " +
+        "WHERE function.oid = 'public.guard_media_storage_key_cleanup_claim()'::regprocedure",
+      [tenantRole, cleanupLoginRole, cleanupRuntimeRole]
+    );
+    const [triggerFunctionRow] = triggerFunctionInfo.rows;
+    assert.ok(triggerFunctionRow);
+    assert.equal(triggerFunctionRow.function_owner, cleanupOwnerRole);
+    assert.equal(triggerFunctionRow.public_can_execute, false);
+    assert.equal(triggerFunctionRow.tenant_can_execute, false);
+    assert.equal(triggerFunctionRow.cleanup_login_can_execute, false);
+    assert.equal(triggerFunctionRow.cleanup_runtime_can_execute, false);
+
     const fixture = await createTenantFixture(admin.pool, "race");
     const productId = await createTestProduct(admin.db, fixture);
     const orphanKey = mediaStorageKey({
