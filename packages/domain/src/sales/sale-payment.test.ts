@@ -14,9 +14,20 @@ function moneyFromMinorUnits(minorUnits: bigint): string {
 describe("normalizeSalePayment", () => {
   it("records the full sale amount and the credit card installment count", () => {
     expect(
-      normalizeSalePayment({ installments: 3, method: "credit_card" }, "55")
+      normalizeSalePayment(
+        {
+          anticipationRequested: true,
+          installmentPlan: "merchant",
+          installments: 3,
+          method: "credit_card",
+        },
+        "55"
+      )
     ).toEqual({
+      anticipationRequested: true,
       amount: "55.00",
+      installmentPlanUnknown: false,
+      installmentPlan: "merchant",
       installments: 3,
       method: "credit_card",
     });
@@ -24,14 +35,20 @@ describe("normalizeSalePayment", () => {
 
   it("omits installments for non-credit card methods", () => {
     expect(normalizeSalePayment({ method: "cash" }, "12.5")).toEqual({
+      anticipationRequested: false,
       amount: "12.50",
+      installmentPlanUnknown: false,
+      installmentPlan: null,
       installments: null,
       method: "cash",
     });
     expect(
       normalizeSalePayment({ method: "pix", installments: null }, "0")
     ).toEqual({
+      anticipationRequested: false,
       amount: "0.00",
+      installmentPlanUnknown: false,
+      installmentPlan: null,
       installments: null,
       method: "pix",
     });
@@ -48,10 +65,11 @@ describe("normalizeSalePayment", () => {
 
   it("requires positive integer installments only for credit card", () => {
     for (const installments of [undefined, null, 0, -1, 1.5, 2_147_483_648]) {
-      const input =
-        installments === undefined
-          ? { method: "credit_card" as const }
-          : { installments, method: "credit_card" as const };
+      const input = {
+        installmentPlan: "issuer" as const,
+        installments: installments ?? null,
+        method: "credit_card" as const,
+      };
       expect(() => normalizeSalePayment(input, "10.00")).toThrow(
         InvalidSalePaymentError
       );
@@ -87,11 +105,35 @@ describe("normalizeSalePayment", () => {
     await fcAssert(
       property(integer({ min: 1, max: 2_147_483_647 }), (installments) => {
         expect(
-          normalizeSalePayment({ method: "credit_card", installments }, "10.00")
-            .installments
+          normalizeSalePayment(
+            {
+              installmentPlan: "merchant",
+              installments,
+              method: "credit_card",
+            },
+            "10.00"
+          ).installments
         ).toBe(installments);
       }),
       { numRuns: 300 }
     );
+  });
+
+  it("requires installment responsibility for credit card and disallows anticipation on other methods", () => {
+    expect(() =>
+      normalizeSalePayment({ installments: 3, method: "credit_card" }, "10.00")
+    ).toThrow(InvalidSalePaymentError);
+    expect(() =>
+      normalizeSalePayment(
+        { installmentPlan: "issuer", method: "credit_card" },
+        "10.00"
+      )
+    ).toThrow(InvalidSalePaymentError);
+    expect(() =>
+      normalizeSalePayment(
+        { anticipationRequested: true, method: "pix" },
+        "10.00"
+      )
+    ).toThrow(InvalidSalePaymentError);
   });
 });

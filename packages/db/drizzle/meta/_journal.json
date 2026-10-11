@@ -232,6 +232,13 @@
       "when": 1791729084642,
       "tag": "0032_mean_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791751552119,
+      "tag": "0033_bent_quicksilver",
+      "breakpoints": true
     }
   ]
 }

@@ -3,13 +3,13 @@ import type {
   CustomerReadModel,
 } from "@polaris/contracts";
 import {
+  type ChangeEvent,
+  type FormEvent,
+  type MouseEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
-  type FormEvent,
-  type MouseEvent,
 } from "react";
 import { orpcClient } from "../lib/orpc";
 import "../catalog/categories-page.css";
@@ -127,8 +127,8 @@ interface CustomerFormProps {
   onCancel: () => void;
   onChange: (field: keyof CustomerDraft, value: string) => void;
   onCreateAnyway: () => void;
-  onUseExisting: (customer: CustomerReadModel) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUseExisting: (customer: CustomerReadModel) => void;
 }
 
 interface CustomerDuplicateCandidateProps {
@@ -548,8 +548,8 @@ function CustomerWorkspace({
           onCancel={onCancelEdit}
           onChange={onChange}
           onCreateAnyway={onCreateAnyway}
-          onUseExisting={onUseExisting}
           onSubmit={onSubmit}
+          onUseExisting={onUseExisting}
         />
       ) : null}
 
@@ -921,6 +921,7 @@ export function CustomersPage() {
           <a aria-current="page" href="/customers">
             Clientes
           </a>
+          <a href="/payment-profiles">Perfis de pagamento</a>
         </nav>
       </header>
 

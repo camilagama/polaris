@@ -4,6 +4,8 @@ import {
   MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS,
   WRITE_OFF_REASON_CODES,
 } from "@polaris/domain/inventory/write-off-stock";
+import { PAYMENT_FEE_MODES } from "@polaris/domain/sales/payment-profile";
+import { SALE_PAYMENT_METHODS } from "@polaris/domain/sales/sale-payment";
 import { z } from "zod";
 
 export function categoryNameCodePointLength(name: string): number {
@@ -105,6 +107,91 @@ const customerDuplicateMatch = z.object({
 export type CustomerDuplicateMatchReadModel = z.infer<
   typeof customerDuplicateMatch
 >;
+
+const paymentFeeConfiguration = z
+  .object({
+    fixedAmount: z.string().trim().min(1).nullable(),
+    mode: z.enum(PAYMENT_FEE_MODES),
+    percentage: z.string().trim().min(1).nullable(),
+  })
+  .superRefine((fee, ctx) => {
+    const hasFixed = fee.fixedAmount !== null;
+    const hasPercentage = fee.percentage !== null;
+    const valid =
+      ((fee.mode === "unknown" || fee.mode === "none") &&
+        !hasFixed &&
+        !hasPercentage) ||
+      (fee.mode === "fixed" && hasFixed && !hasPercentage) ||
+      (fee.mode === "percentage" && !hasFixed && hasPercentage) ||
+      (fee.mode === "fixed_and_percentage" && hasFixed && hasPercentage);
+    if (!valid) {
+      ctx.addIssue({
+        code: "custom",
+        message: "invalid_payment_fee_configuration",
+      });
+    }
+  });
+
+export type PaymentFeeConfigurationReadModel = z.infer<
+  typeof paymentFeeConfiguration
+>;
+
+const paymentProfileRuleFields = z
+  .object({
+    anticipationFee: paymentFeeConfiguration,
+    expectedSettlementDays: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(2_147_483_647)
+      .nullable(),
+    installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
+    installments: z.number().int().positive().max(2_147_483_647).nullable(),
+    method: z.enum(SALE_PAYMENT_METHODS),
+    processingFee: paymentFeeConfiguration,
+  })
+  .superRefine((rule, ctx) => {
+    const cardRuleValid =
+      rule.installments !== null && rule.installmentPlan !== null;
+    const nonCardRuleValid =
+      rule.installments === null && rule.installmentPlan === null;
+    if (
+      (rule.method === "credit_card" && !cardRuleValid) ||
+      (rule.method !== "credit_card" && !nonCardRuleValid)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "invalid_payment_profile_rule_installments",
+        path: ["installments"],
+      });
+    }
+  });
+
+const paymentProfileRule = paymentProfileRuleFields.extend({
+  id: z.string().uuid(),
+});
+
+export type PaymentProfileRuleReadModel = z.infer<typeof paymentProfileRule>;
+export type PaymentProfileRuleInput = z.infer<typeof paymentProfileRuleFields>;
+
+const paymentProfileFields = z.object({
+  name: z.string().trim().min(1).max(100),
+  rules: z.array(paymentProfileRuleFields).min(1),
+});
+
+const paymentProfile = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  organizationId: z.string().min(1),
+  rules: z.array(paymentProfileRule),
+  status: z.enum(["active", "archived"]),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+
+export type PaymentProfileReadModel = z.infer<typeof paymentProfile>;
 
 export const productMediaAssetReadModelSchema = z.object({
   assetId: z.string().uuid(),
@@ -474,6 +561,50 @@ export const polarisContract = {
         })
       )
       .output(z.object({ created: z.boolean(), organization })),
+  },
+  paymentProfile: {
+    archive: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
+    create: oc
+      .input(
+        paymentProfileFields.extend({
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(paymentProfile),
+    list: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z.enum(["active", "archived", "all"]).default("active"),
+        })
+      )
+      .output(z.object({ profiles: z.array(paymentProfile) })),
+    restore: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
+    update: oc
+      .input(
+        paymentProfileFields.extend({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
   },
   product: {
     archive: oc

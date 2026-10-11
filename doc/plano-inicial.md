@@ -2212,6 +2212,36 @@ Snapshots na venda.
 
 
 
+Critérios V1 confirmados:
+
+
+
+- perfis são configurações manuais da organização, não integrações com provedores;
+
+- o operador escolhe explicitamente um perfil em cada venda; sem perfil ou sem regra exata, a venda segue e o custo fica desconhecido;
+
+- cada regra combina método e, para cartão de crédito, modalidade do parcelamento (`merchant` ou `issuer`) e quantidade; métodos sem cartão não têm parcelas;
+
+- cada taxa de processamento e antecipação aceita componente fixo em BRL e percentual efetivo, separadamente ou combinados; ausente/desconhecido é diferente de zero conhecido;
+
+- o componente percentual incide sobre o total devido da venda; somar componente fixo e percentual em decimal exato e arredondar half-up uma vez por custo;
+
+- antecipação só entra no snapshot quando o operador marcar essa intenção na venda; sem antecipação, seu custo estimado é zero não aplicável; se marcada sem regra conhecida, o custo permanece desconhecido;
+
+- prazo esperado é um número inteiro de dias salvo como estimativa na regra/snapshot; não cria data de liquidação nem contas a receber;
+
+- a venda preserva o perfil, a versão, a regra escolhida, os componentes e valores calculados; snapshots não mudam quando a configuração do perfil for editada;
+
+- parcelas de crédito continuam positivas até o limite do `integer` PostgreSQL, sem o teto histórico de 1–12 do documento de origem; registros antigos podem manter modalidade nula com marcador explícito de desconhecida quando ela não foi capturada, mas novos comandos exigem `merchant` ou `issuer`.
+
+Escopo entre etapas: PR42 entrega a configuração/versionamento de perfis e regras, o
+schema dos snapshots e o cálculo determinístico do snapshot. A seleção de perfil na
+venda e a gravação desse snapshot ficam conectadas ao comando e à interface de criação
+transacional da venda no PR43, que passa a criar o pagamento. Essa integração é requisito
+obrigatório do PR43: sem perfil ou sem regra exata, a venda segue com custo desconhecido.
+
+
+
 ---
 
 
@@ -2247,6 +2277,11 @@ Uma transaction deve:
 9. criar audit event;
 
 10. criar outbox intents quando necessário.
+
+O comando da venda aceita um perfil de pagamento opcional e a intenção de antecipação.
+Quando houver perfil/regra exata, grava os snapshots calculados pela regra de PR42; sem
+perfil ou regra exata, não bloqueia a venda e registra taxas desconhecidas. A interface
+da venda deve tornar explícita a seleção do perfil e da intenção de antecipação.
 
 
 

@@ -4,6 +4,7 @@ import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
 import { organizationSchema } from "./schema/organization";
+import { paymentProfileRules, paymentProfiles } from "./schema/payment-profile";
 import { dbPocOperations } from "./schema/poc";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { authSecurityAuditEvents } from "./schema/security-audit";
@@ -23,6 +24,8 @@ const databaseSchema = {
   mediaAssets,
   mediaCleanupClaims,
   productMedia,
+  paymentProfileRules,
+  paymentProfiles,
   saleAdjustments,
   saleItems,
   salePayments,

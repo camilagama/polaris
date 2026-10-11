@@ -1,14 +1,14 @@
 import {
-  categoryNameCodePointLength,
   type CategoryReadModel,
+  categoryNameCodePointLength,
 } from "@polaris/contracts";
 import {
-  useCallback,
-  useEffect,
-  useState,
   type ChangeEvent,
   type FormEvent,
   type MouseEvent,
+  useCallback,
+  useEffect,
+  useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
 import "./categories-page.css";
@@ -262,9 +262,9 @@ function CategoryCreateForm({
           Nova categoria
         </label>
         <input
-          autoComplete="off"
           aria-describedby="category-name-count"
           aria-invalid={isNameTooLong}
+          autoComplete="off"
           id="category-name"
           onChange={onNameChange}
           placeholder="Ex.: Acessórios"
@@ -292,12 +292,12 @@ function CategoryCreateForm({
 
 interface CategoryRowProps {
   category: CategoryReadModel;
-  isDeletePending: boolean;
-  isRenamePending: boolean;
   isArchivePending: boolean;
-  isRestorePending: boolean;
-  isRenaming: boolean;
+  isDeletePending: boolean;
   isDeleteRequested: boolean;
+  isRenamePending: boolean;
+  isRenaming: boolean;
+  isRestorePending: boolean;
   onActionClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onRenameChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onRenameSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -343,9 +343,9 @@ function CategoryActionsCell(props: CategoryRowProps) {
         </label>
         <div className="category-rename-field">
           <input
-            autoFocus
             aria-describedby={`rename-category-count-${category.id}`}
             aria-invalid={isNameTooLong}
+            autoFocus
             id={`rename-category-${category.id}`}
             onChange={onRenameChange}
             required
@@ -531,12 +531,12 @@ function CategoryListContent(props: CategoryListPanelProps) {
                 props.pendingAction === `archive:${category.id}`
               }
               isDeletePending={props.pendingAction === `delete:${category.id}`}
-              isRestorePending={
-                props.pendingAction === `restore:${category.id}`
-              }
               isDeleteRequested={props.pendingDeleteId === category.id}
               isRenamePending={props.pendingAction === `rename:${category.id}`}
               isRenaming={props.renamingCategoryId === category.id}
+              isRestorePending={
+                props.pendingAction === `restore:${category.id}`
+              }
               key={category.id}
               onActionClick={onActionClick}
               onRenameChange={props.onRenameChange}
@@ -883,6 +883,7 @@ export function CategoriesPage() {
           </a>
           <a href="/products">Produtos</a>
           <a href="/customers">Clientes</a>
+          <a href="/payment-profiles">Perfis de pagamento</a>
         </nav>
       </header>
 

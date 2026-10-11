@@ -1,7 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { CategoriesPage } from "./catalog/categories-page";
-import { CustomersPage } from "./customers/customers-page";
 import { ProductsPage } from "./catalog/products-page";
+import { CustomersPage } from "./customers/customers-page";
+import { PaymentProfilesPage } from "./payment-profiles/payment-profiles-page";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -45,6 +46,9 @@ if (isOfflinePocRoute) {
       break;
     case "/customers":
       root.render(<CustomersPage />);
+      break;
+    case "/payment-profiles":
+      root.render(<PaymentProfilesPage />);
       break;
     default:
       root.render(<CategoriesPage />);

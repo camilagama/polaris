@@ -2,9 +2,19 @@ import { implement, ORPCError } from "@orpc/server";
 import {
   type CategoryReadModel,
   type CustomerReadModel,
+  type PaymentProfileReadModel,
   type ProductReadModel,
   polarisContract,
 } from "@polaris/contracts";
+import {
+  archiveCategory,
+  createCategory,
+  deleteCategory,
+  listCategories,
+  renameCategory,
+  restoreCategory,
+} from "@polaris/db/category-repository";
+import { createDatabase } from "@polaris/db/client";
 import {
   archiveCustomer,
   createCustomer,
@@ -14,13 +24,19 @@ import {
   updateCustomer,
 } from "@polaris/db/customer-repository";
 import {
-  archiveCategory,
-  createCategory,
-  deleteCategory,
-  listCategories,
-  renameCategory,
-  restoreCategory,
-} from "@polaris/db/category-repository";
+  getInventoryBalance,
+  inventoryCount,
+  receiveStock,
+  writeOffStock,
+} from "@polaris/db/inventory-repository";
+import {
+  archivePaymentProfile,
+  createPaymentProfile,
+  listPaymentProfiles,
+  paymentProfileStatus,
+  restorePaymentProfile,
+  updatePaymentProfile,
+} from "@polaris/db/payment-profile-repository";
 import {
   archiveProduct,
   configureProductVariants,
@@ -32,13 +48,6 @@ import {
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
-import {
-  getInventoryBalance,
-  inventoryCount,
-  receiveStock,
-  writeOffStock,
-} from "@polaris/db/inventory-repository";
-import { createDatabase } from "@polaris/db/client";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
   CategoryDeletedError,
@@ -50,44 +59,44 @@ import {
   deriveCategoryLifecycle,
 } from "@polaris/domain/catalog/category";
 import {
-  InvalidCustomerDuplicateSearchError,
-  CustomerNotFoundError,
-  CustomerVersionConflictError,
-  InvalidCustomerProfileError,
-} from "@polaris/domain/customers/customer";
-import {
+  deriveProductLifecycle,
   ProductCategoryUnavailableError,
-  ProductDeletedError,
   ProductDefaultVariantSkuConflictError,
+  ProductDeletedError,
   ProductLifecycleError,
   ProductNameError,
-  ProductStockNotEmptyError,
   ProductNotFoundError,
+  ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantNotFoundError,
   ProductVariantSkuConflictError,
   ProductVariantsAlreadyConfiguredError,
-  ProductVersionConflictError,
-  deriveProductLifecycle,
   type ProductVariantValues,
+  ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 import {
+  CustomerNotFoundError,
+  CustomerVersionConflictError,
+  InvalidCustomerDuplicateSearchError,
+  InvalidCustomerProfileError,
+} from "@polaris/domain/customers/customer";
+import {
   InsufficientStockError,
+  InvalidStockMovementError,
   InventoryQuantityLimitError,
   InventoryVariantNotFoundError,
   InventoryVersionConflictError,
-  InvalidStockMovementError,
   StockCommandConflictError,
 } from "@polaris/domain/inventory/inventory";
+import {
+  InvalidUnitCostError,
+  InventoryCostLimitError,
+  InventoryCostUnavailableError,
+} from "@polaris/domain/inventory/inventory-cost";
 import {
   InvalidInventoryCountInputError,
   UnsupportedInventoryCountCommandVersionError,
 } from "@polaris/domain/inventory/inventory-count";
-import {
-  InventoryCostLimitError,
-  InventoryCostUnavailableError,
-  InvalidUnitCostError,
-} from "@polaris/domain/inventory/inventory-cost";
 import {
   InvalidReceiveStockInputError,
   UnsupportedReceiveStockCommandVersionError,
@@ -98,11 +107,16 @@ import {
   UnsupportedWriteOffStockCommandVersionError,
 } from "@polaris/domain/inventory/write-off-stock";
 import {
+  InvalidPaymentProfileError,
+  PaymentProfileLifecycleError,
+  PaymentProfileNotFoundError,
+  PaymentProfileVersionConflictError,
+} from "@polaris/domain/sales/payment-profile";
+import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
-import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -113,6 +127,7 @@ import {
   createInitialOrganization,
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
+import { createInventoryRpcHandlers } from "./inventory-handlers";
 
 export interface PolarisRpcContext {
   bindings: WorkerBindings;
@@ -135,35 +150,40 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RpcRouterDependencies {
-  archiveCustomer: typeof archiveCustomer;
   archiveCategory: typeof archiveCategory;
+  archiveCustomer: typeof archiveCustomer;
+  archivePaymentProfile: typeof archivePaymentProfile;
+  archiveProduct: typeof archiveProduct;
+  configureProductVariants: typeof configureProductVariants;
   createCategory: typeof createCategory;
   createCustomer: typeof createCustomer;
-  findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
-  deleteCategory: typeof deleteCategory;
-  archiveProduct: typeof archiveProduct;
-  deleteProduct: typeof deleteProduct;
-  configureProductVariants: typeof configureProductVariants;
+  createPaymentProfile: typeof createPaymentProfile;
   createProduct: typeof createProduct;
-  getProductVariants: typeof getProductVariants;
-  listProducts: typeof listProducts;
-  restoreProduct: typeof restoreProduct;
-  receiveStock: typeof receiveStock;
+  deleteCategory: typeof deleteCategory;
+  deleteProduct: typeof deleteProduct;
+  findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
   getInventoryBalance: typeof getInventoryBalance;
+  getProductVariants: typeof getProductVariants;
   inventoryCount: typeof inventoryCount;
-  writeOffStock: typeof writeOffStock;
-  setProductVariantSku: typeof setProductVariantSku;
-  updateProduct: typeof updateProduct;
-  updateCustomer: typeof updateCustomer;
   listCategories: typeof listCategories;
   listCustomers: typeof listCustomers;
+  listPaymentProfiles: typeof listPaymentProfiles;
+  listProducts: typeof listProducts;
+  receiveStock: typeof receiveStock;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
   restoreCustomer: typeof restoreCustomer;
+  restorePaymentProfile: typeof restorePaymentProfile;
+  restoreProduct: typeof restoreProduct;
+  setProductVariantSku: typeof setProductVariantSku;
+  updateCustomer: typeof updateCustomer;
+  updatePaymentProfile: typeof updatePaymentProfile;
+  updateProduct: typeof updateProduct;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
+  writeOffStock: typeof writeOffStock;
 }
 
 function organizationStatus(status: string): "active" | "suspended" | "closed" {
@@ -251,6 +271,59 @@ function customerReadModel(customer: {
   };
 }
 
+function paymentProfileReadModel(profile: {
+  archivedAt: Date | null;
+  createdAt: Date;
+  id: string;
+  name: string;
+  organizationId: string;
+  rules: Array<{
+    anticipationFeeFixedAmount: string | null;
+    anticipationFeeMode: string;
+    anticipationFeePercentage: string | null;
+    expectedSettlementDays: number | null;
+    id: string;
+    installmentPlan: string | null;
+    installments: number | null;
+    method: string;
+    processingFeeFixedAmount: string | null;
+    processingFeeMode: string;
+    processingFeePercentage: string | null;
+  }>;
+  updatedAt: Date;
+  version: number;
+}): PaymentProfileReadModel {
+  return {
+    archivedAt: profile.archivedAt?.toISOString() ?? null,
+    createdAt: profile.createdAt.toISOString(),
+    id: profile.id,
+    name: profile.name,
+    organizationId: profile.organizationId,
+    rules: profile.rules.map((rule) => ({
+      anticipationFee: {
+        fixedAmount: rule.anticipationFeeFixedAmount,
+        mode: rule.anticipationFeeMode as PaymentProfileReadModel["rules"][number]["anticipationFee"]["mode"],
+        percentage: rule.anticipationFeePercentage,
+      },
+      expectedSettlementDays: rule.expectedSettlementDays,
+      id: rule.id,
+      installmentPlan: rule.installmentPlan as
+        | PaymentProfileReadModel["rules"][number]["installmentPlan"]
+        | null,
+      installments: rule.installments,
+      method: rule.method as PaymentProfileReadModel["rules"][number]["method"],
+      processingFee: {
+        fixedAmount: rule.processingFeeFixedAmount,
+        mode: rule.processingFeeMode as PaymentProfileReadModel["rules"][number]["processingFee"]["mode"],
+        percentage: rule.processingFeePercentage,
+      },
+    })),
+    status: paymentProfileStatus(profile),
+    updatedAt: profile.updatedAt.toISOString(),
+    version: profile.version,
+  };
+}
+
 function productVariantValues(input: {
   color?: string | undefined;
   model?: string | undefined;
@@ -310,88 +383,27 @@ function toRpcError(error: unknown): never {
     throw new ORPCError(tenantContextErrorCode(error.code), { cause: error });
   }
 
-  if (error instanceof TenantAuthorizationError) {
+  if (matchesRpcError(error, [TenantAuthorizationError])) {
     throw new ORPCError("FORBIDDEN", { cause: error });
   }
 
-  if (error instanceof CategoryNameError) {
+  if (isRpcErrorInGroup(error, badRequestRpcErrors)) {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
-  if (error instanceof ProductNameError) {
-    throw new ORPCError("BAD_REQUEST", { cause: error });
-  }
-
-  if (
-    error instanceof InvalidCustomerProfileError ||
-    error instanceof InvalidCustomerDuplicateSearchError
-  ) {
-    throw new ORPCError("BAD_REQUEST", { cause: error });
-  }
-
-  if (
-    error instanceof InvalidStockMovementError ||
-    error instanceof InvalidUnitCostError ||
-    error instanceof InventoryCostLimitError ||
-    error instanceof InvalidReceiveStockInputError ||
-    error instanceof UnsupportedReceiveStockCommandVersionError ||
-    error instanceof InvalidInventoryCountInputError ||
-    error instanceof UnsupportedInventoryCountCommandVersionError ||
-    error instanceof InvalidWriteOffStockInputError ||
-    error instanceof UnsupportedWriteOffStockCommandVersionError
-  ) {
-    throw new ORPCError("BAD_REQUEST", { cause: error });
-  }
-
-  if (
-    error instanceof InsufficientStockError ||
-    error instanceof InventoryQuantityLimitError ||
-    error instanceof InventoryCostUnavailableError ||
-    error instanceof StockCommandConflictError ||
-    error instanceof InventoryVersionConflictError
-  ) {
+  if (isRpcErrorInGroup(error, stockConflictRpcErrors)) {
     throw new ORPCError("CONFLICT", { cause: error });
   }
 
-  if (error instanceof ProductVariantConfigurationError) {
+  if (matchesRpcError(error, [ProductVariantConfigurationError])) {
     throw new ORPCError("BAD_REQUEST", { cause: error });
   }
 
-  if (
-    error instanceof CategoryDeletedError ||
-    error instanceof CategoryInUseError ||
-    error instanceof CategoryNameConflictError ||
-    error instanceof CategoryLifecycleError ||
-    error instanceof ProductCategoryUnavailableError ||
-    error instanceof ProductDeletedError ||
-    error instanceof ProductLifecycleError ||
-    error instanceof ProductStockNotEmptyError ||
-    error instanceof ProductDefaultVariantSkuConflictError ||
-    error instanceof ProductVariantSkuConflictError ||
-    error instanceof ProductVariantsAlreadyConfiguredError ||
-    error instanceof ProductVersionConflictError ||
-    error instanceof CustomerVersionConflictError
-  ) {
+  if (isRpcErrorInGroup(error, conflictRpcErrors)) {
     throw new ORPCError("CONFLICT", { cause: error });
   }
 
-  if (error instanceof CategoryNotFoundError) {
-    throw new ORPCError("NOT_FOUND", { cause: error });
-  }
-
-  if (error instanceof ProductNotFoundError) {
-    throw new ORPCError("NOT_FOUND", { cause: error });
-  }
-
-  if (error instanceof CustomerNotFoundError) {
-    throw new ORPCError("NOT_FOUND", { cause: error });
-  }
-
-  if (error instanceof ProductVariantNotFoundError) {
-    throw new ORPCError("NOT_FOUND", { cause: error });
-  }
-
-  if (error instanceof InventoryVariantNotFoundError) {
+  if (isRpcErrorInGroup(error, notFoundRpcErrors)) {
     throw new ORPCError("NOT_FOUND", { cause: error });
   }
 
@@ -403,6 +415,86 @@ function toRpcError(error: unknown): never {
 
   throw error;
 }
+
+interface RpcErrorConstructor {
+  prototype: Error;
+  new (...args: never[]): Error;
+}
+
+function matchesRpcError(
+  error: unknown,
+  constructors: readonly RpcErrorConstructor[]
+) {
+  return constructors.some((ErrorType) => error instanceof ErrorType);
+}
+
+function isRpcErrorInGroup(
+  error: unknown,
+  groups: readonly (readonly RpcErrorConstructor[])[]
+) {
+  return groups.some((constructors) => matchesRpcError(error, constructors));
+}
+
+const badRequestRpcErrors = [
+  [CategoryNameError, ProductNameError, InvalidPaymentProfileError],
+  [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
+  [
+    InvalidStockMovementError,
+    InvalidUnitCostError,
+    InventoryCostLimitError,
+    InvalidReceiveStockInputError,
+    UnsupportedReceiveStockCommandVersionError,
+  ],
+  [
+    InvalidInventoryCountInputError,
+    UnsupportedInventoryCountCommandVersionError,
+    InvalidWriteOffStockInputError,
+    UnsupportedWriteOffStockCommandVersionError,
+  ],
+] as const;
+
+const stockConflictRpcErrors = [
+  [InsufficientStockError, InventoryQuantityLimitError],
+  [
+    InventoryCostUnavailableError,
+    StockCommandConflictError,
+    InventoryVersionConflictError,
+  ],
+] as const;
+
+const conflictRpcErrors = [
+  [
+    CategoryDeletedError,
+    CategoryInUseError,
+    CategoryNameConflictError,
+    CategoryLifecycleError,
+    ProductCategoryUnavailableError,
+  ],
+  [
+    ProductDeletedError,
+    ProductLifecycleError,
+    ProductStockNotEmptyError,
+    ProductDefaultVariantSkuConflictError,
+    ProductVariantSkuConflictError,
+  ],
+  [
+    ProductVariantsAlreadyConfiguredError,
+    ProductVersionConflictError,
+    CustomerVersionConflictError,
+    PaymentProfileVersionConflictError,
+    PaymentProfileLifecycleError,
+  ],
+] as const;
+
+const notFoundRpcErrors = [
+  [CategoryNotFoundError, ProductNotFoundError, CustomerNotFoundError],
+  [
+    PaymentProfileNotFoundError,
+    ProductVariantNotFoundError,
+    InventoryVariantNotFoundError,
+  ],
+] as const;
+
 async function productLifecycleCommand(
   context: PolarisRpcContext,
   input: ProductLifecycleInput,
@@ -615,6 +707,158 @@ function createCustomerRpcHandlers(
   return { archive, create, findPossibleDuplicates, list, restore, update };
 }
 
+function createPaymentProfileRpcHandlers(
+  dependencies: Partial<
+    Pick<
+      RpcRouterDependencies,
+      | "archivePaymentProfile"
+      | "createPaymentProfile"
+      | "listPaymentProfiles"
+      | "restorePaymentProfile"
+      | "updatePaymentProfile"
+    >
+  > &
+    Pick<RpcRouterDependencies, "withTenantRequestContext">
+) {
+  const archiveTenantProfile =
+    dependencies.archivePaymentProfile ?? archivePaymentProfile;
+  const createTenantProfile =
+    dependencies.createPaymentProfile ?? createPaymentProfile;
+  const listTenantProfiles =
+    dependencies.listPaymentProfiles ?? listPaymentProfiles;
+  const restoreTenantProfile =
+    dependencies.restorePaymentProfile ?? restorePaymentProfile;
+  const updateTenantProfile =
+    dependencies.updatePaymentProfile ?? updatePaymentProfile;
+  const tenantRequest = dependencies.withTenantRequestContext;
+  const implementContract =
+    implement(polarisContract).$context<PolarisRpcContext>();
+
+  const list = implementContract.paymentProfile.list.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "organization:manage",
+          operation: async (transaction, identity) => ({
+            profiles: await listTenantProfiles(transaction, identity, {
+              status: input.status,
+            }),
+          }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          profiles: result.profiles.map(paymentProfileReadModel),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const create = implementContract.paymentProfile.create.handler(
+    async ({ context, input }) => {
+      try {
+        const profile = await tenantRequest({
+          bindings: context.bindings,
+          capability: "organization:manage",
+          operation: (transaction, identity) =>
+            createTenantProfile(transaction, identity, {
+              name: input.name,
+              requestId: requestAuditId(context.requestId),
+              rules: input.rules,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return paymentProfileReadModel(profile);
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const update = implementContract.paymentProfile.update.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "organization:manage",
+          operation: (transaction, identity) =>
+            updateTenantProfile(transaction, identity, {
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              name: input.name,
+              requestId: requestAuditId(context.requestId),
+              rules: input.rules,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          profile: paymentProfileReadModel(result.profile),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const archive = implementContract.paymentProfile.archive.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "organization:manage",
+          operation: (transaction, identity) =>
+            archiveTenantProfile(transaction, identity, {
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          profile: paymentProfileReadModel(result.profile),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  const restore = implementContract.paymentProfile.restore.handler(
+    async ({ context, input }) => {
+      try {
+        const result = await tenantRequest({
+          bindings: context.bindings,
+          capability: "organization:manage",
+          operation: (transaction, identity) =>
+            restoreTenantProfile(transaction, identity, {
+              expectedVersion: input.expectedVersion,
+              id: input.id,
+              requestId: requestAuditId(context.requestId),
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return {
+          changed: result.changed,
+          profile: paymentProfileReadModel(result.profile),
+        };
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
+
+  return { archive, create, list, restore, update };
+}
+
 export function createRpcRouter(
   overrides: Partial<RpcRouterDependencies> = {}
 ) {
@@ -659,6 +903,10 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const customerHandlers = createCustomerRpcHandlers({
+    ...overrides,
+    withTenantRequestContext: tenantRequest,
+  });
+  const paymentProfileHandlers = createPaymentProfileRpcHandlers({
     ...overrides,
     withTenantRequestContext: tenantRequest,
   });
@@ -1166,6 +1414,7 @@ export function createRpcRouter(
       writeOffStock: writeOffStockRecord,
     },
     organization: { createInitial },
+    paymentProfile: paymentProfileHandlers,
     product: {
       archive: archiveProductRecord,
       configureVariants: configureProductVariantsRecord,

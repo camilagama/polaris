@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -9,13 +10,87 @@ import {
   pgTable,
   text,
   timestamp,
+  type AnyPgColumn,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./organization";
 import { activeTenantScope, productVariants, products } from "./product";
+import { paymentProfileRules, paymentProfiles } from "./payment-profile";
 
 const runtimeRole = "polaris_pr11_runtime";
+
+function validFeeSnapshot(
+  mode: AnyPgColumn,
+  amount: AnyPgColumn,
+  fixedAmount: AnyPgColumn,
+  percentage: AnyPgColumn,
+  allowNotApplicable: boolean
+) {
+  return sql`
+    (
+      ${mode} = 'unknown'
+      AND ${amount} IS NULL
+      AND ${fixedAmount} IS NULL
+      AND ${percentage} IS NULL
+    )
+    OR (
+      ${mode} = 'none'
+      AND ${amount} = 0
+      AND ${fixedAmount} IS NULL
+      AND ${percentage} IS NULL
+    )
+    OR (
+      ${mode} = 'fixed'
+      AND ${amount} IS NOT NULL
+      AND ${amount} >= 0
+      AND scale(${amount}) <= 2
+      AND ${amount} < 1000000000000000000
+      AND ${fixedAmount} IS NOT NULL
+      AND ${fixedAmount} >= 0
+      AND scale(${fixedAmount}) <= 2
+      AND ${fixedAmount} < 1000000000000000000
+      AND ${percentage} IS NULL
+    )
+    OR (
+      ${mode} = 'percentage'
+      AND ${amount} IS NOT NULL
+      AND ${amount} >= 0
+      AND scale(${amount}) <= 2
+      AND ${amount} < 1000000000000000000
+      AND ${fixedAmount} IS NULL
+      AND ${percentage} IS NOT NULL
+      AND ${percentage} >= 0
+      AND scale(${percentage}) <= 6
+      AND ${percentage} < 'Infinity'
+    )
+    OR (
+      ${mode} = 'fixed_and_percentage'
+      AND ${amount} IS NOT NULL
+      AND ${amount} >= 0
+      AND scale(${amount}) <= 2
+      AND ${amount} < 1000000000000000000
+      AND ${fixedAmount} IS NOT NULL
+      AND ${fixedAmount} >= 0
+      AND scale(${fixedAmount}) <= 2
+      AND ${fixedAmount} < 1000000000000000000
+      AND ${percentage} IS NOT NULL
+      AND ${percentage} >= 0
+      AND scale(${percentage}) <= 6
+      AND ${percentage} < 'Infinity'
+    )
+    ${
+      allowNotApplicable
+        ? sql`OR (
+      ${mode} = 'not_applicable'
+      AND ${amount} = 0
+      AND ${fixedAmount} IS NULL
+      AND ${percentage} IS NULL
+    )`
+        : sql``
+    }
+  `;
+}
 
 export const sales = pgTable(
   "sales",
@@ -204,11 +279,47 @@ export const saleAdjustments = pgTable(
 export const salePayments = pgTable(
   "sale_payments",
   {
+    anticipationFeeAmountSnapshot: numeric(
+      "anticipation_fee_amount_snapshot"
+    ).default("0.00"),
+    anticipationFeeFixedAmountSnapshot: numeric(
+      "anticipation_fee_fixed_amount_snapshot"
+    ),
+    anticipationFeeModeSnapshot: text("anticipation_fee_mode_snapshot")
+      .default("not_applicable")
+      .notNull(),
+    anticipationFeePercentageSnapshot: numeric(
+      "anticipation_fee_percentage_snapshot"
+    ),
+    anticipationRequested: boolean("anticipation_requested")
+      .default(false)
+      .notNull(),
     amount: numeric("amount").notNull(),
+    expectedSettlementDaysSnapshot: integer(
+      "expected_settlement_days_snapshot"
+    ),
+    installmentPlan: text("installment_plan"),
+    installmentPlanUnknown: boolean("installment_plan_unknown")
+      .default(false)
+      .notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     installments: integer("installments"),
     method: text("method").notNull(),
     organizationId: text("organization_id").notNull(),
+    paymentProfileId: uuid("payment_profile_id"),
+    paymentProfileNameSnapshot: text("payment_profile_name_snapshot"),
+    paymentProfileRuleIdSnapshot: uuid("payment_profile_rule_id_snapshot"),
+    paymentProfileVersionSnapshot: integer("payment_profile_version_snapshot"),
+    processingFeeAmountSnapshot: numeric("processing_fee_amount_snapshot"),
+    processingFeeFixedAmountSnapshot: numeric(
+      "processing_fee_fixed_amount_snapshot"
+    ),
+    processingFeeModeSnapshot: text("processing_fee_mode_snapshot")
+      .default("unknown")
+      .notNull(),
+    processingFeePercentageSnapshot: numeric(
+      "processing_fee_percentage_snapshot"
+    ),
     saleId: uuid("sale_id").notNull(),
   },
   (table) => [
@@ -231,17 +342,120 @@ export const salePayments = pgTable(
           ${table.method} = 'credit_card'
           AND ${table.installments} IS NOT NULL
           AND ${table.installments} >= 1
+          AND (
+            (
+              ${table.installmentPlan} IS NOT NULL
+              AND ${table.installmentPlan} IN ('merchant', 'issuer')
+              AND ${table.installmentPlanUnknown} = false
+            )
+            OR (
+              ${table.installmentPlan} IS NULL
+              AND ${table.installmentPlanUnknown} = true
+            )
+          )
         )
         OR (
           ${table.method} <> 'credit_card'
           AND ${table.installments} IS NULL
+          AND ${table.installmentPlan} IS NULL
+          AND ${table.installmentPlanUnknown} = false
+          AND ${table.anticipationRequested} = false
         )
       `
+    ),
+    check(
+      "sale_payments_profile_snapshot_valid",
+      sql`
+        (
+          ${table.paymentProfileId} IS NULL
+          AND ${table.paymentProfileNameSnapshot} IS NULL
+          AND ${table.paymentProfileVersionSnapshot} IS NULL
+          AND ${table.paymentProfileRuleIdSnapshot} IS NULL
+        )
+        OR (
+          ${table.paymentProfileId} IS NOT NULL
+          AND ${table.paymentProfileNameSnapshot} IS NOT NULL
+          AND char_length(btrim(${table.paymentProfileNameSnapshot})) >= 1
+          AND ${table.paymentProfileVersionSnapshot} IS NOT NULL
+          AND ${table.paymentProfileVersionSnapshot} >= 1
+        )
+      `
+    ),
+    check(
+      "sale_payments_fee_snapshot_requires_profile_rule",
+      sql`
+        ${table.paymentProfileRuleIdSnapshot} IS NOT NULL
+        OR (
+          ${table.processingFeeModeSnapshot} = 'unknown'
+          AND ${table.expectedSettlementDaysSnapshot} IS NULL
+          AND (
+            ${table.anticipationRequested} = false
+            OR ${table.anticipationFeeModeSnapshot} = 'unknown'
+          )
+        )
+      `
+    ),
+    check(
+      "sale_payments_processing_fee_snapshot_valid",
+      validFeeSnapshot(
+        table.processingFeeModeSnapshot,
+        table.processingFeeAmountSnapshot,
+        table.processingFeeFixedAmountSnapshot,
+        table.processingFeePercentageSnapshot,
+        false
+      )
+    ),
+    check(
+      "sale_payments_anticipation_fee_snapshot_valid",
+      validFeeSnapshot(
+        table.anticipationFeeModeSnapshot,
+        table.anticipationFeeAmountSnapshot,
+        table.anticipationFeeFixedAmountSnapshot,
+        table.anticipationFeePercentageSnapshot,
+        true
+      )
+    ),
+    check(
+      "sale_payments_anticipation_snapshot_matches_request",
+      sql`
+        (
+          ${table.anticipationRequested} = true
+          AND ${table.method} = 'credit_card'
+          AND ${table.anticipationFeeModeSnapshot} <> 'not_applicable'
+        )
+        OR (
+          ${table.anticipationRequested} = false
+          AND ${table.anticipationFeeModeSnapshot} = 'not_applicable'
+          AND ${table.anticipationFeeAmountSnapshot} = 0
+        )
+      `
+    ),
+    check(
+      "sale_payments_expected_settlement_days_nonnegative",
+      sql`${table.expectedSettlementDaysSnapshot} IS NULL OR ${table.expectedSettlementDaysSnapshot} >= 0`
     ),
     foreignKey({
       columns: [table.organizationId, table.saleId],
       foreignColumns: [sales.organizationId, sales.id],
       name: "sale_payments_organization_sale_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.paymentProfileId],
+      foreignColumns: [paymentProfiles.organizationId, paymentProfiles.id],
+      name: "sale_payments_organization_profile_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.organizationId,
+        table.paymentProfileId,
+        table.paymentProfileRuleIdSnapshot,
+      ],
+      foreignColumns: [
+        paymentProfileRules.organizationId,
+        paymentProfileRules.paymentProfileId,
+        paymentProfileRules.id,
+      ],
+      name: "sale_payments_profile_rule_snapshot_fk",
     }).onDelete("restrict"),
     uniqueIndex("sale_payments_organization_sale_unique").on(
       table.organizationId,

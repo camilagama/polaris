@@ -19,6 +19,8 @@
     "./customer-schema": "./src/schema/customer.ts",
     "./customer-repository": "./src/customer-repository.ts",
     "./product-schema": "./src/schema/product.ts",
+    "./payment-profile-schema": "./src/schema/payment-profile.ts",
+    "./payment-profile-repository": "./src/payment-profile-repository.ts",
     "./sale-schema": "./src/schema/sale.ts",
     "./product-repository": "./src/product-repository.ts",
     "./inventory-schema": "./src/schema/inventory.ts",

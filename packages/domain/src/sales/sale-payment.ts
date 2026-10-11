@@ -1,4 +1,5 @@
 import { Money } from "../money/money";
+import type { CardInstallmentPlan } from "./payment-profile";
 
 export const SALE_PAYMENT_METHODS = [
   "pix",
@@ -15,12 +16,17 @@ const maxPostgresInteger = 2_147_483_647;
 const salePaymentMethodSet: ReadonlySet<string> = new Set(SALE_PAYMENT_METHODS);
 
 export interface SalePaymentInput {
+  anticipationRequested?: boolean;
+  installmentPlan?: CardInstallmentPlan | null;
   installments?: number | null;
   method: SalePaymentMethod;
 }
 
 export interface SalePaymentSnapshot {
+  readonly anticipationRequested: boolean;
   readonly amount: string;
+  readonly installmentPlanUnknown: false;
+  readonly installmentPlan: CardInstallmentPlan | null;
   readonly installments: number | null;
   readonly method: SalePaymentMethod;
 }
@@ -68,6 +74,22 @@ function normalizeInstallments(
   return value;
 }
 
+function normalizeInstallmentPlan(
+  method: SalePaymentMethod,
+  value: CardInstallmentPlan | null | undefined
+): CardInstallmentPlan | null {
+  if (method !== "credit_card") {
+    if (value !== undefined && value !== null) {
+      throw new InvalidSalePaymentError();
+    }
+    return null;
+  }
+  if (value !== "merchant" && value !== "issuer") {
+    throw new InvalidSalePaymentError();
+  }
+  return value;
+}
+
 /** Snapshots the sale's full amount; this records the method, not settlement evidence. */
 export function normalizeSalePayment(
   input: SalePaymentInput,
@@ -83,8 +105,22 @@ export function normalizeSalePayment(
 
   const amount = normalizeDueAmount(totalDue);
   const installments = normalizeInstallments(input.method, input.installments);
+  const installmentPlan = normalizeInstallmentPlan(
+    input.method,
+    input.installmentPlan
+  );
+  const anticipationRequested = input.anticipationRequested ?? false;
+  if (
+    typeof anticipationRequested !== "boolean" ||
+    (input.method !== "credit_card" && anticipationRequested)
+  ) {
+    throw new InvalidSalePaymentError();
+  }
   return {
+    anticipationRequested,
     amount: amount.toString(),
+    installmentPlanUnknown: false,
+    installmentPlan,
     installments,
     method: input.method,
   };

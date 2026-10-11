@@ -1,15 +1,32 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import {
+  snapshotPaymentProfileForSale,
+  PaymentProfileVersionConflictError,
+  type PaymentFeeMode,
+  type PaymentProfileForSale,
+} from "@polaris/domain/sales/payment-profile";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import { createProduct } from "../src/product-repository";
+import {
+  archivePaymentProfile,
+  createPaymentProfile,
+  listPaymentProfiles,
+  restorePaymentProfile,
+  updatePaymentProfile,
+} from "../src/payment-profile-repository";
 import {
   saleAdjustments,
   saleItems,
   salePayments,
   sales,
 } from "../src/schema/sale";
+import {
+  paymentProfileRules,
+  paymentProfiles,
+} from "../src/schema/payment-profile";
 import { productVariants } from "../src/schema/product";
 import {
   type TenantRequestIdentity,
@@ -17,7 +34,8 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 
-const expectedBranch = "pr36-customers-gate";
+const expectedBranch = "pr42-payment-profiles-gate";
+const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 const runtimeRole = "polaris_pr11_runtime";
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const poolerPattern = /pooler/i;
@@ -209,9 +227,20 @@ async function run() {
     );
     const [serverRow] = server.rows;
     assert.ok(serverRow);
-    assert.equal(serverRow.database_name, "neondb");
+    assert.equal(serverRow.database_name, expectedDatabase);
     assert.ok(Number(serverRow.server_version_num) >= 180_000);
     tests.push("disposable direct Neon connection is PostgreSQL 18");
+
+    const installmentPlanBackfill = await admin.pool.query<{
+      unmarked_legacy_credit_count: string;
+    }>(
+      "SELECT count(*)::text AS unmarked_legacy_credit_count FROM public.sale_payments WHERE method = 'credit_card' AND installment_plan IS NULL AND installment_plan_unknown = false"
+    );
+    assert.equal(
+      installmentPlanBackfill.rows[0]?.unmarked_legacy_credit_count,
+      "0"
+    );
+    tests.push("credit payments without a known plan are never left unmarked");
 
     const tables = await admin.pool.query<{
       relforcerowsecurity: boolean;
@@ -220,11 +249,27 @@ async function run() {
       relrowsecurity: boolean;
     }>(
       "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, pg_get_userbyid(c.relowner) AS relowner FROM pg_catalog.pg_class AS c JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = ANY($1::text[]) AND c.relkind = 'r' ORDER BY c.relname",
-      [["sales", "sale_items", "sale_adjustments", "sale_payments"]]
+      [
+        [
+          "sales",
+          "sale_items",
+          "sale_adjustments",
+          "sale_payments",
+          "payment_profiles",
+          "payment_profile_rules",
+        ],
+      ]
     );
     assert.deepEqual(
       tables.rows.map((row) => row.relname),
-      ["sale_adjustments", "sale_items", "sale_payments", "sales"]
+      [
+        "payment_profile_rules",
+        "payment_profiles",
+        "sale_adjustments",
+        "sale_items",
+        "sale_payments",
+        "sales",
+      ]
     );
     assert.ok(
       tables.rows.every(
@@ -358,6 +403,687 @@ async function run() {
       tenantB,
       "B"
     );
+    const syntheticLegacySale = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) => {
+        const [sale] = await transaction
+          .insert(sales)
+          .values({
+            commandId: randomUUID(),
+            organizationId: identity.organizationId,
+            currency: "BRL",
+          })
+          .returning();
+        assert.ok(sale);
+        const [payment] = await transaction
+          .insert(salePayments)
+          .values({
+            amount: "1.00",
+            installmentPlan: null,
+            installmentPlanUnknown: true,
+            installments: 3,
+            method: "credit_card",
+            organizationId: identity.organizationId,
+            saleId: sale.id,
+          })
+          .returning();
+        assert.ok(payment);
+        return payment;
+      }
+    );
+    assert.equal(syntheticLegacySale.installmentPlan, null);
+    assert.equal(syntheticLegacySale.installmentPlanUnknown, true);
+    tests.push(
+      "legacy credit payment can retain unknown installment plan without inferring merchant/issuer"
+    );
+
+    const noPlanSale = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) => {
+        const [sale] = await transaction
+          .insert(sales)
+          .values({
+            commandId: randomUUID(),
+            organizationId: identity.organizationId,
+            currency: "BRL",
+          })
+          .returning();
+        assert.ok(sale);
+        return sale;
+      }
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction, identity) =>
+            await transaction.insert(salePayments).values({
+              amount: "1.00",
+              installments: 1,
+              method: "credit_card",
+              organizationId: identity.organizationId,
+              saleId: noPlanSale.id,
+            })
+        ),
+      "23514",
+      "new credit payment without installment plan is rejected"
+    );
+    tests.push(
+      "new credit card payments require an explicit merchant/issuer plan"
+    );
+
+    const profileInput = {
+      name: "Perfil sintético PR42",
+      rules: [
+        {
+          anticipationFee: { mode: "unknown" as const },
+          expectedSettlementDays: 2,
+          method: "pix",
+          processingFee: { mode: "unknown" as const },
+        },
+        {
+          anticipationFee: { mode: "none" as const },
+          expectedSettlementDays: 0,
+          method: "cash",
+          processingFee: { mode: "none" as const },
+        },
+        {
+          anticipationFee: { mode: "fixed" as const, fixedAmount: "0.50" },
+          expectedSettlementDays: 1,
+          method: "debit_card",
+          processingFee: { mode: "fixed" as const, fixedAmount: "1.25" },
+        },
+        {
+          anticipationFee: {
+            mode: "percentage" as const,
+            percentage: "1.250000",
+          },
+          expectedSettlementDays: 30,
+          installmentPlan: "merchant" as const,
+          installments: 2,
+          method: "credit_card",
+          processingFee: {
+            mode: "percentage" as const,
+            percentage: "2.500000",
+          },
+        },
+        {
+          anticipationFee: {
+            fixedAmount: "0.25",
+            mode: "fixed_and_percentage" as const,
+            percentage: "0.500000",
+          },
+          expectedSettlementDays: 45,
+          installmentPlan: "issuer" as const,
+          installments: 3,
+          method: "credit_card",
+          processingFee: {
+            fixedAmount: "0.10",
+            mode: "fixed_and_percentage" as const,
+            percentage: "2.495600",
+          },
+        },
+        {
+          anticipationFee: { mode: "none" as const },
+          expectedSettlementDays: null,
+          installmentPlan: "merchant" as const,
+          installments: 4,
+          method: "credit_card",
+          processingFee: { mode: "unknown" as const },
+        },
+      ],
+    };
+    const createdProfile = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await createPaymentProfile(transaction, identity, profileInput)
+    );
+    assert.equal(createdProfile.version, 1);
+    assert.equal(createdProfile.rules.length, 6);
+    assert.equal(
+      createdProfile.rules.find(
+        (rule) => rule.method === "credit_card" && rule.installments === 3
+      )?.installmentPlan,
+      "issuer"
+    );
+    const tenantBProfile = await withTenant(
+      runtimeDatabase.db,
+      tenantB,
+      async (transaction, identity) =>
+        await createPaymentProfile(transaction, identity, {
+          name: "Perfil sintético tenant B",
+          rules: [
+            {
+              anticipationFee: { mode: "unknown" },
+              method: "cash",
+              processingFee: { mode: "unknown" },
+            },
+          ],
+        })
+    );
+    const tenantAProfiles = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await listPaymentProfiles(transaction, identity, { status: "all" })
+    );
+    const tenantBProfiles = await withTenant(
+      runtimeDatabase.db,
+      tenantB,
+      async (transaction, identity) =>
+        await listPaymentProfiles(transaction, identity, { status: "all" })
+    );
+    assert.ok(
+      tenantAProfiles.some((profile) => profile.id === createdProfile.id)
+    );
+    assert.ok(
+      tenantBProfiles.some((profile) => profile.id === tenantBProfile.id)
+    );
+    assert.ok(
+      tenantAProfiles.every((profile) => profile.id !== tenantBProfile.id)
+    );
+    tests.push(
+      "runtime tenant can create/read profiles and rules with tenant RLS"
+    );
+
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(paymentProfiles).values({
+              name: "Perfil cruzado sintético",
+              organizationId: tenantB.organizationId,
+            })
+        ),
+      "42501",
+      "profile INSERT cannot claim another tenant"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(paymentProfileRules).values({
+              anticipationFeeMode: "unknown",
+              installmentPlan: null,
+              installments: null,
+              method: "pix",
+              organizationId: tenantB.organizationId,
+              paymentProfileId: createdProfile.id,
+              processingFeeMode: "unknown",
+            })
+        ),
+      "42501",
+      "profile rule INSERT cannot claim another tenant"
+    );
+    const hiddenRules = await withTenant(
+      runtimeDatabase.db,
+      tenantB,
+      async (transaction) =>
+        await transaction
+          .select({ id: paymentProfileRules.id })
+          .from(paymentProfileRules)
+          .where(eq(paymentProfileRules.paymentProfileId, createdProfile.id))
+    );
+    assert.deepEqual(hiddenRules, []);
+    tests.push(
+      "profile and rule RLS rejects cross-tenant writes and hides reads"
+    );
+
+    const profileFkProbeSale = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) => {
+        const [sale] = await transaction
+          .insert(sales)
+          .values({
+            commandId: randomUUID(),
+            organizationId: identity.organizationId,
+            currency: "BRL",
+          })
+          .returning();
+        assert.ok(sale);
+        return sale;
+      }
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction, identity) =>
+            await transaction.insert(salePayments).values({
+              amount: "1.00",
+              installments: null,
+              method: "cash",
+              organizationId: identity.organizationId,
+              paymentProfileId: tenantBProfile.id,
+              paymentProfileNameSnapshot: tenantBProfile.name,
+              paymentProfileVersionSnapshot: tenantBProfile.version,
+              saleId: profileFkProbeSale.id,
+            })
+        ),
+      "23503",
+      "sale snapshot cannot reference another tenant profile"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction, identity) =>
+            await transaction.insert(salePayments).values({
+              amount: "1.00",
+              installments: null,
+              method: "cash",
+              organizationId: identity.organizationId,
+              paymentProfileId: createdProfile.id,
+              paymentProfileNameSnapshot: createdProfile.name,
+              paymentProfileRuleIdSnapshot: randomUUID(),
+              paymentProfileVersionSnapshot: createdProfile.version,
+              saleId: profileFkProbeSale.id,
+            })
+        ),
+      "23503",
+      "sale snapshot rule reference must belong to the selected tenant profile"
+    );
+    tests.push(
+      "sale payment profile and rule snapshots enforce tenant-scoped composite foreign keys"
+    );
+
+    const saleWithProfile = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) => {
+        const [sale] = await transaction
+          .insert(sales)
+          .values({
+            commandId: randomUUID(),
+            organizationId: identity.organizationId,
+            currency: "BRL",
+          })
+          .returning();
+        assert.ok(sale);
+        const rule = createdProfile.rules.find(
+          (candidate) =>
+            candidate.method === "credit_card" && candidate.installments === 3
+        );
+        assert.ok(rule);
+        const profileForSale: PaymentProfileForSale = {
+          id: createdProfile.id,
+          name: createdProfile.name,
+          rules: createdProfile.rules.map((profileRule) => ({
+            anticipationFee: {
+              fixedAmount: profileRule.anticipationFeeFixedAmount,
+              mode: profileRule.anticipationFeeMode as PaymentFeeMode,
+              percentage: profileRule.anticipationFeePercentage,
+            },
+            expectedSettlementDays: profileRule.expectedSettlementDays,
+            id: profileRule.id,
+            installmentPlan:
+              profileRule.installmentPlan === "merchant" ||
+              profileRule.installmentPlan === "issuer"
+                ? profileRule.installmentPlan
+                : null,
+            installments: profileRule.installments,
+            method: profileRule.method,
+            processingFee: {
+              fixedAmount: profileRule.processingFeeFixedAmount,
+              mode: profileRule.processingFeeMode as PaymentFeeMode,
+              percentage: profileRule.processingFeePercentage,
+            },
+          })),
+          version: createdProfile.version,
+        };
+        const snapshot = snapshotPaymentProfileForSale(
+          "100.00",
+          {
+            anticipationRequested: true,
+            installmentPlan: "issuer",
+            installments: 3,
+            method: "credit_card",
+          },
+          profileForSale
+        );
+        assert.equal(snapshot.processingFee.amount, "2.60");
+        assert.equal(snapshot.anticipationFee.amount, "0.75");
+        assert.equal(snapshot.expectedSettlementDays, 45);
+        const [payment] = await transaction
+          .insert(salePayments)
+          .values({
+            amount: "100.00",
+            anticipationFeeAmountSnapshot: snapshot.anticipationFee.amount,
+            anticipationFeeFixedAmountSnapshot:
+              snapshot.anticipationFee.fixedAmount,
+            anticipationFeeModeSnapshot: snapshot.anticipationFee.mode,
+            anticipationFeePercentageSnapshot:
+              snapshot.anticipationFee.percentage,
+            anticipationRequested: true,
+            expectedSettlementDaysSnapshot: snapshot.expectedSettlementDays,
+            installmentPlan: "issuer",
+            installmentPlanUnknown: false,
+            installments: 3,
+            method: "credit_card",
+            organizationId: identity.organizationId,
+            paymentProfileId: createdProfile.id,
+            paymentProfileNameSnapshot: createdProfile.name,
+            paymentProfileRuleIdSnapshot: rule.id,
+            paymentProfileVersionSnapshot: createdProfile.version,
+            processingFeeAmountSnapshot: snapshot.processingFee.amount,
+            processingFeeFixedAmountSnapshot:
+              snapshot.processingFee.fixedAmount,
+            processingFeeModeSnapshot: snapshot.processingFee.mode,
+            processingFeePercentageSnapshot: snapshot.processingFee.percentage,
+            saleId: sale.id,
+          })
+          .returning();
+        assert.ok(payment);
+        return { payment, sale };
+      }
+    );
+    assert.equal(saleWithProfile.payment.installmentPlan, "issuer");
+    assert.equal(saleWithProfile.payment.expectedSettlementDaysSnapshot, 45);
+    assert.equal(
+      saleWithProfile.payment.processingFeeModeSnapshot,
+      "fixed_and_percentage"
+    );
+    assert.equal(saleWithProfile.payment.processingFeeAmountSnapshot, "2.60");
+    assert.equal(saleWithProfile.payment.anticipationRequested, true);
+    assert.equal(saleWithProfile.payment.anticipationFeeAmountSnapshot, "0.75");
+    tests.push(
+      "sale payment persists selected profile, issuer installments, requested anticipation, and fee snapshots"
+    );
+
+    const historicWithoutPlan = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction) => {
+        const [payment] = await transaction
+          .select({
+            installmentPlan: salePayments.installmentPlan,
+            installmentPlanUnknown: salePayments.installmentPlanUnknown,
+            paymentProfileId: salePayments.paymentProfileId,
+            processingFeeAmount: salePayments.processingFeeAmountSnapshot,
+            processingFeeMode: salePayments.processingFeeModeSnapshot,
+          })
+          .from(salePayments)
+          .where(eq(salePayments.id, syntheticLegacySale.id));
+        return payment;
+      }
+    );
+    assert.equal(historicWithoutPlan?.installmentPlan, null);
+    assert.equal(historicWithoutPlan?.installmentPlanUnknown, true);
+    assert.equal(historicWithoutPlan?.paymentProfileId, null);
+    assert.equal(historicWithoutPlan?.processingFeeMode, "unknown");
+    assert.equal(historicWithoutPlan?.processingFeeAmount, null);
+    tests.push(
+      "legacy payment without installment plan remains unknown and is not inferred"
+    );
+
+    const changedRules = profileInput.rules.map((rule) =>
+      rule.method === "credit_card" && rule.installments === 3
+        ? {
+            ...rule,
+            processingFee: {
+              fixedAmount: "0.10",
+              mode: "fixed_and_percentage" as const,
+              percentage: "2.600000",
+            },
+          }
+        : rule
+    );
+    const updatedProfile = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await updatePaymentProfile(transaction, identity, {
+          ...profileInput,
+          name: "Perfil sintético PR42 atualizado",
+          rules: changedRules,
+          expectedVersion: createdProfile.version,
+          id: createdProfile.id,
+        })
+    );
+    assert.equal(updatedProfile.profile.version, 2);
+    await assert.rejects(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction, identity) =>
+            await updatePaymentProfile(transaction, identity, {
+              ...profileInput,
+              expectedVersion: createdProfile.version,
+              id: createdProfile.id,
+            })
+        ),
+      PaymentProfileVersionConflictError
+    );
+    tests.push("payment profile updates reject stale expectedVersion");
+    const referencedRuleId =
+      saleWithProfile.payment.paymentProfileRuleIdSnapshot;
+    assert.ok(
+      referencedRuleId,
+      "sale must retain its payment profile rule snapshot"
+    );
+    const archivedReferencedRule = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction) => {
+        const [rule] = await transaction
+          .select()
+          .from(paymentProfileRules)
+          .where(eq(paymentProfileRules.id, referencedRuleId));
+        return rule;
+      }
+    );
+    assert.ok(archivedReferencedRule?.archivedAt instanceof Date);
+    assert.equal(archivedReferencedRule?.processingFeePercentage, "2.495600");
+    const preservedSnapshot = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction) => {
+        const [payment] = await transaction
+          .select()
+          .from(salePayments)
+          .where(eq(salePayments.id, saleWithProfile.payment.id));
+        return payment;
+      }
+    );
+    assert.equal(
+      preservedSnapshot?.paymentProfileNameSnapshot,
+      createdProfile.name
+    );
+    assert.equal(preservedSnapshot?.paymentProfileVersionSnapshot, 1);
+    assert.equal(
+      preservedSnapshot?.paymentProfileRuleIdSnapshot,
+      archivedReferencedRule?.id
+    );
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          "DELETE FROM public.payment_profile_rules WHERE id = $1",
+          [archivedReferencedRule?.id]
+        ),
+      "23001",
+      "an archived rule referenced by a sale snapshot cannot be deleted"
+    );
+    tests.push(
+      "profile update versions rules and preserves archived rule referenced by immutable sale snapshot"
+    );
+
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(paymentProfileRules).values({
+              anticipationFeeMode: "unknown",
+              installmentPlan: "merchant",
+              installments: 2,
+              method: "credit_card",
+              organizationId: tenantA.organizationId,
+              paymentProfileId: createdProfile.id,
+              processingFeeMode: "unknown",
+            })
+        ),
+      "23505",
+      "active profile rules have a unique method/installment key"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(paymentProfileRules).values({
+              anticipationFeeMode: "unknown",
+              installmentPlan: "merchant",
+              installments: 5,
+              method: "credit_card",
+              organizationId: tenantA.organizationId,
+              paymentProfileId: createdProfile.id,
+              processingFeeFixedAmount: "0.001",
+              processingFeeMode: "fixed",
+            })
+        ),
+      "23514",
+      "fixed profile fees are limited to two decimals"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(paymentProfileRules).values({
+              anticipationFeeMode: "unknown",
+              installmentPlan: "merchant",
+              installments: 5,
+              method: "credit_card",
+              organizationId: tenantA.organizationId,
+              paymentProfileId: createdProfile.id,
+              processingFeeMode: "percentage",
+              processingFeePercentage: "1.0000001",
+            })
+        ),
+      "23514",
+      "profile percentage precision is limited to six decimals"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(salePayments).values({
+              amount: "1.00",
+              installments: null,
+              method: "cash",
+              organizationId: tenantA.organizationId,
+              processingFeeAmountSnapshot: "0.00",
+              processingFeeModeSnapshot: "unknown",
+              saleId: noPlanSale.id,
+            })
+        ),
+      "23514",
+      "unknown processing fee cannot carry a zero amount"
+    );
+    tests.push(
+      "profile rule fee modes, fixed/percentage scales, and active rule uniqueness are enforced"
+    );
+
+    const archivedProfile = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await archivePaymentProfile(transaction, identity, {
+          expectedVersion: updatedProfile.profile.version,
+          id: createdProfile.id,
+        })
+    );
+    const archivedProfiles = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await listPaymentProfiles(transaction, identity, { status: "archived" })
+    );
+    const restoredProfile = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await restorePaymentProfile(transaction, identity, {
+          expectedVersion: archivedProfile.profile.version,
+          id: createdProfile.id,
+        })
+    );
+    const activeProfilesAfterRestore = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction, identity) =>
+        await listPaymentProfiles(transaction, identity, { status: "active" })
+    );
+    assert.ok(
+      archivedProfiles.some((profile) => profile.id === createdProfile.id)
+    );
+    assert.equal(
+      restoredProfile.profile.version,
+      archivedProfile.profile.version + 1
+    );
+    assert.ok(
+      activeProfilesAfterRestore.some(
+        (profile) => profile.id === createdProfile.id
+      )
+    );
+    tests.push(
+      "profile archive and restore states are versioned and listed by lifecycle"
+    );
+
+    const profileRuleAcl = await admin.pool.query<{
+      can_delete: boolean;
+      can_insert: boolean;
+      can_select: boolean;
+      can_update: boolean;
+      table_name: string;
+    }>(
+      "SELECT table_name, has_table_privilege($1, format('public.%I', table_name), 'SELECT') AS can_select, has_table_privilege($1, format('public.%I', table_name), 'INSERT') AS can_insert, has_table_privilege($1, format('public.%I', table_name), 'UPDATE') AS can_update, has_table_privilege($1, format('public.%I', table_name), 'DELETE') AS can_delete FROM unnest(ARRAY['payment_profiles', 'payment_profile_rules', 'sale_payments']) AS table_name ORDER BY table_name",
+      [runtimeRole]
+    );
+    assert.deepEqual(profileRuleAcl.rows, [
+      {
+        can_delete: false,
+        can_insert: true,
+        can_select: true,
+        can_update: true,
+        table_name: "payment_profile_rules",
+      },
+      {
+        can_delete: false,
+        can_insert: true,
+        can_select: true,
+        can_update: true,
+        table_name: "payment_profiles",
+      },
+      {
+        can_delete: false,
+        can_insert: false,
+        can_select: true,
+        can_update: false,
+        table_name: "sale_payments",
+      },
+    ]);
+    tests.push(
+      "runtime ACL allows profile/rule CRUD except delete and keeps sale payments read-only"
+    );
+
     const tenantBSale = await withTenant(
       runtimeDatabase.db,
       tenantB,
@@ -461,6 +1187,8 @@ async function run() {
           .insert(salePayments)
           .values({
             amount: "161.82",
+            installmentPlan: "issuer",
+            installmentPlanUnknown: false,
             installments: 3,
             method: "credit_card",
             organizationId: identity.organizationId,
@@ -928,6 +1656,17 @@ async function run() {
     await expectSqlState(
       () =>
         withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
+          client.query(
+            "UPDATE public.sale_payments SET payment_profile_name_snapshot = 'altered' WHERE id = $1",
+            [saleWithProfile.payment.id]
+          )
+        ),
+      "42501",
+      "runtime cannot update profile snapshots on confirmed payments"
+    );
+    await expectSqlState(
+      () =>
+        withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
           client.query("DELETE FROM public.sale_payments WHERE id = $1", [
             confirmedSale.payment.id,
           ])
@@ -980,5 +1719,10 @@ run().catch((error: unknown) => {
   console.error(
     `Sales PostgreSQL gate failed (${name}${code ? `, ${code}` : ""}): ${message}`
   );
+  if (error instanceof Error && error.stack) {
+    console.error(
+      error.stack.replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted]")
+    );
+  }
   process.exitCode = 1;
 });

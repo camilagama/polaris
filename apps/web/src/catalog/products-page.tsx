@@ -718,6 +718,7 @@ export function ProductsPage() {
             Produtos
           </a>
           <a href="/customers">Clientes</a>
+          <a href="/payment-profiles">Perfis de pagamento</a>
         </nav>
       </header>
 
