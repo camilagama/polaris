@@ -460,6 +460,7 @@ async function main(): Promise<void> {
           "PostgreSQL 18 and migration 0026",
           "FORCE RLS on the cleanup claim table",
           "SECURITY DEFINER owner and fixed search_path",
+          "trigger guard has no EXECUTE for PUBLIC, tenant, or cleanup roles",
           "cleanup login can execute only the claim function",
           "cleanup login cannot read claim or media tables",
           "tenant runtime cannot execute the cleanup function",
