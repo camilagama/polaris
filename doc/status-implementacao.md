@@ -538,3 +538,16 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Gate Neon PostgreSQL 18 | Concluído | Migration 0031 aplicada; gate passou em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Nove grupos verificaram FORCE RLS/runtime read-only, snapshots, tipo/escala/modo/posição, FKs compostas, isolamento tenant e imutabilidade. O gate criou fixtures e policies de teste temporárias e as removeu; a branch expira em `2026-10-11 15:00 UTC`. |
 | Revisão independente | Concluída sem blockers | A revisão confirmou coerência do cálculo, schema, migration e gate. Follow-up confirmou que arrays esparsos são rejeitados e que arrays válidos mantêm o cálculo. |
 | Revisão do responsável e publicação | Pendente | Revisar regras e PR draft; publicação aguarda sessão GitHub CLI válida. Nenhum merge será feito. |
+
+### PR41 — Sale payments (implementação, checks, gate e revisão independente concluídos; revisão do responsável/publicação pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base e worktree | Concluídas | Branch `codex/pr41-sale-payment`, isolada em `D:\2 - Dev\2 - Worktree\pr41-sale-payment\polaris`, sobre PR40 `6d74f70`. Baseline passou com 244 testes/36 arquivos e build dos oito workspaces. |
+| Regras de pagamento | Confirmadas | Valor igual ao total devido, sem parcial ou saldo pendente; dinheiro não registra valor entregue/troco; método não prova liquidação; parcelas positivas só para `credit_card`, limitadas pelo `integer` do PostgreSQL. |
+| Domínio | Concluído localmente | `normalizeSalePayment` deriva o valor do total devido, aceita os seis métodos V1 e exige parcelas inteiras positivas apenas para `credit_card`. Erros de método/parcela/valor negativo são rejeitados; seleção do método não representa liquidação. |
+| Migration 0032 e RLS | Concluídas localmente | `sale_payments` permite no máximo uma linha por venda via unicidade tenant-scoped, snapshot de valor BRL, método e parcelas; FK composta para venda. FORCE RLS e runtime somente SELECT até PR43. `db:generate` não encontra drift. |
+| Verificação local | Concluída | `bun run check` passou com 251 testes em 37 arquivos, lint, formato, tipos, boundaries e Knip; `bun run build` passou nos oito workspaces. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration 0032 e gate combinado passaram em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Onze grupos verificaram RLS/grants, método/valor/parcelas, unicidade por venda, FKs tenant, imutabilidade e os gates de venda/ajuste. Fixtures são sintéticas; a branch expira `2026-10-11 15:00 UTC`. |
+| Revisão independente | Concluída sem blockers | Revisão confirmou o snapshot derivado do total devido, métodos/parcelas, unicidade, FK tenant-scoped, RLS/grants e gate/cleanup; nenhuma falha concreta foi encontrada. |
+| Revisão do responsável/publicação | Pendente | Continuar até Gate 4 e manter PRs draft; nenhum merge será feito. |

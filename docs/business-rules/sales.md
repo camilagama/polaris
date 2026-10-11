@@ -7,6 +7,9 @@
 - O subtotal é a soma de `charged_unit_price × quantity`. PR40 permite desconto e acréscimo fixos ou percentuais no nível da venda; frete e sobretaxa de pagamento são valores fixos.
 - Cada ajuste percentual usa o mesmo subtotal após a negociação por item, sem compor sobre outros ajustes. Calcular em decimal exato e arredondar half-up para centavos uma vez por ajuste. A soma dos descontos não pode exceder o subtotal.
 - O total devido é subtotal menos descontos, mais acréscimos, frete e sobretaxa de pagamento. A sobretaxa aumenta o valor devido pelo comprador; custos de processamento e antecipação permanecem separados e serão tratados pelos perfis do PR42.
+- A V1 registra no máximo um pagamento por venda, cujo valor é igual ao total devido; não há pagamento parcial nem saldo pendente. Em dinheiro, o registro guarda o valor aplicado à venda, não o dinheiro entregue nem o troco.
+- O pagamento registra um dos métodos V1: Pix, dinheiro, cartão de crédito, cartão de débito, transferência bancária ou outro. A escolha do método não comprova liquidação bancária.
+- Cartão de crédito exige quantidade positiva de parcelas, limitada pelo tipo `integer` do PostgreSQL; os demais métodos não têm parcelas. Custos de processamento/antecipação desconhecidos permanecem desconhecidos, não zero.
 - O custo unitário é snapshot do custo médio aplicável, com até seis casas decimais. Quando o custo for desconhecido, preservá-lo como `null` e indicar margem indeterminada; nunca inferir custo zero.
 - Corrigir venda confirmada com cancelamento ou devolução. Preservar a venda e os movimentos originais.
 - Devolução parcial registra separadamente a quantidade devolvida e a quantidade que volta ao estoque vendável; esses valores podem ser diferentes.

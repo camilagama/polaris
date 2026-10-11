@@ -4,7 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import { createProduct } from "../src/product-repository";
-import { saleAdjustments, saleItems, sales } from "../src/schema/sale";
+import {
+  saleAdjustments,
+  saleItems,
+  salePayments,
+  sales,
+} from "../src/schema/sale";
 import { productVariants } from "../src/schema/product";
 import {
   type TenantRequestIdentity,
@@ -215,11 +220,11 @@ async function run() {
       relrowsecurity: boolean;
     }>(
       "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, pg_get_userbyid(c.relowner) AS relowner FROM pg_catalog.pg_class AS c JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = ANY($1::text[]) AND c.relkind = 'r' ORDER BY c.relname",
-      [["sales", "sale_items", "sale_adjustments"]]
+      [["sales", "sale_items", "sale_adjustments", "sale_payments"]]
     );
     assert.deepEqual(
       tables.rows.map((row) => row.relname),
-      ["sale_adjustments", "sale_items", "sales"]
+      ["sale_adjustments", "sale_items", "sale_payments", "sales"]
     );
     assert.ok(
       tables.rows.every(
@@ -237,7 +242,7 @@ async function run() {
       can_update: boolean;
       table_name: string;
     }>(
-      "SELECT table_name, has_table_privilege($1, format('public.%I', table_name), 'SELECT') AS can_select, has_table_privilege($1, format('public.%I', table_name), 'INSERT') AS can_insert, has_table_privilege($1, format('public.%I', table_name), 'UPDATE') AS can_update, has_table_privilege($1, format('public.%I', table_name), 'DELETE') AS can_delete FROM unnest(ARRAY['sales', 'sale_items', 'sale_adjustments']) AS table_name ORDER BY table_name",
+      "SELECT table_name, has_table_privilege($1, format('public.%I', table_name), 'SELECT') AS can_select, has_table_privilege($1, format('public.%I', table_name), 'INSERT') AS can_insert, has_table_privilege($1, format('public.%I', table_name), 'UPDATE') AS can_update, has_table_privilege($1, format('public.%I', table_name), 'DELETE') AS can_delete FROM unnest(ARRAY['sales', 'sale_items', 'sale_adjustments', 'sale_payments']) AS table_name ORDER BY table_name",
       [runtimeRole]
     );
     assert.deepEqual(privileges.rows, [
@@ -260,6 +265,13 @@ async function run() {
         can_insert: false,
         can_select: true,
         can_update: false,
+        table_name: "sale_payments",
+      },
+      {
+        can_delete: false,
+        can_insert: false,
+        can_select: true,
+        can_update: false,
         table_name: "sales",
       },
     ]);
@@ -268,11 +280,14 @@ async function run() {
       tablename: string;
     }>(
       "SELECT policyname, tablename FROM pg_catalog.pg_policies WHERE schemaname = 'public' AND tablename = ANY($1::text[]) AND cmd = 'INSERT' AND $2::name = ANY(roles) ORDER BY tablename, policyname",
-      [["sales", "sale_items", "sale_adjustments"], runtimeRole]
+      [
+        ["sales", "sale_items", "sale_adjustments", "sale_payments"],
+        runtimeRole,
+      ]
     );
     assert.deepEqual(runtimeInsertPolicies.rows, []);
     tests.push(
-      "sales, sale_items, and sale_adjustments use FORCE RLS; app runtime is read-only"
+      "sales, items, adjustments, and payments use FORCE RLS; app runtime is read-only"
     );
 
     const tenantA = await createTenantFixture(admin.pool, "A");
@@ -289,10 +304,11 @@ async function run() {
     const gateInsertPolicyPrefixes = {
       sale_adjustments: "sa",
       sale_items: "si",
+      sale_payments: "sp",
       sales: "s",
     } as const;
     const gateInsertPolicies = (
-      ["sales", "sale_items", "sale_adjustments"] as const
+      ["sales", "sale_items", "sale_adjustments", "sale_payments"] as const
     ).map((table) => ({
       name: `${gateInsertPolicyPrefixes[table]}_${loginSuffix}_i`,
       table,
@@ -384,6 +400,17 @@ async function run() {
           })
           .returning();
         assert.ok(adjustment);
+        const [payment] = await transaction
+          .insert(salePayments)
+          .values({
+            amount: "16.00",
+            installments: null,
+            method: "cash",
+            organizationId: identity.organizationId,
+            saleId: sale.id,
+          })
+          .returning();
+        assert.ok(payment);
         return sale;
       }
     );
@@ -430,7 +457,18 @@ async function run() {
           })
           .returning();
         assert.ok(adjustment);
-        return { adjustment, item, sale };
+        const [payment] = await transaction
+          .insert(salePayments)
+          .values({
+            amount: "161.82",
+            installments: 3,
+            method: "credit_card",
+            organizationId: identity.organizationId,
+            saleId: sale.id,
+          })
+          .returning();
+        assert.ok(payment);
+        return { adjustment, item, payment, sale };
       }
     );
     assert.equal(confirmedSale.sale.currency, "BRL");
@@ -441,8 +479,12 @@ async function run() {
     assert.equal(confirmedSale.item.chargedUnitPrice, "89.90");
     assert.equal(confirmedSale.adjustment.amount, "17.98");
     assert.equal(confirmedSale.adjustment.percentage, "10.000000");
+    assert.equal(confirmedSale.payment.amount, "161.82");
+    assert.equal(confirmedSale.payment.method, "credit_card");
+    assert.equal(confirmedSale.payment.installments, 3);
     tests.push("confirmed sale snapshots preserve BRL prices and unknown cost");
     tests.push("sale adjustments persist fixed and percentage snapshots");
+    tests.push("sale payments snapshot the total and credit card installments");
 
     await expectSqlState(
       () =>
@@ -628,6 +670,111 @@ async function run() {
       "sale adjustment kinds, scales, value modes, and positions are constrained"
     );
 
+    const validSalePayment = {
+      amount: "1.00",
+      installments: null,
+      method: "cash",
+      organizationId: tenantA.organizationId,
+      saleId: confirmedSale.sale.id,
+    };
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction
+              .insert(salePayments)
+              .values({ ...validSalePayment, amount: "1.001" })
+        ),
+      "23514",
+      "sale payment amount does not exceed two decimal places"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction
+              .insert(salePayments)
+              .values({ ...validSalePayment, amount: "-0.01" })
+        ),
+      "23514",
+      "sale payment amount is nonnegative"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction
+              .insert(salePayments)
+              .values({ ...validSalePayment, method: "crypto" })
+        ),
+      "23514",
+      "sale payment method is in the V1 allowlist"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(salePayments).values({
+              ...validSalePayment,
+              installments: null,
+              method: "credit_card",
+            })
+        ),
+      "23514",
+      "credit card payments require installments"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(salePayments).values({
+              ...validSalePayment,
+              installments: 0,
+              method: "credit_card",
+            })
+        ),
+      "23514",
+      "credit card installments are positive"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(salePayments).values({
+              ...validSalePayment,
+              installments: 1,
+            })
+        ),
+      "23514",
+      "non-credit card methods cannot have installments"
+    );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantA,
+          async (transaction) =>
+            await transaction.insert(salePayments).values(validSalePayment)
+        ),
+      "23505",
+      "a sale has at most one payment in V1"
+    );
+    tests.push(
+      "sale payment methods, amounts, installments, and per-sale uniqueness are constrained"
+    );
+
     await expectSqlState(
       () =>
         withTenant(
@@ -676,6 +823,20 @@ async function run() {
       "23503",
       "sale adjustments cannot reference a sale from another organization"
     );
+    await expectSqlState(
+      () =>
+        withTenant(
+          runtimeDatabase.db,
+          tenantB,
+          async (transaction, identity) =>
+            await transaction.insert(salePayments).values({
+              ...validSalePayment,
+              organizationId: identity.organizationId,
+            })
+        ),
+      "23503",
+      "sale payments cannot reference a sale from another organization"
+    );
     const crossTenantSales = await withTenant(
       runtimeDatabase.db,
       tenantA,
@@ -696,9 +857,19 @@ async function run() {
           .where(eq(saleAdjustments.organizationId, tenantB.organizationId))
     );
     assert.deepEqual(crossTenantAdjustments, []);
+    const crossTenantPayments = await withTenant(
+      runtimeDatabase.db,
+      tenantA,
+      async (transaction) =>
+        await transaction
+          .select({ id: salePayments.id })
+          .from(salePayments)
+          .where(eq(salePayments.organizationId, tenantB.organizationId))
+    );
+    assert.deepEqual(crossTenantPayments, []);
     assert.ok(tenantBSale.id);
     tests.push(
-      "composite foreign keys and RLS isolate products, sales, and adjustments by tenant"
+      "composite foreign keys and RLS isolate products, sales, adjustments, and payments by tenant"
     );
 
     await expectSqlState(
@@ -743,6 +914,27 @@ async function run() {
       "42501",
       "runtime cannot delete confirmed sale adjustments"
     );
+    await expectSqlState(
+      () =>
+        withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
+          client.query(
+            "UPDATE public.sale_payments SET amount = '9.99' WHERE id = $1",
+            [confirmedSale.payment.id]
+          )
+        ),
+      "42501",
+      "runtime cannot update confirmed sale payments"
+    );
+    await expectSqlState(
+      () =>
+        withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
+          client.query("DELETE FROM public.sale_payments WHERE id = $1", [
+            confirmedSale.payment.id,
+          ])
+        ),
+      "42501",
+      "runtime cannot delete confirmed sale payments"
+    );
     tests.push("runtime cannot update or delete confirmed sale snapshots");
 
     console.log(
@@ -769,7 +961,7 @@ async function run() {
         )
       );
       await admin.pool.query(
-        `REVOKE INSERT ON TABLE public.sales, public.sale_items, public.sale_adjustments FROM "${loginRole}"`
+        `REVOKE INSERT ON TABLE public.sales, public.sale_items, public.sale_adjustments, public.sale_payments FROM "${loginRole}"`
       );
       await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);

@@ -2171,6 +2171,15 @@ Métodos:
 
 Um pagamento por venda na V1.
 
+Critérios V1 confirmados:
+
+- valor do pagamento igual ao total devido, sem parcial ou saldo pendente;
+- dinheiro registra o valor aplicado à venda; dinheiro entregue/troco não é capturado;
+- cartão de crédito exige parcelas inteiras positivas, sem teto adicional além do `integer` do PostgreSQL; outros métodos não têm parcelas;
+- o método é um registro comercial e não comprova liquidação bancária.
+
+Métodos V1: `pix`, `cash`, `credit_card`, `debit_card`, `bank_transfer` e `other`.
+
 
 
 ---

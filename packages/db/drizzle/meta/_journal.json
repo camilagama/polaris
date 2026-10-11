@@ -225,6 +225,13 @@
       "when": 1791728012170,
       "tag": "0031_tan_thor_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791729084642,
+      "tag": "0032_mean_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }

@@ -200,3 +200,57 @@ export const saleAdjustments = pgTable(
     }),
   ]
 ).enableRLS();
+
+export const salePayments = pgTable(
+  "sale_payments",
+  {
+    amount: numeric("amount").notNull(),
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    installments: integer("installments"),
+    method: text("method").notNull(),
+    organizationId: text("organization_id").notNull(),
+    saleId: uuid("sale_id").notNull(),
+  },
+  (table) => [
+    check(
+      "sale_payments_method_allowed",
+      sql`${table.method} IN ('pix', 'cash', 'credit_card', 'debit_card', 'bank_transfer', 'other')`
+    ),
+    check(
+      "sale_payments_amount_allowed",
+      sql`
+        ${table.amount} >= 0
+        AND scale(${table.amount}) <= 2
+        AND ${table.amount} < 1000000000000000000
+      `
+    ),
+    check(
+      "sale_payments_installments_allowed",
+      sql`
+        (
+          ${table.method} = 'credit_card'
+          AND ${table.installments} IS NOT NULL
+          AND ${table.installments} >= 1
+        )
+        OR (
+          ${table.method} <> 'credit_card'
+          AND ${table.installments} IS NULL
+        )
+      `
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.saleId],
+      foreignColumns: [sales.organizationId, sales.id],
+      name: "sale_payments_organization_sale_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("sale_payments_organization_sale_unique").on(
+      table.organizationId,
+      table.saleId
+    ),
+    pgPolicy("sale_payments_current_tenant_select", {
+      for: "select",
+      to: runtimeRole,
+      using: activeTenantScope(table.organizationId),
+    }),
+  ]
+).enableRLS();

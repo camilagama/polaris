@@ -57,6 +57,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Subtotal da venda:** soma dos valores dos itens pelo preço cobrado, antes dos ajustes da venda.
 **Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
 **Sobretaxa de pagamento:** valor cobrado do comprador por um meio de pagamento; é distinto das taxas de processamento e antecipação pagas pelo negócio.
+**Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na venda.
 
 **Devolução:** registro de itens devolvidos e da quantidade que volta ao estoque vendável.
 

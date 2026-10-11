@@ -15,6 +15,7 @@
     "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts",
     "./money/money": "./src/money/money.ts",
     "./sales/sale-adjustments": "./src/sales/sale-adjustments.ts",
+    "./sales/sale-payment": "./src/sales/sale-payment.ts",
     "./sales/sale": "./src/sales/sale.ts"
   },
   "scripts": {
