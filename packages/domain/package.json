@@ -12,7 +12,8 @@
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",
     "./inventory/inventory-count": "./src/inventory/inventory-count.ts",
     "./inventory/receive-stock": "./src/inventory/receive-stock.ts",
-    "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts"
+    "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts",
+    "./sales/sale": "./src/sales/sale.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

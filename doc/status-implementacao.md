@@ -495,3 +495,18 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Origem de preço | Confirmada | Capturar no comando da venda preço de tabela e preço cobrado; não adicionar preço ao catálogo nesta etapa. |
 | Custo desconhecido | Confirmada | Permitir a venda, registrar custo desconhecido e exibir margem indeterminada; não substituir ausência por zero. |
 | Quantidade | Confirmada | Quantidade inteira positiva, limitada atomicamente ao saldo disponível, sem teto arbitrário adicional. |
+| Escala monetária | Confirmada | Valores comerciais BRL com duas casas e até 18 dígitos inteiros; custo em seis casas; percentuais em até seis casas; cálculo exato e half-up na persistência, com pontos definidos por operação. |
+| Estados persistidos | Confirmada | Apenas vendas confirmadas no banco. Estados pending/syncing/rejected/needs_attention ficam na outbox local; sem rascunho persistido. |
+
+### PR38 — Sale aggregate (implementação, migrations, gate Neon, checks, build e revisão concluídos; publicação pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Domínio | Concluído localmente | `normalizeConfirmedSaleSnapshot` exige ao menos um item, IDs UUID válidos, quantidade inteira positiva dentro do limite do PostgreSQL, preços BRL exatos com duas casas e custo null ou decimal com seis casas; preserva a ordem dos itens. Não calcula total, que fica para PR39/40. |
+| Migrations 0029–0030 | Concluídas | `0029` cria `sales` e `sale_items`, command ID único por organização, `confirmed_at`, moeda BRL, snapshots por item, FKs compostas, posição única e FORCE RLS. O índice composto que a FK referencia é criado antes da FK. `0030` remove as policies e o grant de INSERT do runtime: ele permanece somente leitura até PR43 entregar a confirmação transacional do cabeçalho com todos os itens. |
+| Gate Neon PostgreSQL 18 | Concluído | Migrations aplicadas e gate passou em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Sete grupos cobrem FORCE RLS, runtime somente leitura, snapshot com custo desconhecido, command identity, moeda, escala/quantidade, FKs e isolamento tenant. Um login/policies temporários e isolados exercitam as constraints e são removidos ao final; fixtures são sintéticos. A branch expira em `2026-10-11 15:00 UTC`. |
+| Verificação local | Concluída | `bun run check` passou fora do sandbox: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 221 testes em 34 arquivos. A primeira execução dentro do sandbox falhou ao importar módulos por caminhos TEMP redirecionados; a repetição fora dele passou. `bun run db:generate` reportou “No schema changes”. |
+| Build local | Concluído com observação | `bun run build` terminou com exit code 0 nos oito workspaces; Wrangler registrou EPERM transitório ao abrir log no perfil local, depois informou logs gravados. |
+| Revisão independente | Concluída sem blockers | A revisão apontou que grants de INSERT permitiriam confirmar cabeçalho sem itens e inserir itens em commits posteriores. A migration `0030` revoga a escrita do runtime até PR43; follow-up confirmou o isolamento do role temporário no gate e sem blockers. O cleanup também só tenta remover login se `CREATE ROLE` teve sucesso. |
+| Push e PR draft | Pendente | A sessão local do GitHub CLI segue inválida após rotação; device flow iniciado, aguardando conclusão pelo responsável. Nenhum merge foi feito. |
+| Revisão do usuário | Pendente | Revisar o PR38 draft depois da publicação. |

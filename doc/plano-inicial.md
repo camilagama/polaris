@@ -2013,6 +2013,9 @@ sale_items
 
 Venda confirmada imutável.
 
+As tabelas de venda permanecem somente leitura para o runtime até PR43
+implementar o comando que confirma cabeçalho e itens na mesma transação.
+
 
 
 Snapshot:
