@@ -472,7 +472,7 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | CI remoto | Concluído | GitHub Actions run `38139378431` passou 6/6 no head `d3861f3`: build, Knip, lint/boundaries, typecheck, unit tests e offline persistence browser gate. |
 | Revisão do usuário | Autorizada em 2026-10-11 | O responsável confirmou que os PRs revisados estão autorizados a prosseguir. PR #35 continua draft; nenhum merge foi feito. |
 
-### PR37 — Possible duplicates (implementação, gates e revisão independente concluídos; publicação pendente)
+### PR37 — Possible duplicates (implementação, gates, revisão independente e CI concluídos; draft PR #36 publicado; revisão do responsável pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -485,7 +485,7 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Verificação local | Concluída | `bun run check` passou com lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 216 testes em 33 arquivos. `bun run db:generate` confirmou ausência de drift. |
 | Build local | Concluído com observação | `bun run build` terminou com exit code 0 nos oito workspaces. Wrangler registrou `EPERM` transitório ao abrir arquivo de log no perfil local e, em seguida, informou que os logs foram gravados; o build concluiu normalmente. |
 | Revisão independente | Concluída sem blockers | A revisão identificou falta de asserção sobre expressões/predicados dos índices. O gate agora valida o DDL esperado e passou novamente no PostgreSQL 18.6. |
-| Push e PR draft | Pendente | Após a confirmação da rotação do token GitHub, ainda falta publicar `codex/pr37-possible-duplicates` sobre `codex/pr36-customers` e abrir o draft PR. Nenhum merge foi feito. |
+| Push e PR draft | Concluídos | Branch `codex/pr37-possible-duplicates` publicada; [GitHub PR #36](https://github.com/camilagama/polaris/pull/36) em draft sobre `codex/pr36-customers` (PR #35). CI passou 6/6. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar o PR37 draft e os gates depois da publicação. |
 
 ### PR38 — decisões confirmadas para a próxima etapa
@@ -498,7 +498,7 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Escala monetária | Confirmada | Valores comerciais BRL com duas casas e até 18 dígitos inteiros; custo em seis casas; percentuais em até seis casas; cálculo exato e half-up na persistência, com pontos definidos por operação. |
 | Estados persistidos | Confirmada | Apenas vendas confirmadas no banco. Estados pending/syncing/rejected/needs_attention ficam na outbox local; sem rascunho persistido. |
 
-### PR38 — Sale aggregate (implementação, migrations, gate Neon, checks, build e revisão concluídos; publicação pendente)
+### PR38 — Sale aggregate (implementação, migrations, gate Neon, checks, build, revisão e CI concluídos; draft PR #37 publicado; revisão do responsável pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -508,10 +508,10 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Verificação local | Concluída | `bun run check` passou fora do sandbox: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 221 testes em 34 arquivos. A primeira execução dentro do sandbox falhou ao importar módulos por caminhos TEMP redirecionados; a repetição fora dele passou. `bun run db:generate` reportou “No schema changes”. |
 | Build local | Concluído com observação | `bun run build` terminou com exit code 0 nos oito workspaces; Wrangler registrou EPERM transitório ao abrir log no perfil local, depois informou logs gravados. |
 | Revisão independente | Concluída sem blockers | A revisão apontou que grants de INSERT permitiriam confirmar cabeçalho sem itens e inserir itens em commits posteriores. A migration `0030` revoga a escrita do runtime até PR43; follow-up confirmou o isolamento do role temporário no gate e sem blockers. O cleanup também só tenta remover login se `CREATE ROLE` teve sucesso. |
-| Push e PR draft | Pendente | A sessão local do GitHub CLI segue inválida após rotação; device flow iniciado, aguardando conclusão pelo responsável. Nenhum merge foi feito. |
+| Push e PR draft | Concluídos | Branch `codex/pr38-sales-aggregate` publicada; [GitHub PR #37](https://github.com/camilagama/polaris/pull/37) em draft sobre `codex/pr37-possible-duplicates`. CI passou 6/6. Nenhum merge foi feito. |
 | Revisão do usuário | Pendente | Revisar o PR38 draft depois da publicação. |
 
-### PR39 — Money library (implementação, revisão independente e checks concluídos; revisão do responsável e publicação pendentes)
+### PR39 — Money library (implementação, revisão independente, checks e CI concluídos; draft PR #38 publicado; revisão do responsável pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -523,9 +523,9 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Gate Neon | Adiado até PR43 | PR39 é aritmética de domínio, sem schema, migration, grants ou gravação no banco. O gate de persistência e atomicidade será executado junto do comando transacional de PR43. |
 | Revisão independente | Concluída sem blockers | A revisão confirmou precisão BigInt, escalas, arredondamento assinado, aplicação percentual sem arredondamento antecipado e limite inteiro de quantity. Não foi inferido teto inteiro para `DecimalAmount`/`Percentage`, pois a documentação não o define. |
 | Revisão do responsável | Pendente | Revisar especialmente a convenção percentual em pontos percentuais (`2.5` representa `2,5%`), registrada em `CONTEXT.md` e `docs/business-rules/money.md`. |
-| Publicação | Pendente | Requer sessão GitHub CLI válida. Nenhum push ou merge foi feito. |
+| Publicação | Concluída | Branch `codex/pr39-money-library` publicada; [GitHub PR #38](https://github.com/camilagama/polaris/pull/38) em draft sobre `codex/pr38-sales-aggregate`. CI passou 6/6. Nenhum merge foi feito. |
 
-### PR40 — Sale adjustments (implementação, checks e gate concluídos; revisão pendente)
+### PR40 — Sale adjustments (implementação, checks, gate, revisão e CI concluídos; draft PR #39 publicado; revisão do responsável pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -537,9 +537,9 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Verificação local | Concluída | `bun run check` passou com 244 testes em 36 arquivos, lint, formato, tipos, boundaries e Knip. `bun run build` passou nos oito workspaces; `bun run db:generate` não encontrou drift. |
 | Gate Neon PostgreSQL 18 | Concluído | Migration 0031 aplicada; gate passou em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Nove grupos verificaram FORCE RLS/runtime read-only, snapshots, tipo/escala/modo/posição, FKs compostas, isolamento tenant e imutabilidade. O gate criou fixtures e policies de teste temporárias e as removeu; a branch expira em `2026-10-11 15:00 UTC`. |
 | Revisão independente | Concluída sem blockers | A revisão confirmou coerência do cálculo, schema, migration e gate. Follow-up confirmou que arrays esparsos são rejeitados e que arrays válidos mantêm o cálculo. |
-| Revisão do responsável e publicação | Pendente | Revisar regras e PR draft; publicação aguarda sessão GitHub CLI válida. Nenhum merge será feito. |
+| Revisão do responsável e publicação | Publicação concluída; revisão pendente | Branch `codex/pr40-sale-adjustments` publicada; [GitHub PR #39](https://github.com/camilagama/polaris/pull/39) em draft sobre `codex/pr39-money-library`. CI passou 6/6. Nenhum merge será feito. |
 
-### PR41 — Sale payments (implementação, checks, gate e revisão independente concluídos; revisão do responsável/publicação pendentes)
+### PR41 — Sale payments (implementação, checks, gate, revisão independente e CI concluídos; draft PR #40 publicado; revisão do responsável pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -550,9 +550,9 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Verificação local | Concluída | `bun run check` passou com 251 testes em 37 arquivos, lint, formato, tipos, boundaries e Knip; `bun run build` passou nos oito workspaces. |
 | Gate Neon PostgreSQL 18 | Concluído | Migration 0032 e gate combinado passaram em PostgreSQL `18.6` na branch descartável `pr36-customers-gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Onze grupos verificaram RLS/grants, método/valor/parcelas, unicidade por venda, FKs tenant, imutabilidade e os gates de venda/ajuste. Fixtures são sintéticas; a branch expira `2026-10-11 15:00 UTC`. |
 | Revisão independente | Concluída sem blockers | Revisão confirmou o snapshot derivado do total devido, métodos/parcelas, unicidade, FK tenant-scoped, RLS/grants e gate/cleanup; nenhuma falha concreta foi encontrada. |
-| Revisão do responsável/publicação | Pendente | Continuar até Gate 4 e manter PRs draft; nenhum merge será feito. |
+| Revisão do responsável/publicação | Publicação concluída; revisão pendente | Branch `codex/pr41-sale-payment` publicada; [GitHub PR #40](https://github.com/camilagama/polaris/pull/40) em draft sobre `codex/pr40-sale-adjustments`. CI passou 6/6. Nenhum merge será feito. |
 
-### PR42 — Payment profiles (implementação, migration, gate PG18, checks locais, build e revisão independente concluídos; publicação pendente)
+### PR42 — Payment profiles (implementação, migration, gate PG18, checks locais, build, revisão independente e CI concluídos; draft PR #41 publicado; revisão do responsável pendente)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -566,4 +566,4 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Gate Neon PostgreSQL 18 | Concluído | 24 cenários passaram em PostgreSQL 18.6 na branch schema-only `pr42-payment-profiles-gate`, database `polaris_pr42_gate`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Cobre CRUD/RLS/ACL, cross-tenant, taxas/precisão/arredondamento, modalidade, antecipação, snapshot, concorrência de versão e preservação de regras antigas. Fixtures são sintéticas; a branch expira `2026-10-12 15:45 UTC`. Nenhum dado de produção foi copiado. |
 | Verificação local | Concluída | `bun run check` passou: lint, formato, tipos dos oito workspaces, boundaries, Knip e 267 testes em 39 arquivos. `bun run build` passou nos oito workspaces; `bun run --filter @polaris/db db:generate` confirmou ausência de drift. |
 | Revisão independente | Concluída sem blockers | O reviewer inicialmente apontou a seleção por venda como possível lacuna; após formalizar no plano sua conexão obrigatória no PR43 (que cria a transação e o pagamento), confirmou a divisão e não encontrou outros achados Critical/Important no escopo PR42. |
-| Publicação | Pendente | GitHub CLI está autenticado; PR42 ainda não foi commitado nem enviado. Nenhum merge será feito. |
+| Publicação | Concluída | Commit `cee49e5`; branch `codex/pr42-payment-profiles` publicada; [GitHub PR #41](https://github.com/camilagama/polaris/pull/41) em draft sobre `codex/pr41-sale-payment`. CI passou 6/6. Nenhum merge será feito. |
