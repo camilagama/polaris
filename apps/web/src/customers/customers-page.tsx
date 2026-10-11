@@ -2,6 +2,7 @@ import type { CustomerReadModel } from "@polaris/contracts";
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
@@ -501,21 +502,32 @@ export function CustomersPage() {
   const [isLoading, setIsLoading] = useState(Boolean(organizationId));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const customerLoadSequence = useRef(0);
 
   const loadCustomers = useCallback(
     async (targetOrganizationId: string, targetStatus: CustomerListStatus) => {
+      customerLoadSequence.current += 1;
+      const requestSequence = customerLoadSequence.current;
       setIsLoading(true);
       setError(null);
+      setCustomers([]);
       try {
         const result = await orpcClient.customer.list({
           organizationId: targetOrganizationId,
           status: targetStatus,
         });
+        if (requestSequence !== customerLoadSequence.current) {
+          return;
+        }
         setCustomers(result.customers);
       } catch (caughtError) {
-        setError(errorMessage(caughtError, "load"));
+        if (requestSequence === customerLoadSequence.current) {
+          setError(errorMessage(caughtError, "load"));
+        }
       } finally {
-        setIsLoading(false);
+        if (requestSequence === customerLoadSequence.current) {
+          setIsLoading(false);
+        }
       }
     },
     []
@@ -523,11 +535,15 @@ export function CustomersPage() {
 
   useEffect(() => {
     if (!organizationId) {
+      customerLoadSequence.current += 1;
       setCustomers([]);
       setIsLoading(false);
       return;
     }
     loadCustomers(organizationId, status);
+    return () => {
+      customerLoadSequence.current += 1;
+    };
   }, [loadCustomers, organizationId, status]);
 
   const editingCustomer =
@@ -543,16 +559,20 @@ export function CustomersPage() {
   const handleStatusClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       const nextStatus = customerStatusFromEvent(event);
-      if (nextStatus === null) {
+      if (nextStatus === null || nextStatus === status) {
         return;
       }
+      customerLoadSequence.current += 1;
+      setCustomers([]);
+      setIsLoading(true);
+      setError(null);
       setStatus(nextStatus);
       setEditingCustomerId(null);
       setDraft(emptyDraft);
       setError(null);
       setNotice(null);
     },
-    []
+    [status]
   );
 
   const handleEdit = useCallback((customer: CustomerReadModel) => {
@@ -667,8 +687,10 @@ export function CustomersPage() {
 
   const handleResetOrganization = useCallback(() => {
     clearSavedOrganizationId();
+    customerLoadSequence.current += 1;
     setOrganizationId(null);
     setCustomers([]);
+    setIsLoading(false);
     setEditingCustomerId(null);
     setDraft(emptyDraft);
     setNotice("Abra novamente uma organização para acessar os clientes.");
