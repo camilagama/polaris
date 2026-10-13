@@ -161,8 +161,11 @@ async function run() {
       runtimeUrl,
       tenantA,
       async (client) =>
-        (await client.query<{ timezone: string }>("SHOW timezone")).rows[0]
-          ?.timezone
+        (
+          await client.query<{ timezone: string }>(
+            "SELECT current_setting('TimeZone') AS timezone"
+          )
+        ).rows[0]?.timezone
     );
     assert.equal(zoneProbe, "Pacific/Kiritimati", "the setting is in effect");
     const tokyoProduct = await createSellableProduct(rt, tenantA, "fuso", {
