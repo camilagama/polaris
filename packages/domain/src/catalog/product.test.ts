@@ -3,6 +3,7 @@ import {
   deriveProductLifecycle,
   normalizeProductDescription,
   normalizeProductName,
+  ProductDescriptionError,
   ProductLifecycleError,
   ProductNameError,
   transitionProductLifecycle,
@@ -62,6 +63,19 @@ describe("product rules", () => {
     );
     expect(() => transitionProductLifecycle("deleted", "archive")).toThrow(
       ProductLifecycleError
+    );
+  });
+});
+
+describe("product text limits", () => {
+  it("bounds name and description", () => {
+    expect(normalizeProductName("n".repeat(200))).toHaveLength(200);
+    expect(() => normalizeProductName("n".repeat(201))).toThrow(
+      ProductNameError
+    );
+    expect(normalizeProductDescription("d".repeat(5000))).toHaveLength(5000);
+    expect(() => normalizeProductDescription("d".repeat(5001))).toThrow(
+      ProductDescriptionError
     );
   });
 });

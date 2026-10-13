@@ -20,7 +20,7 @@ export const categoryNameSchema = z
     message: "invalid_category_name",
   });
 
-export const productNameSchema = z.string().trim().min(1);
+export const productNameSchema = z.string().trim().min(1).max(200);
 
 const category = z.object({
   archivedAt: z.string().nullable(),
@@ -53,11 +53,11 @@ export type ProductReadModel = z.infer<typeof product>;
 
 const customerProfileFields = z.object({
   email: z
-    .union([z.string().trim().email(), z.string().trim().length(0)])
+    .union([z.string().trim().email().max(254), z.string().trim().length(0)])
     .nullable(),
-  name: z.string().trim().min(1),
-  notes: z.string().trim().nullable(),
-  phone: z.string().trim().nullable(),
+  name: z.string().trim().min(1).max(200),
+  notes: z.string().trim().max(2000).nullable(),
+  phone: z.string().trim().max(40).nullable(),
 });
 
 function requireCustomerContact(
@@ -110,9 +110,9 @@ export type CustomerDuplicateMatchReadModel = z.infer<
 
 const paymentFeeConfiguration = z
   .object({
-    fixedAmount: z.string().trim().min(1).nullable(),
+    fixedAmount: z.string().trim().min(1).max(64).nullable(),
     mode: z.enum(PAYMENT_FEE_MODES),
-    percentage: z.string().trim().min(1).nullable(),
+    percentage: z.string().trim().min(1).max(64).nullable(),
   })
   .superRefine((fee, ctx) => {
     const hasFixed = fee.fixedAmount !== null;
@@ -356,19 +356,19 @@ const saleAdjustmentInput = z.object({
   kind: z.enum(saleAdjustmentKinds),
   value: z.discriminatedUnion("type", [
     z.object({
-      amount: z.string().trim().min(1),
+      amount: z.string().trim().min(1).max(64),
       type: z.literal("fixed"),
     }),
     z.object({
-      percentage: z.string().trim().min(1),
+      percentage: z.string().trim().min(1).max(64),
       type: z.literal("percentage"),
     }),
   ]),
 });
 
 const saleItemInput = z.object({
-  chargedUnitPrice: z.string().trim().min(1),
-  listedUnitPrice: z.string().trim().min(1),
+  chargedUnitPrice: z.string().trim().min(1).max(64),
+  listedUnitPrice: z.string().trim().min(1).max(64),
   quantity: z.number().int().positive().max(2_147_483_647),
   variantId: z.string().uuid(),
 });
@@ -425,13 +425,13 @@ const confirmedSale = z.object({
   }),
   replayed: z.boolean(),
   sale: z.object({
-    recordedAt: z.string().datetime().nullable(),
     commandId: z.string().uuid(),
     confirmedAt: z.string().datetime(),
     currency: z.literal("BRL"),
     id: z.string().uuid(),
     occurredAt: z.string().datetime(),
     occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    recordedAt: z.string().datetime().nullable(),
   }),
   totals: z.object({
     discountTotal: z.string(),
@@ -708,7 +708,7 @@ export const polarisContract = {
             occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
             organizationId: z.string().trim().min(1),
             physicalQuantity: z.number().int().nonnegative().max(2_147_483_647),
-            valuationUnitCost: z.string().trim().min(1).optional(),
+            valuationUnitCost: z.string().trim().min(1).max(64).optional(),
             variantId: z.string().uuid(),
           })
           .superRefine((input, ctx) => {
@@ -739,7 +739,7 @@ export const polarisContract = {
           occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           organizationId: z.string().trim().min(1),
           quantity: z.number().int().positive().max(2_147_483_647),
-          unitCost: z.string().trim().min(1),
+          unitCost: z.string().trim().min(1).max(64),
           variantId: z.string().uuid(),
         })
       )
@@ -886,7 +886,7 @@ export const polarisContract = {
       .input(
         z.object({
           categoryId: z.string().uuid().nullable().optional(),
-          description: z.string().nullable().optional(),
+          description: z.string().max(5000).nullable().optional(),
           name: productNameSchema,
           organizationId: z.string().trim().min(1),
         })
@@ -959,28 +959,6 @@ export const polarisContract = {
       .output(z.object({ changed: z.boolean(), product })),
   },
   sale: {
-    // One command confirms the whole sale. The payment profile is an explicit
-    // choice: an id with the version the operator saw, or null for no profile.
-    confirm: oc
-      .input(
-        z.object({
-          adjustments: z.array(saleAdjustmentInput).max(20),
-          recordedAt: z.string().datetime({ offset: true }).optional(),
-          commandId: z.string().uuid(),
-          commandVersion: z.literal(1),
-          items: z.array(saleItemInput).min(1).max(200),
-          occurredAt: z.string().datetime({ offset: true }),
-          organizationId: z.string().trim().min(1),
-          payment: salePaymentInput,
-          paymentProfile: z
-            .object({
-              expectedVersion: z.number().int().positive(),
-              id: z.string().uuid(),
-            })
-            .nullable(),
-        })
-      )
-      .output(confirmedSale),
     // Attribution is separate from the sale's economics: it never changes the
     // confirmed sale. Each change needs the version the operator saw.
     assignCustomer: oc
@@ -998,6 +976,28 @@ export const polarisContract = {
         })
       )
       .output(cancelledSaleResult),
+    // One command confirms the whole sale. The payment profile is an explicit
+    // choice: an id with the version the operator saw, or null for no profile.
+    confirm: oc
+      .input(
+        z.object({
+          adjustments: z.array(saleAdjustmentInput).max(20),
+          commandId: z.string().uuid(),
+          commandVersion: z.literal(1),
+          items: z.array(saleItemInput).min(1).max(200),
+          occurredAt: z.string().datetime({ offset: true }),
+          organizationId: z.string().trim().min(1),
+          payment: salePaymentInput,
+          paymentProfile: z
+            .object({
+              expectedVersion: z.number().int().positive(),
+              id: z.string().uuid(),
+            })
+            .nullable(),
+          recordedAt: z.string().datetime({ offset: true }).optional(),
+        })
+      )
+      .output(confirmedSale),
     get: oc
       .input(
         z.object({
@@ -1006,6 +1006,28 @@ export const polarisContract = {
         })
       )
       .output(saleDetail),
+    getCustomerLink: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          saleId: z.string().uuid(),
+        })
+      )
+      .output(saleCustomerLink),
+    list: oc
+      .input(
+        z.object({
+          limit: z.number().int().min(1).max(100).default(50),
+          offset: z.number().int().min(0).max(1_000_000).default(0),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({ hasMore: z.boolean(), sales: z.array(saleListEntry) })
+      ),
+    reassignCustomer: oc
+      .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
+      .output(saleCustomerLinkChange),
     // A partial return: per item the returned quantity and the quantity that
     // goes back to sellable stock (restocked <= returned <= still available).
     return: oc
@@ -1021,28 +1043,6 @@ export const polarisContract = {
         })
       )
       .output(returnedSaleResult),
-    list: oc
-      .input(
-        z.object({
-          limit: z.number().int().min(1).max(100).default(50),
-          offset: z.number().int().min(0).max(1_000_000).default(0),
-          organizationId: z.string().trim().min(1),
-        })
-      )
-      .output(
-        z.object({ hasMore: z.boolean(), sales: z.array(saleListEntry) })
-      ),
-    getCustomerLink: oc
-      .input(
-        z.object({
-          organizationId: z.string().trim().min(1),
-          saleId: z.string().uuid(),
-        })
-      )
-      .output(saleCustomerLink),
-    reassignCustomer: oc
-      .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
-      .output(saleCustomerLinkChange),
     unassignCustomer: oc
       .input(saleCustomerLinkTarget)
       .output(saleCustomerLinkChange),

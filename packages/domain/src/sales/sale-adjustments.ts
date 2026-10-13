@@ -200,7 +200,7 @@ function calculateOneAdjustment(
     throw new InvalidSaleAdjustmentError();
   }
 
-  const rate = Percentage.from(valueRecord.percentage);
+  const rate = Percentage.fromRate(valueRecord.percentage);
   const amount = rate.applyTo(subtotal).toMoneyHalfUp();
   return {
     amount,

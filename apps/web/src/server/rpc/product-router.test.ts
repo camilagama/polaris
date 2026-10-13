@@ -7,6 +7,7 @@ import type {
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
   ProductDefaultVariantSkuConflictError,
+  ProductDefaultVariantStockHistoryConflictError,
   ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantSkuConflictError,
@@ -295,6 +296,33 @@ describe("product RPCs", () => {
         variants: [{ values: { model: "Classic" } }],
       })
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("maps a default variant with stock history to a configuration conflict with its reason", async () => {
+    const router = createRpcRouter({
+      configureProductVariants: () =>
+        Promise.reject(new ProductDefaultVariantStockHistoryConflictError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "model", values: ["Classic"] }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { model: "Classic" } }],
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "product_default_variant_stock_history_conflict" },
+    });
   });
 
   it("sets a variant SKU with product:update and the optimistic version", async () => {

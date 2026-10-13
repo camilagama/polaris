@@ -128,6 +128,8 @@ export class PaymentProfileLifecycleError extends Error {
 
 type PaymentFeeParser = (value: string) => { toString: () => string };
 const maxPostgresInteger = 2_147_483_647;
+/** Ten years: a settlement estimate beyond this is a typing mistake. */
+export const MAX_EXPECTED_SETTLEMENT_DAYS = 3650;
 const paymentMethods = new Set([
   "pix",
   "cash",
@@ -153,7 +155,7 @@ function parseFeeAmount(value: string): Money {
 
 function parseFeePercentage(value: string): Percentage {
   try {
-    return Percentage.from(value);
+    return Percentage.fromRate(value);
   } catch (cause) {
     // The domain error constructor forwards this value to ErrorOptions.cause.
     // biome-ignore lint/style/useErrorCause: Biome cannot follow the custom error constructor.
@@ -255,7 +257,7 @@ function normalizePaymentProfileRule(
     expectedSettlementDays !== null &&
     (!Number.isInteger(expectedSettlementDays) ||
       expectedSettlementDays < 0 ||
-      expectedSettlementDays > maxPostgresInteger)
+      expectedSettlementDays > MAX_EXPECTED_SETTLEMENT_DAYS)
   ) {
     throw new InvalidPaymentProfileError();
   }
@@ -331,7 +333,7 @@ export function calculatePaymentFee(
   }
   if (normalizedConfiguration.percentage !== null) {
     exact = exact.add(
-      Percentage.from(normalizedConfiguration.percentage).applyTo(due)
+      Percentage.fromRate(normalizedConfiguration.percentage).applyTo(due)
     );
   }
   return {
