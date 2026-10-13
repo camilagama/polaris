@@ -19,3 +19,9 @@ Este runbook vale para comandos que autenticam, consultam ou alteram recursos Cl
 5. Não copie tokens, connection strings ou segredos para logs, documentação ou saída compartilhada; redija qualquer evidência antes de registrá-la.
 
 O perfil autorizado não substitui a autorização exigida para alterações externas: deploys, mudanças em recursos persistentes e outras ações devem continuar dentro do escopo explicitamente autorizado pelo usuário.
+
+## Identificadores pessoais neste documento
+
+Este runbook, o [Gate 4](./gate-4-sales-core.md) e o `doc/status-implementacao.md` versionam e-mails pessoais do responsável e identificadores de projetos Neon. O repositório é privado e esses valores são necessários para que a política seja verificável: a identidade esperada precisa estar escrita para ser conferida antes de cada comando. Por isso eles permanecem.
+
+**Se o repositório for aberto ou compartilhado fora do círculo do responsável**, esses identificadores devem sair do versionamento antes: substituir os e-mails e os IDs de projeto por variáveis de ambiente ou por um arquivo local ignorado pelo Git, e tratar o histórico (reescrita ou novo repositório) conforme o risco. Nenhuma connection string, senha ou token é versionado em nenhum caso.
