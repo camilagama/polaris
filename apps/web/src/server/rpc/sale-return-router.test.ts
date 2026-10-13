@@ -161,6 +161,7 @@ describe("sale.return RPC", () => {
       { reasonCode: "fraud" },
       { saleId: "nope" },
     ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each rejection is asserted before the next input
       await expect(
         client.sale.return({ ...validInput, ...bad })
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });

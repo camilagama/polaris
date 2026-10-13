@@ -47,6 +47,7 @@ interface Line {
   returnedQuantity: number;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the gate is one linear list of independent scenarios
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -433,6 +434,7 @@ async function run() {
         },
       ],
     ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified before the next one starts
       await expectRejected(
         () =>
           giveBack(tenantA, {
@@ -686,6 +688,7 @@ async function run() {
     ];
     for (const point of failurePoints) {
       const triggerName = `pr46_gate_fail_${point.table}`;
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified before the next one starts
       await admin.pool.query(
         `CREATE TRIGGER ${triggerName} BEFORE ${point.event} ON public.${point.table} FOR EACH ROW ${point.when ? `WHEN (${point.when})` : ""} EXECUTE FUNCTION public.pr46_gate_inject_failure()`
       );
@@ -729,7 +732,6 @@ async function run() {
           `balances restored after ${point.label}`
         );
       } finally {
-        // biome-ignore lint/performance/noAwaitInLoops: each trigger is dropped before the next point
         await admin.pool.query(
           `DROP TRIGGER IF EXISTS ${triggerName} ON public.${point.table}`
         );
@@ -802,36 +804,37 @@ async function run() {
     assert.equal((await movementsOf(tenantA, sharedCommand)).length, 1);
 
     // return racing cancellation: exactly one of them wins, never both
-    const duels = await Promise.all(
-      Array.from({ length: 5 }, async () => {
-        const duelSale = await confirmPlainSale(rt, tenantA, [
-          { quantity: 2, variantId: raceProduct.variantId },
-        ]);
-        const outcome = await Promise.allSettled([
-          giveBack(
-            tenantA,
-            {
-              items: [
-                { position: 0, restockedQuantity: 1, returnedQuantity: 1 },
-              ],
-              saleId: duelSale.sale.id,
-            },
-            concurrentDatabase
-          ),
-          cancel(tenantA, duelSale.sale.id, concurrentDatabase),
-        ]);
-        return {
-          cancelled: await admin.pool
-            .query<{ count: string }>(
-              "SELECT count(*)::text AS count FROM public.sale_cancellations WHERE sale_id = $1",
-              [duelSale.sale.id]
-            )
-            .then((result) => Number(result.rows[0]?.count)),
-          outcome,
-          returns: await returnCount(tenantA, duelSale.sale.id),
-        };
-      })
-    );
+    const duels: {
+      cancelled: number;
+      outcome: PromiseSettledResult<unknown>[];
+      returns: number;
+    }[] = [];
+    for (let round = 0; round < 5; round += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each duel needs its own sale and a quiet pool
+      const duelSale = await confirmPlainSale(rt, tenantA, [
+        { quantity: 2, variantId: raceProduct.variantId },
+      ]);
+      const outcome = await Promise.allSettled([
+        giveBack(
+          tenantA,
+          {
+            items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
+            saleId: duelSale.sale.id,
+          },
+          concurrentDatabase
+        ),
+        cancel(tenantA, duelSale.sale.id, concurrentDatabase),
+      ]);
+      const cancelled = await admin.pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM public.sale_cancellations WHERE sale_id = $1",
+        [duelSale.sale.id]
+      );
+      duels.push({
+        cancelled: Number(cancelled.rows[0]?.count),
+        outcome,
+        returns: await returnCount(tenantA, duelSale.sale.id),
+      });
+    }
     for (const duel of duels) {
       assert.equal(
         duel.cancelled + duel.returns,
@@ -896,7 +899,7 @@ async function run() {
     };
     let accepted = 0;
     let rejected = 0;
-    for (let round = 0; round < 24; round++) {
+    for (let round = 0; round < 24; round += 1) {
       const position = next(2);
       const returnedQuantity = 1 + next(4);
       const restockedQuantity = next(returnedQuantity + 2);
@@ -1162,6 +1165,7 @@ async function run() {
       "DELETE FROM public.sale_return_items",
       "TRUNCATE public.sale_return_items",
     ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified before the next one starts
       await expectSqlState(
         () =>
           withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>

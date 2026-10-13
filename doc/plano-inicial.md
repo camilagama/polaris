@@ -2414,6 +2414,8 @@ restocked <= returned
 
 Property tests obrigatórios.
 
+Decisões de implementação do PR46 (detalhes em `docs/business-rules/sales.md`): itens identificados pela posição, várias devoluções por venda até esgotar o disponível, estoque devolvido ao custo do item apenas para as unidades repostas, motivo estruturado opcional, exclusão mútua com o cancelamento total, capability `sale:return`, sem valor monetário nem reembolso nesta etapa. Os property tests estão em `packages/domain/src/sales/sale-return.test.ts` e o gate PostgreSQL inclui uma sequência aleatória verificada contra um modelo.
+
 
 
 ---
@@ -3147,6 +3149,8 @@ operating result estimate
 
 
 Property tests obrigatórios.
+
+Decisões de implementação do PR46 (detalhes em `docs/business-rules/sales.md`): itens identificados pela posição, várias devoluções por venda até esgotar o disponível, estoque devolvido ao custo do item apenas para as unidades repostas, motivo estruturado opcional, exclusão mútua com o cancelamento total, capability `sale:return`, sem valor monetário nem reembolso nesta etapa. Os property tests estão em `packages/domain/src/sales/sale-return.test.ts` e o gate PostgreSQL inclui uma sequência aleatória verificada contra um modelo.
 
 
 

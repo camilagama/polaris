@@ -1015,7 +1015,7 @@ export const polarisContract = {
           items: z.array(saleReturnLine).min(1).max(200),
           organizationId: z.string().trim().min(1),
           reasonCode: z.enum(returnReasonCodes).nullable().optional(),
-          reasonNote: z.string().nullable().optional(),
+          reasonNote: z.string().max(2000).nullable().optional(),
           saleId: z.string().uuid(),
         })
       )

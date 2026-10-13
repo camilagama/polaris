@@ -63,6 +63,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Prazo esperado de recebimento:** estimativa em número de dias da regra de pagamento; não cria data de liquidação nem contas a receber.
 
 **Devolução:** registro de itens devolvidos e da quantidade que volta ao estoque vendável.
+**Cancelamento da venda:** registro compensatório que desfaz a venda inteira devolvendo ao estoque as quantidades de todos os itens; a venda confirmada e seus movimentos originais permanecem. Uma venda é cancelada uma vez e não pode ser cancelada se já tiver devoluções.
+**Quantidade devolvida e quantidade reposta:** em cada linha de devolução, a quantidade que o comprador devolveu e a parte dela que volta ao estoque vendável; a reposta nunca excede a devolvida, e a devolvida nunca excede o que ainda estava disponível para devolução.
 
 **Cliente:** pessoa ou organização que o revendedor escolhe cadastrar ou associar a uma venda. Uma venda não exige cliente.
 

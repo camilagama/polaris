@@ -105,6 +105,23 @@ export function isReturnReasonCode(value: unknown): value is ReturnReasonCode {
   return RETURN_REASON_CODES.some((code) => code === value);
 }
 
+/**
+ * PostgreSQL text cannot hold NUL, and a lone surrogate is silently replaced
+ * on write, which would make a replay of the same note look like a different
+ * payload. Reject both up front.
+ */
+function isStorableText(value: string): boolean {
+  if (value.includes("\u0000")) {
+    return false;
+  }
+  try {
+    encodeURIComponent(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeNote(value: string | null | undefined): string | null {
   if (value === undefined || value === null) {
     return null;
@@ -112,11 +129,15 @@ function normalizeNote(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     throw new InvalidSaleReturnError();
   }
+  // Bound the work before spreading: a note can never be longer than this many UTF-16 units.
+  if (value.length > MAX_RETURN_NOTE_CODE_POINTS * 2) {
+    throw new InvalidSaleReturnError();
+  }
   const note = value.trim();
   if (note === "") {
     return null;
   }
-  if ([...note].length > MAX_RETURN_NOTE_CODE_POINTS) {
+  if ([...note].length > MAX_RETURN_NOTE_CODE_POINTS || !isStorableText(note)) {
     throw new InvalidSaleReturnError();
   }
   return note;
@@ -240,8 +261,10 @@ export function planSaleReturn(
         throw new InvalidSaleReturnError();
       }
       if (
-        !isQuantity(line.returnedQuantity, 1) ||
-        !isQuantity(line.restockedQuantity, 0) ||
+        !(
+          isQuantity(line.returnedQuantity, 1) &&
+          isQuantity(line.restockedQuantity, 0)
+        ) ||
         line.restockedQuantity > line.returnedQuantity
       ) {
         throw new InvalidSaleReturnError();

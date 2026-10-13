@@ -118,6 +118,18 @@ describe("normalizeReturnSaleCommand", () => {
     ).toThrow(UnsupportedSaleReturnCommandVersionError);
   });
 
+  it("rejects notes PostgreSQL could not store faithfully", () => {
+    for (const reasonNote of [
+      "com\u0000nulo",
+      "surrogate \ud800 solto",
+      "x".repeat(5000),
+    ]) {
+      expect(() =>
+        normalizeReturnSaleCommand(command({ reasonCode: "other", reasonNote }))
+      ).toThrow(InvalidSaleReturnError);
+    }
+  });
+
   it("validates the optional structured reason like a cancellation", () => {
     for (const reasonCode of RETURN_REASON_CODES) {
       if (reasonCode === "other") {
@@ -311,7 +323,7 @@ describe("return invariants (property tests)", () => {
         expect(() => planSaleReturn(facts, [line])).toThrow(
           SaleReturnExceedsAvailableError
         );
-        expect(facts[0]?.returnedSoFar).toBe(0);
+        expect(facts.map((fact) => fact.returnedSoFar)).toEqual([0]);
         expect(
           planSaleReturn(facts, [{ ...line, returnedQuantity: sold }])[0]
             ?.availableBefore
