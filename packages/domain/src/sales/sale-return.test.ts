@@ -290,8 +290,26 @@ describe("return invariants (property tests)", () => {
             const facts = sold.map((quantityOf, position) =>
               item(position, quantityOf, returned[position] ?? 0)
             );
-            try {
+            // Oracle: the first line (in position order) that cannot be
+            // returned decides the error; with none, the plan is accepted.
+            const firstBad = [...lines]
+              .sort((left, right) => left.position - right.position)
+              .map((line) => {
+                const available =
+                  (sold[line.position] ?? 0) - (returned[line.position] ?? 0);
+                if (line.returnedQuantity < 1) {
+                  return InvalidSaleReturnError;
+                }
+                return line.returnedQuantity > available
+                  ? SaleReturnExceedsAvailableError
+                  : null;
+              })
+              .find((error) => error !== null);
+            if (firstBad) {
+              expect(() => planSaleReturn(facts, lines)).toThrow(firstBad);
+            } else {
               const plan = planSaleReturn(facts, lines);
+              expect(plan).toHaveLength(lines.length);
               for (const planned of plan) {
                 expect(planned.returnedQuantity).toBeGreaterThanOrEqual(1);
                 expect(planned.restockedQuantity).toBeLessThanOrEqual(
@@ -304,12 +322,6 @@ describe("return invariants (property tests)", () => {
                   (returned[planned.position] ?? 0) + planned.returnedQuantity;
                 restockedTotal += planned.restockedQuantity;
               }
-            } catch (error) {
-              expect(
-                [InvalidSaleReturnError, SaleReturnExceedsAvailableError].some(
-                  (ErrorType) => error instanceof ErrorType
-                )
-              ).toBe(true);
             }
             sold.forEach((quantityOf, position) => {
               expect(returned[position] ?? 0).toBeLessThanOrEqual(quantityOf);
