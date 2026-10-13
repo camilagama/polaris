@@ -2,13 +2,26 @@ import { implement } from "@orpc/server";
 import {
   type ConfirmedSaleReadModel,
   polarisContract,
+  type SaleCancellationReadModel,
   type SaleCustomerLinkReadModel,
+  type SaleDetailReadModel,
+  type SaleListEntryReadModel,
 } from "@polaris/contracts";
+import type {
+  CancelSaleResult,
+  cancelSale,
+  SaleCancellationRecord,
+} from "@polaris/db/sale-cancellation-repository";
 import type {
   changeSaleCustomerLink,
   getSaleCustomerLink,
   SaleCustomerLinkReadModel as SaleCustomerLinkRecord,
 } from "@polaris/db/sale-customer-link-repository";
+import type {
+  getSale,
+  listSales,
+  SaleListEntry,
+} from "@polaris/db/sale-query-repository";
 import type {
   ConfirmSaleResult,
   confirmSale,
@@ -23,12 +36,18 @@ interface SaleRpcContext {
 }
 
 interface SaleRpcDependencies {
+  cancelSale: typeof cancelSale | undefined;
   changeSaleCustomerLink: typeof changeSaleCustomerLink | undefined;
   confirmSale: typeof confirmSale | undefined;
+  defaultCancelSale: typeof cancelSale;
   defaultChangeSaleCustomerLink: typeof changeSaleCustomerLink;
   defaultConfirmSale: typeof confirmSale;
+  defaultGetSale: typeof getSale;
   defaultGetSaleCustomerLink: typeof getSaleCustomerLink;
+  defaultListSales: typeof listSales;
+  getSale: typeof getSale | undefined;
   getSaleCustomerLink: typeof getSaleCustomerLink | undefined;
+  listSales: typeof listSales | undefined;
   requestAuditId: (requestId: string) => string | null;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
@@ -87,6 +106,58 @@ function confirmedSaleReadModel(
   };
 }
 
+function saleCancellationReadModel(
+  cancellation: SaleCancellationRecord
+): SaleCancellationReadModel {
+  return {
+    cancelledAt: cancellation.cancelledAt.toISOString(),
+    cancelledBy: cancellation.cancelledBy,
+    commandId: cancellation.commandId,
+    id: cancellation.id,
+    reasonCode:
+      cancellation.reasonCode as SaleCancellationReadModel["reasonCode"],
+    reasonNote: cancellation.reasonNote,
+    saleId: cancellation.saleId,
+  };
+}
+
+function saleListEntryReadModel(entry: SaleListEntry): SaleListEntryReadModel {
+  return {
+    cancelledAt: entry.cancelledAt?.toISOString() ?? null,
+    confirmedAt: entry.confirmedAt.toISOString(),
+    customerId: entry.customerId,
+    id: entry.id,
+    itemCount: entry.itemCount,
+    occurredAt: entry.occurredAt.toISOString(),
+    paymentMethod: entry.paymentMethod as PaymentMethod | null,
+    status: entry.status,
+    totalDue: entry.totalDue,
+  };
+}
+
+function saleDetailReadModel(
+  detail: Awaited<ReturnType<typeof getSale>>
+): SaleDetailReadModel {
+  const { replayed: _replayed, ...sale } = confirmedSaleReadModel({
+    ...detail.sale,
+    replayed: false,
+  });
+  return {
+    cancellation: detail.cancellation
+      ? saleCancellationReadModel(detail.cancellation)
+      : null,
+    customer: detail.customer,
+    sale,
+  };
+}
+
+function cancelResultReadModel(result: CancelSaleResult) {
+  return {
+    cancellation: saleCancellationReadModel(result.cancellation),
+    replayed: result.replayed,
+    restocked: result.restocked,
+  };
+}
 function saleCustomerLinkReadModel(
   link: SaleCustomerLinkRecord
 ): SaleCustomerLinkReadModel {
@@ -132,6 +203,66 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .catch(dependencies.toRpcError)
   );
 
+  const cancelRepository =
+    dependencies.cancelSale ?? dependencies.defaultCancelSale;
+  const listRepository =
+    dependencies.listSales ?? dependencies.defaultListSales;
+  const getRepository = dependencies.getSale ?? dependencies.defaultGetSale;
+
+  const cancel = implementContract.sale.cancel.handler(({ context, input }) =>
+    dependencies
+      .withTenantRequestContext({
+        bindings: context.bindings,
+        capability: "sale:cancel",
+        operation: (transaction, identity) =>
+          cancelRepository(transaction, identity, {
+            commandId: input.commandId,
+            commandVersion: input.commandVersion,
+            reasonCode: input.reasonCode ?? null,
+            reasonNote: input.reasonNote ?? null,
+            requestId: dependencies.requestAuditId(context.requestId),
+            saleId: input.saleId,
+          }),
+        request: context.request,
+        requestedOrganizationId: input.organizationId,
+      })
+      .then(cancelResultReadModel)
+      .catch(dependencies.toRpcError)
+  );
+
+  const list = implementContract.sale.list.handler(({ context, input }) =>
+    dependencies
+      .withTenantRequestContext({
+        bindings: context.bindings,
+        capability: "sale:read",
+        operation: (transaction, identity) =>
+          listRepository(transaction, identity, {
+            limit: input.limit,
+            offset: input.offset,
+          }),
+        request: context.request,
+        requestedOrganizationId: input.organizationId,
+      })
+      .then((result) => ({
+        hasMore: result.hasMore,
+        sales: result.sales.map(saleListEntryReadModel),
+      }))
+      .catch(dependencies.toRpcError)
+  );
+
+  const get = implementContract.sale.get.handler(({ context, input }) =>
+    dependencies
+      .withTenantRequestContext({
+        bindings: context.bindings,
+        capability: "sale:read",
+        operation: (transaction, identity) =>
+          getRepository(transaction, identity, input.saleId),
+        request: context.request,
+        requestedOrganizationId: input.organizationId,
+      })
+      .then(saleDetailReadModel)
+      .catch(dependencies.toRpcError)
+  );
   const changeLink =
     dependencies.changeSaleCustomerLink ??
     dependencies.defaultChangeSaleCustomerLink;
@@ -195,8 +326,11 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
 
   return {
     assignCustomer,
+    cancel,
     confirm,
+    get,
     getCustomerLink,
+    list,
     reassignCustomer,
     unassignCustomer,
   };

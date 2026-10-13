@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import type { createDatabase } from "../src/client";
+import { inventoryCount, receiveStock } from "../src/inventory-repository";
 import { createProduct } from "../src/product-repository";
+import { type ConfirmSaleResult, confirmSale } from "../src/sale-repository";
 import { productVariants } from "../src/schema/product";
 import {
   type TenantRequestIdentity,
@@ -223,4 +225,92 @@ export function redactedFailure(error: unknown): string {
       ? error.stack.replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted]")
       : "";
   return `${name}${code ? `, ${code}` : ""}: ${message}${stack ? `\n${stack}` : ""}`;
+}
+
+export interface GateRuntime {
+  adminPool: AdminPool;
+  db: Database;
+}
+
+/** A catalog product with one sellable variant and an opening stock (null cost = unknown). */
+export async function createSellableProduct(
+  runtime: GateRuntime,
+  tenant: TenantFixture,
+  label: string,
+  stock: { cost: string | null; quantity: number }
+) {
+  const product = await withTenantAs(
+    runtime.db,
+    tenant,
+    "product:create",
+    (transaction, identity) =>
+      createProduct(transaction, identity, {
+        name: `Produto ${label}`,
+        requestId: randomUUID(),
+      })
+  );
+  const variant = await runtime.adminPool.query<{ id: string }>(
+    "SELECT id FROM public.product_variants WHERE organization_id = $1 AND product_id = $2",
+    [tenant.organizationId, product.id]
+  );
+  const variantId = variant.rows[0]?.id;
+  assert.ok(variantId);
+  await withTenantAs(
+    runtime.db,
+    tenant,
+    "inventory:adjust",
+    async (transaction, identity) => {
+      if (stock.cost === null) {
+        await inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: 0,
+          occurredOn: "2026-10-01",
+          physicalQuantity: stock.quantity,
+          valuationUnitCost: null,
+          variantId,
+        });
+      } else {
+        await receiveStock(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          occurredOn: "2026-10-01",
+          quantity: stock.quantity,
+          unitCost: stock.cost,
+          variantId,
+        });
+      }
+    }
+  );
+  return { productId: product.id, variantId, version: product.version };
+}
+
+/** Confirms a plain pix sale without profile for the given variants. */
+export function confirmPlainSale(
+  runtime: GateRuntime,
+  tenant: TenantFixture,
+  items: { chargedUnitPrice?: string; quantity: number; variantId: string }[],
+  options: { occurredAt?: string } = {}
+): Promise<ConfirmSaleResult> {
+  return withTenantAs(
+    runtime.db,
+    tenant,
+    "sale:create",
+    (transaction, identity) =>
+      confirmSale(transaction, identity, {
+        adjustments: [],
+        commandId: randomUUID(),
+        commandVersion: 1,
+        items: items.map((item) => ({
+          chargedUnitPrice: item.chargedUnitPrice ?? "19.90",
+          listedUnitPrice: "20.00",
+          quantity: item.quantity,
+          variantId: item.variantId,
+        })),
+        occurredAt: options.occurredAt ?? "2026-10-12T15:30:00-03:00",
+        payment: { anticipationRequested: false, method: "pix" },
+        paymentProfile: null,
+        requestId: randomUUID(),
+      })
+  );
 }

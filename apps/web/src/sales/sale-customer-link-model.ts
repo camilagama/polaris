@@ -38,6 +38,9 @@ const successMessages: Readonly<Record<LinkAction, string>> = {
   unassign: "Cliente removido da venda.",
 };
 
+export const INVALID_SALE_ID_MESSAGE =
+  "Informe um identificador de venda válido (um UUID, como 123e4567-e89b-42d3-a456-426614174000).";
+
 /* -------------------------------------------------------------------------- */
 /* Sale identifier (standalone page)                                          */
 /* -------------------------------------------------------------------------- */
@@ -552,7 +555,7 @@ export function mapLinkError(error: unknown): LinkFailure {
 /* Views                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function customerName(
+export function customerName(
   customers: Loadable<readonly CustomerReadModel[]>,
   customerId: string
 ): string {

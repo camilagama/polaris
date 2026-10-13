@@ -76,6 +76,8 @@ import {
   variantsView,
 } from "./sale-form-model";
 import { SaleCustomerDisclosure } from "./sale-customer-panel";
+import { saleDetailHref } from "./sale-history-model";
+import { SaleSnapshot } from "./sale-snapshot";
 import { readOrganizationId, SalesTopbar } from "./sales-shell";
 import { useSaleCatalog } from "./use-sale-catalog";
 
@@ -894,50 +896,12 @@ function ConfirmedSalePanel({
       <h2 id="sale-confirmed-title" role="status">
         {sale.headline}
       </h2>
-      <dl className="sale-details">
-        {sale.saleDetails.map((detail) => (
-          <div key={detail.label}>
-            <dt>{detail.label}</dt>
-            <dd>{detail.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <h3>Itens</h3>
-      <ul className="sale-lines">
-        {sale.items.map((item) => (
-          <li key={item.key}>
-            <span className="sale-line-label">{item.label}</span>
-            <span>{item.detail}</span>
-            <small>{item.costText}</small>
-          </li>
-        ))}
-      </ul>
-      <dl className="sale-totals">
-        {sale.totals.map((row) => (
-          <div className={`is-${row.tone}`} key={row.key}>
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <h3>Pagamento</h3>
-      <dl className="sale-details">
-        {sale.paymentDetails.map((detail) => (
-          <div key={detail.label}>
-            <dt>{detail.label}</dt>
-            <dd
-              className={
-                detail.tone === "plain"
-                  ? undefined
-                  : `sale-fee is-${detail.tone}`
-              }
-            >
-              {detail.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="sale-hint">{sale.note}</p>
+      <SaleSnapshot sale={sale} />
+      <p className="sale-hint">
+        <a href={saleDetailHref(sale.saleId)}>
+          Ver detalhes e histórico da venda
+        </a>
+      </p>
       <p className="sale-hint">
         O formulário abaixo foi reiniciado para uma nova venda.
       </p>

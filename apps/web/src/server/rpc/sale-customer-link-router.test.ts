@@ -16,8 +16,8 @@ import {
   SaleCustomerArchivedError,
   SaleCustomerLinkStateError,
   SaleCustomerLinkVersionConflictError,
-  SaleNotFoundError,
 } from "@polaris/domain/sales/sale-customer-link";
+import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";

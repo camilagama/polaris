@@ -10,7 +10,7 @@ export function readOrganizationId(): string | null {
 }
 
 interface SalesTopbarProps {
-  current: "customer" | "sale";
+  current: "customer" | "history" | "sale";
 }
 
 export function SalesTopbar({ current }: SalesTopbarProps) {
@@ -29,6 +29,12 @@ export function SalesTopbar({ current }: SalesTopbarProps) {
         <a href="/payment-profiles">Perfis de pagamento</a>
         <a aria-current={current === "sale" ? "page" : undefined} href="/sales">
           Nova venda
+        </a>
+        <a
+          aria-current={current === "history" ? "page" : undefined}
+          href="/sales/history"
+        >
+          Histórico
         </a>
         <a
           aria-current={current === "customer" ? "page" : undefined}

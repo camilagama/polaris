@@ -9,8 +9,8 @@ import {
   SaleCustomerLinkVersionConflictError,
   type SaleCustomerLinkState,
   saleCustomerLinkAuditEvent,
-  SaleNotFoundError,
 } from "@polaris/domain/sales/sale-customer-link";
+import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { customers } from "./schema/customer";
 import { sales } from "./schema/sale";

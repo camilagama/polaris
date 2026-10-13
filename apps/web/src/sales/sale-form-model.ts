@@ -157,7 +157,7 @@ export function formatPercentage(value: string): string {
   return `${whole}${trimmed ? `,${trimmed}` : ""}%`;
 }
 
-function formatInstant(value: string): string {
+export function formatInstant(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);
 }
@@ -1759,6 +1759,11 @@ function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
   }
 }
 
+/** True when the server answered definitively (4xx); anything else may have taken effect. */
+export function isDefiniteRejection(error: unknown): boolean {
+  return definiteFailure(rpcErrorCode(error)) !== null;
+}
+
 /**
  * Maps an oRPC error to a message and to what the page should do next. A known
  * `data.reason` on a 400/404/409 refines the generic per-code message.
@@ -1923,7 +1928,9 @@ function confirmedPaymentDetails(
 }
 
 /** Display model of the confirmed sale exactly as the server returned it. */
-function confirmedSaleView(sale: ConfirmedSaleReadModel): ConfirmedSaleView {
+export function confirmedSaleView(
+  sale: ConfirmedSaleReadModel
+): ConfirmedSaleView {
   return {
     saleId: sale.sale.id,
     headline: sale.replayed

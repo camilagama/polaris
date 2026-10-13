@@ -67,15 +67,6 @@ export class SaleCustomerLinkStateError extends Error {
   }
 }
 
-export class SaleNotFoundError extends Error {
-  readonly code = "sale_not_found";
-
-  constructor() {
-    super("sale_not_found");
-    this.name = "SaleNotFoundError";
-  }
-}
-
 /** Archived customers leave the active choices, so they cannot be newly linked. */
 export class SaleCustomerArchivedError extends Error {
   readonly code = "sale_customer_archived";

@@ -4,6 +4,8 @@ import { ProductsPage } from "./catalog/products-page";
 import { CustomersPage } from "./customers/customers-page";
 import { PaymentProfilesPage } from "./payment-profiles/payment-profiles-page";
 import { SaleCustomerPage } from "./sales/sale-customer-page";
+import { SaleDetailPage } from "./sales/sale-detail-page";
+import { SaleHistoryPage } from "./sales/sale-history-page";
 import { SalePage } from "./sales/sale-page";
 import "./styles.css";
 
@@ -51,6 +53,12 @@ if (isOfflinePocRoute) {
       break;
     case "/payment-profiles":
       root.render(<PaymentProfilesPage />);
+      break;
+    case "/sales/history":
+      root.render(<SaleHistoryPage />);
+      break;
+    case "/sales/detail":
+      root.render(<SaleDetailPage />);
       break;
     case "/sales/customer":
       root.render(<SaleCustomerPage />);

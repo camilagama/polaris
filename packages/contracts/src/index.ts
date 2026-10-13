@@ -444,6 +444,61 @@ const confirmedSale = z.object({
 
 export type ConfirmedSaleReadModel = z.infer<typeof confirmedSale>;
 
+const cancellationReasonCodes = [
+  "customer_request",
+  "entry_error",
+  "payment_issue",
+  "other",
+] as const;
+
+const saleCancellation = z.object({
+  cancelledAt: z.string().datetime(),
+  cancelledBy: z.string().min(1),
+  commandId: z.string().uuid(),
+  id: z.string().uuid(),
+  reasonCode: z.enum(cancellationReasonCodes).nullable(),
+  reasonNote: z.string().nullable(),
+  saleId: z.string().uuid(),
+});
+
+export type SaleCancellationReadModel = z.infer<typeof saleCancellation>;
+
+const cancelledSaleResult = z.object({
+  cancellation: saleCancellation,
+  replayed: z.boolean(),
+  restocked: z.array(
+    z.object({
+      position: z.number().int().nonnegative(),
+      quantity: z.number().int().positive(),
+      variantId: z.string().uuid(),
+    })
+  ),
+});
+
+const saleListEntry = z.object({
+  cancelledAt: z.string().datetime().nullable(),
+  confirmedAt: z.string().datetime(),
+  customerId: z.string().uuid().nullable(),
+  id: z.string().uuid(),
+  itemCount: z.number().int().positive(),
+  occurredAt: z.string().datetime(),
+  paymentMethod: z.enum(SALE_PAYMENT_METHODS).nullable(),
+  status: z.enum(["confirmed", "cancelled"]),
+  totalDue: z.string(),
+});
+
+export type SaleListEntryReadModel = z.infer<typeof saleListEntry>;
+
+const saleDetail = z.object({
+  cancellation: saleCancellation.nullable(),
+  customer: z.object({
+    customerId: z.string().uuid().nullable(),
+    version: z.number().int().nonnegative().max(2_147_483_647),
+  }),
+  sale: confirmedSale.omit({ replayed: true }),
+});
+
+export type SaleDetailReadModel = z.infer<typeof saleDetail>;
 const saleCustomerLinkAction = z.enum(["assign", "reassign", "unassign"]);
 
 const saleCustomerLink = z.object({
@@ -887,6 +942,37 @@ export const polarisContract = {
     assignCustomer: oc
       .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
       .output(saleCustomerLinkChange),
+    cancel: oc
+      .input(
+        z.object({
+          commandId: z.string().uuid(),
+          commandVersion: z.literal(1),
+          organizationId: z.string().trim().min(1),
+          reasonCode: z.enum(cancellationReasonCodes).nullable().optional(),
+          reasonNote: z.string().nullable().optional(),
+          saleId: z.string().uuid(),
+        })
+      )
+      .output(cancelledSaleResult),
+    get: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          saleId: z.string().uuid(),
+        })
+      )
+      .output(saleDetail),
+    list: oc
+      .input(
+        z.object({
+          limit: z.number().int().min(1).max(100).default(50),
+          offset: z.number().int().min(0).max(1_000_000).default(0),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({ hasMore: z.boolean(), sales: z.array(saleListEntry) })
+      ),
     getCustomerLink: oc
       .input(
         z.object({

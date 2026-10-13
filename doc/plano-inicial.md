@@ -2372,6 +2372,8 @@ Nunca editar itens antigos.
 
 Gerar inverse inventory movements.
 
+Decisões de implementação do PR45 (detalhes em `docs/business-rules/sales.md`): cancelamento total em `sale_cancellations`, uma vez por venda, idempotente por `commandId`; motivo estruturado opcional (lista V1 definida pelo projeto); estoque devolvido ao custo do item; produto removido bloqueia o cancelamento; capabilities `sale:cancel` e `sale:read`; leitura `sale.list`/`sale.get` e telas de histórico e detalhe.
+
 
 
 ---

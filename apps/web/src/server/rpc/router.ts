@@ -37,10 +37,12 @@ import {
   restorePaymentProfile,
   updatePaymentProfile,
 } from "@polaris/db/payment-profile-repository";
+import { cancelSale } from "@polaris/db/sale-cancellation-repository";
 import {
   changeSaleCustomerLink,
   getSaleCustomerLink,
 } from "@polaris/db/sale-customer-link-repository";
+import { getSale, listSales } from "@polaris/db/sale-query-repository";
 import { confirmSale } from "@polaris/db/sale-repository";
 import {
   archiveProduct,
@@ -112,12 +114,18 @@ import {
   UnsupportedWriteOffStockCommandVersionError,
 } from "@polaris/domain/inventory/write-off-stock";
 import {
+  InvalidSaleCancellationError,
+  SaleAlreadyCancelledError,
+  SaleCancellationCommandConflictError,
+  UnsupportedSaleCancellationCommandVersionError,
+} from "@polaris/domain/sales/sale-cancellation";
+import {
   InvalidSaleCustomerLinkError,
   SaleCustomerArchivedError,
   SaleCustomerLinkStateError,
   SaleCustomerLinkVersionConflictError,
-  SaleNotFoundError,
 } from "@polaris/domain/sales/sale-customer-link";
+import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import {
   InvalidConfirmSaleCommandError,
   SaleOccurredInFutureError,
@@ -192,9 +200,12 @@ interface RpcRouterDependencies {
   configureProductVariants: typeof configureProductVariants;
   createCategory: typeof createCategory;
   createCustomer: typeof createCustomer;
+  cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
   confirmSale: typeof confirmSale;
+  getSale: typeof getSale;
   getSaleCustomerLink: typeof getSaleCustomerLink;
+  listSales: typeof listSales;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
@@ -516,6 +527,8 @@ const badRequestRpcErrors = [
     InvalidConfirmSaleCommandError,
     SaleOccurredInFutureError,
     InvalidSaleCustomerLinkError,
+    InvalidSaleCancellationError,
+    UnsupportedSaleCancellationCommandVersionError,
     UnsupportedConfirmSaleCommandVersionError,
     InvalidSaleAdjustmentError,
     SaleAdjustmentLimitError,
@@ -565,6 +578,7 @@ const conflictRpcErrors = [
     PaymentProfileLifecycleError,
   ],
   [SaleCommandConflictError, SaleProductUnavailableError],
+  [SaleAlreadyCancelledError, SaleCancellationCommandConflictError],
   [
     SaleCustomerArchivedError,
     SaleCustomerLinkStateError,
@@ -998,12 +1012,18 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const saleHandlers = createSaleRpcHandlers({
+    cancelSale: overrides.cancelSale,
     changeSaleCustomerLink: overrides.changeSaleCustomerLink,
     confirmSale: overrides.confirmSale,
+    defaultCancelSale: cancelSale,
     defaultChangeSaleCustomerLink: changeSaleCustomerLink,
     defaultConfirmSale: confirmSale,
+    defaultGetSale: getSale,
     defaultGetSaleCustomerLink: getSaleCustomerLink,
+    defaultListSales: listSales,
+    getSale: overrides.getSale,
     getSaleCustomerLink: overrides.getSaleCustomerLink,
+    listSales: overrides.listSales,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1526,8 +1546,11 @@ export function createRpcRouter(
     },
     sale: {
       assignCustomer: saleHandlers.assignCustomer,
+      cancel: saleHandlers.cancel,
       confirm: saleHandlers.confirm,
+      get: saleHandlers.get,
       getCustomerLink: saleHandlers.getCustomerLink,
+      list: saleHandlers.list,
       reassignCustomer: saleHandlers.reassignCustomer,
       unassignCustomer: saleHandlers.unassignCustomer,
     },

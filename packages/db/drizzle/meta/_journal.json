@@ -253,6 +253,13 @@
       "when": 1791914332598,
       "tag": "0035_salty_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791917156868,
+      "tag": "0036_shiny_genesis",
+      "breakpoints": true
     }
   ]
 }

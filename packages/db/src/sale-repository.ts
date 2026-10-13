@@ -117,7 +117,7 @@ function samePercentage(left: string | null, right: string | null): boolean {
     : Percentage.from(left).toString() === Percentage.from(right).toString();
 }
 
-async function readConfirmedSale(
+export async function readConfirmedSale(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   header: typeof sales.$inferSelect

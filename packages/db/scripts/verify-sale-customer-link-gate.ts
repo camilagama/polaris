@@ -5,8 +5,8 @@ import {
   SaleCustomerArchivedError,
   SaleCustomerLinkStateError,
   SaleCustomerLinkVersionConflictError,
-  SaleNotFoundError,
 } from "@polaris/domain/sales/sale-customer-link";
+import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { createDatabase } from "../src/client";
 import { archiveCustomer, createCustomer } from "../src/customer-repository";
 import { receiveStock } from "../src/inventory-repository";
