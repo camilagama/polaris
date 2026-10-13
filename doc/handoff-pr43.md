@@ -162,3 +162,7 @@ Use fixtures sintéticas. Não clone dados de produção. O perfil autorizado n�
 - Peça revisão independente para a fronteira transacional/RLS de PR43; corrija findings Critical/Important antes de marcar a etapa concluída.
 - Mantenha PR43 em draft e não faça merge em `main` até o responsável revisar a cadeia e autorizar a integração.
 - Não copie tokens nem connection strings para mensagens, commits, fixtures ou arquivos de handoff.
+
+## 9. Atualização pós-PR43 (13 de outubro de 2026)
+
+PR43 foi implementado em `codex/pr43-sale-transaction`, empilhado sobre `codex/pr42-payment-profiles` (`5c38919`), em draft. O estado, as evidências, o gate PostgreSQL 18 e as perguntas abertas estão na seção PR43 de [`status-implementacao.md`](status-implementacao.md); as regras estão em `docs/business-rules/sales.md`. Para PR44, crie a branch sobre o head vigente de PR43 e lembre que: a escrita nas tabelas de venda agora existe (INSERT com gatilhos deferidos de completude, sem UPDATE/DELETE); a atribuição de cliente deve ser uma tabela própria e não pode mudar a economia da venda; a branch de gate Neon do PR43 expira em 14/10/2026 às 16:30 UTC e não deve ser reutilizada.

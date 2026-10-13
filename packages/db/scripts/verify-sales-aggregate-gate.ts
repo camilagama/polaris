@@ -6,10 +6,8 @@ import {
   type PaymentFeeMode,
   type PaymentProfileForSale,
 } from "@polaris/domain/sales/payment-profile";
-import { and, eq } from "drizzle-orm";
-import { Client } from "pg";
+import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/client";
-import { createProduct } from "../src/product-repository";
 import {
   archivePaymentProfile,
   createPaymentProfile,
@@ -23,183 +21,147 @@ import {
   salePayments,
   sales,
 } from "../src/schema/sale";
+import { stockMovements } from "../src/schema/inventory";
 import {
   paymentProfileRules,
   paymentProfiles,
 } from "../src/schema/payment-profile";
-import { productVariants } from "../src/schema/product";
 import {
-  type TenantRequestIdentity,
-  type TenantRequestTransaction,
-  withAuthorizedTenantTransaction,
+  createProductFixture,
+  createTenantFixture,
+  disposableHostPattern,
+  expectSqlState,
+  poolerPattern,
+  requiredEnvironment,
+  runtimeRole,
+  sqlState,
+  temporaryRuntimeUrl,
+  type ProductFixture,
+  withRuntimeSqlContext,
+  withTenant,
+} from "./sales-gate-support";
+import type {
+  TenantRequestIdentity,
+  TenantRequestTransaction,
 } from "../src/tenant-transaction";
 
-const expectedBranch = "pr42-payment-profiles-gate";
+const expectedBranch = "pr43-sale-transaction-gate";
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
-const runtimeRole = "polaris_pr11_runtime";
-const sqlStatePattern = /^[0-9A-Z]{5}$/;
-const poolerPattern = /pooler/i;
-const disposableHostPattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 
-type Database = ReturnType<typeof createDatabase>["db"];
-type AdminPool = ReturnType<typeof createDatabase>["pool"];
-
-interface TenantFixture {
-  organizationId: string;
-  userId: string;
+interface SaleGraphOptions {
+  adjustments?: Array<{
+    amount: string;
+    kind: string;
+    percentage?: string | null;
+    valueType: string;
+  }>;
+  commandId?: string;
+  itemPrice: string;
+  listedItemPrice?: string;
+  payment: Partial<typeof salePayments.$inferInsert> & { amount: string };
+  quantity?: number;
 }
 
-interface ProductFixture {
-  productId: string;
-  variantId: string;
-}
-
-function requiredEnvironment(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing ${name}.`);
-  }
-  return value;
-}
-
-function sqlState(error: unknown): string | undefined {
-  const visited = new Set<object>();
-  let current: unknown = error;
-  while (typeof current === "object" && current !== null) {
-    if (visited.has(current)) {
-      return undefined;
-    }
-    visited.add(current);
-    const candidate = current as { cause?: unknown; code?: unknown };
-    if (
-      typeof candidate.code === "string" &&
-      sqlStatePattern.test(candidate.code)
-    ) {
-      return candidate.code;
-    }
-    current = candidate.cause;
-  }
-  return undefined;
-}
-
-async function expectSqlState(
-  operation: () => Promise<unknown>,
-  expected: string,
-  label: string
-): Promise<void> {
-  await assert.rejects(
-    operation,
-    (error: unknown) => {
-      assert.equal(sqlState(error), expected, label);
-      return true;
-    },
-    label
-  );
-}
-
-async function createTenantFixture(
-  adminPool: AdminPool,
-  label: string
-): Promise<TenantFixture> {
-  const userId = randomUUID();
-  const organizationId = randomUUID();
-  await adminPool.query(
-    'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
-    [userId, `PR38 sales gate ${label}`, `pr38-${userId}@example.invalid`]
-  );
-  await adminPool.query(
-    "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, $2, $3)",
-    [organizationId, `PR38 sales gate ${label}`, "America/Sao_Paulo"]
-  );
-  await adminPool.query(
-    "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
-    [organizationId, userId]
-  );
-  return { organizationId, userId };
-}
-
-async function withTenant<T>(
-  database: Database,
-  fixture: TenantFixture,
-  operation: (
-    transaction: TenantRequestTransaction,
-    identity: TenantRequestIdentity
-  ) => Promise<T>
-): Promise<T> {
-  return await withAuthorizedTenantTransaction(
-    database,
-    {
-      authenticatedUserId: fixture.userId,
-      capability: "catalog:read",
-      requestedOrganizationId: fixture.organizationId,
-    },
-    operation
-  );
-}
-
-async function withRuntimeSqlContext<T>(
-  connectionString: string,
-  fixture: TenantFixture,
-  operation: (client: Client) => Promise<T>
-): Promise<T> {
-  const client = new Client({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-  });
-  await client.connect();
-  await client.query("BEGIN");
-  try {
-    await client.query(
-      "SELECT set_config('app.organization_id', $1, true), set_config('app.user_id', $2, true)",
-      [fixture.organizationId, fixture.userId]
-    );
-    const result = await operation(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    await client.end();
-  }
-}
-
-function temporaryRuntimeUrl(adminUrl: string, role: string, password: string) {
-  const url = new URL(adminUrl);
-  url.username = role;
-  url.password = password;
-  return url.toString();
-}
-
-async function createProductFixture(
-  database: Database,
-  fixture: TenantFixture,
-  label: string
-): Promise<ProductFixture> {
-  const product = await withTenant(database, fixture, (transaction, identity) =>
-    createProduct(transaction, identity, {
-      name: `Produto sintético ${label}`,
-      requestId: randomUUID(),
+// Inserts a complete confirmed-sale graph in the caller's transaction. Header-
+// only commits are rejected by PostgreSQL, so every fixture is a whole sale.
+async function insertSaleGraph(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  product: ProductFixture,
+  options: SaleGraphOptions
+) {
+  const commandId = options.commandId ?? randomUUID();
+  const quantity = options.quantity ?? 1;
+  const adjustments = options.adjustments ?? [];
+  const [sale] = await transaction
+    .insert(sales)
+    .values({
+      adjustmentCount: adjustments.length,
+      commandId,
+      currency: "BRL",
+      itemCount: 1,
+      occurredAt: new Date("2026-10-13T15:00:00.000Z"),
+      organizationId: identity.organizationId,
     })
-  );
-  const [variant] = await withTenant(
-    database,
-    fixture,
-    async (transaction) =>
-      await transaction
-        .select({ id: productVariants.id })
-        .from(productVariants)
-        .where(
-          and(
-            eq(productVariants.organizationId, fixture.organizationId),
-            eq(productVariants.productId, product.id)
+    .returning();
+  assert.ok(sale);
+  const [item] = await transaction
+    .insert(saleItems)
+    .values({
+      chargedUnitPrice: options.itemPrice,
+      listedUnitPrice: options.listedItemPrice ?? options.itemPrice,
+      organizationId: identity.organizationId,
+      position: 0,
+      productId: product.productId,
+      productLabel: "Produto sintético",
+      quantity,
+      saleId: sale.id,
+      unitCost: null,
+      variantId: product.variantId,
+    })
+    .returning();
+  assert.ok(item);
+  const insertedAdjustments =
+    adjustments.length === 0
+      ? []
+      : await transaction
+          .insert(saleAdjustments)
+          .values(
+            adjustments.map((adjustment, position) => ({
+              amount: adjustment.amount,
+              kind: adjustment.kind,
+              organizationId: identity.organizationId,
+              percentage: adjustment.percentage ?? null,
+              position,
+              saleId: sale.id,
+              valueType: adjustment.valueType,
+            }))
           )
-        )
-        .limit(1)
-  );
-  assert.ok(variant);
-  return { productId: product.id, variantId: variant.id };
+          .returning();
+  const [payment] = await transaction
+    .insert(salePayments)
+    .values({
+      method: "cash",
+      organizationId: identity.organizationId,
+      saleId: sale.id,
+      ...options.payment,
+    })
+    .returning();
+  assert.ok(payment);
+  await transaction.insert(stockMovements).values({
+    commandId,
+    commandIndex: 0,
+    commandVersion: 1,
+    movementType: "sale",
+    occurredOn: "2026-10-13",
+    organizationId: identity.organizationId,
+    productId: product.productId,
+    quantityDelta: -quantity,
+    unitCost: null,
+    variantId: product.variantId,
+  });
+  return { adjustment: insertedAdjustments[0], item, payment, sale };
+}
+
+async function insertSaleHeader(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  overrides: Partial<typeof sales.$inferInsert> = {}
+) {
+  const [sale] = await transaction
+    .insert(sales)
+    .values({
+      adjustmentCount: 0,
+      commandId: randomUUID(),
+      currency: "BRL",
+      itemCount: 1,
+      occurredAt: new Date("2026-10-13T15:00:00.000Z"),
+      organizationId: identity.organizationId,
+      ...overrides,
+    })
+    .returning();
+  assert.ok(sale);
+  return sale;
 }
 
 async function run() {
@@ -214,7 +176,6 @@ async function run() {
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let loginRole: string | undefined;
   let loginRoleCreated = false;
-  const temporaryInsertPolicies: Array<{ name: string; table: string }> = [];
   const tests: string[] = [];
 
   try {
@@ -293,28 +254,28 @@ async function run() {
     assert.deepEqual(privileges.rows, [
       {
         can_delete: false,
-        can_insert: false,
+        can_insert: true,
         can_select: true,
         can_update: false,
         table_name: "sale_adjustments",
       },
       {
         can_delete: false,
-        can_insert: false,
+        can_insert: true,
         can_select: true,
         can_update: false,
         table_name: "sale_items",
       },
       {
         can_delete: false,
-        can_insert: false,
+        can_insert: true,
         can_select: true,
         can_update: false,
         table_name: "sale_payments",
       },
       {
         can_delete: false,
-        can_insert: false,
+        can_insert: true,
         can_select: true,
         can_update: false,
         table_name: "sales",
@@ -330,9 +291,23 @@ async function run() {
         runtimeRole,
       ]
     );
-    assert.deepEqual(runtimeInsertPolicies.rows, []);
+    assert.deepEqual(runtimeInsertPolicies.rows, [
+      {
+        policyname: "sale_adjustments_current_tenant_insert",
+        tablename: "sale_adjustments",
+      },
+      {
+        policyname: "sale_items_current_tenant_insert",
+        tablename: "sale_items",
+      },
+      {
+        policyname: "sale_payments_current_tenant_insert",
+        tablename: "sale_payments",
+      },
+      { policyname: "sales_current_tenant_insert", tablename: "sales" },
+    ]);
     tests.push(
-      "sales, items, adjustments, and payments use FORCE RLS; app runtime is read-only"
+      "sales, items, adjustments, and payments use FORCE RLS; app runtime has tenant-scoped INSERT and no UPDATE/DELETE"
     );
 
     const tenantA = await createTenantFixture(admin.pool, "A");
@@ -345,45 +320,6 @@ async function run() {
     );
     loginRoleCreated = true;
     await admin.pool.query(`GRANT "${runtimeRole}" TO "${loginRole}"`);
-
-    const gateInsertPolicyPrefixes = {
-      sale_adjustments: "sa",
-      sale_items: "si",
-      sale_payments: "sp",
-      sales: "s",
-    } as const;
-    const gateInsertPolicies = (
-      ["sales", "sale_items", "sale_adjustments", "sale_payments"] as const
-    ).map((table) => ({
-      name: `${gateInsertPolicyPrefixes[table]}_${loginSuffix}_i`,
-      table,
-    }));
-    temporaryInsertPolicies.push(...gateInsertPolicies);
-    await Promise.all(
-      gateInsertPolicies.map(async ({ name, table }) => {
-        await admin.pool.query(
-          `GRANT INSERT ON TABLE public.${table} TO "${loginRole}"`
-        );
-        await admin.pool.query(
-          `CREATE POLICY "${name}" ON public.${table} AS PERMISSIVE FOR INSERT TO "${loginRole}" WITH CHECK (
-            organization_id = NULLIF(current_setting('app.organization_id', true), '')
-            AND EXISTS (
-              SELECT 1
-              FROM public.memberships AS membership_scope
-              WHERE membership_scope.organization_id = NULLIF(current_setting('app.organization_id', true), '')
-                AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')
-                AND membership_scope.status = 'active'
-            )
-            AND EXISTS (
-              SELECT 1
-              FROM public.organizations AS organization_scope
-              WHERE organization_scope.id = NULLIF(current_setting('app.organization_id', true), '')
-                AND organization_scope.status = 'active'
-            )
-          )`
-        );
-      })
-    );
 
     const runtimeUrl = temporaryRuntimeUrl(adminUrl, loginRole, loginPassword);
     const runtimeDatabase = createDatabase(runtimeUrl, { maxConnections: 1 });
@@ -407,29 +343,17 @@ async function run() {
       runtimeDatabase.db,
       tenantA,
       async (transaction, identity) => {
-        const [sale] = await transaction
-          .insert(sales)
-          .values({
-            commandId: randomUUID(),
-            organizationId: identity.organizationId,
-            currency: "BRL",
-          })
-          .returning();
-        assert.ok(sale);
-        const [payment] = await transaction
-          .insert(salePayments)
-          .values({
+        const graph = await insertSaleGraph(transaction, identity, productA, {
+          itemPrice: "1.00",
+          payment: {
             amount: "1.00",
             installmentPlan: null,
             installmentPlanUnknown: true,
             installments: 3,
             method: "credit_card",
-            organizationId: identity.organizationId,
-            saleId: sale.id,
-          })
-          .returning();
-        assert.ok(payment);
-        return payment;
+          },
+        });
+        return graph.payment;
       }
     );
     assert.equal(syntheticLegacySale.installmentPlan, null);
@@ -438,35 +362,21 @@ async function run() {
       "legacy credit payment can retain unknown installment plan without inferring merchant/issuer"
     );
 
-    const noPlanSale = await withTenant(
-      runtimeDatabase.db,
-      tenantA,
-      async (transaction, identity) => {
-        const [sale] = await transaction
-          .insert(sales)
-          .values({
-            commandId: randomUUID(),
-            organizationId: identity.organizationId,
-            currency: "BRL",
-          })
-          .returning();
-        assert.ok(sale);
-        return sale;
-      }
-    );
     await expectSqlState(
       () =>
         withTenant(
           runtimeDatabase.db,
           tenantA,
-          async (transaction, identity) =>
+          async (transaction, identity) => {
+            const sale = await insertSaleHeader(transaction, identity);
             await transaction.insert(salePayments).values({
               amount: "1.00",
               installments: 1,
               method: "credit_card",
               organizationId: identity.organizationId,
-              saleId: noPlanSale.id,
-            })
+              saleId: sale.id,
+            });
+          }
         ),
       "23514",
       "new credit payment without installment plan is rejected"
@@ -637,28 +547,13 @@ async function run() {
       "profile and rule RLS rejects cross-tenant writes and hides reads"
     );
 
-    const profileFkProbeSale = await withTenant(
-      runtimeDatabase.db,
-      tenantA,
-      async (transaction, identity) => {
-        const [sale] = await transaction
-          .insert(sales)
-          .values({
-            commandId: randomUUID(),
-            organizationId: identity.organizationId,
-            currency: "BRL",
-          })
-          .returning();
-        assert.ok(sale);
-        return sale;
-      }
-    );
     await expectSqlState(
       () =>
         withTenant(
           runtimeDatabase.db,
           tenantA,
-          async (transaction, identity) =>
+          async (transaction, identity) => {
+            const sale = await insertSaleHeader(transaction, identity);
             await transaction.insert(salePayments).values({
               amount: "1.00",
               installments: null,
@@ -667,8 +562,9 @@ async function run() {
               paymentProfileId: tenantBProfile.id,
               paymentProfileNameSnapshot: tenantBProfile.name,
               paymentProfileVersionSnapshot: tenantBProfile.version,
-              saleId: profileFkProbeSale.id,
-            })
+              saleId: sale.id,
+            });
+          }
         ),
       "23503",
       "sale snapshot cannot reference another tenant profile"
@@ -678,7 +574,8 @@ async function run() {
         withTenant(
           runtimeDatabase.db,
           tenantA,
-          async (transaction, identity) =>
+          async (transaction, identity) => {
+            const sale = await insertSaleHeader(transaction, identity);
             await transaction.insert(salePayments).values({
               amount: "1.00",
               installments: null,
@@ -688,8 +585,9 @@ async function run() {
               paymentProfileNameSnapshot: createdProfile.name,
               paymentProfileRuleIdSnapshot: randomUUID(),
               paymentProfileVersionSnapshot: createdProfile.version,
-              saleId: profileFkProbeSale.id,
-            })
+              saleId: sale.id,
+            });
+          }
         ),
       "23503",
       "sale snapshot rule reference must belong to the selected tenant profile"
@@ -702,15 +600,6 @@ async function run() {
       runtimeDatabase.db,
       tenantA,
       async (transaction, identity) => {
-        const [sale] = await transaction
-          .insert(sales)
-          .values({
-            commandId: randomUUID(),
-            organizationId: identity.organizationId,
-            currency: "BRL",
-          })
-          .returning();
-        assert.ok(sale);
         const rule = createdProfile.rules.find(
           (candidate) =>
             candidate.method === "credit_card" && candidate.installments === 3
@@ -755,36 +644,39 @@ async function run() {
         assert.equal(snapshot.processingFee.amount, "2.60");
         assert.equal(snapshot.anticipationFee.amount, "0.75");
         assert.equal(snapshot.expectedSettlementDays, 45);
-        const [payment] = await transaction
-          .insert(salePayments)
-          .values({
-            amount: "100.00",
-            anticipationFeeAmountSnapshot: snapshot.anticipationFee.amount,
-            anticipationFeeFixedAmountSnapshot:
-              snapshot.anticipationFee.fixedAmount,
-            anticipationFeeModeSnapshot: snapshot.anticipationFee.mode,
-            anticipationFeePercentageSnapshot:
-              snapshot.anticipationFee.percentage,
-            anticipationRequested: true,
-            expectedSettlementDaysSnapshot: snapshot.expectedSettlementDays,
-            installmentPlan: "issuer",
-            installmentPlanUnknown: false,
-            installments: 3,
-            method: "credit_card",
-            organizationId: identity.organizationId,
-            paymentProfileId: createdProfile.id,
-            paymentProfileNameSnapshot: createdProfile.name,
-            paymentProfileRuleIdSnapshot: rule.id,
-            paymentProfileVersionSnapshot: createdProfile.version,
-            processingFeeAmountSnapshot: snapshot.processingFee.amount,
-            processingFeeFixedAmountSnapshot:
-              snapshot.processingFee.fixedAmount,
-            processingFeeModeSnapshot: snapshot.processingFee.mode,
-            processingFeePercentageSnapshot: snapshot.processingFee.percentage,
-            saleId: sale.id,
-          })
-          .returning();
-        assert.ok(payment);
+        const { payment, sale } = await insertSaleGraph(
+          transaction,
+          identity,
+          productA,
+          {
+            itemPrice: "100.00",
+            payment: {
+              amount: "100.00",
+              anticipationFeeAmountSnapshot: snapshot.anticipationFee.amount,
+              anticipationFeeFixedAmountSnapshot:
+                snapshot.anticipationFee.fixedAmount,
+              anticipationFeeModeSnapshot: snapshot.anticipationFee.mode,
+              anticipationFeePercentageSnapshot:
+                snapshot.anticipationFee.percentage,
+              anticipationRequested: true,
+              expectedSettlementDaysSnapshot: snapshot.expectedSettlementDays,
+              installmentPlan: "issuer",
+              installmentPlanUnknown: false,
+              installments: 3,
+              method: "credit_card",
+              paymentProfileId: createdProfile.id,
+              paymentProfileNameSnapshot: createdProfile.name,
+              paymentProfileRuleIdSnapshot: rule.id,
+              paymentProfileVersionSnapshot: createdProfile.version,
+              processingFeeAmountSnapshot: snapshot.processingFee.amount,
+              processingFeeFixedAmountSnapshot:
+                snapshot.processingFee.fixedAmount,
+              processingFeeModeSnapshot: snapshot.processingFee.mode,
+              processingFeePercentageSnapshot:
+                snapshot.processingFee.percentage,
+            },
+          }
+        );
         return { payment, sale };
       }
     );
@@ -991,7 +883,7 @@ async function run() {
               organizationId: tenantA.organizationId,
               processingFeeAmountSnapshot: "0.00",
               processingFeeModeSnapshot: "unknown",
-              saleId: noPlanSale.id,
+              saleId: syntheticLegacySale.saleId,
             })
         ),
       "23514",
@@ -1074,69 +966,32 @@ async function run() {
       },
       {
         can_delete: false,
-        can_insert: false,
+        can_insert: true,
         can_select: true,
         can_update: false,
         table_name: "sale_payments",
       },
     ]);
     tests.push(
-      "runtime ACL allows profile/rule CRUD except delete and keeps sale payments read-only"
+      "runtime ACL allows profile/rule CRUD except delete and sale payments insert/select only"
     );
 
     const tenantBSale = await withTenant(
       runtimeDatabase.db,
       tenantB,
       async (transaction, identity) => {
-        const [sale] = await transaction
-          .insert(sales)
-          .values({
-            commandId: randomUUID(),
-            organizationId: identity.organizationId,
-            currency: "BRL",
-          })
-          .returning();
-        assert.ok(sale);
-        const [item] = await transaction
-          .insert(saleItems)
-          .values({
-            chargedUnitPrice: "15.00",
-            listedUnitPrice: "15.00",
-            organizationId: identity.organizationId,
-            position: 0,
-            productId: productB.productId,
-            productLabel: "Produto sintético B",
-            quantity: 1,
-            saleId: sale.id,
-            unitCost: null,
-            variantId: productB.variantId,
-          })
-          .returning();
-        assert.ok(item);
-        const [adjustment] = await transaction
-          .insert(saleAdjustments)
-          .values({
-            amount: "1.00",
-            kind: "freight",
-            organizationId: identity.organizationId,
-            percentage: null,
-            position: 0,
-            saleId: sale.id,
-            valueType: "fixed",
-          })
-          .returning();
-        assert.ok(adjustment);
-        const [payment] = await transaction
-          .insert(salePayments)
-          .values({
-            amount: "16.00",
-            installments: null,
-            method: "cash",
-            organizationId: identity.organizationId,
-            saleId: sale.id,
-          })
-          .returning();
-        assert.ok(payment);
+        const { sale } = await insertSaleGraph(
+          transaction,
+          identity,
+          productB,
+          {
+            adjustments: [
+              { amount: "1.00", kind: "freight", valueType: "fixed" },
+            ],
+            itemPrice: "15.00",
+            payment: { amount: "16.00", installments: null, method: "cash" },
+          }
+        );
         return sale;
       }
     );
@@ -1145,58 +1000,29 @@ async function run() {
       runtimeDatabase.db,
       tenantA,
       async (transaction, identity) => {
-        const [sale] = await transaction
-          .insert(sales)
-          .values({
-            commandId,
-            organizationId: identity.organizationId,
-            currency: "BRL",
-          })
-          .returning();
-        assert.ok(sale);
-        const [item] = await transaction
-          .insert(saleItems)
-          .values({
-            chargedUnitPrice: "89.90",
-            listedUnitPrice: "100.00",
-            organizationId: identity.organizationId,
-            position: 0,
-            productId: productA.productId,
-            productLabel: "Produto sintético A",
-            quantity: 2,
-            saleId: sale.id,
-            unitCost: null,
-            variantId: productA.variantId,
-          })
-          .returning();
-        assert.ok(item);
-        const [adjustment] = await transaction
-          .insert(saleAdjustments)
-          .values({
-            amount: "17.98",
-            kind: "discount",
-            organizationId: identity.organizationId,
-            percentage: "10.000000",
-            position: 0,
-            saleId: sale.id,
-            valueType: "percentage",
-          })
-          .returning();
-        assert.ok(adjustment);
-        const [payment] = await transaction
-          .insert(salePayments)
-          .values({
+        const graph = await insertSaleGraph(transaction, identity, productA, {
+          adjustments: [
+            {
+              amount: "17.98",
+              kind: "discount",
+              percentage: "10.000000",
+              valueType: "percentage",
+            },
+          ],
+          commandId,
+          itemPrice: "89.90",
+          listedItemPrice: "100.00",
+          payment: {
             amount: "161.82",
             installmentPlan: "issuer",
             installmentPlanUnknown: false,
             installments: 3,
             method: "credit_card",
-            organizationId: identity.organizationId,
-            saleId: sale.id,
-          })
-          .returning();
-        assert.ok(payment);
-        return { adjustment, item, payment, sale };
+          },
+          quantity: 2,
+        });
+        assert.ok(graph.adjustment);
+        return { ...graph, adjustment: graph.adjustment };
       }
     );
     assert.equal(confirmedSale.sale.currency, "BRL");
@@ -1220,11 +1046,7 @@ async function run() {
           runtimeDatabase.db,
           tenantA,
           async (transaction, identity) =>
-            await transaction.insert(sales).values({
-              commandId,
-              organizationId: identity.organizationId,
-              currency: "BRL",
-            })
+            await insertSaleHeader(transaction, identity, { commandId })
         ),
       "23505",
       "sale command identity is unique within an organization"
@@ -1235,11 +1057,7 @@ async function run() {
           runtimeDatabase.db,
           tenantA,
           async (transaction, identity) =>
-            await transaction.insert(sales).values({
-              commandId: randomUUID(),
-              organizationId: identity.organizationId,
-              currency: "USD",
-            })
+            await insertSaleHeader(transaction, identity, { currency: "USD" })
         ),
       "23514",
       "sale currency is constrained to BRL"
@@ -1694,14 +1512,6 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await Promise.all(
-        temporaryInsertPolicies.map(({ name, table }) =>
-          admin.pool.query(`DROP POLICY IF EXISTS "${name}" ON public.${table}`)
-        )
-      );
-      await admin.pool.query(
-        `REVOKE INSERT ON TABLE public.sales, public.sale_items, public.sale_adjustments, public.sale_payments FROM "${loginRole}"`
-      );
       await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }

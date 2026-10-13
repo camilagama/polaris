@@ -345,6 +345,105 @@ export type InventoryCountMovementReadModel = z.infer<
   typeof inventoryCountMovement
 >;
 
+const saleAdjustmentKinds = [
+  "discount",
+  "surcharge",
+  "freight",
+  "payment_surcharge",
+] as const;
+
+const saleAdjustmentInput = z.object({
+  kind: z.enum(saleAdjustmentKinds),
+  value: z.discriminatedUnion("type", [
+    z.object({
+      amount: z.string().trim().min(1),
+      type: z.literal("fixed"),
+    }),
+    z.object({
+      percentage: z.string().trim().min(1),
+      type: z.literal("percentage"),
+    }),
+  ]),
+});
+
+const saleItemInput = z.object({
+  chargedUnitPrice: z.string().trim().min(1),
+  listedUnitPrice: z.string().trim().min(1),
+  quantity: z.number().int().positive().max(2_147_483_647),
+  variantId: z.string().uuid(),
+});
+
+const salePaymentInput = z.object({
+  anticipationRequested: z.boolean(),
+  installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
+  installments: z.number().int().positive().max(2_147_483_647).nullable(),
+  method: z.enum(SALE_PAYMENT_METHODS),
+});
+
+const saleFeeSnapshot = z.object({
+  amount: z.string().nullable(),
+  fixedAmount: z.string().nullable(),
+  mode: z.enum([...PAYMENT_FEE_MODES, "not_applicable"]),
+  percentage: z.string().nullable(),
+});
+
+const confirmedSale = z.object({
+  adjustments: z.array(
+    z.object({
+      amount: z.string(),
+      kind: z.enum(saleAdjustmentKinds),
+      percentage: z.string().nullable(),
+      position: z.number().int().nonnegative(),
+      valueType: z.enum(["fixed", "percentage"]),
+    })
+  ),
+  items: z.array(
+    z.object({
+      chargedUnitPrice: z.string(),
+      listedUnitPrice: z.string(),
+      position: z.number().int().nonnegative(),
+      productId: z.string().uuid(),
+      productLabel: z.string().min(1),
+      quantity: z.number().int().positive(),
+      unitCost: z.string().nullable(),
+      variantId: z.string().uuid(),
+    })
+  ),
+  payment: z.object({
+    amount: z.string(),
+    anticipationFee: saleFeeSnapshot,
+    anticipationRequested: z.boolean(),
+    expectedSettlementDays: z.number().int().nonnegative().nullable(),
+    installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
+    installments: z.number().int().positive().nullable(),
+    method: z.enum(SALE_PAYMENT_METHODS),
+    paymentProfileId: z.string().uuid().nullable(),
+    paymentProfileName: z.string().nullable(),
+    paymentProfileRuleId: z.string().uuid().nullable(),
+    paymentProfileVersion: z.number().int().positive().nullable(),
+    processingFee: saleFeeSnapshot,
+  }),
+  replayed: z.boolean(),
+  sale: z.object({
+    clientCreatedAt: z.string().datetime().nullable(),
+    commandId: z.string().uuid(),
+    confirmedAt: z.string().datetime(),
+    currency: z.literal("BRL"),
+    id: z.string().uuid(),
+    occurredAt: z.string().datetime(),
+  }),
+  totals: z.object({
+    discountTotal: z.string(),
+    freightTotal: z.string(),
+    paymentSurchargeTotal: z.string(),
+    subtotal: z.string(),
+    surchargeTotal: z.string(),
+    totalDue: z.string(),
+  }),
+});
+
+export type ConfirmedSaleReadModel = z.infer<typeof confirmedSale>;
+
 const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
@@ -728,6 +827,30 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
+  },
+  sale: {
+    // One command confirms the whole sale. The payment profile is an explicit
+    // choice: an id with the version the operator saw, or null for no profile.
+    confirm: oc
+      .input(
+        z.object({
+          adjustments: z.array(saleAdjustmentInput).max(20),
+          clientCreatedAt: z.string().datetime({ offset: true }).optional(),
+          commandId: z.string().uuid(),
+          commandVersion: z.literal(1),
+          items: z.array(saleItemInput).min(1).max(200),
+          occurredAt: z.string().datetime({ offset: true }),
+          organizationId: z.string().trim().min(1),
+          payment: salePaymentInput,
+          paymentProfile: z
+            .object({
+              expectedVersion: z.number().int().positive(),
+              id: z.string().uuid(),
+            })
+            .nullable(),
+        })
+      )
+      .output(confirmedSale),
   },
   system: {
     ping: oc.output(z.object({ message: z.literal("pong") })),

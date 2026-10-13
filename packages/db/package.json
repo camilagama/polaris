@@ -22,6 +22,7 @@
     "./payment-profile-schema": "./src/schema/payment-profile.ts",
     "./payment-profile-repository": "./src/payment-profile-repository.ts",
     "./sale-schema": "./src/schema/sale.ts",
+    "./sale-repository": "./src/sale-repository.ts",
     "./product-repository": "./src/product-repository.ts",
     "./inventory-schema": "./src/schema/inventory.ts",
     "./media-schema": "./src/schema/media.ts",
@@ -46,6 +47,7 @@
     "poc:media:derivatives:verify": "bun scripts/verify-media-derivatives-gate.ts",
     "poc:customers:verify": "bun scripts/verify-customers-gate.ts",
     "poc:sales:verify": "bun scripts/verify-sales-aggregate-gate.ts",
+    "poc:sales:transaction:verify": "bun scripts/verify-sale-transaction-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

@@ -95,16 +95,25 @@ function validFeeSnapshot(
 export const sales = pgTable(
   "sales",
   {
+    adjustmentCount: integer("adjustment_count").notNull(),
+    clientCreatedAt: timestamp("client_created_at"),
     commandId: uuid("command_id").notNull(),
     confirmedAt: timestamp("confirmed_at").defaultNow().notNull(),
     currency: text("currency").default("BRL").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    itemCount: integer("item_count").notNull(),
+    occurredAt: timestamp("occurred_at").notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
   },
   (table) => [
     check("sales_currency_brl", sql`${table.currency} = 'BRL'`),
+    check("sales_item_count_positive", sql`${table.itemCount} >= 1`),
+    check(
+      "sales_adjustment_count_nonnegative",
+      sql`${table.adjustmentCount} >= 0`
+    ),
     uniqueIndex("sales_organization_id_id_unique").on(
       table.organizationId,
       table.id
@@ -122,6 +131,11 @@ export const sales = pgTable(
       for: "select",
       to: runtimeRole,
       using: activeTenantScope(table.organizationId),
+    }),
+    pgPolicy("sales_current_tenant_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: activeTenantScope(table.organizationId),
     }),
   ]
 ).enableRLS();
@@ -208,6 +222,11 @@ export const saleItems = pgTable(
       to: runtimeRole,
       using: activeTenantScope(table.organizationId),
     }),
+    pgPolicy("sale_items_current_tenant_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: activeTenantScope(table.organizationId),
+    }),
   ]
 ).enableRLS();
 
@@ -272,6 +291,11 @@ export const saleAdjustments = pgTable(
       for: "select",
       to: runtimeRole,
       using: activeTenantScope(table.organizationId),
+    }),
+    pgPolicy("sale_adjustments_current_tenant_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: activeTenantScope(table.organizationId),
     }),
   ]
 ).enableRLS();
@@ -465,6 +489,11 @@ export const salePayments = pgTable(
       for: "select",
       to: runtimeRole,
       using: activeTenantScope(table.organizationId),
+    }),
+    pgPolicy("sale_payments_current_tenant_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: activeTenantScope(table.organizationId),
     }),
   ]
 ).enableRLS();

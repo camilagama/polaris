@@ -41,7 +41,7 @@ import { productVariants, products } from "./schema/product";
 export interface RecordStockMovementInput {
   movementType: Exclude<
     StockMovementType,
-    "receipt" | "write_off" | "inventory_count"
+    "receipt" | "write_off" | "inventory_count" | "sale"
   >;
   quantityDelta: number;
   requestId?: string | null;
@@ -537,12 +537,23 @@ function movementUnitCost(
   return null;
 }
 
+function requireSaleCapability(identity: TenantRequestIdentity): void {
+  if (identity.capability !== "sale:create") {
+    throw new TenantAuthorizationError("capability_denied");
+  }
+}
+
+// Every movement is authorized here. Inventory commands keep the default
+// inventory:adjust check; only the sale transaction supplies the sale check.
 async function applyStockMovement(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
-  input: StockMovementWriteInput
+  input: StockMovementWriteInput,
+  authorize: (
+    identity: TenantRequestIdentity
+  ) => void = requireInventoryCapability
 ) {
-  requireInventoryCapability(identity);
+  authorize(identity);
   validateStockMovementWriteInput(input);
 
   const variant = await lockVariantProduct(
@@ -633,7 +644,8 @@ export async function recordStockMovement(
     !isStockMovementType(movementType) ||
     movementType === "receipt" ||
     movementType === "write_off" ||
-    movementType === "inventory_count"
+    movementType === "inventory_count" ||
+    movementType === "sale"
   ) {
     throw new InvalidStockMovementError();
   }
@@ -721,6 +733,45 @@ export async function inventoryCount(
       valuationUnitCost: input.valuationUnitCost,
       variantId: input.variantId,
     })
+  );
+}
+
+export interface SaleStockMovementInput {
+  commandId: string;
+  commandIndex: number;
+  occurredOn: string;
+  quantity: number;
+  requestId?: string | null;
+  variantId: string;
+}
+
+/**
+ * Ledger primitive used only by the sale transaction. It runs inside the
+ * caller's transaction (no savepoint), captures the moving-average cost under
+ * the balance lock and fails with InsufficientStockError instead of letting the
+ * balance go negative. The sale command ID and the item position identify the
+ * movement, so a replayed sale cannot write it twice.
+ */
+export async function recordSaleStockMovement(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: SaleStockMovementInput
+) {
+  return await applyStockMovement(
+    transaction,
+    identity,
+    {
+      captureMovingAverageCost: true,
+      commandId: input.commandId,
+      commandIndex: input.commandIndex,
+      commandVersion: 1,
+      movementType: "sale",
+      occurredOn: input.occurredOn,
+      quantityDelta: -input.quantity,
+      requestId: input.requestId ?? null,
+      variantId: input.variantId,
+    },
+    requireSaleCapability
   );
 }
 

@@ -48,7 +48,7 @@ const leadingZeroPattern = /^0+(?=\d)/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function normalizeBrlAmount(value: string): string {
+export function normalizeBrlAmount(value: string): string {
   if (typeof value !== "string") {
     throw new InvalidSaleSnapshotError();
   }

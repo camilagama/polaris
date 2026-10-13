@@ -37,6 +37,7 @@ import {
   restorePaymentProfile,
   updatePaymentProfile,
 } from "@polaris/db/payment-profile-repository";
+import { confirmSale } from "@polaris/db/sale-repository";
 import {
   archiveProduct,
   configureProductVariants,
@@ -107,11 +108,32 @@ import {
   UnsupportedWriteOffStockCommandVersionError,
 } from "@polaris/domain/inventory/write-off-stock";
 import {
+  InvalidConfirmSaleCommandError,
+  SaleCommandConflictError,
+  SaleProductUnavailableError,
+  UnsupportedConfirmSaleCommandVersionError,
+} from "@polaris/domain/sales/confirm-sale";
+import {
+  DecimalAmountScaleError,
+  InvalidDecimalAmountError,
+  InvalidFinancialQuantityError,
+  InvalidMoneyError,
+  InvalidPercentageError,
+  MoneyLimitError,
+} from "@polaris/domain/money/money";
+import {
   InvalidPaymentProfileError,
   PaymentProfileLifecycleError,
   PaymentProfileNotFoundError,
   PaymentProfileVersionConflictError,
 } from "@polaris/domain/sales/payment-profile";
+import { InvalidSaleSnapshotError } from "@polaris/domain/sales/sale";
+import {
+  InvalidSaleAdjustmentError,
+  SaleAdjustmentLimitError,
+  SaleDiscountExceedsSubtotalError,
+} from "@polaris/domain/sales/sale-adjustments";
+import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
 import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
@@ -128,6 +150,7 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
+import { createSaleRpcHandlers } from "./sale-handlers";
 
 export interface PolarisRpcContext {
   bindings: WorkerBindings;
@@ -157,6 +180,7 @@ interface RpcRouterDependencies {
   configureProductVariants: typeof configureProductVariants;
   createCategory: typeof createCategory;
   createCustomer: typeof createCustomer;
+  confirmSale: typeof confirmSale;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
@@ -451,6 +475,23 @@ const badRequestRpcErrors = [
     InvalidWriteOffStockInputError,
     UnsupportedWriteOffStockCommandVersionError,
   ],
+  [
+    InvalidConfirmSaleCommandError,
+    UnsupportedConfirmSaleCommandVersionError,
+    InvalidSaleAdjustmentError,
+    SaleAdjustmentLimitError,
+    SaleDiscountExceedsSubtotalError,
+    InvalidSalePaymentError,
+    InvalidSaleSnapshotError,
+  ],
+  [
+    InvalidMoneyError,
+    InvalidPercentageError,
+    InvalidDecimalAmountError,
+    DecimalAmountScaleError,
+    InvalidFinancialQuantityError,
+    MoneyLimitError,
+  ],
 ] as const;
 
 const stockConflictRpcErrors = [
@@ -484,6 +525,7 @@ const conflictRpcErrors = [
     PaymentProfileVersionConflictError,
     PaymentProfileLifecycleError,
   ],
+  [SaleCommandConflictError, SaleProductUnavailableError],
 ] as const;
 
 const notFoundRpcErrors = [
@@ -908,6 +950,13 @@ export function createRpcRouter(
   });
   const paymentProfileHandlers = createPaymentProfileRpcHandlers({
     ...overrides,
+    withTenantRequestContext: tenantRequest,
+  });
+  const saleHandlers = createSaleRpcHandlers({
+    confirmSale: overrides.confirmSale,
+    defaultConfirmSale: confirmSale,
+    requestAuditId,
+    toRpcError,
     withTenantRequestContext: tenantRequest,
   });
 
@@ -1426,6 +1475,7 @@ export function createRpcRouter(
       setVariantSku: setProductVariantSkuRecord,
       update: updateProductRecord,
     },
+    sale: { confirm: saleHandlers.confirm },
     system: { ping },
   });
 }

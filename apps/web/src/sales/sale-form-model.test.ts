@@ -1,0 +1,1084 @@
+import type {
+  ConfirmedSaleReadModel,
+  InventoryBalanceReadModel,
+  PaymentProfileReadModel,
+  ProductReadModel,
+  ProductVariantConfigurationReadModel,
+} from "@polaris/contracts";
+import { describe, expect, it } from "vitest";
+import {
+  acknowledgeProfileReview,
+  addAdjustment,
+  addItem,
+  autoSelectOnlyVariants,
+  canStartSubmission,
+  chooseItemVariant,
+  confirmSubmission,
+  createBlankSaleForm,
+  describeFee,
+  type EvaluationContext,
+  evaluateSaleForm,
+  failSubmission,
+  formatBrlAmount,
+  formatPercentage,
+  formFieldKeys,
+  idleSubmission,
+  isSubmitting,
+  itemFieldKey,
+  type Loadable,
+  loadErrorMessage,
+  MAX_SALE_ADJUSTMENTS,
+  MAX_SALE_ITEMS,
+  mapSaleSubmitError,
+  NO_PROFILE_CHOICE,
+  parseMoneyText,
+  parsePercentageText,
+  prepareConfirmation,
+  productsView,
+  profilesView,
+  reconcileProfileReload,
+  removeAdjustment,
+  removeItem,
+  resolveSaleAttempt,
+  type SaleFormState,
+  selectItemProduct,
+  selectItemVariant,
+  selectPaymentMethod,
+  selectProfileChoice,
+  startSubmission,
+  stockView,
+  submitButtonLabel,
+  updateAdjustment,
+  updateItem,
+  updatePayment,
+  variantsView,
+} from "./sale-form-model";
+
+const organizationId = "org_1";
+const productId = "11111111-1111-4111-8111-111111111111";
+const variantId = "22222222-2222-4222-8222-222222222222";
+const otherVariantId = "33333333-3333-4333-8333-333333333333";
+const profileId = "44444444-4444-4444-8444-444444444444";
+const ruleCardId = "55555555-5555-4555-8555-555555555555";
+const rulePixId = "66666666-6666-4666-8666-666666666666";
+const noFee = { fixedAmount: null, mode: "none", percentage: null } as const;
+const unknownFee = {
+  fixedAmount: null,
+  mode: "unknown",
+  percentage: null,
+} as const;
+
+function sequentialIds(): () => string {
+  let next = 0;
+  return () => {
+    next += 1;
+    return `00000000-0000-4000-8000-${String(next).padStart(12, "0")}`;
+  };
+}
+
+function profile(version = 3): PaymentProfileReadModel {
+  return {
+    archivedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: profileId,
+    name: "Maquininha Aurora",
+    organizationId,
+    rules: [
+      {
+        anticipationFee: {
+          fixedAmount: null,
+          mode: "percentage",
+          percentage: "1.5",
+        },
+        expectedSettlementDays: 30,
+        id: ruleCardId,
+        installmentPlan: "merchant",
+        installments: 3,
+        method: "credit_card",
+        processingFee: {
+          fixedAmount: "0.50",
+          mode: "fixed_and_percentage",
+          percentage: "2.99",
+        },
+      },
+      {
+        anticipationFee: unknownFee,
+        expectedSettlementDays: 1,
+        id: rulePixId,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        processingFee: noFee,
+      },
+    ],
+    status: "active",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    version,
+  };
+}
+
+function balance(
+  quantity: number,
+  movingAverageCost: string | null
+): Loadable<InventoryBalanceReadModel> {
+  return {
+    status: "ready",
+    value: { movingAverageCost, quantity, variantId, version: 1 },
+  };
+}
+
+function context(
+  overrides: Partial<EvaluationContext> = {}
+): EvaluationContext {
+  return { profiles: [profile()], stock: {}, ...overrides };
+}
+
+function lineOf(form: SaleFormState, index = 0) {
+  const item = form.items[index];
+  if (!item) {
+    throw new Error("missing item");
+  }
+  return item;
+}
+
+/** A complete sale: 2 × 49,90 at the charged price, paid with Pix, no profile. */
+function validForm(): SaleFormState {
+  let form = createBlankSaleForm(sequentialIds());
+  const { draftId } = lineOf(form);
+  form = selectItemProduct(form, draftId, productId);
+  form = selectItemVariant(form, draftId, variantId, "Camiseta — Azul / M");
+  form = updateItem(form, draftId, {
+    chargedUnitPrice: "49,90",
+    listedUnitPrice: "55,00",
+    quantity: "2",
+  });
+  form = selectPaymentMethod(form, "pix");
+  return selectProfileChoice(form, NO_PROFILE_CHOICE, []);
+}
+
+function creditCardForm(): SaleFormState {
+  let form = validForm();
+  form = selectPaymentMethod(form, "credit_card");
+  form = updatePayment(form, {
+    anticipationRequested: false,
+    installmentPlan: "merchant",
+    installments: "3",
+  });
+  return selectProfileChoice(form, profileId, [profile()]);
+}
+
+function evaluate(form: SaleFormState, ctx = context(), showRequired = true) {
+  return evaluateSaleForm(form, ctx, { showRequired });
+}
+
+describe("decimal input parsing", () => {
+  it("accepts comma or dot and always normalizes money to two decimals", () => {
+    expect(parseMoneyText("49,9")).toEqual({ kind: "ok", value: "49.90" });
+    expect(parseMoneyText(" 0012.5 ")).toEqual({ kind: "ok", value: "12.50" });
+    expect(parseMoneyText("7")).toEqual({ kind: "ok", value: "7.00" });
+  });
+
+  it("rejects more than two decimals, mixed separators, signs and text", () => {
+    for (const text of ["1.234", "1.234,56", "-5", "abc", "1,2,3", "1e3"]) {
+      expect(parseMoneyText(text).kind).toBe("invalid");
+    }
+    expect(parseMoneyText("   ").kind).toBe("empty");
+    expect(parseMoneyText(`${"9".repeat(19)}.00`).kind).toBe("too_large");
+  });
+
+  it("accepts percentages up to six decimals in percentage points", () => {
+    expect(parsePercentageText("2,5")).toEqual({ kind: "ok", value: "2.5" });
+    expect(parsePercentageText("0.123456")).toEqual({
+      kind: "ok",
+      value: "0.123456",
+    });
+    expect(parsePercentageText("0.1234567").kind).toBe("invalid");
+    expect(parsePercentageText("").kind).toBe("empty");
+  });
+});
+
+describe("formatting", () => {
+  it("formats BRL from exact strings, keeping at least two decimals", () => {
+    expect(formatBrlAmount("1234567.5")).toBe("R$ 1.234.567,50");
+    expect(formatBrlAmount("12.340000")).toBe("R$ 12,34");
+    expect(formatBrlAmount("12.345600")).toBe("R$ 12,3456");
+    expect(formatBrlAmount("0.00")).toBe("R$ 0,00");
+  });
+
+  it("formats percentages in percentage points", () => {
+    expect(formatPercentage("2.500000")).toBe("2,5%");
+    expect(formatPercentage("10.000000")).toBe("10%");
+  });
+});
+
+describe("form transitions", () => {
+  it("starts blank with no payment method or profile chosen for the operator", () => {
+    const form = createBlankSaleForm(sequentialIds());
+    expect(form.items).toHaveLength(1);
+    expect(form.payment.method).toBe("");
+    expect(form.profile.choice).toBe("");
+    expect(form.adjustments).toEqual([]);
+  });
+
+  it("clears the variant when another product is chosen", () => {
+    const form = validForm();
+    const { draftId } = lineOf(form);
+    const next = selectItemProduct(form, draftId, otherVariantId);
+    expect(lineOf(next).variantId).toBe("");
+    expect(lineOf(next).label).toBe("");
+  });
+
+  it("drops card-only choices when leaving credit card", () => {
+    const card = updatePayment(creditCardForm(), {
+      anticipationRequested: true,
+    });
+    const pix = selectPaymentMethod(card, "pix");
+    expect(pix.payment).toEqual({
+      anticipationRequested: false,
+      installmentPlan: "",
+      installments: "",
+      method: "pix",
+    });
+  });
+
+  it("keeps freight and payment surcharge as fixed amounts", () => {
+    let form = addAdjustment(validForm(), "adj-1");
+    form = updateAdjustment(form, "adj-1", { valueType: "percentage" });
+    expect(form.adjustments[0]?.valueType).toBe("percentage");
+    form = updateAdjustment(form, "adj-1", { kind: "freight" });
+    expect(form.adjustments[0]?.valueType).toBe("fixed");
+  });
+
+  it("keeps at least one item and respects the item and adjustment limits", () => {
+    const form = validForm();
+    expect(removeItem(form, lineOf(form).draftId).items).toHaveLength(1);
+
+    let many = form;
+    for (let index = 0; index < MAX_SALE_ITEMS + 5; index += 1) {
+      many = addItem(many, `item-${index}`);
+    }
+    expect(many.items).toHaveLength(MAX_SALE_ITEMS);
+
+    let adjusted = form;
+    for (let index = 0; index < MAX_SALE_ADJUSTMENTS + 5; index += 1) {
+      adjusted = addAdjustment(adjusted, `adj-${index}`);
+    }
+    expect(adjusted.adjustments).toHaveLength(MAX_SALE_ADJUSTMENTS);
+    expect(removeAdjustment(adjusted, "adj-0").adjustments).toHaveLength(
+      MAX_SALE_ADJUSTMENTS - 1
+    );
+  });
+});
+
+describe("validation errors before calling the server", () => {
+  it("hides required-field errors until the operator tries to confirm", () => {
+    const form = createBlankSaleForm(sequentialIds());
+    const quiet = evaluate(form, context(), false);
+    expect(quiet.body).toBeNull();
+    expect(quiet.issueCount).toBeGreaterThan(0);
+    expect(quiet.errors).toEqual({});
+
+    const loud = evaluate(form, context(), true);
+    expect(loud.errors[formFieldKeys.method]).toBe(
+      "Escolha o método de pagamento."
+    );
+    expect(loud.errors[formFieldKeys.profile]).toContain("Sem perfil");
+    expect(loud.errors[itemFieldKey(lineOf(form).draftId, "product")]).toBe(
+      "Escolha um produto."
+    );
+  });
+
+  it("shows format errors immediately, even before submit", () => {
+    const form = validForm();
+    const { draftId } = lineOf(form);
+    const bad = updateItem(form, draftId, {
+      chargedUnitPrice: "1,234",
+      quantity: "0",
+    });
+    const result = evaluate(bad, context(), false);
+    expect(result.body).toBeNull();
+    expect(result.errors[itemFieldKey(draftId, "chargedUnitPrice")]).toContain(
+      "2 casas decimais"
+    );
+    expect(result.errors[itemFieldKey(draftId, "quantity")]).toContain(
+      "maior que zero"
+    );
+  });
+
+  it("requires integer installments and an installment plan for credit card", () => {
+    let form = selectPaymentMethod(validForm(), "credit_card");
+    let result = evaluate(form);
+    expect(result.errors[formFieldKeys.installments]).toBe(
+      "Informe o número de parcelas."
+    );
+    expect(result.errors[formFieldKeys.installmentPlan]).toBe(
+      "Escolha a modalidade do parcelamento."
+    );
+    form = updatePayment(form, {
+      installmentPlan: "issuer",
+      installments: "2.5",
+    });
+    result = evaluate(form);
+    expect(result.errors[formFieldKeys.installments]).toContain("inteiro");
+    expect(result.body).toBeNull();
+  });
+
+  it("surfaces a discount larger than the subtotal as a domain error", () => {
+    let form = addAdjustment(validForm(), "adj-1");
+    form = updateAdjustment(form, "adj-1", { value: "500" });
+    const result = evaluate(form);
+    expect(result.errors[formFieldKeys.adjustments]).toBe(
+      "O total de descontos não pode ser maior que o subtotal."
+    );
+    expect(result.body).toBeNull();
+    expect(result.summary).toBeNull();
+  });
+
+  it("surfaces a total above the BRL limit", () => {
+    const form = validForm();
+    const huge = updateItem(form, lineOf(form).draftId, {
+      chargedUnitPrice: "999999999999999999",
+      quantity: "99",
+    });
+    const result = evaluate(huge);
+    expect(result.errors[formFieldKeys.totals]).toContain("limite");
+    expect(result.body).toBeNull();
+  });
+
+  it("requires an explicit payment profile choice", () => {
+    const form = {
+      ...validForm(),
+      profile: createBlankSaleForm(sequentialIds()).profile,
+    };
+    const result = evaluate(form);
+    expect(result.body).toBeNull();
+    expect(result.profileText).toBe("Perfil de pagamento ainda não escolhido");
+    expect(result.errors[formFieldKeys.profile]).toBeDefined();
+  });
+});
+
+describe("exact totals and command body", () => {
+  it("builds the confirm body with normalized decimal strings", () => {
+    const result = evaluate(validForm());
+    expect(result.body).toEqual({
+      adjustments: [],
+      commandVersion: 1,
+      items: [
+        {
+          chargedUnitPrice: "49.90",
+          listedUnitPrice: "55.00",
+          quantity: 2,
+          variantId,
+        },
+      ],
+      payment: {
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+      },
+      paymentProfile: null,
+    });
+  });
+
+  it("does not add the listed-versus-charged difference as an adjustment", () => {
+    const result = evaluate(validForm());
+    expect(result.body?.adjustments).toEqual([]);
+    expect(result.summary?.rows.map((row) => row.key)).toEqual([
+      "subtotal",
+      "total-due",
+    ]);
+    expect(result.summary?.lines[0]?.negotiationText).toContain(
+      "R$ 5,10 abaixo do preço de tabela"
+    );
+  });
+
+  it("computes percentage adjustments on the same subtotal without compounding", () => {
+    let form = addItem(validForm(), "item-2");
+    form = selectItemProduct(form, "item-2", productId);
+    form = selectItemVariant(
+      form,
+      "item-2",
+      otherVariantId,
+      "Camiseta — Verde"
+    );
+    form = updateItem(form, "item-2", {
+      chargedUnitPrice: "10",
+      listedUnitPrice: "10",
+      quantity: "1",
+    });
+    form = addAdjustment(form, "adj-discount");
+    form = updateAdjustment(form, "adj-discount", {
+      kind: "discount",
+      value: "10",
+      valueType: "percentage",
+    });
+    form = addAdjustment(form, "adj-surcharge");
+    form = updateAdjustment(form, "adj-surcharge", {
+      kind: "surcharge",
+      value: "5",
+      valueType: "percentage",
+    });
+    form = addAdjustment(form, "adj-freight");
+    form = updateAdjustment(form, "adj-freight", {
+      kind: "freight",
+      value: "15",
+    });
+    const result = evaluate(form);
+    // subtotal 109,80; -10% = 10,98; +5% = 5,49 (both on 109,80); + frete 15,00
+    expect(result.summary?.totalDue).toBe("119.31");
+    expect(result.summary?.rows.map((row) => row.value)).toEqual([
+      "R$ 109,80",
+      "-R$ 10,98",
+      "+R$ 5,49",
+      "+R$ 15,00",
+      "R$ 119,31",
+    ]);
+    expect(result.body?.adjustments).toEqual([
+      { kind: "discount", value: { percentage: "10", type: "percentage" } },
+      { kind: "surcharge", value: { percentage: "5", type: "percentage" } },
+      { kind: "freight", value: { amount: "15.00", type: "fixed" } },
+    ]);
+  });
+
+  it("warns, without blocking, when the quantity exceeds the shown balance", () => {
+    const form = validForm();
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(1, null) } })
+    );
+    expect(result.body).not.toBeNull();
+    expect(result.stockWarnings[lineOf(form).draftId]).toContain(
+      "Quantidade acima do saldo exibido (1)"
+    );
+  });
+
+  it("sums repeated lines of the same variant for the stock warning", () => {
+    let form = addItem(validForm(), "item-2");
+    form = selectItemProduct(form, "item-2", productId);
+    form = selectItemVariant(form, "item-2", variantId, "Camiseta — Azul / M");
+    form = updateItem(form, "item-2", {
+      chargedUnitPrice: "10",
+      listedUnitPrice: "10",
+      quantity: "2",
+    });
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(3, "10.000000") } })
+    );
+    expect(Object.keys(result.stockWarnings)).toHaveLength(2);
+  });
+});
+
+describe("payment profile choice and fee preview", () => {
+  it("sends the chosen profile id with the version the operator saw", () => {
+    const result = evaluate(creditCardForm());
+    expect(result.body?.paymentProfile).toEqual({
+      expectedVersion: 3,
+      id: profileId,
+    });
+    expect(result.profileText).toBe("Maquininha Aurora (versão 3)");
+  });
+
+  it("without a profile, fees and settlement are unknown, not zero", () => {
+    const result = evaluate(validForm());
+    expect(result.profileText).toBe(
+      "Sem perfil de pagamento (taxas e prazo desconhecidos)"
+    );
+    expect(result.feePreview?.profileText).toBe("Sem perfil de pagamento");
+    expect(result.feePreview?.ruleText).toBe(
+      "Sem perfil — nenhuma regra aplicada"
+    );
+    expect(result.feePreview?.processing).toEqual({
+      text: "desconhecida — não é zero",
+      tone: "unknown",
+    });
+    expect(result.feePreview?.settlementText).toContain("prazo desconhecido");
+    expect(result.feePreview?.anticipation.tone).toBe("not_applicable");
+  });
+
+  it("applies the exact rule with half-up cents and a settlement estimate", () => {
+    const result = evaluate(creditCardForm());
+    // total 99,80: 0,50 + 2,99% = 0,50 + 2,98402 -> 3,48
+    expect(result.feePreview?.ruleMatched).toBe(true);
+    expect(result.feePreview?.ruleText).toBe(
+      "Regra exata: Cartão de crédito · 3x · Parcelado pelo lojista"
+    );
+    expect(result.feePreview?.processing.tone).toBe("known");
+    expect(result.feePreview?.processing.text).toContain("R$ 3,48");
+    expect(result.feePreview?.settlementText).toBe(
+      "prazo estimado de 30 dias — estimativa, não data de liquidação"
+    );
+  });
+
+  it("shows anticipation only when requested and a rule gives its fee", () => {
+    const form = updatePayment(creditCardForm(), {
+      anticipationRequested: true,
+    });
+    const result = evaluate(form);
+    // 1,5% of 99,80 = 1,497 -> 1,50
+    expect(result.feePreview?.anticipation.text).toContain("R$ 1,50");
+    expect(result.body?.payment.anticipationRequested).toBe(true);
+  });
+
+  it("reports no exact rule when installments do not match any rule", () => {
+    const form = updatePayment(creditCardForm(), { installments: "4" });
+    const result = evaluate(form);
+    expect(result.feePreview?.ruleMatched).toBe(false);
+    expect(result.feePreview?.ruleText).toBe(
+      "Nenhuma regra exata para este método/parcelas"
+    );
+    expect(result.feePreview?.processing.tone).toBe("unknown");
+    expect(result.feePreview?.settlementText).toContain("prazo desconhecido");
+  });
+
+  it("keeps anticipation unknown when requested without a matching rule", () => {
+    const form = updatePayment(creditCardForm(), {
+      anticipationRequested: true,
+      installments: "4",
+    });
+    expect(evaluate(form).feePreview?.anticipation.tone).toBe("unknown");
+  });
+
+  it("distinguishes a known zero from an unknown fee", () => {
+    const pix = selectPaymentMethod(creditCardForm(), "pix");
+    const result = evaluate(pix);
+    expect(result.feePreview?.processing).toEqual({
+      text: "R$ 0,00 (sem taxa no perfil)",
+      tone: "zero",
+    });
+    expect(
+      describeFee({
+        amount: null,
+        fixedAmount: null,
+        mode: "unknown",
+        percentage: null,
+      }).tone
+    ).toBe("unknown");
+    expect(
+      describeFee({
+        amount: "0.00",
+        fixedAmount: null,
+        mode: "not_applicable",
+        percentage: null,
+      }).text
+    ).toBe("não aplicável (custo estimado R$ 0,00)");
+  });
+
+  it("requires a review when a reload changed the chosen profile version", () => {
+    const form = creditCardForm();
+    const reloaded = [profile(4)];
+    const stale = reconcileProfileReload(form, reloaded);
+    expect(stale.profile.reviewNotice).toContain("versão 3 para a versão 4");
+    const blocked = evaluate(stale, context({ profiles: reloaded }));
+    expect(blocked.body).toBeNull();
+    expect(blocked.errors[formFieldKeys.profile]).toContain("revisão");
+
+    const reviewed = acknowledgeProfileReview(stale, reloaded);
+    const ready = evaluate(reviewed, context({ profiles: reloaded }));
+    expect(ready.body?.paymentProfile).toEqual({
+      expectedVersion: 4,
+      id: profileId,
+    });
+  });
+
+  it("leaves the choice untouched when the profile did not change", () => {
+    const form = creditCardForm();
+    expect(reconcileProfileReload(form, [profile(3)])).toBe(form);
+  });
+
+  it("asks for a new choice when the chosen profile is no longer active", () => {
+    const reset = reconcileProfileReload(creditCardForm(), []);
+    expect(reset.profile.choice).toBe("");
+    expect(reset.profile.reviewNotice).toContain("não está mais ativo");
+  });
+});
+
+describe("loading and empty states", () => {
+  const loading = { status: "loading" } as const;
+
+  it("reports loading for products and profiles", () => {
+    expect(productsView(loading).kind).toBe("loading");
+    expect(profilesView(loading).kind).toBe("loading");
+    expect(variantsView(loading)?.kind).toBe("loading");
+    expect(variantsView(undefined)).toBeNull();
+  });
+
+  it("reports an empty catalog and still allows selling without a profile", () => {
+    const products = productsView({ status: "ready", value: [] });
+    expect(products.kind).toBe("empty");
+    const profiles = profilesView({ status: "ready", value: [] });
+    expect(profiles).toMatchObject({ kind: "empty" });
+    expect("message" in profiles && profiles.message).toContain("Sem perfil");
+  });
+
+  it("lists only active products, sorted by name", () => {
+    const base: ProductReadModel = {
+      archivedAt: null,
+      categoryId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      deletedAt: null,
+      description: null,
+      id: productId,
+      name: "Zebra",
+      organizationId,
+      status: "active",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      version: 1,
+    };
+    const view = productsView({
+      status: "ready",
+      value: [
+        base,
+        { ...base, id: otherVariantId, name: "Álbum" },
+        { ...base, id: profileId, name: "Velho", status: "archived" },
+      ],
+    });
+    expect(view).toEqual({
+      kind: "ready",
+      options: [
+        { id: otherVariantId, label: "Álbum" },
+        { id: productId, label: "Zebra" },
+      ],
+    });
+  });
+
+  it("labels variants by option values, or as the default variant", () => {
+    const configuration: ProductVariantConfigurationReadModel = {
+      configured: true,
+      options: [],
+      productVersion: 1,
+      variants: [
+        {
+          id: variantId,
+          isDefault: false,
+          position: 0,
+          sku: null,
+          values: [
+            {
+              optionName: "color",
+              optionValueId: productId,
+              optionValueName: "Azul",
+            },
+            {
+              optionName: "size",
+              optionValueId: profileId,
+              optionValueName: "M",
+            },
+          ],
+        },
+        {
+          id: otherVariantId,
+          isDefault: true,
+          position: null,
+          sku: null,
+          values: [],
+        },
+      ],
+    };
+    expect(variantsView({ status: "ready", value: configuration })).toEqual({
+      kind: "ready",
+      options: [
+        { id: variantId, label: "Azul / M" },
+        { id: otherVariantId, label: "Variante padrão" },
+      ],
+    });
+  });
+
+  it("reports stock states, never treating an unknown cost as zero", () => {
+    expect(stockView(undefined)).toBeNull();
+    expect(stockView(loading)?.text).toBe("Consultando estoque…");
+    expect(stockView({ message: "Falhou.", status: "error" })?.tone).toBe(
+      "warning"
+    );
+    const none = stockView(balance(0, null));
+    expect(none?.text).toContain("Sem estoque");
+    expect(none?.costText).toBe("Custo desconhecido — margem indeterminada.");
+    const some = stockView(balance(5, "12.340000"));
+    expect(some?.text).toBe("Saldo atual: 5 unidades.");
+    expect(some?.costText).toBe("Custo médio: R$ 12,34.");
+  });
+
+  it("maps load failures to actionable messages", () => {
+    expect(loadErrorMessage({ code: "UNAUTHORIZED" }, "produtos")).toContain(
+      "sessão"
+    );
+    expect(loadErrorMessage({ code: "FORBIDDEN" }, "o estoque")).toContain(
+      "o estoque"
+    );
+    expect(loadErrorMessage(new Error("x"), "produtos")).toBe(
+      "Não foi possível carregar produtos. Tente novamente."
+    );
+  });
+});
+
+describe("variant choice", () => {
+  const configuration = (
+    variants: ProductVariantConfigurationReadModel["variants"]
+  ): Loadable<ProductVariantConfigurationReadModel> => ({
+    status: "ready",
+    value: {
+      configured: variants.length > 1,
+      options: [],
+      productVersion: 1,
+      variants,
+    },
+  });
+  const names = new Map([[productId, "Camiseta"]]);
+
+  it("selects the only variant automatically, keeping the plain product name", () => {
+    const base = selectItemProduct(
+      createBlankSaleForm(sequentialIds()),
+      "00000000-0000-4000-8000-000000000001",
+      productId
+    );
+    const loaded = {
+      [productId]: configuration([
+        {
+          id: variantId,
+          isDefault: true,
+          position: null,
+          sku: null,
+          values: [],
+        },
+      ]),
+    };
+    const next = autoSelectOnlyVariants(base, loaded, names);
+    expect(lineOf(next).variantId).toBe(variantId);
+    expect(lineOf(next).label).toBe("Camiseta");
+    expect(autoSelectOnlyVariants(next, loaded, names)).toBe(next);
+  });
+
+  it("waits while variants load and never picks among several", () => {
+    const base = selectItemProduct(
+      createBlankSaleForm(sequentialIds()),
+      "00000000-0000-4000-8000-000000000001",
+      productId
+    );
+    expect(
+      autoSelectOnlyVariants(
+        base,
+        { [productId]: { status: "loading" } },
+        names
+      )
+    ).toBe(base);
+    const two = {
+      [productId]: configuration([
+        { id: variantId, isDefault: false, position: 0, sku: null, values: [] },
+        {
+          id: otherVariantId,
+          isDefault: false,
+          position: 1,
+          sku: null,
+          values: [],
+        },
+      ]),
+    };
+    expect(autoSelectOnlyVariants(base, two, names)).toBe(base);
+  });
+
+  it("labels the chosen variant with its option values", () => {
+    const base = selectItemProduct(
+      createBlankSaleForm(sequentialIds()),
+      "00000000-0000-4000-8000-000000000001",
+      productId
+    );
+    const loaded = {
+      [productId]: configuration([
+        {
+          id: variantId,
+          isDefault: false,
+          position: 0,
+          sku: null,
+          values: [
+            {
+              optionName: "color",
+              optionValueId: productId,
+              optionValueName: "Azul",
+            },
+            {
+              optionName: "size",
+              optionValueId: profileId,
+              optionValueName: "M",
+            },
+          ],
+        },
+        {
+          id: otherVariantId,
+          isDefault: false,
+          position: 1,
+          sku: null,
+          values: [],
+        },
+      ]),
+    };
+    const next = chooseItemVariant(
+      base,
+      lineOf(base).draftId,
+      variantId,
+      loaded,
+      names
+    );
+    expect(lineOf(next).label).toBe("Camiseta — Azul / M");
+  });
+});
+
+describe("idempotent attempts", () => {
+  const body = () => {
+    const { body: built } = evaluate(validForm());
+    if (!built) {
+      throw new Error("expected a valid body");
+    }
+    return built;
+  };
+
+  it("keeps the same command ID and instant for an identical retry", () => {
+    const ids = sequentialIds();
+    const first = resolveSaleAttempt(
+      null,
+      body(),
+      organizationId,
+      ids,
+      new Date("2026-05-01T12:00:00.000Z")
+    );
+    const retry = resolveSaleAttempt(
+      first,
+      body(),
+      organizationId,
+      ids,
+      new Date("2026-05-01T12:05:00.000Z")
+    );
+    expect(retry).toBe(first);
+    expect(retry.occurredAt).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("creates a fresh command ID when any field of the sale changed", () => {
+    const ids = sequentialIds();
+    const first = resolveSaleAttempt(
+      null,
+      body(),
+      organizationId,
+      ids,
+      new Date("2026-05-01T12:00:00.000Z")
+    );
+    const edited = evaluate(
+      updateItem(validForm(), lineOf(validForm()).draftId, { quantity: "3" })
+    ).body;
+    expect(edited).not.toBeNull();
+    const second = resolveSaleAttempt(
+      first,
+      edited ?? body(),
+      organizationId,
+      ids,
+      new Date("2026-05-01T12:05:00.000Z")
+    );
+    expect(second.commandId).not.toBe(first.commandId);
+    expect(second.occurredAt).toBe("2026-05-01T12:05:00.000Z");
+  });
+
+  it("treats a new profile version as a new payload", () => {
+    const ids = sequentialIds();
+    const now = new Date("2026-05-01T12:00:00.000Z");
+    const v3 = evaluate(creditCardForm()).body;
+    const form4 = acknowledgeProfileReview(
+      reconcileProfileReload(creditCardForm(), [profile(4)]),
+      [profile(4)]
+    );
+    const v4 = evaluate(form4, context({ profiles: [profile(4)] })).body;
+    if (!(v3 && v4)) {
+      throw new Error("expected valid bodies");
+    }
+    const first = resolveSaleAttempt(null, v3, organizationId, ids, now);
+    expect(
+      resolveSaleAttempt(first, v4, organizationId, ids, now).commandId
+    ).not.toBe(first.commandId);
+  });
+
+  it("prepares one confirm request with the version 1 command", () => {
+    const prepared = prepareConfirmation({
+      body: body(),
+      createId: sequentialIds(),
+      now: new Date("2026-05-01T12:00:00.000Z"),
+      organizationId,
+      previousAttempt: null,
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    expect(prepared.request).toMatchObject({
+      commandId: "00000000-0000-4000-8000-000000000001",
+      commandVersion: 1,
+      occurredAt: "2026-05-01T12:00:00.000Z",
+      organizationId,
+      paymentProfile: null,
+    });
+    expect(prepared.request).not.toHaveProperty("clientCreatedAt");
+  });
+});
+
+describe("server errors", () => {
+  it("maps each oRPC code to a message", () => {
+    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).kind).toBe(
+      "unauthorized"
+    );
+    expect(mapSaleSubmitError({ code: "FORBIDDEN" }).message).toContain(
+      "permissão"
+    );
+    expect(mapSaleSubmitError({ code: "BAD_REQUEST" }).kind).toBe(
+      "bad_request"
+    );
+    const notFound = mapSaleSubmitError({ code: "NOT_FOUND" });
+    expect(notFound.kind).toBe("not_found");
+    expect(notFound.refreshData).toBe(true);
+  });
+
+  it("explains a conflict generically and asks to refresh data", () => {
+    const conflict = mapSaleSubmitError({ code: "CONFLICT" });
+    expect(conflict.kind).toBe("conflict");
+    expect(conflict.message).toBe(
+      "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda."
+    );
+    expect(conflict.refreshData).toBe(true);
+    expect(conflict.retrySameCommand).toBe(false);
+  });
+
+  it("treats network, 5xx and unknown failures as safe to retry unchanged", () => {
+    const network = mapSaleSubmitError(new TypeError("Failed to fetch"));
+    expect(network.kind).toBe("network");
+    expect(network.message).toContain("pode ou não ter sido registrada");
+    const server = mapSaleSubmitError({ code: "SERVICE_UNAVAILABLE" });
+    expect(server.kind).toBe("server");
+    const unknown = mapSaleSubmitError(new Error("boom"));
+    expect(unknown.kind).toBe("unknown");
+    for (const failure of [network, server, unknown]) {
+      expect(failure.retrySameCommand).toBe(true);
+      expect(failure.refreshData).toBe(false);
+    }
+  });
+});
+
+describe("submission state", () => {
+  const confirmed: ConfirmedSaleReadModel = {
+    adjustments: [
+      {
+        amount: "10.98",
+        kind: "discount",
+        percentage: "10.000000",
+        position: 0,
+        valueType: "percentage",
+      },
+    ],
+    items: [
+      {
+        chargedUnitPrice: "49.90",
+        listedUnitPrice: "55.00",
+        position: 0,
+        productId,
+        productLabel: "Camiseta — Azul / M",
+        quantity: 2,
+        unitCost: null,
+        variantId,
+      },
+    ],
+    payment: {
+      amount: "88.82",
+      anticipationFee: {
+        amount: "0.00",
+        fixedAmount: null,
+        mode: "not_applicable",
+        percentage: null,
+      },
+      anticipationRequested: false,
+      expectedSettlementDays: null,
+      installmentPlan: null,
+      installments: null,
+      method: "pix",
+      paymentProfileId: null,
+      paymentProfileName: null,
+      paymentProfileRuleId: null,
+      paymentProfileVersion: null,
+      processingFee: {
+        amount: null,
+        fixedAmount: null,
+        mode: "unknown",
+        percentage: null,
+      },
+    },
+    replayed: false,
+    sale: {
+      clientCreatedAt: null,
+      commandId: "00000000-0000-4000-8000-000000000001",
+      confirmedAt: "2026-05-01T12:00:01.000Z",
+      currency: "BRL",
+      id: "77777777-7777-4777-8777-777777777777",
+      occurredAt: "2026-05-01T12:00:00.000Z",
+    },
+    totals: {
+      discountTotal: "10.98",
+      freightTotal: "0.00",
+      paymentSurchargeTotal: "0.00",
+      subtotal: "99.80",
+      surchargeTotal: "0.00",
+      totalDue: "88.82",
+    },
+  };
+
+  it("blocks a second submit while one is in flight", () => {
+    const valid = evaluate(validForm());
+    expect(canStartSubmission(idleSubmission, valid)).toBe(true);
+    const submitting = startSubmission(idleSubmission);
+    expect(isSubmitting(submitting)).toBe(true);
+    expect(canStartSubmission(submitting, valid)).toBe(false);
+    expect(startSubmission(submitting)).toBe(submitting);
+    expect(submitButtonLabel(submitting)).toBe("Confirmando venda…");
+  });
+
+  it("does not allow submitting an invalid form", () => {
+    const invalid = evaluate(createBlankSaleForm(sequentialIds()));
+    expect(canStartSubmission(idleSubmission, invalid)).toBe(false);
+  });
+
+  it("offers a retry label after a transient failure only", () => {
+    expect(submitButtonLabel(idleSubmission)).toBe("Confirmar venda");
+    expect(submitButtonLabel(failSubmission(new TypeError("x")))).toBe(
+      "Tentar confirmar novamente"
+    );
+    expect(submitButtonLabel(failSubmission({ code: "CONFLICT" }))).toBe(
+      "Confirmar venda"
+    );
+  });
+
+  it("shows the confirmed sale as the server snapshot returned it", () => {
+    const state = confirmSubmission(confirmed);
+    expect(state.phase).toBe("confirmed");
+    if (state.phase !== "confirmed") {
+      return;
+    }
+    expect(state.sale.headline).toBe("Venda confirmada.");
+    expect(state.sale.totals.map((row) => row.value)).toEqual([
+      "R$ 99,80",
+      "-R$ 10,98",
+      "R$ 88,82",
+    ]);
+    expect(state.sale.items[0]?.costText).toBe(
+      "Custo desconhecido — margem indeterminada."
+    );
+    const processing = state.sale.paymentDetails.find(
+      (detail) => detail.label === "Taxa de processamento"
+    );
+    expect(processing).toEqual({
+      label: "Taxa de processamento",
+      tone: "unknown",
+      value: "desconhecida — não é zero",
+    });
+    expect(state.sale.note).toContain("não comprova liquidação");
+  });
+
+  it("says the sale was already confirmed when the server replayed it", () => {
+    const state = confirmSubmission({ ...confirmed, replayed: true });
+    expect(state.phase === "confirmed" && state.sale.headline).toBe(
+      "Esta venda já estava confirmada. Nada foi duplicado."
+    );
+  });
+});

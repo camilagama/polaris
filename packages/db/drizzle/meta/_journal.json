@@ -239,6 +239,13 @@
       "when": 1791751552119,
       "tag": "0033_bent_quicksilver",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791908879382,
+      "tag": "0034_legal_rumiko_fujikawa",
+      "breakpoints": true
     }
   ]
 }

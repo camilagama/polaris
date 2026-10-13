@@ -2014,7 +2014,8 @@ sale_items
 Venda confirmada imutável.
 
 As tabelas de venda permanecem somente leitura para o runtime até PR43
-implementar o comando que confirma cabeçalho e itens na mesma transação.
+implementar o comando que confirma cabeçalho e itens na mesma transação
+(PR43: INSERT somente com a garantia de completude no commit; ver PR 43).
 
 
 
@@ -2282,6 +2283,13 @@ O comando da venda aceita um perfil de pagamento opcional e a intenção de ante
 Quando houver perfil/regra exata, grava os snapshots calculados pela regra de PR42; sem
 perfil ou regra exata, não bloqueia a venda e registra taxas desconhecidas. A interface
 da venda deve tornar explícita a seleção do perfil e da intenção de antecipação.
+
+Decisões de implementação do PR43 (detalhes em `docs/business-rules/sales.md`): o comando
+`sale.confirm` é idempotente por `commandId` e exige escolha explícita do perfil (`id` com
+`expectedVersion`, ou `null`); o runtime passa a ter INSERT, sem UPDATE/DELETE, nas tabelas
+de venda, e gatilhos de restrição deferidos no PostgreSQL recusam no commit qualquer venda
+incompleta; o passo 10 não gera intents porque o outbox transacional do servidor só existe
+no PR108 e nenhuma consumidora da venda foi definida. A atribuição de cliente continua no PR44.
 
 
 

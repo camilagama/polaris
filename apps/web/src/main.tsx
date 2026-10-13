@@ -3,6 +3,7 @@ import { CategoriesPage } from "./catalog/categories-page";
 import { ProductsPage } from "./catalog/products-page";
 import { CustomersPage } from "./customers/customers-page";
 import { PaymentProfilesPage } from "./payment-profiles/payment-profiles-page";
+import { SalePage } from "./sales/sale-page";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -49,6 +50,9 @@ if (isOfflinePocRoute) {
       break;
     case "/payment-profiles":
       root.render(<PaymentProfilesPage />);
+      break;
+    case "/sales":
+      root.render(<SalePage />);
       break;
     default:
       root.render(<CategoriesPage />);

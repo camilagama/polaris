@@ -14,6 +14,7 @@
     "./inventory/receive-stock": "./src/inventory/receive-stock.ts",
     "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts",
     "./money/money": "./src/money/money.ts",
+    "./sales/confirm-sale": "./src/sales/confirm-sale.ts",
     "./sales/sale-adjustments": "./src/sales/sale-adjustments.ts",
     "./sales/sale-payment": "./src/sales/sale-payment.ts",
     "./sales/payment-profile": "./src/sales/payment-profile.ts",
