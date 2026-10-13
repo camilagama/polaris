@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Contagem física e valoração do estoque

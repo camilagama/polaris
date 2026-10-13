@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Motivo e valoração da baixa de estoque
