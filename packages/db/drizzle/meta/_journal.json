@@ -295,6 +295,13 @@
       "when": 1791928344970,
       "tag": "0041_auth_runtime_role",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791935351309,
+      "tag": "0042_offline_devices_and_grants",
+      "breakpoints": true
     }
   ]
 }

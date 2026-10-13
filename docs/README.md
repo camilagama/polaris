@@ -50,5 +50,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0025](adr/0025-estrategia-de-testes-de-banco.md) | Testes de banco: Neon descartável e CI | aceito |
 | [0026](adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md) | UI de estoque, organização pela sessão e preço de tabela | aceito |
 | [0027](adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md) | Separação de roles auth e tenant, superfícies PoC | aceito |
+| [0028](adr/0028-dispositivos-e-grants-offline.md) | Dispositivos e grants de autorização offline | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

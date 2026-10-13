@@ -719,6 +719,20 @@ Corredor único de gates (`packages/db/scripts/run-gates.ts`, suítes `gate3`, `
 ### Pendências que só o responsável pode executar
 
 Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDRIVE`); reservar os namespaces de rate limit; apagar Workers e Hyperdrive de PoC implantados (`ebe151e5081344479947edb6028279bb`); rotacionar a credencial owner usada no PR11; testar em Android físico; provar EXIF/orientação em Cloudflare Images real; verificar os cabeçalhos em staging; decidir o merge da cadeia de PRs.
+## Fase 5 — offline
+
+### PR48 — Device model (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr48-device-model` sobre `codex/review-5-tooling`. A cadeia de revisão ainda não está integrada ao `main`: o push direto foi bloqueado pelo classificador de permissões e a integração ficou com o responsável. |
+| Decisões de domínio | Tomadas pelo projeto | [ADR 0028](../docs/adr/0028-dispositivos-e-grants-offline.md): dispositivo do usuário (não da organização), sem fingerprint, rótulo opcional curto, limite de 20 vivos; grant por organização e dispositivo, no máximo 72 h; revogação terminal e idempotente; revogar o dispositivo revoga os grants em todas as organizações; capability `offline:manage`; sem RPC (chega com o lease assinado no PR49). |
+| Domínio | Concluído | `packages/domain/src/offline/offline-grant.ts`: rótulo, janela de 72 h, motivos de revogação e estado do grant, com testes de propriedade. |
+| Schema e migration 0042 | Concluídos | Tabelas `devices` e `offline_grants` com RLS forçada, FKs compostas (usuário/dispositivo e organização/usuário), CHECKs de janela e de revogação, GRANT por coluna, gatilhos de revogação terminal e de dispositivo vivo (`FOR SHARE`). O índice único de `devices` precisou ser criado antes das FKs; descoberto ao aplicar do zero. |
+| Repositório | Concluído | `device-repository.ts` (registrar, listar, tocar e revogar dispositivo; registrar, listar e revogar grant) e `user-transaction.ts` (transação só de usuário). |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-devices:verify` (`offline-devices` no corredor de gates, suíte `gate5`): privilégios e RLS, limite de 20 sob concorrência, isolamento entre usuários, revogação terminal por SQL cru, janela de 72 h no domínio e no banco, dispositivo de outro usuário ou revogado recusado, revogação em duas organizações com uma auditoria por grant e corrida entre grant e revogação sem grant vivo restante. |
+| Limites | Registrados | Sem RPC nem UI; época de autorização, lease assinado e validação no servidor são PR49; o registro de dispositivo não é idempotente por retry do cliente. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

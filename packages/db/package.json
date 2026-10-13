@@ -55,6 +55,7 @@
     "poc:media:derivatives:verify": "bun scripts/verify-media-derivatives-gate.ts",
     "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
+    "poc:offline-devices:verify": "bun scripts/verify-offline-devices-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
