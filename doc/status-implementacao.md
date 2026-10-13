@@ -692,7 +692,7 @@ Verificação de `Origin`, limites de taxa para mutações RPC e upload (binding
 
 ### Produto e interface (frente 3)
 
-Seleção de organização pela sessão (`organization.listMine`), saldos de estoque (`inventory.listBalances`) com busca, filtros e paginação por cursor, telas de receber, contar e baixar estoque, shell do aplicativo, página 404 e `ErrorBoundary`, rotas com carregamento tardio, seletor de produto da venda com preços lembrados, filtros do histórico de vendas e correções de acessibilidade.
+Seleção de organização pela sessão (`organization.listMine`), tentativa de venda não confirmada preservada em `sessionStorage` por organização (30 min) para o reenvio idêntico após recarregar a página, saldos de estoque (`inventory.listBalances`) com busca, filtros e paginação por cursor, telas de receber, contar e baixar estoque, shell do aplicativo, página 404 e `ErrorBoundary`, rotas com carregamento tardio, seletor de produto da venda com preços lembrados, filtros do histórico de vendas e correções de acessibilidade.
 
 ### Ferramentas e CI (frente 5)
 
@@ -703,7 +703,10 @@ Corredor único de gates (`packages/db/scripts/run-gates.ts`, suítes `gate3`, `
 | Verificação | Resultado |
 | --- | --- |
 | Branch Neon descartável `pr472-review-final-gate` (schema-only; database `polaris_pr472_gate`) | Migrations 0000–0041 aplicadas do zero em PostgreSQL 18 |
-| Gates em sequência a partir do head final | Ver o resultado registrado no relatório final desta rodada |
+| Gates em sequência a partir do head final (`run-gates.ts`, um por vez) | Passaram: `sales-aggregate`, `sale-transaction`, `sale-customer-link`, `sale-cancellation`, `sale-return`, `sale-dates`, `gate4`, `read-models`, `gate2-runtime`, `inventory`, `customers`, `media-upload`. O `review-hardening` falhou duas vezes na primeira passada por defeitos reais (abaixo) e por fixtures do próprio gate; depois das correções passou inteiro |
+| Defeitos reais encontrados pelos gates em banco novo | (1) `create_initial_organization` ainda retornava `timestamp without time zone` depois da 0039 e quebrava o onboarding; (2) o repositório do razão trocava um `null` legítimo do cálculo de média pela média antiga (`?? currentAverageCost`), então D-2 não tinha efeito na reposição de venda de custo desconhecido em saldo zero |
+| `bun run check` no head final | lint, formato, tipos, fronteiras (17 fixtures negativos), ciclos (158 arquivos), Knip e 899 testes em 78 arquivos passaram |
+| `bun run build` e `db:generate` | Build dos oito workspaces passou; `db:generate` sem mudanças |
 
 ### Pendências que só o responsável pode executar
 
