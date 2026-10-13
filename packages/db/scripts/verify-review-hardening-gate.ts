@@ -543,7 +543,7 @@ async function run() {
               commandVersion: 1,
               occurredOn: tomorrow,
               quantity: 1,
-              reasonCode: "damage",
+              reasonCode: "damaged",
               variantId: liveProduct.variantId,
             })
         ),
