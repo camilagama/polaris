@@ -20,7 +20,7 @@ Este arquivo é o **único lugar** onde vivem a janela retroativa, a tolerância
 - **Futuro:** o servidor recusa `occurred_at` mais de **5 minutos** à frente do seu relógio (`sale_occurred_in_future`). A tolerância cobre a diferença de relógio do dispositivo.
 - **Replay antes da janela:** repetir um comando já confirmado é respondido antes da checagem da janela; o replay nunca é recusado por a venda ter saído da janela.
 - **Quem decide:** o limite retroativo é decidido só pelo servidor. O navegador pode validar o formato e o futuro com o relógio do dispositivo, mas não decide o retroativo.
-- **Questão em aberto:** uma venda offline legítima de um dispositivo que ficou desconectado por mais tempo que a janela seria recusada. A duração do lease de autorização offline precisa ser alinhada com a janela; a decisão fica para a etapa de autorização offline ([ADR 0021](../adr/0021-datas-da-venda-e-janela-retroativa.md)).
+- **Questão em aberto:** o plano prevê um lease de autorização offline de 72 horas, mas uma venda criada dentro do lease pode demorar mais que a janela para chegar ao servidor e seria recusada. O alinhamento entre lease, tempo máximo de espera de uma venda pendente e janela será decidido na etapa de autorização offline ([ADR 0021](../adr/0021-datas-da-venda-e-janela-retroativa.md)).
 
 ## Outras datas de negócio
 
