@@ -24,6 +24,8 @@ import {
 
 export const CONFIRM_SALE_COMMAND_VERSION = 1;
 
+/** Tolerated difference between a device clock and the server clock. */
+export const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MIN_INSTANT_YEAR = 1900;
 const MAX_INSTANT_YEAR = 2200;
 
@@ -102,6 +104,16 @@ export class InvalidConfirmSaleCommandError extends Error {
   constructor(options?: ErrorOptions) {
     super("invalid_confirm_sale_command", options);
     this.name = "InvalidConfirmSaleCommandError";
+  }
+}
+
+/** The commercial time is later than the server clock plus the skew allowance. */
+export class SaleOccurredInFutureError extends Error {
+  readonly code = "sale_occurred_in_future";
+
+  constructor() {
+    super("sale_occurred_in_future");
+    this.name = "SaleOccurredInFutureError";
   }
 }
 
@@ -209,7 +221,8 @@ function normalizeProfileSelection(
  * product, cost and profile facts inside a single tenant transaction.
  */
 export function normalizeConfirmSaleCommand(
-  input: ConfirmSaleCommandInput
+  input: ConfirmSaleCommandInput,
+  now: Date = new Date()
 ): NormalizedConfirmSaleCommand {
   if (!input || typeof input !== "object") {
     throw new InvalidConfirmSaleCommandError();
@@ -228,6 +241,11 @@ export function normalizeConfirmSaleCommand(
   }
 
   const occurredAt = parseInstant(input.occurredAt);
+  // Offline sales may be confirmed long after they happened, so the past is
+  // unbounded; a sale cannot have happened in the future beyond clock skew.
+  if (occurredAt.getTime() > now.getTime() + MAX_FUTURE_CLOCK_SKEW_MS) {
+    throw new SaleOccurredInFutureError();
+  }
   const clientCreatedAt =
     input.clientCreatedAt === undefined || input.clientCreatedAt === null
       ? null

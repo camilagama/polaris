@@ -4,7 +4,9 @@ import {
   type ConfirmSaleCommandInput,
   composeConfirmedSale,
   InvalidConfirmSaleCommandError,
+  MAX_FUTURE_CLOCK_SKEW_MS,
   normalizeConfirmSaleCommand,
+  SaleOccurredInFutureError,
   summarizeConfirmedSaleTotals,
   UnsupportedConfirmSaleCommandVersionError,
 } from "./confirm-sale";
@@ -18,6 +20,9 @@ import {
 } from "./payment-profile";
 import { InvalidSalePaymentError } from "./sale-payment";
 
+const fixedNow = new Date("2026-10-14T00:00:00Z");
+const normalize = (input: ConfirmSaleCommandInput, now: Date = fixedNow) =>
+  normalizeConfirmSaleCommand(input, now);
 const commandId = "0190a9d2-7c4c-7b2f-9c0e-5f4f4f0d6a11";
 const variantA = "0190a9d2-7c4c-7b2f-9c0e-5f4f4f0d6a21";
 const variantB = "0190a9d2-7c4c-7b2f-9c0e-5f4f4f0d6a22";
@@ -87,7 +92,7 @@ const resolvedA = {
 
 describe("normalizeConfirmSaleCommand", () => {
   it("prices the sale and derives a payment equal to the total due", () => {
-    const normalized = normalizeConfirmSaleCommand(
+    const normalized = normalize(
       command({
         adjustments: [
           { kind: "discount", value: { percentage: "10", type: "percentage" } },
@@ -120,7 +125,7 @@ describe("normalizeConfirmSaleCommand", () => {
   });
 
   it("lowercases ids and keeps the explicit profile selection", () => {
-    const normalized = normalizeConfirmSaleCommand(
+    const normalized = normalize(
       command({
         commandId: commandId.toUpperCase(),
         paymentProfile: { expectedVersion: 4, id: profileId.toUpperCase() },
@@ -138,28 +143,26 @@ describe("normalizeConfirmSaleCommand", () => {
       ...command(),
       paymentProfile: undefined,
     } as unknown as ConfirmSaleCommandInput;
-    expect(() => normalizeConfirmSaleCommand(input)).toThrow(
-      InvalidConfirmSaleCommandError
-    );
+    expect(() => normalize(input)).toThrow(InvalidConfirmSaleCommandError);
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({ paymentProfile: { expectedVersion: 0, id: profileId } })
       )
     ).toThrow(InvalidConfirmSaleCommandError);
   });
 
   it("rejects unsupported versions, empty sales and malformed identifiers", () => {
-    expect(() =>
-      normalizeConfirmSaleCommand(command({ commandVersion: 2 }))
-    ).toThrow(UnsupportedConfirmSaleCommandVersionError);
-    expect(() => normalizeConfirmSaleCommand(command({ items: [] }))).toThrow(
+    expect(() => normalize(command({ commandVersion: 2 }))).toThrow(
+      UnsupportedConfirmSaleCommandVersionError
+    );
+    expect(() => normalize(command({ items: [] }))).toThrow(
+      InvalidConfirmSaleCommandError
+    );
+    expect(() => normalize(command({ commandId: "not-a-uuid" }))).toThrow(
       InvalidConfirmSaleCommandError
     );
     expect(() =>
-      normalizeConfirmSaleCommand(command({ commandId: "not-a-uuid" }))
-    ).toThrow(InvalidConfirmSaleCommandError);
-    expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           items: [
             {
@@ -177,7 +180,7 @@ describe("normalizeConfirmSaleCommand", () => {
   it("rejects non-positive, fractional and oversized quantities", () => {
     for (const quantity of [0, -1, 1.5, 2_147_483_648, Number.NaN]) {
       expect(() =>
-        normalizeConfirmSaleCommand(
+        normalize(
           command({
             items: [
               {
@@ -196,7 +199,7 @@ describe("normalizeConfirmSaleCommand", () => {
   it("enforces BRL scale: two decimals, no negatives, no exponent", () => {
     for (const price of ["1.001", "-1", "1e3", "", " ", "1,5", "abc"]) {
       expect(() =>
-        normalizeConfirmSaleCommand(
+        normalize(
           command({
             items: [
               {
@@ -211,7 +214,7 @@ describe("normalizeConfirmSaleCommand", () => {
       ).toThrow(InvalidConfirmSaleCommandError);
     }
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           items: [
             {
@@ -235,24 +238,24 @@ describe("normalizeConfirmSaleCommand", () => {
       "0000-01-01T00:00:00+05:00",
       "9999-12-31T23:00:00-05:00",
     ]) {
-      expect(() =>
-        normalizeConfirmSaleCommand(command({ occurredAt }))
-      ).toThrow(InvalidConfirmSaleCommandError);
+      expect(() => normalize(command({ occurredAt }))).toThrow(
+        InvalidConfirmSaleCommandError
+      );
     }
-    const normalized = normalizeConfirmSaleCommand(
+    const normalized = normalize(
       command({ clientCreatedAt: "2026-10-13T12:00:00.250Z" })
     );
     expect(normalized.clientCreatedAt?.toISOString()).toBe(
       "2026-10-13T12:00:00.250Z"
     );
-    expect(() =>
-      normalizeConfirmSaleCommand(command({ clientCreatedAt: "yesterday" }))
-    ).toThrow(InvalidConfirmSaleCommandError);
+    expect(() => normalize(command({ clientCreatedAt: "yesterday" }))).toThrow(
+      InvalidConfirmSaleCommandError
+    );
   });
 
   it("rejects discounts above the subtotal and invalid adjustments", () => {
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           adjustments: [
             { kind: "discount", value: { amount: "180", type: "fixed" } },
@@ -261,7 +264,7 @@ describe("normalizeConfirmSaleCommand", () => {
       )
     ).toThrow(SaleDiscountExceedsSubtotalError);
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           adjustments: [
             { kind: "freight", value: { percentage: "5", type: "percentage" } },
@@ -270,7 +273,7 @@ describe("normalizeConfirmSaleCommand", () => {
       )
     ).toThrow(InvalidSaleAdjustmentError);
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           adjustments: [
             { kind: "freight", value: { amount: "1.001", type: "fixed" } },
@@ -282,12 +285,10 @@ describe("normalizeConfirmSaleCommand", () => {
 
   it("validates payment shape: credit needs plan and installments, others none", () => {
     expect(() =>
-      normalizeConfirmSaleCommand(
-        command({ payment: { method: "credit_card" } })
-      )
+      normalize(command({ payment: { method: "credit_card" } }))
     ).toThrow(InvalidSalePaymentError);
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           payment: {
             installmentPlan: null,
@@ -298,18 +299,16 @@ describe("normalizeConfirmSaleCommand", () => {
       )
     ).toThrow(InvalidSalePaymentError);
     expect(() =>
-      normalizeConfirmSaleCommand(
-        command({ payment: { installments: 2, method: "pix" } })
-      )
+      normalize(command({ payment: { installments: 2, method: "pix" } }))
     ).toThrow(InvalidSalePaymentError);
     expect(() =>
-      normalizeConfirmSaleCommand(
+      normalize(
         command({
           payment: { anticipationRequested: true, method: "debit_card" },
         })
       )
     ).toThrow(InvalidSalePaymentError);
-    const credit = normalizeConfirmSaleCommand(
+    const credit = normalize(
       command({
         payment: {
           anticipationRequested: true,
@@ -327,7 +326,7 @@ describe("normalizeConfirmSaleCommand", () => {
   });
 
   it("accepts a total of zero for a fully discounted sale", () => {
-    const normalized = normalizeConfirmSaleCommand(
+    const normalized = normalize(
       command({
         adjustments: [
           {
@@ -344,7 +343,7 @@ describe("normalizeConfirmSaleCommand", () => {
 
 describe("composeConfirmedSale", () => {
   const creditCommand = () =>
-    normalizeConfirmSaleCommand(
+    normalize(
       command({
         items: [
           {
@@ -445,7 +444,7 @@ describe("composeConfirmedSale", () => {
   });
 
   it("applies only requested anticipation, as non applicable zero otherwise", () => {
-    const withoutAnticipation = normalizeConfirmSaleCommand(
+    const withoutAnticipation = normalize(
       command({
         items: [
           {
@@ -515,7 +514,7 @@ describe("composeConfirmedSale", () => {
   });
 
   it("applies the percentage to the total due after adjustments", () => {
-    const pix = normalizeConfirmSaleCommand(
+    const pix = normalize(
       command({
         adjustments: [
           { kind: "freight", value: { amount: "10", type: "fixed" } },
@@ -581,7 +580,7 @@ describe("composeConfirmedSale", () => {
 
   it("preserves unknown item cost instead of inferring zero", () => {
     const composed = composeConfirmedSale(
-      normalizeConfirmSaleCommand(command()),
+      normalize(command()),
       [{ ...resolvedA, unitCost: null }],
       null
     );
@@ -602,7 +601,7 @@ describe("composeConfirmedSale", () => {
   });
 
   it("keeps multi-item positions in order", () => {
-    const normalized = normalizeConfirmSaleCommand(
+    const normalized = normalize(
       command({
         items: [
           {
@@ -677,5 +676,32 @@ describe("calendarDateInTimeZone", () => {
     );
     expect(calendarDateInTimeZone(instant, "UTC")).toBe("2026-10-14");
     expect(calendarDateInTimeZone(instant, "Asia/Tokyo")).toBe("2026-10-14");
+  });
+});
+
+describe("commercial time bounds", () => {
+  const now = new Date("2026-10-14T12:00:00Z");
+
+  it("accepts sales from any time in the past (offline confirmation)", () => {
+    expect(() =>
+      normalize(command({ occurredAt: "2024-01-02T03:04:05Z" }), now)
+    ).not.toThrow();
+    expect(() =>
+      normalize(command({ occurredAt: "2026-10-14T11:59:59Z" }), now)
+    ).not.toThrow();
+  });
+
+  it("allows clock skew up to the tolerance and rejects the future beyond it", () => {
+    const edge = new Date(now.getTime() + MAX_FUTURE_CLOCK_SKEW_MS);
+    expect(() =>
+      normalize(command({ occurredAt: edge.toISOString() }), now)
+    ).not.toThrow();
+    const beyond = new Date(now.getTime() + MAX_FUTURE_CLOCK_SKEW_MS + 1000);
+    expect(() =>
+      normalize(command({ occurredAt: beyond.toISOString() }), now)
+    ).toThrow(SaleOccurredInFutureError);
+    expect(() =>
+      normalize(command({ occurredAt: "2026-10-15T12:00:00Z" }), now)
+    ).toThrow(SaleOccurredInFutureError);
   });
 });

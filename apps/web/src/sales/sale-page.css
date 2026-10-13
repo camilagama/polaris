@@ -460,3 +460,17 @@
     padding: 0.7rem;
   }
 }
+
+.sale-section:disabled {
+  opacity: 0.75;
+}
+
+.sale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sale-locked p {
+  margin: 0 0 0.6rem;
+}

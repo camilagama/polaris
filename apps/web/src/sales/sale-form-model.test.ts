@@ -10,6 +10,13 @@ import {
   acknowledgeProfileReview,
   addAdjustment,
   addItem,
+  attemptAfterFailure,
+  cancelDiscard,
+  discardLockedSale,
+  editSaleForm,
+  isFormLocked,
+  requestDiscard,
+  type SubmissionState,
   autoSelectOnlyVariants,
   canStartSubmission,
   chooseItemVariant,
@@ -940,20 +947,134 @@ describe("server errors", () => {
       "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda."
     );
     expect(conflict.refreshData).toBe(true);
-    expect(conflict.retrySameCommand).toBe(false);
+    expect(conflict.unknownOutcome).toBe(false);
   });
 
-  it("treats network, 5xx and unknown failures as safe to retry unchanged", () => {
+  it("uses the stable data.reason for a specific message", () => {
+    const stock = mapSaleSubmitError({
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    });
+    expect(stock.message).toBe(
+      "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades."
+    );
+    expect(stock.refreshData).toBe(true);
+    expect(stock.reason).toBe("insufficient_stock");
+
+    const future = mapSaleSubmitError({
+      code: "BAD_REQUEST",
+      data: { reason: "sale_occurred_in_future" },
+    });
+    expect(future.message).toBe(
+      "O horário da venda está adiantado em relação ao servidor. Verifique o relógio do dispositivo."
+    );
+    expect(future.kind).toBe("bad_request");
+    expect(future.discardAttempt).toBe(true);
+    expect(future.unknownOutcome).toBe(false);
+  });
+
+  it("maps every known reason, refreshing data only when it is stale", () => {
+    const refreshing = [
+      ["CONFLICT", "insufficient_stock"],
+      ["CONFLICT", "sale_product_unavailable"],
+      ["NOT_FOUND", "inventory_variant_not_found"],
+      ["NOT_FOUND", "product_not_found"],
+      ["CONFLICT", "payment_profile_version_conflict"],
+      ["CONFLICT", "payment_profile_lifecycle_conflict"],
+      ["NOT_FOUND", "payment_profile_not_found"],
+    ] as const;
+    const generic = mapSaleSubmitError({ code: "CONFLICT" }).message;
+    for (const [code, reason] of refreshing) {
+      const failure = mapSaleSubmitError({ code, data: { reason } });
+      expect(failure.refreshData, reason).toBe(true);
+      expect(failure.message, reason).not.toBe(generic);
+      expect(failure.unknownOutcome, reason).toBe(false);
+    }
+    const validation = [
+      "inventory_quantity_limit",
+      "sale_discount_exceeds_subtotal",
+      "invalid_sale_payment",
+      "invalid_sale_adjustment",
+      "invalid_confirm_sale_command",
+      "sale_adjustment_limit",
+    ] as const;
+    for (const reason of validation) {
+      const failure = mapSaleSubmitError({
+        code: "BAD_REQUEST",
+        data: { reason },
+      });
+      expect(failure.refreshData, reason).toBe(false);
+      expect(failure.reason).toBe(reason);
+      expect(failure.message, reason).not.toBe(
+        mapSaleSubmitError({ code: "BAD_REQUEST" }).message
+      );
+    }
+    expect(
+      mapSaleSubmitError({
+        code: "CONFLICT",
+        data: { reason: "payment_profile_version_conflict" },
+      }).message
+    ).toContain("revise a prévia");
+  });
+
+  it("starts a fresh attempt after a command conflict", () => {
+    const failure = mapSaleSubmitError({
+      code: "CONFLICT",
+      data: { reason: "sale_command_conflict" },
+    });
+    expect(failure.discardAttempt).toBe(true);
+    expect(failure.message).toContain("nova tentativa será criada");
+    const attempt = { commandId: "x", occurredAt: "y", signature: "z" };
+    const conflict = failSubmission({
+      code: "CONFLICT",
+      data: { reason: "sale_command_conflict" },
+    });
+    const stock = failSubmission({
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    });
+    expect(attemptAfterFailure(conflict, attempt)).toBeNull();
+    expect(attemptAfterFailure(stock, attempt)).toBe(attempt);
+  });
+
+  it("falls back to the generic per-code message for a missing or unknown reason", () => {
+    const generic = mapSaleSubmitError({ code: "CONFLICT" }).message;
+    for (const data of [
+      { reason: "something_new" },
+      undefined,
+      { reason: 42 },
+    ]) {
+      expect(mapSaleSubmitError({ code: "CONFLICT", data }).message).toBe(
+        generic
+      );
+    }
+    expect(
+      mapSaleSubmitError({ code: "BAD_REQUEST", data: { reason: "nope" } }).kind
+    ).toBe("bad_request");
+  });
+
+  it("ignores a reason on authorization errors", () => {
+    const forbidden = mapSaleSubmitError({
+      code: "FORBIDDEN",
+      data: { reason: "insufficient_stock" },
+    });
+    expect(forbidden.kind).toBe("forbidden");
+    expect(forbidden.reason).toBeNull();
+  });
+
+  it("treats network, 5xx and unknown failures as an unknown outcome", () => {
     const network = mapSaleSubmitError(new TypeError("Failed to fetch"));
     expect(network.kind).toBe("network");
-    expect(network.message).toContain("pode ou não ter sido registrada");
+    expect(network.message).toContain("não sabemos se a venda foi registrada");
     const server = mapSaleSubmitError({ code: "SERVICE_UNAVAILABLE" });
     expect(server.kind).toBe("server");
     const unknown = mapSaleSubmitError(new Error("boom"));
     expect(unknown.kind).toBe("unknown");
     for (const failure of [network, server, unknown]) {
-      expect(failure.retrySameCommand).toBe(true);
+      expect(failure.unknownOutcome).toBe(true);
       expect(failure.refreshData).toBe(false);
+      expect(failure.message).toContain("Tentar novamente (seguro)");
+      expect(failure.message).not.toContain("nova venda");
     }
   });
 });
@@ -1039,14 +1160,140 @@ describe("submission state", () => {
     expect(canStartSubmission(idleSubmission, invalid)).toBe(false);
   });
 
-  it("offers a retry label after a transient failure only", () => {
+  it("locks the sale on network, 5xx and unknown failures", () => {
+    for (const error of [
+      new TypeError("Failed to fetch"),
+      { code: "SERVICE_UNAVAILABLE" },
+      { code: "INTERNAL_SERVER_ERROR" },
+      new Error("boom"),
+    ]) {
+      const state = failSubmission(error);
+      expect(state.phase).toBe("locked");
+      expect(isFormLocked(state)).toBe(true);
+      expect(submitButtonLabel(state)).toBe("Tentar novamente (seguro)");
+    }
+  });
+
+  it("does not lock on definite 4xx failures, which keep editing open", () => {
+    for (const error of [
+      { code: "CONFLICT", data: { reason: "insufficient_stock" } },
+      { code: "BAD_REQUEST", data: { reason: "invalid_sale_payment" } },
+      { code: "NOT_FOUND", data: { reason: "payment_profile_not_found" } },
+      { code: "CONFLICT" },
+      { code: "UNAUTHORIZED" },
+      { code: "FORBIDDEN" },
+    ]) {
+      const state = failSubmission(error);
+      expect(state.phase).toBe("failed");
+      expect(isFormLocked(state)).toBe(false);
+      expect(submitButtonLabel(state)).toBe("Confirmar venda");
+    }
     expect(submitButtonLabel(idleSubmission)).toBe("Confirmar venda");
-    expect(submitButtonLabel(failSubmission(new TypeError("x")))).toBe(
-      "Tentar confirmar novamente"
+  });
+
+  it("rejects edits while the sale is locked or in flight", () => {
+    const form = validForm();
+    const { draftId } = lineOf(form);
+    const edit = (current: SaleFormState) =>
+      updateItem(current, draftId, { quantity: "9" });
+    const locked = failSubmission(new TypeError("x"));
+    expect(editSaleForm(locked, form, edit)).toBe(form);
+    expect(editSaleForm(startSubmission(idleSubmission), form, edit)).toBe(
+      form
     );
-    expect(submitButtonLabel(failSubmission({ code: "CONFLICT" }))).toBe(
-      "Confirmar venda"
+    expect(lineOf(editSaleForm(idleSubmission, form, edit)).quantity).toBe("9");
+    const rejected = failSubmission({ code: "CONFLICT" });
+    expect(lineOf(editSaleForm(rejected, form, edit)).quantity).toBe("9");
+  });
+
+  it("retries a locked sale with the same command ID and instant", () => {
+    const ids = sequentialIds();
+    const { body } = evaluate(validForm());
+    if (!body) {
+      throw new Error("expected a valid body");
+    }
+    const first = prepareConfirmation({
+      body,
+      createId: ids,
+      now: new Date("2026-05-01T12:00:00.000Z"),
+      organizationId,
+      previousAttempt: null,
+    });
+    if (!first.ok) {
+      throw new Error("expected a prepared request");
+    }
+    const locked = failSubmission(new TypeError("x"));
+    expect(attemptAfterFailure(locked, first.attempt)).toBe(first.attempt);
+    expect(canStartSubmission(locked, evaluate(validForm()))).toBe(true);
+    expect(startSubmission(locked)).toEqual({ phase: "submitting" });
+    const retry = prepareConfirmation({
+      body,
+      createId: ids,
+      now: new Date("2026-05-01T12:30:00.000Z"),
+      organizationId,
+      previousAttempt: first.attempt,
+    });
+    expect(retry.ok && retry.request).toEqual(first.request);
+  });
+
+  it("needs an explicit second step to discard a locked sale", () => {
+    const locked = failSubmission({ code: "BAD_GATEWAY" });
+    expect(discardLockedSale(locked, sequentialIds())).toBeNull();
+    const confirming = requestDiscard(locked);
+    expect(confirming).toMatchObject({
+      confirmingDiscard: true,
+      phase: "locked",
+    });
+    expect(isFormLocked(confirming)).toBe(true);
+    const cancelled = cancelDiscard(confirming);
+    expect(cancelled).toMatchObject({ confirmingDiscard: false });
+    expect(discardLockedSale(cancelled, sequentialIds())).toBeNull();
+    expect(discardLockedSale(idleSubmission, sequentialIds())).toBeNull();
+  });
+
+  it("discards into a blank form with a fresh attempt", () => {
+    const ids = sequentialIds();
+    const { body } = evaluate(validForm());
+    if (!body) {
+      throw new Error("expected a valid body");
+    }
+    const now = new Date("2026-05-01T12:00:00.000Z");
+    const old = resolveSaleAttempt(null, body, organizationId, ids, now);
+    const confirming = requestDiscard(failSubmission(new TypeError("x")));
+    const discarded = discardLockedSale(confirming, ids);
+    expect(discarded).not.toBeNull();
+    if (!discarded) {
+      return;
+    }
+    expect(discarded.submission).toBe(idleSubmission);
+    expect(discarded.attempt).toBeNull();
+    expect(discarded.form.items).toHaveLength(1);
+    expect(lineOf(discarded.form).productId).toBe("");
+    expect(discarded.form.payment.method).toBe("");
+    expect(isFormLocked(discarded.submission)).toBe(false);
+    const next = resolveSaleAttempt(
+      discarded.attempt,
+      body,
+      organizationId,
+      ids,
+      now
     );
+    expect(next.commandId).not.toBe(old.commandId);
+  });
+
+  it("unlocks after a locked retry succeeds and reports a replay", () => {
+    let state: SubmissionState = failSubmission(new TypeError("x"));
+    state = startSubmission(state);
+    expect(isFormLocked(state)).toBe(true);
+    state = confirmSubmission({ ...confirmed, replayed: true });
+    expect(isFormLocked(state)).toBe(false);
+    expect(state.phase === "confirmed" && state.sale.headline).toBe(
+      "Esta venda já estava confirmada. Nada foi duplicado."
+    );
+  });
+
+  it("locks again if the retry also ends with an unknown outcome", () => {
+    expect(failSubmission({ code: "GATEWAY_TIMEOUT" }).phase).toBe("locked");
   });
 
   it("shows the confirmed sale as the server snapshot returned it", () => {

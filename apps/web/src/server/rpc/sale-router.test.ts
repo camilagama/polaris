@@ -17,6 +17,7 @@ import {
 import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
+  SaleOccurredInFutureError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
@@ -321,8 +322,33 @@ describe("sale.confirm RPC", () => {
         withTenantRequestContext: rejectingTenantStub(error),
       })
     );
+    const rejection = client.sale.confirm(validInput);
+    await expect(rejection).rejects.toMatchObject({ code });
+    const actionable = ["BAD_REQUEST", "CONFLICT", "NOT_FOUND"].includes(code);
+    const domainCode = (error as { code?: string }).code;
+    if (actionable) {
+      // Clients explain 400/404/409 with the stable domain code, not a message.
+      await expect(rejection).rejects.toMatchObject({
+        data: { reason: domainCode },
+      });
+    } else {
+      // Authorization failures expose no reason.
+      await expect(rejection).rejects.toMatchObject({ data: undefined });
+    }
+  });
+
+  it("explains a commercial time in the future with a stable reason", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        confirmSale: vi.fn<ConfirmSale>(),
+        withTenantRequestContext: rejectingTenantStub(
+          new SaleOccurredInFutureError()
+        ),
+      })
+    );
     await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
-      code,
+      code: "BAD_REQUEST",
+      data: { reason: "sale_occurred_in_future" },
     });
   });
 

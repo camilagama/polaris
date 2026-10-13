@@ -1542,13 +1542,143 @@ type SaleFailureKind =
   | "unknown";
 
 export interface SaleSubmitFailure {
+  /** The attempt cannot be resent as is: the next confirm gets a fresh attempt. */
+  discardAttempt: boolean;
   kind: SaleFailureKind;
   message: string;
+  /** Stable domain code from `error.data.reason`, when the server sent one. */
+  reason: string | null;
   /** The server rejected the sale on current data: reload catalog and profiles. */
   refreshData: boolean;
-  /** The outcome is unknown or transient: retrying the same form is safe. */
-  retrySameCommand: boolean;
+  /** Network, 5xx or unknown error: the sale may already be registered. */
+  unknownOutcome: boolean;
 }
+
+interface ReasonOutcome {
+  discardAttempt?: boolean;
+  message: string;
+  refreshData?: boolean;
+}
+
+const variantGoneMessage =
+  "Uma das variantes não existe mais nesta organização. Remova a linha, atualize os dados e revise a venda.";
+
+const reasonOutcomes = new Map<string, ReasonOutcome>([
+  [
+    "insufficient_stock",
+    {
+      message:
+        "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades.",
+      refreshData: true,
+    },
+  ],
+  [
+    "inventory_quantity_limit",
+    {
+      message:
+        "A quantidade informada ultrapassa o limite de estoque permitido. Reduza a quantidade.",
+    },
+  ],
+  [
+    "sale_product_unavailable",
+    {
+      message:
+        "Um dos produtos foi arquivado ou removido e não pode mais ser vendido. Remova essa linha e atualize os dados.",
+      refreshData: true,
+    },
+  ],
+  [
+    "inventory_variant_not_found",
+    { message: variantGoneMessage, refreshData: true },
+  ],
+  [
+    "product_variant_not_found",
+    { message: variantGoneMessage, refreshData: true },
+  ],
+  [
+    "product_not_found",
+    {
+      message:
+        "Um dos produtos não existe mais nesta organização. Remova a linha, atualize os dados e revise a venda.",
+      refreshData: true,
+    },
+  ],
+  [
+    "payment_profile_version_conflict",
+    {
+      message:
+        "O perfil de pagamento foi editado depois que você o escolheu. Atualize os perfis e revise a prévia de taxas e prazo antes de confirmar.",
+      refreshData: true,
+    },
+  ],
+  [
+    "payment_profile_lifecycle_conflict",
+    {
+      message:
+        "O perfil de pagamento escolhido foi arquivado. Atualize os perfis e escolha outro perfil ou “Sem perfil”.",
+      refreshData: true,
+    },
+  ],
+  [
+    "payment_profile_not_found",
+    {
+      message:
+        "O perfil de pagamento escolhido não existe mais. Atualize os perfis e escolha novamente.",
+      refreshData: true,
+    },
+  ],
+  [
+    "sale_command_conflict",
+    {
+      discardAttempt: true,
+      message:
+        "Esta tentativa já tinha sido usada com outro conteúdo. Uma nova tentativa será criada automaticamente; revise a venda e confirme novamente.",
+    },
+  ],
+  [
+    "sale_occurred_in_future",
+    {
+      discardAttempt: true,
+      message:
+        "O horário da venda está adiantado em relação ao servidor. Verifique o relógio do dispositivo.",
+    },
+  ],
+  [
+    "sale_discount_exceeds_subtotal",
+    {
+      message:
+        "O total de descontos não pode ser maior que o subtotal. Revise os ajustes.",
+    },
+  ],
+  [
+    "invalid_sale_payment",
+    {
+      message:
+        "O pagamento informado é inválido. Revise método, parcelas e modalidade do parcelamento.",
+    },
+  ],
+  [
+    "invalid_sale_adjustment",
+    {
+      message:
+        "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.",
+    },
+  ],
+  [
+    "invalid_confirm_sale_command",
+    {
+      message:
+        "Os dados da venda foram recusados na validação. Revise itens, ajustes e pagamento.",
+    },
+  ],
+  [
+    "sale_adjustment_limit",
+    {
+      message:
+        "Algum valor ou o total da venda excede o limite de 18 dígitos inteiros em BRL.",
+    },
+  ],
+]);
 
 const serverErrorCodes = new Set([
   "BAD_GATEWAY",
@@ -1558,26 +1688,44 @@ const serverErrorCodes = new Set([
   "TIMEOUT",
 ]);
 
-const transientHint =
-  "Tente confirmar de novo sem alterar os dados: o mesmo comando é reenviado e não duplica a venda. Se você alterar algo, será tratada como uma nova venda.";
+const lockHint =
+  "A venda foi bloqueada para edição. Use “Tentar novamente (seguro)”: o mesmo pedido é reenviado e o servidor não duplica a venda se ela já tiver sido registrada.";
 
 function failure(
   kind: SaleFailureKind,
   message: string,
-  refreshData = false
+  options: {
+    discardAttempt?: boolean;
+    reason?: string | null;
+    refreshData?: boolean;
+  } = {}
 ): SaleSubmitFailure {
-  const retrySameCommand =
-    kind === "network" || kind === "server" || kind === "unknown";
-  return { kind, message, refreshData, retrySameCommand };
+  return {
+    discardAttempt: options.discardAttempt ?? false,
+    kind,
+    message,
+    reason: options.reason ?? null,
+    refreshData: options.refreshData ?? false,
+    unknownOutcome:
+      kind === "network" || kind === "server" || kind === "unknown",
+  };
 }
 
-function isNetworkError(error: unknown): boolean {
-  return error instanceof TypeError;
+/** Reads the stable domain code from an oRPC error's `data.reason`. */
+function rpcErrorReason(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("data" in error)) {
+    return undefined;
+  }
+  const { data } = error as { data?: unknown };
+  if (typeof data !== "object" || data === null || !("reason" in data)) {
+    return undefined;
+  }
+  const { reason } = data as { reason?: unknown };
+  return typeof reason === "string" ? reason : undefined;
 }
 
-/** Maps an oRPC error to a message and to what the page should do next. */
-export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
-  const code = rpcErrorCode(error);
+/** Failures the server answered definitively, from the oRPC code alone. */
+function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
   switch (code) {
     case "UNAUTHORIZED":
       return failure(
@@ -1598,32 +1746,57 @@ export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
       return failure(
         "not_found",
         "Um produto, uma variante ou o perfil de pagamento desta venda não existe mais nesta organização. Atualize os dados e revise a venda.",
-        true
+        { refreshData: true }
       );
     case "CONFLICT":
       return failure(
         "conflict",
         "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda.",
-        true
+        { refreshData: true }
       );
     default:
-      break;
+      return null;
   }
-  if (code === undefined && isNetworkError(error)) {
+}
+
+/**
+ * Maps an oRPC error to a message and to what the page should do next. A known
+ * `data.reason` on a 400/404/409 refines the generic per-code message.
+ */
+export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
+  const code = rpcErrorCode(error);
+  const byCode = definiteFailure(code);
+  if (byCode) {
+    const reason = rpcErrorReason(error) ?? null;
+    const outcome = reason === null ? undefined : reasonOutcomes.get(reason);
+    const refinable =
+      byCode.kind === "bad_request" ||
+      byCode.kind === "not_found" ||
+      byCode.kind === "conflict";
+    if (!(outcome && refinable)) {
+      return { ...byCode, reason: refinable ? reason : null };
+    }
+    return failure(byCode.kind, outcome.message, {
+      discardAttempt: outcome.discardAttempt ?? false,
+      reason,
+      refreshData: outcome.refreshData ?? false,
+    });
+  }
+  if (code === undefined && error instanceof TypeError) {
     return failure(
       "network",
-      `Sem conexão com o servidor. A venda pode ou não ter sido registrada. ${transientHint}`
+      `Sem conexão com o servidor: não sabemos se a venda foi registrada. ${lockHint}`
     );
   }
   if (code !== undefined && serverErrorCodes.has(code)) {
     return failure(
       "server",
-      `O servidor não conseguiu concluir a venda agora. ${transientHint}`
+      `O servidor não conseguiu concluir a venda agora e não sabemos se ela foi registrada. ${lockHint}`
     );
   }
   return failure(
     "unknown",
-    `Não foi possível confirmar a venda. ${transientHint}`
+    `Não foi possível confirmar se a venda foi registrada. ${lockHint}`
   );
 }
 
@@ -1778,7 +1951,14 @@ function confirmedSaleView(sale: ConfirmedSaleReadModel): ConfirmedSaleView {
 export type SubmissionState =
   | { phase: "idle" }
   | { phase: "submitting" }
+  /** A definite failure: the server did not register the sale; editing stays allowed. */
   | { failure: SaleSubmitFailure; phase: "failed" }
+  /** The outcome is unknown: the form is locked on this attempt. */
+  | {
+      confirmingDiscard: boolean;
+      failure: SaleSubmitFailure;
+      phase: "locked";
+    }
   | { phase: "confirmed"; sale: ConfirmedSaleView };
 
 export const idleSubmission: SubmissionState = { phase: "idle" };
@@ -1787,7 +1967,24 @@ export function isSubmitting(state: SubmissionState): boolean {
   return state.phase === "submitting";
 }
 
-/** A sale can start only when the form is valid and no request is in flight. */
+/** True while the sale cannot be edited: in flight, or an unknown outcome. */
+export function isFormLocked(state: SubmissionState): boolean {
+  return state.phase === "submitting" || state.phase === "locked";
+}
+
+/** Applies a user edit unless the sale is locked; locked edits are rejected. */
+export function editSaleForm(
+  state: SubmissionState,
+  form: SaleFormState,
+  edit: (current: SaleFormState) => SaleFormState
+): SaleFormState {
+  return isFormLocked(state) ? form : edit(form);
+}
+
+/**
+ * A sale can start only when the form is valid and no request is in flight. A
+ * locked sale can only be resent unchanged, which is exactly what its form is.
+ */
 export function canStartSubmission(
   state: SubmissionState,
   evaluation: SaleEvaluation
@@ -1799,21 +1996,80 @@ export function startSubmission(state: SubmissionState): SubmissionState {
   return isSubmitting(state) ? state : { phase: "submitting" };
 }
 
+/** Definite failures unlock editing; an unknown outcome locks the sale. */
 export function failSubmission(error: unknown): SubmissionState {
-  return { failure: mapSaleSubmitError(error), phase: "failed" };
+  const mapped = mapSaleSubmitError(error);
+  return mapped.unknownOutcome
+    ? { confirmingDiscard: false, failure: mapped, phase: "locked" }
+    : { failure: mapped, phase: "failed" };
 }
 
 /** The final domain validation rejected the form before any request. */
 export function rejectSubmission(message: string): SubmissionState {
   return {
     failure: {
+      discardAttempt: false,
       kind: "bad_request",
       message,
+      reason: null,
       refreshData: false,
-      retrySameCommand: false,
+      unknownOutcome: false,
     },
     phase: "failed",
   };
+}
+
+/** First step of discarding a locked sale: only asks for confirmation. */
+export function requestDiscard(state: SubmissionState): SubmissionState {
+  return state.phase === "locked"
+    ? { ...state, confirmingDiscard: true }
+    : state;
+}
+
+export function cancelDiscard(state: SubmissionState): SubmissionState {
+  return state.phase === "locked"
+    ? { ...state, confirmingDiscard: false }
+    : state;
+}
+
+export interface DiscardedSale {
+  /** The attempt (command ID and instant) is forgotten: the next sale gets new ones. */
+  attempt: null;
+  form: SaleFormState;
+  submission: SubmissionState;
+}
+
+/**
+ * Second step: discards the locked sale and starts a blank one. Returns null
+ * unless the operator already saw and accepted the confirmation step.
+ */
+export function discardLockedSale(
+  state: SubmissionState,
+  createId: () => string
+): DiscardedSale | null {
+  if (state.phase !== "locked" || !state.confirmingDiscard) {
+    return null;
+  }
+  return {
+    attempt: null,
+    form: createBlankSaleForm(createId),
+    submission: idleSubmission,
+  };
+}
+
+/**
+ * The attempt to keep after a failure: an attempt the server cannot accept
+ * again as is (same ID with other content, or a future instant) is dropped so
+ * the next confirm creates a fresh one.
+ */
+export function attemptAfterFailure(
+  state: SubmissionState,
+  attempt: SaleAttempt
+): SaleAttempt | null {
+  const dropped =
+    (state.phase === "failed" || state.phase === "locked") &&
+    state.failure.discardAttempt;
+  return dropped ? null : attempt;
 }
 
 export function confirmSubmission(
@@ -1826,8 +2082,7 @@ export function submitButtonLabel(state: SubmissionState): string {
   if (isSubmitting(state)) {
     return "Confirmando venda…";
   }
-  if (state.phase === "failed" && state.failure.retrySameCommand) {
-    return "Tentar confirmar novamente";
-  }
-  return "Confirmar venda";
+  return state.phase === "locked"
+    ? "Tentar novamente (seguro)"
+    : "Confirmar venda";
 }

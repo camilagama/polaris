@@ -109,6 +109,7 @@ import {
 } from "@polaris/domain/inventory/write-off-stock";
 import {
   InvalidConfirmSaleCommandError,
+  SaleOccurredInFutureError,
   SaleCommandConflictError,
   SaleProductUnavailableError,
   UnsupportedConfirmSaleCommandVersionError,
@@ -402,6 +403,29 @@ function initialOrganizationErrorCode(
   }
 }
 
+/**
+ * Domain failures that the caller can act on carry their stable snake_case
+ * domain code as `data.reason`, so clients can explain a 400/404/409 without
+ * parsing messages. The cause itself is never serialized. Authorization and
+ * unexpected errors deliberately expose no reason.
+ */
+function clientRpcError(
+  code: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND",
+  error: unknown
+): ORPCError<typeof code, { reason: string } | undefined> {
+  const reason =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : undefined;
+  return new ORPCError(code, {
+    cause: error,
+    data: reason === undefined ? undefined : { reason },
+  });
+}
+
 function toRpcError(error: unknown): never {
   if (error instanceof TenantRequestContextError) {
     throw new ORPCError(tenantContextErrorCode(error.code), { cause: error });
@@ -412,23 +436,23 @@ function toRpcError(error: unknown): never {
   }
 
   if (isRpcErrorInGroup(error, badRequestRpcErrors)) {
-    throw new ORPCError("BAD_REQUEST", { cause: error });
+    throw clientRpcError("BAD_REQUEST", error);
   }
 
   if (isRpcErrorInGroup(error, stockConflictRpcErrors)) {
-    throw new ORPCError("CONFLICT", { cause: error });
+    throw clientRpcError("CONFLICT", error);
   }
 
   if (matchesRpcError(error, [ProductVariantConfigurationError])) {
-    throw new ORPCError("BAD_REQUEST", { cause: error });
+    throw clientRpcError("BAD_REQUEST", error);
   }
 
   if (isRpcErrorInGroup(error, conflictRpcErrors)) {
-    throw new ORPCError("CONFLICT", { cause: error });
+    throw clientRpcError("CONFLICT", error);
   }
 
   if (isRpcErrorInGroup(error, notFoundRpcErrors)) {
-    throw new ORPCError("NOT_FOUND", { cause: error });
+    throw clientRpcError("NOT_FOUND", error);
   }
 
   if (error instanceof CreateInitialOrganizationError) {
@@ -477,6 +501,7 @@ const badRequestRpcErrors = [
   ],
   [
     InvalidConfirmSaleCommandError,
+    SaleOccurredInFutureError,
     UnsupportedConfirmSaleCommandVersionError,
     InvalidSaleAdjustmentError,
     SaleAdjustmentLimitError,

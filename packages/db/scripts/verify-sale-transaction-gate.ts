@@ -7,6 +7,7 @@ import {
 import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
+  SaleOccurredInFutureError,
   SaleProductUnavailableError,
   UnsupportedConfirmSaleCommandVersionError,
 } from "@polaris/domain/sales/confirm-sale";
@@ -259,7 +260,7 @@ async function run() {
             variantId,
           },
         ],
-        occurredAt: "2026-10-13T15:30:00-03:00",
+        occurredAt: "2026-10-12T15:30:00-03:00",
         payment: { anticipationRequested: false, method: "pix" },
         paymentProfile: null,
         requestId: randomUUID(),
@@ -455,7 +456,7 @@ async function run() {
     assert.ok(saleOne.sale.confirmedAt instanceof Date);
     assert.equal(
       saleOne.sale.occurredAt.toISOString(),
-      "2026-10-13T18:30:00.000Z"
+      "2026-10-12T18:30:00.000Z"
     );
     assert.deepEqual(
       await effects(tenantA, saleOneCommandId, saleOneRequestId),
@@ -482,14 +483,14 @@ async function run() {
       {
         command_index: 0,
         movement_type: "sale",
-        occurred_on: "2026-10-13",
+        occurred_on: "2026-10-12",
         quantity_delta: -2,
         unit_cost: "12.345678",
       },
       {
         command_index: 1,
         movement_type: "sale",
-        occurred_on: "2026-10-13",
+        occurred_on: "2026-10-12",
         quantity_delta: -1,
         unit_cost: null,
       },
@@ -628,23 +629,30 @@ async function run() {
     assert.equal(pixPercentage.payment.processingFee.amount, "1.50");
     assert.equal(pixPercentage.payment.processingFee.percentage, "1.500000");
     assert.equal(pixPercentage.payment.expectedSettlementDays, 1);
-    // 2026-10-14T01:30Z is already the 14th in UTC but still the 13th in the
+    // 2026-10-13T01:30Z is already the 13th in UTC but still the 12th in the
     // organization's America/Sao_Paulo time zone: the ledger date follows the
     // organization, not UTC.
     const lateEvening = command(productA2.variantId, {
-      occurredAt: "2026-10-14T01:30:00Z",
+      occurredAt: "2026-10-13T01:30:00Z",
     });
     await confirm(tenantA, lateEvening);
     const lateLedger = await admin.pool.query<{ occurred_on: string }>(
       "SELECT occurred_on::text FROM public.stock_movements WHERE organization_id = $1 AND command_id = $2",
       [tenantA.organizationId, lateEvening.commandId]
     );
-    assert.deepEqual(lateLedger.rows, [{ occurred_on: "2026-10-13" }]);
+    assert.deepEqual(lateLedger.rows, [{ occurred_on: "2026-10-12" }]);
     await expectRejectedWithoutEffects(
       tenantA,
       command(productA2.variantId, { occurredAt: "9999-12-31T23:00:00-05:00" }),
       InvalidConfirmSaleCommandError,
       "an unrepresentable commercial instant is a validation error",
+      [productA2.variantId]
+    );
+    await expectRejectedWithoutEffects(
+      tenantA,
+      command(productA2.variantId, { occurredAt: "2099-01-01T00:00:00Z" }),
+      SaleOccurredInFutureError,
+      "a commercial time ahead of the server clock is rejected",
       [productA2.variantId]
     );
     tests.push(
@@ -693,7 +701,7 @@ async function run() {
       ],
       [
         "different commercial time",
-        { ...saleOneInput, occurredAt: "2026-10-13T16:30:00-03:00" },
+        { ...saleOneInput, occurredAt: "2026-10-12T16:30:00-03:00" },
       ],
     ];
     for (const [label, conflicting] of conflicts) {

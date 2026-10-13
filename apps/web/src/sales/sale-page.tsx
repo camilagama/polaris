@@ -16,6 +16,12 @@ import "./sale-page.css";
 import {
   ADJUSTMENT_KINDS,
   acknowledgeProfileReview,
+  attemptAfterFailure,
+  cancelDiscard,
+  discardLockedSale,
+  editSaleForm,
+  isFormLocked,
+  requestDiscard,
   type AdjustmentDraft,
   addAdjustment,
   addItem,
@@ -520,6 +526,7 @@ function AdjustmentEditor({
 /* -------------------------------------------------------------------------- */
 
 interface PaymentSectionProps {
+  disabled: boolean;
   errors: Record<string, string>;
   evaluation: SaleEvaluation;
   form: SaleFormState;
@@ -535,6 +542,7 @@ interface PaymentSectionProps {
 }
 
 function PaymentSection({
+  disabled,
   errors,
   evaluation,
   form,
@@ -551,7 +559,7 @@ function PaymentSection({
   const card = form.payment.method === "credit_card";
   const options = [noProfileOption, ...profileOptions];
   return (
-    <fieldset className="sale-section">
+    <fieldset className="sale-section" disabled={disabled}>
       <legend>Pagamento</legend>
       <p className="sale-help">
         A venda tem um único pagamento, igual ao total devido
@@ -705,8 +713,10 @@ function FeePreviewPanel({ preview }: { preview: FeePreview | null }) {
 interface SummaryPanelProps {
   errors: Record<string, string>;
   evaluation: SaleEvaluation;
-  failureMessage: string | null;
-  onRefresh: (() => void) | null;
+  onDiscardCancel: () => void;
+  onDiscardConfirm: () => void;
+  onDiscardRequest: () => void;
+  onRefresh: () => void;
   showRequired: boolean;
   submission: SubmissionState;
   summary: SaleSummary | null;
@@ -715,7 +725,9 @@ interface SummaryPanelProps {
 function SummaryPanel({
   errors,
   evaluation,
-  failureMessage,
+  onDiscardCancel,
+  onDiscardConfirm,
+  onDiscardRequest,
   onRefresh,
   showRequired,
   submission,
@@ -779,16 +791,13 @@ function SummaryPanel({
           confirmar a venda.
         </p>
       ) : null}
-      {failureMessage ? (
-        <div className="sale-message is-error" role="alert">
-          <p>{failureMessage}</p>
-          {onRefresh ? (
-            <button className="quiet-button" onClick={onRefresh} type="button">
-              Atualizar dados e revisar a venda
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      <FailureNotice
+        onDiscardCancel={onDiscardCancel}
+        onDiscardConfirm={onDiscardConfirm}
+        onDiscardRequest={onDiscardRequest}
+        onRefresh={onRefresh}
+        submission={submission}
+      />
       <button
         className="primary-button sale-submit"
         disabled={isSubmitting(submission)}
@@ -797,6 +806,77 @@ function SummaryPanel({
         {submitButtonLabel(submission)}
       </button>
     </aside>
+  );
+}
+
+interface FailureNoticeProps {
+  onDiscardCancel: () => void;
+  onDiscardConfirm: () => void;
+  onDiscardRequest: () => void;
+  onRefresh: () => void;
+  submission: SubmissionState;
+}
+
+/** Shows a failed or locked submission and the actions allowed for it. */
+function FailureNotice({
+  onDiscardCancel,
+  onDiscardConfirm,
+  onDiscardRequest,
+  onRefresh,
+  submission,
+}: FailureNoticeProps) {
+  if (submission.phase === "failed") {
+    return (
+      <div className="sale-message is-error" role="alert">
+        <p>{submission.failure.message}</p>
+        {submission.failure.refreshData ? (
+          <button className="quiet-button" onClick={onRefresh} type="button">
+            Atualizar dados e revisar a venda
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  if (submission.phase !== "locked") {
+    return null;
+  }
+  return (
+    <div className="sale-message is-error sale-locked" role="alert">
+      <p>{submission.failure.message}</p>
+      {submission.confirmingDiscard ? (
+        <>
+          <p>
+            <strong>Esta venda pode já ter sido registrada.</strong> Se você
+            descartá-la e digitar a venda de novo, ela pode ficar duplicada.
+            Descarte só se tiver verificado que ela não foi registrada.
+          </p>
+          <div className="sale-actions">
+            <button
+              className="danger-button"
+              onClick={onDiscardConfirm}
+              type="button"
+            >
+              Sim, descartar e começar outra
+            </button>
+            <button
+              className="quiet-button"
+              onClick={onDiscardCancel}
+              type="button"
+            >
+              Voltar
+            </button>
+          </div>
+        </>
+      ) : (
+        <button
+          className="quiet-button"
+          onClick={onDiscardRequest}
+          type="button"
+        >
+          Descartar esta venda e começar outra
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -979,19 +1059,24 @@ export function SalePage() {
     ensureItemData(form.items);
   }, [ensureItemData, form.items, refreshAll]);
 
+  const editForm = useCallback(
+    (edit: (current: SaleFormState) => SaleFormState) =>
+      setForm((current) => editSaleForm(submission, current, edit)),
+    [submission]
+  );
   const handleItemChange = useCallback(
     (draftId: string, changes: Partial<ItemDraft>) =>
-      setForm((current) => updateItem(current, draftId, changes)),
-    []
+      editForm((current) => updateItem(current, draftId, changes)),
+    [editForm]
   );
   const handleProductChange = useCallback(
     (draftId: string, productId: string) =>
-      setForm((current) => selectItemProduct(current, draftId, productId)),
-    []
+      editForm((current) => selectItemProduct(current, draftId, productId)),
+    [editForm]
   );
   const handleVariantChange = useCallback(
     (draftId: string, variantId: string) =>
-      setForm((current) =>
+      editForm((current) =>
         chooseItemVariant(
           current,
           draftId,
@@ -1000,69 +1085,71 @@ export function SalePage() {
           productNames
         )
       ),
-    [catalog.variants, productNames]
+    [catalog.variants, editForm, productNames]
   );
   const handleAddItem = useCallback(
-    () => setForm((current) => addItem(current, newId())),
-    []
+    () => editForm((current) => addItem(current, newId())),
+    [editForm]
   );
   const handleRemoveItem = useCallback(
-    (draftId: string) => setForm((current) => removeItem(current, draftId)),
-    []
+    (draftId: string) => editForm((current) => removeItem(current, draftId)),
+    [editForm]
   );
   const handleAddAdjustment = useCallback(
-    () => setForm((current) => addAdjustment(current, newId())),
-    []
+    () => editForm((current) => addAdjustment(current, newId())),
+    [editForm]
   );
   const handleAdjustmentChange = useCallback(
     (draftId: string, changes: Partial<Omit<AdjustmentDraft, "draftId">>) =>
-      setForm((current) => updateAdjustment(current, draftId, changes)),
-    []
+      editForm((current) => updateAdjustment(current, draftId, changes)),
+    [editForm]
   );
   const handleRemoveAdjustment = useCallback(
     (draftId: string) =>
-      setForm((current) => removeAdjustment(current, draftId)),
-    []
+      editForm((current) => removeAdjustment(current, draftId)),
+    [editForm]
   );
   const handleMethodChange = useCallback(
     (value: string) =>
-      setForm((current) =>
+      editForm((current) =>
         selectPaymentMethod(current, value as SaleMethod | "")
       ),
-    []
+    [editForm]
   );
   const handleInstallmentsChange = useCallback(
     (value: string) =>
-      setForm((current) => updatePayment(current, { installments: value })),
-    []
+      editForm((current) => updatePayment(current, { installments: value })),
+    [editForm]
   );
   const handlePlanChange = useCallback(
     (value: string) =>
-      setForm((current) =>
+      editForm((current) =>
         updatePayment(current, {
           installmentPlan: value as "" | "issuer" | "merchant",
         })
       ),
-    []
+    [editForm]
   );
   const handleAnticipationChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const { checked } = event.target;
-      setForm((current) =>
+      editForm((current) =>
         updatePayment(current, { anticipationRequested: checked })
       );
     },
-    []
+    [editForm]
   );
   const handleProfileChange = useCallback(
     (value: string) =>
-      setForm((current) => selectProfileChoice(current, value, activeProfiles)),
-    [activeProfiles]
+      editForm((current) =>
+        selectProfileChoice(current, value, activeProfiles)
+      ),
+    [activeProfiles, editForm]
   );
   const handleAcknowledgeReview = useCallback(
     () =>
-      setForm((current) => acknowledgeProfileReview(current, activeProfiles)),
-    [activeProfiles]
+      editForm((current) => acknowledgeProfileReview(current, activeProfiles)),
+    [activeProfiles, editForm]
   );
 
   const handleSubmit = useCallback(
@@ -1103,13 +1190,34 @@ export function SalePage() {
         setShowRequired(false);
         resetStock();
       } catch (error) {
-        setSubmission(failSubmission(error));
+        const failed = failSubmission(error);
+        attemptRef.current = attemptAfterFailure(failed, prepared.attempt);
+        setSubmission(failed);
       } finally {
         inFlightRef.current = false;
       }
     },
     [evaluation, organizationId, resetStock, submission]
   );
+  const handleDiscardRequest = useCallback(
+    () => setSubmission((current) => requestDiscard(current)),
+    []
+  );
+  const handleDiscardCancel = useCallback(
+    () => setSubmission((current) => cancelDiscard(current)),
+    []
+  );
+  const handleDiscardConfirm = useCallback(() => {
+    const discarded = discardLockedSale(submission, newId);
+    if (discarded === null) {
+      return;
+    }
+    attemptRef.current = discarded.attempt;
+    setForm(discarded.form);
+    setSubmission(discarded.submission);
+    setShowRequired(false);
+    resetStock();
+  }, [resetStock, submission]);
   const handleSubmitEvent = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       handleSubmit(event).catch(() => undefined);
@@ -1135,7 +1243,7 @@ export function SalePage() {
     );
   }
 
-  const failure = submission.phase === "failed" ? submission.failure : null;
+  const locked = isFormLocked(submission);
   const productOptions = optionsOf(productsState);
   const profileOptions = optionsOf(profilesState);
   return (
@@ -1162,7 +1270,7 @@ export function SalePage() {
           onSubmit={handleSubmitEvent}
         >
           <div className="sale-main">
-            <fieldset className="sale-section">
+            <fieldset className="sale-section" disabled={locked}>
               <legend>Itens da venda</legend>
               <div className="sale-toolbar">
                 <p className="sale-help">
@@ -1207,7 +1315,7 @@ export function SalePage() {
                 Adicionar item
               </button>
             </fieldset>
-            <fieldset className="sale-section">
+            <fieldset className="sale-section" disabled={locked}>
               <legend>Ajustes da venda</legend>
               <p className="sale-help">
                 Desconto, acréscimo, frete e sobretaxa de pagamento. Percentuais
@@ -1244,6 +1352,7 @@ export function SalePage() {
               </button>
             </fieldset>
             <PaymentSection
+              disabled={locked}
               errors={evaluation.errors}
               evaluation={evaluation}
               form={form}
@@ -1261,8 +1370,10 @@ export function SalePage() {
           <SummaryPanel
             errors={evaluation.errors}
             evaluation={evaluation}
-            failureMessage={failure?.message ?? null}
-            onRefresh={failure?.refreshData ? handleRefresh : null}
+            onDiscardCancel={handleDiscardCancel}
+            onDiscardConfirm={handleDiscardConfirm}
+            onDiscardRequest={handleDiscardRequest}
+            onRefresh={handleRefresh}
             showRequired={showRequired}
             submission={submission}
             summary={evaluation.summary}
