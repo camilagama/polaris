@@ -4,6 +4,8 @@ Este documento é o dossiê para a **revisão completa da implementação, da et
 
 Nada foi integrado ao `main` nem implantado: todas as etapas continuam em PRs *draft* empilhados.
 
+> **Atualização pós-revisão.** Este dossiê descreve o estado no momento do checkpoint. A revisão completa está em [`revisao-checkpoint-gate4.md`](revisao-checkpoint-gate4.md) e as correções (migrations 0039–0041, decisões D-1 a D-7, interface de estoque, borda, ferramentas) estão em [`status-implementacao.md`](status-implementacao.md), seção "Rodada de correções pós-revisão". Onde este dossiê diz que uma decisão está em aberto, vale o registro da rodada de correções.
+
 ## 1. Onde estamos
 
 | Fase | PRs | Resultado |
