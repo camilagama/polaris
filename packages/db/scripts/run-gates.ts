@@ -58,6 +58,7 @@ const gates: Gate[] = [
   ["sale-dates", "verify-sale-dates-gate.ts"],
   ["gate4", "verify-gate4-sales-core.ts"],
   ["review-hardening", "verify-review-hardening-gate.ts"],
+  ["read-models", "verify-read-models-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
@@ -120,6 +121,7 @@ const suites: Record<string, string[]> = {
     "sale-dates",
     "gate4",
     "review-hardening",
+    "read-models",
   ],
   gate3: ["gate2-runtime", "inventory", "media-upload", "review-hardening"],
   gate4: [
@@ -131,6 +133,7 @@ const suites: Record<string, string[]> = {
     "sale-dates",
     "gate4",
     "customers",
+    "read-models",
   ],
 };
 
