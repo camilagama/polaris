@@ -20,8 +20,6 @@ const HIBP_RANGE_PATH_PATTERN =
 const testBindings = {
   BETTER_AUTH_BASE_URL: testBaseURL,
   BETTER_AUTH_SECRET: testSecret,
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
   HYPERDRIVE: { connectionString: "" },
 } as WorkerBindings;
 
@@ -259,8 +257,6 @@ function stubGoogleTokenExchange() {
 describe("Better Auth route", () => {
   it("fails closed when the Worker secret is not configured", async () => {
     const env = {
-      DB_POC_ENABLED: "false",
-      DB_RLS_POC_ENABLED: "false",
       HYPERDRIVE: { connectionString: "" },
     } as WorkerBindings;
 
@@ -305,6 +301,7 @@ describe("Better Auth route", () => {
 
     const revokeHeaders = new Headers(login.headers);
     revokeHeaders.set("content-type", "application/json");
+    revokeHeaders.set("origin", testBaseURL);
     const revokeResponse = await testApp.request(
       "/api/auth/revoke-session",
       {
@@ -788,7 +785,10 @@ describe("Email/password authentication", () => {
       "/api/auth/send-verification-email",
       {
         body: JSON.stringify({ email }),
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
         method: "POST",
       },
       testBindings
@@ -797,7 +797,10 @@ describe("Email/password authentication", () => {
       "/api/auth/send-verification-email",
       {
         body: JSON.stringify({ email: "not-registered@example.invalid" }),
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
         method: "POST",
       },
       testBindings
@@ -1121,8 +1124,6 @@ describe("Google OAuth and security audit", () => {
     const env = {
       BETTER_AUTH_BASE_URL: testBaseURL,
       BETTER_AUTH_SECRET: testSecret,
-      DB_POC_ENABLED: "false",
-      DB_RLS_POC_ENABLED: "false",
       HYPERDRIVE: { connectionString: "" },
     } as WorkerBindings;
 

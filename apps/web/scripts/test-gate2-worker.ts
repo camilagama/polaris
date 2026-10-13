@@ -87,6 +87,7 @@ function hasRpcCode(error: unknown, code: string): boolean {
 
 function rpcClient(workerUrl: URL, authHeaders?: Headers): PolarisRpcClient {
   const link = new RPCLink({
+    headers: { origin: workerUrl.origin },
     method: "POST",
     url: new URL("/rpc", workerUrl),
     fetch: (request) => {
@@ -327,6 +328,9 @@ function workerEnvironment(
     BETTER_AUTH_BASE_URL: baseURL,
     BETTER_AUTH_SECRET: secret,
     CLOUDFLARE_INCLUDE_PROCESS_ENV: "true",
+    // Local gate: one role serves auth and tenant data; production uses a dedicated auth role.
+    CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_AUTH_HYPERDRIVE:
+      tenantConnectionString,
     CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE:
       tenantConnectionString,
     CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_ONBOARDING_HYPERDRIVE:

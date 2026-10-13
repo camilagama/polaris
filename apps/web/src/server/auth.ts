@@ -21,6 +21,10 @@ import {
   SESSION_IDLE_TTL_SECONDS,
   SESSION_REFRESH_INTERVAL_SECONDS,
 } from "./auth/session-policy";
+import {
+  type BackgroundTaskHandler,
+  betterAuthSecurityOptions,
+} from "./auth/security-options";
 
 type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
 
@@ -69,6 +73,7 @@ interface CreateBetterAuthOptions {
   googleProvider?: GoogleOptions;
   plugins?: BetterAuthOptions["plugins"];
   requestId?: string;
+  runInBackground?: BackgroundTaskHandler;
   secret: string;
 }
 
@@ -521,6 +526,7 @@ export function createBetterAuth({
   googleProvider,
   plugins,
   requestId,
+  runInBackground,
   secret,
 }: CreateBetterAuthOptions) {
   const safeRequestId = normalizeRequestId(requestId);
@@ -612,6 +618,7 @@ export function createBetterAuth({
       },
       encryptOAuthTokens: true,
     },
+    ...betterAuthSecurityOptions(baseURL, runInBackground),
     appName: "Polaris",
     baseURL,
     database: resolvedDatabase,

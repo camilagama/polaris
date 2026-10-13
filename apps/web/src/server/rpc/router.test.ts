@@ -12,8 +12,6 @@ const requestIdPattern = /^[0-9a-f-]{36}$/i;
 const testBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   ONBOARDING_HYPERDRIVE: {
     connectionString: "postgresql://onboarding.invalid/neondb",
@@ -25,6 +23,7 @@ function createRpcClient(router = createRpcRouter()) {
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
     method: "POST",
+    headers: { origin: "https://polaris.example.invalid" },
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 

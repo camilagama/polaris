@@ -4,15 +4,24 @@
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat", "nodejs_als"],
   "vars": {
-    "DB_POC_ENABLED": "false",
-    "DB_RLS_POC_ENABLED": "false",
     "EMAIL_PASSWORD_AUTH_ENABLED": "false",
     "AUTH_ABUSE_PROTECTION_ENABLED": "false"
   },
   "main": "./worker/index.ts",
+  // Structured console.error/console.warn output (see src/server/observability).
+  "observability": { "enabled": true },
+  // The ids below only serve local development. Deployed Workers need real
+  // Hyperdrive configurations with query caching disabled:
+  // - HYPERDRIVE: tenant role (RLS, no access to the auth tables)
+  // - AUTH_HYPERDRIVE: Better Auth role (DML only on user/account/session/verification)
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "AUTH_HYPERDRIVE",
       "id": "local-only",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
     },
@@ -47,6 +56,16 @@
       "name": "AUTH_EMAIL_RATE_LIMITER",
       "namespace_id": "901017",
       "simple": { "limit": 3, "period": 60 }
+    },
+    {
+      "name": "RPC_MUTATION_RATE_LIMIT",
+      "namespace_id": "901018",
+      "simple": { "limit": 120, "period": 60 }
+    },
+    {
+      "name": "MEDIA_UPLOAD_RATE_LIMIT",
+      "namespace_id": "901019",
+      "simple": { "limit": 20, "period": 60 }
     }
   ],
   "triggers": {

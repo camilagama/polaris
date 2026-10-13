@@ -24,8 +24,7 @@ function createBindings(
   return {
     BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
     BETTER_AUTH_SECRET: "a".repeat(32),
-    DB_POC_ENABLED: "false",
-    DB_RLS_POC_ENABLED: "false",
+    AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
     HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
     ...overrides,
   };
@@ -104,6 +103,7 @@ describe("tenant request context", () => {
 
   it("passes only the Better Auth session user and requested organization to the transaction", async () => {
     const fixture = createFixture({
+      session: { createdAt: new Date() },
       user: { id: "session-user-42" },
     });
 
@@ -118,11 +118,17 @@ describe("tenant request context", () => {
       },
       baseInput.operation
     );
-    expect(fixture.createDatabase).toHaveBeenCalledWith(
+    expect(fixture.createDatabase).toHaveBeenNthCalledWith(
+      1,
+      baseInput.bindings.AUTH_HYPERDRIVE?.connectionString,
+      { maxConnections: 1 }
+    );
+    expect(fixture.createDatabase).toHaveBeenNthCalledWith(
+      2,
       baseInput.bindings.HYPERDRIVE.connectionString,
       { maxConnections: 1 }
     );
-    expect(fixture.database.pool.end).toHaveBeenCalledOnce();
+    expect(fixture.database.pool.end).toHaveBeenCalledTimes(2);
   });
 
   it("default context entrypoint fails closed when Better Auth is unavailable", async () => {
@@ -135,6 +141,7 @@ describe("tenant request context", () => {
   });
   it("fails when Better Auth configuration is unavailable without opening a database pool", async () => {
     const fixture = createFixture({
+      session: { createdAt: new Date() },
       user: { id: "session-user-42" },
     });
 
@@ -151,6 +158,7 @@ describe("tenant request context", () => {
 
   it("closes the database pool when the requested organization is invalid", async () => {
     const fixture = createFixture({
+      session: { createdAt: new Date() },
       user: { id: "session-user-42" },
     });
 
@@ -159,6 +167,82 @@ describe("tenant request context", () => {
     ).rejects.toMatchObject({ code: "organization_id_required" });
 
     expect(fixture.runTransaction).not.toHaveBeenCalled();
+    expect(fixture.database.pool.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a session older than the 30-day absolute lifetime without touching tenant data", async () => {
+    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    const fixture = createFixture({
+      session: { createdAt: thirtyOneDaysAgo },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).rejects.toMatchObject({
+      code: "session_required",
+    });
+
+    expect(fixture.createDatabase).toHaveBeenCalledOnce();
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
+    expect(fixture.database.pool.end).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a session whose creation time is unknown", async () => {
+    const fixture = createFixture({
+      session: { createdAt: "not-a-date" },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).rejects.toMatchObject({
+      code: "session_required",
+    });
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
+  });
+
+  it("accepts a session just inside the absolute lifetime", async () => {
+    const twentyNineDaysAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000);
+    const fixture = createFixture({
+      session: { createdAt: twentyNineDaysAgo },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).resolves.toBe("tenant result");
+  });
+
+  it("fails closed when a deployed Worker has no dedicated auth Hyperdrive", async () => {
+    const fixture = createFixture({
+      session: { createdAt: new Date() },
+      user: { id: "session-user-42" },
+    });
+    const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
+      createBindings();
+
+    await expect(
+      fixture.context({ ...baseInput, bindings: withoutAuthDatabase })
+    ).rejects.toMatchObject({ code: "authentication_unavailable" });
+
+    expect(fixture.createDatabase).not.toHaveBeenCalled();
+    expect(fixture.getSession).not.toHaveBeenCalled();
+  });
+
+  it("uses one shared pool in local development when both roles share a connection", async () => {
+    const fixture = createFixture({
+      session: { createdAt: new Date() },
+      user: { id: "session-user-42" },
+    });
+    const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
+      createBindings();
+
+    await expect(
+      fixture.context({
+        ...baseInput,
+        bindings: {
+          ...withoutAuthDatabase,
+          BETTER_AUTH_BASE_URL: "http://127.0.0.1:5173",
+        },
+      })
+    ).resolves.toBe("tenant result");
+
+    expect(fixture.createDatabase).toHaveBeenCalledOnce();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
   });
 });

@@ -11,7 +11,7 @@ import {
   verifyRlsPocTransactionContextReset,
 } from "@polaris/db/rls-poc-gate";
 import { Hono } from "hono";
-import type { ServerEnv } from "../environment";
+import type { HyperdriveBinding } from "../src/server/environment";
 
 type RlsPocAction =
   | "read"
@@ -30,7 +30,14 @@ interface RlsPocRequest {
   token?: string;
 }
 
-const route = new Hono<ServerEnv>();
+export interface RlsPocEnv {
+  Bindings: {
+    DB_RLS_POC_ENABLED?: string;
+    HYPERDRIVE: HyperdriveBinding;
+  };
+}
+
+const route = new Hono<RlsPocEnv>();
 const tokenPattern = /^[0-9a-f-]{36}$/i;
 
 route.onError((_error, context) =>
