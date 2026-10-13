@@ -1,3 +1,4 @@
+import { ProductMediaLimitError } from "@polaris/domain/catalog/media";
 import {
   ProductDeletedError,
   ProductVariantNotFoundError,
@@ -143,8 +144,6 @@ function uploadRequest(input: {
 }
 
 const testBindings: ServerEnv["Bindings"] = {
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   IMAGES: {} as never,
 };
@@ -366,5 +365,106 @@ describe("media upload route", () => {
     expect(response.status).toBe(400);
     expect(dependencies.getMediaAssetForDelivery).not.toHaveBeenCalled();
     expect(mediaBucket.get).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for malformed asset ids without opening a database transaction", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+
+    const statuses = await Promise.all(
+      ["not-a-uuid", "1", "%27%3B%20DROP%20TABLE", "0".repeat(36)].map(
+        async (assetId) =>
+          (
+            await app.fetch(
+              new Request(
+                `https://polaris.example.invalid/api/media/${assetId}?organizationId=${encodeURIComponent(organizationId)}`
+              ),
+              bindings
+            )
+          ).status
+      )
+    );
+
+    expect(statuses).toEqual([404, 404, 404, 404]);
+    expect(dependencies.withTenantRequestContext).not.toHaveBeenCalled();
+    expect(dependencies.getMediaAssetForDelivery).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for malformed product ids without opening a database transaction", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+
+    const response = await app.fetch(
+      new Request(
+        `https://polaris.example.invalid/api/products/not-a-uuid/media?organizationId=${encodeURIComponent(organizationId)}`
+      ),
+      bindings
+    );
+
+    expect(response.status).toBe(404);
+    expect(dependencies.withTenantRequestContext).not.toHaveBeenCalled();
+    expect(dependencies.listProductMedia).not.toHaveBeenCalled();
+  });
+
+  it("maps the per-product media ceiling to a stable 409 and removes the stored object", async () => {
+    const { app, bindings, mediaBucket, stored } = createTestApp({
+      createProductMediaAsset: vi.fn(() =>
+        Promise.reject(new ProductMediaLimitError())
+      ),
+    });
+    const response = await app.fetch(
+      uploadRequest({ body: new Uint8Array([1, 2, 3]) }),
+      bindings
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "product_media_limit" },
+    });
+    expect(mediaBucket.delete).toHaveBeenCalledTimes(2);
+    expect(stored.size).toBe(0);
+  });
+
+  it("logs unexpected failures without personal data and keeps the response generic", async () => {
+    const logger = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const databaseFailure = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint for "ana@example.com"'
+      ),
+      { code: "23505", name: "DatabaseError" }
+    );
+    const { app, bindings } = createTestApp({
+      listProductMedia: vi.fn(() => Promise.reject(databaseFailure)),
+    });
+
+    const response = await app.fetch(
+      new Request(
+        `https://polaris.example.invalid/api/products/${productId}/media?organizationId=${encodeURIComponent(organizationId)}`
+      ),
+      bindings
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(body).not.toContain("ana@example.com");
+    expect(JSON.parse(body)).toMatchObject({
+      error: { code: "internal_error" },
+    });
+    expect(logger).toHaveBeenCalledOnce();
+    const [entry] = logger.mock.calls[0] ?? [];
+    expect(entry).toMatchObject({
+      errorCode: "23505",
+      errorName: "DatabaseError",
+      event: "server_error",
+      method: "GET",
+      route: "/api/products/:productId/media",
+      status: 500,
+    });
+    const serialized = JSON.stringify(entry);
+    expect(serialized).not.toContain("ana@example.com");
+    expect(serialized).not.toContain(organizationId);
+    expect(serialized).not.toContain(productId);
+    expect(serialized).not.toContain("stack");
+    logger.mockRestore();
   });
 });
