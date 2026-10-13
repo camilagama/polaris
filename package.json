@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "boundaries": "node scripts/verify-import-boundaries.mjs",
+    "boundaries": "node scripts/verify-import-boundaries.mjs && node scripts/verify-no-import-cycles.mjs",
     "build": "turbo run build",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run knip && bun run test",
     "dev": "turbo run dev --filter=@polaris/web",
@@ -15,7 +15,7 @@
     "format:check": "biome format .",
     "knip": "knip",
     "lint": "biome lint .",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
