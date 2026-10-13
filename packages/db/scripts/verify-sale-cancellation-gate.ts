@@ -802,6 +802,98 @@ async function run() {
       }
     });
     assert.equal(await cancellationCount(tenantA, guardSale.sale.id), 1);
+    // Negative probes of the movement matching: each wrong shape is rejected.
+    const shapeSale = await confirmPlainSale(rt, tenantA, [
+      { quantity: 2, variantId: a1.variantId },
+      { quantity: 1, variantId: a2.variantId },
+    ]);
+    const shapeItems = await admin.pool.query<{
+      position: number;
+      product_id: string;
+      quantity: number;
+      unit_cost: string | null;
+      variant_id: string;
+    }>(
+      "SELECT position, product_id, variant_id, quantity, unit_cost::text FROM public.sale_items WHERE sale_id = $1 ORDER BY position",
+      [shapeSale.sale.id]
+    );
+    const [shape0, shape1] = shapeItems.rows;
+    assert.ok(shape0 && shape1);
+    interface ShapeMovement {
+      index: number;
+      productId: string;
+      quantity: number;
+      unitCost: string | null;
+      variantId: string;
+    }
+    const attemptShape = (movements: ShapeMovement[]) =>
+      withRuntimeSqlContext(runtimeUrl, tenantA, async (client) => {
+        const command = randomUUID();
+        await client.query(
+          "INSERT INTO public.sale_cancellations (organization_id, sale_id, command_id, cancelled_by) VALUES ($1, $2, $3, $4)",
+          [tenantA.organizationId, shapeSale.sale.id, command, tenantA.userId]
+        );
+        for (const movement of movements) {
+          // biome-ignore lint/performance/noAwaitInLoops: statements share one transaction
+          await client.query(
+            "INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta, unit_cost) VALUES ($1, $2, $3, 1, '2026-10-13', 'sale_cancellation', $4, $5, $6, $7)",
+            [
+              tenantA.organizationId,
+              command,
+              movement.index,
+              movement.productId,
+              movement.variantId,
+              movement.quantity,
+              movement.unitCost,
+            ]
+          );
+        }
+      });
+    const correct0: ShapeMovement = {
+      index: 0,
+      productId: shape0.product_id,
+      quantity: shape0.quantity,
+      unitCost: shape0.unit_cost,
+      variantId: shape0.variant_id,
+    };
+    const correct1: ShapeMovement = {
+      index: 1,
+      productId: shape1.product_id,
+      quantity: shape1.quantity,
+      unitCost: shape1.unit_cost,
+      variantId: shape1.variant_id,
+    };
+    for (const [label, movements] of [
+      ["a missing movement", [correct0]],
+      [
+        "a wrong quantity",
+        [{ ...correct0, quantity: correct0.quantity + 1 }, correct1],
+      ],
+      ["a wrong cost", [{ ...correct0, unitCost: "99.000000" }, correct1]],
+      [
+        "a swapped variant",
+        [
+          correct0,
+          {
+            ...correct1,
+            productId: correct0.productId,
+            variantId: correct0.variantId,
+          },
+        ],
+      ],
+      ["an extra movement", [correct0, correct1, { ...correct0, index: 2 }]],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: each wrong shape is a separate rolled-back transaction
+      await expectSqlState(
+        () => attemptShape([...movements]),
+        "23514",
+        `a cancellation with ${label} is rejected at commit`,
+        "sale_cancellations_stock_complete"
+      );
+    }
+    assert.equal(await cancellationCount(tenantA, shapeSale.sale.id), 0);
+    await attemptShape([correct0, correct1]);
+    assert.equal(await cancellationCount(tenantA, shapeSale.sale.id), 1);
     for (const statement of [
       "UPDATE public.sale_cancellations SET reason_code = 'other'",
       "DELETE FROM public.sale_cancellations",

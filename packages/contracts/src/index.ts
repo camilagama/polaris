@@ -949,7 +949,7 @@ export const polarisContract = {
           commandVersion: z.literal(1),
           organizationId: z.string().trim().min(1),
           reasonCode: z.enum(cancellationReasonCodes).nullable().optional(),
-          reasonNote: z.string().nullable().optional(),
+          reasonNote: z.string().max(2000).nullable().optional(),
           saleId: z.string().uuid(),
         })
       )

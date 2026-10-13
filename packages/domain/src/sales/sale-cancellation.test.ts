@@ -96,6 +96,18 @@ describe("normalizeCancelSaleCommand", () => {
     ).toThrow(InvalidSaleCancellationError);
   });
 
+  it("rejects notes PostgreSQL could not store faithfully", () => {
+    for (const reasonNote of [
+      "com\u0000nulo",
+      "surrogate \ud800 solto",
+      "x".repeat(5000),
+    ]) {
+      expect(() =>
+        normalizeCancelSaleCommand(input({ reasonCode: "other", reasonNote }))
+      ).toThrow(InvalidSaleCancellationError);
+    }
+  });
+
   it("rejects unsupported versions and malformed ids", () => {
     expect(() =>
       normalizeCancelSaleCommand(input({ commandVersion: 2 }))
