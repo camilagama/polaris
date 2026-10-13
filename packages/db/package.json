@@ -8,6 +8,7 @@
     "./tenant-audit-schema": "./src/schema/tenant-audit.ts",
     "./organization-schema": "./src/schema/organization.ts",
     "./organization-repository": "./src/organization-repository.ts",
+    "./organization-membership-query": "./src/organization-membership-query.ts",
     "./client": "./src/client.ts",
     "./schema/poc": "./src/schema/poc.ts",
     "./rls-poc-client": "./src/rls-poc-client.ts",

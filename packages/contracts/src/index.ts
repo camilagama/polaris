@@ -345,6 +345,43 @@ export type InventoryCountMovementReadModel = z.infer<
   typeof inventoryCountMovement
 >;
 
+const inventoryBalanceEntry = z.object({
+  isDefaultVariant: z.boolean(),
+  movingAverageCost: normalizedBrlCost.nullable(),
+  productId: z.string().uuid(),
+  productName: z.string().min(1),
+  productStatus: z.enum(["active", "archived"]),
+  quantity: z.number().int().nonnegative().max(2_147_483_647),
+  sku: z.string().nullable(),
+  updatedAt: z.string().datetime().nullable(),
+  values: z.array(
+    z.object({
+      optionName: productVariantOptionName,
+      optionValueName: z.string().min(1),
+    })
+  ),
+  variantId: z.string().uuid(),
+  version: z.number().int().nonnegative().max(2_147_483_647),
+});
+
+export type InventoryBalanceEntryReadModel = z.infer<
+  typeof inventoryBalanceEntry
+>;
+
+const calendarDateText = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (value) => {
+      const date = new Date(`${value}T00:00:00.000Z`);
+      return (
+        !Number.isNaN(date.getTime()) &&
+        date.toISOString().startsWith(`${value}T`)
+      );
+    },
+    { message: "invalid_calendar_date" }
+  );
+
 const saleAdjustmentKinds = [
   "discount",
   "surcharge",
@@ -520,10 +557,13 @@ const saleListEntry = z.object({
   cancelledAt: z.string().datetime().nullable(),
   confirmedAt: z.string().datetime(),
   customerId: z.string().uuid().nullable(),
+  // The current customer's name, so the history needs no customer list.
+  customerName: z.string().nullable(),
   hasReturns: z.boolean(),
   id: z.string().uuid(),
   itemCount: z.number().int().positive(),
   occurredAt: z.string().datetime(),
+  occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   paymentMethod: z.enum(SALE_PAYMENT_METHODS).nullable(),
   status: z.enum(["confirmed", "cancelled"]),
   totalDue: z.string(),
@@ -581,6 +621,17 @@ const organization = z.object({
   status: z.enum(["active", "suspended", "closed"]),
   timezone: z.string().min(1),
 });
+
+const organizationMembership = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  role: z.string().min(1),
+  timezone: z.string().min(1),
+});
+
+export type OrganizationMembershipReadModel = z.infer<
+  typeof organizationMembership
+>;
 
 export const polarisContract = {
   category: {
@@ -698,6 +749,26 @@ export const polarisContract = {
         })
       )
       .output(inventoryBalance),
+    // One read for the stock screen and the sale picker: every sellable
+    // variant of non-deleted products, with a zero balance when it has no
+    // materialized row. Keyset-paginated; never one request per variant.
+    listBalances: oc
+      .input(
+        z.object({
+          cursor: z.string().min(1).max(512).optional(),
+          limit: z.number().int().min(1).max(100).default(50),
+          organizationId: z.string().trim().min(1),
+          productStatus: z.enum(["active", "all"]).default("active"),
+          query: z.string().trim().max(100).optional(),
+          stock: z.enum(["all", "with_stock", "without_stock"]).default("all"),
+        })
+      )
+      .output(
+        z.object({
+          entries: z.array(inventoryBalanceEntry),
+          nextCursor: z.string().nullable(),
+        })
+      ),
     inventoryCount: oc
       .input(
         z
@@ -790,6 +861,12 @@ export const polarisContract = {
         })
       )
       .output(z.object({ created: z.boolean(), organization })),
+    // No organization ID on purpose: the server reads the authenticated
+    // user's active memberships, so the client learns its organizations here
+    // instead of remembering an ID.
+    listMine: oc.output(
+      z.object({ organizations: z.array(organizationMembership) })
+    ),
   },
   paymentProfile: {
     archive: oc
@@ -1024,9 +1101,17 @@ export const polarisContract = {
     list: oc
       .input(
         z.object({
+          // Optional, additive filters. Dates are commercial dates
+          // (occurredOn), inclusive. "with_returns" is independent of
+          // cancellation; "confirmed" means not cancelled.
+          customerQuery: z.string().trim().max(100).optional(),
           limit: z.number().int().min(1).max(100).default(50),
+          occurredFrom: calendarDateText.optional(),
+          occurredTo: calendarDateText.optional(),
           offset: z.number().int().min(0).max(1_000_000).default(0),
           organizationId: z.string().trim().min(1),
+          query: z.string().trim().max(100).optional(),
+          status: z.enum(["confirmed", "cancelled", "with_returns"]).optional(),
         })
       )
       .output(

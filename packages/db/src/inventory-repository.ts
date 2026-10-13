@@ -28,7 +28,7 @@ import {
   type WriteOffReasonCode,
   type WriteOffStockCommandInput,
 } from "@polaris/domain/inventory/write-off-stock";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import { TenantAuthorizationError } from "./tenant-transaction";
 import type {
@@ -38,6 +38,11 @@ import type {
 import { ProductDeletedError } from "@polaris/domain/catalog/product";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { productVariants, products } from "./schema/product";
+import {
+  productOptions,
+  productOptionValues,
+  variantOptionValues,
+} from "./schema/product-variants";
 
 export interface RecordStockMovementInput {
   movementType: Exclude<
@@ -878,4 +883,310 @@ export async function getInventoryBalance(
       version: 0,
     }
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Balance listing                                                            */
+/* -------------------------------------------------------------------------- */
+
+export const MAX_INVENTORY_BALANCE_LIST_LIMIT = 100;
+
+export type InventoryStockFilter = "all" | "with_stock" | "without_stock";
+type InventoryVariantOptionName = "color" | "model" | "size";
+
+export interface ListInventoryBalancesOptions {
+  cursor?: string | null;
+  /** Archived products stay listed (their stock may still need a write-off). */
+  includeArchived?: boolean;
+  limit?: number;
+  query?: string | null;
+  stock?: InventoryStockFilter;
+}
+
+export interface InventoryBalanceEntry {
+  isDefaultVariant: boolean;
+  movingAverageCost: string | null;
+  productId: string;
+  productName: string;
+  productStatus: "active" | "archived";
+  quantity: number;
+  sku: string | null;
+  updatedAt: Date | null;
+  values: Array<{
+    optionName: InventoryVariantOptionName;
+    optionValueName: string;
+  }>;
+  variantId: string;
+  version: number;
+}
+
+export class InvalidInventoryBalanceCursorError extends Error {
+  readonly code = "invalid_inventory_balance_cursor";
+
+  constructor(options?: ErrorOptions) {
+    super("invalid_inventory_balance_cursor", options);
+    this.name = "InvalidInventoryBalanceCursorError";
+  }
+}
+
+interface InventoryBalanceCursor {
+  name: string;
+  position: number;
+  productId: string;
+  variantId: string;
+}
+
+const cursorUuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const base64PlusPattern = /\+/g;
+const base64SlashPattern = /\//g;
+const base64PaddingPattern = /[=]+$/;
+const base64UrlDashPattern = /-/g;
+const base64UrlUnderscorePattern = /_/g;
+const likeSpecialCharactersPattern = /[\\%_]/g;
+
+/** Opaque keyset cursor: name, product, position and variant of the last row. */
+export function encodeInventoryBalanceCursor(
+  cursor: InventoryBalanceCursor
+): string {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify([
+      cursor.name,
+      cursor.productId,
+      cursor.position,
+      cursor.variantId,
+    ])
+  );
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replace(base64PlusPattern, "-")
+    .replace(base64SlashPattern, "_")
+    .replace(base64PaddingPattern, "");
+}
+
+export function decodeInventoryBalanceCursor(
+  text: string
+): InventoryBalanceCursor {
+  let parsed: unknown;
+  try {
+    const base64 = text
+      .replace(base64UrlDashPattern, "+")
+      .replace(base64UrlUnderscorePattern, "/");
+    const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+    const bytes = Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0)
+    );
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
+  } catch (error) {
+    // biome-ignore lint/style/useErrorCause: InvalidInventoryBalanceCursorError forwards this cause to Error.
+    throw new InvalidInventoryBalanceCursorError({ cause: error });
+  }
+  if (!(Array.isArray(parsed) && parsed.length === 4)) {
+    throw new InvalidInventoryBalanceCursorError();
+  }
+  const [name, productId, position, variantId] = parsed as unknown[];
+  if (
+    typeof name !== "string" ||
+    typeof productId !== "string" ||
+    typeof variantId !== "string" ||
+    !cursorUuidPattern.test(productId) ||
+    !cursorUuidPattern.test(variantId) ||
+    typeof position !== "number" ||
+    !Number.isInteger(position) ||
+    position < 0 ||
+    position > 2_147_483_647
+  ) {
+    throw new InvalidInventoryBalanceCursorError();
+  }
+  return { name, position, productId, variantId };
+}
+
+function isVariantOptionName(
+  value: string
+): value is InventoryVariantOptionName {
+  return value === "model" || value === "color" || value === "size";
+}
+
+function likePattern(text: string): string {
+  return `%${text.replace(likeSpecialCharactersPattern, "\\$&")}%`;
+}
+
+/**
+ * Every variant of the organization's non-deleted products with its balance,
+ * ordered by product name, then variant position. A variant without a
+ * materialized balance row reads as quantity zero and version 0. One query for
+ * the page and one for the option values of exactly that page.
+ */
+export async function listInventoryBalances(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  options: ListInventoryBalancesOptions = {}
+): Promise<{ entries: InventoryBalanceEntry[]; nextCursor: string | null }> {
+  requireInventoryReadCapability(identity);
+  const limit = Math.min(
+    Math.max(Math.trunc(options.limit ?? 50), 1),
+    MAX_INVENTORY_BALANCE_LIST_LIMIT
+  );
+  const lowerName = sql`lower(${products.name})`;
+  const position = sql`coalesce(${productVariants.position}, 0)`;
+  const quantity = sql`coalesce(${inventoryBalances.quantity}, 0)`;
+
+  const conditions: SQL[] = [
+    eq(productVariants.organizationId, identity.organizationId),
+    isNull(products.deletedAt),
+  ];
+  if (!options.includeArchived) {
+    conditions.push(isNull(products.archivedAt));
+  }
+  if (options.stock === "with_stock") {
+    conditions.push(sql`${quantity} > 0`);
+  } else if (options.stock === "without_stock") {
+    conditions.push(sql`${quantity} = 0`);
+  }
+  const queryText = options.query?.trim();
+  if (queryText) {
+    const pattern = likePattern(queryText);
+    conditions.push(
+      sql`(
+        ${products.name} ILIKE ${pattern}
+        OR ${productVariants.sku} ILIKE ${pattern}
+        OR EXISTS (
+          SELECT 1
+          FROM ${variantOptionValues}
+          INNER JOIN ${productOptionValues}
+            ON ${productOptionValues.id} = ${variantOptionValues.optionValueId}
+           AND ${productOptionValues.organizationId} = ${variantOptionValues.organizationId}
+          WHERE ${variantOptionValues.variantId} = ${productVariants.id}
+            AND ${variantOptionValues.organizationId} = ${productVariants.organizationId}
+            AND ${productOptionValues.name} ILIKE ${pattern}
+        )
+      )`
+    );
+  }
+  if (options.cursor) {
+    const cursor = decodeInventoryBalanceCursor(options.cursor);
+    conditions.push(
+      sql`(${lowerName}, ${products.id}, ${position}, ${productVariants.id}) > (${cursor.name}::text, ${cursor.productId}::uuid, ${cursor.position}::integer, ${cursor.variantId}::uuid)`
+    );
+  }
+
+  const page = await transaction
+    .select({
+      archivedAt: products.archivedAt,
+      isDefault: productVariants.isDefault,
+      movingAverageCost: inventoryBalances.movingAverageCost,
+      position: sql<number>`${position}`.mapWith(Number),
+      productId: products.id,
+      productName: products.name,
+      quantity: inventoryBalances.quantity,
+      sku: productVariants.sku,
+      sortName: sql<string>`${lowerName}`,
+      updatedAt: inventoryBalances.updatedAt,
+      variantId: productVariants.id,
+      version: inventoryBalances.version,
+    })
+    .from(productVariants)
+    .innerJoin(
+      products,
+      and(
+        eq(products.organizationId, productVariants.organizationId),
+        eq(products.id, productVariants.productId)
+      )
+    )
+    .leftJoin(
+      inventoryBalances,
+      and(
+        eq(inventoryBalances.organizationId, productVariants.organizationId),
+        eq(inventoryBalances.variantId, productVariants.id)
+      )
+    )
+    .where(and(...conditions))
+    .orderBy(lowerName, products.id, position, productVariants.id)
+    .limit(limit + 1);
+
+  const hasMore = page.length > limit;
+  const rows = page.slice(0, limit);
+  if (rows.length === 0) {
+    return { entries: [], nextCursor: null };
+  }
+
+  const optionRows = await transaction
+    .select({
+      optionName: productOptions.name,
+      optionPosition: productOptions.position,
+      optionValueName: productOptionValues.name,
+      variantId: variantOptionValues.variantId,
+    })
+    .from(variantOptionValues)
+    .innerJoin(
+      productOptions,
+      and(
+        eq(productOptions.organizationId, variantOptionValues.organizationId),
+        eq(productOptions.id, variantOptionValues.optionId)
+      )
+    )
+    .innerJoin(
+      productOptionValues,
+      and(
+        eq(
+          productOptionValues.organizationId,
+          variantOptionValues.organizationId
+        ),
+        eq(productOptionValues.id, variantOptionValues.optionValueId)
+      )
+    )
+    .where(
+      and(
+        eq(variantOptionValues.organizationId, identity.organizationId),
+        inArray(
+          variantOptionValues.variantId,
+          rows.map((row) => row.variantId)
+        )
+      )
+    )
+    .orderBy(asc(productOptions.position));
+  const valuesByVariant = new Map<string, InventoryBalanceEntry["values"]>();
+  for (const optionRow of optionRows) {
+    if (!isVariantOptionName(optionRow.optionName)) {
+      throw new Error("inventory_balance_option_integrity_failed");
+    }
+    const values = valuesByVariant.get(optionRow.variantId) ?? [];
+    values.push({
+      optionName: optionRow.optionName,
+      optionValueName: optionRow.optionValueName,
+    });
+    valuesByVariant.set(optionRow.variantId, values);
+  }
+
+  const lastRow = rows.at(-1);
+  return {
+    entries: rows.map((row) => ({
+      isDefaultVariant: row.isDefault,
+      movingAverageCost:
+        row.movingAverageCost === null
+          ? null
+          : normalizeUnitCost(row.movingAverageCost),
+      productId: row.productId,
+      productName: row.productName,
+      productStatus: row.archivedAt === null ? "active" : "archived",
+      quantity: row.quantity ?? 0,
+      sku: row.sku,
+      updatedAt: row.updatedAt,
+      values: valuesByVariant.get(row.variantId) ?? [],
+      variantId: row.variantId,
+      version: row.version ?? 0,
+    })),
+    nextCursor:
+      hasMore && lastRow
+        ? encodeInventoryBalanceCursor({
+            name: lastRow.sortName,
+            position: lastRow.position,
+            productId: lastRow.productId,
+            variantId: lastRow.variantId,
+          })
+        : null,
+  };
 }

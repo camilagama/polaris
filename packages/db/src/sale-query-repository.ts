@@ -1,7 +1,18 @@
 import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { summarizeConfirmedSaleTotals } from "@polaris/domain/sales/confirm-sale";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { readConfirmedSale } from "./sale-repository";
+import { customers } from "./schema/customer";
 import type { SaleCancellationRecord } from "./sale-cancellation-repository";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
@@ -16,19 +27,34 @@ import {
 export const SALE_READ_CAPABILITY = "sale:read";
 export const MAX_SALE_LIST_LIMIT = 100;
 
+export type SaleListStatusFilter = "cancelled" | "confirmed" | "with_returns";
+
+/**
+ * Optional filters of the sale list. Dates are commercial dates (occurredOn),
+ * inclusive. "confirmed" means not cancelled and "with_returns" has at least
+ * one return. `query` matches the item labels snapshot and `customerQuery` the
+ * current customer's name.
+ */
 export interface SaleListOptions {
+  customerQuery?: string | null | undefined;
   limit?: number;
+  occurredFrom?: string | null | undefined;
+  occurredTo?: string | null | undefined;
   offset?: number;
+  query?: string | null | undefined;
+  status?: SaleListStatusFilter | null | undefined;
 }
 
 export interface SaleListEntry {
   cancelledAt: Date | null;
   confirmedAt: Date;
   customerId: string | null;
+  customerName: string | null;
   hasReturns: boolean;
   id: string;
   itemCount: number;
   occurredAt: Date;
+  occurredOn: string;
   paymentMethod: string | null;
   status: "cancelled" | "confirmed";
   totalDue: string;
@@ -60,6 +86,69 @@ function groupBy<T>(rows: readonly T[], key: (row: T) => string) {
   return grouped;
 }
 
+const likeSpecialCharactersPattern = /[\\%_]/g;
+
+function likePattern(text: string): string {
+  return `%${text.replace(likeSpecialCharactersPattern, "\\$&")}%`;
+}
+
+function saleListConditions(
+  organizationId: string,
+  options: SaleListOptions
+): SQL[] {
+  const conditions: SQL[] = [eq(sales.organizationId, organizationId)];
+  if (options.occurredFrom) {
+    conditions.push(gte(sales.occurredOn, options.occurredFrom));
+  }
+  if (options.occurredTo) {
+    conditions.push(lte(sales.occurredOn, options.occurredTo));
+  }
+  const cancelled = sql`EXISTS (
+    SELECT 1 FROM ${saleCancellations}
+    WHERE ${saleCancellations.organizationId} = ${sales.organizationId}
+      AND ${saleCancellations.saleId} = ${sales.id}
+  )`;
+  if (options.status === "cancelled") {
+    conditions.push(cancelled);
+  } else if (options.status === "confirmed") {
+    conditions.push(sql`NOT ${cancelled}`);
+  } else if (options.status === "with_returns") {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${saleReturns}
+      WHERE ${saleReturns.organizationId} = ${sales.organizationId}
+        AND ${saleReturns.saleId} = ${sales.id}
+    )`);
+  }
+  const query = options.query?.trim();
+  if (query) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${saleItems}
+      WHERE ${saleItems.organizationId} = ${sales.organizationId}
+        AND ${saleItems.saleId} = ${sales.id}
+        AND ${saleItems.productLabel} ILIKE ${likePattern(query)}
+    )`);
+  }
+  const customerQuery = options.customerQuery?.trim();
+  if (customerQuery) {
+    conditions.push(sql`EXISTS (
+      SELECT 1
+      FROM ${saleCustomerLinks}
+      INNER JOIN ${customers}
+        ON ${customers.id} = ${saleCustomerLinks.customerId}
+       AND ${customers.organizationId} = ${saleCustomerLinks.organizationId}
+      WHERE ${saleCustomerLinks.organizationId} = ${sales.organizationId}
+        AND ${saleCustomerLinks.saleId} = ${sales.id}
+        AND ${saleCustomerLinks.version} = (
+          SELECT max(latest.version) FROM ${saleCustomerLinks} AS latest
+          WHERE latest.organization_id = ${sales.organizationId}
+            AND latest.sale_id = ${sales.id}
+        )
+        AND ${customers.name} ILIKE ${likePattern(customerQuery)}
+    )`);
+  }
+  return conditions;
+}
+
 /**
  * Recent confirmed sales, newest first, with their status and current customer.
  * Money comes from the persisted rows; nothing is recalculated from catalog data.
@@ -79,7 +168,7 @@ export async function listSales(
   const page = await transaction
     .select()
     .from(sales)
-    .where(eq(sales.organizationId, identity.organizationId))
+    .where(and(...saleListConditions(identity.organizationId, options)))
     .orderBy(desc(sales.confirmedAt), desc(sales.id))
     .limit(limit + 1)
     .offset(offset);
@@ -177,19 +266,45 @@ export async function listSales(
   for (const link of links) {
     customerBySale.set(link.saleId, link.customerId);
   }
+  const customerIds = [
+    ...new Set(
+      [...customerBySale.values()].filter(
+        (customerId): customerId is string => customerId !== null
+      )
+    ),
+  ];
+  const customerNames = new Map<string, string>();
+  if (customerIds.length > 0) {
+    const named = await transaction
+      .select({ id: customers.id, name: customers.name })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.organizationId, identity.organizationId),
+          inArray(customers.id, customerIds)
+        )
+      );
+    for (const customer of named) {
+      customerNames.set(customer.id, customer.name);
+    }
+  }
 
   return {
     hasMore,
     sales: headers.map((header) => {
       const cancelledAt = cancelledAtBySale.get(header.id) ?? null;
+      const customerId = customerBySale.get(header.id) ?? null;
       return {
         cancelledAt,
         confirmedAt: header.confirmedAt,
-        customerId: customerBySale.get(header.id) ?? null,
+        customerId,
+        customerName:
+          customerId === null ? null : (customerNames.get(customerId) ?? null),
         hasReturns: salesWithReturns.has(header.id),
         id: header.id,
         itemCount: header.itemCount,
         occurredAt: header.occurredAt,
+        occurredOn: header.occurredOn,
         paymentMethod: paymentBySale.get(header.id) ?? null,
         status: cancelledAt === null ? "confirmed" : "cancelled",
         totalDue: summarizeConfirmedSaleTotals(
