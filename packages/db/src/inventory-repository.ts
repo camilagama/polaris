@@ -496,11 +496,14 @@ function projectMovingAverageCost(
   balance: InventoryBalanceSnapshot | undefined
 ): string | null {
   const currentAverageCost = balance?.movingAverageCost ?? null;
-  let movingAverageCost =
-    input.calculateMovingAverageCost?.({
-      currentAverageCost,
-      currentQuantity: balance?.quantity ?? 0,
-    }) ?? currentAverageCost;
+  // A calculator may legitimately answer null (average unknown), so only a
+  // missing calculator keeps the current average.
+  let movingAverageCost = input.calculateMovingAverageCost
+    ? input.calculateMovingAverageCost({
+        currentAverageCost,
+        currentQuantity: balance?.quantity ?? 0,
+      })
+    : currentAverageCost;
 
   if (
     input.valuationUnitCost !== undefined &&
