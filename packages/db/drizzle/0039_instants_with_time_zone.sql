@@ -97,4 +97,22 @@ BEGIN
     EXECUTE v_statement;
   END LOOP;
 END
-$migration$;
+$migration$;--> statement-breakpoint
+-- The onboarding writer returns organizations.created_at/updated_at in its
+-- RETURNS TABLE; after the conversion those columns are timestamptz, so the
+-- function is redefined (same body, same owner and search_path) with the new
+-- result types and its grants are re-applied.
+DO $onboarding$
+DECLARE
+  v_definition text;
+BEGIN
+  SELECT pg_get_functiondef(proc.oid) INTO v_definition
+  FROM pg_proc AS proc
+  WHERE proc.oid = 'public.create_initial_organization(text, text, text, text, uuid)'::regprocedure;
+  v_definition := replace(v_definition, 'timestamp without time zone', 'timestamp with time zone');
+  DROP FUNCTION public.create_initial_organization(text, text, text, text, uuid);
+  EXECUTE v_definition;
+  REVOKE ALL ON FUNCTION public.create_initial_organization(text, text, text, text, uuid) FROM PUBLIC;
+  GRANT EXECUTE ON FUNCTION public.create_initial_organization(text, text, text, text, uuid) TO polaris_onboarding_runtime;
+END
+$onboarding$;
