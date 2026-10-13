@@ -38,7 +38,9 @@ export const customers = pgTable(
   "customers",
   {
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     email: text("email"),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     name: text("name").notNull(),
@@ -47,7 +49,9 @@ export const customers = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     phone: text("phone"),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     version: integer("version").default(1).notNull(),
   },
   (table) => {

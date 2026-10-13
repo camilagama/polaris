@@ -15,7 +15,9 @@ const runtimeRole = "polaris_pr11_runtime";
 export const organizations = pgTable(
   "organizations",
   {
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     currency: text("currency").notNull().default("BRL"),
     id: text("id").primaryKey(),
     name: text("name").notNull(),
@@ -58,7 +60,9 @@ export const organizations = pgTable(
 export const memberships = pgTable(
   "memberships",
   {
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),

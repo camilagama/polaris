@@ -54,7 +54,9 @@ export const inventoryBalances = pgTable(
     organizationId: text("organization_id").notNull(),
     productId: uuid("product_id").notNull(),
     quantity: integer("quantity").default(0).notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     variantId: uuid("variant_id").notNull(),
     version: integer("version").default(1).notNull(),
   },
@@ -116,7 +118,9 @@ export const stockMovements = pgTable(
     commandId: uuid("command_id"),
     commandIndex: integer("command_index").default(0).notNull(),
     commandVersion: integer("command_version"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     movementType: text("movement_type").notNull(),
     organizationId: text("organization_id").notNull(),

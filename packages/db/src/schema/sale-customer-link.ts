@@ -28,7 +28,9 @@ export const saleCustomerLinks = pgTable(
   "sale_customer_links",
   {
     action: text("action").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     customerId: uuid("customer_id"),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     organizationId: text("organization_id").notNull(),

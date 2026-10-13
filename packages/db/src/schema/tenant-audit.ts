@@ -16,7 +16,9 @@ export const tenantAuditEvents = pgTable(
   "tenant_audit_event",
   {
     actorUserId: text("actor_user_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     entityId: text("entity_id").notNull(),
     entityType: text("entity_type").notNull(),
     eventType: text("event_type").notNull(),

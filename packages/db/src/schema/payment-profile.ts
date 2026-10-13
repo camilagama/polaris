@@ -63,13 +63,17 @@ export const paymentProfiles = pgTable(
   "payment_profiles",
   {
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     name: text("name").notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     version: integer("version").default(1).notNull(),
   },
   (table) => [
@@ -114,7 +118,9 @@ export const paymentProfileRules = pgTable(
     anticipationFeeFixedAmount: numeric("anticipation_fee_fixed_amount"),
     anticipationFeeMode: text("anticipation_fee_mode").notNull(),
     anticipationFeePercentage: numeric("anticipation_fee_percentage"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     expectedSettlementDays: integer("expected_settlement_days"),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     installmentPlan: text("installment_plan"),
@@ -125,7 +131,9 @@ export const paymentProfileRules = pgTable(
     processingFeeFixedAmount: numeric("processing_fee_fixed_amount"),
     processingFeeMode: text("processing_fee_mode").notNull(),
     processingFeePercentage: numeric("processing_fee_percentage"),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     check(
