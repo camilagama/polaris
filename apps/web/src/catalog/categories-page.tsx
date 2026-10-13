@@ -10,6 +10,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import "./categories-page.css";
 
@@ -22,7 +23,6 @@ type CategoryButtonAction =
   | "rename-cancel"
   | "rename-start";
 
-const organizationIdStorageKey = "polaris.organizationId";
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
 const statusLabels: Record<CategoryReadModel["status"], string> = {
   active: "Ativa",
@@ -35,14 +35,6 @@ const listStatuses: ReadonlyArray<readonly [CategoryListStatus, string]> = [
   ["deleted", "Removidas"],
 ];
 
-function savedOrganizationId(): string | null {
-  try {
-    return window.localStorage.getItem(organizationIdStorageKey);
-  } catch {
-    return null;
-  }
-}
-
 function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return undefined;
@@ -53,14 +45,11 @@ function rpcErrorCode(error: unknown): string | undefined {
 
 function errorMessage(
   error: unknown,
-  action?: CategoryAction | "create" | "rename" | "setup"
+  action?: CategoryAction | "create" | "rename"
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     return "Sua sessão não está ativa. Entre novamente para acessar o catálogo.";
-  }
-  if (code === "FORBIDDEN" && action === "setup") {
-    return "Verifique seu email antes de criar ou abrir uma organização.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -101,12 +90,6 @@ function categoryNameIsTooLong(name: string): boolean {
   return categoryNameCodePointLength(name) > 100;
 }
 
-function initialTimezone(): string {
-  return (
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo"
-  );
-}
-
 function isCategoryListStatus(value: string): value is CategoryListStatus {
   return value === "active" || value === "archived" || value === "deleted";
 }
@@ -128,71 +111,7 @@ function isCategoryButtonAction(
   }
 }
 
-interface OrganizationSetupProps {
-  isPending: boolean;
-  name: string;
-  onNameChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onTimezoneChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  timezone: string;
-}
-
-function OrganizationSetup({
-  isPending,
-  name,
-  onNameChange,
-  onSubmit,
-  onTimezoneChange,
-  timezone,
-}: OrganizationSetupProps) {
-  return (
-    <section aria-labelledby="organization-setup-title" className="setup-card">
-      <p className="categories-eyebrow">Primeiro acesso</p>
-      <h1 id="organization-setup-title">Abra o catálogo da organização</h1>
-      <p className="categories-intro-copy">
-        Use uma sessão autenticada e verificada. Se a organização já existir,
-        ela será aberta sem alterar seus dados.
-      </p>
-      <form className="setup-form" onSubmit={onSubmit}>
-        <label className="field-label" htmlFor="organization-name">
-          Nome da organização
-        </label>
-        <input
-          autoComplete="organization"
-          id="organization-name"
-          maxLength={128}
-          onChange={onNameChange}
-          placeholder="Ex.: Loja Horizonte"
-          required
-          value={name}
-        />
-        <label className="field-label" htmlFor="organization-timezone">
-          Fuso horário da organização
-        </label>
-        <input
-          autoComplete="off"
-          id="organization-timezone"
-          maxLength={64}
-          onChange={onTimezoneChange}
-          required
-          value={timezone}
-        />
-        <p className="field-help">
-          Use um identificador IANA, como America/Sao_Paulo.
-        </p>
-        <button className="primary-button" disabled={isPending} type="submit">
-          {isPending ? "Abrindo…" : "Criar ou abrir organização"}
-        </button>
-      </form>
-    </section>
-  );
-}
-
-interface CategoriesHeadingProps {
-  onResetOrganization: () => void;
-}
-
-function CategoriesHeading({ onResetOrganization }: CategoriesHeadingProps) {
+function CategoriesHeading() {
   return (
     <section className="categories-heading">
       <div>
@@ -203,13 +122,6 @@ function CategoriesHeading({ onResetOrganization }: CategoriesHeadingProps) {
           de despesas pertencem a outra área do produto.
         </p>
       </div>
-      <button
-        className="quiet-button"
-        onClick={onResetOrganization}
-        type="button"
-      >
-        Trocar organização
-      </button>
     </section>
   );
 }
@@ -572,11 +484,7 @@ function CategoryListPanel(props: CategoryListPanelProps) {
 }
 
 export function CategoriesPage() {
-  const [organizationId, setOrganizationId] = useState<string | null>(
-    savedOrganizationId
-  );
-  const [organizationName, setOrganizationName] = useState("");
-  const [timezone, setTimezone] = useState(initialTimezone);
+  const { organizationId } = useCurrentOrganization();
   const [categoryName, setCategoryName] = useState("");
   const [status, setStatus] = useState<CategoryListStatus>("active");
   const [categories, setCategories] = useState<CategoryReadModel[]>([]);
@@ -592,12 +500,6 @@ export function CategoriesPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!organizationId) {
-      setCategories([]);
-      setIsLoading(false);
-      return;
-    }
-
     let current = true;
     setIsLoading(true);
     setError(null);
@@ -624,18 +526,6 @@ export function CategoriesPage() {
     };
   }, [organizationId, refreshVersion, status]);
 
-  const handleOrganizationNameChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setOrganizationName(event.currentTarget.value);
-    },
-    []
-  );
-  const handleTimezoneChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setTimezone(event.currentTarget.value);
-    },
-    []
-  );
   const handleCategoryNameChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       setCategoryName(event.currentTarget.value);
@@ -649,52 +539,9 @@ export function CategoriesPage() {
     []
   );
 
-  const handleOpenOrganization = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setPendingAction("organization");
-      setError(null);
-      setNotice(null);
-      try {
-        const result = await orpcClient.organization.createInitial({
-          name: organizationName,
-          timezone,
-        });
-        let storageFailure = false;
-        try {
-          window.localStorage.setItem(
-            organizationIdStorageKey,
-            result.organization.id
-          );
-        } catch {
-          storageFailure = true;
-        }
-        setOrganizationId(result.organization.id);
-        let successMessage =
-          "Sua organização existente foi aberta; os dados enviados não a alteraram.";
-        if (result.created) {
-          successMessage = "Organização criada. O catálogo já pode ser usado.";
-        }
-        if (storageFailure) {
-          successMessage =
-            "Organização aberta; este navegador não conseguiu salvar a seleção.";
-        }
-        setNotice(successMessage);
-      } catch (cause: unknown) {
-        setError(errorMessage(cause, "setup"));
-      } finally {
-        setPendingAction(null);
-      }
-    },
-    [organizationName, timezone]
-  );
-
   const handleCreateCategory = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!organizationId) {
-        return;
-      }
       if (categoryNameIsTooLong(categoryName)) {
         setError("O nome da categoria deve ter no máximo 100 caracteres.");
         return;
@@ -721,9 +568,6 @@ export function CategoriesPage() {
 
   const handleCategoryAction = useCallback(
     async (category: CategoryReadModel, action: CategoryAction) => {
-      if (!organizationId) {
-        return;
-      }
       setPendingAction(`${action}:${category.id}`);
       setError(null);
       setNotice(null);
@@ -755,9 +599,6 @@ export function CategoriesPage() {
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       const { categoryId } = event.currentTarget.dataset;
-      if (!organizationId) {
-        return;
-      }
       if (!categoryId) {
         return;
       }
@@ -852,98 +693,48 @@ export function CategoriesPage() {
     []
   );
 
-  const handleResetOrganization = useCallback(() => {
-    try {
-      window.localStorage.removeItem(organizationIdStorageKey);
-    } catch {
-      setError("Não foi possível limpar a organização salva neste navegador.");
-      return;
-    }
-    setOrganizationId(null);
-    setCategories([]);
-    setPendingDeleteId(null);
-    setRenamingCategoryId(null);
-    setRenameValue("");
-    setNotice("Selecione ou crie a organização novamente.");
-    setError(null);
-  }, []);
-
   return (
-    <div className="categories-page">
-      <header className="categories-topbar">
-        <a aria-label="Polaris início" className="categories-brand" href="/">
-          <span aria-hidden="true" className="categories-brand-mark">
-            P
-          </span>
-          <span>Polaris</span>
+    <>
+      <CategoriesHeading />
+      <CategoryTabs onClick={handleStatusClick} status={status} />
+      {status === "active" ? (
+        <CategoryCreateForm
+          isPending={pendingAction === "create"}
+          name={categoryName}
+          onNameChange={handleCategoryNameChange}
+          onSubmit={handleCreateCategory}
+        />
+      ) : null}
+
+      {error ? (
+        <p className="categories-message is-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="categories-message is-success" role="status">
+          {notice}
+        </p>
+      ) : null}
+
+      <CategoryListPanel
+        categories={categories}
+        isLoading={isLoading}
+        onActionClick={handleCategoryActionClick}
+        onRenameChange={handleRenameValueChange}
+        onRenameSubmit={handleRenameCategory}
+        pendingAction={pendingAction}
+        pendingDeleteId={pendingDeleteId}
+        renameValue={renameValue}
+        renamingCategoryId={renamingCategoryId}
+        status={status}
+      />
+
+      {import.meta.env.DEV ? (
+        <a className="offline-lab-link" href="/offline-poc?release=1">
+          Abrir laboratório de persistência offline
         </a>
-        <nav aria-label="Catálogo" className="catalog-switcher">
-          <a aria-current="page" href="/">
-            Categorias
-          </a>
-          <a href="/products">Produtos</a>
-          <a href="/customers">Clientes</a>
-          <a href="/payment-profiles">Perfis de pagamento</a>
-        </nav>
-      </header>
-
-      <main className="categories-content">
-        {organizationId ? (
-          <>
-            <CategoriesHeading onResetOrganization={handleResetOrganization} />
-            <CategoryTabs onClick={handleStatusClick} status={status} />
-            {status === "active" ? (
-              <CategoryCreateForm
-                isPending={pendingAction === "create"}
-                name={categoryName}
-                onNameChange={handleCategoryNameChange}
-                onSubmit={handleCreateCategory}
-              />
-            ) : null}
-          </>
-        ) : (
-          <OrganizationSetup
-            isPending={pendingAction === "organization"}
-            name={organizationName}
-            onNameChange={handleOrganizationNameChange}
-            onSubmit={handleOpenOrganization}
-            onTimezoneChange={handleTimezoneChange}
-            timezone={timezone}
-          />
-        )}
-
-        {error ? (
-          <p className="categories-message is-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {notice ? (
-          <p className="categories-message is-success" role="status">
-            {notice}
-          </p>
-        ) : null}
-
-        {organizationId ? (
-          <CategoryListPanel
-            categories={categories}
-            isLoading={isLoading}
-            onActionClick={handleCategoryActionClick}
-            onRenameChange={handleRenameValueChange}
-            onRenameSubmit={handleRenameCategory}
-            pendingAction={pendingAction}
-            pendingDeleteId={pendingDeleteId}
-            renameValue={renameValue}
-            renamingCategoryId={renamingCategoryId}
-            status={status}
-          />
-        ) : null}
-
-        {import.meta.env.DEV ? (
-          <a className="offline-lab-link" href="/offline-poc?release=1">
-            Abrir laboratório de persistência offline
-          </a>
-        ) : null}
-      </main>
-    </div>
+      ) : null}
+    </>
   );
 }

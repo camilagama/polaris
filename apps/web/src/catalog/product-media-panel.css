@@ -34,8 +34,8 @@
   max-height: 62vh;
   padding: 0.75rem;
   overflow: auto;
-  background: var(--category-surface-muted);
-  border: 1px solid var(--category-line);
+  background: var(--ui-surface-muted);
+  border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
 }
 
@@ -49,7 +49,8 @@
   line-height: 0;
   color: inherit;
   text-align: left;
-  touch-action: none;
+  /* Touch scrolls the page by default; "Ajustar com o dedo" turns on drawing. */
+  touch-action: pan-y pinch-zoom;
   cursor: crosshair;
   -webkit-user-select: none;
   user-select: none;
@@ -57,8 +58,18 @@
   border: 0;
 }
 
+.product-media-crop-frame.is-adjusting {
+  touch-action: none;
+}
+
+.product-media-crop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .product-media-crop-frame:focus-visible {
-  outline: 3px solid var(--category-accent);
+  outline: 3px solid var(--ui-accent);
   outline-offset: 3px;
 }
 
@@ -76,8 +87,8 @@
   min-width: 2px;
   min-height: 2px;
   pointer-events: none;
-  background: color-mix(in srgb, var(--category-accent-soft) 22%, transparent);
-  border: 2px solid var(--category-accent-strong);
+  background: color-mix(in srgb, var(--ui-accent-soft) 22%, transparent);
+  border: 2px solid var(--ui-accent-strong);
 }
 
 .product-media-variants {
@@ -85,7 +96,7 @@
   gap: 0.7rem;
   min-width: 0;
   padding: 1rem;
-  border: 1px solid var(--category-line);
+  border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
 }
 
@@ -110,14 +121,14 @@
   min-height: 2.5rem;
   padding: 0.4rem 0.65rem;
   font-size: 0.85rem;
-  color: var(--category-ink);
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.5rem;
 }
 
 .product-media-variant-option input {
-  accent-color: var(--category-accent);
+  accent-color: var(--ui-accent);
 }
 
 .product-media-list-heading {
@@ -140,8 +151,8 @@
   gap: 0.8rem;
   align-items: center;
   padding: 0.6rem;
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
 }
 
@@ -149,7 +160,7 @@
   width: 4.5rem;
   height: 4.5rem;
   object-fit: cover;
-  background: var(--category-surface-muted);
+  background: var(--ui-surface-muted);
   border-radius: 0.45rem;
 }
 
@@ -158,7 +169,7 @@
   gap: 0.2rem;
   min-width: 0;
   font-size: 0.76rem;
-  color: var(--category-muted);
+  color: var(--ui-muted);
   overflow-wrap: anywhere;
 }
 
@@ -166,7 +177,7 @@
   margin: 0;
   font-size: 0.88rem;
   font-weight: 650;
-  color: var(--category-ink);
+  color: var(--ui-ink);
 }
 
 @media (max-width: 600px) {

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { Pool } from "pg";
 
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
 const runtimeRole = "polaris_pr11_runtime";
 const expectedConfirmation = "polaris-pr22-tenant-context-disposable";
 const expectedHostnamePattern =
@@ -51,7 +56,7 @@ async function main() {
     throw new Error("A valid direct Neon URL is required.", { cause: error });
   }
   assert.equal(databaseUrl.hostname, expectedHostname);
-  assert.equal(databaseUrl.pathname, "/neondb");
+  assert.equal(databaseUrl.pathname, `/${gateDatabase}`);
   assert.equal(databaseUrl.hostname.includes("-pooler"), false);
   assert.match(databaseUrl.hostname, expectedHostnamePattern);
 
@@ -73,7 +78,7 @@ async function main() {
         "current_user AS current_user, " +
         "(SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS admin_bypass_rls"
     );
-    assert.equal(identity.rows[0]?.database, "neondb");
+    assert.equal(identity.rows[0]?.database, gateDatabase);
     assert.equal(
       Number.parseInt(identity.rows[0]?.server_version.split(".")[0] ?? "", 10),
       18
@@ -247,7 +252,7 @@ async function main() {
     console.log(
       JSON.stringify({
         actions: ["verified fixture", "dropped only rls_poc_operations"],
-        database: "neondb",
+        database: gateDatabase,
         migrationsJournalWasEmpty: true,
         next: "run Drizzle db:migrate immediately, then the PR22 tenant gate",
         postgresMajorVersion: 18,

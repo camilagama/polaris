@@ -10,7 +10,11 @@ export type InitialOrganizationRepositoryErrorCode =
   | "email_not_verified"
   | "multiple_existing_organizations"
   | "organization_not_available"
-  | "organization_insert_failed";
+  | "organization_insert_failed"
+  | "invalid_user_id"
+  | "invalid_organization_id"
+  | "invalid_organization_name"
+  | "invalid_timezone";
 
 export class InitialOrganizationRepositoryError extends Error {
   readonly code: InitialOrganizationRepositoryErrorCode;
@@ -77,6 +81,10 @@ function mapWriterError(error: unknown): unknown {
     "multiple_existing_organizations",
     "organization_not_available",
     "organization_insert_failed",
+    "invalid_user_id",
+    "invalid_organization_id",
+    "invalid_organization_name",
+    "invalid_timezone",
   ];
 
   if (

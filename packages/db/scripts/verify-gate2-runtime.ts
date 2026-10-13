@@ -1,5 +1,20 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import {
+  CategoryDeletedError,
+  CategoryInUseError,
+  CategoryLifecycleError,
+  CategoryNameConflictError,
+} from "@polaris/domain/catalog/category";
+import {
+  ProductCategoryUnavailableError,
+  ProductDefaultVariantSkuConflictError,
+  ProductVariantConfigurationError,
+  ProductVariantNotFoundError,
+  ProductVariantSkuConflictError,
+  ProductVariantsAlreadyConfiguredError,
+  ProductVersionConflictError,
+} from "@polaris/domain/catalog/product";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
@@ -11,6 +26,8 @@ import {
   renameCategory,
   restoreCategory,
 } from "../src/category-repository";
+import { createDatabase } from "../src/client";
+import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import {
   archiveProduct,
   configureProductVariants,
@@ -21,26 +38,14 @@ import {
   setProductVariantSku,
   updateProduct,
 } from "../src/product-repository";
-import { createDatabase } from "../src/client";
-import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import { categories } from "../src/schema/category";
 import { products } from "../src/schema/product";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
-import {
-  CategoryDeletedError,
-  CategoryInUseError,
-  CategoryLifecycleError,
-  CategoryNameConflictError,
-} from "@polaris/domain/catalog/category";
-import {
-  ProductDefaultVariantSkuConflictError,
-  ProductCategoryUnavailableError,
-  ProductVariantConfigurationError,
-  ProductVariantNotFoundError,
-  ProductVariantSkuConflictError,
-  ProductVariantsAlreadyConfiguredError,
-  ProductVersionConflictError,
-} from "@polaris/domain/catalog/product";
+
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
 
 const runtimeRole = "polaris_pr11_runtime";
 const onboardingRole = "polaris_onboarding_runtime";
@@ -448,7 +453,7 @@ async function main() {
   }
   const databaseUrl = new URL(connectionString);
   assert.equal(databaseUrl.hostname, expectedHostname);
-  assert.equal(databaseUrl.pathname, "/neondb");
+  assert.equal(databaseUrl.pathname, `/${gateDatabase}`);
   assert.equal(databaseUrl.hostname.includes("-pooler"), false);
   assert.match(databaseUrl.hostname, expectedHost);
 
@@ -507,7 +512,7 @@ async function main() {
         "current_user AS owner, " +
         '(SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS "ownerBypassRls"'
     );
-    assert.equal(server.rows[0]?.database, "neondb");
+    assert.equal(server.rows[0]?.database, gateDatabase);
     assert.equal(
       Number.parseInt(server.rows[0]?.version.split(".")[0] ?? "", 10),
       18
@@ -859,6 +864,11 @@ async function main() {
         name: "products_require_variant",
       },
       {
+        deferrable: null,
+        initiallyDeferred: null,
+        name: "products_tombstone_guard",
+      },
+      {
         deferrable: true,
         initiallyDeferred: true,
         name: "products_variant_configuration_guard",
@@ -907,11 +917,11 @@ async function main() {
     }>(
       "SELECT has_table_privilege($1, 'public.categories', 'SELECT') AS \"categorySelect\", " +
         "has_table_privilege($1, 'public.categories', 'INSERT') AS \"categoryInsert\", " +
-        "has_table_privilege($1, 'public.categories', 'UPDATE') AS \"categoryUpdate\", " +
+        "has_any_column_privilege($1, 'public.categories', 'UPDATE') AS \"categoryUpdate\", " +
         "has_table_privilege($1, 'public.categories', 'DELETE') AS \"categoryDelete\", " +
         "has_table_privilege($1, 'public.products', 'SELECT') AS \"productSelect\", " +
         "has_table_privilege($1, 'public.products', 'INSERT') AS \"productInsert\", " +
-        "has_table_privilege($1, 'public.products', 'UPDATE') AS \"productUpdate\", " +
+        "has_any_column_privilege($1, 'public.products', 'UPDATE') AS \"productUpdate\", " +
         "has_table_privilege($1, 'public.products', 'DELETE') AS \"productDelete\", " +
         "has_table_privilege($1, 'public.product_variants', 'SELECT') AS \"variantSelect\", " +
         "has_table_privilege($1, 'public.product_variants', 'INSERT') AS \"variantInsert\", " +
@@ -943,6 +953,7 @@ async function main() {
       membershipInsert: false,
       organizationInsert: false,
       productDelete: false,
+      productInsert: true,
       productOptionDelete: false,
       productOptionInsert: true,
       productOptionSelect: true,
@@ -951,7 +962,6 @@ async function main() {
       productOptionValueInsert: true,
       productOptionValueSelect: true,
       productOptionValueUpdate: false,
-      productInsert: true,
       productSelect: true,
       productUpdate: true,
       variantDelete: true,
@@ -960,10 +970,10 @@ async function main() {
       variantOptionValueInsert: true,
       variantOptionValueSelect: true,
       variantOptionValueUpdate: false,
-      variantSelect: true,
-      variantUpdate: false,
-      variantSkuUpdate: true,
       variantPositionUpdate: false,
+      variantSelect: true,
+      variantSkuUpdate: true,
+      variantUpdate: false,
     });
 
     const functionAccess = await adminPool.query<{
@@ -2130,11 +2140,11 @@ async function main() {
         requestedOrganizationId: organizationA.organization.id,
       },
       async (transaction, identity) => ({
-        products: await listProducts(transaction, identity, { status: "all" }),
         otherTenantRows: await transaction
           .select({ id: products.id })
           .from(products)
           .where(eq(products.organizationId, organizationB.organization.id)),
+        products: await listProducts(transaction, identity, { status: "all" }),
       })
     );
     assert.deepEqual(
@@ -2634,6 +2644,12 @@ async function main() {
         onboardingRoleCanExecuteOnboarding: true,
         postgresMajorVersion: 18,
         postgresServerVersion: server.rows[0]?.version,
+        productAtomicVariantAndUuidV7: "passed",
+        productLifecycleConcurrencyAndAudit: "passed",
+        productVariantConfigurationAndAudit: "passed",
+        productVariantLimit: "passed",
+        productVariantSkuAssignmentUniquenessAndAudit: "passed",
+        productVariantsConcurrentConfigurationOneWinner: "passed",
         publicExecute: false,
         rlsTables: [
           "categories",
@@ -2646,12 +2662,6 @@ async function main() {
           "tenant_audit_event",
           "variant_option_values",
         ],
-        productAtomicVariantAndUuidV7: "passed",
-        productVariantConfigurationAndAudit: "passed",
-        productVariantSkuAssignmentUniquenessAndAudit: "passed",
-        productVariantsConcurrentConfigurationOneWinner: "passed",
-        productVariantLimit: "passed",
-        productLifecycleConcurrencyAndAudit: "passed",
         rollbackAndCascade: "passed",
         status: "passed",
         tenantRole: runtimeRole,

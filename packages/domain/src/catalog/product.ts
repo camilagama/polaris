@@ -244,9 +244,21 @@ export function normalizeProductVariantConfiguration(
   };
 }
 
+export const MAX_PRODUCT_NAME_LENGTH = 200;
+export const MAX_PRODUCT_DESCRIPTION_LENGTH = 5000;
+
+export class ProductDescriptionError extends Error {
+  readonly code = "invalid_product_description";
+
+  constructor() {
+    super("invalid_product_description");
+    this.name = "ProductDescriptionError";
+  }
+}
+
 export function normalizeProductName(name: string): string {
   const normalized = name.trim();
-  if (!normalized) {
+  if (!normalized || normalized.length > MAX_PRODUCT_NAME_LENGTH) {
     throw new ProductNameError();
   }
   return normalized;
@@ -258,7 +270,11 @@ export function normalizeProductDescription(
   if (description === null || description === undefined) {
     return null;
   }
-  return description.trim() || null;
+  const normalized = description.trim();
+  if (normalized.length > MAX_PRODUCT_DESCRIPTION_LENGTH) {
+    throw new ProductDescriptionError();
+  }
+  return normalized || null;
 }
 
 export function normalizeProductVariantSku(

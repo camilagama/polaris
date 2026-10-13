@@ -10,11 +10,10 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import "../catalog/categories-page.css";
 import "./payment-profiles-page.css";
 
-const organizationStorageKey = "polaris.organizationId";
 const methods = [
   ["pix", "Pix"],
   ["cash", "Dinheiro"],
@@ -78,13 +77,6 @@ const blankRule = (): RuleDraft => ({
 });
 const blankDraft = (): ProfileDraft => ({ name: "", rules: [blankRule()] });
 
-function readOrganizationId(): string | null {
-  try {
-    return window.localStorage.getItem(organizationStorageKey);
-  } catch {
-    return null;
-  }
-}
 function decimalInputValue(value: string): string {
   if (value.includes(",") && value.includes(".")) {
     return value;
@@ -530,19 +522,16 @@ function ProfileListContent({
 }
 
 export function PaymentProfilesPage() {
-  const [organizationId] = useState(readOrganizationId);
+  const { organizationId } = useCurrentOrganization();
   const [profiles, setProfiles] = useState<PaymentProfileReadModel[]>([]);
   const [draft, setDraft] = useState<ProfileDraft>(blankDraft);
   const [editing, setEditing] = useState<PaymentProfileReadModel | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [loading, setLoading] = useState(Boolean(organizationId));
+  const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const loadProfiles = useCallback(async () => {
-    if (!organizationId) {
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
@@ -605,7 +594,7 @@ export function PaymentProfilesPage() {
   const saveProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!(organizationId && draft.rules.length)) {
+      if (!draft.rules.length) {
         return;
       }
       setPending(true);
@@ -662,9 +651,6 @@ export function PaymentProfilesPage() {
   }, []);
   const changeLifecycle = useCallback(
     async (profile: PaymentProfileReadModel) => {
-      if (!organizationId) {
-        return;
-      }
       setPending(true);
       setError(null);
       setNotice(null);
@@ -694,139 +680,102 @@ export function PaymentProfilesPage() {
     (profile) => showArchived || profile.status === "active"
   );
   return (
-    <div className="categories-page payment-profiles-page">
-      <header className="categories-topbar">
-        <a aria-label="Polaris início" className="categories-brand" href="/">
-          <span aria-hidden="true" className="categories-brand-mark">
-            P
-          </span>
-          <span>Polaris</span>
-        </a>
-        <nav aria-label="Navegação principal" className="catalog-switcher">
-          <a href="/">Categorias</a>
-          <a href="/products">Produtos</a>
-          <a href="/customers">Clientes</a>
-          <a aria-current="page" href="/payment-profiles">
-            Perfis de pagamento
-          </a>
-        </nav>
-      </header>
-      <main className="categories-content">
-        {organizationId ? (
-          <>
-            <section className="categories-heading">
-              <div>
-                <p className="categories-eyebrow">Configuração comercial</p>
-                <h1>Perfis de pagamento</h1>
-                <p className="categories-intro-copy">
-                  Organize métodos, parcelamento, prazo de liquidação e taxas
-                  por perfil.
-                </p>
-              </div>
-            </section>
-            {error && (
-              <p className="payment-message is-error" role="alert">
-                {error}{" "}
-                <button onClick={handleRetry} type="button">
-                  Tentar novamente
-                </button>
-              </p>
-            )}
-            {notice && (
-              <p className="payment-message is-success" role="status">
-                {notice}
-              </p>
-            )}
-            <section className="payment-workspace">
-              <form className="payment-form" onSubmit={saveProfile}>
-                <div className="payment-form-heading">
-                  <h2>{editing ? "Editar perfil" : "Novo perfil"}</h2>
-                  {editing && (
-                    <button
-                      className="category-button"
-                      onClick={handleCancelEdit}
-                      type="button"
-                    >
-                      Cancelar edição
-                    </button>
-                  )}
-                </div>
-                <label htmlFor="payment-profile-name">Nome do perfil</label>
-                <input
-                  autoComplete="off"
-                  id="payment-profile-name"
-                  maxLength={100}
-                  onChange={handleNameChange}
-                  required
-                  value={draft.name}
-                />
-                <div className="payment-rules-heading">
-                  <h3>Regras de pagamento</h3>
-                  <button
-                    className="category-button"
-                    onClick={handleAddRule}
-                    type="button"
-                  >
-                    Adicionar regra
-                  </button>
-                </div>
-                {draft.rules.map((rule, index) => (
-                  <RuleEditor
-                    canRemove={draft.rules.length > 1}
-                    index={index}
-                    key={rule.draftId}
-                    onRemove={handleRemoveRule}
-                    onUpdate={updateRule}
-                    rule={rule}
-                  />
-                ))}
-                <button
-                  className="category-button is-primary"
-                  disabled={pending}
-                  type="submit"
-                >
-                  {saveButtonLabel(pending, editing !== null)}
-                </button>
-              </form>
-              <section
-                aria-labelledby="payment-list-title"
-                className="payment-list"
+    <div className="payment-profiles-page">
+      <section className="categories-heading">
+        <div>
+          <p className="categories-eyebrow">Configuração comercial</p>
+          <h1>Perfis de pagamento</h1>
+          <p className="categories-intro-copy">
+            Organize métodos, parcelamento, prazo de liquidação e taxas por
+            perfil.
+          </p>
+        </div>
+      </section>
+      {error && (
+        <p className="payment-message is-error" role="alert">
+          {error}{" "}
+          <button onClick={handleRetry} type="button">
+            Tentar novamente
+          </button>
+        </p>
+      )}
+      {notice && (
+        <p className="payment-message is-success" role="status">
+          {notice}
+        </p>
+      )}
+      <section className="payment-workspace">
+        <form className="payment-form" onSubmit={saveProfile}>
+          <div className="payment-form-heading">
+            <h2>{editing ? "Editar perfil" : "Novo perfil"}</h2>
+            {editing && (
+              <button
+                className="category-button"
+                onClick={handleCancelEdit}
+                type="button"
               >
-                <div className="payment-list-heading">
-                  <h2 id="payment-list-title">Perfis cadastrados</h2>
-                  <label className="payment-archived-toggle">
-                    <input
-                      checked={showArchived}
-                      onChange={handleArchivedChange}
-                      type="checkbox"
-                    />{" "}
-                    Incluir arquivados
-                  </label>
-                </div>
-                <ProfileListContent
-                  loading={loading}
-                  onChangeLifecycle={changeLifecycle}
-                  onEdit={editProfile}
-                  pending={pending}
-                  profiles={visibleProfiles}
-                />
-              </section>
-            </section>
-          </>
-        ) : (
-          <section aria-labelledby="payment-title" className="payment-empty">
-            <p className="categories-eyebrow">Configuração comercial</p>
-            <h1 id="payment-title">Perfis de pagamento</h1>
-            <p>
-              Abra ou crie uma organização para cadastrar condições e taxas de
-              pagamento.
-            </p>
-            <a className="category-button is-primary" href="/">
-              Ir para a página inicial
-            </a>
-          </section>
-        )}
-      </main>
+                Cancelar edição
+              </button>
+            )}
+          </div>
+          <label htmlFor="payment-profile-name">Nome do perfil</label>
+          <input
+            autoComplete="off"
+            id="payment-profile-name"
+            maxLength={100}
+            onChange={handleNameChange}
+            required
+            value={draft.name}
+          />
+          <div className="payment-rules-heading">
+            <h3>Regras de pagamento</h3>
+            <button
+              className="category-button"
+              onClick={handleAddRule}
+              type="button"
+            >
+              Adicionar regra
+            </button>
+          </div>
+          {draft.rules.map((rule, index) => (
+            <RuleEditor
+              canRemove={draft.rules.length > 1}
+              index={index}
+              key={rule.draftId}
+              onRemove={handleRemoveRule}
+              onUpdate={updateRule}
+              rule={rule}
+            />
+          ))}
+          <button
+            className="category-button is-primary"
+            disabled={pending}
+            type="submit"
+          >
+            {saveButtonLabel(pending, editing !== null)}
+          </button>
+        </form>
+        <section aria-labelledby="payment-list-title" className="payment-list">
+          <div className="payment-list-heading">
+            <h2 id="payment-list-title">Perfis cadastrados</h2>
+            <label className="payment-archived-toggle">
+              <input
+                checked={showArchived}
+                onChange={handleArchivedChange}
+                type="checkbox"
+              />{" "}
+              Incluir arquivados
+            </label>
+          </div>
+          <ProfileListContent
+            loading={loading}
+            onChangeLifecycle={changeLifecycle}
+            onEdit={editProfile}
+            pending={pending}
+            profiles={visibleProfiles}
+          />
+        </section>
+      </section>
     </div>
   );
 }

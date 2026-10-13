@@ -14,6 +14,7 @@ import {
 } from "@polaris/domain/sales/sale-return";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { recordSaleRestockMovement } from "./inventory-repository";
+import { stockMovements } from "./schema/inventory";
 import { lockSaleForCompensation } from "./sale-locks";
 import { organizations } from "./schema/organization";
 import { products } from "./schema/product";
@@ -178,6 +179,22 @@ export async function createSaleReturn(
   const afterLock = await replayExisting(transaction, identity, command);
   if (afterLock) {
     return afterLock;
+  }
+  // The ledger keys every movement by command ID across all operations, so a
+  // command ID that already owns movements belongs to another operation; that
+  // is a conflict even when this return restocks nothing.
+  const [foreignMovement] = await transaction
+    .select({ id: stockMovements.id })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, identity.organizationId),
+        eq(stockMovements.commandId, command.commandId)
+      )
+    )
+    .limit(1);
+  if (foreignMovement) {
+    throw new SaleReturnCommandConflictError();
   }
   const [cancellation] = await transaction
     .select({ id: saleCancellations.id })

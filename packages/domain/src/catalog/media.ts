@@ -1,5 +1,6 @@
 export const MAX_MEDIA_INPUT_BYTES = 20_000_000;
 export const MAX_MEDIA_OUTPUT_EDGE = 1200;
+export const MAX_PRODUCT_MEDIA = 20;
 
 const supportedMediaContentTypes = new Set([
   "image/jpeg",
@@ -143,5 +144,14 @@ export function validateMediaImageSource(input: {
 
   if (input.byteLength > MAX_MEDIA_INPUT_BYTES) {
     throw new MediaImageTooLargeError();
+  }
+}
+
+export class ProductMediaLimitError extends Error {
+  readonly code = "product_media_limit";
+
+  constructor() {
+    super("product_media_limit");
+    this.name = "ProductMediaLimitError";
   }
 }

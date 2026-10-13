@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { createDatabase } from "./client";
 import { memberships, organizations } from "./schema/organization";
 import {
+  TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  TENANT_LOCK_TIMEOUT_MS,
+  TENANT_STATEMENT_TIMEOUT_MS,
   TenantAuthorizationError,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
@@ -42,9 +45,14 @@ function createDatabaseStub(options: DatabaseStubOptions = {}) {
     where: vi.fn(() => query),
   };
 
+  let executeCalls = 0;
   const transaction = {
     execute: vi.fn(async () => {
-      events.push("set-local-context");
+      // the first statement of a tenant transaction sets the timeouts; the others set contexts
+      events.push(
+        executeCalls === 0 ? "set-local-guards" : "set-local-context"
+      );
+      executeCalls += 1;
       await Promise.resolve();
     }),
     select: vi.fn(() => query),
@@ -52,9 +60,13 @@ function createDatabaseStub(options: DatabaseStubOptions = {}) {
 
   const database = {
     transaction: vi.fn(
-      async <T>(
-        callback: (transaction: TenantRequestTransaction) => Promise<T>
-      ) => callback(transaction as unknown as TenantRequestTransaction)
+      <T>(
+        callback: (transaction: TenantRequestTransaction) => Promise<T>,
+        _options?: { isolationLevel?: string }
+      ) => {
+        executeCalls = 0;
+        return callback(transaction as unknown as TenantRequestTransaction);
+      }
     ),
   } as unknown as Database;
 
@@ -103,6 +115,7 @@ describe("withAuthorizedTenantTransaction", () => {
     });
 
     expect(fixture.events).toEqual([
+      "set-local-guards",
       "set-local-context",
       "membership-select",
       "set-local-context",
@@ -131,8 +144,10 @@ describe("withAuthorizedTenantTransaction", () => {
     ).rejects.toMatchObject({ code: "tenant_access_denied" });
 
     expect(fixture.events).toEqual([
+      "set-local-guards",
       "set-local-context",
       "membership-select",
+      "set-local-guards",
       "set-local-context",
       "membership-select",
     ]);
@@ -153,7 +168,11 @@ describe("withAuthorizedTenantTransaction", () => {
       )
     ).rejects.toMatchObject({ code: "capability_denied" });
 
-    expect(fixture.events).toEqual(["set-local-context", "membership-select"]);
+    expect(fixture.events).toEqual([
+      "set-local-guards",
+      "set-local-context",
+      "membership-select",
+    ]);
     expect(operation).not.toHaveBeenCalled();
   });
 
@@ -173,6 +192,7 @@ describe("withAuthorizedTenantTransaction", () => {
     ).rejects.toMatchObject({ code: "tenant_access_denied" });
 
     expect(fixture.events).toEqual([
+      "set-local-guards",
       "set-local-context",
       "membership-select",
       "set-local-context",
@@ -201,5 +221,53 @@ describe("withAuthorizedTenantTransaction", () => {
     ).rejects.toMatchObject({ code: "tenant_access_denied" });
 
     expect(fixture.database.transaction).not.toHaveBeenCalled();
+  });
+
+  it("sets the statement, lock and idle timeouts as the first statement of the transaction", async () => {
+    const fixture = createDatabaseStub({
+      membership: { role: "owner", status: "active" },
+      organization: { status: "active" },
+    });
+    await withAuthorizedTenantTransaction(
+      fixture.database,
+      createInput(),
+      async () => undefined
+    );
+    const [firstStatement] = fixture.transaction.execute.mock
+      .calls as unknown as [[{ queryChunks: unknown[] }]];
+    const rendered = JSON.stringify(firstStatement[0].queryChunks);
+    expect(rendered).toContain("statement_timeout");
+    expect(rendered).toContain("lock_timeout");
+    expect(rendered).toContain("idle_in_transaction_session_timeout");
+    expect(TENANT_STATEMENT_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(TENANT_LOCK_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+
+  it("uses READ COMMITTED unless a read model asks for REPEATABLE READ", async () => {
+    const fixture = createDatabaseStub({
+      membership: { role: "owner", status: "active" },
+      organization: { status: "active" },
+    });
+    await withAuthorizedTenantTransaction(
+      fixture.database,
+      createInput(),
+      async () => undefined
+    );
+    await withAuthorizedTenantTransaction(
+      fixture.database,
+      { ...createInput(), isolationLevel: "repeatable read" },
+      async () => undefined
+    );
+    expect(fixture.database.transaction).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Function),
+      { isolationLevel: "read committed" }
+    );
+    expect(fixture.database.transaction).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Function),
+      { isolationLevel: "repeatable read" }
+    );
   });
 });
