@@ -13,6 +13,8 @@ import {
 
 export const runtimeRole = "polaris_pr11_runtime";
 export const poolerPattern = /pooler/i;
+// Every stage runs against its own disposable branch (for example pr44-...-gate).
+export const gateBranchPattern = /^pr\d+-[a-z0-9-]+-gate$/;
 export const disposableHostPattern =
   /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 const sqlStatePattern = /^[0-9A-Z]{5}$/;

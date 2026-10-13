@@ -246,6 +246,13 @@
       "when": 1791908879382,
       "tag": "0034_legal_rumiko_fujikawa",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791914332598,
+      "tag": "0035_salty_meltdown",
+      "breakpoints": true
     }
   ]
 }

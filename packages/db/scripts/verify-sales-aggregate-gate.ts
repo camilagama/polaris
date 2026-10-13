@@ -30,6 +30,7 @@ import {
   createProductFixture,
   createTenantFixture,
   disposableHostPattern,
+  gateBranchPattern,
   expectSqlState,
   poolerPattern,
   requiredEnvironment,
@@ -45,7 +46,6 @@ import type {
   TenantRequestTransaction,
 } from "../src/tenant-transaction";
 
-const expectedBranch = "pr43-sale-transaction-gate";
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 
 interface SaleGraphOptions {
@@ -166,7 +166,7 @@ async function insertSaleHeader(
 
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
-  assert.equal(branch, expectedBranch);
+  assert.match(branch, gateBranchPattern);
   const adminUrl = requiredEnvironment("POLARIS_SALES_GATE_DATABASE_URL");
   const parsedAdminUrl = new URL(adminUrl);
   assert.match(parsedAdminUrl.hostname, disposableHostPattern);

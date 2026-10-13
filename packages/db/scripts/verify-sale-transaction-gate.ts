@@ -40,6 +40,7 @@ import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
   createTenantFixture,
   disposableHostPattern,
+  gateBranchPattern,
   expectSqlState,
   poolerPattern,
   redactedFailure,
@@ -51,7 +52,6 @@ import {
   withTenantAs,
 } from "./sales-gate-support";
 
-const expectedBranch = "pr43-sale-transaction-gate";
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 const injectedFailureMessage = "pr43 gate injected failure";
 
@@ -68,7 +68,7 @@ interface Effects {
 
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
-  assert.equal(branch, expectedBranch);
+  assert.match(branch, gateBranchPattern);
   const adminUrl = requiredEnvironment("POLARIS_SALES_GATE_DATABASE_URL");
   const parsedAdminUrl = new URL(adminUrl);
   assert.match(parsedAdminUrl.hostname, disposableHostPattern);
@@ -99,8 +99,10 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.equal(migrations.rows[0]?.count, "35");
-    tests.push("migrations 0000-0034 were replayed from scratch");
+    assert.ok(Number(migrations.rows[0]?.count) >= 35);
+    tests.push(
+      "migrations 0000-0034 (and any later ones) were replayed from scratch"
+    );
 
     const tenantA = await createTenantFixture(admin.pool, "A");
     const tenantB = await createTenantFixture(admin.pool, "B");

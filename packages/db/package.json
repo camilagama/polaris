@@ -23,6 +23,8 @@
     "./payment-profile-repository": "./src/payment-profile-repository.ts",
     "./sale-schema": "./src/schema/sale.ts",
     "./sale-repository": "./src/sale-repository.ts",
+    "./sale-customer-link-schema": "./src/schema/sale-customer-link.ts",
+    "./sale-customer-link-repository": "./src/sale-customer-link-repository.ts",
     "./product-repository": "./src/product-repository.ts",
     "./inventory-schema": "./src/schema/inventory.ts",
     "./media-schema": "./src/schema/media.ts",
@@ -48,6 +50,7 @@
     "poc:customers:verify": "bun scripts/verify-customers-gate.ts",
     "poc:sales:verify": "bun scripts/verify-sales-aggregate-gate.ts",
     "poc:sales:transaction:verify": "bun scripts/verify-sale-transaction-gate.ts",
+    "poc:sales:customer-link:verify": "bun scripts/verify-sale-customer-link-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

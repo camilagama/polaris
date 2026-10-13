@@ -710,8 +710,8 @@ describe("loading and empty states", () => {
     expect(loadErrorMessage({ code: "UNAUTHORIZED" }, "produtos")).toContain(
       "sessão"
     );
-    expect(loadErrorMessage({ code: "FORBIDDEN" }, "o estoque")).toContain(
-      "o estoque"
+    expect(loadErrorMessage({ code: "FORBIDDEN" }, "o estoque")).toBe(
+      "Sua conta não tem acesso a esta organização ou ação."
     );
     expect(loadErrorMessage(new Error("x"), "produtos")).toBe(
       "Não foi possível carregar produtos. Tente novamente."

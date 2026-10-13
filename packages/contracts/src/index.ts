@@ -444,6 +444,37 @@ const confirmedSale = z.object({
 
 export type ConfirmedSaleReadModel = z.infer<typeof confirmedSale>;
 
+const saleCustomerLinkAction = z.enum(["assign", "reassign", "unassign"]);
+
+const saleCustomerLink = z.object({
+  current: z.object({
+    customerId: z.string().uuid().nullable(),
+    version: z.number().int().nonnegative().max(2_147_483_647),
+  }),
+  history: z.array(
+    z.object({
+      action: saleCustomerLinkAction,
+      createdAt: z.string().datetime(),
+      customerId: z.string().uuid().nullable(),
+      version: z.number().int().positive().max(2_147_483_647),
+    })
+  ),
+  saleId: z.string().uuid(),
+});
+
+export type SaleCustomerLinkReadModel = z.infer<typeof saleCustomerLink>;
+
+const saleCustomerLinkTarget = z.object({
+  expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
+  organizationId: z.string().trim().min(1),
+  saleId: z.string().uuid(),
+});
+
+const saleCustomerLinkChange = z.object({
+  changed: z.boolean(),
+  link: saleCustomerLink,
+});
+
 const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
@@ -851,6 +882,25 @@ export const polarisContract = {
         })
       )
       .output(confirmedSale),
+    // Attribution is separate from the sale's economics: it never changes the
+    // confirmed sale. Each change needs the version the operator saw.
+    assignCustomer: oc
+      .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
+      .output(saleCustomerLinkChange),
+    getCustomerLink: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          saleId: z.string().uuid(),
+        })
+      )
+      .output(saleCustomerLink),
+    reassignCustomer: oc
+      .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
+      .output(saleCustomerLinkChange),
+    unassignCustomer: oc
+      .input(saleCustomerLinkTarget)
+      .output(saleCustomerLinkChange),
   },
   system: {
     ping: oc.output(z.object({ message: z.literal("pong") })),

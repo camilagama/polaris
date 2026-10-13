@@ -37,6 +37,10 @@ import {
   restorePaymentProfile,
   updatePaymentProfile,
 } from "@polaris/db/payment-profile-repository";
+import {
+  changeSaleCustomerLink,
+  getSaleCustomerLink,
+} from "@polaris/db/sale-customer-link-repository";
 import { confirmSale } from "@polaris/db/sale-repository";
 import {
   archiveProduct,
@@ -107,6 +111,13 @@ import {
   isWriteOffReasonCode,
   UnsupportedWriteOffStockCommandVersionError,
 } from "@polaris/domain/inventory/write-off-stock";
+import {
+  InvalidSaleCustomerLinkError,
+  SaleCustomerArchivedError,
+  SaleCustomerLinkStateError,
+  SaleCustomerLinkVersionConflictError,
+  SaleNotFoundError,
+} from "@polaris/domain/sales/sale-customer-link";
 import {
   InvalidConfirmSaleCommandError,
   SaleOccurredInFutureError,
@@ -181,7 +192,9 @@ interface RpcRouterDependencies {
   configureProductVariants: typeof configureProductVariants;
   createCategory: typeof createCategory;
   createCustomer: typeof createCustomer;
+  changeSaleCustomerLink: typeof changeSaleCustomerLink;
   confirmSale: typeof confirmSale;
+  getSaleCustomerLink: typeof getSaleCustomerLink;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
@@ -502,6 +515,7 @@ const badRequestRpcErrors = [
   [
     InvalidConfirmSaleCommandError,
     SaleOccurredInFutureError,
+    InvalidSaleCustomerLinkError,
     UnsupportedConfirmSaleCommandVersionError,
     InvalidSaleAdjustmentError,
     SaleAdjustmentLimitError,
@@ -551,6 +565,11 @@ const conflictRpcErrors = [
     PaymentProfileLifecycleError,
   ],
   [SaleCommandConflictError, SaleProductUnavailableError],
+  [
+    SaleCustomerArchivedError,
+    SaleCustomerLinkStateError,
+    SaleCustomerLinkVersionConflictError,
+  ],
 ] as const;
 
 const notFoundRpcErrors = [
@@ -560,6 +579,7 @@ const notFoundRpcErrors = [
     ProductVariantNotFoundError,
     InventoryVariantNotFoundError,
   ],
+  [SaleNotFoundError],
 ] as const;
 
 async function productLifecycleCommand(
@@ -978,8 +998,12 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const saleHandlers = createSaleRpcHandlers({
+    changeSaleCustomerLink: overrides.changeSaleCustomerLink,
     confirmSale: overrides.confirmSale,
+    defaultChangeSaleCustomerLink: changeSaleCustomerLink,
     defaultConfirmSale: confirmSale,
+    defaultGetSaleCustomerLink: getSaleCustomerLink,
+    getSaleCustomerLink: overrides.getSaleCustomerLink,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1500,7 +1524,13 @@ export function createRpcRouter(
       setVariantSku: setProductVariantSkuRecord,
       update: updateProductRecord,
     },
-    sale: { confirm: saleHandlers.confirm },
+    sale: {
+      assignCustomer: saleHandlers.assignCustomer,
+      confirm: saleHandlers.confirm,
+      getCustomerLink: saleHandlers.getCustomerLink,
+      reassignCustomer: saleHandlers.reassignCustomer,
+      unassignCustomer: saleHandlers.unassignCustomer,
+    },
     system: { ping },
   });
 }

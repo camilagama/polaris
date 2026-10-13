@@ -2,7 +2,13 @@ import { implement } from "@orpc/server";
 import {
   type ConfirmedSaleReadModel,
   polarisContract,
+  type SaleCustomerLinkReadModel,
 } from "@polaris/contracts";
+import type {
+  changeSaleCustomerLink,
+  getSaleCustomerLink,
+  SaleCustomerLinkReadModel as SaleCustomerLinkRecord,
+} from "@polaris/db/sale-customer-link-repository";
 import type {
   ConfirmSaleResult,
   confirmSale,
@@ -17,8 +23,12 @@ interface SaleRpcContext {
 }
 
 interface SaleRpcDependencies {
+  changeSaleCustomerLink: typeof changeSaleCustomerLink | undefined;
   confirmSale: typeof confirmSale | undefined;
+  defaultChangeSaleCustomerLink: typeof changeSaleCustomerLink;
   defaultConfirmSale: typeof confirmSale;
+  defaultGetSaleCustomerLink: typeof getSaleCustomerLink;
+  getSaleCustomerLink: typeof getSaleCustomerLink | undefined;
   requestAuditId: (requestId: string) => string | null;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
@@ -77,6 +87,21 @@ function confirmedSaleReadModel(
   };
 }
 
+function saleCustomerLinkReadModel(
+  link: SaleCustomerLinkRecord
+): SaleCustomerLinkReadModel {
+  return {
+    current: link.current,
+    history: link.history.map((entry) => ({
+      action: entry.action,
+      createdAt: entry.createdAt.toISOString(),
+      customerId: entry.customerId,
+      version: entry.version,
+    })),
+    saleId: link.saleId,
+  };
+}
+
 export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
   const implementContract =
     implement(polarisContract).$context<SaleRpcContext>();
@@ -107,5 +132,72 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .catch(dependencies.toRpcError)
   );
 
-  return { confirm };
+  const changeLink =
+    dependencies.changeSaleCustomerLink ??
+    dependencies.defaultChangeSaleCustomerLink;
+  const getLink =
+    dependencies.getSaleCustomerLink ?? dependencies.defaultGetSaleCustomerLink;
+
+  const linkCommand = (
+    action: "assign" | "reassign" | "unassign",
+    context: SaleRpcContext,
+    input: {
+      customerId?: string;
+      expectedVersion: number;
+      organizationId: string;
+      saleId: string;
+    }
+  ) =>
+    dependencies
+      .withTenantRequestContext({
+        bindings: context.bindings,
+        capability: "sale:assign_customer",
+        operation: (transaction, identity) =>
+          changeLink(transaction, identity, {
+            action,
+            customerId: input.customerId ?? null,
+            expectedVersion: input.expectedVersion,
+            requestId: dependencies.requestAuditId(context.requestId),
+            saleId: input.saleId,
+          }),
+        request: context.request,
+        requestedOrganizationId: input.organizationId,
+      })
+      .then((result) => ({
+        changed: result.changed,
+        link: saleCustomerLinkReadModel(result.link),
+      }))
+      .catch(dependencies.toRpcError);
+
+  const assignCustomer = implementContract.sale.assignCustomer.handler(
+    ({ context, input }) => linkCommand("assign", context, input)
+  );
+  const reassignCustomer = implementContract.sale.reassignCustomer.handler(
+    ({ context, input }) => linkCommand("reassign", context, input)
+  );
+  const unassignCustomer = implementContract.sale.unassignCustomer.handler(
+    ({ context, input }) => linkCommand("unassign", context, input)
+  );
+  const getCustomerLink = implementContract.sale.getCustomerLink.handler(
+    ({ context, input }) =>
+      dependencies
+        .withTenantRequestContext({
+          bindings: context.bindings,
+          capability: "sale:assign_customer",
+          operation: (transaction, identity) =>
+            getLink(transaction, identity, input.saleId),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        })
+        .then(saleCustomerLinkReadModel)
+        .catch(dependencies.toRpcError)
+  );
+
+  return {
+    assignCustomer,
+    confirm,
+    getCustomerLink,
+    reassignCustomer,
+    unassignCustomer,
+  };
 }

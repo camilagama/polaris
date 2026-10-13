@@ -488,7 +488,7 @@ export type CatalogView =
   | { kind: "empty"; message: string }
   | { kind: "ready"; options: ChoiceOption[] };
 
-function rpcErrorCode(error: unknown): string | undefined {
+export function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return undefined;
   }
@@ -503,7 +503,7 @@ export function loadErrorMessage(error: unknown, subject: string): string {
     return "Sua sessão não está ativa. Entre novamente para continuar.";
   }
   if (code === "FORBIDDEN") {
-    return `Sua conta não tem acesso a ${subject} nesta organização.`;
+    return "Sua conta não tem acesso a esta organização ou ação.";
   }
   return `Não foi possível carregar ${subject}. Tente novamente.`;
 }
@@ -1712,7 +1712,7 @@ function failure(
 }
 
 /** Reads the stable domain code from an oRPC error's `data.reason`. */
-function rpcErrorReason(error: unknown): string | undefined {
+export function rpcErrorReason(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("data" in error)) {
     return undefined;
   }
@@ -1815,6 +1815,7 @@ interface ConfirmedSaleItemView {
 
 export interface ConfirmedSaleView {
   headline: string;
+  saleId: string;
   items: ConfirmedSaleItemView[];
   note: string;
   paymentDetails: ConfirmedSaleDetail[];
@@ -1924,6 +1925,7 @@ function confirmedPaymentDetails(
 /** Display model of the confirmed sale exactly as the server returned it. */
 function confirmedSaleView(sale: ConfirmedSaleReadModel): ConfirmedSaleView {
   return {
+    saleId: sale.sale.id,
     headline: sale.replayed
       ? "Esta venda já estava confirmada. Nada foi duplicado."
       : "Venda confirmada.",

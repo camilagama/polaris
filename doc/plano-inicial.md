@@ -2347,6 +2347,11 @@ Economia da venda não muda.
 
 Tudo auditado/versionado.
 
+Decisões de implementação do PR44 (detalhes em `docs/business-rules/sales.md`): histórico
+versionado e somente de acréscimo, comandos com `expectedVersion`, ações idempotentes quando já
+valem, apenas clientes ativos podem ser associados, capability dedicada `sale:assign_customer` e
+interface opcional após a confirmação e em `/sales/customer` (ainda não existe lista de vendas).
+
 
 
 ---

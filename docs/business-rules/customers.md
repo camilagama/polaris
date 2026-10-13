@@ -1,6 +1,6 @@
 # Clientes
 
-- Cliente é uma pessoa ou organização cadastrada pela organização revendedora. O registro pertence a uma única organização; uma venda pode existir sem cliente e este PR ainda não associa clientes a vendas.
+- Cliente é uma pessoa ou organização cadastrada pela organização revendedora. O registro pertence a uma única organização; uma venda pode existir sem cliente. A associação entre venda e cliente é uma atribuição separada, definida em [vendas](sales.md#atribuição-de-cliente-pr44).
 - Nome é obrigatório e aparado. O cadastro exige pelo menos um contato: telefone ou email. Cada contato pode ficar ausente, mas não ambos; observações não contam como identificador.
 - Telefone é armazenado como texto aparado, sem formato nacional obrigatório. Email é aparado e validado quando informado. Nome, telefone e email não têm unicidade rígida; registros repetidos são permitidos e não são mesclados automaticamente.
 - PR37 consulta possíveis duplicados somente dentro da organização: email exato sem distinção de caixa após aparar espaços externos, ou telefone exato após aparar espaços externos. Não normalizar pontuação do telefone, não buscar por nome e não exigir que email e telefone coincidam no mesmo cadastro. A consulta inclui clientes ativos e arquivados, retorna todos os candidatos e indica quais campos coincidiram.

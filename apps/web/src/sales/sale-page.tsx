@@ -75,9 +75,10 @@ import {
   type VariantConfigurations,
   variantsView,
 } from "./sale-form-model";
+import { SaleCustomerDisclosure } from "./sale-customer-panel";
+import { readOrganizationId, SalesTopbar } from "./sales-shell";
 import { useSaleCatalog } from "./use-sale-catalog";
 
-const organizationStorageKey = "polaris.organizationId";
 const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
   ([id, label]) => ({ id, label })
 );
@@ -99,14 +100,6 @@ const noProfileOption: ChoiceOption = {
 };
 
 const newId = () => crypto.randomUUID();
-
-function readOrganizationId(): string | null {
-  try {
-    return window.localStorage.getItem(organizationStorageKey);
-  } catch {
-    return null;
-  }
-}
 
 /* -------------------------------------------------------------------------- */
 /* Small controls                                                             */
@@ -881,11 +874,16 @@ function FailureNotice({
 }
 
 interface ConfirmedPanelProps {
+  organizationId: string;
   panelRef: RefObject<HTMLElement | null>;
   sale: ConfirmedSaleView;
 }
 
-function ConfirmedSalePanel({ panelRef, sale }: ConfirmedPanelProps) {
+function ConfirmedSalePanel({
+  organizationId,
+  panelRef,
+  sale,
+}: ConfirmedPanelProps) {
   return (
     <section
       aria-labelledby="sale-confirmed-title"
@@ -943,6 +941,11 @@ function ConfirmedSalePanel({ panelRef, sale }: ConfirmedPanelProps) {
       <p className="sale-hint">
         O formulário abaixo foi reiniciado para uma nova venda.
       </p>
+      <SaleCustomerDisclosure
+        key={sale.saleId}
+        organizationId={organizationId}
+        saleId={sale.saleId}
+      />
     </section>
   );
 }
@@ -950,28 +953,6 @@ function ConfirmedSalePanel({ panelRef, sale }: ConfirmedPanelProps) {
 /* -------------------------------------------------------------------------- */
 /* Page                                                                       */
 /* -------------------------------------------------------------------------- */
-
-function Topbar() {
-  return (
-    <header className="categories-topbar">
-      <a aria-label="Polaris início" className="categories-brand" href="/">
-        <span aria-hidden="true" className="categories-brand-mark">
-          P
-        </span>
-        <span>Polaris</span>
-      </a>
-      <nav aria-label="Navegação principal" className="catalog-switcher">
-        <a href="/">Categorias</a>
-        <a href="/products">Produtos</a>
-        <a href="/customers">Clientes</a>
-        <a href="/payment-profiles">Perfis de pagamento</a>
-        <a aria-current="page" href="/sales">
-          Nova venda
-        </a>
-      </nav>
-    </header>
-  );
-}
 
 function focusFirstInvalidField() {
   window.requestAnimationFrame(() => {
@@ -1228,7 +1209,7 @@ export function SalePage() {
   if (!organizationId) {
     return (
       <div className="categories-page sale-page">
-        <Topbar />
+        <SalesTopbar current="sale" />
         <main className="categories-content">
           <section aria-labelledby="sale-title" className="sale-empty-page">
             <p className="categories-eyebrow">Vendas</p>
@@ -1248,7 +1229,7 @@ export function SalePage() {
   const profileOptions = optionsOf(profilesState);
   return (
     <div className="categories-page sale-page">
-      <Topbar />
+      <SalesTopbar current="sale" />
       <main className="categories-content">
         <section className="categories-heading">
           <div>
@@ -1261,7 +1242,12 @@ export function SalePage() {
           </div>
         </section>
         {submission.phase === "confirmed" ? (
-          <ConfirmedSalePanel panelRef={confirmedRef} sale={submission.sale} />
+          <ConfirmedSalePanel
+            key={submission.sale.saleId}
+            organizationId={organizationId}
+            panelRef={confirmedRef}
+            sale={submission.sale}
+          />
         ) : null}
         <form
           aria-label="Nova venda"
