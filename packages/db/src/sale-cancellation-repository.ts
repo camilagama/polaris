@@ -12,12 +12,15 @@ import {
   SaleCancellationCommandConflictError,
 } from "@polaris/domain/sales/sale-cancellation";
 import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
+import { SaleHasReturnsError } from "@polaris/domain/sales/sale-return";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { recordSaleRestockMovement } from "./inventory-repository";
+import { lockSaleForCompensation } from "./sale-locks";
 import { organizations } from "./schema/organization";
 import { products } from "./schema/product";
 import { saleItems, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
+import { saleReturns } from "./schema/sale-return";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import {
   TenantAuthorizationError,
@@ -176,6 +179,27 @@ export async function cancelSale(
   // cannot reuse the sale's.
   if (sale.commandId === command.commandId) {
     throw new SaleCancellationCommandConflictError();
+  }
+
+  // Cancellation and returns of one sale run one at a time; re-check the
+  // committed state now that this transaction holds the sale lock.
+  await lockSaleForCompensation(transaction, sale.id);
+  const afterLock = await replayOrConflict(transaction, identity, command);
+  if (afterLock) {
+    return afterLock;
+  }
+  const [anyReturn] = await transaction
+    .select({ id: saleReturns.id })
+    .from(saleReturns)
+    .where(
+      and(
+        eq(saleReturns.organizationId, identity.organizationId),
+        eq(saleReturns.saleId, sale.id)
+      )
+    )
+    .limit(1);
+  if (anyReturn) {
+    throw new SaleHasReturnsError();
   }
 
   const [organization] = await transaction

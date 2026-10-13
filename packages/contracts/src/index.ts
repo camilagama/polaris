@@ -475,10 +475,51 @@ const cancelledSaleResult = z.object({
   ),
 });
 
+const returnReasonCodes = [
+  "customer_request",
+  "defective",
+  "wrong_item",
+  "other",
+] as const;
+
+const saleReturnLine = z.object({
+  position: z.number().int().nonnegative(),
+  restockedQuantity: z.number().int().nonnegative(),
+  returnedQuantity: z.number().int().positive(),
+});
+
+const saleReturn = z.object({
+  commandId: z.string().uuid(),
+  id: z.string().uuid(),
+  items: z.array(saleReturnLine),
+  reasonCode: z.enum(returnReasonCodes).nullable(),
+  reasonNote: z.string().nullable(),
+  returnedAt: z.string().datetime(),
+  returnedBy: z.string().min(1),
+  saleId: z.string().uuid(),
+});
+
+export type SaleReturnReadModel = z.infer<typeof saleReturn>;
+
+const returnSummaryLine = z.object({
+  availableToReturn: z.number().int().nonnegative(),
+  position: z.number().int().nonnegative(),
+  restockedQuantity: z.number().int().nonnegative(),
+  returnedQuantity: z.number().int().nonnegative(),
+  sold: z.number().int().positive(),
+});
+
+const returnedSaleResult = z.object({
+  lines: z.array(saleReturnLine),
+  replayed: z.boolean(),
+  saleReturn: saleReturn.omit({ items: true }),
+});
+
 const saleListEntry = z.object({
   cancelledAt: z.string().datetime().nullable(),
   confirmedAt: z.string().datetime(),
   customerId: z.string().uuid().nullable(),
+  hasReturns: z.boolean(),
   id: z.string().uuid(),
   itemCount: z.number().int().positive(),
   occurredAt: z.string().datetime(),
@@ -495,6 +536,8 @@ const saleDetail = z.object({
     customerId: z.string().uuid().nullable(),
     version: z.number().int().nonnegative().max(2_147_483_647),
   }),
+  returnSummary: z.array(returnSummaryLine),
+  returns: z.array(saleReturn),
   sale: confirmedSale.omit({ replayed: true }),
 });
 
@@ -962,6 +1005,21 @@ export const polarisContract = {
         })
       )
       .output(saleDetail),
+    // A partial return: per item the returned quantity and the quantity that
+    // goes back to sellable stock (restocked <= returned <= still available).
+    return: oc
+      .input(
+        z.object({
+          commandId: z.string().uuid(),
+          commandVersion: z.literal(1),
+          items: z.array(saleReturnLine).min(1).max(200),
+          organizationId: z.string().trim().min(1),
+          reasonCode: z.enum(returnReasonCodes).nullable().optional(),
+          reasonNote: z.string().nullable().optional(),
+          saleId: z.string().uuid(),
+        })
+      )
+      .output(returnedSaleResult),
     list: oc
       .input(
         z.object({

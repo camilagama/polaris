@@ -142,6 +142,11 @@ function SaleHistoryContent({ organizationId }: HistoryContentProps) {
                 <span className={`sale-badge is-${row.statusTone}`}>
                   {row.statusLabel}
                 </span>
+                {row.returnsBadge ? (
+                  <span className="sale-badge is-returns">
+                    {row.returnsBadge}
+                  </span>
+                ) : null}
               </div>
               <strong>{row.totalText}</strong>
               <p className="sale-history-meta">

@@ -302,6 +302,17 @@ describe("error mapping", () => {
     expect(failure.unknownOutcome).toBe(false);
   });
 
+  it("explains that a sale with returns cannot be cancelled and reloads the detail", () => {
+    const failure = mapCancelError({
+      code: "CONFLICT",
+      data: { reason: "sale_has_returns" },
+    });
+    expect(failure.message).toContain("já tem devoluções");
+    expect(failure.message).toContain("não pode ser cancelada por inteiro");
+    expect(failure.reloadDetail).toBe(true);
+    expect(failure.unknownOutcome).toBe(false);
+  });
+
   it("explains a removed product for both reasons", () => {
     for (const reason of ["sale_product_unavailable", "product_deleted"]) {
       const failure = mapCancelError({ code: "CONFLICT", data: { reason } });

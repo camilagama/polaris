@@ -20,6 +20,7 @@
     "./sales/sale-adjustments": "./src/sales/sale-adjustments.ts",
     "./sales/sale-customer-link": "./src/sales/sale-customer-link.ts",
     "./sales/sale-payment": "./src/sales/sale-payment.ts",
+    "./sales/sale-return": "./src/sales/sale-return.ts",
     "./sales/payment-profile": "./src/sales/payment-profile.ts",
     "./sales/sale": "./src/sales/sale.ts"
   },

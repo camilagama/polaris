@@ -106,3 +106,39 @@
   background: var(--category-accent-soft);
   border-color: color-mix(in srgb, var(--category-accent) 32%, transparent);
 }
+
+.sale-badge.is-returns {
+  color: var(--category-warning);
+  background: var(--category-warning-soft);
+}
+
+.sale-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sale-returns-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sale-returns-list > li {
+  padding: 0.75rem;
+  background: var(--category-surface-muted);
+  border: 1px solid var(--category-line);
+  border-radius: 0.65rem;
+}
+
+.sale-returns-list p {
+  margin: 0 0 0.3rem;
+}
+
+.sale-returns-list ul {
+  padding-left: 1.1rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.86rem;
+}

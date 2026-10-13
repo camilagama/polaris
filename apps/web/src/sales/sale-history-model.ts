@@ -6,6 +6,13 @@ import type {
 import { customerName } from "./sale-customer-link-model";
 import { cancellationReasonLabel } from "./sale-cancellation-model";
 import {
+  returnPanelKey,
+  type ReturnTableRow,
+  returnReasonLabel,
+  returnTableRows,
+  totalAvailable,
+} from "./sale-return-model";
+import {
   type ConfirmedSaleView,
   confirmedSaleView,
   formatBrlAmount,
@@ -19,6 +26,9 @@ import {
 export const SALES_PAGE_SIZE = 50;
 
 const methodLabels = new Map<string, string>(SALE_METHODS);
+
+/** Shown beside Confirmada/Cancelada when the sale has at least one return. */
+const RETURNS_BADGE = "Com devoluções";
 
 /** Where a sale's detail lives. The ID is not customer data. */
 export function saleDetailHref(saleId: string): string {
@@ -155,6 +165,7 @@ export function historyCustomersFailed(
 /* -------------------------------------------------------------------------- */
 
 export interface HistoryRow {
+  returnsBadge: string | null;
   customerText: string;
   detailHref: string;
   id: string;
@@ -187,6 +198,7 @@ export function historyRows(state: HistoryState): HistoryRow[] {
         : (methodLabels.get(sale.paymentMethod) ?? sale.paymentMethod),
     occurredText: formatInstant(sale.occurredAt),
     statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
+    returnsBadge: sale.hasReturns ? RETURNS_BADGE : null,
     statusTone: sale.status,
     totalText: formatBrlAmount(sale.totalDue),
   }));
@@ -243,7 +255,25 @@ interface CancellationView {
   rows: Array<{ label: string; value: string }>;
 }
 
+interface ReturnHistoryEntry {
+  dateText: string;
+  id: string;
+  lines: Array<{ key: string; text: string }>;
+  noteText: string | null;
+  reasonText: string;
+}
+
 export interface SaleDetailView {
+  /** A sale with returns is not cancelled as a whole; this says why. */
+  cancelBlockedReason: string | null;
+  /** Set when every unit was already returned (nothing left to return). */
+  allReturnedMessage: string | null;
+  canReturn: boolean;
+  hasReturns: boolean;
+  returnPanelKey: string;
+  returnRows: ReturnTableRow[];
+  returnsBadge: string | null;
+  returnsHistory: ReturnHistoryEntry[];
   canCancel: boolean;
   cancellation: CancellationView | null;
   sale: ConfirmedSaleView;
@@ -272,15 +302,53 @@ function cancellationView(
   return { rows };
 }
 
+function returnsHistory(
+  detail: SaleDetailReadModel,
+  labels: ReadonlyMap<number, string>
+): ReturnHistoryEntry[] {
+  return [...detail.returns]
+    .sort((left, right) => right.returnedAt.localeCompare(left.returnedAt))
+    .map((entry) => ({
+      dateText: formatInstant(entry.returnedAt),
+      id: entry.id,
+      lines: entry.items.map((line) => ({
+        key: `${entry.id}-${line.position}`,
+        text: `${labels.get(line.position) ?? `Item ${line.position + 1}`}: devolvidas ${line.returnedQuantity} · voltaram ao estoque ${line.restockedQuantity}`,
+      })),
+      noteText: entry.reasonNote,
+      reasonText: returnReasonLabel(entry.reasonCode),
+    }));
+}
+
 /**
- * Display model of a sale and its cancellation. A cancelled sale keeps its
- * confirmed snapshot unchanged; only the status and the cancellation record
- * are added, and cancelling again is not offered.
+ * Display model of a sale, its cancellation and its returns. The confirmed
+ * snapshot is never changed. A cancelled sale takes no returns, and a sale
+ * with returns cannot be cancelled as a whole.
  */
 export function saleDetailView(detail: SaleDetailReadModel): SaleDetailView {
   const cancelled = detail.cancellation !== null;
+  const hasReturns = detail.returns.length > 0;
+  const labels = new Map(
+    detail.sale.items.map((item) => [item.position, item.productLabel])
+  );
+  const returnRows = returnTableRows(detail.returnSummary, labels);
+  const available = totalAvailable(returnRows);
   return {
-    canCancel: !cancelled,
+    allReturnedMessage:
+      !cancelled && hasReturns && available === 0
+        ? "Todas as unidades já foram devolvidas."
+        : null,
+    cancelBlockedReason:
+      !cancelled && hasReturns
+        ? "Esta venda já tem devoluções, por isso não pode ser cancelada por inteiro."
+        : null,
+    canCancel: !(cancelled || hasReturns),
+    canReturn: !cancelled && available > 0,
+    hasReturns,
+    returnPanelKey: returnPanelKey(returnRows),
+    returnRows,
+    returnsBadge: hasReturns ? RETURNS_BADGE : null,
+    returnsHistory: returnsHistory(detail, labels),
     cancellation: detail.cancellation
       ? cancellationView(detail.cancellation)
       : null,

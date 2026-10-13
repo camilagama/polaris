@@ -41,6 +41,7 @@ function entry(
     cancelledAt: null,
     confirmedAt: "2026-05-01T12:00:01.000Z",
     customerId: null,
+    hasReturns: false,
     id: id(n),
     itemCount: 2,
     occurredAt: "2026-05-01T12:00:00.000Z",
@@ -201,6 +202,22 @@ describe("rows", () => {
     expect(saleDetailHref(id(1))).toBe(`/sales/detail?saleId=${id(1)}`);
   });
 
+  it("badges a sale that has returns, keeping its status", () => {
+    const [plain, withReturns, cancelled] = historyRows(
+      loaded([
+        entry(1),
+        entry(2, { hasReturns: true }),
+        entry(3, { hasReturns: true, status: "cancelled" }),
+      ])
+    );
+    expect(plain?.returnsBadge).toBeNull();
+    expect(withReturns).toMatchObject({
+      returnsBadge: "Com devoluções",
+      statusLabel: "Confirmada",
+    });
+    expect(cancelled?.statusLabel).toBe("Cancelada");
+  });
+
   it("describes a missing payment method", () => {
     expect(
       historyRows(loaded([entry(1, { paymentMethod: null })]))[0]?.methodText
@@ -242,10 +259,22 @@ describe("rows", () => {
 
 describe("sale detail", () => {
   const detail = (
-    cancellation: SaleDetailReadModel["cancellation"]
+    cancellation: SaleDetailReadModel["cancellation"],
+    extra: Partial<Pick<SaleDetailReadModel, "returnSummary" | "returns">> = {}
   ): SaleDetailReadModel => ({
     cancellation,
     customer: { customerId: null, version: 0 },
+    returnSummary: [
+      {
+        availableToReturn: 2,
+        position: 0,
+        restockedQuantity: 0,
+        returnedQuantity: 0,
+        sold: 2,
+      },
+    ],
+    returns: [],
+    ...extra,
     sale: {
       adjustments: [
         {
@@ -388,6 +417,122 @@ describe("sale detail", () => {
       "Estoque",
     ]);
     expect(view.cancellation?.rows[1]?.value).toBe("Sem motivo informado");
+  });
+
+  const partial: Pick<SaleDetailReadModel, "returnSummary" | "returns"> = {
+    returnSummary: [
+      {
+        availableToReturn: 1,
+        position: 0,
+        restockedQuantity: 0,
+        returnedQuantity: 1,
+        sold: 2,
+      },
+    ],
+    returns: [
+      {
+        commandId: id(90),
+        id: id(91),
+        items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 1 }],
+        reasonCode: "defective",
+        reasonNote: "Rasgada",
+        returnedAt: "2026-05-02T12:00:00.000Z",
+        returnedBy: "user_1",
+        saleId: id(70),
+      },
+      {
+        commandId: id(92),
+        id: id(93),
+        items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
+        reasonCode: null,
+        reasonNote: null,
+        returnedAt: "2026-05-03T12:00:00.000Z",
+        returnedBy: "user_1",
+        saleId: id(70),
+      },
+    ],
+  };
+
+  it("offers a return, and no cancellation, while units remain after a return", () => {
+    const view = saleDetailView(detail(null, partial));
+    expect(view.hasReturns).toBe(true);
+    expect(view.returnsBadge).toBe("Com devoluções");
+    expect(view.statusLabel).toBe("Confirmada");
+    expect(view.canReturn).toBe(true);
+    expect(view.canCancel).toBe(false);
+    expect(view.cancelBlockedReason).toContain("já tem devoluções");
+    expect(view.allReturnedMessage).toBeNull();
+    expect(view.returnRows[0]).toMatchObject({
+      available: 1,
+      label: "Camiseta — Azul / M",
+      returned: 1,
+      sold: 2,
+    });
+  });
+
+  it("lists the returns newest first with reason, note and per-item quantities", () => {
+    const view = saleDetailView(detail(null, partial));
+    expect(view.returnsHistory.map((item) => item.id)).toEqual([
+      id(93),
+      id(91),
+    ]);
+    expect(view.returnsHistory[1]).toMatchObject({
+      noteText: "Rasgada",
+      reasonText: "Item com defeito",
+    });
+    expect(view.returnsHistory[1]?.lines[0]?.text).toBe(
+      "Camiseta — Azul / M: devolvidas 1 · voltaram ao estoque 0"
+    );
+    expect(view.returnsHistory[0]?.reasonText).toBe("Sem motivo informado");
+    expect(view.returnsHistory[0]?.noteText).toBeNull();
+  });
+
+  it("says everything was returned when nothing is available", () => {
+    const view = saleDetailView(
+      detail(null, {
+        ...partial,
+        returnSummary: [
+          {
+            availableToReturn: 0,
+            position: 0,
+            restockedQuantity: 1,
+            returnedQuantity: 2,
+            sold: 2,
+          },
+        ],
+      })
+    );
+    expect(view.canReturn).toBe(false);
+    expect(view.allReturnedMessage).toBe(
+      "Todas as unidades já foram devolvidas."
+    );
+    expect(view.canCancel).toBe(false);
+  });
+
+  it("offers a return but no cancel block for a sale without returns", () => {
+    const view = saleDetailView(detail(null));
+    expect(view.canReturn).toBe(true);
+    expect(view.canCancel).toBe(true);
+    expect(view.cancelBlockedReason).toBeNull();
+    expect(view.returnsBadge).toBeNull();
+    expect(view.returnsHistory).toEqual([]);
+  });
+
+  it("does not offer returns on a cancelled sale", () => {
+    const view = saleDetailView(
+      detail({
+        cancelledAt: "2026-05-02T12:00:00.000Z",
+        cancelledBy: "user_1",
+        commandId: id(80),
+        id: id(81),
+        reasonCode: null,
+        reasonNote: null,
+        saleId: id(70),
+      })
+    );
+    expect(view.canReturn).toBe(false);
+    expect(view.canCancel).toBe(false);
+    expect(view.cancelBlockedReason).toBeNull();
   });
 
   it("maps load failures", () => {

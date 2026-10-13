@@ -26,6 +26,8 @@
     "./sale-cancellation-schema": "./src/schema/sale-cancellation.ts",
     "./sale-cancellation-repository": "./src/sale-cancellation-repository.ts",
     "./sale-query-repository": "./src/sale-query-repository.ts",
+    "./sale-return-schema": "./src/schema/sale-return.ts",
+    "./sale-return-repository": "./src/sale-return-repository.ts",
     "./sale-customer-link-schema": "./src/schema/sale-customer-link.ts",
     "./sale-customer-link-repository": "./src/sale-customer-link-repository.ts",
     "./product-repository": "./src/product-repository.ts",
@@ -55,6 +57,7 @@
     "poc:sales:transaction:verify": "bun scripts/verify-sale-transaction-gate.ts",
     "poc:sales:customer-link:verify": "bun scripts/verify-sale-customer-link-gate.ts",
     "poc:sales:cancellation:verify": "bun scripts/verify-sale-cancellation-gate.ts",
+    "poc:sales:return:verify": "bun scripts/verify-sale-return-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

@@ -16,6 +16,7 @@ describe("tenant capability map", () => {
       "sale:create",
       "sale:read",
       "sale:cancel",
+      "sale:return",
       "sale:assign_customer",
       "customer:update",
       "expense:create",

@@ -43,6 +43,7 @@ import {
   getSaleCustomerLink,
 } from "@polaris/db/sale-customer-link-repository";
 import { getSale, listSales } from "@polaris/db/sale-query-repository";
+import { createSaleReturn } from "@polaris/db/sale-return-repository";
 import { confirmSale } from "@polaris/db/sale-repository";
 import {
   archiveProduct,
@@ -119,6 +120,14 @@ import {
   SaleCancellationCommandConflictError,
   UnsupportedSaleCancellationCommandVersionError,
 } from "@polaris/domain/sales/sale-cancellation";
+import {
+  InvalidSaleReturnError,
+  SaleHasReturnsError,
+  SaleNotReturnableError,
+  SaleReturnCommandConflictError,
+  SaleReturnExceedsAvailableError,
+  UnsupportedSaleReturnCommandVersionError,
+} from "@polaris/domain/sales/sale-return";
 import {
   InvalidSaleCustomerLinkError,
   SaleCustomerArchivedError,
@@ -203,6 +212,7 @@ interface RpcRouterDependencies {
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
   confirmSale: typeof confirmSale;
+  createSaleReturn: typeof createSaleReturn;
   getSale: typeof getSale;
   getSaleCustomerLink: typeof getSaleCustomerLink;
   listSales: typeof listSales;
@@ -528,7 +538,9 @@ const badRequestRpcErrors = [
     SaleOccurredInFutureError,
     InvalidSaleCustomerLinkError,
     InvalidSaleCancellationError,
+    InvalidSaleReturnError,
     UnsupportedSaleCancellationCommandVersionError,
+    UnsupportedSaleReturnCommandVersionError,
     UnsupportedConfirmSaleCommandVersionError,
     InvalidSaleAdjustmentError,
     SaleAdjustmentLimitError,
@@ -579,6 +591,12 @@ const conflictRpcErrors = [
   ],
   [SaleCommandConflictError, SaleProductUnavailableError],
   [SaleAlreadyCancelledError, SaleCancellationCommandConflictError],
+  [
+    SaleHasReturnsError,
+    SaleNotReturnableError,
+    SaleReturnCommandConflictError,
+    SaleReturnExceedsAvailableError,
+  ],
   [
     SaleCustomerArchivedError,
     SaleCustomerLinkStateError,
@@ -1015,7 +1033,9 @@ export function createRpcRouter(
     cancelSale: overrides.cancelSale,
     changeSaleCustomerLink: overrides.changeSaleCustomerLink,
     confirmSale: overrides.confirmSale,
+    createSaleReturn: overrides.createSaleReturn,
     defaultCancelSale: cancelSale,
+    defaultCreateSaleReturn: createSaleReturn,
     defaultChangeSaleCustomerLink: changeSaleCustomerLink,
     defaultConfirmSale: confirmSale,
     defaultGetSale: getSale,
@@ -1551,6 +1571,7 @@ export function createRpcRouter(
       get: saleHandlers.get,
       getCustomerLink: saleHandlers.getCustomerLink,
       list: saleHandlers.list,
+      return: saleHandlers.return,
       reassignCustomer: saleHandlers.reassignCustomer,
       unassignCustomer: saleHandlers.unassignCustomer,
     },

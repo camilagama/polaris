@@ -6,6 +6,7 @@ import {
   type SaleCustomerLinkReadModel,
   type SaleDetailReadModel,
   type SaleListEntryReadModel,
+  type SaleReturnReadModel,
 } from "@polaris/contracts";
 import type {
   CancelSaleResult,
@@ -23,6 +24,10 @@ import type {
   SaleListEntry,
 } from "@polaris/db/sale-query-repository";
 import type {
+  CreateSaleReturnResult,
+  createSaleReturn,
+} from "@polaris/db/sale-return-repository";
+import type {
   ConfirmSaleResult,
   confirmSale,
 } from "@polaris/db/sale-repository";
@@ -39,7 +44,9 @@ interface SaleRpcDependencies {
   cancelSale: typeof cancelSale | undefined;
   changeSaleCustomerLink: typeof changeSaleCustomerLink | undefined;
   confirmSale: typeof confirmSale | undefined;
+  createSaleReturn: typeof createSaleReturn | undefined;
   defaultCancelSale: typeof cancelSale;
+  defaultCreateSaleReturn: typeof createSaleReturn;
   defaultChangeSaleCustomerLink: typeof changeSaleCustomerLink;
   defaultConfirmSale: typeof confirmSale;
   defaultGetSale: typeof getSale;
@@ -126,6 +133,7 @@ function saleListEntryReadModel(entry: SaleListEntry): SaleListEntryReadModel {
     cancelledAt: entry.cancelledAt?.toISOString() ?? null,
     confirmedAt: entry.confirmedAt.toISOString(),
     customerId: entry.customerId,
+    hasReturns: entry.hasReturns,
     id: entry.id,
     itemCount: entry.itemCount,
     occurredAt: entry.occurredAt.toISOString(),
@@ -147,7 +155,30 @@ function saleDetailReadModel(
       ? saleCancellationReadModel(detail.cancellation)
       : null,
     customer: detail.customer,
+    returnSummary: detail.returnSummary,
+    returns: detail.returns.map((saleReturn) => ({
+      ...saleReturn,
+      reasonCode: saleReturn.reasonCode as SaleReturnReadModel["reasonCode"],
+      returnedAt: saleReturn.returnedAt.toISOString(),
+    })),
     sale,
+  };
+}
+
+function returnResultReadModel(result: CreateSaleReturnResult) {
+  const { saleReturn } = result;
+  return {
+    lines: result.lines,
+    replayed: result.replayed,
+    saleReturn: {
+      commandId: saleReturn.commandId,
+      id: saleReturn.id,
+      reasonCode: saleReturn.reasonCode as SaleReturnReadModel["reasonCode"],
+      reasonNote: saleReturn.reasonNote,
+      returnedAt: saleReturn.returnedAt.toISOString(),
+      returnedBy: saleReturn.returnedBy,
+      saleId: saleReturn.saleId,
+    },
   };
 }
 
@@ -205,6 +236,8 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
 
   const cancelRepository =
     dependencies.cancelSale ?? dependencies.defaultCancelSale;
+  const returnRepository =
+    dependencies.createSaleReturn ?? dependencies.defaultCreateSaleReturn;
   const listRepository =
     dependencies.listSales ?? dependencies.defaultListSales;
   const getRepository = dependencies.getSale ?? dependencies.defaultGetSale;
@@ -228,6 +261,29 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       })
       .then(cancelResultReadModel)
       .catch(dependencies.toRpcError)
+  );
+
+  const returnSale = implementContract.sale.return.handler(
+    ({ context, input }) =>
+      dependencies
+        .withTenantRequestContext({
+          bindings: context.bindings,
+          capability: "sale:return",
+          operation: (transaction, identity) =>
+            returnRepository(transaction, identity, {
+              commandId: input.commandId,
+              commandVersion: input.commandVersion,
+              items: input.items,
+              reasonCode: input.reasonCode ?? null,
+              reasonNote: input.reasonNote ?? null,
+              requestId: dependencies.requestAuditId(context.requestId),
+              saleId: input.saleId,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        })
+        .then(returnResultReadModel)
+        .catch(dependencies.toRpcError)
   );
 
   const list = implementContract.sale.list.handler(({ context, input }) =>
@@ -332,6 +388,7 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
     getCustomerLink,
     list,
     reassignCustomer,
+    return: returnSale,
     unassignCustomer,
   };
 }

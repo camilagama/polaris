@@ -260,6 +260,13 @@
       "when": 1791917156868,
       "tag": "0036_shiny_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791918922729,
+      "tag": "0037_square_living_lightning",
+      "breakpoints": true
     }
   ]
 }

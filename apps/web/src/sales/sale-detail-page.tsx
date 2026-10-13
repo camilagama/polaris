@@ -12,7 +12,12 @@ import {
 } from "./sale-customer-link-model";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import type { Loadable } from "./sale-form-model";
-import { detailLoadErrorMessage, saleDetailView } from "./sale-history-model";
+import {
+  detailLoadErrorMessage,
+  type SaleDetailView,
+  saleDetailView,
+} from "./sale-history-model";
+import { SaleReturnPanel } from "./sale-return-panel";
 import { SaleIdForm } from "./sale-id-form";
 import { SaleSnapshot } from "./sale-snapshot";
 import { readOrganizationId, SalesTopbar } from "./sales-shell";
@@ -104,6 +109,60 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   );
 }
 
+interface ReturnsSectionProps {
+  onSaleChanged: (notice: SaleNotice) => void;
+  organizationId: string;
+  saleId: string;
+  view: SaleDetailView;
+}
+
+/** Returns already made, and the form for a new one while units remain. */
+function ReturnsSection({
+  onSaleChanged,
+  organizationId,
+  saleId,
+  view,
+}: ReturnsSectionProps) {
+  return (
+    <>
+      {view.returnsHistory.length > 0 ? (
+        <section aria-labelledby="sale-returns-title" className="sale-detail">
+          <h2 id="sale-returns-title">Devoluções</h2>
+          <ul className="sale-returns-list">
+            {view.returnsHistory.map((entry) => (
+              <li key={entry.id}>
+                <p>
+                  <strong>{entry.dateText}</strong> · {entry.reasonText}
+                </p>
+                {entry.noteText ? (
+                  <p className="sale-hint">Observação: {entry.noteText}</p>
+                ) : null}
+                <ul>
+                  {entry.lines.map((line) => (
+                    <li key={line.key}>{line.text}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {view.allReturnedMessage ? (
+        <p className="sale-empty">{view.allReturnedMessage}</p>
+      ) : null}
+      {view.canReturn ? (
+        <SaleReturnPanel
+          key={view.returnPanelKey}
+          onSaleChanged={onSaleChanged}
+          organizationId={organizationId}
+          rows={view.returnRows}
+          saleId={saleId}
+        />
+      ) : null}
+    </>
+  );
+}
+
 interface ReadyDetailProps {
   detail: SaleDetailReadModel;
   onSaleChanged: (notice: SaleNotice) => void;
@@ -123,8 +182,13 @@ function ReadyDetail({
       <section aria-labelledby="sale-detail-title" className="sale-detail">
         <div className="sale-detail-heading">
           <h2 id="sale-detail-title">Venda</h2>
-          <span className={`sale-badge is-${view.statusTone}`}>
-            {view.statusLabel}
+          <span className="sale-badges">
+            <span className={`sale-badge is-${view.statusTone}`}>
+              {view.statusLabel}
+            </span>
+            {view.returnsBadge ? (
+              <span className="sale-badge is-returns">{view.returnsBadge}</span>
+            ) : null}
           </span>
         </div>
         {view.cancellation ? (
@@ -146,6 +210,17 @@ function ReadyDetail({
         ) : null}
         <SaleSnapshot sale={view.sale} />
       </section>
+      <ReturnsSection
+        onSaleChanged={onSaleChanged}
+        organizationId={organizationId}
+        saleId={saleId}
+        view={view}
+      />
+      {view.cancelBlockedReason ? (
+        <p className="sale-message is-warning" role="note">
+          {view.cancelBlockedReason}
+        </p>
+      ) : null}
       {view.canCancel ? (
         <SaleCancelPanel
           key={saleId}

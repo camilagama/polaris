@@ -6,6 +6,7 @@ import type { SaleCancellationRecord } from "./sale-cancellation-repository";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
 import { saleCustomerLinks } from "./schema/sale-customer-link";
+import { saleReturnItems, saleReturns } from "./schema/sale-return";
 import {
   TenantAuthorizationError,
   type TenantRequestIdentity,
@@ -24,6 +25,7 @@ export interface SaleListEntry {
   cancelledAt: Date | null;
   confirmedAt: Date;
   customerId: string | null;
+  hasReturns: boolean;
   id: string;
   itemCount: number;
   occurredAt: Date;
@@ -88,7 +90,7 @@ export async function listSales(
   }
 
   const ids = headers.map((header) => header.id);
-  const [items, adjustments, payments, cancellations, links] =
+  const [items, adjustments, payments, cancellations, links, returned] =
     await Promise.all([
       transaction
         .select({
@@ -151,7 +153,17 @@ export async function listSales(
           )
         )
         .orderBy(asc(saleCustomerLinks.version)),
+      transaction
+        .select({ saleId: saleReturns.saleId })
+        .from(saleReturns)
+        .where(
+          and(
+            eq(saleReturns.organizationId, identity.organizationId),
+            inArray(saleReturns.saleId, ids)
+          )
+        ),
     ]);
+  const salesWithReturns = new Set(returned.map((row) => row.saleId));
 
   const itemsBySale = groupBy(items, (row) => row.saleId);
   const adjustmentsBySale = groupBy(adjustments, (row) => row.saleId);
@@ -174,6 +186,7 @@ export async function listSales(
         cancelledAt,
         confirmedAt: header.confirmedAt,
         customerId: customerBySale.get(header.id) ?? null,
+        hasReturns: salesWithReturns.has(header.id),
         id: header.id,
         itemCount: header.itemCount,
         occurredAt: header.occurredAt,
@@ -235,12 +248,78 @@ export async function getSale(
     .orderBy(desc(saleCustomerLinks.version))
     .limit(1);
 
+  const returnRows = await transaction
+    .select({
+      commandId: saleReturns.commandId,
+      id: saleReturns.id,
+      reasonCode: saleReturns.reasonCode,
+      reasonNote: saleReturns.reasonNote,
+      returnedAt: saleReturns.returnedAt,
+      returnedBy: saleReturns.returnedBy,
+      saleId: saleReturns.saleId,
+    })
+    .from(saleReturns)
+    .where(
+      and(
+        eq(saleReturns.organizationId, identity.organizationId),
+        eq(saleReturns.saleId, saleId)
+      )
+    )
+    .orderBy(asc(saleReturns.returnedAt), asc(saleReturns.id));
+  const returnItemRows = await transaction
+    .select({
+      position: saleReturnItems.itemPosition,
+      restockedQuantity: saleReturnItems.restockedQuantity,
+      returnId: saleReturnItems.returnId,
+      returnedQuantity: saleReturnItems.returnedQuantity,
+    })
+    .from(saleReturnItems)
+    .where(
+      and(
+        eq(saleReturnItems.organizationId, identity.organizationId),
+        eq(saleReturnItems.saleId, saleId)
+      )
+    )
+    .orderBy(asc(saleReturnItems.itemPosition));
+  const returnItemsById = groupBy(returnItemRows, (row) => row.returnId);
+  const returns = returnRows.map((saleReturn) => ({
+    ...saleReturn,
+    items: (returnItemsById.get(saleReturn.id) ?? []).map(
+      ({ position, restockedQuantity, returnedQuantity }) => ({
+        position,
+        restockedQuantity,
+        returnedQuantity,
+      })
+    ),
+  }));
+  const returnSummary = sale.items.map((item) => {
+    const lines = returnItemRows.filter(
+      (row) => row.position === item.position
+    );
+    const returnedQuantity = lines.reduce(
+      (sum, row) => sum + row.returnedQuantity,
+      0
+    );
+    return {
+      availableToReturn: item.quantity - returnedQuantity,
+      position: item.position,
+      restockedQuantity: lines.reduce(
+        (sum, row) => sum + row.restockedQuantity,
+        0
+      ),
+      returnedQuantity,
+      sold: item.quantity,
+    };
+  });
+
   return {
     cancellation: cancellation ?? null,
     customer: {
       customerId: latestLink?.customerId ?? null,
       version: latestLink?.version ?? 0,
     },
+    returnSummary,
+    returns,
     sale,
   };
 }

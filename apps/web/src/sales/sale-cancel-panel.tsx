@@ -3,10 +3,10 @@ import { orpcClient } from "../lib/orpc";
 import "../catalog/categories-page.css";
 import "./sale-page.css";
 import "./sale-cancel-panel.css";
+import { OperationFailureNotice } from "./operation-failure-notice";
 import {
   type CancelDraft,
   type CancelDraftErrors,
-  type CancelState,
   backToCancelEditing,
   CANCELLATION_EXPLANATION,
   CANCELLATION_REASONS,
@@ -38,71 +38,6 @@ interface CancelPanelProps {
   /** Called when the sale changed on the server: reload it and show the notice. */
   onSaleChanged: (notice: SaleNotice) => void;
   saleId: string;
-}
-
-interface FailureNoticeProps {
-  onDiscardCancel: () => void;
-  onDiscardConfirm: () => void;
-  onDiscardRequest: () => void;
-  state: CancelState;
-}
-
-function CancelFailureNotice({
-  onDiscardCancel,
-  onDiscardConfirm,
-  onDiscardRequest,
-  state,
-}: FailureNoticeProps) {
-  const { submission } = state;
-  if (submission.phase === "failed") {
-    return (
-      <p className="sale-message is-error" role="alert">
-        {submission.failure.message}
-      </p>
-    );
-  }
-  if (submission.phase !== "locked") {
-    return null;
-  }
-  return (
-    <div className="sale-message is-error sale-locked" role="alert">
-      <p>{submission.failure.message}</p>
-      {submission.confirmingDiscard ? (
-        <>
-          <p>
-            <strong>O cancelamento pode já ter sido registrado.</strong>{" "}
-            Descartar esta tentativa não desfaz um cancelamento que já tenha
-            sido feito. Depois de descartar, recarregue a venda para conferir o
-            estado.
-          </p>
-          <div className="sale-actions">
-            <button
-              className="danger-button"
-              onClick={onDiscardConfirm}
-              type="button"
-            >
-              Sim, descartar esta tentativa
-            </button>
-            <button
-              className="quiet-button"
-              onClick={onDiscardCancel}
-              type="button"
-            >
-              Voltar
-            </button>
-          </div>
-        </>
-      ) : (
-        <button
-          className="quiet-button"
-          onClick={onDiscardRequest}
-          type="button"
-        >
-          Descartar esta tentativa
-        </button>
-      )}
-    </div>
-  );
 }
 
 interface CancelFieldsProps {
@@ -371,11 +306,12 @@ export function SaleCancelPanel({
           , o estoque voltará item a item e isso não poderá ser desfeito.
         </p>
       ) : null}
-      <CancelFailureNotice
+      <OperationFailureNotice
         onDiscardCancel={handleDiscardCancel}
         onDiscardConfirm={handleDiscardConfirm}
         onDiscardRequest={handleDiscardRequest}
-        state={state}
+        submission={state.submission}
+        warning="O cancelamento pode já ter sido registrado."
       />
       <CancelActions
         confirming={confirming}

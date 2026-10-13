@@ -261,6 +261,7 @@ describe("sale.list and sale.get RPCs", () => {
         cancelledAt: null,
         confirmedAt: new Date("2026-10-13T18:30:01.000Z"),
         customerId: null,
+        hasReturns: false,
         id: saleId,
         itemCount: 1,
         occurredAt: new Date("2026-10-13T18:30:00.000Z"),
@@ -272,6 +273,7 @@ describe("sale.list and sale.get RPCs", () => {
         cancelledAt: new Date("2026-10-13T21:00:00.000Z"),
         confirmedAt: new Date("2026-10-13T19:00:01.000Z"),
         customerId: "0199c2d0-0000-7000-8000-000000000031",
+        hasReturns: false,
         id: "0199c2d0-0000-7000-8000-000000000005",
         itemCount: 2,
         occurredAt: new Date("2026-10-13T19:00:00.000Z"),
@@ -324,6 +326,16 @@ describe("sale.list and sale.get RPCs", () => {
     const getSale = vi.fn<GetSale>(async () => ({
       cancellation: cancelled.cancellation,
       customer: { customerId: null, version: 0 },
+      returnSummary: [
+        {
+          availableToReturn: 2,
+          position: 0,
+          restockedQuantity: 0,
+          returnedQuantity: 0,
+          sold: 2,
+        },
+      ],
+      returns: [],
       sale: {
         adjustments: [],
         items: [

@@ -7,6 +7,7 @@ export const CAPABILITIES = Object.freeze([
   "sale:create",
   "sale:read",
   "sale:cancel",
+  "sale:return",
   "sale:assign_customer",
   "customer:update",
   "expense:create",

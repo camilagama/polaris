@@ -105,18 +105,18 @@ export function validateCancelDraft(draft: CancelDraft): {
 /* Errors                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export interface CancelFailure {
+export interface OperationFailure {
   /** The attempt cannot be resent as is: the next confirm gets a fresh one. */
   discardAttempt: boolean;
   message: string;
   reason: string | null;
   /** The sale changed on the server: reload its detail. */
   reloadDetail: boolean;
-  /** Network, 5xx or unknown error: the cancellation may already be registered. */
+  /** Network, 5xx or unknown error: the operation may already be registered. */
   unknownOutcome: boolean;
 }
 
-interface ReasonOutcome {
+export interface ReasonOutcome {
   discardAttempt?: boolean;
   message: string;
   reloadDetail?: boolean;
@@ -142,6 +142,14 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
         "Esta tentativa já tinha sido usada com outro conteúdo. Uma nova tentativa será criada automaticamente; revise e confirme de novo.",
     },
   ],
+  [
+    "sale_has_returns",
+    {
+      message:
+        "Esta venda já tem devoluções e não pode ser cancelada por inteiro. Recarregamos os dados para mostrar as devoluções.",
+      reloadDetail: true,
+    },
+  ],
   ["sale_product_unavailable", { message: productGoneMessage }],
   ["product_deleted", { message: productGoneMessage }],
   [
@@ -160,7 +168,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   ],
 ]);
 
-function cancelFailure(
+export function operationFailure(
   message: string,
   options: {
     discardAttempt?: boolean;
@@ -168,7 +176,7 @@ function cancelFailure(
     reloadDetail?: boolean;
     unknownOutcome?: boolean;
   } = {}
-): CancelFailure {
+): OperationFailure {
   return {
     discardAttempt: options.discardAttempt ?? false,
     message,
@@ -178,27 +186,27 @@ function cancelFailure(
   };
 }
 
-function genericCancelFailure(code: string | undefined): CancelFailure {
+function genericOperationFailure(code: string | undefined): OperationFailure {
   switch (code) {
     case "UNAUTHORIZED":
-      return cancelFailure(
-        "Sua sessão não está ativa. Entre novamente para cancelar a venda; os dados continuam no formulário."
+      return operationFailure(
+        "Sua sessão não está ativa. Entre novamente para continuar; os dados continuam no formulário."
       );
     case "FORBIDDEN":
-      return cancelFailure(
+      return operationFailure(
         "Sua conta não tem acesso a esta organização ou ação."
       );
     case "BAD_REQUEST":
-      return cancelFailure(
-        "O servidor recusou o pedido de cancelamento. Revise o motivo e a observação."
+      return operationFailure(
+        "O servidor recusou o pedido. Revise os dados e tente de novo."
       );
     case "NOT_FOUND":
-      return cancelFailure(
+      return operationFailure(
         "A venda não existe nesta organização. Atualize os dados e tente de novo.",
         { reloadDetail: true }
       );
     default:
-      return cancelFailure(
+      return operationFailure(
         "O estado da venda mudou. Recarregamos os dados; revise e tente de novo.",
         { reloadDetail: true }
       );
@@ -210,26 +218,35 @@ function genericCancelFailure(code: string | undefined): CancelFailure {
  * 5xx and unknown errors may have taken effect and lock the attempt. A known
  * `data.reason` on a 400/404/409 refines the generic per-code message.
  */
-export function mapCancelError(error: unknown): CancelFailure {
+export function mapOperationError(
+  error: unknown,
+  outcomes: ReadonlyMap<string, ReasonOutcome>,
+  unknownMessage: string
+): OperationFailure {
   if (!isDefiniteRejection(error)) {
-    return cancelFailure(
-      "Não foi possível confirmar se o cancelamento foi registrado. O cancelamento ficou bloqueado para edição. Use “Tentar novamente (seguro)”: o mesmo pedido é reenviado e o servidor não cancela nem devolve o estoque duas vezes.",
-      { unknownOutcome: true }
-    );
+    return operationFailure(unknownMessage, { unknownOutcome: true });
   }
   const code = rpcErrorCode(error);
   const refinable =
     code === "BAD_REQUEST" || code === "NOT_FOUND" || code === "CONFLICT";
   const reason = refinable ? (rpcErrorReason(error) ?? null) : null;
-  const outcome = reason === null ? undefined : reasonOutcomes.get(reason);
+  const outcome = reason === null ? undefined : outcomes.get(reason);
   if (outcome) {
-    return cancelFailure(outcome.message, {
+    return operationFailure(outcome.message, {
       discardAttempt: outcome.discardAttempt ?? false,
       reason,
       reloadDetail: outcome.reloadDetail ?? false,
     });
   }
-  return { ...genericCancelFailure(code), reason };
+  return { ...genericOperationFailure(code), reason };
+}
+
+export function mapCancelError(error: unknown): OperationFailure {
+  return mapOperationError(
+    error,
+    reasonOutcomes,
+    "Não foi possível confirmar se o cancelamento foi registrado. O cancelamento ficou bloqueado para edição. Use “Tentar novamente (seguro)”: o mesmo pedido é reenviado e o servidor não cancela nem devolve o estoque duas vezes."
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -238,26 +255,26 @@ export function mapCancelError(error: unknown): CancelFailure {
 
 type CancelStep = "closed" | "confirming" | "editing";
 
-interface CancelAttempt {
+export interface OperationAttempt {
   commandId: string;
   signature: string;
 }
 
-type CancelSubmission =
+export type OperationSubmission =
   | { phase: "idle" }
   | { phase: "submitting" }
   /** A definite failure: nothing was cancelled; editing stays open. */
-  | { failure: CancelFailure; phase: "failed" }
+  | { failure: OperationFailure; phase: "failed" }
   /** Unknown outcome: the form is locked on this attempt. */
-  | { confirmingDiscard: boolean; failure: CancelFailure; phase: "locked" }
+  | { confirmingDiscard: boolean; failure: OperationFailure; phase: "locked" }
   | { message: string; phase: "success"; replayed: boolean };
 
 export interface CancelState {
-  attempt: CancelAttempt | null;
+  attempt: OperationAttempt | null;
   draft: CancelDraft;
   showErrors: boolean;
   step: CancelStep;
-  submission: CancelSubmission;
+  submission: OperationSubmission;
 }
 
 export function initialCancelState(): CancelState {
@@ -355,11 +372,11 @@ export function backToCancelEditing(state: CancelState): CancelState {
  * A repeat of an identical payload keeps the command ID, so the server replays
  * it; any edit gives a fresh one.
  */
-function resolveCancelAttempt(
-  previous: CancelAttempt | null,
+export function resolveOperationAttempt(
+  previous: OperationAttempt | null,
   signature: string,
   createId: () => string
-): CancelAttempt {
+): OperationAttempt {
   return previous !== null && previous.signature === signature
     ? previous
     : { commandId: createId(), signature };
@@ -374,7 +391,7 @@ function rejected(state: CancelState, message: string): PreparedCancel {
     ok: false,
     state: {
       ...state,
-      submission: { failure: cancelFailure(message), phase: "failed" },
+      submission: { failure: operationFailure(message), phase: "failed" },
     },
   };
 }
@@ -399,7 +416,7 @@ export function prepareCancelSubmission(input: {
   if (draftInput === null) {
     return rejected(state, "Revise o motivo e a observação do cancelamento.");
   }
-  const attempt = resolveCancelAttempt(
+  const attempt = resolveOperationAttempt(
     state.attempt,
     JSON.stringify({
       organizationId: input.organizationId,
