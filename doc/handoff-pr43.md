@@ -1,3 +1,5 @@
+> **Documento obsoleto.** Este handoff descreve o checkpoint PR42 → PR43 (11 de outubro de 2026) e não reflete mais o estado do projeto: o PR43 e as etapas até o PR47 e o Gate 4 já foram implementados. Para o estado atual, leia [`doc/checkpoint-gate4.md`](checkpoint-gate4.md) e a [revisão do checkpoint](revisao-checkpoint-gate4.md). Mantido apenas como registro histórico.
+
 # Handoff de implementação: checkpoint PR42 → PR43
 
 Atualizado em 11 de outubro de 2026. Este documento prepara a continuação do Polaris por outra pessoa a partir do checkpoint de perfis de pagamento. Ele resume o estado operacional e aponta para as fontes canônicas; não substitui nem altera as regras delas.
