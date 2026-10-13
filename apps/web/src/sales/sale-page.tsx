@@ -1,3 +1,7 @@
+import type {
+  InventoryBalanceEntryReadModel,
+  PaymentProfileReadModel,
+} from "@polaris/contracts";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -9,48 +13,57 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  InventoryBalanceEntryReadModel,
-  PaymentProfileReadModel,
-} from "@polaris/contracts";
-import { browserStorage } from "../lib/current-organization-model";
-import { formatBrlAmount } from "../lib/format";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
+import { formatBrlAmount } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
 import { useNow } from "../lib/use-now";
 import "./sale-page.css";
 import {
+  mergeLastPrices,
+  type RememberedPrices,
+  readLastPrices,
+  suggestionHint,
+  suggestPrices,
+  withSuggestedPrices,
+  writeLastPrices,
+} from "./last-prices-model";
+import {
+  readSaleAttempt,
+  sessionStorageOrNull,
+  writeSaleAttempt,
+} from "./sale-attempt-storage";
+import { SaleCustomerDisclosure } from "./sale-customer-panel";
+import {
   ADJUSTMENT_KINDS,
-  acknowledgeProfileReview,
-  attemptAfterFailure,
-  cancelDiscard,
-  discardLockedSale,
-  editSaleForm,
-  isFormLocked,
-  requestDiscard,
   type AdjustmentDraft,
+  acknowledgeProfileReview,
   addAdjustment,
   addItem,
   adjustmentFieldKey,
+  attemptAfterFailure,
   type CatalogView,
   type ChoiceOption,
-  canStartSubmission,
   type ConfirmedSaleView,
+  cancelDiscard,
+  canStartSubmission,
   confirmSubmission,
   createBlankSaleForm,
-  editSaleDate,
+  discardLockedSale,
   type EvaluationContext,
+  editSaleDate,
+  editSaleForm,
   evaluateSaleForm,
-  failSubmission,
   type FeeLine,
   type FeePreview,
+  failSubmission,
   formFieldKeys,
-  SALE_DATE_HINT,
   INSTALLMENT_PLANS,
-  idleSubmission,
-  isSubmitting,
   type ItemDraft,
+  idleSubmission,
+  isFormLocked,
+  isSubmitting,
   itemFieldKey,
   MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
@@ -61,6 +74,8 @@ import {
   rejectSubmission,
   removeAdjustment,
   removeItem,
+  requestDiscard,
+  SALE_DATE_HINT,
   SALE_METHODS,
   type SaleAttempt,
   type SaleEvaluation,
@@ -77,23 +92,13 @@ import {
   updateItem,
   updatePayment,
 } from "./sale-form-model";
-import {
-  mergeLastPrices,
-  type RememberedPrices,
-  readLastPrices,
-  suggestionHint,
-  suggestPrices,
-  withSuggestedPrices,
-  writeLastPrices,
-} from "./last-prices-model";
-import { SaleCustomerDisclosure } from "./sale-customer-panel";
 import { saleDetailHref } from "./sale-history-model";
 import { SaleSnapshot } from "./sale-snapshot";
+import { VariantSearch } from "./sale-variant-picker";
 import {
   clearedItemChanges,
   itemChangesForEntry,
 } from "./sale-variant-picker-model";
-import { VariantSearch } from "./sale-variant-picker";
 import { useSaleCatalog } from "./use-sale-catalog";
 
 const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
@@ -586,6 +591,7 @@ interface PaymentSectionProps {
   evaluation: SaleEvaluation;
   form: SaleFormState;
   onAcknowledgeReview: () => void;
+  onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onInstallmentPlanChange: (value: string) => void;
   onInstallmentsChange: (value: string) => void;
   onMethodChange: (value: string) => void;
@@ -593,7 +599,6 @@ interface PaymentSectionProps {
   onRetry: () => void;
   profileOptions: readonly ChoiceOption[];
   profilesView: CatalogView;
-  onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }
 
 function PaymentSection({
@@ -1004,7 +1009,17 @@ export function SalePage() {
   );
   const [submission, setSubmission] = useState<SubmissionState>(idleSubmission);
   const [showRequired, setShowRequired] = useState(false);
-  const attemptRef = useRef<SaleAttempt | null>(null);
+  const [restoredAttempt] = useState<SaleAttempt | null>(() =>
+    readSaleAttempt(sessionStorageOrNull(), organizationId, new Date())
+  );
+  const attemptRef = useRef<SaleAttempt | null>(restoredAttempt);
+  const rememberAttempt = useCallback(
+    (attempt: SaleAttempt | null) => {
+      attemptRef.current = attempt;
+      writeSaleAttempt(sessionStorageOrNull(), organizationId, attempt);
+    },
+    [organizationId]
+  );
   const inFlightRef = useRef<boolean>(false);
   const confirmedRef = useRef<HTMLElement | null>(null);
 
@@ -1179,10 +1194,10 @@ export function SalePage() {
         return;
       }
       const prepared = prepareConfirmation({
-        occurredAtOverride: fresh.occurredAtOverride,
         body,
         createId: newId,
         now: submittedAt,
+        occurredAtOverride: fresh.occurredAtOverride,
         organizationId,
         previousAttempt: attemptRef.current,
       });
@@ -1190,12 +1205,12 @@ export function SalePage() {
         setSubmission(rejectSubmission(prepared.message));
         return;
       }
-      attemptRef.current = prepared.attempt;
+      rememberAttempt(prepared.attempt);
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {
         const sale = await orpcClient.sale.confirm(prepared.request);
-        attemptRef.current = null;
+        rememberAttempt(null);
         const remembered = mergeLastPrices(
           lastPrices,
           sale.items,
@@ -1209,7 +1224,7 @@ export function SalePage() {
         resetStock();
       } catch (error) {
         const failed = failSubmission(error);
-        attemptRef.current = attemptAfterFailure(failed, prepared.attempt);
+        rememberAttempt(attemptAfterFailure(failed, prepared.attempt));
         setSubmission(failed);
       } finally {
         inFlightRef.current = false;
@@ -1221,6 +1236,7 @@ export function SalePage() {
       form,
       lastPrices,
       organizationId,
+      rememberAttempt,
       resetStock,
       submission,
     ]
@@ -1238,12 +1254,12 @@ export function SalePage() {
     if (discarded === null) {
       return;
     }
-    attemptRef.current = discarded.attempt;
+    rememberAttempt(discarded.attempt);
     setForm(discarded.form);
     setSubmission(discarded.submission);
     setShowRequired(false);
     resetStock();
-  }, [resetStock, submission]);
+  }, [rememberAttempt, resetStock, submission]);
   const handleSubmitEvent = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       handleSubmit(event).catch(() => undefined);
