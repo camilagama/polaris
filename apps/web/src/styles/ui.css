@@ -4,6 +4,12 @@ body:has(.ui-root) {
   background: var(--ui-canvas);
 }
 
+.ui-root input,
+.ui-root select,
+.ui-root textarea {
+  box-sizing: border-box;
+}
+
 .ui-root {
   min-height: 100vh;
   color: var(--ui-ink);
