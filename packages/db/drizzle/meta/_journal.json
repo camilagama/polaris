@@ -274,6 +274,27 @@
       "when": 1791920383876,
       "tag": "0038_sale_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791927913972,
+      "tag": "0039_instants_with_time_zone",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791928221680,
+      "tag": "0040_ledger_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791928344970,
+      "tag": "0041_auth_runtime_role",
+      "breakpoints": true
     }
   ]
 }

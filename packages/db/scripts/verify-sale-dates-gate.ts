@@ -14,6 +14,7 @@ import {
   createTenantFixture,
   disposableHostPattern,
   gateBranchPattern,
+  journalMigrationCount,
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
@@ -68,7 +69,7 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok(Number(migrations.rows[0]?.count) >= 39);
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
     tests.push(
       "migrations 0000-0038 (and any later ones) were replayed from scratch"
     );
@@ -172,7 +173,7 @@ async function run() {
         occurred_on: string;
         recorded_at: Date | null;
       }>(
-        "SELECT confirmed_at AT TIME ZONE 'UTC' AS confirmed_at, occurred_at AT TIME ZONE 'UTC' AS occurred_at, occurred_on::text, recorded_at AT TIME ZONE 'UTC' AS recorded_at FROM public.sales WHERE organization_id = $1 AND id = $2",
+        "SELECT confirmed_at, occurred_at, occurred_on::text, recorded_at FROM public.sales WHERE organization_id = $1 AND id = $2",
         [tenant.organizationId, saleId]
       );
       const [row] = result.rows;
@@ -455,11 +456,11 @@ async function run() {
     await admin.pool.query("ALTER TABLE public.sales DISABLE TRIGGER USER");
     try {
       await admin.pool.query(
-        "UPDATE public.sales SET occurred_at = $3::timestamp, occurred_on = $4::date WHERE organization_id = $1 AND id = $2",
+        "UPDATE public.sales SET occurred_at = $3::timestamptz, occurred_on = $4::date WHERE organization_id = $1 AND id = $2",
         [
           tenantA.organizationId,
           aged.sale.id,
-          `${sixtyDaysBack}T12:00:00`,
+          `${sixtyDaysBack}T12:00:00Z`,
           sixtyDaysBack,
         ]
       );
@@ -499,7 +500,7 @@ async function run() {
     // -------- 6c. the 0038 backfill expression equals what the server stores
     const backfill = await admin.pool.query<{ checked: string; wrong: string }>(
       `SELECT count(*)::text AS checked,
-              count(*) FILTER (WHERE ((sale.occurred_at AT TIME ZONE 'UTC') AT TIME ZONE organization.timezone)::date <> sale.occurred_on)::text AS wrong
+              count(*) FILTER (WHERE (sale.occurred_at AT TIME ZONE organization.timezone)::date <> sale.occurred_on)::text AS wrong
        FROM public.sales AS sale
        JOIN public.organizations AS organization ON organization.id = sale.organization_id
        WHERE sale.organization_id IN ($1, $2) AND sale.id <> $3`,
@@ -515,7 +516,7 @@ async function run() {
       "the backfill expression gives the same commercial date as the application for São Paulo and Tokyo sales"
     );
     tests.push(
-      "the 0038 backfill expression (UTC wall clock to the organization's calendar date) equals the date the application stores, in two time zones, and the migration role can read organizations to apply it"
+      "the organization-calendar date of an instant (the expression the 0038 backfill used) equals the date the application stores, in two time zones, and the migration role can read organizations to apply it"
     );
     // ------------------------------------------------- 7. database guards
     await assert.rejects(

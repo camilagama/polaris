@@ -24,6 +24,7 @@ import {
   disposableHostPattern,
   expectSqlState,
   gateBranchPattern,
+  journalMigrationCount,
   poolerPattern,
   recentInstant,
   redactedFailure,
@@ -74,7 +75,7 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok(Number(migrations.rows[0]?.count) >= 36);
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
     tests.push(
       "migrations 0000-0035 (and any later ones) were replayed from scratch"
     );

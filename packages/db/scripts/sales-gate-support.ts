@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import type { createDatabase } from "../src/client";
@@ -14,11 +16,34 @@ import {
 } from "../src/tenant-transaction";
 
 export const runtimeRole = "polaris_pr11_runtime";
+
+/**
+ * How many migrations the repository ships (the Drizzle journal). A gate
+ * database replayed from scratch must have applied exactly this many, so a
+ * partially replayed or stale database cannot pass a gate by accident.
+ */
+export function journalMigrationCount(): number {
+  const journal = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("../drizzle/meta/_journal.json", import.meta.url)),
+      "utf8"
+    )
+  ) as { entries: unknown[] };
+  return journal.entries.length;
+}
 export const poolerPattern = /pooler/i;
 // Every stage runs against its own disposable branch (for example pr44-...-gate).
 export const gateBranchPattern = /^pr\d+-[a-z0-9-]+-gate$/;
-export const disposableHostPattern =
+const neonDisposableHostPattern =
   /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
+// Inside CI the target is the job's own Postgres service, so a local host is
+// accepted there (and only there: a developer machine never gets this).
+const ciDisposableHostPattern =
+  /^(?:ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech|localhost|127\.0\.0\.1)$/;
+export const disposableHostPattern =
+  process.env.CI === "true"
+    ? ciDisposableHostPattern
+    : neonDisposableHostPattern;
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 
 export type Database = ReturnType<typeof createDatabase>["db"];

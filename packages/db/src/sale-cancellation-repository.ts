@@ -207,6 +207,21 @@ export async function cancelSale(
   if (afterLock) {
     return afterLock;
   }
+  // A command ID that already owns ledger movements belongs to another
+  // operation (replays were answered above).
+  const [foreignMovement] = await transaction
+    .select({ id: stockMovements.id })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, identity.organizationId),
+        eq(stockMovements.commandId, command.commandId)
+      )
+    )
+    .limit(1);
+  if (foreignMovement) {
+    throw new SaleCancellationCommandConflictError();
+  }
   const [anyReturn] = await transaction
     .select({ id: saleReturns.id })
     .from(saleReturns)

@@ -93,6 +93,7 @@ import {
 import {
   InsufficientStockError,
   InvalidStockMovementError,
+  InventoryOccurredInFutureError,
   InventoryQuantityLimitError,
   InventoryVariantNotFoundError,
   InventoryVersionConflictError,
@@ -531,6 +532,7 @@ const badRequestRpcErrors = [
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
   [
     InvalidStockMovementError,
+    InventoryOccurredInFutureError,
     InvalidUnitCostError,
     InventoryCostLimitError,
     InvalidReceiveStockInputError,

@@ -6,7 +6,7 @@ const cleanupOwnerRole = "polaris_media_cleanup_owner";
 export const mediaCleanupClaims = pgTable(
   "media_cleanup_claims",
   {
-    claimedAt: timestamp("claimed_at").defaultNow().notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }).defaultNow().notNull(),
     storageKey: text("storage_key").primaryKey(),
   },
   (table) => [

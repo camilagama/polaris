@@ -97,15 +97,15 @@ export const sales = pgTable(
   "sales",
   {
     adjustmentCount: integer("adjustment_count").notNull(),
-    recordedAt: timestamp("recorded_at"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }),
     commandId: uuid("command_id").notNull(),
-    confirmedAt: timestamp("confirmed_at")
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
       .default(sql`clock_timestamp()`)
       .notNull(),
     currency: text("currency").default("BRL").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     itemCount: integer("item_count").notNull(),
-    occurredAt: timestamp("occurred_at").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     occurredOn: date("occurred_on", { mode: "string" }).notNull(),
     organizationId: text("organization_id")
       .notNull()
