@@ -708,6 +708,14 @@ Corredor único de gates (`packages/db/scripts/run-gates.ts`, suítes `gate3`, `
 | `bun run check` no head final | lint, formato, tipos, fronteiras (17 fixtures negativos), ciclos (158 arquivos), Knip e 899 testes em 78 arquivos passaram |
 | `bun run build` e `db:generate` | Build dos oito workspaces passou; `db:generate` sem mudanças |
 
+### Backlog registrado (não bloqueia a Fase 5)
+
+- Manutenibilidade: dividir `apps/web/src/server/router.ts`, `packages/contracts/src/index.ts`, `sale-form-model.ts` e `sale-page.tsx`; unificar os helpers de gates (`sales-gate-support.ts` e os scripts mais antigos).
+- Repositório de estoque: `recordStockMovement` é exportado apenas como ponto de teste dos gates; `getProductVariants` ainda lê com `FOR SHARE`; `inventory_quantity_limit` e `insufficient_stock` compartilham o mesmo status HTTP.
+- Capabilities: `expense:create` ainda não é usada por nenhum procedimento; algumas leituras exigem capabilities de escrita (`customer:update`, `organization:manage`) até a Fase de papéis finos.
+- `/offline-poc` continua empacotada fora do modo DEV; remover ou proteger antes de produção.
+- Mídia: prova de EXIF/orientação em Cloudflare Images real, consumo de memória por upload e comandos de remover/substituir/reordenar mídia (antes da Fase 7).
+- CI: promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde.
 ### Pendências que só o responsável pode executar
 
 Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDRIVE`); reservar os namespaces de rate limit; apagar Workers e Hyperdrive de PoC implantados (`ebe151e5081344479947edb6028279bb`); rotacionar a credencial owner usada no PR11; testar em Android físico; provar EXIF/orientação em Cloudflare Images real; verificar os cabeçalhos em staging; decidir o merge da cadeia de PRs.
