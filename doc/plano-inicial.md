@@ -2444,6 +2444,7 @@ Timezone organization-aware.
 
 Validar limite retroativo.
 
+Decisões de implementação do PR47 (detalhes em `docs/business-rules/sales.md` e `time-and-dates.md`): `recorded_at` substitui `client_created_at` e é só evidência do dispositivo; `occurred_on` (data de `occurred_at` no calendário da organização, calculada no servidor) é obrigatória e é a data dos movimentos de venda, exigida também pelo banco no commit; janela retroativa de 30 dias de calendário no fuso da organização para o `owner` (papel desconhecido = 0), tolerância de futuro de 5 minutos e replay respondido antes da janela. O gate PostgreSQL `poc:sales:dates:verify` prova as bordas (30/31 dias, dois fusos, tolerância, data do razão, replay).
 
 
 ---
@@ -2469,6 +2470,8 @@ Provar:
 - returns corretos;
 
 - customer reconciliation não altera economia.
+
+Fechado com `poc:gate4:verify` (cenário ponta a ponta contra um oráculo independente) mais os gates por etapa, descritos em `docs/runbooks/gate-4-sales-core.md`. O dossiê para a revisão completa é `doc/checkpoint-gate4.md`.
 
 
 
