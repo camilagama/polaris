@@ -695,11 +695,25 @@ async function run() {
         [orgId, key, commandId, fingerprint]
       );
     const assetCommand = randomUUID();
-    await insertAsset(
-      goodKey(tenantA.organizationId, assetCommand, fingerprint),
-      tenantA.organizationId,
-      assetCommand
-    );
+    // The deferred product-link trigger fires at commit, so the well-formed
+    // key is probed inside a transaction that is rolled back: the CHECK
+    // constraint (immediate) accepts it.
+    const probe = await admin.pool.connect();
+    try {
+      await probe.query("BEGIN");
+      await probe.query(
+        "INSERT INTO public.media_assets (organization_id, storage_key, upload_command_id, input_fingerprint, content_type, byte_size, width, height) VALUES ($1, $2, $3, $4, 'image/webp', 100, 10, 10)",
+        [
+          tenantA.organizationId,
+          goodKey(tenantA.organizationId, assetCommand, fingerprint),
+          assetCommand,
+          fingerprint,
+        ]
+      );
+    } finally {
+      await probe.query("ROLLBACK");
+      probe.release();
+    }
     for (const [label, key, owner] of [
       [
         "another organization's segment",
@@ -730,7 +744,7 @@ async function run() {
       "SELECT id FROM public.session LIMIT 1",
       "SELECT id FROM public.account LIMIT 1",
       "SELECT id FROM public.verification LIMIT 1",
-      "INSERT INTO public.auth_security_audit_event (event_type, outcome) VALUES ('login', 'success')",
+      "INSERT INTO public.auth_security_audit_event (event_type, outcome, request_id) VALUES ('logout_succeeded', 'succeeded', 'gate')",
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: each probe is verified before the next one starts
       await expectSqlState(
