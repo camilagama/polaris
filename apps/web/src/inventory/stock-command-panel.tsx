@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import {
   backToStockEditing,
@@ -616,9 +617,7 @@ export function StockCommandPanel({
         next.target,
         next.today
       );
-      window.requestAnimationFrame(() =>
-        focus(firstInvalidStockField(next.action, issues))
-      );
+      focusLater(() => focus(firstInvalidStockField(next.action, issues)));
     }
   }, [focus, state]);
   const handleBack = useCallback(

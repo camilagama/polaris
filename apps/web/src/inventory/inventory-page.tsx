@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { focusLater } from "../lib/focus";
 import { calendarDayInTimezone } from "../lib/dates";
 import { useCurrentOrganization } from "../lib/current-organization";
 import "./inventory-page.css";
@@ -195,7 +196,7 @@ export function InventoryPage() {
     const current = open;
     setOpen(null);
     if (current) {
-      window.requestAnimationFrame(() =>
+      focusLater(() =>
         document
           .getElementById(triggerId(current.target.variantId, current.action))
           ?.focus()

@@ -155,6 +155,41 @@ describe("inventory.listBalances", () => {
     });
   });
 
+  it("re-reads exactly the requested variants and rejects malformed ids", async () => {
+    const listInventoryBalances = vi.fn(
+      async (
+        _transaction: unknown,
+        _identity: typeof identity,
+        _options: unknown
+      ) => ({ entries: [], nextCursor: null })
+    );
+    const client = createClient({
+      listInventoryBalances,
+      withTenantRequestContext: (request: TenantContextRequest) =>
+        request.operation({}, identity),
+    });
+    const variantIds = [
+      "0199c2d0-0000-7000-8000-000000000002",
+      "0199c2d0-0000-7000-8000-000000000003",
+    ];
+
+    await client.inventory.listBalances({ organizationId, variantIds });
+    expect(listInventoryBalances.mock.calls[0]?.[2]).toMatchObject({
+      variantIds,
+    });
+
+    await expect(
+      client.inventory.listBalances({
+        organizationId,
+        variantIds: ["not-a-uuid"],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      client.inventory.listBalances({ organizationId, variantIds: [] })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(listInventoryBalances).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects an out-of-range limit before reaching the repository", async () => {
     const listInventoryBalances = vi.fn();
     const client = createClient({

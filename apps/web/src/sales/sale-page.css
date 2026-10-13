@@ -1,11 +1,3 @@
-.sale-page .catalog-switcher {
-  flex-wrap: wrap;
-}
-
-.sale-page .catalog-switcher a {
-  white-space: nowrap;
-}
-
 .sale-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(19rem, 1fr);
@@ -26,14 +18,14 @@
   min-width: 0;
   padding: clamp(1rem, 2.5vw, 1.5rem);
   margin: 0;
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.85rem;
 }
 
 .sale-confirmed {
   margin-bottom: 1.25rem;
-  border-color: color-mix(in srgb, var(--category-accent) 45%, transparent);
+  border-color: color-mix(in srgb, var(--ui-accent) 45%, transparent);
 }
 
 .sale-section > legend,
@@ -41,14 +33,14 @@
   padding: 0 0.35rem;
   font-size: 0.82rem;
   font-weight: 750;
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-section > legend {
   font-family: Georgia, "Times New Roman", serif;
   font-size: 1.25rem;
   font-weight: 500;
-  color: var(--category-ink);
+  color: var(--ui-ink);
   letter-spacing: -0.02em;
 }
 
@@ -56,8 +48,8 @@
   min-width: 0;
   padding: 0.85rem;
   margin: 0 0 0.85rem;
-  background: var(--category-surface-muted);
-  border: 1px solid var(--category-line);
+  background: var(--ui-surface-muted);
+  border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
 }
 
@@ -81,7 +73,7 @@
   margin: 0.7rem 0 0.35rem;
   font-size: 0.84rem;
   font-weight: 700;
-  color: var(--category-ink);
+  color: var(--ui-ink);
 }
 
 .sale-page select {
@@ -90,9 +82,9 @@
   padding: 0.6rem 0.8rem;
   font: inherit;
   font-size: 0.94rem;
-  color: var(--category-ink);
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.55rem;
 }
 
@@ -103,13 +95,14 @@
 }
 
 .sale-page [aria-invalid="true"] {
-  border-color: var(--category-danger);
+  border-color: var(--ui-danger);
 }
 
 .sale-check {
   display: flex;
   gap: 0.6rem;
   align-items: center;
+  min-height: 2.75rem;
   margin-top: 0.4rem;
 }
 
@@ -119,7 +112,7 @@
   min-height: 1.15rem;
   height: 1.15rem;
   padding: 0;
-  accent-color: var(--category-accent);
+  accent-color: var(--ui-accent);
 }
 
 .sale-check label {
@@ -131,7 +124,7 @@
   margin: 0.4rem 0 0;
   font-size: 0.8rem;
   line-height: 1.5;
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-hint {
@@ -143,7 +136,7 @@
   font-size: 0.8rem;
   font-weight: 650;
   line-height: 1.4;
-  color: var(--category-danger-strong);
+  color: var(--ui-danger-strong);
 }
 
 .sale-toolbar {
@@ -166,9 +159,9 @@
   margin: 0.6rem 0;
   font-size: 0.86rem;
   line-height: 1.5;
-  color: var(--category-muted);
-  background: var(--category-surface-muted);
-  border: 1px dashed var(--category-line);
+  color: var(--ui-muted);
+  background: var(--ui-surface-muted);
+  border: 1px dashed var(--ui-line);
   border-radius: 0.6rem;
 }
 
@@ -177,7 +170,7 @@
   margin: 0.7rem 0;
   font-size: 0.86rem;
   line-height: 1.5;
-  border: 1px solid var(--category-line);
+  border: 1px solid var(--ui-line);
   border-radius: 0.6rem;
 }
 
@@ -186,15 +179,15 @@
 }
 
 .sale-message.is-error {
-  color: var(--category-danger-strong);
-  background: var(--category-danger-soft);
-  border-color: color-mix(in srgb, var(--category-danger) 32%, transparent);
+  color: var(--ui-danger-strong);
+  background: var(--ui-danger-soft);
+  border-color: color-mix(in srgb, var(--ui-danger) 32%, transparent);
 }
 
 .sale-message.is-warning {
-  color: var(--category-warning);
-  background: var(--category-warning-soft);
-  border-color: color-mix(in srgb, var(--category-warning) 32%, transparent);
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border-color: color-mix(in srgb, var(--ui-warning) 32%, transparent);
 }
 
 .sale-stock {
@@ -205,24 +198,27 @@
 }
 
 .sale-stock.is-ok {
-  color: var(--category-accent-strong);
+  color: var(--ui-accent-strong);
 }
 
 .sale-stock.is-warning {
-  color: var(--category-warning);
+  color: var(--ui-warning);
 }
 
 .sale-stock.is-neutral {
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-link-button,
 .sale-remove {
-  padding: 0.4rem 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.5rem;
   font: inherit;
   font-size: 0.83rem;
   font-weight: 700;
-  color: var(--category-danger);
+  color: var(--ui-danger);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -252,7 +248,7 @@
   top: 1rem;
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
-  box-shadow: var(--category-shadow);
+  box-shadow: var(--ui-shadow);
 }
 
 .sale-summary h2,
@@ -284,7 +280,7 @@
   gap: 0.15rem 0.75rem;
   padding-bottom: 0.6rem;
   font-size: 0.86rem;
-  border-bottom: 1px solid var(--category-line);
+  border-bottom: 1px solid var(--ui-line);
 }
 
 .sale-line-label {
@@ -296,7 +292,7 @@
 .sale-lines small {
   grid-column: 1 / -1;
   font-size: 0.76rem;
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-lines strong,
@@ -322,7 +318,7 @@
 
 .sale-totals dt,
 .sale-details dt {
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-totals dd,
@@ -343,27 +339,27 @@
 }
 
 .sale-totals .is-discount dd {
-  color: var(--category-accent-strong);
+  color: var(--ui-accent-strong);
 }
 
 .sale-totals .is-total {
   padding-top: 0.55rem;
   margin-top: 0.2rem;
-  border-top: 1px solid var(--category-line);
+  border-top: 1px solid var(--ui-line);
 }
 
 .sale-totals .is-total dt,
 .sale-totals .is-total dd {
   font-size: 1.1rem;
   font-weight: 800;
-  color: var(--category-ink);
+  color: var(--ui-ink);
 }
 
 .sale-preview {
   padding: 0.85rem;
   margin-bottom: 1rem;
-  background: var(--category-surface-muted);
-  border: 1px solid var(--category-line);
+  background: var(--ui-surface-muted);
+  border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
 }
 
@@ -384,21 +380,21 @@
 
 .sale-fee.is-known,
 .sale-fee.is-zero {
-  color: var(--category-accent-strong);
-  background: var(--category-accent-soft);
+  color: var(--ui-accent-strong);
+  background: var(--ui-accent-soft);
 }
 
 .sale-fee.is-not_applicable {
   padding-inline: 0;
   font-weight: 650;
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-fee.is-unknown {
   font-style: italic;
-  color: var(--category-warning);
-  background: var(--category-warning-soft);
-  border: 1px dashed var(--category-warning);
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border: 1px dashed var(--ui-warning);
 }
 
 .sale-submit {
@@ -435,22 +431,6 @@
 }
 
 @media (max-width: 560px) {
-  .sale-page .categories-topbar {
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: flex-start;
-    padding: 0.75rem 1rem;
-  }
-
-  .sale-page .catalog-switcher {
-    width: 100%;
-  }
-
-  .sale-page .catalog-switcher a {
-    padding-inline: 0.45rem;
-    font-size: 0.74rem;
-  }
-
   .sale-grid,
   .sale-grid.is-three {
     grid-template-columns: 1fr;
@@ -473,4 +453,74 @@
 
 .sale-locked p {
   margin: 0 0 0.6rem;
+}
+
+/* Variant picker: a search box and real buttons, 44 px tall for touch. */
+.sale-pick-list {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 22rem;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.sale-pick-option {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+  font: inherit;
+  color: var(--ui-ink);
+  text-align: left;
+  cursor: pointer;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 0.6rem;
+}
+
+.sale-pick-option:hover {
+  background: var(--ui-surface-muted);
+  border-color: var(--ui-accent);
+}
+
+.sale-pick-label {
+  font-size: 0.92rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sale-pick-detail {
+  font-size: 0.78rem;
+  color: var(--ui-muted);
+}
+
+.sale-pick-detail.is-warning {
+  color: var(--ui-warning);
+}
+
+.sale-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.6rem;
+  background: var(--ui-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 32%, transparent);
+  border-radius: 0.65rem;
+}
+
+.sale-chosen-label {
+  margin: 0;
+  font-weight: 700;
+  color: var(--ui-accent-strong);
+  overflow-wrap: anywhere;
+}
+
+.sale-chosen-change {
+  min-height: 2.75rem;
 }

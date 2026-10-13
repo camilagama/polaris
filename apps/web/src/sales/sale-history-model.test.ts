@@ -1,5 +1,4 @@
 import type {
-  CustomerReadModel,
   SaleDetailReadModel,
   SaleListEntryReadModel,
 } from "@polaris/contracts";
@@ -7,9 +6,11 @@ import { describe, expect, it } from "vitest";
 import {
   canLoadMore,
   detailLoadErrorMessage,
+  activeFilterCount,
+  emptyHistoryFilters,
+  HISTORY_STATUS_FILTERS,
   type HistoryState,
-  historyCustomersFailed,
-  historyCustomersLoaded,
+  historyListRequest,
   historyLoaded,
   historyLoadFailed,
   historyLoading,
@@ -21,11 +22,15 @@ import {
   moreLoaded,
   moreLoadFailed,
   nextOffset,
+  periodError,
+  SALES_PAGE_SIZE,
+  saleCustomerHref,
   saleDetailHref,
   saleDetailView,
 } from "./sale-history-model";
 
 const organizationId = "org_1";
+const timePattern = /\d{2}:\d{2}/;
 const ana = "a0000000-0000-4000-8000-000000000001";
 const gone = "d0000000-0000-4000-8000-000000000004";
 
@@ -51,26 +56,6 @@ function entry(
     status: "confirmed",
     totalDue: "1234.5",
     ...overrides,
-  };
-}
-
-function customer(
-  customerId: string,
-  name: string,
-  status: "active" | "archived" = "active"
-): CustomerReadModel {
-  return {
-    archivedAt: status === "archived" ? "2026-02-01T00:00:00.000Z" : null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    email: "ana@example.com",
-    id: customerId,
-    name,
-    notes: null,
-    organizationId,
-    phone: "+55 11 99999-0000",
-    status,
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    version: 1,
   };
 }
 
@@ -226,36 +211,137 @@ describe("rows", () => {
     ).toBe("Pagamento não informado");
   });
 
-  it("resolves the customer by name only", () => {
-    const state = historyCustomersLoaded(
+  it("shows the customer's name from the list itself, never contact data", () => {
+    const rows = historyRows(
       loaded([
         entry(1),
-        entry(2, { customerId: ana }),
-        entry(3, { customerId: gone }),
-      ]),
-      [customer(ana, "Ana"), customer(id(99), "Outra", "archived")]
+        entry(2, { customerId: ana, customerName: "Ana Souza" }),
+        entry(3, { customerId: gone, customerName: null }),
+      ])
     );
-    const rows = historyRows(state);
     expect(rows.map((row) => row.customerText)).toEqual([
       "Sem cliente",
-      "Ana",
+      "Ana Souza",
       "Cliente indisponível",
     ]);
     expect(JSON.stringify(rows)).not.toContain("example.com");
-    expect(JSON.stringify(rows)).not.toContain("99999");
   });
 
-  it("marks an archived customer and handles customers still loading or failed", () => {
-    const sales = [entry(1, { customerId: ana })];
-    const archived = historyCustomersLoaded(loaded(sales), [
-      customer(ana, "Ana", "archived"),
-    ]);
-    expect(historyRows(archived)[0]?.customerText).toBe("Ana (arquivado)");
-    expect(historyRows(loaded(sales))[0]?.customerText).toBe(
-      "Carregando cliente…"
+  it("shows the commercial date and the time, not just an instant", () => {
+    const [row] = historyRows(
+      loaded([
+        entry(1, {
+          confirmedAt: "2026-05-01T12:00:01.000Z",
+          occurredAt: "2026-05-01T12:00:00.000Z",
+          occurredOn: "2026-05-01",
+        }),
+      ])
     );
-    const failed = historyCustomersFailed(loaded(sales), { code: "FORBIDDEN" });
-    expect(historyRows(failed)[0]?.customerText).toBe("Cliente indisponível");
+    expect(row?.dateText).toBe("01/05/2026");
+    expect(row?.timeText).toMatch(timePattern);
+    expect(row?.backdated).toBe(false);
+  });
+
+  it("marks a sale dated before the day it was confirmed", () => {
+    const [row] = historyRows(
+      loaded([
+        entry(1, {
+          confirmedAt: "2026-05-10T15:00:00.000Z",
+          occurredAt: "2026-05-03T15:00:00.000Z",
+          occurredOn: "2026-05-03",
+        }),
+      ])
+    );
+    expect(row).toMatchObject({ backdated: true, dateText: "03/05/2026" });
+  });
+});
+
+describe("filters", () => {
+  const filters = { ...emptyHistoryFilters };
+
+  it("sends only the filters in use, with the paging", () => {
+    expect(historyListRequest(organizationId, filters, 0)).toEqual({
+      limit: SALES_PAGE_SIZE,
+      offset: 0,
+      organizationId,
+    });
+    expect(
+      historyListRequest(
+        organizationId,
+        {
+          customer: "  ana ",
+          from: "2026-05-01",
+          query: " camiseta ",
+          status: "with_returns",
+          to: "2026-05-31",
+        },
+        50
+      )
+    ).toEqual({
+      customerQuery: "ana",
+      limit: SALES_PAGE_SIZE,
+      occurredFrom: "2026-05-01",
+      occurredTo: "2026-05-31",
+      offset: 50,
+      organizationId,
+      query: "camiseta",
+      status: "with_returns",
+    });
+  });
+
+  it("offers confirmed, cancelled and with-returns statuses", () => {
+    expect(HISTORY_STATUS_FILTERS.map(([, label]) => label)).toEqual([
+      "Todas",
+      "Confirmadas",
+      "Canceladas",
+      "Com devoluções",
+    ]);
+  });
+
+  it("counts a period as one filter and ignores blank text", () => {
+    expect(activeFilterCount(filters)).toBe(0);
+    expect(
+      activeFilterCount({ ...filters, from: "2026-05-01", to: "2026-05-31" })
+    ).toBe(1);
+    expect(activeFilterCount({ ...filters, customer: "   ", query: " " })).toBe(
+      0
+    );
+    expect(
+      activeFilterCount({
+        customer: "ana",
+        from: "2026-05-01",
+        query: "x",
+        status: "cancelled",
+        to: "",
+      })
+    ).toBe(4);
+  });
+
+  it("rejects a period that ends before it starts", () => {
+    expect(
+      periodError({ ...filters, from: "2026-05-10", to: "2026-05-01" })
+    ).toContain("posterior");
+    expect(
+      periodError({ ...filters, from: "2026-05-01", to: "2026-05-01" })
+    ).toBeNull();
+    expect(periodError({ ...filters, from: "2026-05-10" })).toBeNull();
+  });
+
+  it("explains an empty result differently when filters are active", () => {
+    expect(historyView(loaded([]), filters)).toMatchObject({
+      href: "/sales",
+      kind: "empty",
+    });
+    const filtered = historyView(loaded([]), {
+      ...filters,
+      status: "cancelled",
+    });
+    expect(filtered).toMatchObject({ href: null, kind: "empty" });
+    expect("message" in filtered && filtered.message).toContain("filtros");
+  });
+
+  it("links the sale detail to the customer page without putting it in the menu", () => {
+    expect(saleCustomerHref(id(1))).toBe(`/sales/customer?saleId=${id(1)}`);
   });
 });
 

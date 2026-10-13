@@ -143,10 +143,7 @@ export const STOCK_FIELD_ORDER: Readonly<
   write_off: ["quantity", "reasonCode", "reasonNote", "occurredOn"],
 };
 
-function initialStockDraft(
-  action: StockAction,
-  today: string
-): StockDraft {
+function initialStockDraft(action: StockAction, today: string): StockDraft {
   switch (action) {
     case "receive":
       return { action, occurredOn: today, quantity: "", unitCost: "" };

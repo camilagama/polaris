@@ -11,8 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import "../catalog/categories-page.css";
 import "./customers-page.css";
 
 type CustomerListStatus = "active" | "archived";
@@ -24,7 +24,6 @@ interface CustomerDraft {
   phone: string;
 }
 
-const organizationIdStorageKey = "polaris.organizationId";
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
 const customerStatuses: ReadonlyArray<readonly [CustomerListStatus, string]> = [
   ["active", "Ativos"],
@@ -37,22 +36,6 @@ const emptyDraft: CustomerDraft = {
   notes: "",
   phone: "",
 };
-
-function savedOrganizationId(): string | null {
-  try {
-    return window.localStorage.getItem(organizationIdStorageKey);
-  } catch {
-    return null;
-  }
-}
-
-function clearSavedOrganizationId(): void {
-  try {
-    window.localStorage.removeItem(organizationIdStorageKey);
-  } catch {
-    // The page still clears its in-memory organization context.
-  }
-}
 
 function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
@@ -477,7 +460,6 @@ interface CustomerWorkspaceProps {
   onChange: (field: keyof CustomerDraft, value: string) => void;
   onCreateAnyway: () => void;
   onEdit: (customer: CustomerReadModel) => void;
-  onResetOrganization: () => void;
   onRestore: (customer: CustomerReadModel) => void;
   onStatusClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -499,7 +481,6 @@ function CustomerWorkspace({
   onChange,
   onCreateAnyway,
   onEdit,
-  onResetOrganization,
   onRestore,
   onStatusClick,
   onSubmit,
@@ -518,14 +499,6 @@ function CustomerWorkspace({
             repetir entre clientes.
           </p>
         </div>
-        <button
-          className="quiet-button"
-          disabled={pendingAction !== null}
-          onClick={onResetOrganization}
-          type="button"
-        >
-          Trocar organização
-        </button>
       </section>
 
       {notice ? (
@@ -618,9 +591,7 @@ function CustomerWorkspace({
 }
 
 export function CustomersPage() {
-  const [organizationId, setOrganizationId] = useState<string | null>(
-    savedOrganizationId
-  );
+  const { organizationId } = useCurrentOrganization();
   const [status, setStatus] = useState<CustomerListStatus>("active");
   const [customers, setCustomers] = useState<CustomerReadModel[]>([]);
   const [draft, setDraft] = useState<CustomerDraft>(emptyDraft);
@@ -630,7 +601,7 @@ export function CustomersPage() {
     CustomerDuplicateMatchReadModel[]
   >([]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(organizationId));
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const customerLoadSequence = useRef(0);
@@ -665,12 +636,6 @@ export function CustomersPage() {
   );
 
   useEffect(() => {
-    if (!organizationId) {
-      customerLoadSequence.current += 1;
-      setCustomers([]);
-      setIsLoading(false);
-      return;
-    }
     loadCustomers(organizationId, status);
     return () => {
       customerLoadSequence.current += 1;
@@ -746,9 +711,6 @@ export function CustomersPage() {
   }, []);
 
   const findDraftDuplicates = useCallback(async () => {
-    if (!organizationId) {
-      return [];
-    }
     const result = await orpcClient.customer.findPossibleDuplicates({
       email: draft.email,
       organizationId,
@@ -758,9 +720,6 @@ export function CustomersPage() {
   }, [draft.email, draft.phone, organizationId]);
 
   const persistCustomer = useCallback(async () => {
-    if (!organizationId) {
-      return "";
-    }
     const profile = {
       email: draft.email,
       name: draft.name,
@@ -782,9 +741,6 @@ export function CustomersPage() {
 
   const saveCustomer = useCallback(
     async (allowPossibleDuplicates = false) => {
-      if (!organizationId) {
-        return;
-      }
       if (!hasCustomerContact(draft)) {
         setError("Informe ao menos um telefone ou email para o cliente.");
         setNotice(null);
@@ -851,9 +807,6 @@ export function CustomersPage() {
 
   const handleLifecycle = useCallback(
     async (customer: CustomerReadModel, action: CustomerAction) => {
-      if (!organizationId) {
-        return;
-      }
       setPendingAction(`${action}:${customer.id}`);
       setError(null);
       setNotice(null);
@@ -893,78 +846,28 @@ export function CustomersPage() {
     [handleLifecycle]
   );
 
-  const handleResetOrganization = useCallback(() => {
-    clearSavedOrganizationId();
-    customerLoadSequence.current += 1;
-    setOrganizationId(null);
-    setCustomers([]);
-    setIsLoading(false);
-    setEditingCustomer(null);
-    setDraft(emptyDraft);
-    setDuplicateMatches([]);
-    setNotice("Abra novamente uma organização para acessar os clientes.");
-    setError(null);
-  }, []);
-
   return (
-    <div className="categories-page customers-page">
-      <header className="categories-topbar">
-        <a aria-label="Polaris início" className="categories-brand" href="/">
-          <span aria-hidden="true" className="categories-brand-mark">
-            P
-          </span>
-          <span>Polaris</span>
-        </a>
-        <nav aria-label="Navegação principal" className="catalog-switcher">
-          <a href="/">Categorias</a>
-          <a href="/products">Produtos</a>
-          <a aria-current="page" href="/customers">
-            Clientes
-          </a>
-          <a href="/payment-profiles">Perfis de pagamento</a>
-        </nav>
-      </header>
-
-      <main className="categories-content customers-content">
-        {organizationId ? (
-          <CustomerWorkspace
-            customers={customers}
-            draft={draft}
-            duplicateMatches={duplicateMatches}
-            editingCustomer={editingCustomer}
-            error={error}
-            isLoading={isLoading}
-            notice={notice}
-            onArchive={handleArchive}
-            onCancelEdit={handleCancelEdit}
-            onChange={handleDraftChange}
-            onCreateAnyway={handleCreateAnyway}
-            onEdit={handleEdit}
-            onResetOrganization={handleResetOrganization}
-            onRestore={handleRestore}
-            onStatusClick={handleStatusClick}
-            onSubmit={handleSubmit}
-            onUseExisting={handleUseExisting}
-            pendingAction={pendingAction}
-            status={status}
-          />
-        ) : (
-          <section
-            aria-labelledby="customer-organization-title"
-            className="customer-organization-prompt"
-          >
-            <p className="categories-eyebrow">Primeiro acesso</p>
-            <h1 id="customer-organization-title">Abra uma organização</h1>
-            <p className="categories-intro-copy">
-              Os cadastros de clientes pertencem a uma organização. Abra ou crie
-              uma organização antes de continuar.
-            </p>
-            <a className="primary-button" href="/">
-              Ir para categorias
-            </a>
-          </section>
-        )}
-      </main>
+    <div className="customers-page">
+      <CustomerWorkspace
+        customers={customers}
+        draft={draft}
+        duplicateMatches={duplicateMatches}
+        editingCustomer={editingCustomer}
+        error={error}
+        isLoading={isLoading}
+        notice={notice}
+        onArchive={handleArchive}
+        onCancelEdit={handleCancelEdit}
+        onChange={handleDraftChange}
+        onCreateAnyway={handleCreateAnyway}
+        onEdit={handleEdit}
+        onRestore={handleRestore}
+        onStatusClick={handleStatusClick}
+        onSubmit={handleSubmit}
+        onUseExisting={handleUseExisting}
+        pendingAction={pendingAction}
+        status={status}
+      />
     </div>
   );
 }

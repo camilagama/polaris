@@ -132,6 +132,7 @@ export function createInventoryRpcHandlers(
               limit: input.limit,
               query: input.query ?? null,
               stock: input.stock,
+              variantIds: input.variantIds,
             }),
           request: context.request,
           requestedOrganizationId: input.organizationId,

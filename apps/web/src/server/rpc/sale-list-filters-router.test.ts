@@ -99,7 +99,12 @@ describe("sale.list filters", () => {
   });
 
   it("keeps the unfiltered call compatible", async () => {
-    const listSales = vi.fn(async () => ({ hasMore: false, sales: [] }));
+    const listSales = vi.fn(
+      async (_transaction: unknown, _identity: unknown, _options: unknown) => ({
+        hasMore: false,
+        sales: [],
+      })
+    );
     const client = createClient(listSales);
 
     await client.sale.list({ organizationId });

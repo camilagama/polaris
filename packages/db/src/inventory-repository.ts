@@ -901,6 +901,7 @@ export interface ListInventoryBalancesOptions {
   limit?: number;
   query?: string | null;
   stock?: InventoryStockFilter;
+  variantIds?: readonly string[] | undefined;
 }
 
 export interface InventoryBalanceEntry {
@@ -1040,6 +1041,9 @@ export async function listInventoryBalances(
   ];
   if (!options.includeArchived) {
     conditions.push(isNull(products.archivedAt));
+  }
+  if (options.variantIds && options.variantIds.length > 0) {
+    conditions.push(inArray(productVariants.id, [...options.variantIds]));
   }
   if (options.stock === "with_stock") {
     conditions.push(sql`${quantity} > 0`);

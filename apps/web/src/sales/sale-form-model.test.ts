@@ -6,12 +6,12 @@ import type {
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   acknowledgeProfileReview,
   addAdjustment,
   addItem,
   editSaleDate,
-  formatCalendarDate,
   parseLocalDateTime,
   saleDateDetails,
   validateSaleDate,
@@ -31,7 +31,6 @@ import {
   type EvaluationContext,
   evaluateSaleForm,
   failSubmission,
-  formatBrlAmount,
   formatPercentage,
   formFieldKeys,
   idleSubmission,

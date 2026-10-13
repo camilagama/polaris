@@ -27,6 +27,11 @@ import {
   uploadProductMedia,
 } from "../lib/media-upload";
 import { orpcClient } from "../lib/orpc";
+import {
+  adjustCropWithKey,
+  cropArrowKeys,
+  describeCrop,
+} from "./media-crop-model";
 import "./product-media-panel.css";
 
 interface ProductMediaPanelProps {
@@ -47,13 +52,6 @@ interface ImageDimensions {
   width: number;
 }
 
-const cropArrowKeys = new Set([
-  "ArrowDown",
-  "ArrowLeft",
-  "ArrowRight",
-  "ArrowUp",
-]);
-
 const fullImageCrop: NormalizedMediaCropRect = {
   height: 1,
   width: 1,
@@ -63,43 +61,6 @@ const fullImageCrop: NormalizedMediaCropRect = {
 
 function clamp(value: number): number {
   return Math.min(1, Math.max(0, value));
-}
-
-function clampBetween(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function adjustCropWithKey(
-  crop: NormalizedMediaCropRect,
-  key: string,
-  move: boolean
-): NormalizedMediaCropRect {
-  const step = move ? 0.01 : 0.05;
-  const direction = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
-  const isHorizontal = key === "ArrowLeft" || key === "ArrowRight";
-
-  if (move && isHorizontal) {
-    return {
-      ...crop,
-      x: clampBetween(crop.x + direction * step, 0, 1 - crop.width),
-    };
-  }
-  if (move) {
-    return {
-      ...crop,
-      y: clampBetween(crop.y + direction * step, 0, 1 - crop.height),
-    };
-  }
-  if (isHorizontal) {
-    return {
-      ...crop,
-      width: clampBetween(crop.width + direction * step, 0.01, 1 - crop.x),
-    };
-  }
-  return {
-    ...crop,
-    height: clampBetween(crop.height + direction * step, 0.01, 1 - crop.y),
-  };
 }
 
 async function readImageDimensions(url: string): Promise<ImageDimensions> {
@@ -229,6 +190,8 @@ export function ProductMediaPanel({
     useState<ImageDimensions | null>(null);
   const [crop, setCrop] = useState<NormalizedMediaCropRect>(fullImageCrop);
   const [dragStart, setDragStart] = useState<CropPoint | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [cropAnnouncement, setCropAnnouncement] = useState("");
   const [uploadCommandId, setUploadCommandId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -431,12 +394,21 @@ export function ProductMediaPanel({
         return;
       }
       event.preventDefault();
-      setCrop((current) =>
-        adjustCropWithKey(current, event.key, event.shiftKey)
-      );
+      setCrop((current) => {
+        const next = adjustCropWithKey(current, event.key, {
+          alt: event.altKey,
+          shift: event.shiftKey,
+        });
+        setCropAnnouncement(describeCrop(next));
+        return next;
+      });
       setUploadCommandId(crypto.randomUUID());
     },
     [isUploading]
+  );
+  const handleToggleAdjusting = useCallback(
+    () => setAdjusting((current) => !current),
+    []
   );
 
   const handleVariantToggle = useCallback((variantId: string) => {
@@ -575,25 +547,42 @@ export function ProductMediaPanel({
                 <div>
                   <p className="field-label">Recorte</p>
                   <p className="field-help">
-                    Arraste sobre a imagem para escolher uma área. Use as setas
-                    para ajustar o recorte; com Shift, mova a área. Um toque sem
-                    arraste mantém a imagem inteira.
+                    Arraste sobre a imagem para escolher uma área. Com o
+                    teclado, as setas aumentam ou diminuem o recorte a partir do
+                    canto inferior direito; com Alt, a partir do canto superior
+                    esquerdo; com Shift, movem a área. Um toque sem arraste
+                    mantém a imagem inteira.
                   </p>
                 </div>
-                <button
-                  className="quiet-button"
-                  disabled={isUploading}
-                  onClick={handleUseFullImage}
-                  type="button"
-                >
-                  Imagem inteira
-                </button>
+                <div className="product-media-crop-actions">
+                  <button
+                    aria-pressed={adjusting}
+                    className="quiet-button"
+                    disabled={isUploading}
+                    onClick={handleToggleAdjusting}
+                    type="button"
+                  >
+                    {adjusting ? "Concluir ajuste" : "Ajustar com o dedo"}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    disabled={isUploading}
+                    onClick={handleUseFullImage}
+                    type="button"
+                  >
+                    Imagem inteira
+                  </button>
+                </div>
               </div>
               <div className="product-media-crop-stage">
                 <button
-                  aria-describedby="product-media-crop-help"
+                  aria-describedby="product-media-crop-help product-media-crop-state"
                   aria-label="Área de recorte. Arraste ou use as setas para ajustar."
-                  className="product-media-crop-frame"
+                  className={
+                    adjusting
+                      ? "product-media-crop-frame is-adjusting"
+                      : "product-media-crop-frame"
+                  }
                   onKeyDown={handleCropPreviewKeyDown}
                   onPointerCancel={handleCropPointerCancel}
                   onPointerDown={handleCropPointerDown}
@@ -616,6 +605,14 @@ export function ProductMediaPanel({
                   />
                 </button>
               </div>
+              <p
+                aria-live="polite"
+                className="field-help"
+                id="product-media-crop-state"
+                role="status"
+              >
+                {cropAnnouncement || describeCrop(crop)}
+              </p>
               <p className="field-help" id="product-media-crop-help">
                 Saída WebP, proporção preservada e dimensão máxima de 1200 px
                 sem ampliação.

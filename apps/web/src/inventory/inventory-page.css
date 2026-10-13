@@ -142,7 +142,7 @@
   margin: 0.15rem 0 0;
   font-size: 0.88rem;
   font-weight: 650;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .stock-quantity {
@@ -350,6 +350,16 @@
 .stock-actions-row .quiet-button,
 .stock-actions-row .danger-button {
   min-height: 2.75rem;
+}
+
+@media (max-width: 519px) {
+  .stock-figures {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+
+  .stock-figures div:last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (min-width: 700px) {

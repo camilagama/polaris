@@ -761,6 +761,9 @@ export const polarisContract = {
           productStatus: z.enum(["active", "all"]).default("active"),
           query: z.string().trim().max(100).optional(),
           stock: z.enum(["all", "with_stock", "without_stock"]).default("all"),
+          // Re-reads exactly these variants (e.g. the lines of a sale in
+          // progress) in one call, regardless of the other filters.
+          variantIds: z.array(z.string().uuid()).min(1).max(100).optional(),
         })
       )
       .output(
