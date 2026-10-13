@@ -20,6 +20,25 @@
 
 
 
+# 0. Emendas da revisão do checkpoint Gate 4
+
+Resultado da revisão completa PR01–PR47 ([`revisao-checkpoint-gate4.md`](revisao-checkpoint-gate4.md)). Estas emendas alteram a sequência abaixo; onde houver conflito, vale esta seção.
+
+- **Gate 3 formal.** O fim da Fase 3 passa a ter um gate nomeado, executável por `bun run gates:gate3` (catálogo, estoque, mídia privada e endurecimento), documentado em `docs/runbooks/gate-3-catalog-stock.md`.
+- **PRs corretivos.** A rodada de correções da revisão (migrations 0039–0041, borda, interface de estoque, ferramentas) foi executada em cinco branches empilhadas antes da Fase 5; ver `doc/status-implementacao.md`.
+- **Interface de estoque e organização pela sessão** entram antes do Gate 5 (já implementadas): `organization.listMine`, `inventory.listBalances`, receber/contar/baixar estoque.
+- **PR50.** A variante ganha preço de tabela (decisão D-6); o contrato offline do PR55 parte dessa decisão.
+- **Antes do PR52.** Teste real em Android físico (a emulação não substitui) e uso de `navigator.storage.persist()` para a persistência offline.
+- **PR49.** Definir namespace de armazenamento por usuário e organização e o apagamento no logout.
+- **PR120.** Cabeçalhos de segurança e verificação de `Origin` (CSRF) foram antecipados e já existem; o PR120 fica reduzido à auditoria em staging.
+- **Antes do PR67.** Decidir a regra de rateio de descontos e frete entre itens.
+- **Antes da Fase 7.** Comandos para remover, substituir e reordenar mídia de produto.
+- **Retroativos.** A janela retroativa de venda é de 30 dias de calendário no fuso da organização (PR47); custo de venda retroativa usa a média vigente (D-4).
+- **Integração.** A cadeia de PRs é integrada por fase, antes da Fase 5; nenhum merge foi feito nesta rodada.
+
+---
+
+
 # 1. Como usar este plano
 
 
