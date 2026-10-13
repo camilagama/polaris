@@ -5,9 +5,9 @@ import {
   closeReturn,
   discardLockedReturn,
   editRestocked,
+  editReturned,
   editReturnNote,
   editReturnReason,
-  editReturned,
   initialReturnState,
   isReturnLocked,
   mapReturnError,
@@ -23,8 +23,8 @@ import {
   returnReasonLabel,
   returnReview,
   returnSubmitLabel,
-  returnSuccessMessage,
   returnSucceeded,
+  returnSuccessMessage,
   returnTableRows,
   reviewReturn,
   totalAvailable,
@@ -178,8 +178,8 @@ describe("opening and editing", () => {
     state = editReturned(state, 0, "1");
     expect(draftOf(state).lines[0]).toMatchObject({
       restocked: "1",
-      returned: "1",
       restockedTouched: true,
+      returned: "1",
     });
   });
 
@@ -402,6 +402,24 @@ describe("error mapping", () => {
     expect(failure.unknownOutcome).toBe(false);
   });
 
+  it("discards the attempt when the command ID collides with a stock movement", () => {
+    const failure = mapReturnError({
+      code: "CONFLICT",
+      data: { reason: "stock_command_conflict" },
+    });
+    expect(failure.discardAttempt).toBe(true);
+    expect(failure.unknownOutcome).toBe(false);
+  });
+
+  it("explains the stock limit without locking the attempt", () => {
+    const failure = mapReturnError({
+      code: "CONFLICT",
+      data: { reason: "inventory_quantity_limit" },
+    });
+    expect(failure.message).toContain("limite");
+    expect(failure.discardAttempt).toBeFalsy();
+    expect(failure.unknownOutcome).toBe(false);
+  });
   it("reloads when the sale was cancelled", () => {
     const failure = mapReturnError({
       code: "CONFLICT",

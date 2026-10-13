@@ -253,6 +253,9 @@ export function planSaleReturn(
   lines: readonly ReturnLineInput[]
 ): PlannedReturnLine[] {
   const byPosition = new Map(items.map((item) => [item.position, item]));
+  if (new Set(lines.map((line) => line.position)).size !== lines.length) {
+    throw new InvalidSaleReturnError();
+  }
   return [...lines]
     .sort((left, right) => left.position - right.position)
     .map((line) => {
