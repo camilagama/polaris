@@ -16,8 +16,14 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { redactedFailure } from "./sales-gate-support";
 
-const expectedBranch = "pr36-customers-gate";
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
+const expectedBranch = process.env.POLARIS_GATE_BRANCH ?? "pr36-customers-gate";
 const runtimeRole = "polaris_pr11_runtime";
 const cleanupOwnerRole = "polaris_media_cleanup_owner";
 const cleanupRuntimeRole = "polaris_media_cleanup_runtime";
@@ -165,7 +171,7 @@ async function run() {
     );
     const [serverRow] = server.rows;
     assert.ok(serverRow);
-    assert.equal(serverRow.database_name, "neondb");
+    assert.equal(serverRow.database_name, gateDatabase);
     assert.ok(Number(serverRow.server_version_num) >= 180_000);
     tests.push("disposable direct Neon connection is PostgreSQL 18");
 
@@ -187,7 +193,7 @@ async function run() {
       can_select: boolean;
       can_update: boolean;
     }>(
-      "SELECT has_table_privilege($1, 'public.customers', 'SELECT') AS can_select, has_table_privilege($1, 'public.customers', 'INSERT') AS can_insert, has_table_privilege($1, 'public.customers', 'UPDATE') AS can_update, has_table_privilege($1, 'public.customers', 'DELETE') AS can_delete",
+      "SELECT has_table_privilege($1, 'public.customers', 'SELECT') AS can_select, has_table_privilege($1, 'public.customers', 'INSERT') AS can_insert, has_any_column_privilege($1, 'public.customers', 'UPDATE') AS can_update, has_table_privilege($1, 'public.customers', 'DELETE') AS can_delete",
       [runtimeRole]
     );
     assert.deepEqual(privileges.rows[0], {
@@ -651,9 +657,7 @@ async function run() {
   }
 }
 
-run().catch(() => {
-  console.error(
-    "Customers PostgreSQL gate failed; sensitive connection details were suppressed."
-  );
+run().catch((error: unknown) => {
+  console.error(`Customers PostgreSQL gate failed (${redactedFailure(error)})`);
   process.exitCode = 1;
 });

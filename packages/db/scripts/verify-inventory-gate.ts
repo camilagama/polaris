@@ -1,9 +1,29 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import {
+  ProductDefaultVariantStockHistoryConflictError,
+  ProductDeletedError,
+  ProductLifecycleError,
+  ProductStockNotEmptyError,
+} from "@polaris/domain/catalog/product";
+import {
+  InsufficientStockError,
+  InvalidStockMovementError,
+  InventoryVersionConflictError,
+  StockCommandConflictError,
+} from "@polaris/domain/inventory/inventory";
+import { InvalidInventoryCountInputError } from "@polaris/domain/inventory/inventory-count";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import {
+  getInventoryBalance,
+  inventoryCount,
+  receiveStock,
+  recordStockMovement,
+  writeOffStock,
+} from "../src/inventory-repository";
 import {
   configureProductVariants,
   createProduct,
@@ -12,33 +32,18 @@ import {
   restoreProduct,
   setProductVariantSku,
 } from "../src/product-repository";
-import {
-  getInventoryBalance,
-  inventoryCount,
-  receiveStock,
-  recordStockMovement,
-  writeOffStock,
-} from "../src/inventory-repository";
 import { stockMovements } from "../src/schema/inventory";
 import { productVariants } from "../src/schema/product";
 import {
-  InsufficientStockError,
-  InventoryVersionConflictError,
-  InvalidStockMovementError,
-  StockCommandConflictError,
-} from "@polaris/domain/inventory/inventory";
-import { InvalidInventoryCountInputError } from "@polaris/domain/inventory/inventory-count";
-import {
-  ProductDefaultVariantStockHistoryConflictError,
-  ProductDeletedError,
-  ProductLifecycleError,
-  ProductStockNotEmptyError,
-} from "@polaris/domain/catalog/product";
-import {
-  withAuthorizedTenantTransaction,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
+  withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
 
 const runtimeRole = "polaris_pr11_runtime";
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
@@ -267,7 +272,7 @@ async function main(): Promise<void> {
 
   const connection = new URL(connectionString);
   assert.equal(connection.protocol, "postgresql:");
-  assert.equal(connection.pathname, "/neondb");
+  assert.equal(connection.pathname, `/${gateDatabase}`);
   assert.equal(connection.hostname, expectedHostname);
   assert.match(connection.hostname, disposableHostPattern);
   assert.doesNotMatch(connection.hostname, poolerPattern);
@@ -289,7 +294,7 @@ async function main(): Promise<void> {
       )
       .then((result) => result.rows);
     assert.ok(server);
-    assert.equal(server.current_database, "neondb");
+    assert.equal(server.current_database, gateDatabase);
     assert.equal(Math.floor(server.server_version_num / 10_000), 18);
 
     const roles = await admin.pool.query<{

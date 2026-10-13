@@ -1,9 +1,8 @@
 import type {
-  CustomerReadModel,
+  PolarisRpcClient,
   SaleDetailReadModel,
   SaleListEntryReadModel,
 } from "@polaris/contracts";
-import { customerName } from "./sale-customer-link-model";
 import { cancellationReasonLabel } from "./sale-cancellation-model";
 import {
   returnPanelKey,
@@ -13,13 +12,16 @@ import {
   totalAvailable,
 } from "./sale-return-model";
 import {
+  formatBrlAmount,
+  formatCalendarDate,
+  formatInstant,
+} from "../lib/format";
+import { rpcErrorReason } from "../lib/rpc-error";
+import {
   type ConfirmedSaleView,
   confirmedSaleView,
-  formatBrlAmount,
-  formatInstant,
-  type Loadable,
   loadErrorMessage,
-  rpcErrorReason,
+  localDay,
   SALE_METHODS,
 } from "./sale-form-model";
 
@@ -35,6 +37,11 @@ export function saleDetailHref(saleId: string): string {
   return `/sales/detail?saleId=${saleId}`;
 }
 
+/** The customer reconciliation of one sale; reached from the sale detail. */
+export function saleCustomerHref(saleId: string): string {
+  return `/sales/customer?saleId=${saleId}`;
+}
+
 /* -------------------------------------------------------------------------- */
 /* List state                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -45,7 +52,6 @@ export interface SalePage {
 }
 
 export interface HistoryState {
-  customers: Loadable<readonly CustomerReadModel[]>;
   hasMore: boolean;
   list: "error" | "loading" | "ready";
   listError: string | null;
@@ -57,7 +63,6 @@ export interface HistoryState {
 
 export function initialHistoryState(): HistoryState {
   return {
-    customers: { status: "loading" },
     hasMore: false,
     list: "loading",
     listError: null,
@@ -140,23 +145,80 @@ export function moreLoadFailed(
   };
 }
 
-export function historyCustomersLoaded(
-  state: HistoryState,
-  customers: readonly CustomerReadModel[]
-): HistoryState {
-  return { ...state, customers: { status: "ready", value: customers } };
+/* -------------------------------------------------------------------------- */
+/* Filters                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type HistoryStatusFilter =
+  | ""
+  | "cancelled"
+  | "confirmed"
+  | "with_returns";
+
+export const HISTORY_STATUS_FILTERS: ReadonlyArray<
+  readonly [HistoryStatusFilter, string]
+> = [
+  ["", "Todas"],
+  ["confirmed", "Confirmadas"],
+  ["cancelled", "Canceladas"],
+  ["with_returns", "Com devoluções"],
+];
+
+export interface HistoryFilters {
+  /** Part of the current customer's name. */
+  customer: string;
+  /** First commercial date, YYYY-MM-DD, or empty. */
+  from: string;
+  /** Part of an item's label (product and variant). */
+  query: string;
+  status: HistoryStatusFilter;
+  /** Last commercial date, YYYY-MM-DD, or empty. */
+  to: string;
 }
 
-export function historyCustomersFailed(
-  state: HistoryState,
-  error: unknown
-): HistoryState {
+export const emptyHistoryFilters: HistoryFilters = {
+  customer: "",
+  from: "",
+  query: "",
+  status: "",
+  to: "",
+};
+
+export function activeFilterCount(filters: HistoryFilters): number {
+  return [
+    filters.from !== "" || filters.to !== "",
+    filters.status !== "",
+    filters.customer.trim() !== "",
+    filters.query.trim() !== "",
+  ].filter(Boolean).length;
+}
+
+/** The period is the only filter that can contradict itself. */
+export function periodError(filters: HistoryFilters): string | null {
+  return filters.from !== "" && filters.to !== "" && filters.from > filters.to
+    ? "A data inicial é posterior à data final."
+    : null;
+}
+
+type ListInput = Parameters<PolarisRpcClient["sale"]["list"]>[0];
+
+/** The list request: only the filters in use are sent. */
+export function historyListRequest(
+  organizationId: string,
+  filters: HistoryFilters,
+  offset: number
+): ListInput {
+  const customerQuery = filters.customer.trim();
+  const query = filters.query.trim();
   return {
-    ...state,
-    customers: {
-      message: loadErrorMessage(error, "os clientes"),
-      status: "error",
-    },
+    limit: SALES_PAGE_SIZE,
+    offset,
+    organizationId,
+    ...(customerQuery === "" ? {} : { customerQuery }),
+    ...(filters.from === "" ? {} : { occurredFrom: filters.from }),
+    ...(filters.to === "" ? {} : { occurredTo: filters.to }),
+    ...(query === "" ? {} : { query }),
+    ...(filters.status === "" ? {} : { status: filters.status }),
   };
 }
 
@@ -165,30 +227,42 @@ export function historyCustomersFailed(
 /* -------------------------------------------------------------------------- */
 
 export interface HistoryRow {
+  /** The sale was dated before the day it was confirmed on the server. */
+  backdated: boolean;
   returnsBadge: string | null;
   customerText: string;
+  /** The commercial date (the organization's calendar day), dd/mm/aaaa. */
+  dateText: string;
   detailHref: string;
   id: string;
   itemCountText: string;
   methodText: string;
-  occurredText: string;
   statusLabel: string;
   statusTone: "cancelled" | "confirmed";
+  /** Local time of the sale on this device, or empty when unreadable. */
+  timeText: string;
   totalText: string;
 }
 
-function rowCustomerText(
-  state: HistoryState,
-  customerId: string | null
-): string {
-  return customerId === null
-    ? "Sem cliente"
-    : customerName(state.customers, customerId);
+const timeFormatter = new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" });
+
+function timeOf(instant: string): string {
+  const date = new Date(instant);
+  return Number.isNaN(date.getTime()) ? "" : timeFormatter.format(date);
+}
+
+function rowCustomerText(sale: SaleListEntryReadModel): string {
+  if (sale.customerId === null) {
+    return "Sem cliente";
+  }
+  return sale.customerName ?? "Cliente indisponível";
 }
 
 export function historyRows(state: HistoryState): HistoryRow[] {
   return state.sales.map((sale) => ({
-    customerText: rowCustomerText(state, sale.customerId),
+    backdated: sale.occurredOn < localDay(sale.confirmedAt),
+    customerText: rowCustomerText(sale),
+    dateText: formatCalendarDate(sale.occurredOn),
     detailHref: saleDetailHref(sale.id),
     id: sale.id,
     itemCountText: `${sale.itemCount} ${sale.itemCount === 1 ? "item" : "itens"}`,
@@ -196,10 +270,10 @@ export function historyRows(state: HistoryState): HistoryRow[] {
       sale.paymentMethod === null
         ? "Pagamento não informado"
         : (methodLabels.get(sale.paymentMethod) ?? sale.paymentMethod),
-    occurredText: formatInstant(sale.occurredAt),
     statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
     returnsBadge: sale.hasReturns ? RETURNS_BADGE : null,
     statusTone: sale.status,
+    timeText: timeOf(sale.occurredAt),
     totalText: formatBrlAmount(sale.totalDue),
   }));
 }
@@ -207,10 +281,13 @@ export function historyRows(state: HistoryState): HistoryRow[] {
 export type HistoryView =
   | { kind: "loading"; message: string }
   | { kind: "error"; message: string }
-  | { href: string; kind: "empty"; message: string }
+  | { href: string | null; kind: "empty"; message: string }
   | { kind: "ready"; rows: HistoryRow[] };
 
-export function historyView(state: HistoryState): HistoryView {
+export function historyView(
+  state: HistoryState,
+  filters: HistoryFilters = emptyHistoryFilters
+): HistoryView {
   if (state.list === "loading") {
     return { kind: "loading", message: "Carregando vendas…" };
   }
@@ -221,12 +298,19 @@ export function historyView(state: HistoryState): HistoryView {
     };
   }
   if (state.sales.length === 0) {
-    return {
-      href: "/sales",
-      kind: "empty",
-      message:
-        "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui.",
-    };
+    return activeFilterCount(filters) > 0
+      ? {
+          href: null,
+          kind: "empty",
+          message:
+            "Nenhuma venda encontrada com estes filtros. Ajuste ou limpe os filtros.",
+        }
+      : {
+          href: "/sales",
+          kind: "empty",
+          message:
+            "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui.",
+        };
   }
   return { kind: "ready", rows: historyRows(state) };
 }

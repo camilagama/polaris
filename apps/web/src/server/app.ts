@@ -1,5 +1,5 @@
+import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import { createDatabase } from "@polaris/db/client";
 import { type Context, Hono } from "hono";
 import {
   type AuthAbuseProtector,
@@ -11,16 +11,28 @@ import {
   isEmailPasswordAuthEnabled,
 } from "./auth/handler";
 import type { ServerEnv, WorkerBindings } from "./environment";
+import { originCheckMiddleware } from "./middleware/origin-check";
+import {
+  mediaUploadRateLimitMiddleware,
+  rpcMutationRateLimitMiddleware,
+} from "./middleware/rate-limit";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
+import {
+  logServerError,
+  logServerErrorFromContext,
+} from "./observability/server-log";
 import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
 import { rpcRouter as defaultRpcRouter } from "./rpc/router";
 
+type BackgroundTaskRunner = (promise: Promise<unknown>) => void;
+
 type AuthRequestHandler = (
   request: Request,
   bindings: WorkerBindings,
-  requestId: string
+  requestId: string,
+  runInBackground?: BackgroundTaskRunner
 ) => Promise<Response>;
 
 interface ServerAppOptions {
@@ -29,16 +41,48 @@ interface ServerAppOptions {
   rpcRouter?: typeof defaultRpcRouter;
 }
 
+function backgroundTaskRunner(context: Context<ServerEnv>) {
+  return (promise: Promise<unknown>): void => {
+    try {
+      context.executionCtx.waitUntil(promise);
+    } catch {
+      // No ExecutionContext (unit tests): detach the task without an unhandled rejection.
+      promise.catch(() => undefined);
+    }
+  };
+}
+
 export function createServerApp({
   authAbuseProtector = protectAuthRequest,
   authHandler = handleBetterAuthRequest,
   rpcRouter = defaultRpcRouter,
 }: ServerAppOptions = {}) {
   const app = new Hono<ServerEnv>();
-  const rpcHandler = new RPCHandler(rpcRouter);
+  const rpcHandler = new RPCHandler(rpcRouter, {
+    clientInterceptors: [
+      // Expected failures (4xx) are part of the contract; only server faults are logged.
+      onError((error, options) => {
+        if (error instanceof ORPCError && error.status < 500) {
+          return;
+        }
+        const { requestId } = options.context as { requestId?: string };
+        logServerError({
+          error,
+          method: "POST",
+          requestId: requestId ?? "unknown",
+          route: `/rpc/${options.path.join("/")}`,
+          status: error instanceof ORPCError ? error.status : 500,
+        });
+      }),
+    ],
+  });
 
   app.use("*", requestIdMiddleware);
   app.use("*", securityHeadersMiddleware);
+  app.use("/rpc/*", originCheckMiddleware);
+  app.use("/api/*", originCheckMiddleware);
+  app.use("/rpc/*", rpcMutationRateLimitMiddleware);
+  app.use("/api/products/:productId/media", mediaUploadRateLimitMiddleware);
   app.use("/rpc/*", async (context, next) => {
     const { matched, response } = await rpcHandler.handle(context.req.raw, {
       context: {
@@ -87,7 +131,8 @@ export function createServerApp({
     return await authHandler(
       context.req.raw,
       context.env,
-      context.get("requestId")
+      context.get("requestId"),
+      backgroundTaskRunner(context)
     );
   };
   app.get("/api/auth/*", authRoute);
@@ -95,34 +140,6 @@ export function createServerApp({
 
   app.route("/", systemRoutes);
   app.route("/", createMediaRoutes());
-
-  app.post("/api/poc/database", async (context) => {
-    if (context.env.DB_POC_ENABLED !== "true") {
-      return context.json(
-        {
-          error: { code: "not_found" },
-          requestId: context.get("requestId"),
-        },
-        404
-      );
-    }
-
-    const { pool } = createDatabase(context.env.HYPERDRIVE.connectionString, {
-      maxConnections: 1,
-    });
-
-    try {
-      const probe = await pool.query("SELECT 1 AS connected");
-
-      if (Number(probe.rows[0]?.connected) !== 1) {
-        return context.json({ error: { code: "database_unavailable" } }, 503);
-      }
-
-      return context.json({ status: "ok" });
-    } finally {
-      await pool.end();
-    }
-  });
 
   app.notFound((context) =>
     context.json(
@@ -134,15 +151,16 @@ export function createServerApp({
     )
   );
 
-  app.onError((_error, context) =>
-    context.json(
+  app.onError((error, context) => {
+    logServerErrorFromContext(context, error, 500);
+    return context.json(
       {
         error: { code: "internal_error" },
         requestId: context.get("requestId"),
       },
       500
-    )
-  );
+    );
+  });
 
   return app;
 }

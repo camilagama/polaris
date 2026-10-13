@@ -13,6 +13,7 @@ import {
   MediaImageProcessingError,
   MediaImageTooLargeError,
   MediaUploadCommandConflictError,
+  ProductMediaLimitError,
   type NormalizedMediaCropRect,
   UnsupportedMediaImageError,
   validateNormalizedMediaCropRect,
@@ -38,6 +39,7 @@ import {
   mediaUploadFingerprint,
   parseUploadCommandId,
 } from "../media-upload-command";
+import { logServerErrorFromContext } from "../observability/server-log";
 import { TenantRequestContextError } from "../request-context-error";
 import { withTenantRequestContext } from "../tenant-request-context";
 
@@ -264,6 +266,15 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
       409
     );
   }
+  if (error instanceof ProductMediaLimitError) {
+    return context.json(
+      {
+        error: { code: "product_media_limit" },
+        requestId: context.get("requestId"),
+      },
+      409
+    );
+  }
   if (
     error instanceof ProductNotFoundError ||
     error instanceof ProductDeletedError ||
@@ -275,6 +286,7 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
     );
   }
   if (error instanceof MediaImageProcessingError) {
+    logServerErrorFromContext(context, error, 503);
     return context.json(
       {
         error: { code: "media_processing_unavailable" },
@@ -285,6 +297,9 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
   }
   if (error instanceof TenantRequestContextError) {
     const status = error.code === "session_required" ? 401 : 503;
+    if (status === 503) {
+      logServerErrorFromContext(context, error, status);
+    }
     return context.json(
       { error: { code: error.code }, requestId: context.get("requestId") },
       status
@@ -304,6 +319,7 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
       403
     );
   }
+  logServerErrorFromContext(context, error, 500);
   return context.json(
     { error: { code: "internal_error" }, requestId: context.get("requestId") },
     500
@@ -433,7 +449,8 @@ function canCompensateRejectedMediaWrite(error: unknown): boolean {
     error instanceof ProductNotFoundError ||
     error instanceof ProductDeletedError ||
     error instanceof ProductVariantNotFoundError ||
-    error instanceof MediaUploadCommandConflictError
+    error instanceof MediaUploadCommandConflictError ||
+    error instanceof ProductMediaLimitError
   );
 }
 
@@ -739,6 +756,10 @@ async function handleMediaDelivery(
     tenantRequest: TenantRunner;
   }
 ): Promise<Response> {
+  // A malformed id can never name an asset; answer before opening a database transaction.
+  if (!uuidPattern.test(context.req.param("assetId") ?? "")) {
+    return mediaNotFoundResponse(context);
+  }
   const organizationId =
     context.req.query("organizationId") ??
     context.req.header("x-organization-id") ??
@@ -855,6 +876,10 @@ export function createMediaRoutes(
       context.req.header("x-organization-id") ??
       "";
     const productId = context.req.param("productId");
+    // A malformed id can never name a product; answer before opening a database transaction.
+    if (!uuidPattern.test(productId)) {
+      return mediaNotFoundResponse(context);
+    }
     if (!organizationId.trim() || organizationId !== organizationId.trim()) {
       return errorResponse(context, new InvalidMediaUploadRequestError());
     }

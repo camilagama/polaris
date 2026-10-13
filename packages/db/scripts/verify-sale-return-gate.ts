@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { StockCommandConflictError } from "@polaris/domain/inventory/inventory";
 import { SaleProductUnavailableError } from "@polaris/domain/sales/confirm-sale";
 import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import {
@@ -27,6 +26,7 @@ import {
   disposableHostPattern,
   expectSqlState,
   gateBranchPattern,
+  journalMigrationCount,
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
@@ -82,7 +82,7 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok(Number(migrations.rows[0]?.count) >= 38);
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
     tests.push(
       "migrations 0000-0037 (and any later ones) were replayed from scratch"
     );
@@ -1059,6 +1059,11 @@ async function run() {
               guardRow.unit_cost,
             ]
           );
+          // the balance is a projection of the ledger and must move with it
+          await client.query(
+            "UPDATE public.inventory_balances SET quantity = quantity + $3 WHERE organization_id = $1 AND variant_id = $2",
+            [tenant.organizationId, guardRow.variant_id, movement.quantity]
+          );
         }
       });
     await expectSqlState(
@@ -1291,8 +1296,8 @@ async function run() {
           items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
           saleId: nsSale.sale.id,
         }),
-      StockCommandConflictError,
-      "a return cannot reuse the command ID of another sale's stock movement"
+      SaleReturnCommandConflictError,
+      "a return cannot reuse the command ID of another operation's stock movement (a domain conflict, not a late database error)"
     );
     assert.equal(await returnCount(tenantA, nsSale.sale.id), 0);
     assert.equal((await balance(tenantA, a1.variantId)).quantity, nsStock);

@@ -20,8 +20,6 @@ const expiredCookiePattern = /;\s*max-age=0/i;
 const testBindings = {
   BETTER_AUTH_BASE_URL: testBaseURL,
   BETTER_AUTH_SECRET: testSecret,
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
   HYPERDRIVE: { connectionString: "" },
 } as WorkerBindings;
 

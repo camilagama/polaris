@@ -1,0 +1,238 @@
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createServerApp } from "./app";
+import type { RateLimitBinding, WorkerBindings } from "./environment";
+import { TenantRequestContextError } from "./request-context-error";
+import { createRpcRouter } from "./rpc/router";
+
+const baseURL = "https://polaris.example.invalid";
+const secret = "a".repeat(32);
+
+function createBindings(overrides: Partial<WorkerBindings> = {}) {
+  return {
+    BETTER_AUTH_BASE_URL: baseURL,
+    BETTER_AUTH_SECRET: secret,
+    HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
+    ...overrides,
+  } satisfies WorkerBindings;
+}
+
+function createRpcClient(
+  router: ReturnType<typeof createRpcRouter>,
+  bindings = createBindings(),
+  headers: Record<string, string> = { origin: baseURL }
+) {
+  const app = createServerApp({ rpcRouter: router });
+  const link = new RPCLink({
+    fetch: (request) => Promise.resolve(app.fetch(request, bindings)),
+    headers,
+    method: "POST",
+    url: new URL("/rpc", baseURL),
+  });
+
+  return createORPCClient(link) as unknown as {
+    category: { create: (input: unknown) => Promise<unknown> };
+  };
+}
+
+describe("RPC request guards", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("rejects a text/plain cross-site post before it reaches any procedure", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const tenantRequest = vi.fn();
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        withTenantRequestContext: tenantRequest as never,
+      }),
+    });
+
+    const response = await app.request(
+      "/rpc/category/create",
+      {
+        body: JSON.stringify({ json: { name: "x", organizationId: "o" } }),
+        headers: {
+          "content-type": "text/plain",
+          origin: "https://evil.example",
+        },
+        method: "POST",
+      },
+      createBindings()
+    );
+
+    expect(response.status).toBe(403);
+    expect(tenantRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mutation that carries no Origin at all", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const tenantRequest = vi.fn();
+    const client = createRpcClient(
+      createRpcRouter({ withTenantRequestContext: tenantRequest }),
+      createBindings(),
+      {}
+    );
+
+    await expect(
+      client.category.create({ name: "x", organizationId: "o" })
+    ).rejects.toMatchObject({ status: 403 });
+    expect(tenantRequest).not.toHaveBeenCalled();
+  });
+
+  it("logs a structured server fault for a failing procedure without leaking its message", async () => {
+    const logger = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const failure = Object.assign(
+      new Error("insert failed for customer ana@example.com"),
+      { code: "57014", name: "DatabaseError" }
+    );
+    const client = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext: () => Promise.reject(failure),
+      })
+    );
+
+    await expect(
+      client.category.create({ name: "Camisas", organizationId: "org-1" })
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+
+    expect(logger).toHaveBeenCalledOnce();
+    const [entry] = logger.mock.calls[0] ?? [];
+    expect(entry).toMatchObject({
+      errorCode: "57014",
+      errorName: "DatabaseError",
+      event: "server_error",
+      route: "/rpc/category/create",
+      status: 500,
+    });
+    const serialized = JSON.stringify(entry);
+    for (const secretValue of [
+      "ana@example.com",
+      "Camisas",
+      "org-1",
+      "stack",
+    ]) {
+      expect(serialized).not.toContain(secretValue);
+    }
+  });
+
+  it("logs infrastructure unavailability (503) but not expected client failures", async () => {
+    const logger = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const unavailable = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext: () =>
+          Promise.reject(
+            new TenantRequestContextError("authentication_unavailable")
+          ),
+      })
+    );
+    const unauthenticated = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext: () =>
+          Promise.reject(new TenantRequestContextError("session_required")),
+      })
+    );
+
+    await expect(
+      unavailable.category.create({ name: "x", organizationId: "o" })
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(
+      unauthenticated.category.create({ name: "x", organizationId: "o" })
+    ).rejects.toMatchObject({ status: 401 });
+
+    expect(logger).toHaveBeenCalledOnce();
+    expect(logger.mock.calls[0]?.[0]).toMatchObject({
+      causes: [
+        {
+          code: "authentication_unavailable",
+          name: "TenantRequestContextError",
+        },
+      ],
+      errorCode: "SERVICE_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("logs unhandled route errors with the route pattern and a generic response", async () => {
+    const logger = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const app = createServerApp({
+      authHandler: () =>
+        Promise.reject(new Error("token=abc123 for bob@example.com")),
+    });
+
+    const response = await app.request(
+      "/api/auth/get-session?token=abc123",
+      {},
+      createBindings()
+    );
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(JSON.parse(text)).toMatchObject({
+      error: { code: "internal_error" },
+    });
+    expect(text).not.toContain("bob@example.com");
+    expect(logger).toHaveBeenCalledOnce();
+    const serialized = JSON.stringify(logger.mock.calls[0]?.[0]);
+    expect(logger.mock.calls[0]?.[0]).toMatchObject({
+      errorName: "Error",
+      event: "server_error",
+      method: "GET",
+      route: "/api/auth/*",
+      status: 500,
+    });
+    for (const secretValue of ["abc123", "bob@example.com", "stack"]) {
+      expect(serialized).not.toContain(secretValue);
+    }
+  });
+});
+
+describe("rate limit wiring", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("limits RPC mutations per client but not RPC reads", async () => {
+    const limiter: RateLimitBinding = {
+      limit: vi.fn(() => Promise.resolve({ success: false })),
+    };
+    const tenantRequest = vi.fn(() => Promise.resolve({ categories: [] }));
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        withTenantRequestContext: tenantRequest as never,
+      }),
+    });
+    const bindings = createBindings({ RPC_MUTATION_RATE_LIMIT: limiter });
+    const request = (path: string) =>
+      app.request(
+        path,
+        {
+          body: JSON.stringify({
+            json: { organizationId: "org-1", name: "x" },
+          }),
+          headers: {
+            "cf-connecting-ip": "203.0.113.9",
+            "content-type": "application/json",
+            origin: baseURL,
+          },
+          method: "POST",
+        },
+        bindings
+      );
+
+    const mutation = await request("/rpc/category/create");
+    const read = await request("/rpc/category/list");
+
+    expect(mutation.status).toBe(429);
+    expect(read.status).not.toBe(429);
+    expect(limiter.limit).toHaveBeenCalledOnce();
+  });
+});

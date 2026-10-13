@@ -2,12 +2,11 @@ import type {
   CustomerReadModel,
   SaleCustomerLinkReadModel,
 } from "@polaris/contracts";
+import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
 import {
   type ChoiceOption,
   type Loadable,
   loadErrorMessage,
-  rpcErrorCode,
-  rpcErrorReason,
 } from "./sale-form-model";
 
 export type LinkAction = SaleCustomerLinkReadModel["history"][number]["action"];
@@ -555,7 +554,7 @@ export function mapLinkError(error: unknown): LinkFailure {
 /* Views                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export function customerName(
+function customerName(
   customers: Loadable<readonly CustomerReadModel[]>,
   customerId: string
 ): string {

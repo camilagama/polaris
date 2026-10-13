@@ -7,6 +7,7 @@ import type {
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
   ProductDefaultVariantSkuConflictError,
+  ProductDefaultVariantStockHistoryConflictError,
   ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantSkuConflictError,
@@ -20,8 +21,6 @@ import { createRpcRouter } from "./router";
 const testBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   ONBOARDING_HYPERDRIVE: {
     connectionString: "postgresql://onboarding.invalid/neondb",
@@ -55,6 +54,7 @@ function createRpcClient(router = createRpcRouter()) {
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
     method: "POST",
+    headers: { origin: "https://polaris.example.invalid" },
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 
@@ -295,6 +295,33 @@ describe("product RPCs", () => {
         variants: [{ values: { model: "Classic" } }],
       })
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("maps a default variant with stock history to a configuration conflict with its reason", async () => {
+    const router = createRpcRouter({
+      configureProductVariants: () =>
+        Promise.reject(new ProductDefaultVariantStockHistoryConflictError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "model", values: ["Classic"] }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { model: "Classic" } }],
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "product_default_variant_stock_history_conflict" },
+    });
   });
 
   it("sets a variant SKU with product:update and the optimistic version", async () => {

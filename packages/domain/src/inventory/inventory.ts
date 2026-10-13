@@ -48,6 +48,19 @@ export class InventoryVariantNotFoundError extends Error {
   }
 }
 
+/**
+ * Receipts, write-offs and counts are dated by the operator; a date after the
+ * organization's today is a typing mistake and would put history in the future.
+ */
+export class InventoryOccurredInFutureError extends Error {
+  readonly code = "inventory_occurred_in_future";
+
+  constructor() {
+    super("inventory_occurred_in_future");
+    this.name = "InventoryOccurredInFutureError";
+  }
+}
+
 export class StockCommandConflictError extends Error {
   readonly code = "stock_command_conflict";
 

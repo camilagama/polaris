@@ -10,10 +10,15 @@ import {
 } from "../src/product-repository";
 import { productVariants } from "../src/schema/product";
 import {
-  withAuthorizedTenantTransaction,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
+  withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
 
 const runtimeRole = "polaris_pr11_runtime";
 const expectedTables = ["media_assets", "product_media", "variant_media"];
@@ -241,7 +246,7 @@ async function main(): Promise<void> {
   const runtimeConnection = new URL(runtimeConnectionString);
   for (const candidate of [connection, runtimeConnection]) {
     assert.equal(candidate.protocol, "postgresql:");
-    assert.equal(candidate.pathname, "/neondb");
+    assert.equal(candidate.pathname, `/${gateDatabase}`);
     assert.equal(candidate.hostname, expectedHostname);
     assert.match(candidate.hostname, disposableHostPattern);
     assert.doesNotMatch(candidate.hostname, poolerPattern);
@@ -620,7 +625,7 @@ async function main(): Promise<void> {
 
     const report = {
       branch: "pr33-media-schema-gate",
-      database: "neondb",
+      database: gateDatabase,
       serverVersion: serverInfo.server_version,
       status: "passed",
       tests: [

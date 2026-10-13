@@ -2,7 +2,9 @@ import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import type {
   getInventoryBalance,
+  InventoryBalanceEntry,
   inventoryCount,
+  listInventoryBalances,
 } from "@polaris/db/inventory-repository";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
@@ -18,9 +20,15 @@ interface InventoryRpcDependencies {
   defaultGetInventoryBalance: typeof getInventoryBalance;
   inventoryCount: typeof inventoryCount | undefined;
   defaultInventoryCount: typeof inventoryCount;
+  defaultListInventoryBalances: typeof listInventoryBalances;
+  listInventoryBalances: typeof listInventoryBalances | undefined;
   requestAuditId: (requestId: string) => string | null;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
+}
+
+function balanceEntryReadModel(entry: InventoryBalanceEntry) {
+  return { ...entry, updatedAt: entry.updatedAt?.toISOString() ?? null };
 }
 
 function inventoryCountReadModel(
@@ -69,6 +77,9 @@ export function createInventoryRpcHandlers(
     dependencies.getInventoryBalance ?? dependencies.defaultGetInventoryBalance;
   const countInventoryRepository =
     dependencies.inventoryCount ?? dependencies.defaultInventoryCount;
+  const listBalancesRepository =
+    dependencies.listInventoryBalances ??
+    dependencies.defaultListInventoryBalances;
 
   const getBalance = implementContract.inventory.getBalance.handler(
     ({ context, input }) =>
@@ -108,5 +119,30 @@ export function createInventoryRpcHandlers(
         .catch(dependencies.toRpcError)
   );
 
-  return { count, getBalance };
+  const listBalances = implementContract.inventory.listBalances.handler(
+    ({ context, input }) =>
+      dependencies
+        .withTenantRequestContext({
+          bindings: context.bindings,
+          capability: "inventory:read",
+          operation: (transaction, identity) =>
+            listBalancesRepository(transaction, identity, {
+              cursor: input.cursor ?? null,
+              includeArchived: input.productStatus === "all",
+              limit: input.limit,
+              query: input.query ?? null,
+              stock: input.stock,
+              variantIds: input.variantIds,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        })
+        .then((result) => ({
+          entries: result.entries.map(balanceEntryReadModel),
+          nextCursor: result.nextCursor,
+        }))
+        .catch(dependencies.toRpcError)
+  );
+
+  return { count, getBalance, listBalances };
 }

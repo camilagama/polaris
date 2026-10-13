@@ -12,8 +12,7 @@ import {
 const baseBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
+  AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
 } satisfies WorkerBindings;
 
@@ -30,7 +29,10 @@ function contextWithDatabaseSpy() {
   );
   const createAuth = vi.fn(() => ({
     api: {
-      getSession: vi.fn(async () => ({ user: { id: "test-user" } })),
+      getSession: vi.fn(async () => ({
+        session: { createdAt: new Date() },
+        user: { id: "test-user" },
+      })),
     },
   }));
   const run = createAuthenticatedRequestContext({
@@ -67,7 +69,12 @@ describe("authenticated request database connection", () => {
       baseBindings.HYPERDRIVE.connectionString,
       { connectionTimeoutMillis: 30_000, maxConnections: 1 }
     );
-    expect(endPool).toHaveBeenCalledOnce();
+    expect(createDatabaseSpy).toHaveBeenNthCalledWith(
+      1,
+      baseBindings.AUTH_HYPERDRIVE.connectionString,
+      { connectionTimeoutMillis: 30_000, maxConnections: 1 }
+    );
+    expect(endPool).toHaveBeenCalledTimes(2);
   });
 
   it("leaves the database helper default unchanged when unset", async () => {

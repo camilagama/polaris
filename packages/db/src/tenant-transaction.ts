@@ -25,8 +25,21 @@ export interface TenantRequestIdentity {
 export interface AuthorizedTenantTransactionInput {
   authenticatedUserId: string;
   capability: string;
+  /**
+   * READ COMMITTED by default. Read models assembled from several queries
+   * (sale detail, lists) ask for REPEATABLE READ so every query sees one snapshot.
+   */
+  isolationLevel?: "read committed" | "repeatable read";
   requestedOrganizationId: string;
 }
+
+/**
+ * Per-transaction guards against a stuck statement or lock holding a product or
+ * sale lock for everyone else. Values are milliseconds.
+ */
+export const TENANT_STATEMENT_TIMEOUT_MS = 30_000;
+export const TENANT_LOCK_TIMEOUT_MS = 20_000;
+export const TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
 
 export type TenantAuthorizationErrorCode =
   | "tenant_access_denied"
@@ -76,7 +89,12 @@ export function withAuthorizedTenantTransaction<T>(
     identity: TenantRequestIdentity
   ) => Promise<T>
 ): Promise<T> {
-  const { authenticatedUserId, capability, requestedOrganizationId } = input;
+  const {
+    authenticatedUserId,
+    capability,
+    isolationLevel = "read committed",
+    requestedOrganizationId,
+  } = input;
 
   if (
     !authenticatedUserId.trim() ||
@@ -89,6 +107,11 @@ export function withAuthorizedTenantTransaction<T>(
 
   return database.transaction(
     async (transaction) => {
+      await transaction.execute(
+        sql`SELECT set_config('statement_timeout', ${String(TENANT_STATEMENT_TIMEOUT_MS)}, true),
+                   set_config('lock_timeout', ${String(TENANT_LOCK_TIMEOUT_MS)}, true),
+                   set_config('idle_in_transaction_session_timeout', ${String(TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS)}, true)`
+      );
       await transaction.execute(
         sql`SELECT set_config('app.user_id', ${authenticatedUserId}, true)`
       );
@@ -140,6 +163,6 @@ export function withAuthorizedTenantTransaction<T>(
         userId: authenticatedUserId,
       });
     },
-    { isolationLevel: "read committed" }
+    { isolationLevel }
   );
 }

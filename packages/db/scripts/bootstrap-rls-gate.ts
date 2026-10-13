@@ -51,7 +51,7 @@ const webDirectory = fileURLToPath(
   new URL("../../../apps/web/", import.meta.url)
 );
 const configPath = fileURLToPath(
-  new URL("../../../apps/web/wrangler.pr11.jsonc", import.meta.url)
+  new URL("../../../apps/web/poc/wrangler.pr11.jsonc", import.meta.url)
 );
 const excludedCloudflareEnvironment = new Set([
   "DATABASE_URL",

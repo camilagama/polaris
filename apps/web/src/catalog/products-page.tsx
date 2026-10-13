@@ -7,8 +7,8 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import "./categories-page.css";
 import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import "./products-page.css";
@@ -22,7 +22,6 @@ interface ProductDraft {
   name: string;
 }
 
-const organizationIdStorageKey = "polaris.organizationId";
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
 const productStatuses: ReadonlyArray<readonly [ProductListStatus, string]> = [
   ["active", "Ativos"],
@@ -34,14 +33,6 @@ const emptyDraft: ProductDraft = {
   description: "",
   name: "",
 };
-
-function savedOrganizationId(): string | null {
-  try {
-    return window.localStorage.getItem(organizationIdStorageKey);
-  } catch {
-    return null;
-  }
-}
 
 function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
@@ -455,9 +446,7 @@ function ProductList({
 }
 
 export function ProductsPage() {
-  const [organizationId, setOrganizationId] = useState<string | null>(
-    savedOrganizationId
-  );
+  const { organizationId } = useCurrentOrganization();
   const [status, setStatus] = useState<ProductListStatus>("active");
   const [products, setProducts] = useState<ProductReadModel[]>([]);
   const [categories, setCategories] = useState<CategoryReadModel[]>([]);
@@ -474,13 +463,6 @@ export function ProductsPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!organizationId) {
-      setProducts([]);
-      setCategories([]);
-      setIsLoading(false);
-      return;
-    }
-
     let current = true;
     setIsLoading(true);
     Promise.all([
@@ -519,10 +501,6 @@ export function ProductsPage() {
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!organizationId) {
-        return;
-      }
-
       const editingProduct = products.find(
         (product) => product.id === editingProductId
       );
@@ -625,9 +603,6 @@ export function ProductsPage() {
 
   const handleProductAction = useCallback(
     async (product: ProductReadModel, action: ProductAction) => {
-      if (!organizationId) {
-        return;
-      }
       setPendingAction(`${action}:${product.id}`);
       setError(null);
       setNotice(null);
@@ -679,23 +654,6 @@ export function ProductsPage() {
     []
   );
 
-  const handleResetOrganization = useCallback(() => {
-    try {
-      window.localStorage.removeItem(organizationIdStorageKey);
-    } catch {
-      // The route still clears its in-memory organization context.
-    }
-    setOrganizationId(null);
-    setProducts([]);
-    setCategories([]);
-    setEditingProductId(null);
-    setVariantsProductId(null);
-    setMediaProductId(null);
-    setDraft(emptyDraft);
-    setNotice("Abra novamente a organização para acessar os produtos.");
-    setError(null);
-  }, []);
-
   const editingProduct =
     products.find((product) => product.id === editingProductId) ?? null;
   const variantsProduct =
@@ -704,135 +662,90 @@ export function ProductsPage() {
     products.find((product) => product.id === mediaProductId) ?? null;
 
   return (
-    <div className="categories-page products-page">
-      <header className="categories-topbar">
-        <a aria-label="Polaris início" className="categories-brand" href="/">
-          <span aria-hidden="true" className="categories-brand-mark">
-            P
-          </span>
-          <span>Polaris</span>
-        </a>
-        <nav aria-label="Catálogo" className="catalog-switcher">
-          <a href="/">Categorias</a>
-          <a aria-current="page" href="/products">
-            Produtos
-          </a>
-          <a href="/customers">Clientes</a>
-          <a href="/payment-profiles">Perfis de pagamento</a>
-        </nav>
-      </header>
-
-      <main className="categories-content">
-        {organizationId ? (
-          <>
-            <section className="categories-heading">
-              <div>
-                <p className="categories-eyebrow">Gestão de catálogo</p>
-                <h1>Produtos</h1>
-                <p className="categories-intro-copy">
-                  Cadastre os itens da organização e defina combinações
-                  vendáveis explicitamente. O estoque será definido em uma etapa
-                  própria.
-                </p>
-              </div>
-              <button
-                className="quiet-button"
-                onClick={handleResetOrganization}
-                type="button"
-              >
-                Trocar organização
-              </button>
-            </section>
-
-            <nav aria-label="Estado dos produtos" className="category-tabs">
-              {productStatuses.map(([value, label]) => (
-                <button
-                  aria-pressed={status === value}
-                  className={
-                    status === value
-                      ? "category-tab is-selected"
-                      : "category-tab"
-                  }
-                  data-product-status={value}
-                  key={value}
-                  onClick={handleStatusClick}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
-
-            {status === "active" || editingProduct ? (
-              <ProductForm
-                categories={categories}
-                draft={draft}
-                editingProduct={editingProduct}
-                isPending={pendingAction !== null}
-                onCancel={handleCancelEdit}
-                onChange={handleDraftChange}
-                onSubmit={handleSubmit}
-              />
-            ) : null}
-          </>
-        ) : (
-          <section className="setup-card product-organization-prompt">
-            <p className="categories-eyebrow">Organização necessária</p>
-            <h1>Abra uma organização para usar produtos</h1>
-            <p className="categories-intro-copy">
-              A seleção é compartilhada com a área de categorias deste
-              navegador.
-            </p>
-            <a className="primary-button" href="/">
-              Abrir categorias
-            </a>
-          </section>
-        )}
-
-        {error ? (
-          <p className="categories-message is-error" role="alert">
-            {error}
+    <div className="products-page">
+      <section className="categories-heading">
+        <div>
+          <p className="categories-eyebrow">Gestão de catálogo</p>
+          <h1>Produtos</h1>
+          <p className="categories-intro-copy">
+            Cadastre os itens da organização e defina combinações vendáveis
+            explicitamente. As quantidades em estoque ficam na tela{" "}
+            <a href="/inventory">Estoque</a>, onde você recebe, conta e baixa
+            cada variante.
           </p>
-        ) : null}
-        {notice ? (
-          <p className="categories-message is-success" role="status">
-            {notice}
-          </p>
-        ) : null}
+        </div>
+      </section>
 
-        {organizationId ? (
-          <ProductList
-            categories={categories}
-            isLoading={isLoading}
-            onArchive={handleArchiveProduct}
-            onEdit={handleEdit}
-            onManageMedia={handleManageMedia}
-            onManageVariants={handleManageVariants}
-            onRestore={handleRestoreProduct}
-            pendingAction={pendingAction}
-            products={products}
-            status={status}
-          />
-        ) : null}
+      <nav aria-label="Estado dos produtos" className="category-tabs">
+        {productStatuses.map(([value, label]) => (
+          <button
+            aria-pressed={status === value}
+            className={
+              status === value ? "category-tab is-selected" : "category-tab"
+            }
+            data-product-status={value}
+            key={value}
+            onClick={handleStatusClick}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
-        {organizationId && variantsProduct ? (
-          <ProductVariantsPanel
-            key={variantsProduct.id}
-            onClose={handleCloseVariants}
-            onProductUpdated={handleVariantsUpdated}
-            organizationId={organizationId}
-            product={variantsProduct}
-          />
-        ) : null}
-        {organizationId && mediaProduct ? (
-          <ProductMediaPanel
-            key={mediaProduct.id}
-            onClose={handleCloseMedia}
-            organizationId={organizationId}
-            product={mediaProduct}
-          />
-        ) : null}
-      </main>
+      {status === "active" || editingProduct ? (
+        <ProductForm
+          categories={categories}
+          draft={draft}
+          editingProduct={editingProduct}
+          isPending={pendingAction !== null}
+          onCancel={handleCancelEdit}
+          onChange={handleDraftChange}
+          onSubmit={handleSubmit}
+        />
+      ) : null}
+
+      {error ? (
+        <p className="categories-message is-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="categories-message is-success" role="status">
+          {notice}
+        </p>
+      ) : null}
+
+      <ProductList
+        categories={categories}
+        isLoading={isLoading}
+        onArchive={handleArchiveProduct}
+        onEdit={handleEdit}
+        onManageMedia={handleManageMedia}
+        onManageVariants={handleManageVariants}
+        onRestore={handleRestoreProduct}
+        pendingAction={pendingAction}
+        products={products}
+        status={status}
+      />
+
+      {variantsProduct ? (
+        <ProductVariantsPanel
+          key={variantsProduct.id}
+          onClose={handleCloseVariants}
+          onProductUpdated={handleVariantsUpdated}
+          organizationId={organizationId}
+          product={variantsProduct}
+        />
+      ) : null}
+      {mediaProduct ? (
+        <ProductMediaPanel
+          key={mediaProduct.id}
+          onClose={handleCloseMedia}
+          organizationId={organizationId}
+          product={mediaProduct}
+        />
+      ) : null}
     </div>
   );
 }

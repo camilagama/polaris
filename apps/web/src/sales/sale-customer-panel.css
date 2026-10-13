@@ -2,9 +2,9 @@
   min-width: 0;
   padding: clamp(1rem, 2.5vw, 1.5rem);
   margin: 1rem 0;
-  color: var(--category-ink);
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.85rem;
 }
 
@@ -27,9 +27,9 @@
   min-height: 2.8rem;
   padding: 0.6rem 0.8rem;
   font: inherit;
-  color: var(--category-ink);
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.55rem;
 }
 
@@ -42,9 +42,9 @@
 }
 
 .sale-customer .sale-message.is-success {
-  color: var(--category-accent-strong);
-  background: var(--category-accent-soft);
-  border-color: color-mix(in srgb, var(--category-accent) 32%, transparent);
+  color: var(--ui-accent-strong);
+  background: var(--ui-accent-soft);
+  border-color: color-mix(in srgb, var(--ui-accent) 32%, transparent);
 }
 
 .sale-history {
@@ -62,12 +62,12 @@
   justify-content: space-between;
   padding-bottom: 0.5rem;
   font-size: 0.86rem;
-  border-bottom: 1px solid var(--category-line);
+  border-bottom: 1px solid var(--ui-line);
   overflow-wrap: anywhere;
 }
 
 .sale-history small {
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-customer-disclosure {
@@ -87,5 +87,5 @@
 }
 
 .sale-customer a {
-  color: var(--category-accent-strong);
+  color: var(--ui-accent-strong);
 }

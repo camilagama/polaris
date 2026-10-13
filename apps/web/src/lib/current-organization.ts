@@ -1,0 +1,134 @@
+import {
+  createContext,
+  createElement,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  browserStorage,
+  clearLegacyOrganizationId,
+  type Organization,
+  type OrganizationLoad,
+  organizationLoadErrorMessage,
+  organizationLoadFromList,
+  readPreferredOrganizationId,
+  selectOrganization,
+  writePreferredOrganizationId,
+} from "./current-organization-model";
+import { orpcClient } from "./orpc";
+
+interface OrganizationContextValue {
+  load: OrganizationLoad;
+  /** Reads the user's organizations again, e.g. after onboarding. */
+  reload: () => void;
+  select: (organizationId: string) => void;
+}
+
+const OrganizationContext = createContext<OrganizationContextValue | null>(
+  null
+);
+
+interface OrganizationProviderProps {
+  children: ReactNode;
+}
+
+/**
+ * Resolves the organization from the signed-in session: the server lists the
+ * user's organizations, and the browser only remembers which one was chosen
+ * last. That ID is still sent as the requested context on every call, and the
+ * server still authorizes it.
+ */
+export function OrganizationProvider({ children }: OrganizationProviderProps) {
+  const [load, setLoad] = useState<OrganizationLoad>({ status: "loading" });
+  const latestRequest = useRef(0);
+
+  const loadOrganizations = useCallback(() => {
+    latestRequest.current += 1;
+    const request = latestRequest.current;
+    orpcClient.organization
+      .listMine()
+      .then(({ organizations }) => {
+        if (request === latestRequest.current) {
+          setLoad(
+            organizationLoadFromList(
+              organizations,
+              readPreferredOrganizationId(browserStorage())
+            )
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (request === latestRequest.current) {
+          setLoad({
+            message: organizationLoadErrorMessage(error),
+            status: "error",
+          });
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    clearLegacyOrganizationId(browserStorage());
+    loadOrganizations();
+    return () => {
+      // A late answer from an unmounted provider must not set state.
+      latestRequest.current += 1;
+    };
+  }, [loadOrganizations]);
+
+  const reload = useCallback(() => {
+    setLoad({ status: "loading" });
+    loadOrganizations();
+  }, [loadOrganizations]);
+  const select = useCallback((organizationId: string) => {
+    writePreferredOrganizationId(browserStorage(), organizationId);
+    setLoad((current) => selectOrganization(current, organizationId));
+  }, []);
+
+  const value = useMemo(
+    () => ({ load, reload, select }),
+    [load, reload, select]
+  );
+  return createElement(OrganizationContext.Provider, { value }, children);
+}
+
+/** The load state of the organization, for the shell that gates the pages. */
+export function useOrganizationLoad(): OrganizationContextValue {
+  const value = useContext(OrganizationContext);
+  if (value === null) {
+    throw new Error("useOrganizationLoad needs an OrganizationProvider.");
+  }
+  return value;
+}
+
+export interface CurrentOrganization {
+  organization: Organization;
+  /** The requested context for every call. The server still authorizes it. */
+  organizationId: string;
+  organizations: readonly Organization[];
+  select: (organizationId: string) => void;
+}
+
+/**
+ * The organization a page works in. Pages render only once the shell has
+ * resolved one, so this never returns "no organization".
+ */
+export function useCurrentOrganization(): CurrentOrganization {
+  const { load, select } = useOrganizationLoad();
+  if (load.status !== "ready") {
+    throw new Error(
+      "useCurrentOrganization was used before an organization was resolved."
+    );
+  }
+  return {
+    organization: load.current,
+    organizationId: load.current.id,
+    organizations: load.organizations,
+    select,
+  };
+}
