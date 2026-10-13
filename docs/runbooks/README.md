@@ -15,6 +15,7 @@ Gates e provas por fase:
 - Provas de arquitetura (Fase 1): [Banco e Drizzle](./database-poc.md), [RLS and Hyperdrive gate](./rls-hyperdrive-gate.md) e [Gate de persistência offline](./offline-persistence-gate.md).
 - Identidade e acesso (Fase 2): [Gate Auth](./better-auth-gate.md), [E-mail transacional](./email-auth.md), [Auth abuse protection](./auth-abuse-protection.md), [Contexto tenant e audit trail](./tenant-context-gate.md) e [Gate 2 em runtime](./gate2-runtime.md).
 - Catálogo, estoque e mídia (Fase 3): [Gate do ledger de estoque](./inventory-ledger-gate.md) e [Media storage reconciliation](./media-storage-reconciliation.md). O Gate 3 formal fica no runbook `docs/runbooks/gate-3-catalog-stock.md`, escrito pelo responsável.
+- Catálogo, estoque e mídia (Fase 3): [Gate 3 — catálogo, estoque e mídia privada](./gate-3-catalog-stock.md).
 - Clientes e vendas (Fase 4): [Gate 4 — núcleo de vendas](./gate-4-sales-core.md).
 
 A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md).
