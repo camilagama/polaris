@@ -28,7 +28,9 @@ export const authSecurityAuditEvents = pgTable(
   "auth_security_audit_event",
   {
     actorId: text("actor_id"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     errorCode: text("error_code"),
     eventType: authSecurityAuditEventType("event_type").notNull(),
     id: uuid("id").defaultRandom().primaryKey(),

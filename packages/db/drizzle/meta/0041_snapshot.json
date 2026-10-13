@@ -110,13 +110,9 @@
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "user",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -203,13 +199,9 @@
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "user",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -218,9 +210,7 @@
       "uniqueConstraints": {
         "session_token_unique": {
           "name": "session_token_unique",
-          "columns": [
-            "token"
-          ],
+          "columns": ["token"],
           "nullsNotDistinct": false
         }
       },
@@ -284,9 +274,7 @@
       "uniqueConstraints": {
         "user_email_unique": {
           "name": "user_email_unique",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "nullsNotDistinct": false
         }
       },
@@ -480,13 +468,9 @@
         "categories_organization_id_organizations_id_fk": {
           "name": "categories_organization_id_organizations_id_fk",
           "tableFrom": "categories",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -498,27 +482,21 @@
           "name": "categories_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
         },
         "categories_current_tenant_insert": {
           "name": "categories_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
         },
         "categories_current_tenant_update": {
           "name": "categories_current_tenant_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      ",
           "withCheck": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
         }
@@ -704,13 +682,9 @@
         "customers_organization_id_organizations_id_fk": {
           "name": "customers_organization_id_organizations_id_fk",
           "tableFrom": "customers",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -722,27 +696,21 @@
           "name": "customers_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  "
         },
         "customers_current_tenant_insert": {
           "name": "customers_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  "
         },
         "customers_current_tenant_update": {
           "name": "customers_current_tenant_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  ",
           "withCheck": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  "
         }
@@ -840,17 +808,9 @@
         "inventory_balances_variant_fk": {
           "name": "inventory_balances_variant_fk",
           "tableFrom": "inventory_balances",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "variant_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -858,10 +818,7 @@
       "compositePrimaryKeys": {
         "inventory_balances_pk": {
           "name": "inventory_balances_pk",
-          "columns": [
-            "organization_id",
-            "variant_id"
-          ]
+          "columns": ["organization_id", "variant_id"]
         }
       },
       "uniqueConstraints": {},
@@ -870,27 +827,21 @@
           "name": "inventory_balances_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n"
         },
         "inventory_balances_current_tenant_insert": {
           "name": "inventory_balances_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n"
         },
         "inventory_balances_current_tenant_update": {
           "name": "inventory_balances_current_tenant_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n",
           "withCheck": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n"
         }
@@ -1115,17 +1066,9 @@
         "stock_movements_variant_fk": {
           "name": "stock_movements_variant_fk",
           "tableFrom": "stock_movements",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "variant_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1137,18 +1080,14 @@
           "name": "stock_movements_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \n  \"stock_movements\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"stock_movements\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"stock_movements\".\"variant_id\"\n      AND variant_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND variant_scope.product_id = \"stock_movements\".\"product_id\"\n  )\n"
         },
         "stock_movements_current_tenant_insert": {
           "name": "stock_movements_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \n  \"stock_movements\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"stock_movements\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"stock_movements\".\"variant_id\"\n      AND variant_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND variant_scope.product_id = \"stock_movements\".\"product_id\"\n  )\n"
         }
       },
@@ -1223,9 +1162,7 @@
           "name": "media_cleanup_claims_owner_all",
           "as": "PERMISSIVE",
           "for": "ALL",
-          "to": [
-            "polaris_media_cleanup_owner"
-          ],
+          "to": ["polaris_media_cleanup_owner"],
           "using": "true",
           "withCheck": "true"
         }
@@ -1368,13 +1305,9 @@
         "media_assets_organization_id_organizations_id_fk": {
           "name": "media_assets_organization_id_organizations_id_fk",
           "tableFrom": "media_assets",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1386,18 +1319,14 @@
           "name": "media_assets_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"media_assets\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"media_assets\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"media_assets\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "media_assets_current_tenant_select": {
           "name": "media_assets_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"media_assets\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"media_assets\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"media_assets\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -1511,30 +1440,18 @@
         "product_media_product_fk": {
           "name": "product_media_product_fk",
           "tableFrom": "product_media",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "product_media_asset_fk": {
           "name": "product_media_asset_fk",
           "tableFrom": "product_media",
-          "columnsFrom": [
-            "organization_id",
-            "media_asset_id"
-          ],
+          "columnsFrom": ["organization_id", "media_asset_id"],
           "tableTo": "media_assets",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1542,11 +1459,7 @@
       "compositePrimaryKeys": {
         "product_media_pk": {
           "name": "product_media_pk",
-          "columns": [
-            "organization_id",
-            "product_id",
-            "media_asset_id"
-          ]
+          "columns": ["organization_id", "product_id", "media_asset_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1555,18 +1468,14 @@
           "name": "product_media_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"product_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_media\".\"product_id\"\n            AND product_scope.organization_id = \"product_media\".\"organization_id\"\n        )\n      "
         },
         "product_media_current_tenant_live_product_insert": {
           "name": "product_media_current_tenant_live_product_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"product_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_media\".\"product_id\"\n            AND product_scope.organization_id = \"product_media\".\"organization_id\"\n            AND product_scope.deleted_at IS NULL\n        )\n      "
         }
       },
@@ -1680,34 +1589,18 @@
         "variant_media_variant_fk": {
           "name": "variant_media_variant_fk",
           "tableFrom": "variant_media",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "variant_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "variant_media_product_asset_fk": {
           "name": "variant_media_product_asset_fk",
           "tableFrom": "variant_media",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "media_asset_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "media_asset_id"],
           "tableTo": "product_media",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "media_asset_id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "media_asset_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1729,18 +1622,14 @@
           "name": "variant_media_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"variant_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          INNER JOIN public.product_variants AS variant_scope\n            ON variant_scope.organization_id = product_scope.organization_id\n           AND variant_scope.product_id = product_scope.id\n          WHERE product_scope.id = \"variant_media\".\"product_id\"\n            AND product_scope.organization_id = \"variant_media\".\"organization_id\"\n            AND variant_scope.id = \"variant_media\".\"variant_id\"\n        )\n      "
         },
         "variant_media_current_tenant_live_product_insert": {
           "name": "variant_media_current_tenant_live_product_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"variant_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          INNER JOIN public.product_variants AS variant_scope\n            ON variant_scope.organization_id = product_scope.organization_id\n           AND variant_scope.product_id = product_scope.id\n          WHERE product_scope.id = \"variant_media\".\"product_id\"\n            AND product_scope.organization_id = \"variant_media\".\"organization_id\"\n            AND product_scope.deleted_at IS NULL\n            AND variant_scope.id = \"variant_media\".\"variant_id\"\n        )\n      "
         }
       },
@@ -1818,26 +1707,18 @@
         "memberships_organization_id_organizations_id_fk": {
           "name": "memberships_organization_id_organizations_id_fk",
           "tableFrom": "memberships",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "memberships_user_id_user_id_fk": {
           "name": "memberships_user_id_user_id_fk",
           "tableFrom": "memberships",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "user",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1845,10 +1726,7 @@
       "compositePrimaryKeys": {
         "memberships_pk": {
           "name": "memberships_pk",
-          "columns": [
-            "organization_id",
-            "user_id"
-          ]
+          "columns": ["organization_id", "user_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1857,9 +1735,7 @@
           "name": "memberships_current_user_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \"memberships\".\"user_id\" = NULLIF(current_setting('app.user_id', true), '')\n        AND (\n          NULLIF(current_setting('app.organization_id', true), '') IS NULL\n          OR \"memberships\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        )\n      "
         }
       },
@@ -1935,9 +1811,7 @@
           "name": "organizations_active_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \"organizations\".\"id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND \"organizations\".\"status\" = 'active'\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"organizations\".\"id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n      "
         }
       },
@@ -2191,15 +2065,9 @@
         "payment_profile_rules_organization_profile_fk": {
           "name": "payment_profile_rules_organization_profile_fk",
           "tableFrom": "payment_profile_rules",
-          "columnsFrom": [
-            "organization_id",
-            "payment_profile_id"
-          ],
+          "columnsFrom": ["organization_id", "payment_profile_id"],
           "tableTo": "payment_profiles",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -2211,27 +2079,21 @@
           "name": "payment_profile_rules_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"payment_profile_rules\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profile_rules\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profile_rules\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "payment_profile_rules_current_tenant_insert": {
           "name": "payment_profile_rules_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"payment_profile_rules\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profile_rules\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profile_rules\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "payment_profile_rules_current_tenant_update": {
           "name": "payment_profile_rules_current_tenant_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"payment_profile_rules\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profile_rules\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profile_rules\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n",
           "withCheck": "\n  \"payment_profile_rules\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profile_rules\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profile_rules\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
@@ -2371,13 +2233,9 @@
         "payment_profiles_organization_id_organizations_id_fk": {
           "name": "payment_profiles_organization_id_organizations_id_fk",
           "tableFrom": "payment_profiles",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -2389,27 +2247,21 @@
           "name": "payment_profiles_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"payment_profiles\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profiles\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profiles\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "payment_profiles_current_tenant_insert": {
           "name": "payment_profiles_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"payment_profiles\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profiles\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profiles\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "payment_profiles_current_tenant_update": {
           "name": "payment_profiles_current_tenant_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"payment_profiles\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profiles\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profiles\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n",
           "withCheck": "\n  \"payment_profiles\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"payment_profiles\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"payment_profiles\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
@@ -2449,9 +2301,7 @@
       "uniqueConstraints": {
         "db_poc_operations_token_unique": {
           "name": "db_poc_operations_token_unique",
-          "columns": [
-            "token"
-          ],
+          "columns": ["token"],
           "nullsNotDistinct": false
         }
       },
@@ -2606,17 +2456,9 @@
         "product_option_values_option_fk": {
           "name": "product_option_values_option_fk",
           "tableFrom": "product_option_values",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "option_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "option_id"],
           "tableTo": "product_options",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -2628,18 +2470,14 @@
           "name": "product_option_values_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"product_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.product_options AS option_scope\n          WHERE option_scope.id = \"product_option_values\".\"option_id\"\n            AND option_scope.organization_id = \"product_option_values\".\"organization_id\"\n            AND option_scope.product_id = \"product_option_values\".\"product_id\"\n        )\n      "
         },
         "product_option_values_current_tenant_insert": {
           "name": "product_option_values_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"product_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.product_options AS option_scope\n          INNER JOIN public.products AS product_scope\n            ON product_scope.id = option_scope.product_id\n           AND product_scope.organization_id = option_scope.organization_id\n          WHERE option_scope.id = \"product_option_values\".\"option_id\"\n            AND option_scope.organization_id = \"product_option_values\".\"organization_id\"\n            AND option_scope.product_id = \"product_option_values\".\"product_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
         }
       },
@@ -2778,15 +2616,9 @@
         "product_options_organization_product_fk": {
           "name": "product_options_organization_product_fk",
           "tableFrom": "product_options",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -2798,18 +2630,14 @@
           "name": "product_options_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"product_options\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_options\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_options\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_options\".\"product_id\"\n            AND product_scope.organization_id = \"product_options\".\"organization_id\"\n        )\n      "
         },
         "product_options_current_tenant_insert": {
           "name": "product_options_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"product_options\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_options\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_options\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_options\".\"product_id\"\n            AND product_scope.organization_id = \"product_options\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
         }
       },
@@ -2899,34 +2727,18 @@
         "variant_option_values_variant_fk": {
           "name": "variant_option_values_variant_fk",
           "tableFrom": "variant_option_values",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "variant_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "variant_option_values_option_fk": {
           "name": "variant_option_values_option_fk",
           "tableFrom": "variant_option_values",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "option_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "option_id"],
           "tableTo": "product_options",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
@@ -2940,12 +2752,7 @@
             "option_value_id"
           ],
           "tableTo": "product_option_values",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "option_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "option_id", "id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -2967,18 +2774,14 @@
           "name": "variant_option_values_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"variant_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"variant_option_values\".\"product_id\"\n            AND product_scope.organization_id = \"variant_option_values\".\"organization_id\"\n        )\n      "
         },
         "variant_option_values_current_tenant_insert": {
           "name": "variant_option_values_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"variant_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"variant_option_values\".\"product_id\"\n            AND product_scope.organization_id = \"variant_option_values\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
         }
       },
@@ -3149,15 +2952,9 @@
         "product_variants_organization_product_fk": {
           "name": "product_variants_organization_product_fk",
           "tableFrom": "product_variants",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -3169,36 +2966,28 @@
           "name": "product_variants_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n        )\n      "
         },
         "product_variants_current_tenant_insert": {
           "name": "product_variants_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
         },
         "product_variants_current_tenant_delete": {
           "name": "product_variants_current_tenant_delete",
           "as": "PERMISSIVE",
           "for": "DELETE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND \"product_variants\".\"is_default\"\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
         },
         "product_variants_current_tenant_sku_update": {
           "name": "product_variants_current_tenant_sku_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n          AND product_scope.deleted_at IS NULL\n        )\n      ",
           "withCheck": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n          AND product_scope.deleted_at IS NULL\n        )\n      "
         }
@@ -3371,28 +3160,18 @@
         "products_organization_id_organizations_id_fk": {
           "name": "products_organization_id_organizations_id_fk",
           "tableFrom": "products",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "products_organization_category_fk": {
           "name": "products_organization_category_fk",
           "tableFrom": "products",
-          "columnsFrom": [
-            "organization_id",
-            "category_id"
-          ],
+          "columnsFrom": ["organization_id", "category_id"],
           "tableTo": "categories",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -3404,27 +3183,21 @@
           "name": "products_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "products_current_tenant_insert": {
           "name": "products_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "products_current_tenant_update": {
           "name": "products_current_tenant_update",
           "as": "PERMISSIVE",
           "for": "UPDATE",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n",
           "withCheck": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
@@ -3469,10 +3242,7 @@
       "compositePrimaryKeys": {
         "rls_poc_operations_pk": {
           "name": "rls_poc_operations_pk",
-          "columns": [
-            "organization_id",
-            "token"
-          ]
+          "columns": ["organization_id", "token"]
         }
       },
       "uniqueConstraints": {},
@@ -3604,15 +3374,9 @@
         "sale_cancellations_organization_sale_fk": {
           "name": "sale_cancellations_organization_sale_fk",
           "tableFrom": "sale_cancellations",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "sale_id"],
           "tableTo": "sales",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -3624,18 +3388,14 @@
           "name": "sale_cancellations_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_cancellations\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_cancellations\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_cancellations\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_cancellations_current_tenant_insert": {
           "name": "sale_cancellations_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"sale_cancellations\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_cancellations\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_cancellations\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND \"sale_cancellations\".\"cancelled_by\" = NULLIF(current_setting('app.user_id', true), '')\n      "
         }
       },
@@ -3760,30 +3520,18 @@
         "sale_customer_links_organization_sale_fk": {
           "name": "sale_customer_links_organization_sale_fk",
           "tableFrom": "sale_customer_links",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "sale_id"],
           "tableTo": "sales",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "sale_customer_links_organization_customer_fk": {
           "name": "sale_customer_links_organization_customer_fk",
           "tableFrom": "sale_customer_links",
-          "columnsFrom": [
-            "organization_id",
-            "customer_id"
-          ],
+          "columnsFrom": ["organization_id", "customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -3795,18 +3543,14 @@
           "name": "sale_customer_links_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_customer_links\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_customer_links\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_customer_links\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_customer_links_current_tenant_insert": {
           "name": "sale_customer_links_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"sale_customer_links\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_customer_links\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_customer_links\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -3938,34 +3682,18 @@
         "sale_return_items_organization_return_sale_fk": {
           "name": "sale_return_items_organization_return_sale_fk",
           "tableFrom": "sale_return_items",
-          "columnsFrom": [
-            "organization_id",
-            "return_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "return_id", "sale_id"],
           "tableTo": "sale_returns",
-          "columnsTo": [
-            "organization_id",
-            "id",
-            "sale_id"
-          ],
+          "columnsTo": ["organization_id", "id", "sale_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "sale_return_items_organization_sale_item_fk": {
           "name": "sale_return_items_organization_sale_item_fk",
           "tableFrom": "sale_return_items",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id",
-            "item_position"
-          ],
+          "columnsFrom": ["organization_id", "sale_id", "item_position"],
           "tableTo": "sale_items",
-          "columnsTo": [
-            "organization_id",
-            "sale_id",
-            "position"
-          ],
+          "columnsTo": ["organization_id", "sale_id", "position"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -3977,18 +3705,14 @@
           "name": "sale_return_items_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_return_items\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_return_items\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_return_items\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_return_items_current_tenant_insert": {
           "name": "sale_return_items_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"sale_return_items\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_return_items\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_return_items\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -4144,15 +3868,9 @@
         "sale_returns_organization_sale_fk": {
           "name": "sale_returns_organization_sale_fk",
           "tableFrom": "sale_returns",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "sale_id"],
           "tableTo": "sales",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -4164,18 +3882,14 @@
           "name": "sale_returns_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_returns\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_returns\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_returns\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_returns_current_tenant_insert": {
           "name": "sale_returns_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \n  \"sale_returns\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_returns\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_returns\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND \"sale_returns\".\"returned_by\" = NULLIF(current_setting('app.user_id', true), '')\n      "
         }
       },
@@ -4278,15 +3992,9 @@
         "sale_adjustments_organization_sale_fk": {
           "name": "sale_adjustments_organization_sale_fk",
           "tableFrom": "sale_adjustments",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "sale_id"],
           "tableTo": "sales",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -4298,18 +4006,14 @@
           "name": "sale_adjustments_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_adjustments\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_adjustments\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_adjustments\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_adjustments_current_tenant_insert": {
           "name": "sale_adjustments_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"sale_adjustments\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_adjustments\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_adjustments\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -4469,47 +4173,27 @@
         "sale_items_organization_sale_fk": {
           "name": "sale_items_organization_sale_fk",
           "tableFrom": "sale_items",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "sale_id"],
           "tableTo": "sales",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "sale_items_organization_product_fk": {
           "name": "sale_items_organization_product_fk",
           "tableFrom": "sale_items",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "sale_items_variant_fk": {
           "name": "sale_items_variant_fk",
           "tableFrom": "sale_items",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "variant_id"
-          ],
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "product_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -4521,18 +4205,14 @@
           "name": "sale_items_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_items\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_items\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_items\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_items_current_tenant_insert": {
           "name": "sale_items_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"sale_items\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_items\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_items\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -4734,30 +4414,18 @@
         "sale_payments_organization_sale_fk": {
           "name": "sale_payments_organization_sale_fk",
           "tableFrom": "sale_payments",
-          "columnsFrom": [
-            "organization_id",
-            "sale_id"
-          ],
+          "columnsFrom": ["organization_id", "sale_id"],
           "tableTo": "sales",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "sale_payments_organization_profile_fk": {
           "name": "sale_payments_organization_profile_fk",
           "tableFrom": "sale_payments",
-          "columnsFrom": [
-            "organization_id",
-            "payment_profile_id"
-          ],
+          "columnsFrom": ["organization_id", "payment_profile_id"],
           "tableTo": "payment_profiles",
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
@@ -4770,11 +4438,7 @@
             "payment_profile_rule_id_snapshot"
           ],
           "tableTo": "payment_profile_rules",
-          "columnsTo": [
-            "organization_id",
-            "payment_profile_id",
-            "id"
-          ],
+          "columnsTo": ["organization_id", "payment_profile_id", "id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -4786,18 +4450,14 @@
           "name": "sale_payments_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sale_payments\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_payments\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_payments\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sale_payments_current_tenant_insert": {
           "name": "sale_payments_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"sale_payments\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_payments\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_payments\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -4984,13 +4644,9 @@
         "sales_organization_id_organizations_id_fk": {
           "name": "sales_organization_id_organizations_id_fk",
           "tableFrom": "sales",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -5002,18 +4658,14 @@
           "name": "sales_current_tenant_select",
           "as": "PERMISSIVE",
           "for": "SELECT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "using": "\n  \"sales\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sales\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sales\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         },
         "sales_current_tenant_insert": {
           "name": "sales_current_tenant_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n  \"sales\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sales\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sales\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
         }
       },
@@ -5232,13 +4884,9 @@
         "tenant_audit_event_organization_id_organizations_id_fk": {
           "name": "tenant_audit_event_organization_id_organizations_id_fk",
           "tableFrom": "tenant_audit_event",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -5250,9 +4898,7 @@
           "name": "tenant_audit_event_current_actor_insert",
           "as": "PERMISSIVE",
           "for": "INSERT",
-          "to": [
-            "polaris_pr11_runtime"
-          ],
+          "to": ["polaris_pr11_runtime"],
           "withCheck": "\n        \"tenant_audit_event\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND \"tenant_audit_event\".\"actor_user_id\" = NULLIF(current_setting('app.user_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"tenant_audit_event\".\"organization_id\"\n            AND membership_scope.user_id = \"tenant_audit_event\".\"actor_user_id\"\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"tenant_audit_event\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
         }
       },
@@ -5292,11 +4938,7 @@
     "public.auth_security_audit_outcome": {
       "name": "auth_security_audit_outcome",
       "schema": "public",
-      "values": [
-        "started",
-        "succeeded",
-        "failed"
-      ]
+      "values": ["started", "succeeded", "failed"]
     }
   },
   "schemas": {},

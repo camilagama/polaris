@@ -16,7 +16,9 @@ const runtimeRole = "polaris_pr11_runtime";
 export const categories = pgTable(
   "categories",
   {
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     id: uuid("id").defaultRandom().primaryKey(),

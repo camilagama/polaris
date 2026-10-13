@@ -41,15 +41,21 @@ export const products = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     categoryId: uuid("category_id"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     description: text("description"),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     name: text("name").notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-    variantsConfiguredAt: timestamp("variants_configured_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    variantsConfiguredAt: timestamp("variants_configured_at", {
+      withTimezone: true,
+    }),
     version: integer("version").default(1).notNull(),
   },
   (table) => [
@@ -99,7 +105,9 @@ export const products = pgTable(
 export const productVariants = pgTable(
   "product_variants",
   {
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     isDefault: boolean("is_default").default(true).notNull(),
     organizationId: text("organization_id").notNull(),
