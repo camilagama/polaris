@@ -44,7 +44,7 @@ O Gate 4 prova seis propriedades: venda atômica, estoque correto, dinheiro corr
 | Cancelamento correto | `poc:sales:cancellation:verify`: reposição ao custo do item, regra da média, corridas cancelamento × cancelamento e × venda, gatilho de completude. | Quantidade inteira volta ao estoque ao custo original, a venda e os movimentos originais não são editados, repetir o comando é replay, a venda cancelada mantém os totais e não aceita devolução. |
 | Devoluções corretas | `poc:sales:return:verify`: `returned ≤ disponível`, `restocked ≤ returned`, sequência aleatória contra um modelo, exclusão mútua com o cancelamento, guardas do banco. | Devolvido e reposto são separados, só o reposto movimenta estoque, devolução acima do disponível é recusada, venda com devoluções não cancela, a venda nunca é editada. |
 | Reconciliação de cliente não altera a economia | `poc:sales:customer-link:verify`: histórico versionado, concorrência, cliente arquivado. | Atribuir, reatribuir, conflito de versão e remover (inclusive em venda cancelada) mantêm vendas, itens, ajustes, pagamentos, movimentos e saldos idênticos byte a byte. |
-| Datas (PR47) | `poc:sales:dates:verify`: janela de 30 dias no calendário da organização, tolerância de 5 minutos, data do razão = data comercial, replay e conflito de `recorded_at`. | Venda de 10 dias atrás grava o movimento na sua data comercial. |
+| Datas (PR47) | `poc:sales:dates:verify`: janela retroativa no calendário da organização e tolerância de futuro (valores em [tempo e datas](../business-rules/time-and-dates.md)), data do razão = data comercial, replay e conflito de `recorded_at`. | Venda de 10 dias atrás grava o movimento na sua data comercial. |
 
 ## Limites conhecidos
 

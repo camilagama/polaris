@@ -10,4 +10,4 @@
 - Cada tentativa física de upload usa uma chave de master exclusiva. Um marker privado é escrito no prefixo `media/staging/v1/` antes do master e removido depois do commit confirmado. Commit ambíguo mantém o marker para reconciliação.
 - Markers têm retenção mínima de 24 horas baseada no timestamp real do R2. O reconciliador remove o master somente após reivindicar sua chave no banco e comprovar que não há asset referenciado; para chave referenciada, remove apenas o marker.
 - A reivindicação usa uma tabela privada com FORCE RLS e funções SECURITY DEFINER de privilégios mínimos. Um advisory lock transacional compartilhado com o trigger de inserção de `media_assets` serializa limpeza e criação da referência. Chaves reivindicadas ficam tombstoned e não podem ser reutilizadas.
-- Os limites iniciais de imagens Free/Pro em `PRODUCT.md` são hipóteses comerciais. Enforcement continua no modelo de entitlements; PR35 não cria bucket público nem fixa quotas comerciais.
+- Os limites iniciais de imagens Free/Pro em `PRODUCT.md` são hipóteses comerciais. Enforcement continua no modelo de entitlements; não há bucket público nem quotas comerciais fixadas nas regras de mídia.
