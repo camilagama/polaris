@@ -262,6 +262,21 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
         "Esta tentativa já tinha sido usada com outro conteúdo. Uma nova tentativa será criada automaticamente; revise e confirme de novo.",
     },
   ],
+  [
+    "stock_command_conflict",
+    {
+      discardAttempt: true,
+      message:
+        "Este identificador de tentativa já foi usado em outra operação de estoque. Uma nova tentativa será criada automaticamente; revise e confirme de novo.",
+    },
+  ],
+  [
+    "inventory_quantity_limit",
+    {
+      message:
+        "O estoque deste item chegaria acima do limite permitido. Registre uma volta ao estoque menor (ou 0) para esse item e tente de novo.",
+    },
+  ],
   ["sale_product_unavailable", { message: returnProductGoneMessage }],
   ["product_deleted", { message: returnProductGoneMessage }],
   [

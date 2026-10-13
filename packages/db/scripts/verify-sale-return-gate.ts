@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { StockCommandConflictError } from "@polaris/domain/inventory/inventory";
 import { SaleProductUnavailableError } from "@polaris/domain/sales/confirm-sale";
 import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import {
@@ -891,34 +892,65 @@ async function run() {
     ];
     const sold = [7, 4];
     const modelReturned = [0, 0];
-    let modelRestocked = [0, 0];
+    const modelRestocked = [0, 0];
+    // Park-Miller minimal standard generator: the product stays below 2^47, so
+    // the arithmetic is exact in doubles and the sequence is well distributed.
     let seed = 20_261_013;
     const next = (bound: number) => {
-      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
-      return seed % bound;
+      seed = (seed * 48_271) % 2_147_483_647;
+      return Math.floor(((seed - 1) / 2_147_483_646) * bound);
     };
+    // Rounds 0 and 1 are fixed so both outcomes and a multi-line return are
+    // always exercised: a valid two-line return, then a two-line return whose
+    // second line is too large, which must leave the first line untouched.
+    const forcedRounds: Line[][] = [
+      [
+        { position: 0, restockedQuantity: 1, returnedQuantity: 1 },
+        { position: 1, restockedQuantity: 0, returnedQuantity: 1 },
+      ],
+      [
+        { position: 0, restockedQuantity: 1, returnedQuantity: 1 },
+        { position: 1, restockedQuantity: 0, returnedQuantity: 4 },
+      ],
+    ];
     let accepted = 0;
     let rejected = 0;
-    for (let round = 0; round < 24; round += 1) {
-      const position = next(2);
-      const returnedQuantity = 1 + next(4);
-      const restockedQuantity = next(returnedQuantity + 2);
-      const available = (sold[position] ?? 0) - (modelReturned[position] ?? 0);
-      const valid =
-        restockedQuantity <= returnedQuantity && returnedQuantity <= available;
+    let multiLine = 0;
+    for (let round = 0; round < 32; round += 1) {
+      const forced = forcedRounds[round];
+      const firstPosition = next(2);
+      const positions =
+        next(3) === 0 ? [firstPosition, 1 - firstPosition] : [firstPosition];
+      const lines: Line[] =
+        forced ??
+        positions.map((position) => {
+          const returnedQuantity = 1 + next(3);
+          return {
+            position,
+            restockedQuantity: next(returnedQuantity + 2),
+            returnedQuantity,
+          };
+        });
+      const valid = lines.every(
+        (line) =>
+          line.restockedQuantity <= line.returnedQuantity &&
+          line.returnedQuantity <=
+            (sold[line.position] ?? 0) - (modelReturned[line.position] ?? 0)
+      );
       try {
         // biome-ignore lint/performance/noAwaitInLoops: each attempt depends on the previous state
-        await giveBack(tenantA, {
-          items: [{ position, restockedQuantity, returnedQuantity }],
-          saleId: modelSale.sale.id,
-        });
+        await giveBack(tenantA, { items: lines, saleId: modelSale.sale.id });
         assert.ok(valid, "the model says this return must be rejected");
-        modelReturned[position] =
-          (modelReturned[position] ?? 0) + returnedQuantity;
-        modelRestocked = modelRestocked.map((value, index) =>
-          index === position ? value + restockedQuantity : value
-        );
+        for (const line of lines) {
+          modelReturned[line.position] =
+            (modelReturned[line.position] ?? 0) + line.returnedQuantity;
+          modelRestocked[line.position] =
+            (modelRestocked[line.position] ?? 0) + line.restockedQuantity;
+        }
         accepted += 1;
+        if (lines.length > 1) {
+          multiLine += 1;
+        }
       } catch (error) {
         assert.ok(
           !valid,
@@ -932,8 +964,12 @@ async function run() {
       }
     }
     assert.ok(
-      accepted > 0 && rejected > 0,
-      "the sequence exercises both outcomes"
+      accepted > 0 && rejected > 0 && multiLine > 0,
+      "the sequence exercises accepted, rejected and multi-line returns"
+    );
+    assert.ok(
+      modelReturned.every((value) => value > 0),
+      "both sale positions receive returns"
     );
     const sums = await returnedSum(tenantA, modelSale.sale.id);
     for (const position of [0, 1]) {
@@ -944,14 +980,14 @@ async function run() {
     }
     assert.equal(
       (await balance(tenantA, raceProduct.variantId)).quantity,
-      (stockAtModelStart[0] ?? 0) + (modelRestocked[0] ?? 0)
+      (stockAtModelStart[0] ?? 0) + Number(modelRestocked[0])
     );
     assert.equal(
       (await balance(tenantA, a1.variantId)).quantity,
-      (stockAtModelStart[1] ?? 0) + (modelRestocked[1] ?? 0)
+      (stockAtModelStart[1] ?? 0) + Number(modelRestocked[1])
     );
     tests.push(
-      `a randomized sequence of 24 return attempts (${accepted} accepted, ${rejected} rejected) matches an in-memory model of returned, restocked, and stock quantities exactly`
+      `a randomized sequence of 32 return attempts (${accepted} accepted, ${multiLine} multi-line, ${rejected} rejected) matches an in-memory model of returned, restocked, and stock quantities exactly`
     );
 
     // ---------------------------------------- 11. database-level guards
@@ -1157,6 +1193,39 @@ async function run() {
       saleId: guardSale.sale.id,
     });
     assert.equal(await returnCount(tenantA, guardSale.sale.id), 2);
+    await expectSqlState(
+      () =>
+        insertReturn(tenantA, {
+          items: [{ position: 0, restocked: 0, returned: 1 }],
+          saleId: guardSale.sale.id,
+        }),
+      "23514",
+      "a new return above what committed returns left is rejected at commit",
+      "sale_returns_quantity_valid"
+    );
+    // two writers that skip the repository still serialize on the sale at commit
+    const duelSale = await confirmPlainSale(rt, tenantA, [
+      { quantity: 3, variantId: a1.variantId },
+    ]);
+    const duel = await Promise.allSettled([
+      insertReturn(tenantA, {
+        items: [{ position: 0, restocked: 0, returned: 2 }],
+        saleId: duelSale.sale.id,
+      }),
+      insertReturn(tenantA, {
+        items: [{ position: 0, restocked: 0, returned: 2 }],
+        saleId: duelSale.sale.id,
+      }),
+    ]);
+    assert.equal(
+      duel.filter((result) => result.status === "fulfilled").length,
+      1,
+      "exactly one of two raw returns of 2 over 3 sold commits"
+    );
+    assert.equal(
+      (await returnedSum(tenantA, duelSale.sale.id))[0]?.returned,
+      2
+    );
     for (const statement of [
       "UPDATE public.sale_returns SET reason_code = 'other'",
       "DELETE FROM public.sale_returns",
@@ -1210,6 +1279,37 @@ async function run() {
       "PostgreSQL rejects a return without lines, without its movements, with a wrong movement quantity, above the quantity sold, with restocked above returned, for a position the sale lacks, with a forged actor, across organizations, with an orphan movement, on a cancelled sale, and a cancellation of a returned sale; coherent graphs are accepted; the runtime has SELECT+INSERT only under FORCE RLS"
     );
 
+    // -------------------------------------- 11b. command-ID namespaces
+    const nsSale = await confirmPlainSale(rt, tenantA, [
+      { quantity: 2, variantId: a1.variantId },
+    ]);
+    const nsStock = (await balance(tenantA, a1.variantId)).quantity;
+    await expectRejected(
+      () =>
+        giveBack(tenantA, {
+          commandId: saleCommandId,
+          items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
+          saleId: nsSale.sale.id,
+        }),
+      StockCommandConflictError,
+      "a return cannot reuse the command ID of another sale's stock movement"
+    );
+    assert.equal(await returnCount(tenantA, nsSale.sale.id), 0);
+    assert.equal((await balance(tenantA, a1.variantId)).quantity, nsStock);
+    await expectRejected(
+      () =>
+        giveBack(tenantA, {
+          commandId: return1Command,
+          items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 1 }],
+          saleId: nsSale.sale.id,
+        }),
+      SaleReturnCommandConflictError,
+      "replaying a return command against a different sale conflicts"
+    );
+    assert.equal(await returnCount(tenantA, nsSale.sale.id), 0);
+    tests.push(
+      "committed returns count against a new raw return at commit, two raw writers over the remaining units serialize on the sale (one commits), a return command ID cannot reuse a stock movement's command ID or replay against another sale, and none of these leave rows or stock behind"
+    );
     // ----------------------------------------------- 12. reads
     const detail = await withTenantAs(
       runtimeDatabase.db,

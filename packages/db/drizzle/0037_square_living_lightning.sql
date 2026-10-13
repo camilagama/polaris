@@ -154,6 +154,12 @@ BEGIN
     v_return_id := NEW.return_id;
   END IF;
 
+  -- Serialize with the application-level compensation lock (same key) so the
+  -- checks below also hold for writers that skip the repository.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('polaris.sale.compensation:' || v_sale_id::text, 0)
+  );
+
   SELECT sale.command_id INTO v_sale_command
   FROM public.sales AS sale
   WHERE sale.organization_id = NEW.organization_id
@@ -283,6 +289,12 @@ BEGIN
     v_cancellation_command := NEW.command_id;
     v_sale_id := NEW.sale_id;
   END IF;
+
+  -- Serialize with the application-level compensation lock (same key) so the
+  -- checks below also hold for writers that skip the repository.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('polaris.sale.compensation:' || v_sale_id::text, 0)
+  );
 
   SELECT sale.command_id, sale.item_count
   INTO v_sale_command, v_item_count

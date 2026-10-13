@@ -1,4 +1,4 @@
-import { assert as fcAssert, array, integer, property } from "fast-check";
+import { array, assert as fcAssert, integer, property } from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   InvalidSaleReturnError,
@@ -221,6 +221,18 @@ describe("planSaleReturn", () => {
       planSaleReturn(
         [item(0, 3)],
         [{ position: 0, restockedQuantity: 2, returnedQuantity: 1 }]
+      )
+    ).toThrow(InvalidSaleReturnError);
+  });
+
+  it("rejects the same position twice even when each line fits alone", () => {
+    expect(() =>
+      planSaleReturn(
+        [item(0, 3)],
+        [
+          { position: 0, restockedQuantity: 0, returnedQuantity: 2 },
+          { position: 0, restockedQuantity: 0, returnedQuantity: 2 },
+        ]
       )
     ).toThrow(InvalidSaleReturnError);
   });
