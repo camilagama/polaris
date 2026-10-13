@@ -20,6 +20,8 @@ const ignoredFolders = new Set([
   "scripts",
   "e2e",
 ]);
+const workspaceSpecifier = /^(@polaris\/[^/]+)(?:\/(.+))?$/;
+const sourceSuffix = /\.tsx?$/;
 const importPattern =
   /(?:^|\n)\s*(?:import|export)\s+(type\s+)?(?:[^"'`;]*?\sfrom\s+)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -100,7 +102,7 @@ function resolveSpecifier(from, specifier) {
   if (specifier.startsWith(".")) {
     return withExtension(path.resolve(path.dirname(from), specifier));
   }
-  const match = /^(@polaris\/[^/]+)(?:\/(.+))?$/.exec(specifier);
+  const match = workspaceSpecifier.exec(specifier);
   if (!match) {
     return null;
   }
@@ -112,7 +114,9 @@ function resolveSpecifier(from, specifier) {
   const target = entry.exports[key];
   const resolved = typeof target === "string" ? target : target?.default;
   return resolved
-    ? withExtension(path.resolve(entry.folder, resolved).replace(/\.tsx?$/, ""))
+    ? withExtension(
+        path.resolve(entry.folder, resolved).replace(sourceSuffix, "")
+      )
     : null;
 }
 

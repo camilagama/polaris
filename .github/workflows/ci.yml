@@ -170,7 +170,8 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile      - name: Create the runtime role that lives outside the migrations
+      - run: bun install --frozen-lockfile
+      - name: Create the runtime role that lives outside the migrations
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
       - name: Replay every migration from scratch
         run: bun run --filter @polaris/db db:migrate
@@ -197,7 +198,8 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile      - run: bun audit --audit-level=high
+      - run: bun install --frozen-lockfile
+      - run: bun audit --audit-level=high
 
   offline-poc-browser:
     name: Offline persistence browser gate
