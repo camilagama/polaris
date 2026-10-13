@@ -73,7 +73,9 @@ import {
   deriveProductLifecycle,
   ProductCategoryUnavailableError,
   ProductDefaultVariantSkuConflictError,
+  ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
+  ProductDescriptionError,
   ProductLifecycleError,
   ProductNameError,
   ProductNotFoundError,
@@ -94,6 +96,7 @@ import {
 import {
   InsufficientStockError,
   InvalidStockMovementError,
+  InventoryOccurredInFutureError,
   InventoryQuantityLimitError,
   InventoryVariantNotFoundError,
   InventoryVersionConflictError,
@@ -436,6 +439,7 @@ function initialOrganizationErrorCode(
     case "organization_not_available":
       return "CONFLICT";
     case "invalid_user_id":
+    case "invalid_organization_id":
     case "invalid_organization_name":
     case "invalid_timezone":
       return "BAD_REQUEST";
@@ -525,10 +529,16 @@ function isRpcErrorInGroup(
 }
 
 const badRequestRpcErrors = [
-  [CategoryNameError, ProductNameError, InvalidPaymentProfileError],
+  [
+    CategoryNameError,
+    ProductNameError,
+    ProductDescriptionError,
+    InvalidPaymentProfileError,
+  ],
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
   [
     InvalidStockMovementError,
+    InventoryOccurredInFutureError,
     InvalidUnitCostError,
     InventoryCostLimitError,
     InvalidReceiveStockInputError,
@@ -589,6 +599,7 @@ const conflictRpcErrors = [
     ProductLifecycleError,
     ProductStockNotEmptyError,
     ProductDefaultVariantSkuConflictError,
+    ProductDefaultVariantStockHistoryConflictError,
     ProductVariantSkuConflictError,
   ],
   [

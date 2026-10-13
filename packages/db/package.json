@@ -61,6 +61,11 @@
     "poc:sales:return:verify": "bun scripts/verify-sale-return-gate.ts",
     "poc:sales:dates:verify": "bun scripts/verify-sale-dates-gate.ts",
     "poc:gate4:verify": "bun scripts/verify-gate4-sales-core.ts",
+    "gates:all": "bun scripts/run-gates.ts",
+    "gates:ci": "bun scripts/run-gates.ts ci",
+    "gates:gate3": "bun scripts/run-gates.ts gate3",
+    "gates:gate4": "bun scripts/run-gates.ts gate4",
+    "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

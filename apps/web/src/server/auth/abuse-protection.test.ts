@@ -284,12 +284,12 @@ describe("auth abuse protection", () => {
 
     const protectedResponse = await testApp.request(
       "/api/auth/sign-in/email",
-      { method: "POST" },
+      { headers: { origin: baseURL }, method: "POST" },
       bindings
     );
     const protectedTrailingSlashResponse = await testApp.request(
       "/api/auth/sign-in/email/",
-      { method: "POST" },
+      { headers: { origin: baseURL }, method: "POST" },
       bindings
     );
     const unrelatedResponse = await testApp.request(
@@ -310,14 +310,15 @@ describe("auth abuse protection", () => {
     const testApp = createServerApp({ authHandler });
     const response = await testApp.request(
       "/api/auth/sign-up/email",
-      { headers: { "cf-connecting-ip": "203.0.113.17" }, method: "POST" },
+      {
+        headers: { "cf-connecting-ip": "203.0.113.17", origin: baseURL },
+        method: "POST",
+      },
       {
         AUTH_ABUSE_PROTECTION_ENABLED: "false",
         AUTH_EMAIL_FROM: "Polaris <auth@example.invalid>",
         BETTER_AUTH_BASE_URL: baseURL,
         BETTER_AUTH_SECRET: "test-only-better-auth-secret-32-bytes",
-        DB_POC_ENABLED: "false",
-        DB_RLS_POC_ENABLED: "false",
         EMAIL_PASSWORD_AUTH_ENABLED: "true",
         HYPERDRIVE: { connectionString: "" },
         RESEND_API_KEY: "re_test_only",

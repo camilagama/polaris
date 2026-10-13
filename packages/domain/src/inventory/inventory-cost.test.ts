@@ -1,9 +1,10 @@
+import { assert as fcAssert, integer, property } from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   calculateMovingAverageCost,
-  InventoryCostUnavailableError,
-  InventoryCostLimitError,
   InvalidUnitCostError,
+  InventoryCostLimitError,
+  InventoryCostUnavailableError,
   normalizeUnitCost,
   restockMovingAverageCost,
 } from "./inventory-cost";
@@ -87,53 +88,79 @@ describe("inventory cost rules", () => {
   });
 
   it("preserves the weighted-average property over generated exact-decimal cases", () => {
-    let seed = 0x5e_ed_20_26;
-    const nextInt = (maximum: number) => {
-      seed = (seed * 48_271) % 2_147_483_647;
-      return seed % (maximum + 1);
-    };
+    fcAssert(
+      property(
+        integer({ max: 5000, min: 0 }),
+        integer({ max: 5000, min: 1 }),
+        integer({ max: 20_000_000, min: 0 }),
+        integer({ max: 20_000_000, min: 0 }),
+        (currentQuantity, receivedQuantity, currentScaled, receiptScaled) => {
+          const currentCost = BigInt(currentScaled);
+          const receiptCost = BigInt(receiptScaled);
+          const average = calculateMovingAverageCost({
+            currentAverageCost:
+              currentQuantity === 0 ? null : costFromScaled(currentCost),
+            currentQuantity,
+            receivedQuantity,
+            unitCost: costFromScaled(receiptCost),
+          });
+          const resultingCost = scaledCost(average);
+          const exactWeightedNumerator =
+            currentCost * BigInt(currentQuantity) +
+            receiptCost * BigInt(receivedQuantity);
+          const resultingDenominator = BigInt(
+            currentQuantity + receivedQuantity
+          );
+          const twiceTheRoundingError =
+            (resultingCost * resultingDenominator - exactWeightedNumerator) *
+            2n;
+          const roundingErrorMagnitude =
+            twiceTheRoundingError < 0n
+              ? -twiceTheRoundingError
+              : twiceTheRoundingError;
+          const lowerBound =
+            currentQuantity === 0 || currentCost >= receiptCost
+              ? receiptCost
+              : currentCost;
+          const upperBound =
+            currentQuantity === 0 || currentCost <= receiptCost
+              ? receiptCost
+              : currentCost;
 
-    for (let iteration = 0; iteration < 500; iteration += 1) {
-      const currentQuantity = nextInt(5000);
-      const receivedQuantity = nextInt(5000) + 1;
-      const currentCost = BigInt(nextInt(20_000_000));
-      const receiptCost = BigInt(nextInt(20_000_000));
-      const average = calculateMovingAverageCost({
-        currentAverageCost:
-          currentQuantity === 0 ? null : costFromScaled(currentCost),
-        currentQuantity,
-        receivedQuantity,
-        unitCost: costFromScaled(receiptCost),
-      });
-      const resultingCost = scaledCost(average);
-      const exactWeightedNumerator =
-        currentCost * BigInt(currentQuantity) +
-        receiptCost * BigInt(receivedQuantity);
-      const resultingDenominator = BigInt(currentQuantity + receivedQuantity);
-      const twiceTheRoundingError =
-        (resultingCost * resultingDenominator - exactWeightedNumerator) * 2n;
-      const roundingErrorMagnitude =
-        twiceTheRoundingError < 0n
-          ? -twiceTheRoundingError
-          : twiceTheRoundingError;
+          expect(roundingErrorMagnitude <= resultingDenominator).toBe(true);
+          expect(resultingCost >= lowerBound).toBe(true);
+          expect(resultingCost <= upperBound).toBe(true);
+        }
+      ),
+      { numRuns: 500 }
+    );
+  });
 
-      expect(roundingErrorMagnitude).toBeLessThanOrEqual(resultingDenominator);
-      const lowerBound =
-        currentQuantity === 0 || currentCost >= receiptCost
-          ? receiptCost
-          : currentCost;
-      const upperBound =
-        currentQuantity === 0 || currentCost <= receiptCost
-          ? receiptCost
-          : currentCost;
-      expect(resultingCost).toBeGreaterThanOrEqual(lowerBound);
-      expect(resultingCost).toBeLessThanOrEqual(upperBound);
-    }
+  it("is a no-op for the cost when the received cost equals the current average (property)", () => {
+    fcAssert(
+      property(
+        integer({ max: 5000, min: 1 }),
+        integer({ max: 5000, min: 1 }),
+        integer({ max: 20_000_000, min: 0 }),
+        (currentQuantity, receivedQuantity, scaled) => {
+          const cost = costFromScaled(BigInt(scaled));
+          expect(
+            calculateMovingAverageCost({
+              currentAverageCost: cost,
+              currentQuantity,
+              receivedQuantity,
+              unitCost: cost,
+            })
+          ).toBe(cost);
+        }
+      ),
+      { numRuns: 300 }
+    );
   });
 });
 
 describe("restockMovingAverageCost", () => {
-  it("keeps the average when the restocked cost was unknown", () => {
+  it("keeps the average of a positive balance when the restocked cost was unknown", () => {
     expect(
       restockMovingAverageCost({
         currentAverageCost: "10.000000",
@@ -147,6 +174,17 @@ describe("restockMovingAverageCost", () => {
         currentAverageCost: null,
         currentQuantity: 0,
         restockedQuantity: 2,
+        restockedUnitCost: null,
+      })
+    ).toBeNull();
+  });
+
+  it("does not revive a stale average on an empty balance when the restocked cost was unknown", () => {
+    expect(
+      restockMovingAverageCost({
+        currentAverageCost: "12.500000",
+        currentQuantity: 0,
+        restockedQuantity: 3,
         restockedUnitCost: null,
       })
     ).toBeNull();

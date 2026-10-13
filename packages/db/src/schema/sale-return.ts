@@ -29,7 +29,9 @@ export const saleReturns = pgTable(
     organizationId: text("organization_id").notNull(),
     reasonCode: text("reason_code"),
     reasonNote: text("reason_note"),
-    returnedAt: timestamp("returned_at").defaultNow().notNull(),
+    returnedAt: timestamp("returned_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     returnedBy: text("returned_by").notNull(),
     saleId: uuid("sale_id").notNull(),
   },

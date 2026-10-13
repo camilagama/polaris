@@ -294,6 +294,7 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .withTenantRequestContext({
         bindings: context.bindings,
         capability: "sale:read",
+        isolationLevel: "repeatable read",
         operation: (transaction, identity) =>
           listRepository(transaction, identity, {
             customerQuery: input.customerQuery,
@@ -319,6 +320,7 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .withTenantRequestContext({
         bindings: context.bindings,
         capability: "sale:read",
+        isolationLevel: "repeatable read",
         operation: (transaction, identity) =>
           getRepository(transaction, identity, input.saleId),
         request: context.request,

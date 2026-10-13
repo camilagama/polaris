@@ -1,11 +1,15 @@
-import { MediaUploadCommandConflictError } from "@polaris/domain/catalog/media";
+import {
+  MAX_PRODUCT_MEDIA,
+  MediaUploadCommandConflictError,
+  ProductMediaLimitError,
+} from "@polaris/domain/catalog/media";
 import {
   MAX_PRODUCT_VARIANTS,
   ProductDeletedError,
   ProductNotFoundError,
   ProductVariantNotFoundError,
 } from "@polaris/domain/catalog/product";
-import { and, asc, eq, inArray, max } from "drizzle-orm";
+import { and, asc, count, eq, inArray, max } from "drizzle-orm";
 import { mediaAssets, productMedia, variantMedia } from "./schema/media";
 import { products, productVariants } from "./schema/product";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -162,6 +166,27 @@ async function productPosition(
   return next;
 }
 
+// Technical ceiling per product, enforced under the product row lock so
+// concurrent uploads cannot overshoot it.
+async function assertProductMediaCapacity(
+  transaction: TenantRequestTransaction,
+  organizationId: string,
+  productId: string
+): Promise<void> {
+  const [row] = await transaction
+    .select({ total: count() })
+    .from(productMedia)
+    .where(
+      and(
+        eq(productMedia.organizationId, organizationId),
+        eq(productMedia.productId, productId)
+      )
+    );
+  if ((row?.total ?? 0) >= MAX_PRODUCT_MEDIA) {
+    throw new ProductMediaLimitError();
+  }
+}
+
 export async function findMediaUploadCommand(
   transaction: TenantRequestTransaction,
   organizationId: string,
@@ -214,6 +239,8 @@ export async function assertProductCanReceiveMedia(
   if (product.deletedAt) {
     throw new ProductDeletedError();
   }
+
+  await assertProductMediaCapacity(transaction, organizationId, productId);
 
   const uniqueVariantIds = [...new Set(variantIds)];
   if (
@@ -314,6 +341,12 @@ export async function createProductMediaAsset(
       throw new ProductVariantNotFoundError();
     }
   }
+
+  await assertProductMediaCapacity(
+    transaction,
+    organizationId,
+    input.productId
+  );
 
   const [asset] = await transaction
     .insert(mediaAssets)

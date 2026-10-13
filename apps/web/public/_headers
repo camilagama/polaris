@@ -1,0 +1,11 @@
+# Workers Static Assets applies this file to the SPA shell only (index.html, JS,
+# CSS, the single-page-application fallback). Worker responses (/health, /ready,
+# /rpc/*, /api/*) get the same policy from src/server/middleware/security-policy.ts;
+# security-headers.test.ts keeps both copies identical.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY

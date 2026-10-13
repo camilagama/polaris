@@ -129,6 +129,20 @@ async function insertSaleGraph(
     })
     .returning();
   assert.ok(payment);
+  // The fixture product has no stock, so a receipt of the same quantity keeps
+  // the ledger at zero (the balance projection) next to the sale movement.
+  await transaction.insert(stockMovements).values({
+    commandId: randomUUID(),
+    commandIndex: 0,
+    commandVersion: 1,
+    movementType: "receipt",
+    occurredOn: "2026-10-13",
+    organizationId: identity.organizationId,
+    productId: product.productId,
+    quantityDelta: quantity,
+    unitCost: "1.000000",
+    variantId: product.variantId,
+  });
   await transaction.insert(stockMovements).values({
     commandId,
     commandIndex: 0,
@@ -948,7 +962,7 @@ async function run() {
       can_update: boolean;
       table_name: string;
     }>(
-      "SELECT table_name, has_table_privilege($1, format('public.%I', table_name), 'SELECT') AS can_select, has_table_privilege($1, format('public.%I', table_name), 'INSERT') AS can_insert, has_table_privilege($1, format('public.%I', table_name), 'UPDATE') AS can_update, has_table_privilege($1, format('public.%I', table_name), 'DELETE') AS can_delete FROM unnest(ARRAY['payment_profiles', 'payment_profile_rules', 'sale_payments']) AS table_name ORDER BY table_name",
+      "SELECT table_name, has_table_privilege($1, format('public.%I', table_name), 'SELECT') AS can_select, has_table_privilege($1, format('public.%I', table_name), 'INSERT') AS can_insert, has_any_column_privilege($1, format('public.%I', table_name), 'UPDATE') AS can_update, has_table_privilege($1, format('public.%I', table_name), 'DELETE') AS can_delete FROM unnest(ARRAY['payment_profiles', 'payment_profile_rules', 'sale_payments']) AS table_name ORDER BY table_name",
       [runtimeRole]
     );
     assert.deepEqual(profileRuleAcl.rows, [

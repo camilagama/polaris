@@ -6,7 +6,12 @@ import {
   validateNewPassword,
 } from "../auth/password-policy";
 import type { WorkerBindings } from "../environment";
+import {
+  AuthDatabaseNotConfiguredError,
+  resolveAuthConnectionString,
+} from "./auth-database";
 import { createResendAuthEmailDelivery } from "./email";
+import type { BackgroundTaskHandler } from "./security-options";
 import { isSessionPastAbsoluteExpiration } from "./session-policy";
 
 const trailingSlashPattern = /\/+$/;
@@ -168,7 +173,8 @@ export async function handleSetPasswordRequest(
 export async function handleBetterAuthRequest(
   request: Request,
   bindings: WorkerBindings,
-  requestId?: string
+  requestId?: string,
+  runInBackground?: BackgroundTaskHandler
 ): Promise<Response> {
   const secret = bindings.BETTER_AUTH_SECRET;
   const baseURL = bindings.BETTER_AUTH_BASE_URL;
@@ -203,7 +209,21 @@ export async function handleBetterAuthRequest(
     );
   }
 
-  const { db, pool } = createDatabase(bindings.HYPERDRIVE.connectionString, {
+  let authConnectionString: string;
+  try {
+    authConnectionString = resolveAuthConnectionString(bindings);
+  } catch (error) {
+    if (error instanceof AuthDatabaseNotConfiguredError) {
+      console.error({ event: "auth_database_not_configured", requestId });
+      return Response.json(
+        { error: { code: "auth_unavailable" } },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
+
+  const { db, pool } = createDatabase(authConnectionString, {
     maxConnections: 1,
   });
 
@@ -237,6 +257,7 @@ export async function handleBetterAuthRequest(
           }
         : {}),
       ...(requestId ? { requestId } : {}),
+      ...(runInBackground ? { runInBackground } : {}),
       secret,
     });
     await enforceAbsoluteSessionLifetime(auth, request);

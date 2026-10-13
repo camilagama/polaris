@@ -15,6 +15,8 @@ export type CreateInitialOrganizationErrorCode =
   | "invalid_organization_name"
   | "invalid_timezone"
   | InitialOrganizationRepositoryErrorCode;
+// The writer validates again in PostgreSQL (for example the time zone against
+// pg_timezone_names), so its invalid_* codes are client errors, not 500s.
 
 export class CreateInitialOrganizationError extends Error {
   readonly code: CreateInitialOrganizationErrorCode;

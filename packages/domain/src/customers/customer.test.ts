@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  deriveCustomerLifecycle,
   InvalidCustomerDuplicateSearchError,
   InvalidCustomerProfileError,
-  deriveCustomerLifecycle,
   normalizeCustomerDuplicateSearch,
   normalizeCustomerProfile,
   transitionCustomerLifecycle,
@@ -14,7 +14,7 @@ describe("normalizeCustomerProfile", () => {
       normalizeCustomerProfile({ name: " Ana ", phone: "  " })
     ).toThrow(InvalidCustomerProfileError);
     expect(() =>
-      normalizeCustomerProfile({ name: "  ", email: "ana@example.com" })
+      normalizeCustomerProfile({ email: "ana@example.com", name: "  " })
     ).toThrow(InvalidCustomerProfileError);
   });
 
@@ -87,5 +87,30 @@ describe("customer lifecycle", () => {
       changed: true,
       lifecycle: "active",
     });
+  });
+});
+
+describe("customer text limits", () => {
+  const valid = { email: "a@example.com", name: "Ana" };
+
+  it("accepts the limits and refuses one character beyond them", () => {
+    expect(() =>
+      normalizeCustomerProfile({ ...valid, name: "n".repeat(200) })
+    ).not.toThrow();
+    expect(() =>
+      normalizeCustomerProfile({ ...valid, name: "n".repeat(201) })
+    ).toThrow(InvalidCustomerProfileError);
+    expect(() =>
+      normalizeCustomerProfile({ ...valid, phone: "1".repeat(41) })
+    ).toThrow(InvalidCustomerProfileError);
+    expect(() =>
+      normalizeCustomerProfile({ ...valid, email: `${"e".repeat(250)}@x.co` })
+    ).toThrow(InvalidCustomerProfileError);
+    expect(() =>
+      normalizeCustomerProfile({ ...valid, notes: "n".repeat(2001) })
+    ).toThrow(InvalidCustomerProfileError);
+    expect(() =>
+      normalizeCustomerDuplicateSearch({ phone: "1".repeat(41) })
+    ).toThrow(InvalidCustomerDuplicateSearchError);
   });
 });
