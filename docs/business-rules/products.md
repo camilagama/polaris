@@ -9,7 +9,7 @@
 - A ordem em que as combinações foram cadastradas é preservada; a variante padrão não tem posição de exibição.
 - O limite é de 50 variantes por produto no estado persistido ao fim de cada transação, inclusive para produtos arquivados. Configurar as opções, valores e combinações troca a variante padrão oculta por variantes configuráveis na mesma transação; o banco valida de forma diferida os limites mínimo e máximo no commit.
 - Só a configuração inicial das variantes é permitida. A troca da variante padrão oculta por combinações fica bloqueada quando ela tem SKU ou qualquer movimento de estoque; não há transferência presumida para uma combinação. Reconfigurar ou remover variantes configuráveis fica adiado até regras definirem como preservar IDs referenciados por SKU e estoque.
-- Configurar variantes incrementa a versão do produto e grava a auditoria `product.variants_configured` na mesma transação. Produtos sem opções configuradas mantêm sua variante padrão oculta na interface.
+- Configurar variantes incrementa a versão do produto e grava a auditoria `product.variants_configured` na mesma transação. Produtos sem opções configuradas mantêm sua variante padrão oculta ao operador.
 - version começa em 1 e incrementa em cada alteração real do produto, inclusive lifecycle. Updates declaram expectedVersion; versão obsoleta é conflito e não altera dados. Repetir uma transição de lifecycle já aplicada não incrementa versão nem gera audit duplicado.
 - Criação, alteração, archive, restore e tombstone são auditados na mesma transação da mudança.
 - Remoção terminal de categoria é bloqueada enquanto houver produto vinculado. A verificação é sincronizada com atribuições concorrentes e também protegida no banco.

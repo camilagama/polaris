@@ -22,7 +22,7 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 
 - Uma sessão expira após 7 dias sem renovação (`expiresIn = 7d`); o Worker renova a sessão no máximo a cada 24 horas quando ela é usada (`updateAge = 24h`). O cache de sessão em cookie fica desativado para manter revogação e validade absoluta verificadas no servidor.
 - O limite absoluto é 30 dias desde `created_at`. O Worker revoga sessão acima desse limite antes de processar uma rota Better Auth; a trigger PostgreSQL limita `expires_at` em INSERT/UPDATE, mantém `created_at` imutável em UPDATE e ajusta sessões existentes.
-- Múltiplas sessões simultâneas são permitidas. `GET /api/auth/list-sessions` lista apenas sessões do usuário autenticado; Better Auth exige sessão fresca, com `created_at` de até 24 horas, para essa operação. A futura UI deve oferecer nova autenticação quando necessário.
+- Múltiplas sessões simultâneas são permitidas. `GET /api/auth/list-sessions` lista apenas sessões do usuário autenticado; Better Auth exige sessão fresca, com `created_at` de até 24 horas, para essa operação. Um cliente que liste sessões precisa suportar nova autenticação quando necessário.
 - `POST /api/auth/revoke-session` pode revogar uma sessão somente se ela pertencer ao usuário autenticado; `POST /api/auth/sign-out` encerra a sessão atual. Reset de senha revoga todas as sessões.
 - O campo `token` retornado pela API nativa de sessões serve como identificador para revogação; autenticar ainda exige o cookie assinado. Não registrar esse campo em logs ou telemetria.
 
