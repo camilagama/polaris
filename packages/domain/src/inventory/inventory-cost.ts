@@ -1,6 +1,6 @@
 import {
-  InventoryQuantityLimitError,
   InvalidStockMovementError,
+  InventoryQuantityLimitError,
   MAX_INVENTORY_QUANTITY,
 } from "./inventory";
 
@@ -129,16 +129,18 @@ export function calculateMovingAverageCost(
 export interface RestockMovingAverageCostInput {
   currentAverageCost: string | null;
   currentQuantity: number;
+  restockedQuantity: number;
   /** Cost snapshot of the units that come back; null when it was unknown. */
   restockedUnitCost: string | null;
-  restockedQuantity: number;
 }
 
 /**
  * Moving average after units of a confirmed sale come back to stock
  * (cancellation or return). It never blocks and never invents a cost:
- * - an unknown snapshot cost leaves the average unchanged;
- * - an empty balance takes the snapshot cost;
+ * - an unknown snapshot cost on an empty balance leaves the average unknown
+ *   (the stale average of units that no longer exist must not describe them);
+ * - an unknown snapshot cost on a positive balance leaves the average unchanged;
+ * - an empty balance with a known snapshot cost takes the snapshot cost;
  * - a positive balance with an unknown average stays unknown;
  * - otherwise the weighted average is recomputed exactly like a receipt.
  */
@@ -146,7 +148,7 @@ export function restockMovingAverageCost(
   input: RestockMovingAverageCostInput
 ): string | null {
   if (input.restockedUnitCost === null) {
-    return input.currentAverageCost;
+    return input.currentQuantity > 0 ? input.currentAverageCost : null;
   }
   if (input.currentQuantity > 0 && input.currentAverageCost === null) {
     return null;

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   date,
   foreignKey,
@@ -53,7 +54,7 @@ export const inventoryBalances = pgTable(
     organizationId: text("organization_id").notNull(),
     productId: uuid("product_id").notNull(),
     quantity: integer("quantity").default(0).notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     variantId: uuid("variant_id").notNull(),
     version: integer("version").default(1).notNull(),
   },
@@ -115,7 +116,7 @@ export const stockMovements = pgTable(
     commandId: uuid("command_id"),
     commandIndex: integer("command_index").default(0).notNull(),
     commandVersion: integer("command_version"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     movementType: text("movement_type").notNull(),
     organizationId: text("organization_id").notNull(),
@@ -129,6 +130,15 @@ export const stockMovements = pgTable(
     unitCost: numeric("unit_cost"),
     valuationUnitCost: numeric("valuation_unit_cost"),
     variantId: uuid("variant_id").notNull(),
+    /**
+     * Position of the movement in its variant's ledger (1, 2, 3, ...). Assigned
+     * by a BEFORE INSERT trigger under the balance row lock, so it follows the
+     * order in which movements were confirmed, unlike created_at (transaction
+     * start). The default is a placeholder that the trigger always overwrites.
+     */
+    variantSequence: bigint("variant_sequence", { mode: "number" })
+      .default(0)
+      .notNull(),
   },
   (table) => [
     check(
@@ -274,6 +284,11 @@ export const stockMovements = pgTable(
       table.organizationId,
       table.variantId,
       table.createdAt
+    ),
+    uniqueIndex("stock_movements_variant_sequence_unique").on(
+      table.organizationId,
+      table.variantId,
+      table.variantSequence
     ),
     uniqueIndex("stock_movements_command_unique").on(
       table.organizationId,

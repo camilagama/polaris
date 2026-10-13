@@ -10,6 +10,11 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
 const allowedGateBranches = new Set([
   "pr35-media-derivatives-gate",
   "pr36-customers-gate",
@@ -68,7 +73,7 @@ function validateGateConnection(
   const connection = new URL(connectionString);
   assert.equal(connection.protocol, "postgresql:");
   assert.match(connection.hostname, disposableHostPattern);
-  assert.equal(connection.pathname, "/neondb");
+  assert.equal(connection.pathname, `/${gateDatabase}`);
   assert.equal(connection.searchParams.get("sslmode"), "verify-full");
   assert.doesNotMatch(connection.hostname, poolerPattern);
   assert.equal(decodeURIComponent(connection.username), expectedRole);
@@ -257,9 +262,9 @@ async function main(): Promise<void> {
     );
     assert.deepEqual(branchSchema.rows, [
       {
+        relforcerowsecurity: true,
         relname: "media_cleanup_claims",
         relrowsecurity: true,
-        relforcerowsecurity: true,
       },
     ]);
 
@@ -452,7 +457,7 @@ async function main(): Promise<void> {
     console.log(
       JSON.stringify({
         branch: branchName,
-        database: "neondb",
+        database: gateDatabase,
         movement: "synthetic fixtures retained until branch auto-expiry",
         serverVersion: serverInfo.server_version,
         status: "passed",

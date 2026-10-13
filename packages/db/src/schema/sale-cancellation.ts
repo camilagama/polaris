@@ -23,7 +23,7 @@ const runtimeRole = "polaris_pr11_runtime";
 export const saleCancellations = pgTable(
   "sale_cancellations",
   {
-    cancelledAt: timestamp("cancelled_at").defaultNow().notNull(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }).defaultNow().notNull(),
     cancelledBy: text("cancelled_by").notNull(),
     commandId: uuid("command_id").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),

@@ -17,6 +17,11 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
 const runtimeRole = "polaris_pr11_runtime";
 const expectedPocSeeds = [
   {
@@ -263,7 +268,7 @@ async function main() {
     );
   }
   assert.equal(databaseUrl.hostname, expectedHostname);
-  assert.equal(databaseUrl.pathname, "/neondb");
+  assert.equal(databaseUrl.pathname, `/${gateDatabase}`);
   assert.equal(databaseUrl.hostname.includes("-pooler"), false);
   assert.match(databaseUrl.hostname, neonTestHostnamePattern);
 
@@ -320,7 +325,7 @@ async function main() {
     }>(
       "SELECT current_database() AS database, current_setting('server_version') AS server_version"
     );
-    assert.equal(databaseIdentity.rows[0]?.database, "neondb");
+    assert.equal(databaseIdentity.rows[0]?.database, gateDatabase);
     const postgresServerVersion = databaseIdentity.rows[0]?.server_version;
     assert.ok(postgresServerVersion);
     assert.equal(

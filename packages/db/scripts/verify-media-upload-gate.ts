@@ -22,7 +22,13 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 
-const expectedBranch = "pr34-media-upload-gate";
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
+const expectedBranch =
+  process.env.POLARIS_GATE_BRANCH ?? "pr34-media-upload-gate";
 const runtimeRole = "polaris_pr11_runtime";
 const mediaTables = ["media_assets", "product_media", "variant_media"];
 const expectedChecks = [
@@ -194,6 +200,10 @@ async function createRuntimeClient(connectionString: string): Promise<Client> {
     connectionTimeoutMillis: 5000,
   });
   await client.connect();
+  if (process.env.POLARIS_GATE_RUNTIME_LOGIN) {
+    // The unified gate runner connects through a temporary login that is a member of the runtime role.
+    await client.query(`SET ROLE ${runtimeRole}`);
+  }
   const role = await client.query<{ role: string }>(
     "SELECT current_user AS role"
   );
@@ -278,11 +288,14 @@ async function main(): Promise<void> {
     assert.equal(candidate.protocol, "postgresql:");
     assert.equal(candidate.hostname, expectedHostname);
     assert.match(candidate.hostname, disposableHostPattern);
-    assert.equal(candidate.pathname, "/neondb");
+    assert.equal(candidate.pathname, `/${gateDatabase}`);
     assert.equal(candidate.searchParams.get("sslmode"), "verify-full");
     assert.doesNotMatch(candidate.hostname, poolerPattern);
   }
-  assert.equal(decodeURIComponent(runtimeConnection.username), runtimeRole);
+  assert.equal(
+    decodeURIComponent(runtimeConnection.username),
+    process.env.POLARIS_GATE_RUNTIME_LOGIN ?? runtimeRole
+  );
 
   const admin = createDatabase(connectionString, { maxConnections: 8 });
   const runtimeDatabase = createDatabase(runtimeConnectionString, {
@@ -714,7 +727,7 @@ async function main(): Promise<void> {
 
     const report = {
       branch: expectedBranch,
-      database: "neondb",
+      database: gateDatabase,
       fixtures: "synthetic fixtures retained until branch auto-expiry",
       serverVersion: serverInfo.server_version,
       status: "passed",

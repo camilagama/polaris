@@ -26,6 +26,7 @@ export interface TenantRequestContextDependencies
 export interface TenantRequestContextInput<T> {
   bindings: WorkerBindings;
   capability: string;
+  isolationLevel?: "read committed" | "repeatable read";
   operation: (
     transaction: TenantRequestTransaction,
     identity: TenantRequestIdentity
@@ -60,6 +61,9 @@ export function createTenantRequestContext(
           {
             authenticatedUserId: session.user.id,
             capability: input.capability,
+            ...(input.isolationLevel
+              ? { isolationLevel: input.isolationLevel }
+              : {}),
             requestedOrganizationId: input.requestedOrganizationId,
           },
           input.operation

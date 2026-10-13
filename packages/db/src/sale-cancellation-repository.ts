@@ -16,6 +16,7 @@ import { SaleHasReturnsError } from "@polaris/domain/sales/sale-return";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { recordSaleRestockMovement } from "./inventory-repository";
 import { lockSaleForCompensation } from "./sale-locks";
+import { stockMovements } from "./schema/inventory";
 import { organizations } from "./schema/organization";
 import { products } from "./schema/product";
 import { saleItems, sales } from "./schema/sale";
@@ -47,7 +48,11 @@ export interface SaleCancellationRecord {
 export interface CancelSaleResult {
   cancellation: SaleCancellationRecord;
   replayed: boolean;
-  /** One inverse movement per sale item, in item position order. */
+  /**
+   * One inverse movement per sale item, in item position order. Items of a
+   * product that was removed afterwards have frozen stock, take no units back
+   * and are not listed.
+   */
   restocked: Array<{ position: number; quantity: number; variantId: string }>;
 }
 
@@ -114,14 +119,28 @@ async function replayOrConflict(
       throw new SaleCancellationCommandConflictError();
     }
     const items = await readItems(transaction, identity, existing.saleId);
+    const movements = await transaction
+      .select({ commandIndex: stockMovements.commandIndex })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.organizationId, identity.organizationId),
+          eq(stockMovements.commandId, existing.commandId)
+        )
+      );
+    const restockedPositions = new Set(
+      movements.map((movement) => movement.commandIndex)
+    );
     return {
       cancellation: existing,
       replayed: true,
-      restocked: items.map(({ position, quantity, variantId }) => ({
-        position,
-        quantity,
-        variantId,
-      })),
+      restocked: items
+        .filter((item) => restockedPositions.has(item.position))
+        .map(({ position, quantity, variantId }) => ({
+          position,
+          quantity,
+          variantId,
+        })),
     };
   }
 
@@ -188,6 +207,21 @@ export async function cancelSale(
   if (afterLock) {
     return afterLock;
   }
+  // A command ID that already owns ledger movements belongs to another
+  // operation (replays were answered above).
+  const [foreignMovement] = await transaction
+    .select({ id: stockMovements.id })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, identity.organizationId),
+        eq(stockMovements.commandId, command.commandId)
+      )
+    )
+    .limit(1);
+  if (foreignMovement) {
+    throw new SaleCancellationCommandConflictError();
+  }
   const [anyReturn] = await transaction
     .select({ id: saleReturns.id })
     .from(saleReturns)
@@ -248,7 +282,8 @@ export async function cancelSale(
 
   // Lock products in id order (as sales do) so concurrent sales, returns and
   // cancellations over the same products cannot deadlock. A removed product has
-  // frozen stock and cannot take units back.
+  // frozen stock (zero, immutable): the cancellation is still recorded, but its
+  // items take no units back, so no movement is written for them.
   const productIds = [...new Set(plan.map((line) => line.productId))];
   const lockedProducts = await transaction
     .select({ deletedAt: products.deletedAt, id: products.id })
@@ -261,14 +296,19 @@ export async function cancelSale(
     )
     .orderBy(asc(products.id))
     .for("update");
-  if (
-    lockedProducts.length !== productIds.length ||
-    lockedProducts.some((product) => product.deletedAt !== null)
-  ) {
+  if (lockedProducts.length !== productIds.length) {
     throw new SaleProductUnavailableError();
   }
+  const removedProductIds = new Set(
+    lockedProducts
+      .filter((product) => product.deletedAt !== null)
+      .map((product) => product.id)
+  );
+  const restockPlan = plan.filter(
+    (line) => !removedProductIds.has(line.productId)
+  );
 
-  const lockOrder = [...plan].sort(
+  const lockOrder = [...restockPlan].sort(
     (left, right) =>
       left.productId.localeCompare(right.productId) ||
       left.variantId.localeCompare(right.variantId) ||
@@ -299,7 +339,7 @@ export async function cancelSale(
   return {
     cancellation: created,
     replayed: false,
-    restocked: plan.map(({ position, quantity, variantId }) => ({
+    restocked: restockPlan.map(({ position, quantity, variantId }) => ({
       position,
       quantity,
       variantId,

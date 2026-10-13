@@ -1,24 +1,26 @@
+import { ProductDeletedError } from "@polaris/domain/catalog/product";
 import {
+  InvalidStockMovementError,
+  InventoryOccurredInFutureError,
   InventoryVariantNotFoundError,
   InventoryVersionConflictError,
-  InvalidStockMovementError,
   isStockMovementType,
   projectInventoryCount,
   projectInventoryQuantity,
   StockCommandConflictError,
-  validateStockMovementType,
   type StockMovementType,
+  validateStockMovementType,
 } from "@polaris/domain/inventory/inventory";
-import {
-  InvalidInventoryCountInputError,
-  normalizeInventoryCountInput,
-  type InventoryCountCommandInput,
-} from "@polaris/domain/inventory/inventory-count";
 import {
   calculateMovingAverageCost as calculateMovingAverageCostDomain,
   normalizeUnitCost,
   restockMovingAverageCost,
 } from "@polaris/domain/inventory/inventory-cost";
+import {
+  InvalidInventoryCountInputError,
+  type InventoryCountCommandInput,
+  normalizeInventoryCountInput,
+} from "@polaris/domain/inventory/inventory-count";
 import {
   normalizeReceiveStockInput,
   type ReceiveStockCommandInput,
@@ -28,16 +30,17 @@ import {
   type WriteOffReasonCode,
   type WriteOffStockCommandInput,
 } from "@polaris/domain/inventory/write-off-stock";
+import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import { and, eq, sql } from "drizzle-orm";
+import { inventoryBalances, stockMovements } from "./schema/inventory";
+import { organizations } from "./schema/organization";
+import { products, productVariants } from "./schema/product";
 import { recordTenantAuditEvent } from "./tenant-audit";
-import { TenantAuthorizationError } from "./tenant-transaction";
 import type {
   TenantRequestIdentity,
   TenantRequestTransaction,
 } from "./tenant-transaction";
-import { ProductDeletedError } from "@polaris/domain/catalog/product";
-import { inventoryBalances, stockMovements } from "./schema/inventory";
-import { productVariants, products } from "./schema/product";
+import { TenantAuthorizationError } from "./tenant-transaction";
 
 export interface RecordStockMovementInput {
   movementType: Exclude<
@@ -72,19 +75,19 @@ export interface InventoryBalance {
 
 interface StockMovementWriteInput
   extends Omit<RecordStockMovementInput, "movementType" | "quantityDelta"> {
-  movementType: StockMovementType;
-  quantityDelta?: number;
   calculateMovingAverageCost?: (balance: {
     currentAverageCost: string | null;
     currentQuantity: number;
   }) => string | null;
+  captureMovingAverageCost?: boolean;
   commandId?: string | null;
   commandIndex?: number;
   commandVersion?: number | null;
-  captureMovingAverageCost?: boolean;
-  occurredOn?: string | null;
   expectedVersion?: number | null;
+  movementType: StockMovementType;
+  occurredOn?: string | null;
   physicalQuantity?: number | null;
+  quantityDelta?: number;
   reasonCode?: WriteOffReasonCode | null;
   reasonNote?: string | null;
   unitCost?: string | null;
@@ -99,8 +102,8 @@ const movementColumns = {
   expectedVersion: stockMovements.expectedVersion,
   id: stockMovements.id,
   movementType: stockMovements.movementType,
-  organizationId: stockMovements.organizationId,
   occurredOn: stockMovements.occurredOn,
+  organizationId: stockMovements.organizationId,
   physicalQuantity: stockMovements.physicalQuantity,
   productId: stockMovements.productId,
   quantityDelta: stockMovements.quantityDelta,
@@ -109,6 +112,7 @@ const movementColumns = {
   unitCost: stockMovements.unitCost,
   valuationUnitCost: stockMovements.valuationUnitCost,
   variantId: stockMovements.variantId,
+  variantSequence: stockMovements.variantSequence,
 };
 
 const balanceColumns = {
@@ -341,9 +345,9 @@ async function insertStockMovement(
       commandId: input.commandId ?? null,
       commandIndex: input.commandIndex ?? 0,
       commandVersion: input.commandVersion ?? null,
+      expectedVersion: input.expectedVersion ?? null,
       movementType: input.movementType,
       occurredOn: input.occurredOn ?? null,
-      expectedVersion: input.expectedVersion ?? null,
       organizationId: identity.organizationId,
       physicalQuantity: input.physicalQuantity ?? null,
       productId,
@@ -544,6 +548,36 @@ function requireSaleCapability(identity: TenantRequestIdentity): void {
   }
 }
 
+// Operator-dated movements (receipt, write-off, count) cannot be dated after the
+// organization's today. Replays were answered before this check, and sale
+// movements have their own commercial-date rules.
+async function assertOperatorDateNotInFuture(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: StockMovementWriteInput
+) {
+  const operatorDated =
+    input.movementType === "receipt" ||
+    input.movementType === "write_off" ||
+    input.movementType === "inventory_count";
+  if (!(operatorDated && input.occurredOn)) {
+    return;
+  }
+  const [organization] = await transaction
+    .select({ timezone: organizations.timezone })
+    .from(organizations)
+    .where(eq(organizations.id, identity.organizationId))
+    .limit(1);
+  if (!organization) {
+    throw new TenantAuthorizationError("tenant_access_denied");
+  }
+  if (
+    input.occurredOn > calendarDateInTimeZone(new Date(), organization.timezone)
+  ) {
+    throw new InventoryOccurredInFutureError();
+  }
+}
+
 // Every movement is authorized here. Inventory commands keep the default
 // inventory:adjust check; only the sale transaction supplies the sale check.
 async function applyStockMovement(
@@ -575,6 +609,7 @@ async function applyStockMovement(
   if (variant.deletedAt) {
     throw new ProductDeletedError();
   }
+  await assertOperatorDateNotInFuture(transaction, identity, input);
 
   const [balance] = await transaction
     .select({

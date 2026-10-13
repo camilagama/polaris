@@ -22,7 +22,7 @@ export const mediaAssets = pgTable(
   {
     byteSize: integer("byte_size").notNull(),
     contentType: text("content_type").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     height: integer("height").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     inputFingerprint: text("input_fingerprint").notNull(),
@@ -75,7 +75,7 @@ export const mediaAssets = pgTable(
 export const productMedia = pgTable(
   "product_media",
   {
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     mediaAssetId: uuid("media_asset_id").notNull(),
     organizationId: text("organization_id").notNull(),
     position: integer("position").notNull(),
@@ -139,7 +139,7 @@ export const productMedia = pgTable(
 export const variantMedia = pgTable(
   "variant_media",
   {
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     mediaAssetId: uuid("media_asset_id").notNull(),
     organizationId: text("organization_id").notNull(),
     position: integer("position").notNull(),

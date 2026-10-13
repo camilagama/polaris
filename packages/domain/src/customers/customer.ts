@@ -1,3 +1,9 @@
+/** Text limits shared by the contract, the domain and the database CHECKs. */
+export const MAX_CUSTOMER_NAME_LENGTH = 200;
+export const MAX_CUSTOMER_PHONE_LENGTH = 40;
+export const MAX_CUSTOMER_EMAIL_LENGTH = 254;
+export const MAX_CUSTOMER_NOTES_LENGTH = 2000;
+
 export type CustomerLifecycle = "active" | "archived";
 export type CustomerLifecycleAction = "archive" | "restore";
 
@@ -74,7 +80,13 @@ export function normalizeCustomerProfile(
   const email = optionalText(input.email);
   const notes = optionalText(input.notes);
 
-  if (!(name && (phone || email))) {
+  if (
+    !(name && (phone || email)) ||
+    name.length > MAX_CUSTOMER_NAME_LENGTH ||
+    (phone?.length ?? 0) > MAX_CUSTOMER_PHONE_LENGTH ||
+    (email?.length ?? 0) > MAX_CUSTOMER_EMAIL_LENGTH ||
+    (notes?.length ?? 0) > MAX_CUSTOMER_NOTES_LENGTH
+  ) {
     throw new InvalidCustomerProfileError();
   }
 
@@ -87,7 +99,11 @@ export function normalizeCustomerDuplicateSearch(
   const email = optionalText(input.email);
   const phone = optionalText(input.phone);
 
-  if (!(email || phone)) {
+  if (
+    !(email || phone) ||
+    (phone?.length ?? 0) > MAX_CUSTOMER_PHONE_LENGTH ||
+    (email?.length ?? 0) > MAX_CUSTOMER_EMAIL_LENGTH
+  ) {
     throw new InvalidCustomerDuplicateSearchError();
   }
 

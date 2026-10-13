@@ -8,6 +8,7 @@ import {
 } from "@polaris/domain/sales/sale-return";
 import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
+import { receiveStock } from "../src/inventory-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { getSale } from "../src/sale-query-repository";
@@ -18,6 +19,7 @@ import {
   createTenantFixture,
   disposableHostPattern,
   gateBranchPattern,
+  journalMigrationCount,
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
@@ -43,7 +45,15 @@ type RuntimeDatabase = ReturnType<typeof createDatabase>;
 /** Exact money in cents, half-up, independent of the production decimal code. */
 function cents(value: string): bigint {
   const [whole = "0", fraction = ""] = value.split(".");
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0").slice(0, 2));
+  // The oracle is exact only for BRL amounts: refuse more than two places
+  // instead of silently truncating them.
+  assert.ok(fraction.length <= 2, `not a BRL amount: ${value}`);
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+}
+
+/** Half-up (ties away from zero) integer division of non-negative numbers. */
+function roundHalfUp(numerator: bigint, denominator: bigint): bigint {
+  return (2n * numerator + denominator) / (2n * denominator);
 }
 
 function formatCents(value: bigint): string {
@@ -90,7 +100,7 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok(Number(migrations.rows[0]?.count) >= 39);
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
     tests.push("all migrations were replayed from scratch");
 
     const tenant = await createTenantFixture(admin.pool, "gate4", saoPaulo);
@@ -255,7 +265,7 @@ async function run() {
       (sum, line) => sum + cents(line.chargedUnitPrice) * BigInt(line.quantity),
       0n
     );
-    const discount = (subtotal * 10n + 50n) / 100n; // 10 %, half-up to the cent
+    const discount = roundHalfUp(subtotal * 10n, 100n); // 10 %, half-up to the cent
     const freight = cents("5.00");
     const expectedTotal = subtotal - discount + freight;
     const sale1 = await sell(lines, {
@@ -324,6 +334,16 @@ async function run() {
     // ------------------------------------ 3. atomicity: a failing sale leaves nothing
     const economyBeforeFailure = await digest("economy");
     const ledgerBeforeFailure = await digest("ledger");
+    const auditCount = async () =>
+      Number(
+        (
+          await admin.pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.tenant_audit_event WHERE organization_id = $1",
+            [tenant.organizationId]
+          )
+        ).rows[0]?.count
+      );
+    const auditBeforeFailure = await auditCount();
     await assert.rejects(
       () =>
         sell([
@@ -344,6 +364,11 @@ async function run() {
     );
     assert.equal(await digest("economy"), economyBeforeFailure);
     assert.equal(await digest("ledger"), ledgerBeforeFailure);
+    assert.equal(
+      await auditCount(),
+      auditBeforeFailure,
+      "a refused sale leaves no audit event either"
+    );
     const replayed = await sell(lines, {
       adjustments: [
         { kind: "discount", value: { percentage: "10", type: "percentage" } },
@@ -357,7 +382,7 @@ async function run() {
     assert.equal(await digest("economy"), economyBeforeFailure);
     assert.equal(await digest("ledger"), ledgerBeforeFailure);
     tests.push(
-      "atomic sale: a sale whose second line lacks stock leaves no header, item, payment, movement, balance, or audit change, and replaying a confirmed sale changes nothing"
+      "atomic sale: a sale whose second line lacks stock leaves no header, item, payment, movement, balance, or audit event, and replaying a confirmed sale changes nothing"
     );
 
     // ------------------------------------------- 4. cancellation
@@ -542,6 +567,40 @@ async function run() {
       "dates: a sale from 10 days ago keeps its commercial date in the organization's calendar and writes its movement on that date"
     );
 
+    // -------- 7b. half-up on a real tie: 10 % of 10.05 is 1.005, 2.5 % is 0.25125
+    const tieSale = await sell(
+      [
+        {
+          chargedUnitPrice: "10.05",
+          listedUnitPrice: "10.05",
+          quantity: 1,
+          variantId: p1.variantId,
+        },
+      ],
+      {
+        adjustments: [
+          { kind: "discount", value: { percentage: "10", type: "percentage" } },
+          {
+            kind: "surcharge",
+            value: { percentage: "2.5", type: "percentage" },
+          },
+        ],
+      }
+    );
+    const tieSubtotal = cents("10.05");
+    const tieDiscount = roundHalfUp(tieSubtotal * 10n, 100n);
+    const tieSurcharge = roundHalfUp(tieSubtotal * 25n, 1000n);
+    assert.equal(tieDiscount, 101n, "the oracle itself rounds the tie up");
+    assert.equal(tieSale.totals.discountTotal, formatCents(tieDiscount));
+    assert.equal(tieSale.totals.surchargeTotal, formatCents(tieSurcharge));
+    assert.equal(
+      tieSale.totals.totalDue,
+      formatCents(tieSubtotal - tieDiscount + tieSurcharge)
+    );
+    tests.push(
+      "money: a percentage that lands exactly on a half cent (10 % of 10.05) rounds half-up once per adjustment, matching the oracle"
+    );
+
     // ----------------------------------- 8. the final conservation invariant
     const conservation = await admin.pool.query<{
       net_sold: string;
@@ -559,8 +618,19 @@ async function run() {
        GROUP BY i.variant_id, i.organization_id`,
       [tenant.organizationId]
     );
+    // a late receipt joins the invariant: opening + receipts - net sold + restocked
+    await as("inventory:adjust", (transaction, identity) =>
+      receiveStock(transaction, identity, {
+        commandId: randomUUID(),
+        commandVersion: 1,
+        occurredOn: calendarDateInTimeZone(new Date(), saoPaulo),
+        quantity: 7,
+        unitCost: "11.00",
+        variantId: p1.variantId,
+      })
+    );
     const opening = new Map([
-      [p1.variantId, 50],
+      [p1.variantId, 50 + 7],
       [p2.variantId, 20],
     ]);
     const balances = await Promise.all(
@@ -578,7 +648,7 @@ async function run() {
       );
     }
     tests.push(
-      "conservation: for every variant, stock equals opening stock minus the units of non-cancelled sales plus the units restocked by returns"
+      "conservation: for every variant, stock equals opening stock plus later receipts minus the units of non-cancelled sales plus the units restocked by returns"
     );
 
     console.log(
