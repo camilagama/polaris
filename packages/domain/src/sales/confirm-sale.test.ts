@@ -121,7 +121,7 @@ describe("normalizeConfirmSaleCommand", () => {
     expect(normalized.occurredAt.toISOString()).toBe(
       "2026-10-13T18:30:00.000Z"
     );
-    expect(normalized.clientCreatedAt).toBeNull();
+    expect(normalized.recordedAt).toBeNull();
   });
 
   it("lowercases ids and keeps the explicit profile selection", () => {
@@ -243,12 +243,12 @@ describe("normalizeConfirmSaleCommand", () => {
       );
     }
     const normalized = normalize(
-      command({ clientCreatedAt: "2026-10-13T12:00:00.250Z" })
+      command({ recordedAt: "2026-10-13T12:00:00.250Z" })
     );
-    expect(normalized.clientCreatedAt?.toISOString()).toBe(
+    expect(normalized.recordedAt?.toISOString()).toBe(
       "2026-10-13T12:00:00.250Z"
     );
-    expect(() => normalize(command({ clientCreatedAt: "yesterday" }))).toThrow(
+    expect(() => normalize(command({ recordedAt: "yesterday" }))).toThrow(
       InvalidConfirmSaleCommandError
     );
   });

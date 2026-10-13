@@ -5,6 +5,7 @@ import {
   InventoryVariantNotFoundError,
 } from "@polaris/domain/inventory/inventory";
 import {
+  calendarDateInTimeZone,
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -40,8 +41,8 @@ import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
   createTenantFixture,
   disposableHostPattern,
-  gateBranchPattern,
   expectSqlState,
+  gateBranchPattern,
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
@@ -53,6 +54,20 @@ import {
 } from "./sales-gate-support";
 
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
+
+/** Shifts a `YYYY-MM-DD` calendar date by whole days. */
+function shiftDay(day: string, days: number): string {
+  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, date + days))
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** A commercial day two days back in the organization's calendar: inside the retroactive window whenever the gate runs. */
+const saleDay = shiftDay(
+  calendarDateInTimeZone(new Date(), "America/Sao_Paulo"),
+  -2
+);
 const injectedFailureMessage = "pr43 gate injected failure";
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
@@ -262,7 +277,7 @@ async function run() {
             variantId,
           },
         ],
-        occurredAt: "2026-10-12T15:30:00-03:00",
+        occurredAt: `${saleDay}T15:30:00-03:00`,
         payment: { anticipationRequested: false, method: "pix" },
         paymentProfile: null,
         requestId: randomUUID(),
@@ -458,7 +473,7 @@ async function run() {
     assert.ok(saleOne.sale.confirmedAt instanceof Date);
     assert.equal(
       saleOne.sale.occurredAt.toISOString(),
-      "2026-10-12T18:30:00.000Z"
+      `${saleDay}T18:30:00.000Z`
     );
     assert.deepEqual(
       await effects(tenantA, saleOneCommandId, saleOneRequestId),
@@ -485,14 +500,14 @@ async function run() {
       {
         command_index: 0,
         movement_type: "sale",
-        occurred_on: "2026-10-12",
+        occurred_on: saleDay,
         quantity_delta: -2,
         unit_cost: "12.345678",
       },
       {
         command_index: 1,
         movement_type: "sale",
-        occurred_on: "2026-10-12",
+        occurred_on: saleDay,
         quantity_delta: -1,
         unit_cost: null,
       },
@@ -631,18 +646,18 @@ async function run() {
     assert.equal(pixPercentage.payment.processingFee.amount, "1.50");
     assert.equal(pixPercentage.payment.processingFee.percentage, "1.500000");
     assert.equal(pixPercentage.payment.expectedSettlementDays, 1);
-    // 2026-10-13T01:30Z is already the 13th in UTC but still the 12th in the
+    // 01:30Z of the following day is already that day in UTC but still `saleDay` in the
     // organization's America/Sao_Paulo time zone: the ledger date follows the
     // organization, not UTC.
     const lateEvening = command(productA2.variantId, {
-      occurredAt: "2026-10-13T01:30:00Z",
+      occurredAt: `${shiftDay(saleDay, 1)}T01:30:00Z`,
     });
     await confirm(tenantA, lateEvening);
     const lateLedger = await admin.pool.query<{ occurred_on: string }>(
       "SELECT occurred_on::text FROM public.stock_movements WHERE organization_id = $1 AND command_id = $2",
       [tenantA.organizationId, lateEvening.commandId]
     );
-    assert.deepEqual(lateLedger.rows, [{ occurred_on: "2026-10-12" }]);
+    assert.deepEqual(lateLedger.rows, [{ occurred_on: saleDay }]);
     await expectRejectedWithoutEffects(
       tenantA,
       command(productA2.variantId, { occurredAt: "9999-12-31T23:00:00-05:00" }),
@@ -703,7 +718,7 @@ async function run() {
       ],
       [
         "different commercial time",
-        { ...saleOneInput, occurredAt: "2026-10-12T16:30:00-03:00" },
+        { ...saleOneInput, occurredAt: `${saleDay}T16:30:00-03:00` },
       ],
     ];
     for (const [label, conflicting] of conflicts) {
@@ -1315,6 +1330,7 @@ async function run() {
       appendTo?: { adjustment?: boolean; item?: boolean; saleId: string };
       itemCount?: number;
       movement?: boolean;
+      movementOn?: string;
       payment?: string | null;
     }
     const writeGraph = (
@@ -1343,7 +1359,7 @@ async function run() {
             return;
           }
           const header = await transaction.execute<{ id: string }>(
-            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, item_count, adjustment_count) VALUES (${org}, ${commandId}, now(), ${options.itemCount ?? 1}, 0) RETURNING id`
+            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0) RETURNING id`
           );
           const saleId = header.rows[0]?.id;
           assert.ok(saleId);
@@ -1357,7 +1373,7 @@ async function run() {
           }
           if (options.movement !== false) {
             await transaction.execute(
-              sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta) VALUES (${org}, ${commandId}, 0, 1, '2026-10-13', 'sale', ${product.productId}, ${product.variantId}, -1)`
+              sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta) VALUES (${org}, ${commandId}, 0, 1, ${options.movementOn ?? "2026-10-13"}, 'sale', ${product.productId}, ${product.variantId}, -1)`
             );
           }
         }
@@ -1370,7 +1386,7 @@ async function run() {
         "sale:create",
         async (transaction, identity) => {
           await transaction.execute(
-            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, item_count, adjustment_count) VALUES (${identity.organizationId}, ${randomUUID()}, now(), 1, 0)`
+            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES (${identity.organizationId}, ${randomUUID()}, now(), '2026-10-13', 1, 0)`
           );
         }
       );
@@ -1397,6 +1413,12 @@ async function run() {
       "23514",
       "a payment different from the total due is rejected",
       "sales_confirmation_payment_complete"
+    );
+    await expectSqlState(
+      () => writeGraph(tenantA, productA2, { movementOn: "2026-10-12" }),
+      "23514",
+      "a sale movement dated differently from the sale's commercial date is rejected",
+      "sales_confirmation_stock_complete"
     );
     await expectSqlState(
       () => writeGraph(tenantA, productA2, { movement: false }),
@@ -1449,7 +1471,7 @@ async function run() {
       () =>
         withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
           client.query(
-            "INSERT INTO public.sales (organization_id, command_id, occurred_at, item_count, adjustment_count) VALUES ($1, gen_random_uuid(), now(), 1, 0)",
+            "INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES ($1, gen_random_uuid(), now(), '2026-10-13', 1, 0)",
             [tenantB.organizationId]
           )
         ),

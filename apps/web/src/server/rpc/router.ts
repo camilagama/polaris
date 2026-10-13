@@ -37,14 +37,6 @@ import {
   restorePaymentProfile,
   updatePaymentProfile,
 } from "@polaris/db/payment-profile-repository";
-import { cancelSale } from "@polaris/db/sale-cancellation-repository";
-import {
-  changeSaleCustomerLink,
-  getSaleCustomerLink,
-} from "@polaris/db/sale-customer-link-repository";
-import { getSale, listSales } from "@polaris/db/sale-query-repository";
-import { createSaleReturn } from "@polaris/db/sale-return-repository";
-import { confirmSale } from "@polaris/db/sale-repository";
 import {
   archiveProduct,
   configureProductVariants,
@@ -56,6 +48,14 @@ import {
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
+import { cancelSale } from "@polaris/db/sale-cancellation-repository";
+import {
+  changeSaleCustomerLink,
+  getSaleCustomerLink,
+} from "@polaris/db/sale-customer-link-repository";
+import { getSale, listSales } from "@polaris/db/sale-query-repository";
+import { confirmSale } from "@polaris/db/sale-repository";
+import { createSaleReturn } from "@polaris/db/sale-return-repository";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
   CategoryDeletedError,
@@ -115,34 +115,6 @@ import {
   UnsupportedWriteOffStockCommandVersionError,
 } from "@polaris/domain/inventory/write-off-stock";
 import {
-  InvalidSaleCancellationError,
-  SaleAlreadyCancelledError,
-  SaleCancellationCommandConflictError,
-  UnsupportedSaleCancellationCommandVersionError,
-} from "@polaris/domain/sales/sale-cancellation";
-import {
-  InvalidSaleReturnError,
-  SaleHasReturnsError,
-  SaleNotReturnableError,
-  SaleReturnCommandConflictError,
-  SaleReturnExceedsAvailableError,
-  UnsupportedSaleReturnCommandVersionError,
-} from "@polaris/domain/sales/sale-return";
-import {
-  InvalidSaleCustomerLinkError,
-  SaleCustomerArchivedError,
-  SaleCustomerLinkStateError,
-  SaleCustomerLinkVersionConflictError,
-} from "@polaris/domain/sales/sale-customer-link";
-import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
-import {
-  InvalidConfirmSaleCommandError,
-  SaleOccurredInFutureError,
-  SaleCommandConflictError,
-  SaleProductUnavailableError,
-  UnsupportedConfirmSaleCommandVersionError,
-} from "@polaris/domain/sales/confirm-sale";
-import {
   DecimalAmountScaleError,
   InvalidDecimalAmountError,
   InvalidFinancialQuantityError,
@@ -150,6 +122,13 @@ import {
   InvalidPercentageError,
   MoneyLimitError,
 } from "@polaris/domain/money/money";
+import {
+  InvalidConfirmSaleCommandError,
+  SaleCommandConflictError,
+  SaleOccurredInFutureError,
+  SaleProductUnavailableError,
+  UnsupportedConfirmSaleCommandVersionError,
+} from "@polaris/domain/sales/confirm-sale";
 import {
   InvalidPaymentProfileError,
   PaymentProfileLifecycleError,
@@ -162,7 +141,29 @@ import {
   SaleAdjustmentLimitError,
   SaleDiscountExceedsSubtotalError,
 } from "@polaris/domain/sales/sale-adjustments";
+import {
+  InvalidSaleCancellationError,
+  SaleAlreadyCancelledError,
+  SaleCancellationCommandConflictError,
+  UnsupportedSaleCancellationCommandVersionError,
+} from "@polaris/domain/sales/sale-cancellation";
+import {
+  InvalidSaleCustomerLinkError,
+  SaleCustomerArchivedError,
+  SaleCustomerLinkStateError,
+  SaleCustomerLinkVersionConflictError,
+} from "@polaris/domain/sales/sale-customer-link";
+import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
+import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
+import {
+  InvalidSaleReturnError,
+  SaleHasReturnsError,
+  SaleNotReturnableError,
+  SaleReturnCommandConflictError,
+  SaleReturnExceedsAvailableError,
+  UnsupportedSaleReturnCommandVersionError,
+} from "@polaris/domain/sales/sale-return";
 import {
   type AuthenticatedRequestContextInput,
   withAuthenticatedRequestContext,
@@ -206,30 +207,30 @@ interface RpcRouterDependencies {
   archiveCustomer: typeof archiveCustomer;
   archivePaymentProfile: typeof archivePaymentProfile;
   archiveProduct: typeof archiveProduct;
-  configureProductVariants: typeof configureProductVariants;
-  createCategory: typeof createCategory;
-  createCustomer: typeof createCustomer;
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
+  configureProductVariants: typeof configureProductVariants;
   confirmSale: typeof confirmSale;
-  createSaleReturn: typeof createSaleReturn;
-  getSale: typeof getSale;
-  getSaleCustomerLink: typeof getSaleCustomerLink;
-  listSales: typeof listSales;
+  createCategory: typeof createCategory;
+  createCustomer: typeof createCustomer;
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
   createProduct: typeof createProduct;
+  createSaleReturn: typeof createSaleReturn;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
   getInventoryBalance: typeof getInventoryBalance;
   getProductVariants: typeof getProductVariants;
+  getSale: typeof getSale;
+  getSaleCustomerLink: typeof getSaleCustomerLink;
   inventoryCount: typeof inventoryCount;
   listCategories: typeof listCategories;
   listCustomers: typeof listCustomers;
   listPaymentProfiles: typeof listPaymentProfiles;
   listProducts: typeof listProducts;
+  listSales: typeof listSales;
   receiveStock: typeof receiveStock;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
@@ -539,6 +540,7 @@ const badRequestRpcErrors = [
     InvalidSaleCustomerLinkError,
     InvalidSaleCancellationError,
     InvalidSaleReturnError,
+    SaleOccurredTooOldError,
     UnsupportedSaleCancellationCommandVersionError,
     UnsupportedSaleReturnCommandVersionError,
     UnsupportedConfirmSaleCommandVersionError,
@@ -1035,9 +1037,9 @@ export function createRpcRouter(
     confirmSale: overrides.confirmSale,
     createSaleReturn: overrides.createSaleReturn,
     defaultCancelSale: cancelSale,
-    defaultCreateSaleReturn: createSaleReturn,
     defaultChangeSaleCustomerLink: changeSaleCustomerLink,
     defaultConfirmSale: confirmSale,
+    defaultCreateSaleReturn: createSaleReturn,
     defaultGetSale: getSale,
     defaultGetSaleCustomerLink: getSaleCustomerLink,
     defaultListSales: listSales,
@@ -1571,8 +1573,8 @@ export function createRpcRouter(
       get: saleHandlers.get,
       getCustomerLink: saleHandlers.getCustomerLink,
       list: saleHandlers.list,
-      return: saleHandlers.return,
       reassignCustomer: saleHandlers.reassignCustomer,
+      return: saleHandlers.return,
       unassignCustomer: saleHandlers.unassignCustomer,
     },
     system: { ping },

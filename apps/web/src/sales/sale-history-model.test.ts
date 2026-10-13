@@ -322,12 +322,13 @@ describe("sale detail", () => {
         },
       },
       sale: {
-        clientCreatedAt: null,
+        recordedAt: null,
         commandId: id(60),
         confirmedAt: "2026-05-01T12:00:01.000Z",
         currency: "BRL",
         id: id(70),
         occurredAt: "2026-05-01T12:00:00.000Z",
+        occurredOn: "2026-05-01",
       },
       totals: {
         discountTotal: "10.98",
@@ -367,7 +368,7 @@ describe("sale detail", () => {
     });
     expect(view.sale.saleDetails.map((row) => row.label)).toEqual([
       "Venda",
-      "Data comercial",
+      "Data da venda",
       "Confirmada no servidor",
     ]);
   });

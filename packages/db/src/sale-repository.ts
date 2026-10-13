@@ -1,7 +1,6 @@
 import { InventoryVariantNotFoundError } from "@polaris/domain/inventory/inventory";
 import { Money, Percentage } from "@polaris/domain/money/money";
 import {
-  calendarDateInTimeZone,
   type ConfirmSaleCommandInput,
   type ConfirmedSaleTotals,
   composeConfirmedSale,
@@ -20,6 +19,10 @@ import {
   PaymentProfileVersionConflictError,
 } from "@polaris/domain/sales/payment-profile";
 import { normalizeBrlAmount } from "@polaris/domain/sales/sale";
+import {
+  assertSaleOccurredWithinWindow,
+  retroactiveLimitDaysForRole,
+} from "@polaris/domain/sales/sale-dates";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { recordSaleStockMovement } from "./inventory-repository";
 import { organizations } from "./schema/organization";
@@ -85,12 +88,13 @@ export interface ConfirmedSaleReadModel {
     };
   };
   sale: {
-    clientCreatedAt: Date | null;
+    recordedAt: Date | null;
     commandId: string;
     confirmedAt: Date;
     currency: string;
     id: string;
     occurredAt: Date;
+    occurredOn: string;
   };
   totals: ConfirmedSaleTotals;
 }
@@ -205,12 +209,13 @@ export async function readConfirmedSale(
       },
     },
     sale: {
-      clientCreatedAt: header.clientCreatedAt,
+      recordedAt: header.recordedAt,
       commandId: header.commandId,
       confirmedAt: header.confirmedAt,
       currency: header.currency,
       id: header.id,
       occurredAt: header.occurredAt,
+      occurredOn: header.occurredOn,
     },
     totals: summarizeConfirmedSaleTotals(itemModels, adjustmentModels),
   };
@@ -226,7 +231,7 @@ function replayMatchesCommand(
   return (
     saved.sale.commandId === command.commandId &&
     sameNullableInstant(saved.sale.occurredAt, command.occurredAt) &&
-    sameNullableInstant(saved.sale.clientCreatedAt, command.clientCreatedAt) &&
+    sameNullableInstant(saved.sale.recordedAt, command.recordedAt) &&
     saved.items.length === command.items.length &&
     command.items.every((item) => {
       const savedItem = saved.items[item.position];
@@ -507,10 +512,15 @@ export async function confirmSale(
   if (!organization) {
     throw new TenantAuthorizationError("tenant_access_denied");
   }
-  const occurredOn = calendarDateInTimeZone(
-    command.occurredAt,
-    organization.timezone
-  );
+  // The commercial date is the organization's calendar date; the retroactive
+  // window is counted in that calendar and follows the actor's role. Replays
+  // were answered above, so an old sale already confirmed still replays.
+  const occurredOn = assertSaleOccurredWithinWindow({
+    maxRetroactiveDays: retroactiveLimitDaysForRole(identity.role),
+    now: new Date(),
+    occurredAt: command.occurredAt,
+    timeZone: organization.timezone,
+  });
 
   // The unique (organization, command) index serializes a duplicate that races
   // this transaction: the loser waits for the winner, inserts nothing, and
@@ -519,10 +529,11 @@ export async function confirmSale(
     .insert(sales)
     .values({
       adjustmentCount: command.adjustments.length,
-      clientCreatedAt: command.clientCreatedAt,
+      recordedAt: command.recordedAt,
       commandId: command.commandId,
       itemCount: command.items.length,
       occurredAt: command.occurredAt,
+      occurredOn,
       organizationId: identity.organizationId,
     })
     .onConflictDoNothing({ target: [sales.organizationId, sales.commandId] })

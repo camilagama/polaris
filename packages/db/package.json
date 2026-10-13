@@ -58,6 +58,8 @@
     "poc:sales:customer-link:verify": "bun scripts/verify-sale-customer-link-gate.ts",
     "poc:sales:cancellation:verify": "bun scripts/verify-sale-cancellation-gate.ts",
     "poc:sales:return:verify": "bun scripts/verify-sale-return-gate.ts",
+    "poc:sales:dates:verify": "bun scripts/verify-sale-dates-gate.ts",
+    "poc:gate4:verify": "bun scripts/verify-gate4-sales-core.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {

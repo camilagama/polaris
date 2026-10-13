@@ -267,6 +267,13 @@
       "when": 1791918922729,
       "tag": "0037_square_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791920383876,
+      "tag": "0038_sale_dates",
+      "breakpoints": true
     }
   ]
 }

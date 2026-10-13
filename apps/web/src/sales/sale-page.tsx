@@ -34,6 +34,7 @@ import {
   type ConfirmedSaleView,
   confirmSubmission,
   createBlankSaleForm,
+  editSaleDate,
   type EvaluationContext,
   evaluateSaleForm,
   failSubmission,
@@ -41,6 +42,7 @@ import {
   type FeePreview,
   formatBrlAmount,
   formFieldKeys,
+  SALE_DATE_HINT,
   INSTALLMENT_PLANS,
   idleSubmission,
   isSubmitting,
@@ -520,6 +522,57 @@ function AdjustmentEditor({
 /* Payment                                                                    */
 /* -------------------------------------------------------------------------- */
 
+interface DateSectionProps {
+  disabled: boolean;
+  error: string | undefined;
+  onChange: (value: string) => void;
+  value: string;
+}
+
+/** The optional commercial date and time; empty means now. */
+function DateSection({ disabled, error, onChange, value }: DateSectionProps) {
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
+    [onChange]
+  );
+  const handleClear = useCallback(() => onChange(""), [onChange]);
+  return (
+    <fieldset className="sale-section" disabled={disabled}>
+      <legend>Data e hora da venda</legend>
+      <div className="sale-field">
+        <label htmlFor="sale-occurred-at">
+          Data e hora da venda (opcional)
+        </label>
+        <input
+          aria-describedby={
+            error
+              ? "sale-occurred-at-error sale-occurred-at-hint"
+              : "sale-occurred-at-hint"
+          }
+          aria-invalid={error ? true : undefined}
+          id="sale-occurred-at"
+          onChange={handleChange}
+          type="datetime-local"
+          value={value}
+        />
+        <p className="sale-hint" id="sale-occurred-at-hint">
+          {SALE_DATE_HINT}
+        </p>
+        {error ? (
+          <p className="sale-error" id="sale-occurred-at-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+      {value === "" ? null : (
+        <button className="quiet-button" onClick={handleClear} type="button">
+          Usar agora
+        </button>
+      )}
+    </fieldset>
+  );
+}
+
 interface PaymentSectionProps {
   disabled: boolean;
   errors: Record<string, string>;
@@ -771,6 +824,10 @@ function SummaryPanel({
       ) : null}
       <dl className="sale-details">
         <div>
+          <dt>Data e hora da venda</dt>
+          <dd>{evaluation.dateText}</dd>
+        </div>
+        <div>
           <dt>Pagamento</dt>
           <dd>{evaluation.methodText}</dd>
         </div>
@@ -966,7 +1023,7 @@ export function SalePage() {
       evaluateSaleForm(
         form,
         { profiles: activeProfiles, stock: catalog.stock },
-        { showRequired }
+        { now: new Date(), showRequired }
       ),
     [activeProfiles, catalog.stock, form, showRequired]
   );
@@ -1054,6 +1111,10 @@ export function SalePage() {
       editForm((current) => removeAdjustment(current, draftId)),
     [editForm]
   );
+  const handleDateChange = useCallback(
+    (value: string) => editForm((current) => editSaleDate(current, value)),
+    [editForm]
+  );
   const handleMethodChange = useCallback(
     (value: string) =>
       editForm((current) =>
@@ -1114,6 +1175,7 @@ export function SalePage() {
         return;
       }
       const prepared = prepareConfirmation({
+        occurredAtOverride: evaluation.occurredAtOverride,
         body,
         createId: newId,
         now: new Date(),
@@ -1301,6 +1363,12 @@ export function SalePage() {
                 Adicionar ajuste
               </button>
             </fieldset>
+            <DateSection
+              disabled={locked}
+              error={evaluation.errors[formFieldKeys.occurredAt]}
+              onChange={handleDateChange}
+              value={form.occurredAtLocal}
+            />
             <PaymentSection
               disabled={locked}
               errors={evaluation.errors}

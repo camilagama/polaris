@@ -10,6 +10,11 @@ import {
   acknowledgeProfileReview,
   addAdjustment,
   addItem,
+  editSaleDate,
+  formatCalendarDate,
+  parseLocalDateTime,
+  saleDateDetails,
+  validateSaleDate,
   attemptAfterFailure,
   cancelDiscard,
   discardLockedSale,
@@ -174,8 +179,13 @@ function creditCardForm(): SaleFormState {
   return selectProfileChoice(form, profileId, [profile()]);
 }
 
-function evaluate(form: SaleFormState, ctx = context(), showRequired = true) {
-  return evaluateSaleForm(form, ctx, { showRequired });
+function evaluate(
+  form: SaleFormState,
+  ctx = context(),
+  showRequired = true,
+  now?: Date
+) {
+  return evaluateSaleForm(form, ctx, { now, showRequired });
 }
 
 describe("decimal input parsing", () => {
@@ -920,6 +930,10 @@ describe("idempotent attempts", () => {
       organizationId,
       paymentProfile: null,
     });
+    expect(prepared.request).toHaveProperty(
+      "recordedAt",
+      "2026-05-01T12:00:00.000Z"
+    );
     expect(prepared.request).not.toHaveProperty("clientCreatedAt");
   });
 });
@@ -1024,7 +1038,12 @@ describe("server errors", () => {
     });
     expect(failure.discardAttempt).toBe(true);
     expect(failure.message).toContain("nova tentativa será criada");
-    const attempt = { commandId: "x", occurredAt: "y", signature: "z" };
+    const attempt = {
+      commandId: "x",
+      occurredAt: "y",
+      recordedAt: "r",
+      signature: "z",
+    };
     const conflict = failSubmission({
       code: "CONFLICT",
       data: { reason: "sale_command_conflict" },
@@ -1128,12 +1147,13 @@ describe("submission state", () => {
     },
     replayed: false,
     sale: {
-      clientCreatedAt: null,
+      recordedAt: null,
       commandId: "00000000-0000-4000-8000-000000000001",
       confirmedAt: "2026-05-01T12:00:01.000Z",
       currency: "BRL",
       id: "77777777-7777-4777-8777-777777777777",
       occurredAt: "2026-05-01T12:00:00.000Z",
+      occurredOn: "2026-05-01",
     },
     totals: {
       discountTotal: "10.98",
@@ -1322,10 +1342,271 @@ describe("submission state", () => {
     expect(state.sale.note).toContain("não comprova liquidação");
   });
 
+  it("puts the three dates in the confirmed sale view", () => {
+    const state = confirmSubmission({
+      ...confirmed,
+      sale: { ...confirmed.sale, recordedAt: "2026-05-01T11:59:00.000Z" },
+    });
+    const labels =
+      state.phase === "confirmed"
+        ? state.sale.saleDetails.map((row) => row.label)
+        : [];
+    expect(labels).toContain("Data da venda");
+    expect(labels).toContain("Registrada no dispositivo");
+    expect(labels).toContain("Confirmada no servidor");
+  });
+
   it("says the sale was already confirmed when the server replayed it", () => {
     const state = confirmSubmission({ ...confirmed, replayed: true });
     expect(state.phase === "confirmed" && state.sale.headline).toBe(
       "Esta venda já estava confirmada. Nada foi duplicado."
+    );
+  });
+});
+
+describe("sale date and time", () => {
+  const now = new Date(2026, 4, 1, 12, 0, 0);
+
+  it("reads a datetime-local value in the device time zone", () => {
+    const parsed = parseLocalDateTime("2026-04-20T09:30");
+    expect(parsed.kind).toBe("ok");
+    if (parsed.kind === "ok") {
+      expect(parsed.date.getFullYear()).toBe(2026);
+      expect(parsed.date.getMonth()).toBe(3);
+      expect(parsed.date.getDate()).toBe(20);
+      expect(parsed.date.getHours()).toBe(9);
+      expect(parsed.date.getMinutes()).toBe(30);
+    }
+    expect(parseLocalDateTime("2026-04-20T09:30:15").kind).toBe("ok");
+  });
+
+  it("treats empty as now and rejects anything unparsable", () => {
+    expect(parseLocalDateTime("  ").kind).toBe("empty");
+    for (const text of [
+      "abc",
+      "2026-04-20",
+      "2026-13-01T10:00",
+      "2026-02-31T10:00",
+      "2026-04-20T25:00",
+    ]) {
+      expect(parseLocalDateTime(text).kind, text).toBe("invalid");
+    }
+  });
+
+  it("validates: empty is fine, invalid and future are errors, past is accepted", () => {
+    expect(validateSaleDate("", now)).toEqual({
+      error: null,
+      occurredAt: null,
+    });
+    expect(validateSaleDate("nope", now).error).toBe(
+      "Informe uma data e hora válidas."
+    );
+    expect(validateSaleDate("2026-05-01T12:06", now).error).toBe(
+      "A data e hora da venda não podem estar no futuro."
+    );
+    expect(validateSaleDate("2026-05-01T12:04", now).error).toBeNull();
+    const past = validateSaleDate("2026-03-01T08:00", now);
+    expect(past.error).toBeNull();
+    expect(past.occurredAt).toBe(new Date(2026, 2, 1, 8, 0, 0).toISOString());
+  });
+
+  it("does not check the retroactive limit in the browser", () => {
+    expect(validateSaleDate("2020-01-01T08:00", now).error).toBeNull();
+  });
+
+  it("blocks the form on a bad date and shows the error at once", () => {
+    const bad = editSaleDate(validForm(), "2026-05-01T13:00");
+    const result = evaluate(bad, context(), false, now);
+    expect(result.body).toBeNull();
+    expect(result.errors[formFieldKeys.occurredAt]).toContain("futuro");
+  });
+
+  it("carries the chosen date, or says it will be now", () => {
+    expect(evaluate(validForm(), context(), true, now)).toMatchObject({
+      dateText: "Agora, ao confirmar",
+      occurredAtOverride: null,
+    });
+    const chosen = evaluate(
+      editSaleDate(validForm(), "2026-04-25T10:00"),
+      context(),
+      true,
+      now
+    );
+    expect(chosen.body).not.toBeNull();
+    expect(chosen.occurredAtOverride).toBe(
+      new Date(2026, 3, 25, 10, 0, 0).toISOString()
+    );
+    expect(chosen.dateText).not.toBe("Agora, ao confirmar");
+  });
+
+  const body = () => {
+    const { body: built } = evaluate(validForm());
+    if (!built) {
+      throw new Error("expected a valid body");
+    }
+    return built;
+  };
+
+  it("freezes occurredAt and recordedAt for an identical retry", () => {
+    const ids = sequentialIds();
+    const first = resolveSaleAttempt(
+      null,
+      body(),
+      organizationId,
+      ids,
+      new Date("2026-05-01T12:00:00.000Z")
+    );
+    expect(first.occurredAt).toBe("2026-05-01T12:00:00.000Z");
+    expect(first.recordedAt).toBe("2026-05-01T12:00:00.000Z");
+    const retry = resolveSaleAttempt(
+      first,
+      body(),
+      organizationId,
+      ids,
+      new Date("2026-05-01T12:30:00.000Z")
+    );
+    expect(retry).toBe(first);
+  });
+
+  it("uses the chosen instant as occurredAt and the device clock as recordedAt", () => {
+    const override = new Date(2026, 3, 25, 10, 0, 0).toISOString();
+    const attempt = resolveSaleAttempt(
+      null,
+      body(),
+      organizationId,
+      sequentialIds(),
+      new Date("2026-05-01T12:00:00.000Z"),
+      override
+    );
+    expect(attempt.occurredAt).toBe(override);
+    expect(attempt.recordedAt).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("gives a fresh command ID when only the date changes", () => {
+    const ids = sequentialIds();
+    const at = new Date("2026-05-01T12:00:00.000Z");
+    const first = resolveSaleAttempt(
+      null,
+      body(),
+      organizationId,
+      ids,
+      at,
+      null
+    );
+    const dated = resolveSaleAttempt(
+      first,
+      body(),
+      organizationId,
+      ids,
+      at,
+      "2026-04-25T13:00:00.000Z"
+    );
+    expect(dated.commandId).not.toBe(first.commandId);
+    const same = resolveSaleAttempt(
+      dated,
+      body(),
+      organizationId,
+      ids,
+      at,
+      "2026-04-25T13:00:00.000Z"
+    );
+    expect(same).toBe(dated);
+  });
+
+  it("sends recordedAt in the request, never clientCreatedAt", () => {
+    const override = new Date(2026, 3, 25, 10, 0, 0).toISOString();
+    const prepared = prepareConfirmation({
+      body: body(),
+      createId: sequentialIds(),
+      now: new Date("2026-05-01T12:00:00.000Z"),
+      occurredAtOverride: override,
+      organizationId,
+      previousAttempt: null,
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    expect(prepared.request).toMatchObject({
+      occurredAt: override,
+      recordedAt: "2026-05-01T12:00:00.000Z",
+    });
+    expect(prepared.request).not.toHaveProperty("clientCreatedAt");
+  });
+
+  it("refuses a future instant before any request", () => {
+    const prepared = prepareConfirmation({
+      body: body(),
+      createId: sequentialIds(),
+      now: new Date("2026-05-01T12:00:00.000Z"),
+      occurredAtOverride: "2026-05-01T12:10:00.000Z",
+      organizationId,
+      previousAttempt: null,
+    });
+    expect(prepared).toEqual({
+      message: "A data e hora da venda não podem estar no futuro.",
+      ok: false,
+    });
+  });
+
+  it("maps a sale too old to a message, without lock, with a fresh attempt", () => {
+    const failure = mapSaleSubmitError({
+      code: "BAD_REQUEST",
+      data: { reason: "sale_occurred_too_old" },
+    });
+    expect(failure.message).toContain("limite retroativo de 30 dias");
+    expect(failure.message).toContain("mais recente");
+    expect(failure.discardAttempt).toBe(true);
+    expect(failure.unknownOutcome).toBe(false);
+    expect(
+      failSubmission({
+        code: "BAD_REQUEST",
+        data: { reason: "sale_occurred_too_old" },
+      }).phase
+    ).toBe("failed");
+    expect(
+      mapSaleSubmitError({
+        code: "BAD_REQUEST",
+        data: { reason: "sale_occurred_in_future" },
+      }).message
+    ).toContain("adiantado");
+  });
+
+  it("formats the commercial date from the organization's calendar day", () => {
+    expect(formatCalendarDate("2026-05-01")).toBe("01/05/2026");
+  });
+
+  const dates = {
+    confirmedAt: "2026-05-10T12:00:00.000Z",
+    occurredAt: "2026-05-10T11:00:00.000Z",
+    occurredOn: "2026-05-10",
+    recordedAt: "2026-05-10T11:59:00.000Z",
+  };
+
+  it("shows the three dates, in order, with the device evidence when present", () => {
+    const rows = saleDateDetails(dates);
+    expect(rows.map((row) => row.label).slice(0, 3)).toEqual([
+      "Data da venda",
+      "Registrada no dispositivo",
+      "Confirmada no servidor",
+    ]);
+    expect(rows[0]?.value.startsWith("10/05/2026")).toBe(true);
+    expect(rows[0]?.value).toContain("(horário deste dispositivo)");
+    const without = saleDateDetails({ ...dates, recordedAt: null });
+    expect(without.map((row) => row.label)).not.toContain(
+      "Registrada no dispositivo"
+    );
+  });
+
+  it("marks a retroactive sale only when its date is before the confirmation day", () => {
+    const retro = saleDateDetails({
+      ...dates,
+      occurredAt: "2026-04-01T11:00:00.000Z",
+      occurredOn: "2026-04-01",
+    });
+    expect(retro.at(-1)).toMatchObject({ label: "Venda retroativa" });
+    expect(saleDateDetails(dates).map((row) => row.label)).not.toContain(
+      "Venda retroativa"
     );
   });
 });

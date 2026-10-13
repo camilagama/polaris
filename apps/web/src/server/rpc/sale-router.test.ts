@@ -26,6 +26,7 @@ import {
   PaymentProfileVersionConflictError,
 } from "@polaris/domain/sales/payment-profile";
 import { SaleDiscountExceedsSubtotalError } from "@polaris/domain/sales/sale-adjustments";
+import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
@@ -134,12 +135,13 @@ const confirmedResult: ConfirmSaleResult = {
   },
   replayed: false,
   sale: {
-    clientCreatedAt: null,
     commandId,
     confirmedAt: new Date("2026-10-13T18:30:01.000Z"),
     currency: "BRL",
     id: saleId,
     occurredAt: new Date("2026-10-13T18:30:00.000Z"),
+    occurredOn: "2026-10-13",
+    recordedAt: new Date("2026-10-13T18:29:58.000Z"),
   },
   totals: {
     discountTotal: "17.98",
@@ -216,6 +218,8 @@ describe("sale.confirm RPC", () => {
         currency: "BRL",
         id: saleId,
         occurredAt: "2026-10-13T18:30:00.000Z",
+        occurredOn: "2026-10-13",
+        recordedAt: "2026-10-13T18:29:58.000Z",
       },
       totals: { totalDue: "161.82" },
     });
@@ -258,8 +262,8 @@ describe("sale.confirm RPC", () => {
       })
     ).resolves.toMatchObject({ replayed: true });
     expect(confirmSale.mock.calls[0]?.[2]).toMatchObject({
-      paymentProfile: null,
       payment: { method: "pix" },
+      paymentProfile: null,
     });
   });
 
@@ -352,6 +356,37 @@ describe("sale.confirm RPC", () => {
     });
   });
 
+  it("explains a sale older than the retroactive window with a stable reason", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        confirmSale: vi.fn<ConfirmSale>(),
+        withTenantRequestContext: rejectingTenantStub(
+          new SaleOccurredTooOldError()
+        ),
+      })
+    );
+    await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      data: { reason: "sale_occurred_too_old" },
+    });
+  });
+
+  it("forwards the device evidence time and never trusts it as the sale time", async () => {
+    const confirmSale = vi.fn<ConfirmSale>(async () => confirmedResult);
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    await client.sale.confirm({
+      ...validInput,
+      recordedAt: "2026-10-13T18:29:58.000Z",
+    });
+    const passed = confirmSale.mock.calls[0]?.[2] as ConfirmSaleRepositoryInput;
+    expect(passed.recordedAt).toBe("2026-10-13T18:29:58.000Z");
+    expect(passed.occurredAt).toBe(validInput.occurredAt);
+    await expect(
+      client.sale.confirm({ ...validInput, recordedAt: "ontem" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
   it("does not leak a requested organization into the repository identity", async () => {
     const confirmSale = vi.fn<ConfirmSale>(async () => confirmedResult);
     const client = createRpcClient(

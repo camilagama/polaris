@@ -375,12 +375,13 @@ describe("sale.list and sale.get RPCs", () => {
           },
         },
         sale: {
-          clientCreatedAt: null,
           commandId,
           confirmedAt: new Date("2026-10-13T18:30:01.000Z"),
           currency: "BRL",
           id: saleId,
           occurredAt: new Date("2026-10-13T18:30:00.000Z"),
+          occurredOn: "2026-10-13",
+          recordedAt: null,
         },
         totals: {
           discountTotal: "0.00",

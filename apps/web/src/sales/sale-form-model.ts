@@ -8,6 +8,7 @@ import type {
 } from "@polaris/contracts";
 import {
   CONFIRM_SALE_COMMAND_VERSION,
+  MAX_FUTURE_CLOCK_SKEW_MS,
   normalizeConfirmSaleCommand,
 } from "@polaris/domain/sales/confirm-sale";
 import { Money } from "@polaris/domain/money/money";
@@ -37,7 +38,7 @@ type AdjustmentValueType = "fixed" | "percentage";
 type ConfirmSaleRequest = Parameters<PolarisRpcClient["sale"]["confirm"]>[0];
 export type SaleCommandBody = Omit<
   ConfirmSaleRequest,
-  "clientCreatedAt" | "commandId" | "occurredAt" | "organizationId"
+  "recordedAt" | "commandId" | "occurredAt" | "organizationId"
 >;
 
 export const MAX_SALE_ITEMS = 200;
@@ -112,6 +113,8 @@ interface ProfileSelectionDraft {
 export interface SaleFormState {
   adjustments: AdjustmentDraft[];
   items: ItemDraft[];
+  /** `datetime-local` text in the device time zone; empty means now. */
+  occurredAtLocal: string;
   payment: PaymentDraft;
   profile: ProfileSelectionDraft;
 }
@@ -266,6 +269,7 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
   return {
     adjustments: [],
     items: [createItemDraft(createId())],
+    occurredAtLocal: "",
     payment: {
       anticipationRequested: false,
       installmentPlan: "",
@@ -274,6 +278,13 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
     },
     profile: { choice: "", reviewNotice: null, seenVersion: null },
   };
+}
+
+export function editSaleDate(
+  form: SaleFormState,
+  occurredAtLocal: string
+): SaleFormState {
+  return { ...form, occurredAtLocal };
 }
 
 export function addItem(form: SaleFormState, draftId: string): SaleFormState {
@@ -867,8 +878,79 @@ export const itemFieldKey = (
 ) => `item:${draftId}:${field}`;
 export const adjustmentFieldKey = (draftId: string) =>
   `adjustment:${draftId}:value`;
+export const SALE_DATE_HINT =
+  "Deixe vazio para usar agora. Vendas retroativas são aceitas por até 30 dias (data do calendário da organização); datas futuras não são aceitas.";
+
+const localDateTimePattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+type LocalDateTimeParse =
+  | { kind: "empty" }
+  | { kind: "invalid" }
+  | { date: Date; kind: "ok" };
+
+/**
+ * Reads a `datetime-local` value as a moment in the device time zone. A date
+ * that does not exist (31/02) is invalid rather than rolled over.
+ */
+export function parseLocalDateTime(text: string): LocalDateTimeParse {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return { kind: "empty" };
+  }
+  const match = localDateTimePattern.exec(trimmed);
+  if (!match) {
+    return { kind: "invalid" };
+  }
+  const [year, month, day, hour, minute, second] = match
+    .slice(1)
+    .map((part) => (part === undefined ? 0 : Number(part)));
+  const date = new Date(
+    year ?? 0,
+    (month ?? 1) - 1,
+    day ?? 1,
+    hour ?? 0,
+    minute ?? 0,
+    second ?? 0
+  );
+  const same =
+    date.getFullYear() === year &&
+    date.getMonth() === (month ?? 1) - 1 &&
+    date.getDate() === day &&
+    date.getHours() === hour &&
+    date.getMinutes() === minute;
+  return same ? { date, kind: "ok" } : { kind: "invalid" };
+}
+
+/**
+ * The optional commercial date and time: empty means now (chosen when the
+ * attempt starts). A value must exist and cannot be more than the server's
+ * clock-skew tolerance ahead of this device. The retroactive limit depends on
+ * the organization's calendar, so only the server checks it.
+ */
+export function validateSaleDate(
+  text: string,
+  now: Date
+): { error: string | null; occurredAt: string | null } {
+  const parsed = parseLocalDateTime(text);
+  if (parsed.kind === "empty") {
+    return { error: null, occurredAt: null };
+  }
+  if (parsed.kind === "invalid") {
+    return { error: "Informe uma data e hora válidas.", occurredAt: null };
+  }
+  if (parsed.date.getTime() > now.getTime() + MAX_FUTURE_CLOCK_SKEW_MS) {
+    return {
+      error: "A data e hora da venda não podem estar no futuro.",
+      occurredAt: null,
+    };
+  }
+  return { error: null, occurredAt: parsed.date.toISOString() };
+}
+
 export const formFieldKeys = {
   adjustments: "adjustments",
+  occurredAt: "occurredAt",
   installmentPlan: "payment:installmentPlan",
   installments: "payment:installments",
   method: "payment:method",
@@ -1331,7 +1413,11 @@ export interface SaleEvaluation {
   feePreview: FeePreview | null;
   /** Every problem, including fields that are just not filled in yet. */
   issueCount: number;
+  /** Text for the summary: the chosen date, or that it will be now. */
+  dateText: string;
   methodText: string;
+  /** ISO instant chosen by the operator; null means now at attempt creation. */
+  occurredAtOverride: string | null;
   profileText: string;
   stockWarnings: Record<string, string>;
   summary: SaleSummary | null;
@@ -1419,9 +1505,16 @@ function buildBody(
 export function evaluateSaleForm(
   form: SaleFormState,
   context: EvaluationContext,
-  options: { showRequired: boolean }
+  options: { now?: Date | undefined; showRequired: boolean }
 ): SaleEvaluation {
   const issues: Issue[] = [];
+  const date = validateSaleDate(
+    form.occurredAtLocal,
+    options.now ?? new Date()
+  );
+  if (date.error) {
+    pushIssue(issues, formFieldKeys.occurredAt, date.error, false);
+  }
   const items = parseItems(form.items, issues);
   const adjustments = parseAdjustments(form.adjustments, issues);
   const payment = parsePayment(form.payment, issues);
@@ -1442,8 +1535,13 @@ export function evaluateSaleForm(
     body,
     errors: visibleErrors(issues, options.showRequired),
     feePreview,
+    dateText:
+      date.occurredAt === null
+        ? "Agora, ao confirmar"
+        : formatInstant(date.occurredAt),
     issueCount: issues.length,
     methodText: methodSummary(form.payment),
+    occurredAtOverride: date.occurredAt,
     profileText: profileSummary(form.profile, resolution),
     stockWarnings: items ? stockWarnings(items, context.stock) : {},
     summary,
@@ -1457,11 +1555,17 @@ export function evaluateSaleForm(
 export interface SaleAttempt {
   commandId: string;
   occurredAt: string;
+  /** Device clock when the attempt started; local evidence only. */
+  recordedAt: string;
   signature: string;
 }
 
-function bodySignature(body: SaleCommandBody, organizationId: string): string {
-  return JSON.stringify({ body, organizationId });
+function bodySignature(
+  body: SaleCommandBody,
+  organizationId: string,
+  occurredAtOverride: string | null
+): string {
+  return JSON.stringify({ body, occurredAtOverride, organizationId });
 }
 
 /**
@@ -1474,13 +1578,19 @@ export function resolveSaleAttempt(
   body: SaleCommandBody,
   organizationId: string,
   createId: () => string,
-  now: Date
+  now: Date,
+  occurredAtOverride: string | null = null
 ): SaleAttempt {
-  const signature = bodySignature(body, organizationId);
+  const signature = bodySignature(body, organizationId, occurredAtOverride);
   if (previous !== null && previous.signature === signature) {
     return previous;
   }
-  return { commandId: createId(), occurredAt: now.toISOString(), signature };
+  return {
+    commandId: createId(),
+    occurredAt: occurredAtOverride ?? now.toISOString(),
+    recordedAt: now.toISOString(),
+    signature,
+  };
 }
 
 export type PreparedConfirmation =
@@ -1496,27 +1606,42 @@ export function prepareConfirmation(input: {
   body: SaleCommandBody;
   createId: () => string;
   now: Date;
+  /** The operator's commercial instant; null means now. */
+  occurredAtOverride?: string | null;
   organizationId: string;
   previousAttempt: SaleAttempt | null;
 }): PreparedConfirmation {
+  const override = input.occurredAtOverride ?? null;
+  if (
+    override !== null &&
+    new Date(override).getTime() >
+      input.now.getTime() + MAX_FUTURE_CLOCK_SKEW_MS
+  ) {
+    return {
+      message: "A data e hora da venda não podem estar no futuro.",
+      ok: false,
+    };
+  }
   const attempt = resolveSaleAttempt(
     input.previousAttempt,
     input.body,
     input.organizationId,
     input.createId,
-    input.now
+    input.now,
+    override
   );
   const command = {
     ...input.body,
     commandId: attempt.commandId,
     occurredAt: attempt.occurredAt,
+    recordedAt: attempt.recordedAt,
   };
   const request: ConfirmSaleRequest = {
     ...command,
     organizationId: input.organizationId,
   };
   try {
-    normalizeConfirmSaleCommand(command);
+    normalizeConfirmSaleCommand(command, input.now);
   } catch {
     return {
       message:
@@ -1641,6 +1766,14 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
       discardAttempt: true,
       message:
         "O horário da venda está adiantado em relação ao servidor. Verifique o relógio do dispositivo.",
+    },
+  ],
+  [
+    "sale_occurred_too_old",
+    {
+      discardAttempt: true,
+      message:
+        "A data da venda é mais antiga que o limite retroativo de 30 dias. Escolha uma data mais recente em “Data e hora da venda” e confirme de novo.",
     },
   ],
   [
@@ -1927,6 +2060,68 @@ function confirmedPaymentDetails(
   ];
 }
 
+/** dd/mm/aaaa from a YYYY-MM-DD calendar date, without any time zone shift. */
+export function formatCalendarDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+const timeFormatter = new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" });
+function localDay(instant: string): string {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * The three separate dates of a confirmed sale: the commercial date (the
+ * organization's calendar day, plus the local time of the instant), the
+ * device's recording evidence, and the server's confirmation, which is the
+ * authority. A commercial date before the confirmation day is marked.
+ */
+export function saleDateDetails(sale: {
+  confirmedAt: string;
+  occurredAt: string;
+  occurredOn: string;
+  recordedAt: string | null;
+}): ConfirmedSaleDetail[] {
+  const time = new Date(sale.occurredAt);
+  const timeText = Number.isNaN(time.getTime())
+    ? ""
+    : ` · ${timeFormatter.format(time)} (horário deste dispositivo)`;
+  const rows: ConfirmedSaleDetail[] = [
+    {
+      label: "Data da venda",
+      tone: "plain",
+      value: `${formatCalendarDate(sale.occurredOn)}${timeText}`,
+    },
+  ];
+  if (sale.recordedAt !== null) {
+    rows.push({
+      label: "Registrada no dispositivo",
+      tone: "plain",
+      value: formatInstant(sale.recordedAt),
+    });
+  }
+  rows.push({
+    label: "Confirmada no servidor",
+    tone: "plain",
+    value: formatInstant(sale.confirmedAt),
+  });
+  const confirmedDay = localDay(sale.confirmedAt);
+  if (confirmedDay !== "" && sale.occurredOn < confirmedDay) {
+    rows.push({
+      label: "Venda retroativa",
+      tone: "plain",
+      value: "A data da venda é anterior ao dia da confirmação no servidor.",
+    });
+  }
+  return rows;
+}
+
 /** Display model of the confirmed sale exactly as the server returned it. */
 export function confirmedSaleView(
   sale: ConfirmedSaleReadModel
@@ -1942,16 +2137,7 @@ export function confirmedSaleView(
     replayed: sale.replayed,
     saleDetails: [
       { label: "Venda", tone: "plain", value: sale.sale.id },
-      {
-        label: "Data comercial",
-        tone: "plain",
-        value: formatInstant(sale.sale.occurredAt),
-      },
-      {
-        label: "Confirmada no servidor",
-        tone: "plain",
-        value: formatInstant(sale.sale.confirmedAt),
-      },
+      ...saleDateDetails(sale.sale),
     ],
     totals: confirmedTotals(sale),
   };

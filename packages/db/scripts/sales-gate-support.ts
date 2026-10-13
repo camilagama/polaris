@@ -93,9 +93,18 @@ export async function expectSqlState(
   );
 }
 
+/**
+ * An instant a few hours back, always inside the retroactive window and never in
+ * the future, so gates do not expire as the calendar moves on.
+ */
+export function recentInstant(hoursAgo = 3): string {
+  return new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+}
+
 export async function createTenantFixture(
   adminPool: AdminPool,
-  label: string
+  label: string,
+  timezone = "America/Sao_Paulo"
 ): Promise<TenantFixture> {
   const userId = randomUUID();
   const organizationId = randomUUID();
@@ -105,7 +114,7 @@ export async function createTenantFixture(
   );
   await adminPool.query(
     "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, $2, $3)",
-    [organizationId, `PR43 sales gate ${label}`, "America/Sao_Paulo"]
+    [organizationId, `PR43 sales gate ${label}`, timezone]
   );
   await adminPool.query(
     "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
@@ -307,7 +316,7 @@ export function confirmPlainSale(
           quantity: item.quantity,
           variantId: item.variantId,
         })),
-        occurredAt: options.occurredAt ?? "2026-10-12T15:30:00-03:00",
+        occurredAt: options.occurredAt ?? recentInstant(),
         payment: { anticipationRequested: false, method: "pix" },
         paymentProfile: null,
         requestId: randomUUID(),

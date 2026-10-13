@@ -425,12 +425,13 @@ const confirmedSale = z.object({
   }),
   replayed: z.boolean(),
   sale: z.object({
-    clientCreatedAt: z.string().datetime().nullable(),
+    recordedAt: z.string().datetime().nullable(),
     commandId: z.string().uuid(),
     confirmedAt: z.string().datetime(),
     currency: z.literal("BRL"),
     id: z.string().uuid(),
     occurredAt: z.string().datetime(),
+    occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   }),
   totals: z.object({
     discountTotal: z.string(),
@@ -964,7 +965,7 @@ export const polarisContract = {
       .input(
         z.object({
           adjustments: z.array(saleAdjustmentInput).max(20),
-          clientCreatedAt: z.string().datetime({ offset: true }).optional(),
+          recordedAt: z.string().datetime({ offset: true }).optional(),
           commandId: z.string().uuid(),
           commandVersion: z.literal(1),
           items: z.array(saleItemInput).min(1).max(200),

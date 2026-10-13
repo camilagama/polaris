@@ -53,7 +53,7 @@ export interface ConfirmSalePaymentProfileSelection {
 export interface ConfirmSaleCommandInput {
   adjustments: readonly SaleAdjustmentInput[];
   /** Local creation evidence for offline commands; never an authoritative time. */
-  clientCreatedAt?: string | null;
+  recordedAt?: string | null;
   commandId: string;
   commandVersion: number;
   items: readonly ConfirmSaleItemInput[];
@@ -74,7 +74,7 @@ export interface NormalizedConfirmSaleItem {
 export interface NormalizedConfirmSaleCommand {
   adjustments: readonly NormalizedSaleAdjustment[];
   calculation: SaleAdjustmentCalculation;
-  clientCreatedAt: Date | null;
+  recordedAt: Date | null;
   commandId: string;
   items: readonly NormalizedConfirmSaleItem[];
   occurredAt: Date;
@@ -246,10 +246,10 @@ export function normalizeConfirmSaleCommand(
   if (occurredAt.getTime() > now.getTime() + MAX_FUTURE_CLOCK_SKEW_MS) {
     throw new SaleOccurredInFutureError();
   }
-  const clientCreatedAt =
-    input.clientCreatedAt === undefined || input.clientCreatedAt === null
+  const recordedAt =
+    input.recordedAt === undefined || input.recordedAt === null
       ? null
-      : parseInstant(input.clientCreatedAt);
+      : parseInstant(input.recordedAt);
   const items = input.items.map(normalizeItem);
   const paymentProfile = normalizeProfileSelection(input.paymentProfile);
 
@@ -262,7 +262,7 @@ export function normalizeConfirmSaleCommand(
   return {
     adjustments: calculation.adjustments,
     calculation,
-    clientCreatedAt,
+    recordedAt,
     commandId: input.commandId.toLowerCase(),
     items,
     occurredAt,

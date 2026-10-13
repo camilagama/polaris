@@ -24,13 +24,13 @@ import type {
   SaleListEntry,
 } from "@polaris/db/sale-query-repository";
 import type {
-  CreateSaleReturnResult,
-  createSaleReturn,
-} from "@polaris/db/sale-return-repository";
-import type {
   ConfirmSaleResult,
   confirmSale,
 } from "@polaris/db/sale-repository";
+import type {
+  CreateSaleReturnResult,
+  createSaleReturn,
+} from "@polaris/db/sale-return-repository";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
@@ -46,9 +46,9 @@ interface SaleRpcDependencies {
   confirmSale: typeof confirmSale | undefined;
   createSaleReturn: typeof createSaleReturn | undefined;
   defaultCancelSale: typeof cancelSale;
-  defaultCreateSaleReturn: typeof createSaleReturn;
   defaultChangeSaleCustomerLink: typeof changeSaleCustomerLink;
   defaultConfirmSale: typeof confirmSale;
+  defaultCreateSaleReturn: typeof createSaleReturn;
   defaultGetSale: typeof getSale;
   defaultGetSaleCustomerLink: typeof getSaleCustomerLink;
   defaultListSales: typeof listSales;
@@ -102,12 +102,13 @@ function confirmedSaleReadModel(
     },
     replayed: result.replayed,
     sale: {
-      clientCreatedAt: result.sale.clientCreatedAt?.toISOString() ?? null,
       commandId: result.sale.commandId,
       confirmedAt: result.sale.confirmedAt.toISOString(),
       currency: "BRL",
       id: result.sale.id,
       occurredAt: result.sale.occurredAt.toISOString(),
+      occurredOn: result.sale.occurredOn,
+      recordedAt: result.sale.recordedAt?.toISOString() ?? null,
     },
     totals: result.totals,
   };
@@ -218,13 +219,13 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
         operation: (transaction, identity) =>
           confirmSaleRepository(transaction, identity, {
             adjustments: input.adjustments,
-            clientCreatedAt: input.clientCreatedAt ?? null,
             commandId: input.commandId,
             commandVersion: input.commandVersion,
             items: input.items,
             occurredAt: input.occurredAt,
             payment: input.payment,
             paymentProfile: input.paymentProfile,
+            recordedAt: input.recordedAt ?? null,
             requestId: dependencies.requestAuditId(context.requestId),
           }),
         request: context.request,

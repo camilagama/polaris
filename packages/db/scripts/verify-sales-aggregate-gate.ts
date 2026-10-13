@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  snapshotPaymentProfileForSale,
-  PaymentProfileVersionConflictError,
   type PaymentFeeMode,
   type PaymentProfileForSale,
+  PaymentProfileVersionConflictError,
+  snapshotPaymentProfileForSale,
 } from "@polaris/domain/sales/payment-profile";
 import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/client";
@@ -15,36 +15,36 @@ import {
   restorePaymentProfile,
   updatePaymentProfile,
 } from "../src/payment-profile-repository";
-import {
-  saleAdjustments,
-  saleItems,
-  salePayments,
-  sales,
-} from "../src/schema/sale";
 import { stockMovements } from "../src/schema/inventory";
 import {
   paymentProfileRules,
   paymentProfiles,
 } from "../src/schema/payment-profile";
 import {
+  saleAdjustments,
+  saleItems,
+  salePayments,
+  sales,
+} from "../src/schema/sale";
+import type {
+  TenantRequestIdentity,
+  TenantRequestTransaction,
+} from "../src/tenant-transaction";
+import {
   createProductFixture,
   createTenantFixture,
   disposableHostPattern,
-  gateBranchPattern,
   expectSqlState,
+  gateBranchPattern,
+  type ProductFixture,
   poolerPattern,
   requiredEnvironment,
   runtimeRole,
   sqlState,
   temporaryRuntimeUrl,
-  type ProductFixture,
   withRuntimeSqlContext,
   withTenant,
 } from "./sales-gate-support";
-import type {
-  TenantRequestIdentity,
-  TenantRequestTransaction,
-} from "../src/tenant-transaction";
 
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 
@@ -81,6 +81,7 @@ async function insertSaleGraph(
       currency: "BRL",
       itemCount: 1,
       occurredAt: new Date("2026-10-13T15:00:00.000Z"),
+      occurredOn: "2026-10-13",
       organizationId: identity.organizationId,
     })
     .returning();
@@ -156,6 +157,7 @@ async function insertSaleHeader(
       currency: "BRL",
       itemCount: 1,
       occurredAt: new Date("2026-10-13T15:00:00.000Z"),
+      occurredOn: "2026-10-13",
       organizationId: identity.organizationId,
       ...overrides,
     })
@@ -401,10 +403,10 @@ async function run() {
           processingFee: { mode: "none" as const },
         },
         {
-          anticipationFee: { mode: "fixed" as const, fixedAmount: "0.50" },
+          anticipationFee: { fixedAmount: "0.50", mode: "fixed" as const },
           expectedSettlementDays: 1,
           method: "debit_card",
-          processingFee: { mode: "fixed" as const, fixedAmount: "1.25" },
+          processingFee: { fixedAmount: "1.25", mode: "fixed" as const },
         },
         {
           anticipationFee: {
@@ -737,10 +739,10 @@ async function run() {
       async (transaction, identity) =>
         await updatePaymentProfile(transaction, identity, {
           ...profileInput,
-          name: "Perfil sintético PR42 atualizado",
-          rules: changedRules,
           expectedVersion: createdProfile.version,
           id: createdProfile.id,
+          name: "Perfil sintético PR42 atualizado",
+          rules: changedRules,
         })
     );
     assert.equal(updatedProfile.profile.version, 2);

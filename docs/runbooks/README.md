@@ -8,6 +8,8 @@ Para configurar a proteção das rotas de autenticação, consulte [Auth abuse p
 
 Para operar o staging e a reconciliação de mídia privada, consulte [Media storage reconciliation](./media-storage-reconciliation.md).
 
+Para provar o núcleo de vendas (venda atômica, estoque, dinheiro, cancelamento, devoluções e reconciliação de cliente), consulte [Gate 4 — núcleo de vendas](./gate-4-sales-core.md).
+
 Antes de qualquer comando Cloudflare ou Neon, siga [CLI profile policy](./cli-profile-policy.md) para confirmar a identidade autorizada.
 
 Cada runbook deve registrar gatilho, pré-requisitos de acesso, alvo seguro, passos, verificação, rollback ou forward-fix e responsável por escalonamento. Não documente ação de produção como comando executável antes de testá-la em ambiente descartável ou staging.
