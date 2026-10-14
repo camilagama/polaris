@@ -21,8 +21,25 @@ const isOutboxLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-outbox-lab";
 const isLocalLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-local-lab";
+const isAttentionLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
 
-if (isOutboxLabRoute) {
+if (isAttentionLabRoute) {
+  const loadAttentionLab = async () => {
+    try {
+      const { AttentionLab } = await import("./offline-poc/attention-lab");
+      root.render(<AttentionLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir o laboratório da atenção</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadAttentionLab().catch(() => undefined);
+} else if (isOutboxLabRoute) {
   const loadOutboxLab = async () => {
     try {
       const { OutboxLab } = await import("./offline-poc/outbox-lab");

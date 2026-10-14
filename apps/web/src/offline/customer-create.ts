@@ -155,3 +155,41 @@ export async function restorePendingCustomers(
   }
   return rows.length;
 }
+
+/**
+ * The explicit "throw this customer away" action for one that was refused (or
+ * that the person no longer wants): removes the command and its local row. Kept
+ * while the command is being sent (the server may already have created it) and
+ * while a later queued command refers to the customer.
+ */
+export async function discardPendingCustomer(
+  outbox: Outbox,
+  writer: LocalWriter,
+  commandId: string
+): Promise<void> {
+  const { commands } = await outbox.snapshot();
+  const target = commands.find((command) => command.commandId === commandId);
+  if (
+    !(
+      target &&
+      target.type === CUSTOMER_CREATE_COMMAND &&
+      isCustomerPayload(target.payload)
+    )
+  ) {
+    throw new Error("not_a_pending_customer");
+  }
+  if (target.status === "sending") {
+    throw new Error("customer_is_sending");
+  }
+  const { customerId } = target.payload;
+  const dependent = commands.some(
+    (command) =>
+      command.commandId !== commandId &&
+      JSON.stringify(command.payload).includes(customerId)
+  );
+  if (dependent) {
+    throw new Error("customer_has_dependent_commands");
+  }
+  await outbox.discard(commandId);
+  await writer.remove("customers", [customerId]);
+}

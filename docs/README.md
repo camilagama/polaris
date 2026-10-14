@@ -60,5 +60,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0035](adr/0035-produto-criado-offline.md) | Produto criado offline | aceito |
 | [0036](adr/0036-comandos-de-estoque-offline.md) | Comandos de estoque offline | aceito |
 | [0037](adr/0037-venda-offline.md) | Venda offline | aceito |
+| [0038](adr/0038-painel-de-atencao-offline.md) | Painel de atenção das operações offline | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

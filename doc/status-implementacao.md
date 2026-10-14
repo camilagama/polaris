@@ -848,6 +848,17 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-sale:verify` (`offline-sale`, suítes `ci` e `gate5`): confirmada uma vez com `recordedAt` e replay; versão por linha; recusa total sem rastro; recusa gravada e reenvio como comando novo; janela de datas; disputa pelas últimas unidades; isolamento entre organizações. |
 | Limites | Registrados | Sem perfil de pagamento offline; sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; aparelho offline além da janela retroativa tem as vendas recusadas por `sale_occurred_too_old`. |
 
+### PR58 — Painel de atenção das operações offline (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr58-conflict-attention` sobre `codex/pr57-offline-sale`. |
+| Decisões | Tomadas pelo projeto | [ADR 0038](../docs/adr/0038-painel-de-atencao-offline.md): modelo puro de itens de atenção (causa, explicação, ações honestas por causa); sem "forçar sincronização"; descarte em duas etapas; reenvio só da venda recuperável, como comando novo; mudança de direito leva à revisão da conta sem descartar. |
+| Modelo | Concluído | `offline/attention.ts` (`buildAttention`, `discardAttentionItem`, `resubmitAttentionItem`, `discardWarning`); `discardPendingCustomer` no módulo do cliente; 8 testes. |
+| Painel | Concluído | `offline/attention-panel.tsx` e CSS (só apresentação, botões desabilitados durante a resolução); 5 testes de marcação (sem botão que force a sincronização). |
+| Gate de navegador | Concluído | `e2e/offline-attention.e2e.ts` sobre o laboratório `/offline-attention-lab` (outbox real em IndexedDB): venda recusada aparece, bloqueia a fila e sobrevive a recarregar; reenvio como comando novo; descarte com confirmação; direito alterado só leva à revisão da conta. 4 cenários em Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | O painel ainda não está montado no app (a interface offline não está montada); sem edição guiada de SKU; a prova em Android físico ainda bloqueia ligar a escrita offline. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
