@@ -26,6 +26,7 @@ import {
   normalizeReceiveStockInput,
 } from "@polaris/domain/inventory/receive-stock";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
+import { withCapability } from "./identity";
 
 /**
  * `product.create` (plan PR55): a product with its default variant and, when the
@@ -206,7 +207,7 @@ export function createProductCreateHandler(
         // The lease and the role granted `inventory:adjust` (see `extraCapabilities`).
         await dependencies.receiveStock(
           transaction,
-          { ...identity, capability: INVENTORY_ADJUST },
+          withCapability(identity, INVENTORY_ADJUST),
           {
             commandId: context.commandId,
             commandVersion: 1,

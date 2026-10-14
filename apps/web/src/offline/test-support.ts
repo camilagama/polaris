@@ -32,6 +32,9 @@ export class FakeWriter implements LocalWriter {
   };
   meta: LocalSyncMeta | null = null;
 
+  inventoryRow(variantId: string) {
+    return Promise.resolve(this.stock(variantId));
+  }
   keys(collection: BootstrapCollectionName) {
     return Promise.resolve([...this.data[collection].keys()]);
   }
@@ -360,6 +363,158 @@ export class FakeCatalogServer implements BootstrapSource {
     return Promise.resolve({
       nextAfterId: null,
       rows: rows as LocalRows[K][],
+    });
+  }
+  pull(cursor: string, limit: number) {
+    const after = Number(cursor);
+    const batch = this.changes
+      .filter((change) => change.seq > after)
+      .slice(0, limit);
+    return Promise.resolve({
+      changes: batch,
+      hasMore: false,
+      nextCursor: String(batch.at(-1)?.seq ?? after),
+    });
+  }
+  recentSales() {
+    return Promise.resolve([]);
+  }
+}
+
+/**
+ * A synthetic server for the stock commands: idempotent by command ID, refusing
+ * a write-off below zero and a count made against a stale balance version, like
+ * the real ledger. Every movement moves the balance version by one.
+ */
+export class FakeStockServer implements BootstrapSource {
+  readonly balances = new Map<string, LocalInventoryReadModel>();
+  readonly outcomes = new Map<string, PushResultReadModel>();
+  readonly changes: SyncChangeReadModel[] = [];
+  executions = 0;
+  requests = 0;
+  lostResponses = 0;
+
+  /** Puts a balance on the server (and nowhere else). */
+  seed(variantId: string, quantity: number, version: number) {
+    this.balances.set(variantId, {
+      productId: "0199c2d0-0000-7000-8000-0000000000f1",
+      quantity,
+      updatedAt: "2026-10-14T12:00:00.000Z",
+      variantId,
+      version,
+    });
+  }
+
+  private refuse(commandId: string, code: string): PushResultReadModel {
+    return {
+      code,
+      commandId,
+      replayed: false,
+      result: null,
+      status: "rejected",
+    };
+  }
+
+  private execute(command: PushCommandReadModel): PushResultReadModel {
+    const payload = command.payload as {
+      physicalQuantity?: number;
+      quantity?: number;
+      variantId: string;
+    };
+    const current = this.balances.get(payload.variantId);
+    const quantity = current?.quantity ?? 0;
+    const version = current?.version ?? 0;
+    let next: number;
+    if (command.type === "stock.receive") {
+      next = quantity + (payload.quantity ?? 0);
+    } else if (command.type === "stock.write_off") {
+      next = quantity - (payload.quantity ?? 0);
+      if (next < 0) {
+        return this.refuse(command.commandId, "insufficient_stock");
+      }
+    } else if (command.type === "stock.count") {
+      if (version !== command.baseVersion) {
+        return this.refuse(command.commandId, "inventory_version_conflict");
+      }
+      next = payload.physicalQuantity ?? 0;
+    } else {
+      return this.refuse(command.commandId, "unsupported_command_type");
+    }
+    this.balances.set(payload.variantId, {
+      productId: "0199c2d0-0000-7000-8000-0000000000f1",
+      quantity: next,
+      updatedAt: "2026-10-14T13:00:00.000Z",
+      variantId: payload.variantId,
+      version: version + 1,
+    });
+    this.changes.push({
+      entityId: payload.variantId,
+      entityType: "inventory_balance",
+      seq: this.changes.length + 1,
+    });
+    return {
+      code: null,
+      commandId: command.commandId,
+      replayed: false,
+      result: {
+        quantity: next,
+        variantId: payload.variantId,
+        version: version + 1,
+      },
+      status: "accepted",
+    };
+  }
+
+  push = (input: { commands: PushCommandReadModel[] }) => {
+    this.requests += 1;
+    const results: PushResultReadModel[] = [];
+    let blocked = false;
+    for (const command of input.commands) {
+      if (blocked) {
+        results.push({
+          code: null,
+          commandId: command.commandId,
+          replayed: false,
+          result: null,
+          status: "not_processed",
+        });
+        continue;
+      }
+      const seen = this.outcomes.get(command.commandId);
+      if (seen) {
+        results.push({ ...seen, replayed: true });
+        blocked = seen.status !== "accepted";
+        continue;
+      }
+      this.executions += 1;
+      const outcome = this.execute(command);
+      this.outcomes.set(command.commandId, outcome);
+      results.push(outcome);
+      blocked = outcome.status !== "accepted";
+    }
+    if (this.lostResponses > 0) {
+      this.lostResponses -= 1;
+      return Promise.reject(new Error("network lost the response"));
+    }
+    return Promise.resolve({ results });
+  };
+
+  getCursor() {
+    return Promise.resolve(String(this.changes.length));
+  }
+  page<K extends BootstrapCollectionName>(
+    collection: K,
+    request: { ids?: string[] }
+  ) {
+    const rows =
+      collection === "inventory"
+        ? [...this.balances.values()].filter(
+            (row) => !request.ids || request.ids.includes(row.variantId)
+          )
+        : [];
+    return Promise.resolve({
+      nextAfterId: null,
+      rows: rows as unknown as LocalRows[K][],
     });
   }
   pull(cursor: string, limit: number) {

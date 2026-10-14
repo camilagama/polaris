@@ -1,5 +1,10 @@
 import { createCustomerCreateHandler } from "./handlers/customer-create";
 import { createProductCreateHandler } from "./handlers/product-create";
+import {
+  createStockCountHandler,
+  createStockReceiveHandler,
+  createStockWriteOffHandler,
+} from "./handlers/stock-commands";
 import type { SyncCommandHandler } from "./push";
 
 /**
@@ -12,4 +17,7 @@ import type { SyncCommandHandler } from "./push";
 export const syncCommandHandlers: readonly SyncCommandHandler[] = [
   createCustomerCreateHandler(),
   createProductCreateHandler(),
+  createStockReceiveHandler(),
+  createStockWriteOffHandler(),
+  createStockCountHandler(),
 ];

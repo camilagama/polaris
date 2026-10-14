@@ -823,6 +823,18 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-product:verify` (`offline-product`, suítes `ci` e `gate5`): IDs, SKU, preço e estoque preservados; change log; reenvio cria uma vez; SKU em uso (qualquer caixa) recusa tudo; ID de produto ou variante ocupado (mesma ou outra organização); atomicidade com estoque recusado e categoria indisponível; `receiveStock` negado sob `sync:push` puro. |
 | Limites | Registrados | Só a variante padrão é criada offline (opções e variantes continuam online); sem laboratório de navegador nem tela; a prova em Android físico ainda bloqueia ligar a escrita offline. |
 
+### PR56 — Comandos de estoque offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr56-offline-stock-commands` sobre `codex/pr55-offline-product-create`. |
+| Decisões | Tomadas pelo projeto | [ADR 0036](../docs/adr/0036-comandos-de-estoque-offline.md): `stock.receive`, `stock.write_off`, `stock.count` (capability `inventory:adjust`); servidor autoritativo (`insufficient_stock`, `inventory_version_conflict`), sem "forçar"; o cliente não edita o saldo local, o saldo exibido é a linha do servidor mais a fila; descarte explícito. |
+| Banco | Concluído | Sem migration e sem mudança de repositório: os manipuladores chamam `receiveStock`, `writeOffStock` e `inventoryCount`. |
+| Servidor | Concluído | `handlers/stock-commands.ts` (três manipuladores, códigos estáveis, contagem exige `baseVersion`), `handlers/identity.ts` (`withCapability`); 13 testes. |
+| Cliente | Concluído | `offline/stock-commands.ts`: `effectiveStock`, `receiveStockOffline`, `writeOffStockOffline`, `countStockOffline` (leva a versão-base), `pendingStockCommands`, `discardPendingStock`; leitor `inventoryRow` no armazenamento local; servidor sintético do razão; 12 testes. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-stock:verify` (`offline-stock`, suítes `ci` e `gate5`): entrada uma vez e replay; fila com a versão-base prevista igual à do razão; baixa acima do saldo e contagem obsoleta recusadas sem rastro; variante inexistente; data futura; duas contagens concorrentes (uma conflita); duas baixas concorrentes (saldo nunca negativo); isolamento entre organizações. |
+| Limites | Registrados | Sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; contagem obsoleta após descarte de um movimento anterior só é percebida pelo servidor. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

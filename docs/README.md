@@ -58,5 +58,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0033](adr/0033-protocolo-sync-push.md) | Protocolo do sync.push | aceito |
 | [0034](adr/0034-cliente-criado-offline.md) | Cliente criado offline | aceito |
 | [0035](adr/0035-produto-criado-offline.md) | Produto criado offline | aceito |
+| [0036](adr/0036-comandos-de-estoque-offline.md) | Comandos de estoque offline | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

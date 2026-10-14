@@ -68,6 +68,7 @@
     "poc:offline-devices:verify": "bun scripts/verify-offline-devices-gate.ts",
     "poc:offline-lease:verify": "bun scripts/verify-offline-lease-gate.ts",
     "poc:offline-product:verify": "bun scripts/verify-offline-product-gate.ts",
+    "poc:offline-stock:verify": "bun scripts/verify-offline-stock-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
