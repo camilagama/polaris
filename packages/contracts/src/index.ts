@@ -192,6 +192,7 @@ const paymentProfile = z.object({
 });
 
 export type PaymentProfileReadModel = z.infer<typeof paymentProfile>;
+export const paymentProfileReadModelSchema = paymentProfile;
 
 export const productMediaAssetReadModelSchema = z.object({
   assetId: z.string().uuid(),
@@ -415,6 +416,13 @@ const saleItemInput = z.object({
   variantId: z.string().uuid(),
 });
 
+/** The payment profile a sale was priced with, by the version the person saw. */
+const salePaymentProfileSelection = z.object({
+  // the database column is an integer: a bigger number is not a version, and must not reach it
+  expectedVersion: z.number().int().positive().max(2_147_483_647),
+  id: z.string().uuid(),
+});
+
 const salePaymentInput = z.object({
   anticipationRequested: z.boolean(),
   installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
@@ -425,9 +433,11 @@ const salePaymentInput = z.object({
 /**
  * The payload of the offline `sale.confirm` command (plan PR57): what a device
  * can state about a sale without the server. The command ID, the organization
- * and the command version come from the sync frame, and there is no payment
- * profile (profiles are not kept on the device): the sale is confirmed with the
- * plain payment method.
+ * and the command version come from the sync frame. The payment profile is
+ * optional (absent or null: the plain payment method): a device that saw the
+ * profile on its last connection names it by id and by the version it saw, and
+ * the server refuses the sale if that version is not the current one (the fees
+ * and the term the person was shown would not be the ones recorded).
  */
 export const offlineSalePayloadSchema = z
   .object({
@@ -435,6 +445,7 @@ export const offlineSalePayloadSchema = z
     items: z.array(saleItemInput).min(1).max(200),
     occurredAt: z.string().datetime({ offset: true }),
     payment: salePaymentInput,
+    paymentProfile: salePaymentProfileSelection.nullable().optional(),
     recordedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -1282,12 +1293,7 @@ export const polarisContract = {
           occurredAt: z.string().datetime({ offset: true }),
           organizationId: z.string().trim().min(1),
           payment: salePaymentInput,
-          paymentProfile: z
-            .object({
-              expectedVersion: z.number().int().positive(),
-              id: z.string().uuid(),
-            })
-            .nullable(),
+          paymentProfile: salePaymentProfileSelection.nullable(),
           recordedAt: z.string().datetime({ offset: true }).optional(),
         })
       )

@@ -23,12 +23,18 @@ type AttentionCause =
   | "id_conflict"
   | "insufficient_stock"
   | "other"
+  | "profile_changed"
+  | "profile_unavailable"
   | "sale_too_old"
   | "sku_conflict"
   | "unavailable"
   | "version_conflict";
 
-export type AttentionAction = "discard" | "resubmit" | "review_account";
+export type AttentionAction =
+  | "discard"
+  | "resubmit"
+  | "resubmit_without_profile"
+  | "review_account";
 
 export interface AttentionItem {
   actions: AttentionAction[];
@@ -64,6 +70,8 @@ const DATA_CAUSES: Readonly<Record<string, AttentionCause>> = {
   customer_id_conflict: "id_conflict",
   insufficient_stock: "insufficient_stock",
   inventory_version_conflict: "version_conflict",
+  payment_profile_changed: "profile_changed",
+  payment_profile_unavailable: "profile_unavailable",
   product_deleted: "unavailable",
   product_id_conflict: "id_conflict",
   sale_occurred_too_old: "sale_too_old",
@@ -142,6 +150,10 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
       return kind === "sale"
         ? "Um dos produtos desta venda não está mais disponível (arquivado, removido ou inexistente). Restaure o produto e reenvie a venda, ou descarte-a."
         : "O produto ou a categoria deste registro não está mais disponível. Restaure-o e refaça o registro.";
+    case "profile_changed":
+      return "O perfil de pagamento usado nesta venda mudou (taxas ou prazo) depois que este aparelho o viu, então o servidor não a registrou com ele. Reenvie a venda sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte-a e refaça a venda com o perfil atual.";
+    case "profile_unavailable":
+      return "O perfil de pagamento usado nesta venda foi arquivado ou removido. Reenvie a venda sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte-a e refaça a venda com outro perfil.";
     case "sale_too_old":
       return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
     case "entitlement_changed":
@@ -162,6 +174,12 @@ function actionsFor(
   }
   if (cause === "authorization_revoked") {
     return ["review_account", "discard"];
+  }
+  if (
+    kind === "sale" &&
+    (cause === "profile_changed" || cause === "profile_unavailable")
+  ) {
+    return ["resubmit_without_profile", "discard"];
   }
   return kind === "sale" && RESUBMITTABLE.has(cause)
     ? ["resubmit", "discard"]
@@ -251,8 +269,18 @@ export async function resubmitAttentionItem(
   item: AttentionItem,
   { lease, outbox }: { lease: string; outbox: Outbox }
 ): Promise<void> {
-  if (!(item.kind === "sale" && item.actions.includes("resubmit"))) {
+  const withoutProfile = item.actions.includes("resubmit_without_profile");
+  if (
+    !(
+      item.kind === "sale" &&
+      (withoutProfile || item.actions.includes("resubmit"))
+    )
+  ) {
     throw new Error("action_not_available");
   }
-  await resubmitRejectedSale(outbox, { commandId: item.commandId, lease });
+  await resubmitRejectedSale(outbox, {
+    commandId: item.commandId,
+    lease,
+    withoutProfile,
+  });
 }

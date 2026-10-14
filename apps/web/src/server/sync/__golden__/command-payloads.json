@@ -89,5 +89,32 @@
       "recordedAt": "2026-10-14T12:30:00.000Z"
     },
     "type": "sale.confirm"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "adjustments": [],
+      "items": [
+        {
+          "chargedUnitPrice": "50.00",
+          "listedUnitPrice": "50.00",
+          "quantity": 1,
+          "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+        }
+      ],
+      "occurredAt": "2026-10-14T12:30:00.000Z",
+      "payment": {
+        "anticipationRequested": false,
+        "installmentPlan": null,
+        "installments": null,
+        "method": "debit_card"
+      },
+      "paymentProfile": {
+        "expectedVersion": 3,
+        "id": "0199c2d0-0000-7000-8000-000000000259"
+      },
+      "recordedAt": "2026-10-14T12:30:00.000Z"
+    },
+    "type": "sale.confirm"
   }
 ]

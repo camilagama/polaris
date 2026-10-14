@@ -3,10 +3,8 @@ import {
   canKeepLockedSaleOnDevice,
   createBlankSaleForm,
   formForOfflineSale,
-  formForOnlineSale,
   idleSubmission,
   isFormLocked,
-  NO_PROFILE_CHOICE,
   queuedSubmission,
   saleModeIsOffline,
   selectProfileChoice,
@@ -17,26 +15,14 @@ import {
 const newId = () => "draft";
 
 describe("the form for a sale kept on the device", () => {
-  it("has no payment profile and no typed date offline", () => {
+  it("drops a typed date offline and keeps the person's payment profile choice", () => {
     const typed = {
-      ...createBlankSaleForm(newId),
+      ...selectProfileChoice(createBlankSaleForm(newId), "profile-1", []),
       occurredAtLocal: "2026-10-01T10:00",
     };
     const offline = formForOfflineSale(typed);
-    expect(offline.profile.choice).toBe(NO_PROFILE_CHOICE);
     expect(offline.occurredAtLocal).toBe("");
-  });
-
-  it("undoes the offline 'no profile' choice when the connection is back, but keeps a real profile choice", () => {
-    const offline = formForOfflineSale(createBlankSaleForm(newId));
-    expect(formForOnlineSale(offline).profile.choice).toBe("");
-
-    const chosen = selectProfileChoice(
-      createBlankSaleForm(newId),
-      "profile-1",
-      []
-    );
-    expect(formForOnlineSale(chosen)).toBe(chosen);
+    expect(offline.profile.choice).toBe("profile-1");
   });
 
   it("labels the button for what will happen, and a queued sale does not lock the form", () => {
@@ -86,18 +72,18 @@ describe("keeping a locked sale on the device as the same sale", () => {
       occurredAtOverride: "override" in overrides ? overrides.override : null,
     }) as unknown as Parameters<typeof canKeepLockedSaleOnDevice>[2];
 
-  it("is allowed only for a locked sale the device command can carry exactly", () => {
+  it("is allowed for a locked sale the device command can carry exactly, with or without a payment profile", () => {
     expect(canKeepLockedSaleOnDevice(locked, attempt, evaluation())).toBe(true);
-  });
-
-  it("is refused with a payment profile, a typed date, another instant, no attempt, or any other state", () => {
     expect(
       canKeepLockedSaleOnDevice(
         locked,
         attempt,
         evaluation({ profile: { expectedVersion: 1, id: "p" } })
       )
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("is refused with a typed date, another instant, no attempt, or any other state", () => {
     expect(
       canKeepLockedSaleOnDevice(
         locked,
@@ -151,42 +137,5 @@ describe("the mode of the sale screen", () => {
     expect(saleModeIsOffline(false, true, locked)).toBe(false);
     // the device mode, and the connection returns during the save
     expect(saleModeIsOffline(true, false, submitting)).toBe(true);
-  });
-});
-
-describe("what the person had chosen before going offline", () => {
-  it("is put back when the connection returns: a real profile, a deliberate 'no profile', or nothing", () => {
-    const real = selectProfileChoice(
-      createBlankSaleForm(newId),
-      "profile-1",
-      []
-    );
-    expect(formForOnlineSale(formForOfflineSale(real)).profile).toMatchObject({
-      choice: "profile-1",
-    });
-
-    const none = selectProfileChoice(
-      createBlankSaleForm(newId),
-      NO_PROFILE_CHOICE,
-      []
-    );
-    expect(formForOnlineSale(formForOfflineSale(none)).profile.choice).toBe(
-      NO_PROFILE_CHOICE
-    );
-
-    expect(
-      formForOnlineSale(formForOfflineSale(createBlankSaleForm(newId))).profile
-        .choice
-    ).toBe("");
-  });
-
-  it("applying the offline form twice does not turn the assumed 'no profile' into the person's choice", () => {
-    const real = selectProfileChoice(
-      createBlankSaleForm(newId),
-      "profile-1",
-      []
-    );
-    const twice = formForOfflineSale(formForOfflineSale(real));
-    expect(formForOnlineSale(twice).profile.choice).toBe("profile-1");
   });
 });

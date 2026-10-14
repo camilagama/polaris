@@ -123,6 +123,14 @@ async function currentPayloads() {
     payment: { method: "pix" },
     reader: writer,
   });
+  // a sale priced with the payment profile the device saw (by id and version)
+  await createOfflineSale({
+    ...common(),
+    lines: [{ chargedUnitPrice: "50.00", quantity: 1, variantId }],
+    payment: { method: "debit_card" },
+    paymentProfile: { expectedVersion: 3, id: uuid(601) },
+    reader: writer,
+  });
   const { commands } = await outbox.snapshot();
   return commands.map((command) => ({
     baseVersion: command.baseVersion,

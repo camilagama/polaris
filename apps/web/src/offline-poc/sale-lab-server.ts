@@ -1,7 +1,7 @@
 import type {
   LocalProductReadModel,
-  SaleListEntryReadModel,
   LocalVariantReadModel,
+  SaleListEntryReadModel,
 } from "@polaris/contracts";
 import type { BootstrapCollectionName, LocalRows } from "../offline/bootstrap";
 import { FakeStockServer } from "../offline/test-support";
@@ -79,6 +79,9 @@ const recentSalesWindow: SaleListEntryReadModel[] = [
   recent(3, { hasReturns: true, totalDue: "30.00" }),
 ];
 
+/** The version of the payment profile the lab's server has, whatever a device saw. */
+const LAB_PROFILE_SERVER_VERSION = 3;
+
 export class SaleLabServer extends FakeStockServer {
   override recentSales() {
     return Promise.resolve(recentSalesWindow);
@@ -88,6 +91,51 @@ export class SaleLabServer extends FakeStockServer {
     super();
     this.seed(SHIRT, 5, 1);
     this.seed(SOCK, 20, 1);
+    const accept = this.push;
+    // A sale priced with a profile version that is not the server's is refused, like the real server.
+    this.push = (input) => {
+      const stale = input.commands.find((command) => {
+        const profile = (
+          command.payload as {
+            paymentProfile?: { expectedVersion: number; id: string };
+          }
+        ).paymentProfile;
+        return (
+          command.type === "sale.confirm" &&
+          profile !== undefined &&
+          profile.expectedVersion !== LAB_PROFILE_SERVER_VERSION
+        );
+      });
+      if (!stale) {
+        return accept(input);
+      }
+      // the queue is ordered: what comes before is processed, the refused one stops it
+      const before = input.commands.slice(0, input.commands.indexOf(stale));
+      const processed = before.length > 0 ? accept({ commands: before }) : null;
+      return (processed ?? Promise.resolve({ results: [] })).then(
+        ({ results }) => ({
+          results: [
+            ...results,
+            {
+              code: "payment_profile_changed",
+              commandId: stale.commandId,
+              replayed: false,
+              result: null,
+              status: "rejected" as const,
+            },
+            ...input.commands
+              .slice(input.commands.indexOf(stale) + 1)
+              .map((command) => ({
+                code: null,
+                commandId: command.commandId,
+                replayed: false,
+                result: null,
+                status: "not_processed" as const,
+              })),
+          ],
+        })
+      );
+    };
   }
 
   override page<K extends BootstrapCollectionName>(

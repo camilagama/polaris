@@ -199,3 +199,31 @@ describe("the outcome of confirming on the device", () => {
     }
   });
 });
+
+describe("a sale with a payment profile", () => {
+  it("is kept with the profile by id and version", async () => {
+    const { outbox, stores } = await setup();
+    const withProfile = prepared();
+    withProfile.request.paymentProfile = {
+      expectedVersion: 4,
+      id: "0199c2d0-0000-7000-8000-0000000000c1",
+    };
+    await queueOfflineSale({ labels, request: withProfile.request, stores });
+    expect((await outbox.snapshot()).commands[0]?.payload).toMatchObject({
+      paymentProfile: {
+        expectedVersion: 4,
+        id: "0199c2d0-0000-7000-8000-0000000000c1",
+      },
+    });
+  });
+
+  it("is refused when it carries a date of its own, which the device command cannot hold", async () => {
+    const { outbox, stores } = await setup();
+    const dated = prepared();
+    dated.request.recordedAt = "2026-10-14T12:30:05.000Z";
+    await expect(
+      queueOfflineSale({ labels, request: dated.request, stores })
+    ).rejects.toThrow("device_sale_not_carriable");
+    expect((await outbox.snapshot()).commands).toHaveLength(0);
+  });
+});

@@ -4,12 +4,19 @@ import type {
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
+import {
+  readPaymentProfileCache,
+  writePaymentProfileCache,
+} from "../lib/payment-profile-cache";
+import { isSigningOut } from "../lib/sign-out";
 import {
   filterLocalStockEntries,
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { type Loadable, loadErrorMessage } from "./sale-form-model";
 import {
@@ -63,11 +70,18 @@ export function useSaleCatalog(
     {}
   );
   const generation = useRef(0);
+  /** Only the latest read of the profiles may speak: an older answer arrives after the mode changed. */
+  const profilesRequest = useRef(0);
 
   const loadProfiles = useCallback(async () => {
+    profilesRequest.current += 1;
+    const request = profilesRequest.current;
     if (usesLocal) {
-      setProfiles({ status: "ready", value: [] });
-      onProfilesLoaded([]);
+      // the profiles of the last connection: the sale names the one chosen by id and
+      // version, and the server refuses it if that version is no longer the current one
+      const cached = readPaymentProfileCache(browserStorage(), organizationId);
+      setProfiles({ status: "ready", value: cached });
+      onProfilesLoaded(cached);
       return;
     }
     setProfiles(keepReady);
@@ -76,9 +90,22 @@ export function useSaleCatalog(
         organizationId,
         status: "active",
       });
+      if (request !== profilesRequest.current) {
+        return;
+      }
       setProfiles({ status: "ready", value: result.profiles });
+      if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
+        writePaymentProfileCache(
+          browserStorage(),
+          organizationId,
+          result.profiles
+        );
+      }
       onProfilesLoaded(result.profiles);
     } catch (error) {
+      if (request !== profilesRequest.current) {
+        return;
+      }
       setProfiles({
         message: loadErrorMessage(error, "os perfis de pagamento"),
         status: "error",

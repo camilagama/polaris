@@ -24,8 +24,9 @@ export function OfflineSaleNotice() {
       Sem conexão. A venda será guardada neste aparelho e confirmada pelo
       servidor quando a conexão voltar. O estoque mostrado é o do aparelho: se
       não bastar quando o servidor conferir, a venda é recusada e fica em{" "}
-      <a href="/attention">Pendências</a> para você corrigir. Sem perfil de
-      pagamento, taxas e prazo ficam desconhecidos.
+      <a href="/attention">Pendências</a> para você corrigir. O perfil de
+      pagamento é o da última vez com conexão (sem perfil, taxas e prazo ficam
+      desconhecidos).
     </p>
   );
 }

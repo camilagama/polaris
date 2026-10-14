@@ -25,6 +25,7 @@ import {
   writePreferredOrganizationId,
 } from "./current-organization-model";
 import { orpcClient } from "./orpc";
+import { clearPaymentProfileCaches } from "./payment-profile-cache";
 import { rpcErrorCode } from "./rpc-error";
 import { isSigningOut } from "./sign-out";
 
@@ -80,6 +81,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         if (rpcErrorCode(error) === "UNAUTHORIZED") {
           // The session is over: its organizations must not be offered offline.
           clearOrganizationsCache(browserStorage());
+          clearPaymentProfileCaches(browserStorage());
         }
         const outcome = organizationLoadAfterFailure({
           cached: readOrganizationsCache(browserStorage()),

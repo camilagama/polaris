@@ -217,6 +217,10 @@ async function fillShirtSale(page: Page, quantity: number) {
   await page.getByRole("button", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill(String(quantity));
   await page.getByLabel("Método de pagamento").selectOption({ label: "Pix" });
+  // the profile is a choice in both modes; these scenarios sell without one
+  await page.getByLabel("Perfil de pagamento").selectOption({
+    label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
+  });
 }
 
 const keepSale = (page: Page) =>
@@ -231,8 +235,8 @@ test.describe("venda", () => {
     await expect(
       page.getByText("Sem conexão. A venda será guardada")
     ).toBeVisible();
-    // no profile and no date exist offline
-    await expect(page.getByLabel("Perfil de pagamento")).toHaveCount(0);
+    // the profile is offered (the ones of the last connection), a typed date is not
+    await expect(page.getByLabel("Perfil de pagamento")).toBeVisible();
     await expect(
       page.getByLabel("Data e hora da venda (opcional)")
     ).toHaveCount(0);
@@ -498,5 +502,111 @@ test.describe("histórico de vendas", () => {
     // back online it is the server's history again, with the links
     await page.getByLabel("Rede disponível").check();
     await expect(page.getByLabel("Busca")).toBeEnabled();
+  });
+});
+
+const LAB_ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
+const LAB_PROFILE = (version: number) => ({
+  archivedAt: null,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  id: "0199c2d0-0000-7000-8000-0000000000c1",
+  name: "Maquininha do laboratório",
+  organizationId: LAB_ORGANIZATION,
+  rules: [
+    {
+      anticipationFee: { fixedAmount: null, mode: "none", percentage: null },
+      expectedSettlementDays: 1,
+      id: "0199c2d0-0000-7000-8000-0000000000c2",
+      installmentPlan: null,
+      installments: null,
+      method: "debit_card",
+      processingFee: {
+        fixedAmount: null,
+        mode: "percentage",
+        percentage: "2.000000",
+      },
+    },
+  ],
+  status: "active",
+  updatedAt: "2026-10-01T12:00:00.000Z",
+  version,
+});
+
+/** The profiles of "the last time with a connection", as the sale screen keeps them. */
+async function rememberProfile(page: Page, version: number) {
+  await page.addInitScript(
+    ([key, value]) =>
+      window.localStorage.setItem(key as string, value as string),
+    [
+      `polaris.offline.paymentProfiles.${LAB_ORGANIZATION}`,
+      JSON.stringify([LAB_PROFILE(version)]),
+    ]
+  );
+}
+
+test.describe("venda com perfil de pagamento sem conexão", () => {
+  test("oferece o perfil da última vez com conexão, guarda a venda com ele, e o servidor aceita se a versão é a atual", async ({
+    page,
+  }) => {
+    await rememberProfile(page, 3);
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await expect(
+      page.getByText("estes são os perfis da última vez com conexão")
+    ).toBeVisible();
+
+    await fillShirtSale(page, 1);
+    await page.getByLabel("Método de pagamento").selectOption({
+      label: "Cartão de débito",
+    });
+    await page
+      .getByLabel("Perfil de pagamento")
+      .selectOption({ label: "Maquininha do laboratório (versão 3)" });
+    await expect(page.getByLabel("Perfil de pagamento")).toHaveValue(
+      "0199c2d0-0000-7000-8000-0000000000c1"
+    );
+    // the summary names the profile the sale is priced with
+    await expect(page.locator(".sale-details").first()).toContainText(
+      "Maquininha do laboratório (versão 3)"
+    );
+    await keepSale(page).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+  });
+
+  test("com o perfil mudado no servidor a venda é recusada e fica à vista em Pendências", async ({
+    page,
+  }) => {
+    // the device saw version 2; the server is already at 3
+    await rememberProfile(page, 2);
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 1);
+    await page.getByLabel("Método de pagamento").selectOption({
+      label: "Cartão de débito",
+    });
+    await page
+      .getByLabel("Perfil de pagamento")
+      .selectOption({ label: "Maquininha do laboratório (versão 2)" });
+    await keepSale(page).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByText("Recusada pelo servidor")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("server-records")).toHaveText("0");
   });
 });

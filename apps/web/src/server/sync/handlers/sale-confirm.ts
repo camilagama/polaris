@@ -15,6 +15,12 @@ import {
   SaleOccurredInFutureError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
+import {
+  InvalidPaymentProfileError,
+  PaymentProfileLifecycleError,
+  PaymentProfileNotFoundError,
+  PaymentProfileVersionConflictError,
+} from "@polaris/domain/sales/payment-profile";
 import { InvalidSaleSnapshotError } from "@polaris/domain/sales/sale";
 import {
   InvalidSaleAdjustmentError,
@@ -45,6 +51,8 @@ const SALE_REFUSAL = {
   dateInFuture: "sale_occurred_in_future",
   insufficientStock: "insufficient_stock",
   invalidPayload: "invalid_payload",
+  paymentProfileChanged: "payment_profile_changed",
+  paymentProfileUnavailable: "payment_profile_unavailable",
   productUnavailable: "sale_product_unavailable",
   tooOld: "sale_occurred_too_old",
   variantNotFound: "variant_not_found",
@@ -52,6 +60,7 @@ const SALE_REFUSAL = {
 
 const payloadErrors = [
   InvalidConfirmSaleCommandError,
+  InvalidPaymentProfileError,
   InvalidSaleAdjustmentError,
   InvalidSalePaymentError,
   InvalidSaleSnapshotError,
@@ -82,6 +91,15 @@ function classify(error: unknown): string | null {
   if (error instanceof SaleCommandConflictError) {
     return SALE_REFUSAL.commandConflict;
   }
+  if (error instanceof PaymentProfileVersionConflictError) {
+    return SALE_REFUSAL.paymentProfileChanged;
+  }
+  if (
+    error instanceof PaymentProfileLifecycleError ||
+    error instanceof PaymentProfileNotFoundError
+  ) {
+    return SALE_REFUSAL.paymentProfileUnavailable;
+  }
   return payloadErrors.some((type) => error instanceof type)
     ? SALE_REFUSAL.invalidPayload
     : null;
@@ -102,7 +120,7 @@ function parsePayload(payload: unknown): OfflineSalePayload {
         ...parsed.data,
         commandId: placeholderCommandId,
         commandVersion: 1,
-        paymentProfile: null,
+        paymentProfile: parsed.data.paymentProfile ?? null,
       },
       skipClockCheck
     );
@@ -134,7 +152,7 @@ export function createSaleConfirmHandler(
           items: input.items,
           occurredAt: input.occurredAt,
           payment: input.payment,
-          paymentProfile: null,
+          paymentProfile: input.paymentProfile ?? null,
           recordedAt: input.recordedAt,
           requestId: context.commandId,
         }

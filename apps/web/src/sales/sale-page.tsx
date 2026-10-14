@@ -74,7 +74,6 @@ import {
   type FeePreview,
   formFieldKeys,
   formForOfflineSale,
-  formForOnlineSale,
   INSTALLMENT_PLANS,
   type ItemDraft,
   idleSubmission,
@@ -716,26 +715,24 @@ function PaymentSection({
           ? "É uma intenção registrada na venda; não indica que a antecipação ocorreu."
           : "Disponível apenas para cartão de crédito. Sem antecipação, o custo estimado é R$ 0,00."}
       </p>
+      <SelectField
+        error={errors[formFieldKeys.profile]}
+        hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
+        id="sale-profile"
+        label="Perfil de pagamento"
+        onChange={onProfileChange}
+        options={options}
+        placeholder="Escolha uma opção"
+        value={form.profile.choice}
+      />
       {offline ? (
         <p className="sale-hint" role="note">
-          Perfil de pagamento: sem conexão, a venda é guardada sem perfil (taxas
-          e prazo ficam desconhecidos).
+          Sem conexão: estes são os perfis da última vez com conexão. Se o
+          perfil mudar até o servidor confirmar a venda, ela é recusada e você
+          pode reenviá-la sem perfil em Pendências.
         </p>
-      ) : (
-        <SelectField
-          error={errors[formFieldKeys.profile]}
-          hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
-          id="sale-profile"
-          label="Perfil de pagamento"
-          onChange={onProfileChange}
-          options={options}
-          placeholder="Escolha uma opção"
-          value={form.profile.choice}
-        />
-      )}
-      {offline ? null : (
-        <CatalogNotice onRetry={onRetry} view={profilesState} />
-      )}
+      ) : null}
+      <CatalogNotice onRetry={onRetry} view={profilesState} />
       {form.profile.reviewNotice ? (
         <div className="sale-message is-warning" role="alert">
           <p>{form.profile.reviewNotice}</p>
@@ -1133,9 +1130,9 @@ export function SalePage() {
     // Going offline fills in what the offline sale uses (no profile, dated now);
     // coming back online undoes the "no profile" choice made for the person.
     // The mode never changes while a sale is in flight or locked (see above).
-    setForm((current) =>
-      offline ? formForOfflineSale(current) : formForOnlineSale(current)
-    );
+    if (offline) {
+      setForm(formForOfflineSale);
+    }
     if (modeApplied.current) {
       // the lines on the sale keep the balances of the OTHER source otherwise
       refreshRef.current(

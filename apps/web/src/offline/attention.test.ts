@@ -309,3 +309,29 @@ describe("resolving an item", () => {
     }
   });
 });
+
+describe("a sale refused for its payment profile", () => {
+  it.each([
+    ["payment_profile_changed", "profile_changed"],
+    ["payment_profile_unavailable", "profile_unavailable"],
+  ])(
+    "%s offers resubmit without the profile and discard, never a plain resubmit",
+    async (code, cause) => {
+      const { lease, outbox, refuse, sale } = await setup();
+      const refused = await sale();
+      await refuse(refused.commandId, code);
+      const item = await itemOf(outbox);
+
+      expect(item.cause).toBe(cause);
+      expect(item.actions).toEqual(["resubmit_without_profile", "discard"]);
+      expect(item.detail).toContain("sem perfil de pagamento");
+
+      await resubmitAttentionItem(item, { lease, outbox });
+      const after = await outbox.snapshot();
+      expect(after.commands).toHaveLength(1);
+      expect(after.commands[0]?.commandId).not.toBe(refused.commandId);
+      expect(after.commands[0]?.status).toBe("pending");
+      expect(after.commands[0]?.payload).not.toHaveProperty("paymentProfile");
+    }
+  );
+});

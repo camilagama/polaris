@@ -31,6 +31,7 @@ export interface AttentionPanelProps {
 const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
   resubmit: "Reenviar venda",
+  resubmit_without_profile: "Reenviar sem perfil de pagamento",
   review_account: "Revisar acesso e plano",
 };
 
@@ -44,7 +45,11 @@ function ActionButton({ action, busy, onAct }: ActionButtonProps) {
   const act = useCallback(() => onAct(action), [action, onAct]);
   return (
     <button
-      className={action === "resubmit" ? "primary-button" : "secondary-button"}
+      className={
+        action === "resubmit" || action === "resubmit_without_profile"
+          ? "primary-button"
+          : "secondary-button"
+      }
       disabled={busy}
       onClick={act}
       type="button"
@@ -74,7 +79,10 @@ function ItemCard({
     (action: AttentionAction) => {
       if (action === "discard") {
         setConfirming(true);
-      } else if (action === "resubmit") {
+      } else if (
+        action === "resubmit" ||
+        action === "resubmit_without_profile"
+      ) {
         onResubmit(item);
       } else {
         onReviewAccount(item);

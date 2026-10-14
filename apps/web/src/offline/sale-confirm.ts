@@ -53,6 +53,16 @@ const ACCOUNT_REFUSALS: ReadonlySet<string> = new Set([
   "wrong_device",
 ]);
 
+/**
+ * Refusals about the payment profile the sale was priced with (it changed since
+ * the device saw it, or was archived or removed). Nothing else about the sale is
+ * wrong, so it can be sent again without the profile.
+ */
+const PROFILE_REFUSALS: ReadonlySet<string> = new Set([
+  "payment_profile_changed",
+  "payment_profile_unavailable",
+]);
+
 /** Reads the local copy of a variant (its list price). */
 export interface LocalVariantReader {
   variantRow: (variantId: string) => Promise<LocalVariantReadModel | undefined>;
@@ -92,6 +102,12 @@ export interface CreateOfflineSaleRequest {
   organizationId: string;
   outbox: Outbox;
   payment: SalePaymentInput;
+  /**
+   * The payment profile the sale was priced with, by id and by the version the
+   * person saw. The server refuses the sale if that is no longer the current
+   * version; null prices it with the plain payment method.
+   */
+  paymentProfile?: { expectedVersion: number; id: string } | null | undefined;
   reader: LocalInventoryReader & LocalVariantReader;
 }
 
@@ -166,13 +182,18 @@ async function stockWarnings(
   return warnings;
 }
 
+/** What the device stores: the contract's payload, with the profile present only when there is one. */
+type StoredSalePayload = Omit<OfflineSalePayload, "paymentProfile"> & {
+  paymentProfile?: { expectedVersion: number; id: string };
+};
+
 export async function createOfflineSale(
   request: CreateOfflineSaleRequest
 ): Promise<OfflineSaleResult> {
   const now = (request.now ?? (() => new Date()))();
   const commandId = (request.newCommandId ?? crypto.randomUUID.bind(crypto))();
   const items = await itemsFor(request);
-  const payload: OfflineSalePayload = {
+  const payload: StoredSalePayload = {
     adjustments: [
       ...(request.adjustments ?? []),
     ] as OfflineSalePayload["adjustments"],
@@ -184,12 +205,21 @@ export async function createOfflineSale(
       installments: request.payment.installments ?? null,
       method: request.payment.method,
     },
+    // absent (not null) when there is none, so a sale without a profile keeps its old shape
+    ...(request.paymentProfile
+      ? { paymentProfile: request.paymentProfile }
+      : {}),
     recordedAt: now.toISOString(),
   };
   // The same normalization the server runs, on this device's clock, so a sale
   // the server would refuse for its shape or amounts never enters the queue.
   const normalized = normalizeConfirmSaleCommand(
-    { ...payload, commandId, commandVersion: 1, paymentProfile: null },
+    {
+      ...payload,
+      commandId,
+      commandVersion: 1,
+      paymentProfile: request.paymentProfile ?? null,
+    },
     now
   );
   const warnings = await stockWarnings(request, items);
@@ -300,6 +330,11 @@ export async function resubmitRejectedSale(
     commandId: string;
     lease: string;
     newCommandId?: () => string;
+    /**
+     * Send it again without its payment profile (taxes and term unknown), the way
+     * out of a profile that changed or went away. Only for those refusals.
+     */
+    withoutProfile?: boolean;
   }
 ): Promise<OutboxCommand> {
   const sale = await findSale(outbox, request.commandId);
@@ -309,13 +344,22 @@ export async function resubmitRejectedSale(
   if (ACCOUNT_REFUSALS.has(sale.rejection?.code ?? "")) {
     throw new Error("sale_needs_attention");
   }
+  let { payload } = sale;
+  if (request.withoutProfile) {
+    if (!PROFILE_REFUSALS.has(sale.rejection?.code ?? "")) {
+      throw new Error("sale_not_profile_refused");
+    }
+    const { paymentProfile: _profile, ...rest } =
+      sale.payload as OfflineSalePayload;
+    payload = rest as typeof sale.payload;
+  }
   const next = await outbox.enqueue({
     baseVersion: null,
     commandId: (request.newCommandId ?? crypto.randomUUID.bind(crypto))(),
     deviceId: sale.deviceId,
     lease: request.lease,
     organizationId: sale.organizationId,
-    payload: sale.payload,
+    payload,
     type: SALE_CONFIRM,
   });
   await outbox.discard(sale.commandId);

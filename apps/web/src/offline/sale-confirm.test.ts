@@ -373,3 +373,69 @@ describe("a sale through its states", () => {
     });
   });
 });
+
+const profileSelection = {
+  expectedVersion: 3,
+  id: "0199c2d0-0000-7000-8000-0000000000c1",
+};
+
+describe("a sale priced with a payment profile", () => {
+  it("carries the profile by id and version, and a sale without one keeps its old shape", async () => {
+    const { sell } = await setup();
+    const priced = await sell([{ quantity: 1, variantId: shirt }], {
+      paymentProfile: profileSelection,
+    });
+    expect(priced.command.payload).toMatchObject({
+      paymentProfile: profileSelection,
+    });
+
+    const plain = await sell([{ quantity: 1, variantId: shirt }]);
+    expect(plain.command.payload).not.toHaveProperty("paymentProfile");
+    const none = await sell([{ quantity: 1, variantId: shirt }], {
+      paymentProfile: null,
+    });
+    expect(none.command.payload).not.toHaveProperty("paymentProfile");
+  });
+
+  it("is resubmitted without its profile after a profile refusal, as a new command that keeps everything else", async () => {
+    const { lease, outbox, sell } = await setup();
+    const { command } = await sell([{ quantity: 2, variantId: shirt }], {
+      paymentProfile: profileSelection,
+    });
+    await outbox.markSending(command.commandId);
+    await outbox.reject(command.commandId, "payment_profile_changed");
+
+    const next = await resubmitRejectedSale(outbox, {
+      commandId: command.commandId,
+      lease,
+      withoutProfile: true,
+    });
+
+    expect(next.commandId).not.toBe(command.commandId);
+    expect(next.payload).not.toHaveProperty("paymentProfile");
+    expect(next.payload).toMatchObject({
+      items: (command.payload as { items: unknown }).items,
+      occurredAt: (command.payload as { occurredAt: unknown }).occurredAt,
+      recordedAt: (command.payload as { recordedAt: unknown }).recordedAt,
+    });
+    const { commands } = await outbox.snapshot();
+    expect(commands.map((item) => item.commandId)).toEqual([next.commandId]);
+  });
+
+  it("refuses to drop the profile of a sale that was refused for anything else", async () => {
+    const { lease, outbox, sell } = await setup();
+    const { command } = await sell([{ quantity: 2, variantId: shirt }], {
+      paymentProfile: profileSelection,
+    });
+    await outbox.markSending(command.commandId);
+    await outbox.reject(command.commandId, "insufficient_stock");
+    await expect(
+      resubmitRejectedSale(outbox, {
+        commandId: command.commandId,
+        lease,
+        withoutProfile: true,
+      })
+    ).rejects.toThrow("sale_not_profile_refused");
+    expect((await outbox.snapshot()).commands).toHaveLength(1);
+  });
+});
