@@ -75,6 +75,8 @@ export class UnknownLocalVariantError extends Error {
 interface OfflineSaleLine {
   /** BRL price actually charged; the variant's list price by default. */
   chargedUnitPrice?: string;
+  /** BRL list price to record; the variant's list price by default. */
+  listedUnitPrice?: string;
   quantity: number;
   variantId: string;
 }
@@ -118,7 +120,8 @@ async function itemsFor(
     if (!variant) {
       throw new UnknownLocalVariantError();
     }
-    const listed = variant.listPrice ?? line.chargedUnitPrice;
+    const listed =
+      line.listedUnitPrice ?? variant.listPrice ?? line.chargedUnitPrice;
     const charged = line.chargedUnitPrice ?? variant.listPrice;
     if (!(listed && charged)) {
       throw new MissingSalePriceError();

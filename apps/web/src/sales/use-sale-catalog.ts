@@ -5,6 +5,12 @@ import type {
 } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import {
+  filterLocalStockEntries,
+  localStockEntries,
+  readLocalCatalog,
+} from "../offline/local-stock-entries";
+import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { type Loadable, loadErrorMessage } from "./sale-form-model";
 import {
   balanceOfEntry,
@@ -37,11 +43,19 @@ function keepReady<T>(current: Loadable<T>): Loadable<T> {
  * Read-only data the sale form needs: the payment profiles and the balances of
  * the variants on the sale. Variants are found by the picker's search (one read
  * per search), never one request per product or per variant.
+ *
+ * With a local workspace (no connection, the sale will be queued on the device)
+ * nothing is read from the server: there are no payment profiles, and the
+ * balances come from the device's collections with the queue applied.
  */
 export function useSaleCatalog(
   organizationId: string,
-  onProfilesLoaded: (profiles: PaymentProfileReadModel[]) => void
+  onProfilesLoaded: (profiles: PaymentProfileReadModel[]) => void,
+  local: LocalWorkspace | null = null
 ): SaleCatalog {
+  const localRef = useRef(local);
+  localRef.current = local;
+  const usesLocal = local !== null;
   const [profiles, setProfiles] = useState<Loadable<PaymentProfileReadModel[]>>(
     { status: "loading" }
   );
@@ -51,6 +65,11 @@ export function useSaleCatalog(
   const generation = useRef(0);
 
   const loadProfiles = useCallback(async () => {
+    if (usesLocal) {
+      setProfiles({ status: "ready", value: [] });
+      onProfilesLoaded([]);
+      return;
+    }
     setProfiles(keepReady);
     try {
       const result = await orpcClient.paymentProfile.list({
@@ -65,7 +84,7 @@ export function useSaleCatalog(
         status: "error",
       });
     }
-  }, [onProfilesLoaded, organizationId]);
+  }, [onProfilesLoaded, organizationId, usesLocal]);
 
   useEffect(() => {
     loadProfiles().catch(() => undefined);
@@ -98,6 +117,35 @@ export function useSaleCatalog(
       const { current } = generation;
       loadProfiles().catch(() => undefined);
       if (variantIds.length === 0) {
+        return;
+      }
+      const workspace = localRef.current;
+      if (workspace) {
+        const { outbox, writer } = workspace.stores;
+        readLocalCatalog(writer, outbox)
+          .then((rows) => {
+            if (generation.current === current) {
+              const { entries } = filterLocalStockEntries(
+                localStockEntries(rows),
+                { productStatus: "all", variantIds }
+              );
+              setStock((map) => stockAfterRefresh(map, variantIds, entries));
+            }
+          })
+          .catch((error: unknown) => {
+            if (generation.current === current) {
+              setStock((map) => {
+                const next = { ...map };
+                for (const variantId of variantIds) {
+                  next[variantId] = {
+                    message: loadErrorMessage(error, "o estoque do aparelho"),
+                    status: "error",
+                  };
+                }
+                return next;
+              });
+            }
+          });
         return;
       }
       setStock((map) => {

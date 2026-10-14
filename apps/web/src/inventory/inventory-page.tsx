@@ -16,6 +16,7 @@ import {
   type StockAction,
 } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   STOCK_FILTERS,
   type StockFilter,
@@ -149,14 +150,20 @@ function StockItem({
  */
 export function InventoryPage() {
   const { organization, organizationId } = useCurrentOrganization();
+  const workspace = useLocalWorkspace(organizationId);
+  // Stock is read from the server whenever it is reachable; only without a
+  // connection does the screen work from the device (and queue movements).
+  const offlineWorkspace =
+    workspace !== null && !workspace.online ? workspace : null;
+  const offline = offlineWorkspace !== null;
   const { applyBalance, filters, loadMore, reload, setFilters, state } =
-    useStockList(organizationId);
+    useStockList(organizationId, offlineWorkspace);
   const [open, setOpen] = useState<OpenCommand | null>(null);
   const today = useMemo(
     () => calendarDayInTimezone(new Date(), organization.timezone),
     [organization.timezone]
   );
-  const view = stockListView(state, filters);
+  const view = stockListView(state, filters, offline);
   const more = stockMoreView(state);
 
   const handleQuery = useCallback(
@@ -188,9 +195,12 @@ export function InventoryPage() {
       if (!entry) {
         return;
       }
-      setOpen({ action: stockAction, target: stockTarget(entry) });
+      setOpen({
+        action: stockAction,
+        target: stockTarget(entry, { costUnavailable: offline }),
+      });
     },
-    [state]
+    [offline, state]
   );
   const handleClose = useCallback(() => {
     const current = open;
@@ -218,6 +228,15 @@ export function InventoryPage() {
           </p>
         </div>
       </section>
+
+      {offline ? (
+        <p className="categories-message is-success" role="status">
+          Sem conexão. O saldo mostrado é o do aparelho, com o que está na fila.
+          Receber, contar e baixar ficam guardados e são enviados quando a
+          conexão voltar (acompanhe em <a href="/attention">Pendências</a>); o
+          custo médio só aparece com conexão.
+        </p>
+      ) : null}
 
       <search aria-label="Filtrar estoque" className="stock-toolbar">
         <div className="stock-search">
@@ -306,6 +325,7 @@ export function InventoryPage() {
                 <StockCommandPanel
                   action={open.action}
                   key={`${open.target.variantId}-${open.action}`}
+                  local={offlineWorkspace ?? undefined}
                   onBalance={applyBalance}
                   onClose={handleClose}
                   onReloadList={reload}

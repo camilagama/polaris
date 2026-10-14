@@ -17,9 +17,20 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
 import { formatBrlAmount } from "../lib/format";
-import { orpcClient } from "../lib/orpc";
 import { useNow } from "../lib/use-now";
+import {
+  filterLocalStockEntries,
+  localStockEntries,
+  readLocalCatalog,
+} from "../offline/local-stock-entries";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import "./sale-page.css";
+import { confirmOnServer } from "./confirm-on-server";
+import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
+import type {
+  OfflineRuntime,
+  RuntimeContext,
+} from "../offline/runtime/offline-runtime";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -29,6 +40,11 @@ import {
   withSuggestedPrices,
   writeLastPrices,
 } from "./last-prices-model";
+import {
+  OfflineSaleNotice,
+  PendingSalesPanel,
+  QueuedSalePanel,
+} from "./offline-sale-panels";
 import {
   readSaleAttempt,
   sessionStorageOrNull,
@@ -42,13 +58,12 @@ import {
   addAdjustment,
   addItem,
   adjustmentFieldKey,
-  attemptAfterFailure,
   type CatalogView,
   type ChoiceOption,
   type ConfirmedSaleView,
   cancelDiscard,
+  canKeepLockedSaleOnDevice,
   canStartSubmission,
-  confirmSubmission,
   createBlankSaleForm,
   discardLockedSale,
   type EvaluationContext,
@@ -57,8 +72,9 @@ import {
   evaluateSaleForm,
   type FeeLine,
   type FeePreview,
-  failSubmission,
   formFieldKeys,
+  formForOfflineSale,
+  formForOnlineSale,
   INSTALLMENT_PLANS,
   type ItemDraft,
   idleSubmission,
@@ -68,12 +84,14 @@ import {
   MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
   NO_PROFILE_CHOICE,
+  type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
   reconcileProfileReload,
   rejectSubmission,
   removeAdjustment,
   removeItem,
+  saleModeIsOffline,
   requestDiscard,
   SALE_DATE_HINT,
   SALE_METHODS,
@@ -98,6 +116,7 @@ import { VariantSearch } from "./sale-variant-picker";
 import {
   clearedItemChanges,
   itemChangesForEntry,
+  PICKER_RESULT_LIMIT,
 } from "./sale-variant-picker-model";
 import { useSaleCatalog } from "./use-sale-catalog";
 
@@ -122,6 +141,16 @@ const noProfileOption: ChoiceOption = {
 };
 
 const newId = () => crypto.randomUUID();
+
+type PreparedOk = Extract<PreparedConfirmation, { ok: true }>;
+
+const itemLabels = (items: readonly ItemDraft[]) =>
+  new Map(items.map((item) => [item.variantId, item.label]));
+
+type LocalSearch = (query: string) => Promise<{
+  entries: readonly InventoryBalanceEntryReadModel[];
+  more: boolean;
+}>;
 
 /* -------------------------------------------------------------------------- */
 /* Small controls                                                             */
@@ -300,6 +329,8 @@ interface ItemEditorProps {
   errors: Record<string, string>;
   index: number;
   item: ItemDraft;
+  /** Searches this device's collections instead of the server (no connection). */
+  localSearch: LocalSearch | undefined;
   onChange: (draftId: string, changes: Partial<ItemDraft>) => void;
   onClearVariant: (draftId: string) => void;
   onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
@@ -315,6 +346,7 @@ function ItemEditor({
   errors,
   index,
   item,
+  localSearch,
   onChange,
   onClearVariant,
   onPick,
@@ -372,6 +404,7 @@ function ItemEditor({
         <VariantSearch
           error={pickError}
           id={prefix}
+          localSearch={localSearch}
           onPick={handlePick}
           organizationId={organizationId}
         />
@@ -382,7 +415,7 @@ function ItemEditor({
           id={`${prefix}-stock`}
           role="status"
         >
-          {stockState.text} {stockState.costText}
+          {stockState.text} {localSearch ? "" : stockState.costText}
         </p>
       ) : null}
       {stockWarning ? (
@@ -590,6 +623,8 @@ interface PaymentSectionProps {
   errors: Record<string, string>;
   evaluation: SaleEvaluation;
   form: SaleFormState;
+  /** Without a connection there are no payment profiles to choose from. */
+  offline: boolean;
   onAcknowledgeReview: () => void;
   onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onInstallmentPlanChange: (value: string) => void;
@@ -611,6 +646,7 @@ function PaymentSection({
   onInstallmentPlanChange,
   onInstallmentsChange,
   onMethodChange,
+  offline,
   onProfileChange,
   onRetry,
   profileOptions,
@@ -680,17 +716,26 @@ function PaymentSection({
           ? "É uma intenção registrada na venda; não indica que a antecipação ocorreu."
           : "Disponível apenas para cartão de crédito. Sem antecipação, o custo estimado é R$ 0,00."}
       </p>
-      <SelectField
-        error={errors[formFieldKeys.profile]}
-        hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
-        id="sale-profile"
-        label="Perfil de pagamento"
-        onChange={onProfileChange}
-        options={options}
-        placeholder="Escolha uma opção"
-        value={form.profile.choice}
-      />
-      <CatalogNotice onRetry={onRetry} view={profilesState} />
+      {offline ? (
+        <p className="sale-hint" role="note">
+          Perfil de pagamento: sem conexão, a venda é guardada sem perfil (taxas
+          e prazo ficam desconhecidos).
+        </p>
+      ) : (
+        <SelectField
+          error={errors[formFieldKeys.profile]}
+          hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
+          id="sale-profile"
+          label="Perfil de pagamento"
+          onChange={onProfileChange}
+          options={options}
+          placeholder="Escolha uma opção"
+          value={form.profile.choice}
+        />
+      )}
+      {offline ? null : (
+        <CatalogNotice onRetry={onRetry} view={profilesState} />
+      )}
       {form.profile.reviewNotice ? (
         <div className="sale-message is-warning" role="alert">
           <p>{form.profile.reviewNotice}</p>
@@ -773,9 +818,11 @@ function FeePreviewPanel({ preview }: { preview: FeePreview | null }) {
 interface SummaryPanelProps {
   errors: Record<string, string>;
   evaluation: SaleEvaluation;
+  offline: boolean;
   onDiscardCancel: () => void;
   onDiscardConfirm: () => void;
   onDiscardRequest: () => void;
+  onKeepOnDevice: (() => void) | undefined;
   onRefresh: () => void;
   showRequired: boolean;
   submission: SubmissionState;
@@ -788,6 +835,8 @@ function SummaryPanel({
   onDiscardCancel,
   onDiscardConfirm,
   onDiscardRequest,
+  offline,
+  onKeepOnDevice,
   onRefresh,
   showRequired,
   submission,
@@ -859,6 +908,7 @@ function SummaryPanel({
         onDiscardCancel={onDiscardCancel}
         onDiscardConfirm={onDiscardConfirm}
         onDiscardRequest={onDiscardRequest}
+        onKeepOnDevice={onKeepOnDevice}
         onRefresh={onRefresh}
         submission={submission}
       />
@@ -867,7 +917,7 @@ function SummaryPanel({
         disabled={isSubmitting(submission)}
         type="submit"
       >
-        {submitButtonLabel(submission)}
+        {submitButtonLabel(submission, offline)}
       </button>
     </aside>
   );
@@ -877,6 +927,8 @@ interface FailureNoticeProps {
   onDiscardCancel: () => void;
   onDiscardConfirm: () => void;
   onDiscardRequest: () => void;
+  /** Keeps a locked sale on this device as the same sale (only when it can carry it). */
+  onKeepOnDevice: (() => void) | undefined;
   onRefresh: () => void;
   submission: SubmissionState;
 }
@@ -886,6 +938,7 @@ function FailureNotice({
   onDiscardCancel,
   onDiscardConfirm,
   onDiscardRequest,
+  onKeepOnDevice,
   onRefresh,
   submission,
 }: FailureNoticeProps) {
@@ -932,13 +985,31 @@ function FailureNotice({
           </div>
         </>
       ) : (
-        <button
-          className="quiet-button"
-          onClick={onDiscardRequest}
-          type="button"
-        >
-          Descartar esta venda e começar outra
-        </button>
+        <>
+          {onKeepOnDevice ? (
+            <>
+              <p className="sale-hint">
+                Sem resposta do servidor, a venda pode ser guardada neste
+                aparelho como a mesma venda: se o servidor já a registrou, ele a
+                reconhece quando o aparelho enviar e nada é duplicado.
+              </p>
+              <button
+                className="quiet-button"
+                onClick={onKeepOnDevice}
+                type="button"
+              >
+                Guardar esta venda neste aparelho
+              </button>
+            </>
+          ) : null}
+          <button
+            className="quiet-button"
+            onClick={onDiscardRequest}
+            type="button"
+          >
+            Descartar esta venda e começar outra
+          </button>
+        </>
       )}
     </div>
   );
@@ -1000,6 +1071,7 @@ const CLOCK_TICK_MS = 60_000;
 
 export function SalePage() {
   const { organizationId } = useCurrentOrganization();
+  const workspace = useLocalWorkspace(organizationId);
   const now = useNow(CLOCK_TICK_MS);
   const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
     readLastPrices(browserStorage(), organizationId)
@@ -1008,6 +1080,26 @@ export function SalePage() {
     createBlankSaleForm(newId)
   );
   const [submission, setSubmission] = useState<SubmissionState>(idleSubmission);
+  const submissionRef = useRef(submission);
+  submissionRef.current = submission;
+  const formRef = useRef(form);
+  formRef.current = form;
+  // Money and stock go to the server whenever it is reachable; only without a
+  // connection is the sale kept on this device. The mode is FROZEN while a sale
+  // is in flight or locked (outcome unknown): the connection dropping during the
+  // request must not swap the catalog, the profiles or the form under a sale
+  // that may already be on the server. It follows the connection again once the
+  // sale settles.
+  const connectionIsDown = workspace !== null && !workspace.online;
+  const modeRef = useRef(connectionIsDown);
+  modeRef.current = saleModeIsOffline(
+    modeRef.current,
+    connectionIsDown,
+    submission
+  );
+  const offlineWorkspace =
+    modeRef.current && workspace !== null ? workspace : null;
+  const offline = offlineWorkspace !== null;
   const [showRequired, setShowRequired] = useState(false);
   const [restoredAttempt] = useState<SaleAttempt | null>(() =>
     readSaleAttempt(sessionStorageOrNull(), organizationId, new Date())
@@ -1029,7 +1121,46 @@ export function SalePage() {
     },
     []
   );
-  const catalog = useSaleCatalog(organizationId, handleProfilesLoaded);
+  const catalog = useSaleCatalog(
+    organizationId,
+    handleProfilesLoaded,
+    offlineWorkspace
+  );
+  const refreshRef = useRef(catalog.refresh);
+  refreshRef.current = catalog.refresh;
+  const modeApplied = useRef<boolean>(false);
+  useEffect(() => {
+    // Going offline fills in what the offline sale uses (no profile, dated now);
+    // coming back online undoes the "no profile" choice made for the person.
+    // The mode never changes while a sale is in flight or locked (see above).
+    setForm((current) =>
+      offline ? formForOfflineSale(current) : formForOnlineSale(current)
+    );
+    if (modeApplied.current) {
+      // the lines on the sale keep the balances of the OTHER source otherwise
+      refreshRef.current(
+        formRef.current.items
+          .map((item) => item.variantId)
+          .filter((variantId) => variantId !== "")
+      );
+    }
+    modeApplied.current = true;
+  }, [offline]);
+  const localWriter = offlineWorkspace?.stores.writer;
+  const localOutbox = offlineWorkspace?.stores.outbox;
+  const localSearch = useMemo<LocalSearch | undefined>(() => {
+    if (!(localWriter && localOutbox)) {
+      return;
+    }
+    return async (query) => {
+      const rows = await readLocalCatalog(localWriter, localOutbox);
+      return filterLocalStockEntries(localStockEntries(rows), {
+        limit: PICKER_RESULT_LIMIT,
+        productStatus: "active",
+        query,
+      });
+    };
+  }, [localOutbox, localWriter]);
   const { refresh, resetStock, seedStock } = catalog;
 
   const activeProfiles = useMemo(
@@ -1048,7 +1179,7 @@ export function SalePage() {
   );
 
   useEffect(() => {
-    if (submission.phase === "confirmed") {
+    if (submission.phase === "confirmed" || submission.phase === "queued") {
       confirmedRef.current?.focus();
     }
   }, [submission.phase]);
@@ -1178,6 +1309,59 @@ export function SalePage() {
     [activeProfiles, editForm]
   );
 
+  /** What the page does once a confirmation settled, on the server or on the device. */
+  const applyOutcome = useCallback(
+    (
+      outcome: ConfirmationOutcome,
+      device: { runtime: OfflineRuntime; stores: RuntimeContext } | null
+    ) => {
+      rememberAttempt(outcome.attempt);
+      if (outcome.prices) {
+        const remembered = mergeLastPrices(
+          lastPrices,
+          outcome.prices.lines,
+          outcome.prices.day
+        );
+        setLastPrices(remembered);
+        writeLastPrices(browserStorage(), organizationId, remembered);
+      }
+      setSubmission(outcome.submission);
+      if (!outcome.completed) {
+        return;
+      }
+      const blank = createBlankSaleForm(newId);
+      // by the mode the screen is in now: a locked sale kept on the device while
+      // the screen is in the server mode must not leave "no profile" preselected
+      setForm(offline ? formForOfflineSale(blank) : blank);
+      setShowRequired(false);
+      resetStock();
+      if (device) {
+        device.runtime.localDataChanged();
+        device.runtime.refreshCounts().catch(() => undefined);
+        // sends it now when the connection came back since the render
+        device.runtime.syncNow().catch(() => undefined);
+      }
+    },
+    [lastPrices, offline, organizationId, rememberAttempt, resetStock]
+  );
+
+  /** Tries the confirmation (on the server, or on the device when offline) and applies its outcome. */
+  const settleConfirmation = useCallback(
+    async (prepared: PreparedOk) => {
+      // Read again at the click: the connection may have changed since the render.
+      const stores = offlineWorkspace?.runtime.context() ?? null;
+      if (offlineWorkspace && stores) {
+        applyOutcome(
+          await confirmOnDevice(prepared, stores, itemLabels(form.items)),
+          { runtime: offlineWorkspace.runtime, stores }
+        );
+        return;
+      }
+      applyOutcome(await confirmOnServer(prepared), null);
+    },
+    [applyOutcome, form.items, offlineWorkspace]
+  );
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -1213,23 +1397,7 @@ export function SalePage() {
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {
-        const sale = await orpcClient.sale.confirm(prepared.request);
-        rememberAttempt(null);
-        const remembered = mergeLastPrices(
-          lastPrices,
-          sale.items,
-          sale.sale.occurredOn
-        );
-        setLastPrices(remembered);
-        writeLastPrices(browserStorage(), organizationId, remembered);
-        setSubmission(confirmSubmission(sale));
-        setForm(createBlankSaleForm(newId));
-        setShowRequired(false);
-        resetStock();
-      } catch (error) {
-        const failed = failSubmission(error);
-        rememberAttempt(attemptAfterFailure(failed, prepared.attempt));
-        setSubmission(failed);
+        await settleConfirmation(prepared);
       } finally {
         inFlightRef.current = false;
       }
@@ -1238,13 +1406,92 @@ export function SalePage() {
       activeProfiles,
       catalog.stock,
       form,
-      lastPrices,
       organizationId,
       rememberAttempt,
-      resetStock,
+      settleConfirmation,
       submission,
     ]
   );
+  const keepLockedAllowed =
+    workspace !== null &&
+    canKeepLockedSaleOnDevice(submission, attemptRef.current, evaluation);
+  /**
+   * An unknown outcome on the server, moved to the device as the SAME sale
+   * (same command ID and payload). If the device cannot keep it, the sale stays
+   * locked as it was: it is never unlocked for editing, which could record it twice.
+   */
+  const handleKeepLocked = useCallback(async () => {
+    const stores = workspace?.runtime.context() ?? null;
+    if (!(workspace && stores) || inFlightRef.current) {
+      return;
+    }
+    const clickedAt = new Date();
+    const fresh = evaluateSaleForm(
+      form,
+      { profiles: activeProfiles, stock: catalog.stock },
+      { now: clickedAt, showRequired: true }
+    );
+    const { body } = fresh;
+    if (
+      body === null ||
+      !canKeepLockedSaleOnDevice(submission, attemptRef.current, fresh)
+    ) {
+      return;
+    }
+    const prepared = prepareConfirmation({
+      body,
+      createId: newId,
+      now: clickedAt,
+      occurredAtOverride: null,
+      organizationId,
+      previousAttempt: attemptRef.current,
+    });
+    if (!prepared.ok || prepared.attempt !== attemptRef.current) {
+      return;
+    }
+    const before = submission;
+    inFlightRef.current = true;
+    setSubmission(startSubmission(before));
+    try {
+      const outcome = await confirmOnDevice(
+        prepared,
+        stores,
+        itemLabels(form.items)
+      );
+      if (outcome.completed) {
+        applyOutcome(outcome, { runtime: workspace.runtime, stores });
+      } else if (before.phase === "locked") {
+        // still locked, never unlocked for editing; the reason it could not be kept is said
+        const reason =
+          outcome.submission.phase === "failed"
+            ? `${outcome.submission.failure.message} `
+            : "";
+        setSubmission({
+          ...before,
+          failure: {
+            ...before.failure,
+            message: `${reason}${before.failure.message}`,
+          },
+        });
+      } else {
+        setSubmission(before);
+      }
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [
+    activeProfiles,
+    applyOutcome,
+    catalog.stock,
+    form,
+    organizationId,
+    submission,
+    workspace,
+  ]);
+  const handleKeepLockedEvent = useCallback(() => {
+    handleKeepLocked().catch(() => undefined);
+  }, [handleKeepLocked]);
+
   const handleDiscardRequest = useCallback(
     () => setSubmission((current) => requestDiscard(current)),
     []
@@ -1285,6 +1532,11 @@ export function SalePage() {
           </p>
         </div>
       </section>
+      {offline ? <OfflineSaleNotice /> : null}
+      {workspace ? <PendingSalesPanel workspace={workspace} /> : null}
+      {submission.phase === "queued" ? (
+        <QueuedSalePanel panelRef={confirmedRef} sale={submission.sale} />
+      ) : null}
       {submission.phase === "confirmed" ? (
         <ConfirmedSalePanel
           key={submission.sale.saleId}
@@ -1322,6 +1574,7 @@ export function SalePage() {
                 index={index}
                 item={item}
                 key={item.draftId}
+                localSearch={localSearch}
                 onChange={handleItemChange}
                 onClearVariant={handleClearVariant}
                 onPick={handlePickVariant}
@@ -1377,17 +1630,20 @@ export function SalePage() {
               Adicionar ajuste
             </button>
           </fieldset>
-          <DateSection
-            disabled={locked}
-            error={evaluation.errors[formFieldKeys.occurredAt]}
-            onChange={handleDateChange}
-            value={form.occurredAtLocal}
-          />
+          {offline ? null : (
+            <DateSection
+              disabled={locked}
+              error={evaluation.errors[formFieldKeys.occurredAt]}
+              onChange={handleDateChange}
+              value={form.occurredAtLocal}
+            />
+          )}
           <PaymentSection
             disabled={locked}
             errors={evaluation.errors}
             evaluation={evaluation}
             form={form}
+            offline={offline}
             onAcknowledgeReview={handleAcknowledgeReview}
             onAnticipationChange={handleAnticipationChange}
             onInstallmentPlanChange={handlePlanChange}
@@ -1402,9 +1658,11 @@ export function SalePage() {
         <SummaryPanel
           errors={evaluation.errors}
           evaluation={evaluation}
+          offline={offline}
           onDiscardCancel={handleDiscardCancel}
           onDiscardConfirm={handleDiscardConfirm}
           onDiscardRequest={handleDiscardRequest}
+          onKeepOnDevice={keepLockedAllowed ? handleKeepLockedEvent : undefined}
           onRefresh={handleRefresh}
           showRequired={showRequired}
           submission={submission}

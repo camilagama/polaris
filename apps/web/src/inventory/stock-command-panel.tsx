@@ -26,6 +26,7 @@ import {
   STOCK_ACTION_LABELS,
   STOCK_FIELD_ORDER,
   type StockAction,
+  type StockCall,
   type StockCommandState,
   type StockFailure,
   type StockFieldName,
@@ -34,6 +35,7 @@ import {
   stockActionBlock,
   stockConsequence,
   stockFailed,
+  stockQueueFailed,
   stockSubmitLabel,
   stockSucceeded,
   stockSummary,
@@ -42,12 +44,21 @@ import {
   visibleStockIssues,
   WRITE_OFF_REASONS,
 } from "./stock-command-model";
-import { costText, type StockTarget, unitsText } from "./stock-target";
+import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { queueOfflineStock } from "./queue-offline-stock";
+import {
+  costText,
+  type StockTarget,
+  targetCostText,
+  unitsText,
+} from "./stock-target";
 
 const newId = () => crypto.randomUUID();
 
 interface StockCommandPanelProps {
   action: StockAction;
+  /** Without a connection: the movement is kept on this device instead of sent. */
+  local?: LocalWorkspace | undefined;
   organizationId: string;
   /** The panel was closed; the page restores focus to the row's button. */
   onClose: () => void;
@@ -571,6 +582,7 @@ function Actions({
  */
 export function StockCommandPanel({
   action,
+  local,
   onBalance,
   onClose,
   onReloadList,
@@ -652,6 +664,27 @@ export function StockCommandPanel({
     }
   }, [onBalance, organizationId, target.variantId]);
 
+  /** Keeps the movement on this device; nothing is sent, so a failure here is definite. */
+  const confirmOnDevice = useCallback(
+    async (call: StockCall) => {
+      const stores = local?.runtime.context() ?? null;
+      try {
+        if (!(local && stores)) {
+          throw new Error("offline_runtime_unavailable");
+        }
+        const queued = await queueOfflineStock({ call, stores });
+        setState((current) => stockSucceeded(current, queued, true));
+        local.runtime.localDataChanged();
+        local.runtime.refreshCounts().catch(() => undefined);
+        // sends it now when the connection came back since the render
+        local.runtime.syncNow().catch(() => undefined);
+      } catch (error) {
+        setState((current) => stockQueueFailed(current, error));
+      }
+    },
+    [local]
+  );
+
   const handleConfirm = useCallback(async () => {
     if (inFlight.current) {
       return;
@@ -668,6 +701,13 @@ export function StockCommandPanel({
     inFlight.current = true;
     try {
       const { call } = prepared;
+      // An attempt locked on the server (outcome unknown) is retried there, as it
+      // was sent: sending it to the device with another payload could record the
+      // movement twice.
+      if (local && state.submission.phase !== "locked") {
+        await confirmOnDevice(call);
+        return;
+      }
       let result: StockResult & { movement: { createdAt: string } };
       if (call.action === "receive") {
         result = await orpcClient.inventory.receiveStock(call.input);
@@ -693,7 +733,15 @@ export function StockCommandPanel({
     } finally {
       inFlight.current = false;
     }
-  }, [onBalance, onReloadList, organizationId, refreshBalance, state]);
+  }, [
+    confirmOnDevice,
+    local,
+    onBalance,
+    onReloadList,
+    organizationId,
+    refreshBalance,
+    state,
+  ]);
   const handleConfirmEvent = useCallback(() => {
     handleConfirm().catch(() => undefined);
   }, [handleConfirm]);
@@ -731,10 +779,12 @@ export function StockCommandPanel({
           tabIndex={-1}
         >
           <p>{submission.message}</p>
-          <p className="stock-hint">
-            Saldo: {unitsText(submission.balance.quantity)} · custo médio:{" "}
-            {costText(submission.balance.movingAverageCost)}
-          </p>
+          {submission.queued ? null : (
+            <p className="stock-hint">
+              Saldo: {unitsText(submission.balance.quantity)} · custo médio:{" "}
+              {costText(submission.balance.movingAverageCost)}
+            </p>
+          )}
         </div>
         <div className="stock-actions-row">
           <button className="primary-button" onClick={onClose} type="button">
@@ -756,7 +806,7 @@ export function StockCommandPanel({
       <p className="stock-hint">
         {state.target.productName} — {state.target.variantText}. Saldo atual:{" "}
         {unitsText(state.target.quantity)} · custo médio:{" "}
-        {costText(state.target.movingAverageCost)}.
+        {targetCostText(state.target)}.
       </p>
       {state.target.archived ? (
         <p className="stock-message is-warning" role="note">

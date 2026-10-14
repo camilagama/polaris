@@ -199,6 +199,11 @@ function createWriter(
         [...collections.recentSales.keys()].filter((key) => !wanted.has(key))
       );
     },
+    async rows<K extends BootstrapCollectionName>(collection: K) {
+      return await (
+        collections[collection] as unknown as CollectionLike<LocalRows[K]>
+      ).toArrayWhenReady();
+    },
     async upsert<K extends BootstrapCollectionName>(
       collection: K,
       rows: LocalRows[K][]

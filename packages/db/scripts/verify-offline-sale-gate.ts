@@ -140,7 +140,7 @@ async function run() {
     const pushSale = (
       id: string,
       lines: Line[],
-      options: { occurredAt?: string } = {}
+      options: { occurredAt?: string; recordedAt?: string } = {}
     ): Promise<SyncCommandOutcome> =>
       withTenantAs(db, tenantA, "sync:push", (transaction, identity) =>
         runSyncCommand(
@@ -173,7 +173,7 @@ async function run() {
               occurredAt,
               payment: { anticipationRequested: false, method: "pix" },
               paymentProfile: null,
-              recordedAt: recentInstant(1),
+              recordedAt: options.recordedAt ?? recentInstant(1),
               requestId: id,
             });
             return {
@@ -262,6 +262,64 @@ async function run() {
     });
     tests.push(
       "an offline sale is confirmed once with the device's recordedAt as evidence and its own commercial time; sending it again replays the outcome and takes no more stock"
+    );
+
+    // -------------- 1b. the SAME sale sent directly first, then kept on the device
+    // The web screen can lose the answer of a direct send and then keep the sale
+    // on the device. Both paths use `confirmSale` with the same command ID and the
+    // same content, so the device's copy must be recognized, not recorded twice.
+    const pants = await createSellableProduct(gateRuntime, tenantA, "calca", {
+      cost: "5.00",
+      quantity: 4,
+    });
+    const crossId = randomUUID();
+    const crossOccurredAt = recentInstant(2);
+    const direct = await withTenantAs(
+      db,
+      tenantA,
+      "sale:create",
+      (transaction, identity) =>
+        confirmSale(transaction, identity, {
+          adjustments: [],
+          commandId: crossId,
+          commandVersion: 1,
+          items: [
+            {
+              chargedUnitPrice: "19.90",
+              listedUnitPrice: "20.00",
+              quantity: 1,
+              variantId: pants.variantId,
+            },
+          ],
+          // no typed date: the instant of the attempt is both times
+          occurredAt: crossOccurredAt,
+          payment: { anticipationRequested: false, method: "pix" },
+          paymentProfile: null,
+          recordedAt: crossOccurredAt,
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(direct.replayed, false);
+    const afterDirect = await balance(pants.variantId);
+    const viaDevice = await pushSale(
+      crossId,
+      [{ quantity: 1, variantId: pants.variantId }],
+      { occurredAt: crossOccurredAt, recordedAt: crossOccurredAt }
+    );
+    assert.equal(viaDevice.status, "accepted");
+    assert.equal(
+      (viaDevice as { result?: { saleId?: string } }).result?.saleId,
+      direct.sale.id,
+      "the device's copy is the sale the direct send already recorded"
+    );
+    assert.equal(await salesOf(crossId), 1);
+    assert.deepEqual(
+      await balance(pants.variantId),
+      afterDirect,
+      "no second movement of stock"
+    );
+    tests.push(
+      "a sale first sent directly (answer lost) and then sent from the device with the same command ID and content is recognized as the same sale: one sale, one movement per line"
     );
 
     // ---- 2. the overlay's arithmetic: one version step per line, repeated lines included

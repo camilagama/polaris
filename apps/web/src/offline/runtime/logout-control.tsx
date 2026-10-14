@@ -1,4 +1,9 @@
 import { useCallback, useState } from "react";
+import {
+  browserStorage,
+  clearOrganizationsCache,
+} from "../../lib/current-organization-model";
+import { markSigningOut } from "../../lib/sign-out";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
 import {
@@ -37,7 +42,12 @@ export function LogoutControl() {
       const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
       return workspaces.length > 0
         ? {
-            leave: () => window.location.assign("/"),
+            leave: () => {
+              // the next person to open this browser must not be offered these organizations
+              markSigningOut();
+              clearOrganizationsCache(browserStorage());
+              window.location.assign("/");
+            },
             signOut: signOutOnServer,
             workspaces,
           }
@@ -50,6 +60,9 @@ export function LogoutControl() {
     ) => {
       const deps = await dependencies();
       if (!deps) {
+        setMessage(
+          "Não foi possível verificar o trabalho guardado neste aparelho agora. Tente de novo com conexão, depois que o app terminar de abrir."
+        );
         return;
       }
       setBusy(true);

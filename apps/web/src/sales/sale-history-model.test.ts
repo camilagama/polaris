@@ -4,9 +4,9 @@ import type {
 } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  activeFilterCount,
   canLoadMore,
   detailLoadErrorMessage,
-  activeFilterCount,
   emptyHistoryFilters,
   HISTORY_STATUS_FILTERS,
   type HistoryState,
@@ -410,13 +410,13 @@ describe("sale detail", () => {
         },
       },
       sale: {
-        recordedAt: null,
         commandId: id(60),
         confirmedAt: "2026-05-01T12:00:01.000Z",
         currency: "BRL",
         id: id(70),
         occurredAt: "2026-05-01T12:00:00.000Z",
         occurredOn: "2026-05-01",
+        recordedAt: null,
       },
       totals: {
         discountTotal: "10.98",

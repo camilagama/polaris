@@ -8,6 +8,11 @@ import { formatBrlAmount, formatQuantity } from "../lib/format";
 export interface StockTarget {
   /** The product is archived: its stock can still be adjusted. */
   archived: boolean;
+  /**
+   * The average cost is not on this device (ADR 0031), so `movingAverageCost` is
+   * null without meaning "unknown": the screen neither shows it nor blocks on it.
+   */
+  costUnavailable?: boolean;
   movingAverageCost: string | null;
   productName: string;
   quantity: number;
@@ -41,10 +46,12 @@ export function variantFullLabel(
 }
 
 export function stockTarget(
-  entry: InventoryBalanceEntryReadModel
+  entry: InventoryBalanceEntryReadModel,
+  options: { costUnavailable?: boolean } = {}
 ): StockTarget {
   return {
     archived: entry.productStatus === "archived",
+    ...(options.costUnavailable ? { costUnavailable: true } : {}),
     movingAverageCost: entry.movingAverageCost,
     productName: entry.productName,
     quantity: entry.quantity,
@@ -69,6 +76,13 @@ export function retarget(
 
 export function unitsText(quantity: number): string {
   return `${formatQuantity(quantity)} ${quantity === 1 ? "unidade" : "unidades"}`;
+}
+
+/** The cost line of a target: unavailable offline, unknown, or the average. */
+export function targetCostText(target: StockTarget): string {
+  return target.costUnavailable
+    ? "Disponível com conexão"
+    : costText(target.movingAverageCost);
 }
 
 /** Average cost for display; an unknown cost is never shown as zero. */

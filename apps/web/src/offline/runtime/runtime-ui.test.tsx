@@ -15,11 +15,13 @@ const snapshot = (
 ): RuntimeSnapshot => ({
   bootstrapped: true,
   counts: { pending: 0, rejected: 0, sending: 0 },
+  dataVersion: 0,
   lastSyncAt: null,
   leaseExpiresAt: null,
   online: true,
   phase: "ready",
   reason: null,
+  sessionRefused: false,
   syncing: false,
   ...overrides,
 });

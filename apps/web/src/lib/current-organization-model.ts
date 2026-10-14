@@ -77,6 +77,124 @@ export function resolveCurrentOrganization(
   );
 }
 
+/**
+ * The organizations the server listed last, kept so the app can open without a
+ * connection (the offline runtime is on). It is a convenience for drawing the
+ * screen, never proof of access: the server authorizes every request, and the
+ * list is dropped when the session ends (sign-out or an "unauthorized" answer).
+ */
+export const ORGANIZATIONS_CACHE_KEY = "polaris.offline.organizations";
+
+function isOrganization(value: unknown): value is Organization {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === "string" &&
+    row.id.length > 0 &&
+    typeof row.name === "string" &&
+    row.name.length > 0 &&
+    typeof row.role === "string" &&
+    row.role.length > 0 &&
+    typeof row.timezone === "string" &&
+    row.timezone.length > 0
+  );
+}
+
+export function writeOrganizationsCache(
+  storage: PreferenceStorage | null,
+  organizations: readonly Organization[]
+): void {
+  try {
+    storage?.setItem(
+      ORGANIZATIONS_CACHE_KEY,
+      JSON.stringify(
+        organizations.map(({ id, name, role, timezone }) => ({
+          id,
+          name,
+          role,
+          timezone,
+        }))
+      )
+    );
+  } catch {
+    // Without it the app still works online; only the offline start is lost.
+  }
+}
+
+export function readOrganizationsCache(
+  storage: PreferenceStorage | null
+): Organization[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      storage?.getItem(ORGANIZATIONS_CACHE_KEY) ?? "[]"
+    );
+    return Array.isArray(parsed) ? parsed.filter(isOrganization) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearOrganizationsCache(
+  storage: PreferenceStorage | null
+): void {
+  try {
+    storage?.removeItem(ORGANIZATIONS_CACHE_KEY);
+  } catch {
+    // Nothing to clean when storage is unavailable.
+  }
+}
+
+/**
+ * Whether a failed read of the organizations may be answered from the cache: the
+ * network or the server is down, not "the session is over" or "not allowed".
+ */
+export function canUseCachedOrganizations(error: unknown): boolean {
+  const code = rpcErrorCode(error);
+  return (
+    code === undefined ||
+    code === "SERVICE_UNAVAILABLE" ||
+    code === "INTERNAL_SERVER_ERROR"
+  );
+}
+
+export interface OrganizationLoadOutcome {
+  /** Shown from the device's copy; read again once the connection is back. */
+  fromCache: boolean;
+  load: OrganizationLoad;
+}
+
+/**
+ * What the screen shows when the read of the organizations failed: the cached
+ * list when the offline runtime is on and the failure is a connection one,
+ * otherwise the error.
+ */
+export function organizationLoadAfterFailure(input: {
+  cached: readonly Organization[];
+  error: unknown;
+  offlineEnabled: boolean;
+  preferredId: string | null;
+}): OrganizationLoadOutcome {
+  if (
+    input.offlineEnabled &&
+    canUseCachedOrganizations(input.error) &&
+    input.cached.length > 0
+  ) {
+    return {
+      fromCache: true,
+      load: organizationLoadFromList(input.cached, input.preferredId),
+    };
+  }
+  return {
+    fromCache: false,
+    load: {
+      message: organizationLoadErrorMessage(input.error),
+      status: "error",
+    },
+  };
+}
+
 export type OrganizationLoad =
   | { status: "loading" }
   | { message: string; status: "error" }

@@ -37,6 +37,14 @@ export interface StockSnapshot {
   version: number;
 }
 
+/** The balance the person counted against is not the one the device shows any more. */
+class StaleLocalCountError extends Error {
+  constructor() {
+    super("stale_local_count");
+    this.name = "StaleLocalCountError";
+  }
+}
+
 export class InsufficientLocalStockError extends Error {
   constructor() {
     super("insufficient_local_stock");
@@ -72,6 +80,13 @@ export interface WriteOffRequest extends StockRequestBase {
 }
 
 export interface CountRequest extends StockRequestBase {
+  /**
+   * The version of the balance the person reviewed. When given, the count is
+   * refused (`StaleLocalCountError`) if the device's balance has moved since,
+   * like the server's `expectedVersion`; otherwise it is made against the
+   * balance as the device shows it now.
+   */
+  expectedVersion?: number;
   occurredOn?: string;
   physicalQuantity: number;
   /** Cost to value the counted stock at, when the variant has no average yet. */
@@ -145,22 +160,47 @@ function applyCommand(
 }
 
 /**
- * The balance as this device should show it: the local server row with the
- * movements still waiting (pending or being sent), and the sales still waiting,
- * applied in queue order.
- * Refused commands do not count: they were not applied.
+ * The queued commands that can change each variant's balance, by variant, in
+ * queue order. A screen listing thousands of variants applies only the few
+ * commands that touch each one instead of the whole queue to every variant.
  */
-export async function effectiveStock(
-  outbox: Outbox,
-  reader: LocalInventoryReader,
-  variantId: string
-): Promise<StockSnapshot> {
-  const row = await reader.inventoryRow(variantId);
-  let snapshot: StockSnapshot = {
-    quantity: row?.quantity ?? 0,
-    version: row?.version ?? 0,
+export function queuedCommandsByVariant(
+  commands: readonly OutboxCommand[]
+): Map<string, OutboxCommand[]> {
+  const byVariant = new Map<string, OutboxCommand[]>();
+  const add = (variantId: string, command: OutboxCommand) => {
+    const list = byVariant.get(variantId);
+    if (list) {
+      if (list.at(-1) !== command) {
+        list.push(command);
+      }
+    } else {
+      byVariant.set(variantId, [command]);
+    }
   };
-  const { commands } = await outbox.snapshot();
+  for (const command of commands) {
+    const direct = stockVariantOf(command);
+    if (direct !== null) {
+      add(direct, command);
+    }
+    for (const line of saleLinesOf(command)) {
+      add(line.variantId, command);
+    }
+  }
+  return byVariant;
+}
+
+/**
+ * A balance with the movements and sales still waiting in the queue applied, in
+ * queue order. Refused commands do not count: they were not applied. Pure, so a
+ * screen that lists many variants reads the queue once and applies it to each.
+ */
+export function applyQueuedStock(
+  base: StockSnapshot,
+  commands: readonly OutboxCommand[],
+  variantId: string
+): StockSnapshot {
+  let snapshot = base;
   for (const command of commands) {
     if (command.status === "rejected") {
       continue;
@@ -179,6 +219,25 @@ export async function effectiveStock(
     }
   }
   return snapshot;
+}
+
+/**
+ * The balance as this device should show it: the local server row with the
+ * movements still waiting (pending or being sent), and the sales still waiting,
+ * applied in queue order.
+ */
+export async function effectiveStock(
+  outbox: Outbox,
+  reader: LocalInventoryReader,
+  variantId: string
+): Promise<StockSnapshot> {
+  const row = await reader.inventoryRow(variantId);
+  const { commands } = await outbox.snapshot();
+  return applyQueuedStock(
+    { quantity: row?.quantity ?? 0, version: row?.version ?? 0 },
+    commands,
+    variantId
+  );
 }
 
 interface Enqueue {
@@ -279,6 +338,12 @@ export async function countStockOffline(request: CountRequest) {
     request.reader,
     request.variantId
   );
+  if (
+    request.expectedVersion !== undefined &&
+    request.expectedVersion !== base.version
+  ) {
+    throw new StaleLocalCountError();
+  }
   const input = normalizeInventoryCountInput({
     commandId: placeholderCommandId,
     commandVersion: 1,

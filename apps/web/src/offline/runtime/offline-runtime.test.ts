@@ -7,6 +7,7 @@ import { Outbox } from "../outbox/outbox";
 import { createOfflineProduct } from "../product-create";
 import { FakeCatalogServer, FakeWriter } from "../test-support";
 import {
+  type DataChannel,
   type KeyValueStore,
   OfflineRuntime,
   type OpenedStores,
@@ -43,14 +44,47 @@ function world(options: { leaseHours?: number } = {}) {
   const labels: (string | null)[] = [];
   const owners = new Map<string, string>();
   const session = { user: userId };
-  const failures: { issueLease: Error[]; push: boolean } = {
+  const failures: {
+    issueLease: Error[];
+    push: boolean;
+    /** The oRPC code the failing push carries (UNAUTHORIZED, FORBIDDEN...), if any. */
+    pushCode?: string;
+  } = {
     issueLease: [],
     push: false,
   };
+  /** Makes closing the stores wait, to catch stop/start overlapping. */
+  const gates: { close?: Promise<void> | undefined } = {};
   const keyValues = memoryKeyValues();
   const stores = new Map<string, { outbox: Outbox; writer: FakeWriter }>();
   const closed: string[] = [];
   const purged: { discardPending: boolean }[] = [];
+  // two tabs: every channel of a name hears the posts of the others, never its own
+  const bus = new Map<string, Set<{ listener: () => void }>>();
+  const openDataChannel = (name: string): DataChannel => {
+    const mine: { listener: () => void } = { listener: () => undefined };
+    const members = bus.get(name) ?? new Set();
+    members.add(mine);
+    bus.set(name, members);
+    return {
+      close: () => {
+        members.delete(mine);
+      },
+      post: () => {
+        for (const member of members) {
+          if (member !== mine) {
+            member.listener();
+          }
+        }
+      },
+      subscribe: (listener) => {
+        mine.listener = listener;
+        return () => {
+          mine.listener = () => undefined;
+        };
+      },
+    };
+  };
 
   const issue = async (deviceId: string, org: string) => {
     const lease = await signOfflineLease(
@@ -86,7 +120,13 @@ function world(options: { leaseHours?: number } = {}) {
     push: () => (input) => {
       calls.push += 1;
       if (failures.push) {
-        return Promise.reject(new Error("server down"));
+        return Promise.reject(
+          Object.assign(new Error("server down"), {
+            ...(failures.pushCode === undefined
+              ? {}
+              : { code: failures.pushCode }),
+          })
+        );
       }
       return server.push(input);
     },
@@ -114,6 +154,7 @@ function world(options: { leaseHours?: number } = {}) {
           userId: user,
         }),
       now: () => clock,
+      openDataChannel,
       openStores: (namespace, deviceId) => {
         const existing = stores.get(namespace.key);
         const value = existing ?? {
@@ -130,6 +171,7 @@ function world(options: { leaseHours?: number } = {}) {
         const opened: OpenedStores = {
           close: () => {
             closed.push(namespace.key);
+            return gates.close;
           },
           ...value,
         };
@@ -147,6 +189,7 @@ function world(options: { leaseHours?: number } = {}) {
     calls,
     closed,
     failures,
+    gates,
     keyValues,
     labels,
     make,
@@ -480,5 +523,135 @@ describe("what the rest of the app plugs into", () => {
     runtime.subscribe(listener);
     await runtime.start(organizationId);
     expect(listener).toHaveBeenCalled();
+  });
+});
+
+describe("the data version the screens read by", () => {
+  it("goes up when the stores open, when a screen wrote, and after every sync (even a failed one)", async () => {
+    const w = world();
+    const runtime = w.make();
+    expect(runtime.getSnapshot().dataVersion).toBe(0);
+    await runtime.start(organizationId);
+    const opened = runtime.getSnapshot().dataVersion;
+    expect(opened).toBeGreaterThan(0);
+
+    runtime.localDataChanged();
+    const written = runtime.getSnapshot().dataVersion;
+    expect(written).toBe(opened + 1);
+
+    await runtime.syncNow();
+    const synced = runtime.getSnapshot().dataVersion;
+    expect(synced).toBeGreaterThan(written);
+
+    w.failures.push = true;
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).toBe("sync_failed");
+    expect(runtime.getSnapshot().dataVersion).toBeGreaterThan(synced);
+  });
+
+  it("exposes every row of a collection to the screens", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+    const rows = await runtime.context()?.writer.rows("products");
+    expect(rows?.map((row) => row.name).sort()).toEqual(["Calça", "Camiseta"]);
+  });
+});
+
+describe("two tabs of the same namespace", () => {
+  it("a change in one makes the other read again, and the news does not echo back", async () => {
+    const w = world();
+    const first = w.make();
+    const second = w.make();
+    await first.start(organizationId);
+    await second.start(organizationId);
+    const before = second.getSnapshot().dataVersion;
+    const firstBefore = first.getSnapshot().dataVersion;
+
+    first.localDataChanged();
+
+    expect(first.getSnapshot().dataVersion).toBe(firstBefore + 1);
+    expect(second.getSnapshot().dataVersion).toBe(before + 1);
+    // the second tab heard it but did not announce it again
+    expect(first.getSnapshot().dataVersion).toBe(firstBefore + 1);
+  });
+
+  it("a tab that closed its stores no longer hears the others", async () => {
+    const w = world();
+    const first = w.make();
+    const second = w.make();
+    await first.start(organizationId);
+    await second.start(organizationId);
+    await second.stop();
+    const before = second.getSnapshot().dataVersion;
+    first.localDataChanged();
+    expect(second.getSnapshot().dataVersion).toBe(before);
+  });
+});
+
+describe("switching organization", () => {
+  it("a stop that was still closing the old stores does not undo the organization opened after it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    let release: () => void = () => undefined;
+    w.gates.close = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // the cleanup of the old organization is not awaited; the new one starts at once
+    const stopping = runtime.stop();
+    await runtime.start("org-2");
+    w.gates.close = undefined;
+    release();
+    await stopping;
+
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()?.organizationId).toBe("org-2");
+  });
+});
+
+describe("a session the server refuses", () => {
+  it("is flagged only when the server says not signed in or not allowed, and clears with a sync that works", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+
+    w.failures.push = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      reason: "sync_failed",
+      sessionRefused: false,
+    });
+
+    for (const code of ["UNAUTHORIZED", "FORBIDDEN"]) {
+      w.failures.pushCode = code;
+      // biome-ignore lint/performance/noAwaitInLoops: each code is tried after the previous sync settled
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().sessionRefused).toBe(true);
+    }
+
+    w.failures.push = false;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      reason: null,
+      sessionRefused: false,
+    });
+  });
+
+  it("stopping forgets the last figures of the organization that was open", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().lastSyncAt).not.toBeNull();
+    await runtime.stop();
+    expect(runtime.getSnapshot()).toMatchObject({
+      lastSyncAt: null,
+      leaseExpiresAt: null,
+    });
   });
 });

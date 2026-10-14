@@ -4,6 +4,8 @@ import { orpcClient } from "../../lib/orpc";
 import { getUpdateStore } from "../../pwa/runtime";
 import { purgeNamespace } from "../logout-purge";
 import { localNamespace } from "../namespace";
+import { openBrowserDataChannel } from "./data-channel";
+import { OFFLINE_RUNTIME_ENABLED } from "./enabled";
 import { OfflineRuntime } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 import { RuntimeContext } from "./runtime-context";
@@ -17,9 +19,6 @@ import { openRuntimeStores } from "./runtime-stores";
  * device checklist of Gate 5 is done: with it off nothing here runs, registers a
  * device or touches the disk.
  */
-const OFFLINE_RUNTIME_ENABLED =
-  import.meta.env.VITE_OFFLINE_RUNTIME_ENABLED === "true";
-
 const SYNC_EVERY_MS = 60_000;
 
 function createBrowserRuntime(): OfflineRuntime {
@@ -48,13 +47,14 @@ function createBrowserRuntime(): OfflineRuntime {
       },
     },
     namespaceFor: localNamespace,
+    openDataChannel: openBrowserDataChannel,
     openStores: openRuntimeStores,
     purge: purgeNamespace,
   });
 }
 
 export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
-  const { load } = useOrganizationLoad();
+  const { load, reload } = useOrganizationLoad();
   const organizationId = load.status === "ready" ? load.current.id : null;
   const runtime = useMemo(
     () => (OFFLINE_RUNTIME_ENABLED ? createBrowserRuntime() : null),
@@ -96,6 +96,25 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
       runtime.stop().catch(() => undefined);
     };
   }, [organizationId, runtime]);
+
+  // The server refused the session or the membership while the app was open:
+  // read the organizations again, so the screen shows what the server now says
+  // (and the cached list is dropped when the session is really over).
+  useEffect(() => {
+    if (!runtime) {
+      return;
+    }
+    let handled = false;
+    return runtime.subscribe(() => {
+      const refused = runtime.getSnapshot().sessionRefused;
+      if (refused && !handled) {
+        handled = true;
+        reload();
+      } else if (!refused) {
+        handled = false;
+      }
+    });
+  }, [reload, runtime]);
 
   return (
     <RuntimeContext.Provider value={runtime}>

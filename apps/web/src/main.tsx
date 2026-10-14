@@ -32,6 +32,8 @@ const isLogoutLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-logout-lab";
 const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
+const isScreensLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-screens-lab";
 
 if (isRuntimeLabRoute) {
   const loadRuntimeLab = async () => {
@@ -63,6 +65,21 @@ if (isRuntimeLabRoute) {
     }
   };
   loadLogoutLab().catch(() => undefined);
+} else if (isScreensLabRoute) {
+  const loadScreensLab = async () => {
+    try {
+      const { ScreensLab } = await import("./offline-poc/screens-lab");
+      root.render(<ScreensLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir o laboratório das telas</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadScreensLab().catch(() => undefined);
 } else if (isAttentionLabRoute) {
   const loadAttentionLab = async () => {
     try {

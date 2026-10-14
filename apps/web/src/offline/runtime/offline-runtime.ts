@@ -1,4 +1,5 @@
 import { readUnverifiedOfflineLease } from "../../lib/offline-lease-token";
+import { rpcErrorCode } from "../../lib/rpc-error";
 import type { PendingWork, PendingWorkSource } from "../../pwa/update-model";
 import {
   type BootstrapSource,
@@ -64,6 +65,13 @@ export interface OpenedStores {
   writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
 }
 
+/** Tells the other tabs of this namespace that the local rows changed, and hears them. */
+export interface DataChannel {
+  close: () => void;
+  post: () => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
 export interface RuntimeDependencies {
   api: RuntimeApi;
   deviceLabel?: string | null;
@@ -74,6 +82,8 @@ export interface RuntimeDependencies {
     organizationId: string
   ) => Promise<LocalNamespace>;
   now?: () => Date;
+  /** Cross-tab news (BroadcastChannel in the browser); without it tabs refresh on their own syncs. */
+  openDataChannel?: (name: string) => DataChannel;
   openStores: (
     namespace: LocalNamespace,
     deviceId: string
@@ -90,12 +100,23 @@ export interface RuntimeSnapshot {
   /** Whether the local collections hold a complete snapshot of the organization. */
   bootstrapped: boolean;
   counts: PendingWork;
+  /**
+   * Goes up whenever the local collections may have changed (opened, synced,
+   * or written by a screen), so a screen that reads them knows to read again.
+   */
+  dataVersion: number;
   lastSyncAt: string | null;
   leaseExpiresAt: string | null;
   online: boolean;
   phase: RuntimePhase;
   /** Why the runtime is unavailable or the last sync failed; null when fine. */
   reason: string | null;
+  /**
+   * The server answered the last sync with "not signed in" or "not allowed": the
+   * session ended or the membership was withdrawn while the app was open. The
+   * local copy must stop standing in for the server until a sync works again.
+   */
+  sessionRefused: boolean;
   syncing: boolean;
 }
 
@@ -106,6 +127,12 @@ export interface RuntimeContext {
   organizationId: string;
   outbox: Outbox;
   writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
+}
+
+/** The server said the session is over or the account may not do this. */
+function isSessionRefusal(error: unknown): boolean {
+  const code = rpcErrorCode(error);
+  return code === "UNAUTHORIZED" || code === "FORBIDDEN";
 }
 
 const DEVICE_KEY = "polaris.offline.device";
@@ -136,14 +163,18 @@ export class OfflineRuntime {
   private snapshot: RuntimeSnapshot = {
     bootstrapped: false,
     counts: EMPTY_COUNTS,
+    dataVersion: 0,
     lastSyncAt: null,
     leaseExpiresAt: null,
     online: true,
     phase: "off",
     reason: null,
+    sessionRefused: false,
     syncing: false,
   };
   private stores: OpenedStores | null = null;
+  private channel: DataChannel | null = null;
+  private stopListening: (() => void) | null = null;
   private namespace: LocalNamespace | null = null;
   private organizationId: string | null = null;
   private deviceId: string | null = null;
@@ -310,14 +341,23 @@ export class OfflineRuntime {
 
   async stop(): Promise<void> {
     this.generation += 1;
+    const { generation } = this;
     await this.closeStores();
+    if (generation !== this.generation) {
+      // a later stop or start took over while the stores were closing: it owns
+      // the state now, and resetting it here would undo the organization it opened
+      return;
+    }
     this.organizationId = null;
     this.lease = null;
     this.set({
       ...this.snapshot,
       counts: EMPTY_COUNTS,
+      lastSyncAt: null,
+      leaseExpiresAt: null,
       phase: "off",
       reason: null,
+      sessionRefused: false,
       syncing: false,
     });
   }
@@ -334,13 +374,23 @@ export class OfflineRuntime {
     return run;
   }
 
+  /** Tells the screens that read the local collections to read them again (call after writing to them). */
+  localDataChanged(): void {
+    this.set({ ...this.snapshot, dataVersion: this.snapshot.dataVersion + 1 });
+    this.channel?.post();
+  }
+
   /** Re-reads the queue figures (call after queueing or resolving a command). */
   async refreshCounts(): Promise<void> {
-    const { stores } = this;
+    const { generation, stores } = this;
     if (!stores) {
       return;
     }
     const queue = await stores.outbox.snapshot();
+    if (generation !== this.generation) {
+      // the organization changed while the queue was being read
+      return;
+    }
     this.set({
       ...this.snapshot,
       counts: {
@@ -372,8 +422,22 @@ export class OfflineRuntime {
     this.lease = null;
   }
 
+  /** Another tab changed the shared rows: read them (and the queue) again. */
+  private onRemoteChange() {
+    this.set({ ...this.snapshot, dataVersion: this.snapshot.dataVersion + 1 });
+    this.refreshCounts().catch(() => undefined);
+  }
+
+  private closeChannel() {
+    this.stopListening?.();
+    this.stopListening = null;
+    this.channel?.close();
+    this.channel = null;
+  }
+
   private async closeStores() {
     const { stores } = this;
+    this.closeChannel();
     this.stores = null;
     this.namespace = null;
     await stores?.close();
@@ -573,6 +637,13 @@ export class OfflineRuntime {
     }
     this.stores = stores;
     this.namespace = namespace;
+    this.closeChannel();
+    this.channel =
+      this.dependencies.openDataChannel?.(
+        `${namespace.coordinatorName}:changed`
+      ) ?? null;
+    this.stopListening =
+      this.channel?.subscribe(() => this.onRemoteChange()) ?? null;
     this.deviceId = deviceId;
     this.lease = lease;
     await stores.outbox.recoverInterrupted();
@@ -590,6 +661,7 @@ export class OfflineRuntime {
     this.set({
       ...this.snapshot,
       bootstrapped,
+      dataVersion: this.snapshot.dataVersion + 1,
       leaseExpiresAt: new Date(claims.exp * 1000).toISOString(),
       online: this.dependencies.isOnline(),
       phase: "ready",
@@ -628,12 +700,23 @@ export class OfflineRuntime {
       this.set({
         ...this.snapshot,
         bootstrapped: true,
+        dataVersion: this.snapshot.dataVersion + 1,
         lastSyncAt: this.now().toISOString(),
         reason: null,
+        sessionRefused: false,
         syncing: false,
       });
-    } catch {
-      this.set({ ...this.snapshot, reason: "sync_failed", syncing: false });
+      this.channel?.post();
+    } catch (error) {
+      // a partial sync may still have changed rows (accepted commands, pulled pages)
+      this.set({
+        ...this.snapshot,
+        dataVersion: this.snapshot.dataVersion + 1,
+        reason: "sync_failed",
+        sessionRefused: isSessionRefusal(error),
+        syncing: false,
+      });
+      this.channel?.post();
     }
     await this.refreshCounts();
   }

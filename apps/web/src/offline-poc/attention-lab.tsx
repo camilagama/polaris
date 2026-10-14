@@ -37,6 +37,7 @@ const noCollections: LocalWriter = {
   readMeta: () => Promise.resolve(null),
   remove: () => Promise.resolve(),
   replaceRecentSales: () => Promise.resolve(),
+  rows: () => Promise.resolve([]),
   upsert: () => Promise.resolve(),
   variantKeysOfProducts: () => Promise.resolve([]),
   writeMeta: () => Promise.resolve(),

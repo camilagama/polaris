@@ -6,12 +6,12 @@ import type {
   ProductReadModel,
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
+import { Money } from "@polaris/domain/money/money";
 import {
   CONFIRM_SALE_COMMAND_VERSION,
   MAX_FUTURE_CLOCK_SKEW_MS,
   normalizeConfirmSaleCommand,
 } from "@polaris/domain/sales/confirm-sale";
-import { Money } from "@polaris/domain/money/money";
 import {
   type PaymentProfileForSale,
   type SalePaymentFeeSnapshot,
@@ -21,8 +21,8 @@ import {
   calculateSaleAdjustments,
   InvalidSaleAdjustmentError,
   type NormalizedSaleAdjustment,
-  SaleAdjustmentLimitError,
   type SaleAdjustmentCalculation,
+  SaleAdjustmentLimitError,
   SaleDiscountExceedsSubtotalError,
 } from "@polaris/domain/sales/sale-adjustments";
 import {
@@ -114,6 +114,11 @@ interface ProfileSelectionDraft {
   reviewNotice: string | null;
   /** Version of the chosen profile the operator last reviewed. */
   seenVersion: number | null;
+  /**
+   * What the person had chosen before the offline form took the profile away;
+   * put back when the connection returns. Absent when nothing was taken.
+   */
+  restore?: ProfileSelectionDraft | undefined;
 }
 
 export interface SaleFormState {
@@ -925,10 +930,10 @@ export function validateSaleDate(
 
 export const formFieldKeys = {
   adjustments: "adjustments",
-  occurredAt: "occurredAt",
   installmentPlan: "payment:installmentPlan",
   installments: "payment:installments",
   method: "payment:method",
+  occurredAt: "occurredAt",
   profile: "profile",
   totals: "totals",
 } as const;
@@ -1383,13 +1388,13 @@ export interface EvaluationContext {
 export interface SaleEvaluation {
   /** Command body, present only when the whole form is valid. */
   body: SaleCommandBody | null;
+  /** Text for the summary: the chosen date, or that it will be now. */
+  dateText: string;
   /** Visible field errors keyed by field. Required-but-empty only after submit. */
   errors: Record<string, string>;
   feePreview: FeePreview | null;
   /** Every problem, including fields that are just not filled in yet. */
   issueCount: number;
-  /** Text for the summary: the chosen date, or that it will be now. */
-  dateText: string;
   methodText: string;
   /** ISO instant chosen by the operator; null means now at attempt creation. */
   occurredAtOverride: string | null;
@@ -1508,12 +1513,12 @@ export function evaluateSaleForm(
       : null;
   return {
     body,
-    errors: visibleErrors(issues, options.showRequired),
-    feePreview,
     dateText:
       date.occurredAt === null
         ? "Agora, ao confirmar"
         : formatInstant(date.occurredAt),
+    errors: visibleErrors(issues, options.showRequired),
+    feePreview,
     issueCount: issues.length,
     methodText: methodSummary(form.payment),
     occurredAtOverride: date.occurredAt,
@@ -1915,12 +1920,12 @@ interface ConfirmedSaleItemView {
 
 export interface ConfirmedSaleView {
   headline: string;
-  saleId: string;
   items: ConfirmedSaleItemView[];
   note: string;
   paymentDetails: ConfirmedSaleDetail[];
   replayed: boolean;
   saleDetails: ConfirmedSaleDetail[];
+  saleId: string;
   totals: SummaryRow[];
 }
 
@@ -2083,7 +2088,6 @@ export function confirmedSaleView(
   sale: ConfirmedSaleReadModel
 ): ConfirmedSaleView {
   return {
-    saleId: sale.sale.id,
     headline: sale.replayed
       ? "Esta venda já estava confirmada. Nada foi duplicado."
       : "Venda confirmada.",
@@ -2095,6 +2099,7 @@ export function confirmedSaleView(
       { label: "Venda", tone: "plain", value: sale.sale.id },
       ...saleDateDetails(sale.sale),
     ],
+    saleId: sale.sale.id,
     totals: confirmedTotals(sale),
   };
 }
@@ -2110,7 +2115,90 @@ export type SubmissionState =
       failure: SaleSubmitFailure;
       phase: "locked";
     }
-  | { phase: "confirmed"; sale: ConfirmedSaleView };
+  | { phase: "confirmed"; sale: ConfirmedSaleView }
+  /** Without a connection: the sale is kept on this device until the server confirms it. */
+  | { phase: "queued"; sale: QueuedSaleView };
+
+/** What the person sees after a sale was queued on the device. */
+export interface QueuedSaleView {
+  commandId: string;
+  /** Lines the device's copy of the stock does not seem to cover. */
+  stockWarnings: string[];
+  /** The total the customer owes, in reais, as the server will compute it. */
+  totalDue: string;
+}
+
+/**
+ * A sale whose outcome on the server is unknown can be kept on the device as the
+ * SAME sale (same command ID, same payload), which the server then recognizes
+ * instead of recording twice, only when the device command can carry exactly
+ * what was sent: no payment profile and no typed date (the offline command has
+ * neither).
+ */
+export function canKeepLockedSaleOnDevice(
+  state: SubmissionState,
+  attempt: SaleAttempt | null,
+  evaluation: SaleEvaluation
+): boolean {
+  return (
+    state.phase === "locked" &&
+    attempt !== null &&
+    evaluation.body !== null &&
+    evaluation.body.paymentProfile === null &&
+    evaluation.occurredAtOverride === null &&
+    attempt.occurredAt === attempt.recordedAt
+  );
+}
+
+/**
+ * Whether the sale screen works from the device. It follows the connection, but
+ * is FROZEN while a sale is in flight or its outcome is unknown: the connection
+ * dropping during the request must not swap the catalog, the profiles or the form
+ * under a sale that may already be on the server.
+ */
+export function saleModeIsOffline(
+  previous: boolean,
+  connectionIsDown: boolean,
+  state: SubmissionState
+): boolean {
+  return state.phase === "submitting" || state.phase === "locked"
+    ? previous
+    : connectionIsDown;
+}
+
+export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
+  return { phase: "queued", sale };
+}
+
+/**
+ * The form while the sale will be queued on the device: no payment profile
+ * exists offline (the server resolves fees and term when it confirms), and the
+ * sale is dated now, so a typed date is dropped.
+ */
+export function formForOfflineSale(form: SaleFormState): SaleFormState {
+  return {
+    ...form,
+    occurredAtLocal: "",
+    profile: {
+      choice: NO_PROFILE_CHOICE,
+      // keep the earliest choice: applying this twice must not remember "no profile" as the person's
+      restore: form.profile.restore ?? form.profile,
+      reviewNotice: null,
+      seenVersion: null,
+    },
+  };
+}
+
+/**
+ * Back online: the choice the person had before the offline form took the profile
+ * away is put back (a real profile, a deliberate "no profile", or nothing yet).
+ */
+export function formForOnlineSale(form: SaleFormState): SaleFormState {
+  const { restore } = form.profile;
+  return restore === undefined
+    ? form
+    : { ...form, profile: { ...restore, restore: undefined } };
+}
 
 export const idleSubmission: SubmissionState = { phase: "idle" };
 
@@ -2229,9 +2317,15 @@ export function confirmSubmission(
   return { phase: "confirmed", sale: confirmedSaleView(sale) };
 }
 
-export function submitButtonLabel(state: SubmissionState): string {
+export function submitButtonLabel(
+  state: SubmissionState,
+  offline = false
+): string {
   if (isSubmitting(state)) {
-    return "Confirmando venda…";
+    return offline ? "Guardando venda…" : "Confirmando venda…";
+  }
+  if (offline) {
+    return "Guardar venda neste aparelho";
   }
   return state.phase === "locked"
     ? "Tentar novamente (seguro)"
