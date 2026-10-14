@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { ProductsPage } from "../catalog/products-page";
 import { CustomersPage } from "../customers/customers-page";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
@@ -15,7 +16,7 @@ import { OfflineRuntime } from "../offline/runtime/offline-runtime";
 import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
 import { SyncStatus } from "../offline/runtime/sync-status";
-import { FakeCustomerServer } from "../offline/test-support";
+import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 
 /**
  * Browser lab for the screens that work from this device (plan PR64): the real
@@ -37,13 +38,29 @@ const ORGANIZATION = {
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
+type LabScreen = "customers" | "products";
+
+function labScreen(): LabScreen {
+  return new URLSearchParams(window.location.search).get("screen") ===
+    "products"
+    ? "products"
+    : "customers";
+}
+
 export function ScreensLab() {
+  const screen = useMemo(labScreen, []);
   const [userId, setUserId] = useState("user-a");
   const [online, setOnline] = useState(true);
   const [started, setStarted] = useState(false);
   const [message, setMessage] = useState("Laboratório fechado.");
   const network = useMemo<{ online: boolean }>(() => ({ online: true }), []);
-  const server = useMemo(() => new FakeCustomerServer(), []);
+  const server = useMemo(
+    () =>
+      screen === "products"
+        ? new FakeCatalogServer()
+        : new FakeCustomerServer(),
+    [screen]
+  );
 
   const runtime = useMemo(
     () =>
@@ -55,7 +72,7 @@ export function ScreensLab() {
             const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
             const lease = await signOfflineLease(
               buildOfflineLeaseClaims({
-                capabilities: ["customer:create"],
+                capabilities: ["customer:create", "product:create"],
                 deviceId,
                 epoch: 0,
                 expiresAt,
@@ -87,7 +104,10 @@ export function ScreensLab() {
 
   // the screen syncs by itself: read the simulated server whenever the runtime says so
   useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
-  const serverCustomers = server.customers.size;
+  const serverRecords =
+    server instanceof FakeCatalogServer
+      ? server.products.size
+      : server.customers.size;
 
   const handleStart = useCallback(async () => {
     window.localStorage.setItem("screens-lab-user", userId);
@@ -154,10 +174,11 @@ export function ScreensLab() {
             </button>
           </div>
           <p>
-            Clientes no servidor simulado:{" "}
-            <span data-testid="server-customers">{serverCustomers}</span>
+            Registros no servidor simulado:{" "}
+            <span data-testid="server-records">{serverRecords}</span>
           </p>
-          {started ? <CustomersPage /> : null}
+          {started && screen === "customers" ? <CustomersPage /> : null}
+          {started && screen === "products" ? <ProductsPage /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

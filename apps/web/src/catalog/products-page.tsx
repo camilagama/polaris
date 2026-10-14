@@ -9,6 +9,17 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import {
+  createOfflineProduct,
+  type PendingProduct,
+  pendingProducts,
+} from "../offline/product-create";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import {
+  listLocalCategories,
+  listLocalProducts,
+  toLocalProductRow,
+} from "./local-products";
 import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import "./products-page.css";
@@ -215,6 +226,8 @@ function ProductForm({
 interface ProductListProps {
   categories: CategoryReadModel[];
   isLoading: boolean;
+  /** Working from this device's collections while the connection is down. */
+  isOffline: boolean;
   onArchive: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
   onManageMedia: (product: ProductReadModel) => void;
@@ -223,10 +236,25 @@ interface ProductListProps {
   pendingAction: string | null;
   products: ProductReadModel[];
   status: ProductListStatus;
+  /** Products created on this device that the server has not confirmed yet. */
+  syncStates: ReadonlyMap<string, PendingProduct>;
+}
+
+/** Everything but creating needs the server to know the product and to be reachable. */
+function lockedReasonFor(
+  syncState: PendingProduct | undefined,
+  isOffline: boolean
+): string | null {
+  if (syncState) {
+    return "Disponível depois que o servidor confirmar o cadastro.";
+  }
+  return isOffline ? "Disponível quando houver conexão." : null;
 }
 
 interface ProductCardProps {
   categoryName: string | null;
+  /** Why editing, archiving, variants and images are unavailable for this product, or null. */
+  lockedReason: string | null;
   onArchive: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
   onManageMedia: (product: ProductReadModel) => void;
@@ -234,10 +262,20 @@ interface ProductCardProps {
   onRestore: (product: ProductReadModel) => void;
   pendingAction: string | null;
   product: ProductReadModel;
+  /** The product was created on this device and the server has not confirmed it yet. */
+  syncState: PendingProduct | undefined;
+}
+
+function syncStateLabel(syncState: PendingProduct): string {
+  if (syncState.state === "rejected") {
+    return "Recusado pelo servidor";
+  }
+  return syncState.state === "sending" ? "Enviando…" : "Aguardando envio";
 }
 
 function ProductCard({
   categoryName,
+  lockedReason,
   onArchive,
   onEdit,
   onManageMedia,
@@ -245,8 +283,10 @@ function ProductCard({
   onRestore,
   pendingAction,
   product,
+  syncState,
 }: ProductCardProps) {
   const isPending = pendingAction?.endsWith(product.id) ?? false;
+  const locked = lockedReason !== null;
   const isArchiving = pendingAction === `archive:${product.id}`;
   const isRestoring = pendingAction === `restore:${product.id}`;
   const handleEdit = useCallback(() => onEdit(product), [onEdit, product]);
@@ -275,6 +315,15 @@ function ProductCard({
           <span className={`category-status status-${product.status}`}>
             {statusLabel(product.status)}
           </span>
+          {syncState ? (
+            <span
+              className="product-sync-state"
+              data-state={syncState.state}
+              role="status"
+            >
+              {syncStateLabel(syncState)}
+            </span>
+          ) : null}
         </div>
         {product.description ? (
           <p className="product-description">{product.description}</p>
@@ -286,11 +335,17 @@ function ProductCard({
           <span>Versão {product.version}</span>
           <span>Atualizado em {formatDate(product.updatedAt)}</span>
         </div>
+        {syncState?.state === "rejected" ? (
+          <p className="product-meta">
+            <a href="/attention">Resolver em Pendências</a>
+          </p>
+        ) : null}
+        {lockedReason ? <p className="product-meta">{lockedReason}</p> : null}
       </div>
       <div className="product-card-actions">
         <button
           className="quiet-button"
-          disabled={isPending}
+          disabled={isPending || locked}
           onClick={handleManageVariants}
           type="button"
         >
@@ -299,7 +354,7 @@ function ProductCard({
         {product.status === "active" ? (
           <button
             className="quiet-button"
-            disabled={isPending}
+            disabled={isPending || locked}
             onClick={handleManageMedia}
             type="button"
           >
@@ -308,7 +363,7 @@ function ProductCard({
         ) : null}
         <button
           className="quiet-button"
-          disabled={isPending}
+          disabled={isPending || locked}
           onClick={handleEdit}
           type="button"
         >
@@ -317,7 +372,7 @@ function ProductCard({
         {product.status === "active" ? (
           <button
             className="quiet-button"
-            disabled={isPending}
+            disabled={isPending || locked}
             onClick={handleArchive}
             type="button"
           >
@@ -326,7 +381,7 @@ function ProductCard({
         ) : (
           <button
             className="quiet-button"
-            disabled={isPending}
+            disabled={isPending || locked}
             onClick={handleRestore}
             type="button"
           >
@@ -345,6 +400,8 @@ interface ProductListContentProps extends Omit<ProductListProps, "categories"> {
 function ProductListContent({
   categoryNames,
   isLoading,
+  isOffline,
+  syncStates,
   onArchive,
   onEdit,
   onManageMedia,
@@ -382,6 +439,10 @@ function ProductListContent({
           <li className="product-list-item" key={product.id}>
             <ProductCard
               categoryName={categoryName}
+              lockedReason={lockedReasonFor(
+                syncStates.get(product.id),
+                isOffline
+              )}
               onArchive={onArchive}
               onEdit={onEdit}
               onManageMedia={onManageMedia}
@@ -389,6 +450,7 @@ function ProductListContent({
               onRestore={onRestore}
               pendingAction={pendingAction}
               product={product}
+              syncState={syncStates.get(product.id)}
             />
           </li>
         );
@@ -400,6 +462,8 @@ function ProductListContent({
 function ProductList({
   categories,
   isLoading,
+  isOffline,
+  syncStates,
   onArchive,
   onEdit,
   onManageMedia,
@@ -432,6 +496,7 @@ function ProductList({
       <ProductListContent
         categoryNames={categoryNames}
         isLoading={isLoading}
+        isOffline={isOffline}
         onArchive={onArchive}
         onEdit={onEdit}
         onManageMedia={onManageMedia}
@@ -440,13 +505,71 @@ function ProductList({
         pendingAction={pendingAction}
         products={products}
         status={status}
+        syncStates={syncStates}
       />
     </section>
   );
 }
 
+/**
+ * After the server changed a product, the same row goes into the local
+ * collection (when the runtime is on), so the list read from the device shows
+ * it at once instead of waiting for the next pull.
+ */
+async function keepLocalRow(
+  workspace: ReturnType<typeof useLocalWorkspace>,
+  product: ProductReadModel
+): Promise<void> {
+  if (workspace) {
+    await workspace.stores.writer.upsert("products", [
+      toLocalProductRow(product),
+    ]);
+  }
+}
+
+/**
+ * Creates a product and says what happened. With the offline runtime ready it is
+ * queued on this device and shown at once (sent now when there is a connection);
+ * without it, it is created on the server as before.
+ */
+async function createProduct(
+  workspace: ReturnType<typeof useLocalWorkspace>,
+  organizationId: string,
+  input: { categoryId: string | null; description: string | null; name: string }
+): Promise<string> {
+  if (!workspace) {
+    const product = await orpcClient.product.create({
+      ...input,
+      organizationId,
+    });
+    return `Produto “${product.name}” cadastrado.`;
+  }
+  const stores = workspace.runtime.context();
+  if (!stores) {
+    throw new Error("offline_runtime_unavailable");
+  }
+  await createOfflineProduct({
+    deviceId: stores.deviceId,
+    input,
+    lease: stores.lease,
+    organizationId,
+    outbox: stores.outbox,
+    writer: stores.writer,
+  });
+  const name = input.name.trim();
+  if (workspace.online) {
+    workspace.runtime.syncNow().catch(() => undefined);
+    return `Produto “${name}” cadastrado.`;
+  }
+  return `Produto “${name}” salvo neste aparelho. Ele será enviado quando a conexão voltar.`;
+}
+
 export function ProductsPage() {
   const { organizationId } = useCurrentOrganization();
+  const workspace = useLocalWorkspace(organizationId);
+  const [syncStates, setSyncStates] = useState<
+    ReadonlyMap<string, PendingProduct>
+  >(new Map());
   const [status, setStatus] = useState<ProductListStatus>("active");
   const [products, setProducts] = useState<ProductReadModel[]>([]);
   const [categories, setCategories] = useState<CategoryReadModel[]>([]);
@@ -462,7 +585,11 @@ export function ProductsPage() {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
+  const usesLocalRows = workspace !== null;
   useEffect(() => {
+    if (usesLocalRows) {
+      return;
+    }
     let current = true;
     setIsLoading(true);
     Promise.all([
@@ -489,7 +616,50 @@ export function ProductsPage() {
     return () => {
       current = false;
     };
-  }, [organizationId, refreshVersion, status]);
+  }, [organizationId, refreshVersion, status, usesLocalRows]);
+
+  // With the offline runtime ready the list comes from this device, and is read
+  // again whenever the runtime says the local rows may have changed.
+  useEffect(() => {
+    if (!workspace) {
+      return;
+    }
+    let current = true;
+    const { outbox, writer } = workspace.stores;
+    Promise.all([
+      writer.rows("products"),
+      writer.rows("categories"),
+      pendingProducts(outbox),
+    ])
+      .then(([productRows, categoryRows, pending]) => {
+        if (!current) {
+          return;
+        }
+        setProducts(listLocalProducts(productRows, organizationId, status));
+        setCategories(listLocalCategories(categoryRows, organizationId));
+        setSyncStates(new Map(pending.map((item) => [item.productId, item])));
+        setIsLoading(false);
+      })
+      .catch((cause: unknown) => {
+        if (current) {
+          setError(errorMessage(cause));
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [workspace, organizationId, status]);
+
+  /** Shows the change: the local rows are read again, or the server's list is. */
+  const refresh = useCallback(() => {
+    if (workspace) {
+      workspace.runtime.refreshCounts().catch(() => undefined);
+      workspace.runtime.localDataChanged();
+      return;
+    }
+    setRefreshVersion((version) => version + 1);
+  }, [workspace]);
 
   const handleDraftChange = useCallback(
     (field: keyof ProductDraft, value: string) => {
@@ -506,7 +676,7 @@ export function ProductsPage() {
       );
       if (editingProductId && !editingProduct) {
         setError("Atualize a lista antes de editar este produto novamente.");
-        setRefreshVersion((version) => version + 1);
+        refresh();
         return;
       }
       const action = editingProduct ? "update" : "create";
@@ -525,31 +695,32 @@ export function ProductsPage() {
             name: draft.name,
             organizationId,
           });
+          await keepLocalRow(workspace, result.product);
           setNotice(
             result.changed
               ? `Produto “${result.product.name}” atualizado.`
               : `O produto “${result.product.name}” continua sem alterações.`
           );
         } else {
-          const product = await orpcClient.product.create({
-            categoryId,
-            description,
-            name: draft.name,
-            organizationId,
-          });
-          setNotice(`Produto “${product.name}” cadastrado.`);
+          setNotice(
+            await createProduct(workspace, organizationId, {
+              categoryId,
+              description,
+              name: draft.name,
+            })
+          );
         }
         setEditingProductId(null);
         setDraft(emptyDraft);
-        setRefreshVersion((version) => version + 1);
+        refresh();
       } catch (cause: unknown) {
         setError(errorMessage(cause, action));
-        setRefreshVersion((version) => version + 1);
+        refresh();
       } finally {
         setPendingAction(null);
       }
     },
-    [draft, editingProductId, organizationId, products]
+    [draft, editingProductId, organizationId, products, refresh, workspace]
   );
 
   const handleEdit = useCallback((product: ProductReadModel) => {
@@ -597,9 +768,14 @@ export function ProductsPage() {
     setMediaProductId(null);
   }, []);
 
-  const handleVariantsUpdated = useCallback((_product: ProductReadModel) => {
-    setRefreshVersion((version) => version + 1);
-  }, []);
+  const handleVariantsUpdated = useCallback(
+    (_product: ProductReadModel) => {
+      // The variants live on the server: bring them to this device, then show them.
+      workspace?.runtime.syncNow().catch(() => undefined);
+      refresh();
+    },
+    [refresh, workspace]
+  );
 
   const handleProductAction = useCallback(
     async (product: ProductReadModel, action: ProductAction) => {
@@ -612,21 +788,22 @@ export function ProductsPage() {
           id: product.id,
           organizationId,
         });
+        await keepLocalRow(workspace, result.product);
         const actionLabel = action === "archive" ? "arquivado" : "restaurado";
         setNotice(
           result.changed
             ? `Produto “${result.product.name}” ${actionLabel}.`
             : `O produto “${result.product.name}” já estava nesse estado.`
         );
-        setRefreshVersion((version) => version + 1);
+        refresh();
       } catch (cause: unknown) {
         setError(errorMessage(cause, action));
-        setRefreshVersion((version) => version + 1);
+        refresh();
       } finally {
         setPendingAction(null);
       }
     },
-    [organizationId]
+    [organizationId, refresh, workspace]
   );
 
   const handleArchiveProduct = useCallback(
@@ -676,6 +853,14 @@ export function ProductsPage() {
         </div>
       </section>
 
+      {workspace && !workspace.online ? (
+        <p className="categories-message is-success" role="status">
+          Sem conexão. Você pode cadastrar produtos; eles são enviados quando a
+          conexão voltar. Editar, arquivar, variantes e imagens precisam de
+          conexão.
+        </p>
+      ) : null}
+
       <nav aria-label="Estado dos produtos" className="category-tabs">
         {productStatuses.map(([value, label]) => (
           <button
@@ -719,6 +904,7 @@ export function ProductsPage() {
       <ProductList
         categories={categories}
         isLoading={isLoading}
+        isOffline={workspace !== null && !workspace.online}
         onArchive={handleArchiveProduct}
         onEdit={handleEdit}
         onManageMedia={handleManageMedia}
@@ -727,6 +913,7 @@ export function ProductsPage() {
         pendingAction={pendingAction}
         products={products}
         status={status}
+        syncStates={syncStates}
       />
 
       {variantsProduct ? (

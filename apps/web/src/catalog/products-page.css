@@ -174,3 +174,18 @@
     flex-wrap: wrap;
   }
 }
+
+.product-sync-state {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  color: var(--ui-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.product-sync-state[data-state="rejected"] {
+  border-color: var(--ui-danger);
+  color: var(--ui-danger-strong);
+  background: var(--ui-danger-soft);
+}
