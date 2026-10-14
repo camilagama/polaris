@@ -929,7 +929,20 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | No app | Concluído | Provedor, chip de sincronização no cabeçalho, página `/attention` com o painel de atenção, "Sair" com o fluxo completo (`logout-flow.ts`), aviso de atualização ligado à fila real. |
 | Testes | Concluído | 15 do runtime (início, segunda visita offline, indisponibilidade, renovação, outro usuário, troca de organização, sincronização, execução única, falha e recuperação, fonte de trabalho, saída) e 11 do chip, da rota e do fluxo de saída. |
 | Prova em navegador | Concluída | `e2e/offline-runtime.e2e.ts` sobre `/offline-runtime-lab` (runtime real, IndexedDB e OPFS reais, servidor simulado): iniciar online, trabalhar sem rede, recarregar e abrir offline do aparelho, enviar quando a rede volta, indisponível sem acesso anterior. Chromium desktop e Pixel 5 emulado. |
-| Limites | Registrados | Nenhuma tela lê as coleções locais nem enfileira comandos ainda (converter vender, estoque, produtos e clientes é o trabalho seguinte); a chave de build fica desligada até o checklist em aparelho físico; o app ainda não tem tela de entrada, então "Sair" só leva ao início. |
+| Limites | Registrados | Nenhuma tela lê as coleções locais nem enfileira comandos ainda (converter vender, estoque, produtos e clientes é o trabalho seguinte; clientes e produtos estão na seção seguinte); a chave de build fica desligada até o checklist em aparelho físico; o app ainda não tem tela de entrada, então "Sair" só leva ao início. |
+
+### Telas de clientes e produtos lendo do aparelho (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/offline-screens` sobre a `main` (já com os seis PRs de revisão mesclados). |
+| Decisões | Tomadas pelo projeto | [ADR 0045](../docs/adr/0045-telas-lendo-do-aparelho.md): a tela só troca de fonte quando o runtime está pronto e com cópia completa (sem modo misto); só cadastrar vai offline (já tem comando); editar, arquivar, variantes e imagens continuam online e ficam desabilitados sem rede ou sem confirmação do servidor; estoque e venda ficam para o passo seguinte porque o saldo local não traz o custo médio. |
+| Base técnica | Concluída | `LocalWriter.rows`, `dataVersion` no estado do runtime e `localDataChanged()`, hook `useLocalWorkspace`. |
+| Clientes | Concluído | `customers/local-customers.ts` (lista, ordem e repetidos como o servidor), página com leitura local, cadastro enfileirado, selos de envio, edição bloqueada sem rede. |
+| Produtos | Concluído | `catalog/local-products.ts`, página com leitura local de produtos e categorias, cadastro enfileirado, selos, ações bloqueadas sem rede ou sem confirmação. |
+| Testes | Concluído | 10 de unidade (helpers e `dataVersion`/`rows` do runtime) e 14 cenários de navegador (7 por projeto) sobre `/offline-screens-lab`: telas reais, runtime real, IndexedDB e OPFS reais, servidor e rede simulados. A suíte inteira de navegador do offline (90) e os 1.200 testes de unidade passam. |
+| Segurança | Verificada | Chave desligada por padrão: sem ela as telas são as de antes. O laboratório e o provedor de organização fixa não entram na build de produção (conferido no `dist/client`). |
+| Limites | Registrados | Estoque e venda continuam online (precisam do custo médio no saldo local); edição offline não existe (sem comando); falta o checklist em aparelho físico, agora com um item para estas telas. |
 
 ### Handoff para continuação por outro desenvolvedor
 
