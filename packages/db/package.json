@@ -66,6 +66,7 @@
     "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
     "poc:offline-devices:verify": "bun scripts/verify-offline-devices-gate.ts",
+    "poc:offline-e2e:verify": "bun ../../apps/web/scripts/verify-offline-e2e-gate.ts",
     "poc:offline-lease:verify": "bun scripts/verify-offline-lease-gate.ts",
     "poc:offline-product:verify": "bun scripts/verify-offline-product-gate.ts",
     "poc:offline-sale:verify": "bun scripts/verify-offline-sale-gate.ts",

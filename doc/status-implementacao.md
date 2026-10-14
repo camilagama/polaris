@@ -870,6 +870,17 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate de navegador | Concluído | `e2e/offline-logout.e2e.ts` sobre `/offline-logout-lab` (outbox em IndexedDB e banco em OPFS reais, rede e servidor simulados): 6 cenários em Chromium desktop e Pixel 5 emulado. |
 | Limites | Registrados | O app ainda não tem tela de conta: o guarda não está ligado a um botão "Sair" nem ao `signOut`; sem registro das organizações do usuário no aparelho (quem chama informa as organizações); a prova em Android físico ainda bloqueia ligar a escrita offline. |
 
+### Gate 5 — offline (provas automáticas concluídas; aparelho físico adiado)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Runbook | Concluído | [gate-5-offline.md](../docs/runbooks/gate-5-offline.md): cada critério do plano ligado à prova que o cobre, passos, e o checklist manual em iPhone e Android; ligado ao índice e ao checklist de go-live. |
+| Gate ponta a ponta | Concluído | `poc:offline-e2e:verify` (`offline-e2e`, suítes `ci` e `gate5`, em `apps/web/scripts`): o cliente offline real (outbox, construtores de comando, sincronizador, atenção) contra o código real do servidor (`sync.push`, verificação do lease, todos os manipuladores) sobre o banco real, com oráculo independente: fila de sete comandos feita offline, primeira resposta perdida, reenvio que repete os sete sem executar nenhum duas vezes; saldos e versões iguais à previsão do aparelho; totais da venda em centavos; razão explica todos os saldos; conflito de estoque recusado sem corromper e corrigido do cliente (reenvio como comando novo, contagem obsoleta descartada); SKU em uso recusa o produto inteiro; aparelho revogado confirma nada e vira `needs_attention`. |
+| Suíte completa de gates | Concluída | Os 22 gates em Neon descartável PostgreSQL 18 (migrations reaplicadas do zero, dados sintéticos) passam, inclusive os de venda, estoque, clientes, mídia e os nove da Fase 5. |
+| Navegador | Concluído | Persistência, coleções locais, outbox, painel de atenção e saída com pendências em Chromium desktop e Pixel 5 emulado (CI). |
+| Aparelho físico | **Adiado (bloqueia ligar a escrita offline)** | iPhone real (Safari e PWA instalado), Android real (Chrome), matar e reabrir durante envio, duas abas, saída com pendências e relógio errado: checklist no runbook, nada executado. |
+| Limites | Registrados | A interface offline (telas) e o botão "Sair" ainda não estão montados no app; PWA, service worker e atualização (PR60 a PR62 do plano) não foram feitos; promover os jobs de CI `database` e `audit` a obrigatórios é decisão do responsável. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
