@@ -701,7 +701,10 @@ export function StockCommandPanel({
     inFlight.current = true;
     try {
       const { call } = prepared;
-      if (local) {
+      // An attempt locked on the server (outcome unknown) is retried there, as it
+      // was sent: sending it to the device with another payload could record the
+      // movement twice.
+      if (local && state.submission.phase !== "locked") {
         await confirmOnDevice(call);
         return;
       }

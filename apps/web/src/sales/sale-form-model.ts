@@ -2145,6 +2145,22 @@ export function canKeepLockedSaleOnDevice(
   );
 }
 
+/**
+ * Whether the sale screen works from the device. It follows the connection, but
+ * is FROZEN while a sale is in flight or its outcome is unknown: the connection
+ * dropping during the request must not swap the catalog, the profiles or the form
+ * under a sale that may already be on the server.
+ */
+export function saleModeIsOffline(
+  previous: boolean,
+  connectionIsDown: boolean,
+  state: SubmissionState
+): boolean {
+  return state.phase === "submitting" || state.phase === "locked"
+    ? previous
+    : connectionIsDown;
+}
+
 export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
   return { phase: "queued", sale };
 }

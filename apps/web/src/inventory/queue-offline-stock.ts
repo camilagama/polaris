@@ -36,11 +36,14 @@ export async function queueOfflineStock(input: {
       unitCost: call.input.unitCost,
     }));
   } else if (call.action === "count") {
-    // The count is made against the balance this device shows (the queue
-    // applied), whose version it carries as the command's base version.
+    // The count is made against the balance the person reviewed; its version
+    // is the command's base version.
     ({ stock: balance } = await countStockOffline({
       ...base,
+      // what the person reviewed: the count is refused if the device's balance moved since
+      expectedVersion: call.input.expectedVersion,
       physicalQuantity: call.input.physicalQuantity,
+      valuationUnitCost: call.input.valuationUnitCost ?? null,
     }));
   } else {
     ({ stock: balance } = await writeOffStockOffline({

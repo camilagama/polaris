@@ -545,7 +545,8 @@ async function createProduct(
     return `Produto “${product.name}” cadastrado.`;
   }
   const stores = workspace.runtime.context();
-  if (!stores) {
+  if (!stores || stores.organizationId !== organizationId) {
+    // not ready, or the organization changed under the screen: nothing is queued
     throw new Error("offline_runtime_unavailable");
   }
   await createOfflineProduct({

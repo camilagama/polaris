@@ -1,4 +1,5 @@
 import { readUnverifiedOfflineLease } from "../../lib/offline-lease-token";
+import { rpcErrorCode } from "../../lib/rpc-error";
 import type { PendingWork, PendingWorkSource } from "../../pwa/update-model";
 import {
   type BootstrapSource,
@@ -110,6 +111,12 @@ export interface RuntimeSnapshot {
   phase: RuntimePhase;
   /** Why the runtime is unavailable or the last sync failed; null when fine. */
   reason: string | null;
+  /**
+   * The server answered the last sync with "not signed in" or "not allowed": the
+   * session ended or the membership was withdrawn while the app was open. The
+   * local copy must stop standing in for the server until a sync works again.
+   */
+  sessionRefused: boolean;
   syncing: boolean;
 }
 
@@ -120,6 +127,12 @@ export interface RuntimeContext {
   organizationId: string;
   outbox: Outbox;
   writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
+}
+
+/** The server said the session is over or the account may not do this. */
+function isSessionRefusal(error: unknown): boolean {
+  const code = rpcErrorCode(error);
+  return code === "UNAUTHORIZED" || code === "FORBIDDEN";
 }
 
 const DEVICE_KEY = "polaris.offline.device";
@@ -156,6 +169,7 @@ export class OfflineRuntime {
     online: true,
     phase: "off",
     reason: null,
+    sessionRefused: false,
     syncing: false,
   };
   private stores: OpenedStores | null = null;
@@ -327,14 +341,23 @@ export class OfflineRuntime {
 
   async stop(): Promise<void> {
     this.generation += 1;
+    const { generation } = this;
     await this.closeStores();
+    if (generation !== this.generation) {
+      // a later stop or start took over while the stores were closing: it owns
+      // the state now, and resetting it here would undo the organization it opened
+      return;
+    }
     this.organizationId = null;
     this.lease = null;
     this.set({
       ...this.snapshot,
       counts: EMPTY_COUNTS,
+      lastSyncAt: null,
+      leaseExpiresAt: null,
       phase: "off",
       reason: null,
+      sessionRefused: false,
       syncing: false,
     });
   }
@@ -359,11 +382,15 @@ export class OfflineRuntime {
 
   /** Re-reads the queue figures (call after queueing or resolving a command). */
   async refreshCounts(): Promise<void> {
-    const { stores } = this;
+    const { generation, stores } = this;
     if (!stores) {
       return;
     }
     const queue = await stores.outbox.snapshot();
+    if (generation !== this.generation) {
+      // the organization changed while the queue was being read
+      return;
+    }
     this.set({
       ...this.snapshot,
       counts: {
@@ -676,15 +703,17 @@ export class OfflineRuntime {
         dataVersion: this.snapshot.dataVersion + 1,
         lastSyncAt: this.now().toISOString(),
         reason: null,
+        sessionRefused: false,
         syncing: false,
       });
       this.channel?.post();
-    } catch {
+    } catch (error) {
       // a partial sync may still have changed rows (accepted commands, pulled pages)
       this.set({
         ...this.snapshot,
         dataVersion: this.snapshot.dataVersion + 1,
         reason: "sync_failed",
+        sessionRefused: isSessionRefusal(error),
         syncing: false,
       });
       this.channel?.post();

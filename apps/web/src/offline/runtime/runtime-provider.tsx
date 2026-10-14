@@ -54,7 +54,7 @@ function createBrowserRuntime(): OfflineRuntime {
 }
 
 export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
-  const { load } = useOrganizationLoad();
+  const { load, reload } = useOrganizationLoad();
   const organizationId = load.status === "ready" ? load.current.id : null;
   const runtime = useMemo(
     () => (OFFLINE_RUNTIME_ENABLED ? createBrowserRuntime() : null),
@@ -96,6 +96,25 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
       runtime.stop().catch(() => undefined);
     };
   }, [organizationId, runtime]);
+
+  // The server refused the session or the membership while the app was open:
+  // read the organizations again, so the screen shows what the server now says
+  // (and the cached list is dropped when the session is really over).
+  useEffect(() => {
+    if (!runtime) {
+      return;
+    }
+    let handled = false;
+    return runtime.subscribe(() => {
+      const refused = runtime.getSnapshot().sessionRefused;
+      if (refused && !handled) {
+        handled = true;
+        reload();
+      } else if (!refused) {
+        handled = false;
+      }
+    });
+  }, [reload, runtime]);
 
   return (
     <RuntimeContext.Provider value={runtime}>

@@ -353,3 +353,49 @@ describe("the outcome shown to the person", () => {
     expect(stockSubmitLabel(state)).toBe("Confirmar baixa");
   });
 });
+
+describe("a count made against the balance the person reviewed", () => {
+  it("is refused when the device's balance moved since the panel was opened, and queues nothing", async () => {
+    const { outbox, stores } = await setup();
+    // the person reviewed version 3 (the device row)
+    const prepared = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: reviewStock(
+        filled("count", { physicalQuantity: "7" }, offlineTarget)
+      ),
+    });
+    if (!prepared.ok) {
+      throw new Error("not prepared");
+    }
+    // meanwhile a movement was queued on the device: the version is now 4
+    const receipt = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: reviewStock(
+        filled("receive", { quantity: "1", unitCost: "1" }, offlineTarget)
+      ),
+    });
+    if (!receipt.ok) {
+      throw new Error("not prepared");
+    }
+    await queueOfflineStock({ call: receipt.call, stores });
+
+    await expect(
+      queueOfflineStock({ call: prepared.call, stores })
+    ).rejects.toThrow("stale_local_count");
+    expect(await pendingStockCommands(outbox)).toHaveLength(1);
+
+    const failed = stockQueueFailed(
+      reviewStock(filled("count", { physicalQuantity: "7" }, offlineTarget)),
+      Object.assign(new Error("stale_local_count"), {
+        name: "StaleLocalCountError",
+      })
+    );
+    if (failed.submission.phase === "failed") {
+      expect(failed.submission.failure.message).toContain(
+        "mudou depois que você abriu a contagem"
+      );
+    }
+  });
+});

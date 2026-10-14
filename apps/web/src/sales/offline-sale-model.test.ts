@@ -8,6 +8,7 @@ import {
   isFormLocked,
   NO_PROFILE_CHOICE,
   queuedSubmission,
+  saleModeIsOffline,
   selectProfileChoice,
   startSubmission,
   submitButtonLabel,
@@ -115,5 +116,40 @@ describe("keeping a locked sale on the device as the same sale", () => {
     expect(
       canKeepLockedSaleOnDevice(idleSubmission, attempt, evaluation())
     ).toBe(false);
+  });
+});
+
+describe("the mode of the sale screen", () => {
+  const submitting = { phase: "submitting" as const };
+  const locked = {
+    confirmingDiscard: false,
+    failure: {
+      discardAttempt: false,
+      kind: "network" as const,
+      message: "m",
+      reason: null,
+      refreshData: false,
+      unknownOutcome: true,
+    },
+    phase: "locked" as const,
+  };
+
+  it("follows the connection when no sale is in flight", () => {
+    expect(saleModeIsOffline(false, true, idleSubmission)).toBe(true);
+    expect(saleModeIsOffline(true, false, idleSubmission)).toBe(false);
+    expect(
+      saleModeIsOffline(true, false, {
+        failure: locked.failure,
+        phase: "failed" as const,
+      })
+    ).toBe(false);
+  });
+
+  it("stays as it was while a sale is in flight or its outcome is unknown, whatever the connection does", () => {
+    // the server mode, and the connection drops during the request
+    expect(saleModeIsOffline(false, true, submitting)).toBe(false);
+    expect(saleModeIsOffline(false, true, locked)).toBe(false);
+    // the device mode, and the connection returns during the save
+    expect(saleModeIsOffline(true, false, submitting)).toBe(true);
   });
 });

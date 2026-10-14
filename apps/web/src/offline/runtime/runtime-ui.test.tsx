@@ -21,6 +21,7 @@ const snapshot = (
   online: true,
   phase: "ready",
   reason: null,
+  sessionRefused: false,
   syncing: false,
   ...overrides,
 });

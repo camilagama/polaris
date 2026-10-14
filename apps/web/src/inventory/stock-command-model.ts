@@ -1211,11 +1211,16 @@ export function stockQueueFailed(
   state: StockCommandState,
   error: unknown
 ): StockCommandState {
-  const insufficient =
-    error instanceof Error && error.name === "InsufficientLocalStockError";
-  const message = insufficient
-    ? "Estoque insuficiente neste aparelho: a baixa deixaria o saldo abaixo de zero. Reduza a quantidade."
-    : "Não foi possível guardar neste aparelho. Confira a validade da autorização offline e o espaço do aparelho, e tente de novo. Nada foi guardado.";
+  const name = error instanceof Error ? error.name : "";
+  let message =
+    "Não foi possível guardar neste aparelho. Confira a validade da autorização offline e o espaço do aparelho, e tente de novo. Nada foi guardado.";
+  if (name === "InsufficientLocalStockError") {
+    message =
+      "Estoque insuficiente neste aparelho: a baixa deixaria o saldo abaixo de zero. Reduza a quantidade.";
+  } else if (name === "StaleLocalCountError") {
+    message =
+      "O saldo deste aparelho mudou depois que você abriu a contagem (uma venda ou um movimento guardado, ou uma atualização). Feche e abra a contagem de novo para revisar a quantidade.";
+  }
   return {
     ...state,
     step: "editing",
