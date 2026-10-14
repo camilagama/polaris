@@ -26,12 +26,29 @@ const isOutboxLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-outbox-lab";
 const isLocalLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-local-lab";
+const isRuntimeLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-runtime-lab";
 const isLogoutLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-logout-lab";
 const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
 
-if (isLogoutLabRoute) {
+if (isRuntimeLabRoute) {
+  const loadRuntimeLab = async () => {
+    try {
+      const { RuntimeLab } = await import("./offline-poc/runtime-lab");
+      root.render(<RuntimeLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir o laboratório do runtime</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadRuntimeLab().catch(() => undefined);
+} else if (isLogoutLabRoute) {
   const loadLogoutLab = async () => {
     try {
       const { LogoutLab } = await import("./offline-poc/logout-lab");

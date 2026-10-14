@@ -1,0 +1,53 @@
+.sync-status {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.25rem 0.7rem;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--ui-ink);
+  text-decoration: none;
+  background: var(--ui-accent-soft);
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+}
+
+.sync-status-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--ui-accent);
+  border-radius: 50%;
+}
+
+.sync-status[data-tone="offline"] {
+  background: var(--ui-warning-soft);
+}
+
+.sync-status[data-tone="offline"] .sync-status-dot {
+  background: var(--ui-warning);
+}
+
+.sync-status[data-tone="attention"] {
+  background: var(--ui-danger-soft);
+}
+
+.sync-status[data-tone="attention"] .sync-status-dot {
+  background: var(--ui-danger);
+}
+
+.sync-status[data-tone="busy"] .sync-status-dot {
+  animation: sync-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sync-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-status[data-tone="busy"] .sync-status-dot {
+    animation: none;
+  }
+}

@@ -919,6 +919,18 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Execução | Concluída | `bun run test:offline-browser` (as duas configurações de navegador); o CI roda ambas. |
 | Limites | Registrados | Safari de iPhone e Chrome de Android reais seguem no checklist do Gate 5 e bloqueiam ligar a escrita offline; o outbox ainda não está montado no app, então a atualização com fila usa a interface de fonte. |
 
+### Runtime offline no app (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr63-offline-runtime` sobre `codex/pr62-offline-browser-suite`. |
+| Decisões | Tomadas pelo projeto | [ADR 0043](../docs/adr/0043-runtime-offline-no-app.md): um runtime por organização, sem React e com dependências injetadas; o usuário vem das claims do lease (segunda visita offline sem nenhuma chamada); aparelho de outro usuário é esquecido e registrado de novo, uma vez; sincronização de uma execução por vez; atrás de `VITE_OFFLINE_RUNTIME_ENABLED`, desligada por padrão. |
+| Runtime | Concluído | `offline/runtime/offline-runtime.ts` (aparelho, lease com renovação, abertura dos armazenamentos, restauração, bootstrap, sincronização, figuras, `workSource`, `logoutWorkspace`, `context`), `runtime-api.ts` (RPC), `runtime-stores.ts` (IndexedDB e OPFS). |
+| No app | Concluído | Provedor, chip de sincronização no cabeçalho, página `/attention` com o painel de atenção, "Sair" com o fluxo completo (`logout-flow.ts`), aviso de atualização ligado à fila real. |
+| Testes | Concluído | 15 do runtime (início, segunda visita offline, indisponibilidade, renovação, outro usuário, troca de organização, sincronização, execução única, falha e recuperação, fonte de trabalho, saída) e 11 do chip, da rota e do fluxo de saída. |
+| Prova em navegador | Concluída | `e2e/offline-runtime.e2e.ts` sobre `/offline-runtime-lab` (runtime real, IndexedDB e OPFS reais, servidor simulado): iniciar online, trabalhar sem rede, recarregar e abrir offline do aparelho, enviar quando a rede volta, indisponível sem acesso anterior. Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | Nenhuma tela lê as coleções locais nem enfileira comandos ainda (converter vender, estoque, produtos e clientes é o trabalho seguinte); a chave de build fica desligada até o checklist em aparelho físico; o app ainda não tem tela de entrada, então "Sair" só leva ao início. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

@@ -26,7 +26,9 @@ import type { Outbox } from "./outbox/outbox";
  * and throws: the same commands, with the same IDs, go out next time, and the
  * server replays what it already did. Sending twice is always safe.
  */
-type PushFunction = (input: { commands: PushCommandReadModel[] }) => Promise<{
+export type PushFunction = (input: {
+  commands: PushCommandReadModel[];
+}) => Promise<{
   results: PushResultReadModel[];
 }>;
 
