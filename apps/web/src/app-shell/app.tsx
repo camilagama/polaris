@@ -1,11 +1,14 @@
 import {
   type ComponentType,
-  lazy,
   type LazyExoticComponent,
+  lazy,
   Suspense,
   useEffect,
 } from "react";
 import { OrganizationProvider } from "../lib/current-organization";
+import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
+import { getUpdateStore } from "../pwa/runtime";
+import { UpdateBanner } from "../pwa/update-banner";
 import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
 import {
@@ -20,6 +23,11 @@ type Page = LazyExoticComponent<ComponentType>;
 
 /** Each area is its own chunk; a screen only loads when it is opened. */
 const pages: Readonly<Record<RouteId, Page>> = {
+  attention: lazy(() =>
+    import("../offline/runtime/attention-page").then((module) => ({
+      default: module.AttentionPage,
+    }))
+  ),
   categories: lazy(() =>
     import("../catalog/categories-page").then((module) => ({
       default: module.CategoriesPage,
@@ -93,6 +101,12 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
   );
 }
 
+/** The new-version notice, where there is a service worker to update. */
+function UpdateSlot() {
+  const store = getUpdateStore();
+  return store ? <UpdateBanner store={store} /> : null;
+}
+
 export function App() {
   const route = resolveRoute(window.location.pathname);
   const { title } = route;
@@ -103,7 +117,10 @@ export function App() {
   return (
     <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
       <OrganizationProvider>
-        <RouteContent route={route} />
+        <OfflineRuntimeProvider>
+          <UpdateSlot />
+          <RouteContent route={route} />
+        </OfflineRuntimeProvider>
       </OrganizationProvider>
     </ErrorBoundary>
   );

@@ -18,7 +18,12 @@
       "project": ["src/**/*.ts"]
     },
     "apps/web": {
-      "entry": ["poc/pr11.ts", "poc/pr12-offline.ts", "e2e/**/*.e2e.ts"],
+      "entry": [
+        "poc/pr11.ts",
+        "poc/pr12-offline.ts",
+        "e2e/**/*.e2e.ts",
+        "e2e-pwa/**/*.e2e.ts"
+      ],
       "project": [
         "src/**/*.{ts,tsx}",
         "worker/**/*.ts",

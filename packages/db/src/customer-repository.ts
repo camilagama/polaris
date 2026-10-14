@@ -1,12 +1,13 @@
 import {
+  type CustomerDuplicateSearchInput,
+  type CustomerLifecycleAction,
   CustomerNotFoundError,
+  type CustomerProfileInput,
   CustomerVersionConflictError,
+  InvalidCustomerProfileError,
   normalizeCustomerDuplicateSearch,
   normalizeCustomerProfile,
   transitionCustomerLifecycle,
-  type CustomerDuplicateSearchInput,
-  type CustomerLifecycleAction,
-  type CustomerProfileInput,
 } from "@polaris/domain/customers/customer";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { customers } from "./schema/customer";
@@ -27,7 +28,47 @@ export interface CustomerMutationInput {
 }
 
 export interface CreateCustomerInput extends CustomerProfileInput {
+  /**
+   * A UUID the caller generated (an offline device names the customer before the
+   * server has seen it). Without one the database assigns a UUIDv7.
+   */
+  id?: string;
   requestId?: string | null;
+}
+
+export class CustomerIdConflictError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("customer_id_conflict", options);
+    this.name = "CustomerIdConflictError";
+  }
+}
+
+const customerIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isCustomerIdConflict(error: unknown): boolean {
+  const seen = new Set<object>();
+  let current: unknown = error;
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !seen.has(current)
+  ) {
+    seen.add(current);
+    const candidate = current as {
+      cause?: unknown;
+      code?: unknown;
+      constraint?: unknown;
+    };
+    if (
+      candidate.code === "23505" &&
+      candidate.constraint === "customers_pkey"
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
 }
 
 export interface UpdateCustomerInput
@@ -124,10 +165,29 @@ export async function createCustomer(
   input: CreateCustomerInput
 ) {
   const profile = normalizeCustomerProfile(input);
-  const [customer] = await transaction
-    .insert(customers)
-    .values({ ...profile, organizationId: identity.organizationId })
-    .returning();
+  if (input.id !== undefined && !customerIdPattern.test(input.id)) {
+    throw new InvalidCustomerProfileError();
+  }
+  let customer: typeof customers.$inferSelect | undefined;
+  try {
+    // The savepoint keeps a duplicate ID from aborting the caller's transaction.
+    [customer] = await transaction.transaction((savepoint) =>
+      savepoint
+        .insert(customers)
+        .values({
+          ...profile,
+          ...(input.id === undefined ? {} : { id: input.id }),
+          organizationId: identity.organizationId,
+        })
+        .returning()
+    );
+  } catch (error) {
+    if (isCustomerIdConflict(error)) {
+      // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
+      throw new CustomerIdConflictError({ cause: error });
+    }
+    throw error;
+  }
 
   if (!customer) {
     throw new Error("customer_insert_failed");

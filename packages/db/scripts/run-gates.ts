@@ -64,6 +64,11 @@ const gates: Gate[] = [
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
   ["sync-push", "verify-sync-push-gate.ts"],
+  ["offline-product", "verify-offline-product-gate.ts"],
+  ["offline-stock", "verify-offline-stock-gate.ts"],
+  ["offline-sale", "verify-offline-sale-gate.ts"],
+  // lives in apps/web: it needs the real offline client and the real server handlers
+  ["offline-e2e", "../../../apps/web/scripts/verify-offline-e2e-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
@@ -132,6 +137,10 @@ const suites: Record<string, string[]> = {
     "sync-log",
     "bootstrap",
     "sync-push",
+    "offline-product",
+    "offline-stock",
+    "offline-sale",
+    "offline-e2e",
   ],
   gate3: ["gate2-runtime", "inventory", "media-upload", "review-hardening"],
   gate4: [
@@ -152,6 +161,10 @@ const suites: Record<string, string[]> = {
     "sync-log",
     "bootstrap",
     "sync-push",
+    "offline-product",
+    "offline-stock",
+    "offline-sale",
+    "offline-e2e",
   ],
 };
 

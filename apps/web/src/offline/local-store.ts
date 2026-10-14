@@ -13,6 +13,8 @@ import type {
   LocalWriter,
 } from "./bootstrap";
 import type { LocalNamespace } from "./namespace";
+import type { LocalVariantReader } from "./sale-confirm";
+import type { LocalInventoryReader } from "./stock-commands";
 
 /**
  * The local collections on a device (plan PR50): TanStack DB over SQLite WASM
@@ -55,7 +57,7 @@ export interface LocalStore {
   close: () => Promise<void>;
   collections: LocalStoreCollections;
   namespace: LocalNamespace;
-  writer: LocalWriter;
+  writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
 }
 
 interface LocalStoreSupport {
@@ -161,7 +163,9 @@ async function removeFrom<T extends object>(
   }
 }
 
-function createWriter(collections: LocalStoreCollections): LocalWriter {
+function createWriter(
+  collections: LocalStoreCollections
+): LocalWriter & LocalInventoryReader & LocalVariantReader {
   const keyed = {
     categories: (row: LocalRows["categories"]) => row.id,
     customers: (row: LocalRows["customers"]) => row.id,
@@ -170,6 +174,8 @@ function createWriter(collections: LocalStoreCollections): LocalWriter {
     variants: (row: LocalRows["variants"]) => row.id,
   };
   return {
+    inventoryRow: (variantId) =>
+      Promise.resolve(collections.inventory.get(variantId)),
     keys: (collection) => Promise.resolve([...collections[collection].keys()]),
     readMeta() {
       const row = collections.syncMeta.get(META_KEY);
@@ -209,6 +215,8 @@ function createWriter(collections: LocalStoreCollections): LocalWriter {
         .filter((row) => wanted.has(row.productId))
         .map((row) => row.id);
     },
+    variantRow: (variantId) =>
+      Promise.resolve(collections.variants.get(variantId)),
     async writeMeta(meta) {
       await upsertInto(collections.syncMeta, (row) => row.id, [
         { ...meta, id: META_KEY },

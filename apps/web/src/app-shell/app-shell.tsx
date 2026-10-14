@@ -12,6 +12,8 @@ import {
 } from "../lib/current-organization";
 import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
+import { LogoutControl } from "../offline/runtime/logout-control";
+import { SyncStatus } from "../offline/runtime/sync-status";
 import { NAV_ITEMS, type NavId } from "./navigation-model";
 
 interface OrganizationSwitcherProps {
@@ -88,6 +90,7 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
           </span>
           <span>Polaris</span>
         </a>
+        <SyncStatus />
         <button
           aria-controls="app-navigation"
           aria-expanded={open}
@@ -120,6 +123,7 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
           </ul>
         </nav>
         {organization ? <OrganizationSwitcher current={organization} /> : null}
+        <LogoutControl />
       </div>
     </header>
   );

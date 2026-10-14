@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { CustomerVersionConflictError } from "@polaris/domain/customers/customer";
+import {
+  CustomerVersionConflictError,
+  InvalidCustomerProfileError,
+} from "@polaris/domain/customers/customer";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import {
   archiveCustomer,
+  CustomerIdConflictError,
   createCustomer,
   findPossibleCustomerDuplicates,
   listCustomers,
@@ -376,6 +380,77 @@ async function run() {
     );
     tests.push(
       "same organization permits duplicate emails/phones and either contact field"
+    );
+
+    const clientCustomerId = randomUUID();
+    const clientCustomer = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) =>
+        createCustomer(transaction, identity, {
+          email: null,
+          id: clientCustomerId,
+          name: "Criado offline",
+          notes: null,
+          phone: "+5511977770000",
+          requestId: randomUUID(),
+        })
+    );
+    assert.equal(clientCustomer.id, clientCustomerId);
+    assert.equal(clientCustomer.organizationId, tenantA.organizationId);
+    // a duplicate ID is a clean conflict and leaves the caller's transaction usable
+    const afterConflict = await withTenant(
+      runtime.db,
+      tenantA,
+      async (transaction, identity) => {
+        await assert.rejects(
+          createCustomer(transaction, identity, {
+            email: null,
+            id: clientCustomerId,
+            name: "Mesmo id",
+            notes: null,
+            phone: "+5511966660000",
+          }),
+          CustomerIdConflictError
+        );
+        return listCustomers(transaction, identity, { status: "active" });
+      }
+    );
+    assert.ok(
+      afterConflict.some((customer) => customer.id === clientCustomerId)
+    );
+    assert.equal(
+      afterConflict.filter((customer) => customer.name === "Mesmo id").length,
+      0
+    );
+    // another tenant cannot take the same ID either
+    await withTenant(runtime.db, tenantB, (transaction, identity) =>
+      assert.rejects(
+        createCustomer(transaction, identity, {
+          email: null,
+          id: clientCustomerId,
+          name: "Outro tenant mesmo id",
+          notes: null,
+          phone: "+5511955550000",
+        }),
+        CustomerIdConflictError
+      )
+    );
+    // an ID that is not a UUID never reaches the database
+    await withTenant(runtime.db, tenantA, (transaction, identity) =>
+      assert.rejects(
+        createCustomer(transaction, identity, {
+          email: null,
+          id: "not-a-uuid",
+          name: "Id invalido",
+          notes: null,
+          phone: "1",
+        }),
+        InvalidCustomerProfileError
+      )
+    );
+    tests.push(
+      "a client-supplied customer ID is kept; a duplicate (same or other tenant) is a clean conflict that does not abort the transaction"
     );
 
     const archivedDuplicate = await withTenant(

@@ -32,6 +32,13 @@ export type BootstrapCollection = (typeof BOOTSTRAP_COLLECTIONS)[number];
 export const BOOTSTRAP_DEFAULT_LIMIT = 200;
 export const BOOTSTRAP_MAX_LIMIT = 500;
 export const BOOTSTRAP_MAX_IDS = 200;
+/**
+ * Reading variants by id returns every variant of each product, at most 50 per
+ * product, within one read of BOOTSTRAP_MAX_LIMIT * 4 rows. More than 40 product
+ * ids could exceed that and be cut off without a next page, leaving a device with
+ * some variants missing and no way to know, so the request is refused instead.
+ */
+export const BOOTSTRAP_MAX_VARIANT_PRODUCT_IDS = 40;
 
 export interface LocalCategoryRow {
   archivedAt: string | null;
@@ -433,7 +440,10 @@ export function readBootstrapPage(
     !Number.isInteger(pageSize) ||
     pageSize < 1 ||
     pageSize > BOOTSTRAP_MAX_LIMIT ||
-    (input.ids && input.ids.length > BOOTSTRAP_MAX_IDS)
+    (input.ids && input.ids.length > BOOTSTRAP_MAX_IDS) ||
+    (input.collection === "variants" &&
+      input.ids &&
+      input.ids.length > BOOTSTRAP_MAX_VARIANT_PRODUCT_IDS)
   ) {
     return Promise.reject(new RangeError("invalid_bootstrap_request"));
   }

@@ -1,0 +1,93 @@
+[
+  {
+    "baseVersion": null,
+    "payload": {
+      "customerId": "0199c2d0-0000-7000-8000-0000000000c9",
+      "email": "ana@example.test",
+      "name": "Ana Souza",
+      "notes": "Cliente antigo",
+      "phone": "+5511999990000"
+    },
+    "type": "customer.create"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "categoryId": "0199c2d0-0000-7000-8000-0000000000fa",
+      "description": "Algodão",
+      "initialStock": {
+        "occurredOn": "2026-10-14",
+        "quantity": 10,
+        "unitCost": "20"
+      },
+      "listPrice": "50.00",
+      "name": "Camiseta",
+      "sku": "CAM-01",
+      "productId": "0199c2d0-0000-7000-8000-00000000012d",
+      "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+    },
+    "type": "product.create"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "occurredOn": "2026-10-14",
+      "quantity": 5,
+      "unitCost": "30.000000",
+      "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+    },
+    "type": "stock.receive"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "occurredOn": "2026-10-14",
+      "quantity": 2,
+      "reasonCode": "damaged",
+      "reasonNote": "Caiu da prateleira",
+      "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+    },
+    "type": "stock.write_off"
+  },
+  {
+    "baseVersion": 3,
+    "payload": {
+      "occurredOn": "2026-10-14",
+      "physicalQuantity": 9,
+      "valuationUnitCost": null,
+      "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+    },
+    "type": "stock.count"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "adjustments": [
+        {
+          "kind": "freight",
+          "value": {
+            "amount": "10.00",
+            "type": "fixed"
+          }
+        }
+      ],
+      "items": [
+        {
+          "chargedUnitPrice": "45.00",
+          "listedUnitPrice": "50.00",
+          "quantity": 2,
+          "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+        }
+      ],
+      "occurredAt": "2026-10-14T12:30:00.000Z",
+      "payment": {
+        "anticipationRequested": false,
+        "installmentPlan": null,
+        "installments": null,
+        "method": "pix"
+      },
+      "recordedAt": "2026-10-14T12:30:00.000Z"
+    },
+    "type": "sale.confirm"
+  }
+]

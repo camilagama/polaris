@@ -17,6 +17,7 @@ Gates e provas por fase:
 - Catálogo, estoque e mídia (Fase 3): [Gate do ledger de estoque](./inventory-ledger-gate.md) e [Media storage reconciliation](./media-storage-reconciliation.md). O Gate 3 formal fica no runbook `docs/runbooks/gate-3-catalog-stock.md`, escrito pelo responsável.
 - Catálogo, estoque e mídia (Fase 3): [Gate 3 — catálogo, estoque e mídia privada](./gate-3-catalog-stock.md).
 - Clientes e vendas (Fase 4): [Gate 4 — núcleo de vendas](./gate-4-sales-core.md).
+- Offline (Fase 5): [Gate 5 — offline](./gate-5-offline.md), com o checklist manual em aparelho físico (iPhone e Android) que bloqueia ligar a escrita offline.
 
 A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md).
 
@@ -37,7 +38,7 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 
 - [ ] **Rotacionar a credencial owner do PR11** (o status pede e não registra conclusão) e registrar a rotação.
 - [ ] **Remover os Workers e o Hyperdrive de PoC** criados nos PR11 e PR12 (inclusive subdomínio `workers.dev` temporário e role temporária de gate), e confirmar com um HTTP 404 nos endereços antigos.
-- [ ] **Dropar a tabela de PoC** `db_poc_operations` (e fixtures do gate de RLS) no ambiente de produção e remover as rotas e variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) do Worker de produção, que devem estar `false` ou ausentes.
+- [ ] **Dropar as tabelas de PoC** `db_poc_operations` e `rls_poc_operations` (esta tem uma política `FOR ALL TO PUBLIC` e o papel de tenant mantém DML sobre ela; ver [ADR 0044](../adr/0044-revisao-de-seguranca-adicional.md)) (e fixtures do gate de RLS) no ambiente de produção e remover as rotas e variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) do Worker de produção, que devem estar `false` ou ausentes.
 - [ ] Confirmar que o laboratório offline não está no bundle de produção.
 
 ### Borda e segurança de rede
@@ -63,4 +64,6 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 - [ ] **Segredo do lease offline** (`OFFLINE_LEASE_SECRET`, mínimo 32 bytes aleatórios, e `OFFLINE_LEASE_KEY_ID`) criado em cada ambiente antes de ligar o offline; rotação com `OFFLINE_LEASE_PREVIOUS_SECRET` e `OFFLINE_LEASE_PREVIOUS_KEY_ID` ([ADR 0029](../adr/0029-lease-de-autorizacao-offline.md)). Sem o segredo, `offline.issueLease` responde 503 e não grava nada.
 - [ ] A role de autenticação tem `EXECUTE` em `bump_user_authorization_epoch` e a role de tenant não (a migration 0043 concede e revoga); verificar no ambiente real.
 - [ ] CI com PostgreSQL 18, replay de migrations e checagem de drift ativos ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md)).
+- [ ] **Chave do runtime offline** (`VITE_OFFLINE_RUNTIME_ENABLED=true` na build): ligada só em staging até o checklist do Gate 5; confirmar que a build de produção está sem ela (nada de aparelho registrado, lease ou dados locais) até lá. Ligá-la registra um aparelho por usuário, emite leases de até 72 horas e grava uma cópia local da organização ([ADR 0043](../adr/0043-runtime-offline-no-app.md)).
+- [ ] **Bloqueante para ligar a escrita offline:** concluir o checklist manual do [Gate 5](./gate-5-offline.md#checklist-manual-em-aparelho-físico-adiado-bloqueia-ligar-a-escrita-offline) em iPhone e Android reais.
 - [ ] **Bloqueante para ligar a escrita offline:** prova em Android Chrome real do outbox (IndexedDB) e das coleções (OPFS), incluindo sobreviver a matar o processo, e o resultado de `navigator.storage.persist()` visível ao usuário ([ADR 0032](../adr/0032-outbox-duravel-de-comandos.md)). Prova em Android Chrome real da persistência offline antes de ligar escrita offline em produção ([ADR 0015](../adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md)).

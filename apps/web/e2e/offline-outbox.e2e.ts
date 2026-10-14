@@ -168,3 +168,32 @@ test("pede o armazenamento persistente e mostra a resposta", async ({
     .click();
   await expect(page.getByTestId("persistent")).toHaveText(persistentPattern);
 });
+
+test("duas abas do mesmo usuário compartilham a fila e cada comando é enviado uma única vez", async ({
+  context,
+}) => {
+  const user = `user-${crypto.randomUUID()}`;
+  const first = await context.newPage();
+  const second = await context.newPage();
+  await openLab(first);
+  await useNamespace(first, user);
+  await click(first, "Enfileirar", "Enfileirar: ok");
+  await click(first, "Enfileirar", "Enfileirar: ok");
+
+  await openLab(second);
+  await useNamespace(second, user);
+  await click(second, "Abrir", "Abrir: ok");
+  await expect(list(second)).toHaveCount(2);
+
+  // the first tab starts sending the head: the second must not send it again
+  await click(first, "Enviar", "Enviar: ok");
+  await click(second, "Enviar", "nada para enviar");
+  await expect(second.getByTestId("count-sending")).toHaveText("1");
+  await expect(list(second).nth(0)).toContainText("1:sending");
+
+  // once the head is confirmed, the next command goes out, from whichever tab
+  await click(first, "Confirmar", "Confirmar: ok");
+  await click(second, "Enviar", "Enviar: ok");
+  await expect(list(second)).toHaveCount(1);
+  await expect(list(second).nth(0)).toContainText("2:sending");
+});

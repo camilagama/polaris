@@ -8,6 +8,7 @@ export type NavId =
   | "sale";
 
 export type RouteId =
+  | "attention"
   | "categories"
   | "customers"
   | "inventory"
@@ -52,6 +53,11 @@ interface RouteDefinition {
  */
 const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/": { id: "sale", navId: "sale", title: "Nova venda" },
+  "/attention": {
+    id: "attention",
+    navId: null,
+    title: "Operações que precisam de atenção",
+  },
   "/categories": { id: "categories", navId: "categories", title: "Categorias" },
   "/customers": { id: "customers", navId: "customers", title: "Clientes" },
   "/inventory": { id: "inventory", navId: "inventory", title: "Estoque" },

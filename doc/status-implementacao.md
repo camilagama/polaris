@@ -800,6 +800,137 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:sync-push:verify` (`sync-push`, suíte `gate5`): privilégios, aceito uma vez e repetido igual, mesmo ID com outro conteúdo, recusa sem rastro, falha inesperada reenviável, revogação, época, dispositivo, capabilities, janela de criação, lease vencido com comando feito a tempo, direito perdido, oito envios simultâneos executando uma vez e isolamento entre organizações. |
 | Limites | Registrados | Nenhum comando de domínio registrado ainda (PR54 em diante); direito (billing) é só um ponto de extensão; sem retenção de `sync_commands`; o cliente que envia o outbox pelo `sync.push` ainda não existe. |
 
+### PR54 — Cliente criado offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr54-offline-customer-create` sobre `codex/pr53-sync-push`. |
+| Decisões | Tomadas pelo projeto | [ADR 0034](../docs/adr/0034-cliente-criado-offline.md): o dispositivo gera o UUIDv7 do cliente; idempotência por `commandId` e por `customerId` (`customer_id_conflict`); validação repetida no servidor; sem capability nova (`customer:update`). |
+| Servidor | Concluído | `createCustomer` aceita `id` (validado, em savepoint, conflito limpo); manipulador `customer.create` registrado em `server/sync/registry.ts`, com 9 testes do manipulador e do roteador. |
+| Cliente | Concluído | `lib/uuidv7.ts`; `offline/customer-create.ts` (enfileira, grava a linha otimista, restaura após queda, estado pendente/rejeitado); `offline/sync-runner.ts` (lotes em ordem, `sending` antes da requisição, aplicação dos resultados, atualização das coleções pelo change log); servidor sintético com resposta perdida e rejeição. |
+| Gate Neon PostgreSQL 18 | Concluído | `customers` (ID do cliente mantido, duplicata na mesma organização e em outra, transação do chamador intacta após o conflito, ID inválido recusado) e `sync-push` verdes. |
+| Limites | Registrados | Nenhuma tela monta o fluxo (a prova em Android físico ainda bloqueia ligar a escrita offline); sem laboratório de navegador para este fluxo; o sincronizador ainda não tem agendamento (online, foco, tentativa com espera). |
+
+### PR55 — Produto criado offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr55-offline-product-create` sobre `codex/pr54-offline-customer-create`. |
+| Decisões | Tomadas pelo projeto | [ADR 0035](../docs/adr/0035-produto-criado-offline.md): um comando atômico `product.create` (produto, variante padrão e estoque de abertura opcional); IDs do dispositivo; SKU em conflito recusa o comando inteiro (`sku_conflict`) e o descarte é explícito; `product:create` mais `inventory:adjust` quando há estoque, via `extraCapabilities`. |
+| Banco | Concluído | Sem migration. `createProduct` aceita `id`, `defaultVariantId`, `sku` e `listPrice`, em savepoint, com `ProductIdConflictError` e `InvalidProductIdError`. |
+| Servidor | Concluído | Manipulador `product.create` registrado; `extraCapabilities` no `sync.push` (lease precisa carregar todas); 8 testes do manipulador e 1 do `push`. |
+| Cliente | Concluído | `offline/product-create.ts` (valida, enfileira, linhas otimistas de produto/variante/saldo, restauração, estado pendente/recusado, descarte explícito com bloqueio por dependentes e por `sending`); servidor sintético atômico com SKU único e resposta perdida; 9 testes. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-product:verify` (`offline-product`, suítes `ci` e `gate5`): IDs, SKU, preço e estoque preservados; change log; reenvio cria uma vez; SKU em uso (qualquer caixa) recusa tudo; ID de produto ou variante ocupado (mesma ou outra organização); atomicidade com estoque recusado e categoria indisponível; `receiveStock` negado sob `sync:push` puro. |
+| Limites | Registrados | Só a variante padrão é criada offline (opções e variantes continuam online); sem laboratório de navegador nem tela; a prova em Android físico ainda bloqueia ligar a escrita offline. |
+
+### PR56 — Comandos de estoque offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr56-offline-stock-commands` sobre `codex/pr55-offline-product-create`. |
+| Decisões | Tomadas pelo projeto | [ADR 0036](../docs/adr/0036-comandos-de-estoque-offline.md): `stock.receive`, `stock.write_off`, `stock.count` (capability `inventory:adjust`); servidor autoritativo (`insufficient_stock`, `inventory_version_conflict`), sem "forçar"; o cliente não edita o saldo local, o saldo exibido é a linha do servidor mais a fila; descarte explícito. |
+| Banco | Concluído | Sem migration e sem mudança de repositório: os manipuladores chamam `receiveStock`, `writeOffStock` e `inventoryCount`. |
+| Servidor | Concluído | `handlers/stock-commands.ts` (três manipuladores, códigos estáveis, contagem exige `baseVersion`), `handlers/identity.ts` (`withCapability`); 13 testes. |
+| Cliente | Concluído | `offline/stock-commands.ts`: `effectiveStock`, `receiveStockOffline`, `writeOffStockOffline`, `countStockOffline` (leva a versão-base), `pendingStockCommands`, `discardPendingStock`; leitor `inventoryRow` no armazenamento local; servidor sintético do razão; 12 testes. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-stock:verify` (`offline-stock`, suítes `ci` e `gate5`): entrada uma vez e replay; fila com a versão-base prevista igual à do razão; baixa acima do saldo e contagem obsoleta recusadas sem rastro; variante inexistente; data futura; duas contagens concorrentes (uma conflita); duas baixas concorrentes (saldo nunca negativo); isolamento entre organizações. |
+| Limites | Registrados | Sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; contagem obsoleta após descarte de um movimento anterior só é percebida pelo servidor. |
+
+### PR57 — Venda offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr57-offline-sale` sobre `codex/pr56-offline-stock-commands`. |
+| Decisões | Tomadas pelo projeto | [ADR 0037](../docs/adr/0037-venda-offline.md): um comando `sale.confirm` (capability `sale:create`) pela mesma `confirmSale` da venda online; estoque autoritativo do servidor (venda recusada inteira, sem rastro); aviso local sem bloqueio; estados `pending`, `syncing`, `confirmed`, `rejected`, `needs_attention`; correção por reenvio como comando novo ou descarte, sem "forçar"; estoque exibido desconta a fila. |
+| Banco | Concluído | Sem migration e sem mudança de repositório. |
+| Contrato | Concluído | `offlineSalePayloadSchema` em `@polaris/contracts` (sem perfil de pagamento). |
+| Servidor | Concluído | `handlers/sale-confirm.ts` (esquema mais normalização do domínio sem checagem de relógio, códigos estáveis, snapshot inválido classificado); 6 testes. |
+| Cliente | Concluído | `offline/sale-confirm.ts`: `createOfflineSale` (preço de tabela local, total, avisos de estoque), `pendingSales` com os cinco estados, `confirmedSales`, `resubmitRejectedSale`, `discardPendingSale`; `syncOutbox` informa `acceptedCommands`; `effectiveStock` desconta vendas na fila; leitor `variantRow`; 13 testes. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-sale:verify` (`offline-sale`, suítes `ci` e `gate5`): confirmada uma vez com `recordedAt` e replay; versão por linha; recusa total sem rastro; recusa gravada e reenvio como comando novo; janela de datas; disputa pelas últimas unidades; isolamento entre organizações. |
+| Limites | Registrados | Sem perfil de pagamento offline; sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; aparelho offline além da janela retroativa tem as vendas recusadas por `sale_occurred_too_old`. |
+
+### PR58 — Painel de atenção das operações offline (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr58-conflict-attention` sobre `codex/pr57-offline-sale`. |
+| Decisões | Tomadas pelo projeto | [ADR 0038](../docs/adr/0038-painel-de-atencao-offline.md): modelo puro de itens de atenção (causa, explicação, ações honestas por causa); sem "forçar sincronização"; descarte em duas etapas; reenvio só da venda recuperável, como comando novo; mudança de direito leva à revisão da conta sem descartar. |
+| Modelo | Concluído | `offline/attention.ts` (`buildAttention`, `discardAttentionItem`, `resubmitAttentionItem`, `discardWarning`); `discardPendingCustomer` no módulo do cliente; 8 testes. |
+| Painel | Concluído | `offline/attention-panel.tsx` e CSS (só apresentação, botões desabilitados durante a resolução); 5 testes de marcação (sem botão que force a sincronização). |
+| Gate de navegador | Concluído | `e2e/offline-attention.e2e.ts` sobre o laboratório `/offline-attention-lab` (outbox real em IndexedDB): venda recusada aparece, bloqueia a fila e sobrevive a recarregar; reenvio como comando novo; descarte com confirmação; direito alterado só leva à revisão da conta. 4 cenários em Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | O painel ainda não está montado no app (a interface offline não está montada); sem edição guiada de SKU; a prova em Android físico ainda bloqueia ligar a escrita offline. |
+
+### PR59 — Sair com operações pendentes (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr59-logout-pending` sobre `codex/pr58-conflict-attention`. |
+| Decisões | Tomadas pelo projeto | [ADR 0039](../docs/adr/0039-saida-com-operacoes-pendentes.md): enviar primeiro; bloquear a saída com razão e contagens; nada é apagado em nenhuma organização enquanto uma tiver trabalho; descarte só com confirmação explícita, em duas etapas; limpeza que se recusa a perder comandos; encerrar a sessão só depois de `ready`. |
+| Guarda | Concluído | `offline/logout-guard.ts` (`attemptLogout`, `discardAndLogout`), `offline/logout-purge.ts` (`purgeNamespace`: outbox e depois coleções locais); 9 testes. |
+| Diálogo | Concluído | `offline/logout-dialog.tsx` e CSS (sem "sair assim mesmo", descarte em duas etapas, aviso de comandos já enviados); 5 testes de marcação. |
+| Gate de navegador | Concluído | `e2e/offline-logout.e2e.ts` sobre `/offline-logout-lab` (outbox em IndexedDB e banco em OPFS reais, rede e servidor simulados): 6 cenários em Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | O app ainda não tem tela de conta: o guarda não está ligado a um botão "Sair" nem ao `signOut`; sem registro das organizações do usuário no aparelho (quem chama informa as organizações); a prova em Android físico ainda bloqueia ligar a escrita offline. |
+
+### Gate 5 — offline (provas automáticas concluídas; aparelho físico adiado)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Runbook | Concluído | [gate-5-offline.md](../docs/runbooks/gate-5-offline.md): cada critério do plano ligado à prova que o cobre, passos, e o checklist manual em iPhone e Android; ligado ao índice e ao checklist de go-live. |
+| Gate ponta a ponta | Concluído | `poc:offline-e2e:verify` (`offline-e2e`, suítes `ci` e `gate5`, em `apps/web/scripts`): o cliente offline real (outbox, construtores de comando, sincronizador, atenção) contra o código real do servidor (`sync.push`, verificação do lease, todos os manipuladores) sobre o banco real, com oráculo independente: fila de sete comandos feita offline, primeira resposta perdida, reenvio que repete os sete sem executar nenhum duas vezes; saldos e versões iguais à previsão do aparelho; totais da venda em centavos; razão explica todos os saldos; conflito de estoque recusado sem corromper e corrigido do cliente (reenvio como comando novo, contagem obsoleta descartada); SKU em uso recusa o produto inteiro; aparelho revogado confirma nada e vira `needs_attention`. |
+| Suíte completa de gates | Concluída | Os 22 gates em Neon descartável PostgreSQL 18 (migrations reaplicadas do zero, dados sintéticos) passam, inclusive os de venda, estoque, clientes, mídia e os nove da Fase 5. |
+| Navegador | Concluído | Persistência, coleções locais, outbox, painel de atenção e saída com pendências em Chromium desktop e Pixel 5 emulado (CI). |
+| Aparelho físico | **Adiado (bloqueia ligar a escrita offline)** | iPhone real (Safari e PWA instalado), Android real (Chrome), matar e reabrir durante envio, duas abas, saída com pendências e relógio errado: checklist no runbook, nada executado. |
+| Limites | Registrados | A interface offline (telas) e o botão "Sair" ainda não estão montados no app; PWA, service worker e atualização (PR60 a PR62 do plano) não foram feitos; promover os jobs de CI `database` e `audit` a obrigatórios é decisão do responsável. |
+
+### PR60 — Service worker do app shell (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr60-pwa-service-worker` sobre `codex/pr59-logout-pending`. |
+| Decisões | Tomadas pelo projeto | [ADR 0040](../docs/adr/0040-service-worker-do-app-shell.md): worker próprio de três funções (pré-guardar o shell, navegação rede-primeiro com o shell como reserva, arquivos pré-guardados do cache); nunca intercepta `/rpc`, `/api`, `/health`, `/ready`; cache por build; sem `skipWaiting` nem `clients.claim()`; sem biblioteca de PWA. |
+| Worker | Concluído | `src/pwa/sw.ts` (roteamento, nome de cache ordenável, limpeza que mantém a build atual e a anterior, mensagem `SKIP_WAITING`); busca ignorando `Vary`. |
+| Build | Concluído | `pwa/service-worker-plugin.ts` emite `sw.js` com o id da build, o instante e a lista de arquivos; `public/_headers` revalida `/sw.js`. |
+| Instalável | Concluído | `manifest.webmanifest`, ícones PNG (any, maskable, apple-touch) por `scripts/generate-pwa-icons.mjs`, links no `index.html`. |
+| Registro | Concluído | `src/pwa/register.ts` (produção, suporte, contexto seguro, depois do `load`, nunca nos laboratórios offline); chamado em `main.tsx`. |
+| Testes | Concluído | 14 do worker e do manifesto de build (inclusive a simulação do worker compilado) e 3 do registro, mais o teste dos cabeçalhos. |
+| Prova em navegador | Concluída | `e2e-pwa/app-shell.e2e.ts` (`bun run test:pwa`, no job de navegador do CI): instala e controla a página; abre offline, inclusive em rota interna; a API não passa pelo cache; manifesto e ícones; os laboratórios não registram o worker. Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | O ciclo de atualização para o usuário (aviso, esperar a fila vazia, recarregar sem perder trabalho) é o PR61; as telas ainda não leem os dados locais offline; Safari de iPhone e instalação na tela inicial dependem do checklist físico do Gate 5. |
+
+### PR61 — Ciclo de atualização do app (implementação, prova em navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr61-pwa-update-lifecycle` sobre `codex/pr60-pwa-service-worker`. |
+| Decisões | Tomadas pelo projeto | [ADR 0041](../docs/adr/0041-ciclo-de-atualizacao-do-app.md): quatro ofertas (nenhuma, pronta, enviar primeiro, adiada por recusa); nunca atualizar por cima de trabalho na fila; nunca automático (avisa, a pessoa clica, recarrega uma vez); build esperando só conta como atualização quando a página já é controlada; a fila entra por `PendingWorkSource`. |
+| Modelo | Concluído | `pwa/update-model.ts` (`offerFor`, `applyWhenSafe`); `pwa/update-controller.ts` (`watchForUpdate`, `takeOver` com recarga única); `pwa/update-store.ts` (store externa para `useSyncExternalStore`). |
+| Interface | Concluída | `pwa/update-banner.tsx` e CSS, montado no topo do app; sem botão de atualizar enquanto há recusa; procura por builds novas ao voltar para o app e a cada hora (`pwa/runtime.ts`). |
+| Testes | Concluído | 23 testes (decisão, envio seguro, controlador, store, aviso renderizado). |
+| Prova em navegador | Concluída | `e2e-pwa/update.e2e.ts` com duas builds reais do app (a segunda com marcador no `index.html`): a nova versão vira aviso sem recarregar; só troca ao clicar; ficam os caches das duas builds; a primeira instalação não é anunciada. Servidor estático próprio que lê o disco a cada pedido (`scripts/serve-static.mjs`), porque `vite preview` não sobrevive a uma recompilação. Chromium desktop e Pixel 5 emulado, um teste de cada vez. |
+| Limites | Registrados | A fila ainda é "ociosa" no app (o outbox não está montado), então hoje o aviso sempre oferece "Atualizar agora"; as provas com fila usam a interface de fonte; falta o PR62 (suíte de navegador do offline: duas abas, versão antiga, atualização pendente) e o checklist físico do Gate 5. |
+
+### PR62 — Suíte de navegador do offline (implementação e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr62-offline-browser-suite` sobre `codex/pr61-pwa-update-lifecycle`. |
+| Decisões | Tomadas pelo projeto | [ADR 0042](../docs/adr/0042-suite-de-navegador-do-offline-e-versoes.md): cada cenário no nível mais barato que o prova de verdade, mapeado no runbook do Gate 5; arquivo dourado dos payloads para a compatibilidade entre versões; o contrato só cresce e o servidor vai ao ar antes do app que usa um campo novo. |
+| Duas abas | Concluído | `e2e/offline-outbox`: duas abas do mesmo usuário compartilham a fila; um comando em envio não é enviado de novo pela outra aba; o próximo vai depois da confirmação. |
+| Atualização pendente | Concluído | `e2e-pwa/update-with-queue.e2e.ts` (duas builds reais, gancho só na build `pwa-e2e`): com fila e sem rede a atualização espera e nada se perde; com rede envia e só então atualiza; com recusa não há botão. |
+| Versão antiga do app | Concluído | `server/sync/command-compatibility.test.ts` e `__golden__/command-payloads.json`: o que cada construtor emite hoje, aceito por todos os manipuladores registrados e coberto para todos os tipos; um campo desconhecido (app mais novo que o servidor) é `invalid_payload`. |
+| Execução | Concluída | `bun run test:offline-browser` (as duas configurações de navegador); o CI roda ambas. |
+| Limites | Registrados | Safari de iPhone e Chrome de Android reais seguem no checklist do Gate 5 e bloqueiam ligar a escrita offline; o outbox ainda não está montado no app, então a atualização com fila usa a interface de fonte. |
+
+### Runtime offline no app (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr63-offline-runtime` sobre `codex/pr62-offline-browser-suite`. |
+| Decisões | Tomadas pelo projeto | [ADR 0043](../docs/adr/0043-runtime-offline-no-app.md): um runtime por organização, sem React e com dependências injetadas; o usuário vem das claims do lease (segunda visita offline sem nenhuma chamada); aparelho de outro usuário é esquecido e registrado de novo, uma vez; sincronização de uma execução por vez; atrás de `VITE_OFFLINE_RUNTIME_ENABLED`, desligada por padrão. |
+| Runtime | Concluído | `offline/runtime/offline-runtime.ts` (aparelho, lease com renovação, abertura dos armazenamentos, restauração, bootstrap, sincronização, figuras, `workSource`, `logoutWorkspace`, `context`), `runtime-api.ts` (RPC), `runtime-stores.ts` (IndexedDB e OPFS). |
+| No app | Concluído | Provedor, chip de sincronização no cabeçalho, página `/attention` com o painel de atenção, "Sair" com o fluxo completo (`logout-flow.ts`), aviso de atualização ligado à fila real. |
+| Testes | Concluído | 15 do runtime (início, segunda visita offline, indisponibilidade, renovação, outro usuário, troca de organização, sincronização, execução única, falha e recuperação, fonte de trabalho, saída) e 11 do chip, da rota e do fluxo de saída. |
+| Prova em navegador | Concluída | `e2e/offline-runtime.e2e.ts` sobre `/offline-runtime-lab` (runtime real, IndexedDB e OPFS reais, servidor simulado): iniciar online, trabalhar sem rede, recarregar e abrir offline do aparelho, enviar quando a rede volta, indisponível sem acesso anterior. Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | Nenhuma tela lê as coleções locais nem enfileira comandos ainda (converter vender, estoque, produtos e clientes é o trabalho seguinte); a chave de build fica desligada até o checklist em aparelho físico; o app ainda não tem tela de entrada, então "Sair" só leva ao início. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

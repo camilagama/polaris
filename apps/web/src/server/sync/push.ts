@@ -24,8 +24,8 @@ import type { OfflineLeaseKeys } from "../offline-lease-service";
  * never overtakes one it may depend on.
  */
 export class InvalidSyncPayloadError extends Error {
-  constructor() {
-    super("invalid_sync_payload");
+  constructor(options?: ErrorOptions) {
+    super("invalid_sync_payload", options);
     this.name = "InvalidSyncPayloadError";
   }
 }
@@ -47,9 +47,30 @@ export interface SyncCommandHandler {
     payload: unknown,
     context: SyncCommandContext
   ) => Promise<SyncJson>;
+  /**
+   * Capabilities beyond `capability` that this particular payload needs (a
+   * product created with opening stock also adjusts inventory). The lease must
+   * carry them all, so the role still has to grant each one.
+   */
+  extraCapabilities?: (payload: unknown) => string[];
   /** Throws `InvalidSyncPayloadError` for a payload the command cannot take. */
   parse: (payload: unknown) => unknown;
   type: string;
+}
+
+/**
+ * The largest payload a command may carry (the outbox on the device enforces the
+ * same limit). A bigger one is refused before it is parsed, hashed or stored, so a
+ * caller cannot make the server do unbounded work per command.
+ */
+const MAX_COMMAND_PAYLOAD_CHARS = 256 * 1024;
+
+function payloadLength(payload: unknown): number {
+  try {
+    return String(JSON.stringify(payload)).length;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 export const PUSH_REJECTION = {
@@ -111,6 +132,10 @@ async function pushOne(
   ) {
     precheckFailure = PUSH_REJECTION.capabilityNotInLease;
   }
+  const oversized = payloadLength(command.payload) > MAX_COMMAND_PAYLOAD_CHARS;
+  if (precheckFailure === null && oversized) {
+    precheckFailure = PUSH_REJECTION.invalidPayload;
+  }
   if (precheckFailure === null && handler) {
     try {
       parsed = handler.parse(command.payload);
@@ -121,13 +146,27 @@ async function pushOne(
       precheckFailure = PUSH_REJECTION.invalidPayload;
     }
   }
+  if (
+    precheckFailure === null &&
+    handler?.extraCapabilities &&
+    leaseClaims &&
+    !handler
+      .extraCapabilities(parsed)
+      .every((capability) => leaseClaims.caps.includes(capability))
+  ) {
+    precheckFailure = PUSH_REJECTION.capabilityNotInLease;
+  }
 
+  // An oversized payload is not canonicalized (that is the unbounded work): its
+  // identity for the stored rejection is its length.
   const payloadHash = await sha256Hex(
-    canonicalJson({
-      baseVersion: command.baseVersion,
-      payload: command.payload,
-      type: command.type,
-    })
+    oversized
+      ? `oversized:${command.type}:${payloadLength(command.payload)}`
+      : canonicalJson({
+          baseVersion: command.baseVersion,
+          payload: command.payload,
+          type: command.type,
+        })
   );
   const outcome = await dependencies.withTenant((transaction, identity) =>
     dependencies.runSyncCommand(
