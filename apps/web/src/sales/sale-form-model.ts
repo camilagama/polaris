@@ -114,11 +114,6 @@ interface ProfileSelectionDraft {
   reviewNotice: string | null;
   /** Version of the chosen profile the operator last reviewed. */
   seenVersion: number | null;
-  /**
-   * What the person had chosen before the offline form took the profile away;
-   * put back when the connection returns. Absent when nothing was taken.
-   */
-  restore?: ProfileSelectionDraft | undefined;
 }
 
 export interface SaleFormState {
@@ -2132,8 +2127,8 @@ export interface QueuedSaleView {
  * A sale whose outcome on the server is unknown can be kept on the device as the
  * SAME sale (same command ID, same payload), which the server then recognizes
  * instead of recording twice, only when the device command can carry exactly
- * what was sent: no payment profile and no typed date (the offline command has
- * neither).
+ * what was sent: the offline command carries the payment profile (by id and
+ * version) but not a typed date, and records one instant for both times.
  */
 export function canKeepLockedSaleOnDevice(
   state: SubmissionState,
@@ -2144,7 +2139,6 @@ export function canKeepLockedSaleOnDevice(
     state.phase === "locked" &&
     attempt !== null &&
     evaluation.body !== null &&
-    evaluation.body.paymentProfile === null &&
     evaluation.occurredAtOverride === null &&
     attempt.occurredAt === attempt.recordedAt
   );
@@ -2171,33 +2165,12 @@ export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
 }
 
 /**
- * The form while the sale will be queued on the device: no payment profile
- * exists offline (the server resolves fees and term when it confirms), and the
- * sale is dated now, so a typed date is dropped.
+ * The form while the sale will be queued on the device: the sale is dated now, so
+ * a typed date is dropped. The payment profile stays the person's choice (the
+ * profiles of the last connection are offered, ADR 0049).
  */
 export function formForOfflineSale(form: SaleFormState): SaleFormState {
-  return {
-    ...form,
-    occurredAtLocal: "",
-    profile: {
-      choice: NO_PROFILE_CHOICE,
-      // keep the earliest choice: applying this twice must not remember "no profile" as the person's
-      restore: form.profile.restore ?? form.profile,
-      reviewNotice: null,
-      seenVersion: null,
-    },
-  };
-}
-
-/**
- * Back online: the choice the person had before the offline form took the profile
- * away is put back (a real profile, a deliberate "no profile", or nothing yet).
- */
-export function formForOnlineSale(form: SaleFormState): SaleFormState {
-  const { restore } = form.profile;
-  return restore === undefined
-    ? form
-    : { ...form, profile: { ...restore, restore: undefined } };
+  return { ...form, occurredAtLocal: "" };
 }
 
 export const idleSubmission: SubmissionState = { phase: "idle" };

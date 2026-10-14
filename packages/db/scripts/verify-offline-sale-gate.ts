@@ -8,18 +8,31 @@ import {
   SaleOccurredInFutureError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
+import {
+  PaymentProfileLifecycleError,
+  PaymentProfileNotFoundError,
+  PaymentProfileVersionConflictError,
+} from "@polaris/domain/sales/payment-profile";
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { createDatabase } from "../src/client";
 import { registerDevice } from "../src/device-repository";
 import { receiveStock } from "../src/inventory-repository";
 import { issueOfflineLeaseGrant } from "../src/offline-lease-repository";
+import {
+  archivePaymentProfile,
+  createPaymentProfile,
+  updatePaymentProfile,
+} from "../src/payment-profile-repository";
 import { confirmSale } from "../src/sale-repository";
 import {
   runSyncCommand,
   type SyncCommandOutcome,
   type SyncJson,
 } from "../src/sync-command-repository";
-import type { TenantRequestIdentity } from "../src/tenant-transaction";
+import type {
+  TenantRequestIdentity,
+  TenantRequestTransaction,
+} from "../src/tenant-transaction";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -66,6 +79,15 @@ const classify = (error: unknown): string | null => {
   }
   if (error instanceof SaleOccurredInFutureError) {
     return "sale_occurred_in_future";
+  }
+  if (error instanceof PaymentProfileVersionConflictError) {
+    return "payment_profile_changed";
+  }
+  if (
+    error instanceof PaymentProfileLifecycleError ||
+    error instanceof PaymentProfileNotFoundError
+  ) {
+    return "payment_profile_unavailable";
   }
   return null;
 };
@@ -140,7 +162,11 @@ async function run() {
     const pushSale = (
       id: string,
       lines: Line[],
-      options: { occurredAt?: string; recordedAt?: string } = {}
+      options: {
+        occurredAt?: string;
+        paymentProfile?: { expectedVersion: number; id: string };
+        recordedAt?: string;
+      } = {}
     ): Promise<SyncCommandOutcome> =>
       withTenantAs(db, tenantA, "sync:push", (transaction, identity) =>
         runSyncCommand(
@@ -172,7 +198,7 @@ async function run() {
               })),
               occurredAt,
               payment: { anticipationRequested: false, method: "pix" },
-              paymentProfile: null,
+              paymentProfile: options.paymentProfile ?? null,
               recordedAt: options.recordedAt ?? recentInstant(1),
               requestId: id,
             });
@@ -320,6 +346,177 @@ async function run() {
     );
     tests.push(
       "a sale first sent directly (answer lost) and then sent from the device with the same command ID and content is recognized as the same sale: one sale, one movement per line"
+    );
+
+    // ---- 1c. a sale priced with the payment profile the device saw
+    const profileRule = {
+      anticipationFee: { mode: "none" as const },
+      expectedSettlementDays: 1,
+      method: "pix",
+      processingFee: {
+        fixedAmount: null,
+        mode: "percentage" as const,
+        percentage: "1.500000",
+      },
+    };
+    const asManager = <T>(
+      work: (
+        transaction: TenantRequestTransaction,
+        identity: TenantRequestIdentity
+      ) => Promise<T>
+    ) => withTenantAs(db, tenantA, "organization:manage", work);
+    const profile = await asManager((transaction, identity) =>
+      createPaymentProfile(transaction, identity, {
+        name: "Maquininha offline",
+        rules: [profileRule],
+      })
+    );
+    const bermuda = await createSellableProduct(
+      gateRuntime,
+      tenantA,
+      "bermuda",
+      {
+        cost: "4.00",
+        quantity: 6,
+      }
+    );
+    const profileCommandId = randomUUID();
+    const withProfile = await pushSale(
+      profileCommandId,
+      [{ quantity: 1, variantId: bermuda.variantId }],
+      { paymentProfile: { expectedVersion: profile.version, id: profile.id } }
+    );
+    assert.equal(withProfile.status, "accepted");
+    const snapshot = await admin.pool.query<{
+      payment_profile_id: string | null;
+      payment_profile_version_snapshot: number | null;
+    }>(
+      "SELECT p.payment_profile_id, p.payment_profile_version_snapshot FROM public.sale_payments p JOIN public.sales s ON s.id = p.sale_id WHERE s.organization_id = $1 AND s.command_id = $2",
+      [tenantA.organizationId, profileCommandId]
+    );
+    assert.equal(snapshot.rows[0]?.payment_profile_id, profile.id);
+    assert.equal(
+      snapshot.rows[0]?.payment_profile_version_snapshot,
+      profile.version,
+      "the sale records the profile and the version the device named"
+    );
+    assert.deepEqual(await balance(bermuda.variantId), {
+      quantity: 5,
+      version: 2,
+    });
+    tests.push(
+      "a sale from the device priced with the payment profile it saw (id and version) is confirmed and records that profile version"
+    );
+
+    // ---- 1d. the profile moved on, or went away: the sale is refused whole, with nothing recorded
+    const updated = await asManager((transaction, identity) =>
+      updatePaymentProfile(transaction, identity, {
+        expectedVersion: profile.version,
+        id: profile.id,
+        name: "Maquininha offline (nova taxa)",
+        rules: [profileRule],
+      })
+    );
+    assert.ok(updated.profile.version > profile.version);
+    const staleCommandId = randomUUID();
+    const staleVersion = await pushSale(
+      staleCommandId,
+      [{ quantity: 1, variantId: bermuda.variantId }],
+      { paymentProfile: { expectedVersion: profile.version, id: profile.id } }
+    );
+    assert.equal(staleVersion.status, "rejected");
+    assert.equal(staleVersion.code, "payment_profile_changed");
+    assert.equal(await salesOf(staleCommandId), 0);
+    assert.deepEqual(await balance(bermuda.variantId), {
+      quantity: 5,
+      version: 2,
+    });
+    // the same sale sent again as a NEW command without the profile is confirmed
+    const withoutProfile = await pushSale(randomUUID(), [
+      { quantity: 1, variantId: bermuda.variantId },
+    ]);
+    assert.equal(withoutProfile.status, "accepted");
+
+    await asManager((transaction, identity) =>
+      archivePaymentProfile(transaction, identity, {
+        expectedVersion: updated.profile.version,
+        id: profile.id,
+      })
+    );
+    const gone = await pushSale(
+      randomUUID(),
+      [{ quantity: 1, variantId: bermuda.variantId }],
+      {
+        paymentProfile: {
+          expectedVersion: updated.profile.version,
+          id: profile.id,
+        },
+      }
+    );
+    assert.equal(gone.code, "payment_profile_unavailable");
+    const unknown = await pushSale(
+      randomUUID(),
+      [{ quantity: 1, variantId: bermuda.variantId }],
+      { paymentProfile: { expectedVersion: 1, id: randomUUID() } }
+    );
+    assert.equal(unknown.code, "payment_profile_unavailable");
+    tests.push(
+      "a sale whose profile version is no longer current, or whose profile was archived or never existed, is refused with its own stable code and leaves no sale, payment or stock movement; sent again without the profile as a new command it is confirmed"
+    );
+
+    // ---- 1e. the same profile sale sent directly first, then kept on the device
+    const profile2 = await asManager((transaction, identity) =>
+      createPaymentProfile(transaction, identity, {
+        name: "Maquininha offline 2",
+        rules: [profileRule],
+      })
+    );
+    const crossProfileId = randomUUID();
+    const crossProfileAt = recentInstant(2);
+    const selection = { expectedVersion: profile2.version, id: profile2.id };
+    const directWithProfile = await withTenantAs(
+      db,
+      tenantA,
+      "sale:create",
+      (transaction, identity) =>
+        confirmSale(transaction, identity, {
+          adjustments: [],
+          commandId: crossProfileId,
+          commandVersion: 1,
+          items: [
+            {
+              chargedUnitPrice: "19.90",
+              listedUnitPrice: "20.00",
+              quantity: 1,
+              variantId: bermuda.variantId,
+            },
+          ],
+          occurredAt: crossProfileAt,
+          payment: { anticipationRequested: false, method: "pix" },
+          paymentProfile: selection,
+          recordedAt: crossProfileAt,
+          requestId: randomUUID(),
+        })
+    );
+    const afterDirectProfile = await balance(bermuda.variantId);
+    const viaDeviceProfile = await pushSale(
+      crossProfileId,
+      [{ quantity: 1, variantId: bermuda.variantId }],
+      {
+        occurredAt: crossProfileAt,
+        paymentProfile: selection,
+        recordedAt: crossProfileAt,
+      }
+    );
+    assert.equal(viaDeviceProfile.status, "accepted");
+    assert.equal(
+      (viaDeviceProfile as { result?: { saleId?: string } }).result?.saleId,
+      directWithProfile.sale.id
+    );
+    assert.equal(await salesOf(crossProfileId), 1);
+    assert.deepEqual(await balance(bermuda.variantId), afterDirectProfile);
+    tests.push(
+      "a sale priced with a payment profile, sent directly (answer lost) and then from the device with the same command ID, content and profile selection, is the same sale: one sale, one movement per line"
     );
 
     // ---- 2. the overlay's arithmetic: one version step per line, repeated lines included

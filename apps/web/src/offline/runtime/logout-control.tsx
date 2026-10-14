@@ -3,6 +3,7 @@ import {
   browserStorage,
   clearOrganizationsCache,
 } from "../../lib/current-organization-model";
+import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { markSigningOut } from "../../lib/sign-out";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
@@ -46,6 +47,7 @@ export function LogoutControl() {
               // the next person to open this browser must not be offered these organizations
               markSigningOut();
               clearOrganizationsCache(browserStorage());
+              clearPaymentProfileCaches(browserStorage());
               window.location.assign("/");
             },
             signOut: signOutOnServer,

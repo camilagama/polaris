@@ -4,7 +4,13 @@ import type {
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
+import {
+  readPaymentProfileCache,
+  writePaymentProfileCache,
+} from "../lib/payment-profile-cache";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import {
   filterLocalStockEntries,
   localStockEntries,
@@ -66,8 +72,11 @@ export function useSaleCatalog(
 
   const loadProfiles = useCallback(async () => {
     if (usesLocal) {
-      setProfiles({ status: "ready", value: [] });
-      onProfilesLoaded([]);
+      // the profiles of the last connection: the sale names the one chosen by id and
+      // version, and the server refuses it if that version is no longer the current one
+      const cached = readPaymentProfileCache(browserStorage(), organizationId);
+      setProfiles({ status: "ready", value: cached });
+      onProfilesLoaded(cached);
       return;
     }
     setProfiles(keepReady);
@@ -77,6 +86,13 @@ export function useSaleCatalog(
         status: "active",
       });
       setProfiles({ status: "ready", value: result.profiles });
+      if (OFFLINE_RUNTIME_ENABLED) {
+        writePaymentProfileCache(
+          browserStorage(),
+          organizationId,
+          result.profiles
+        );
+      }
       onProfilesLoaded(result.profiles);
     } catch (error) {
       setProfiles({

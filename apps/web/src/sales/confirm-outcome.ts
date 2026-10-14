@@ -27,7 +27,7 @@ export interface ConfirmationOutcome {
 }
 
 const NOT_CARRIABLE =
-  "Esta venda tem perfil de pagamento ou data própria, e o aparelho não os guarda: ela só pode ser confirmada com conexão.";
+  "Esta venda tem data própria, e o aparelho não a guarda: ela só pode ser confirmada com conexão.";
 
 const QUEUE_FAILURE =
   "Não foi possível guardar a venda neste aparelho. Confira a validade da autorização offline e o espaço do aparelho, e tente de novo. Nada foi guardado.";

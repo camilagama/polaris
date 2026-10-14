@@ -7,6 +7,11 @@ import {
   SaleOccurredInFutureError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
+import {
+  PaymentProfileLifecycleError,
+  PaymentProfileNotFoundError,
+  PaymentProfileVersionConflictError,
+} from "@polaris/domain/sales/payment-profile";
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { describe, expect, it, vi } from "vitest";
 import { InvalidSyncPayloadError } from "../push";
@@ -20,6 +25,7 @@ const identity = {
   role: "owner",
   userId: "user-1",
 };
+const profileId = "0199c2d0-0000-7000-8000-0000000000c1";
 const selling = { ...identity, capability: "sale:create" };
 
 const sale = {
@@ -74,6 +80,9 @@ describe("sale.confirm handler", () => {
         ],
       },
       { ...sale, items: [{ ...sale.items[0], chargedUnitPrice: "abc" }] },
+      { ...sale, paymentProfile: { expectedVersion: 1, id: "nope" } },
+      { ...sale, paymentProfile: { expectedVersion: 0, id: profileId } },
+      { ...sale, paymentProfile: { id: profileId } },
     ];
     for (const payload of bad) {
       expect(() => handler.parse(payload)).toThrow(InvalidSyncPayloadError);
@@ -117,6 +126,54 @@ describe("sale.confirm handler", () => {
       saleId: "sale-1",
       totalDue: "39.80",
     });
+  });
+
+  it("accepts a sale priced with the payment profile the device saw, by id and version, and passes it on", async () => {
+    const withProfile = {
+      ...sale,
+      paymentProfile: { expectedVersion: 3, id: profileId },
+    };
+    const confirmSale = vi.fn(() =>
+      Promise.resolve({
+        sale: {
+          confirmedAt: new Date("2026-10-14T13:00:00.000Z"),
+          id: "sale-1",
+        },
+        totals: { totalDue: "39.80" },
+      })
+    );
+    const handler = createSaleConfirmHandler({
+      confirmSale: confirmSale as never,
+    });
+    expect(handler.parse(withProfile)).toEqual(withProfile);
+    expect(handler.parse({ ...sale, paymentProfile: null })).toEqual({
+      ...sale,
+      paymentProfile: null,
+    });
+    await handler.execute({} as never, identity, handler.parse(withProfile), {
+      baseVersion: null,
+      commandId,
+    });
+    expect(confirmSale).toHaveBeenCalledWith(
+      {},
+      selling,
+      expect.objectContaining({
+        paymentProfile: { expectedVersion: 3, id: profileId },
+      })
+    );
+  });
+
+  it("names a profile that changed or went away as its own refusals", () => {
+    const { classify } = createSaleConfirmHandler();
+    expect(classify(new PaymentProfileVersionConflictError())).toBe(
+      "payment_profile_changed"
+    );
+    expect(classify(new PaymentProfileLifecycleError())).toBe(
+      "payment_profile_unavailable"
+    );
+    expect(classify(new PaymentProfileNotFoundError())).toBe(
+      "payment_profile_unavailable"
+    );
   });
 
   it("names the refusals for the device, and nothing else", () => {
