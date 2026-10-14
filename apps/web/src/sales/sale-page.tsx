@@ -1039,11 +1039,6 @@ const CLOCK_TICK_MS = 60_000;
 export function SalePage() {
   const { organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
-  // Money and stock go to the server whenever it is reachable; only without a
-  // connection is the sale kept on this device.
-  const offlineWorkspace =
-    workspace !== null && !workspace.online ? workspace : null;
-  const offline = offlineWorkspace !== null;
   const now = useNow(CLOCK_TICK_MS);
   const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
     readLastPrices(browserStorage(), organizationId)
@@ -1052,6 +1047,17 @@ export function SalePage() {
     createBlankSaleForm(newId)
   );
   const [submission, setSubmission] = useState<SubmissionState>(idleSubmission);
+  const submissionRef = useRef(submission);
+  submissionRef.current = submission;
+  // Money and stock go to the server whenever it is reachable; only without a
+  // connection is the sale kept on this device. A sale whose outcome on the
+  // server is unknown (locked) is only ever resent there, unchanged: moving it
+  // to the device under a different payload could record it twice.
+  const offlineWorkspace =
+    workspace !== null && !workspace.online && submission.phase !== "locked"
+      ? workspace
+      : null;
+  const offline = offlineWorkspace !== null;
   const [showRequired, setShowRequired] = useState(false);
   const [restoredAttempt] = useState<SaleAttempt | null>(() =>
     readSaleAttempt(sessionStorageOrNull(), organizationId, new Date())
@@ -1081,9 +1087,13 @@ export function SalePage() {
   useEffect(() => {
     // Going offline fills in what the offline sale uses (no profile, dated now);
     // coming back online undoes the "no profile" choice made for the person.
-    setForm((current) =>
-      offline ? formForOfflineSale(current) : formForOnlineSale(current)
-    );
+    // Never while a sale is in flight or locked: its payload must stay as sent.
+    setForm((current) => {
+      if (isFormLocked(submissionRef.current)) {
+        return current;
+      }
+      return offline ? formForOfflineSale(current) : formForOnlineSale(current);
+    });
   }, [offline]);
   const localWriter = offlineWorkspace?.stores.writer;
   const localOutbox = offlineWorkspace?.stores.outbox;

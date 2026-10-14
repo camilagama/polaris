@@ -308,3 +308,72 @@ test.describe("venda", () => {
     await expect(keepSale(page)).toHaveCount(0);
   });
 });
+
+async function openStockLab(page: Page, user: string) {
+  await openLab(page, user, "stock");
+  await start(page, "Estoque");
+}
+
+const shirtRow = (page: Page) =>
+  page.locator(".stock-item", { hasText: "Azul" });
+
+test.describe("estoque", () => {
+  test("sem rede, lista do aparelho sem custo, guarda um recebimento, mostra o saldo do aparelho e o servidor executa ao voltar a rede", async ({
+    page,
+  }) => {
+    await openStockLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await expect(
+      page.getByText("Sem conexão. O saldo mostrado é o do aparelho")
+    ).toBeVisible();
+    await expect(shirtRow(page)).toContainText("Com conexão");
+    await expect(shirtRow(page).locator(".stock-quantity")).toContainText("5");
+
+    await page
+      .getByRole("button", {
+        name: "Receber estoque de Camiseta do laboratório, Azul",
+      })
+      .click();
+    await page.getByLabel("Quantidade recebida").fill("10");
+    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page.getByRole("button", { name: "Revisar" }).click();
+    await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+
+    await expect(
+      page.getByText("Recebimento guardado neste aparelho")
+    ).toBeVisible();
+    await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+    await page.getByRole("button", { name: "Fechar" }).click();
+    await expect(shirtRow(page).locator(".stock-quantity")).toContainText("15");
+
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+    // back online the list is the server's again, with the cost column
+    await expect(page.getByText("Sem conexão. O saldo mostrado")).toHaveCount(
+      0
+    );
+  });
+
+  test("sem rede, uma baixa maior que o saldo do aparelho é recusada pelo formulário e nada é guardado", async ({
+    page,
+  }) => {
+    await openStockLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await page
+      .getByRole("button", {
+        name: "Baixar estoque de Camiseta do laboratório, Azul",
+      })
+      .click();
+    await page.getByLabel("Quantidade a baixar").fill("6");
+    await page.getByLabel("Motivo da baixa").selectOption({ index: 1 });
+    await page.getByRole("button", { name: "Revisar" }).click();
+
+    await expect(
+      page.getByText("A baixa não pode ser maior que o saldo exibido (5)")
+    ).toBeVisible();
+    await expect(chip(page)).not.toContainText("operação guardada");
+  });
+});

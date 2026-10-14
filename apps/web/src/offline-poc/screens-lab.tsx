@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ProductsPage } from "../catalog/products-page";
 import { CustomersPage } from "../customers/customers-page";
+import { InventoryPage } from "../inventory/inventory-page";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { purgeNamespace } from "../offline/logout-purge";
@@ -40,27 +41,36 @@ const ORGANIZATION = {
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
-type LabScreen = "customers" | "products" | "sale";
+type LabScreen = "customers" | "products" | "sale" | "stock";
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
-  return screen === "products" || screen === "sale" ? screen : "customers";
+  return screen === "products" || screen === "sale" || screen === "stock"
+    ? screen
+    : "customers";
 }
 
 function newServer(screen: LabScreen) {
   if (screen === "products") {
     return new FakeCatalogServer();
   }
-  return screen === "sale" ? new SaleLabServer() : new FakeCustomerServer();
+  return screen === "sale" || screen === "stock"
+    ? new SaleLabServer()
+    : new FakeCustomerServer();
 }
 
-function recordsOn(server: ReturnType<typeof newServer>): number {
+function recordsOn(
+  server: ReturnType<typeof newServer>,
+  screen: LabScreen
+): number {
   if (server instanceof FakeCatalogServer) {
     return server.products.size;
   }
-  return server instanceof SaleLabServer
-    ? server.sales.size
-    : server.customers.size;
+  if (server instanceof SaleLabServer) {
+    // sales confirmed, or movements executed when the screen is the stock one
+    return screen === "stock" ? server.executions : server.sales.size;
+  }
+  return server.customers.size;
 }
 
 export function ScreensLab() {
@@ -86,6 +96,7 @@ export function ScreensLab() {
                   "customer:create",
                   "product:create",
                   "sale:create",
+                  "inventory:adjust",
                 ],
                 deviceId,
                 epoch: 0,
@@ -118,7 +129,7 @@ export function ScreensLab() {
 
   // the screen syncs by itself: read the simulated server whenever the runtime says so
   useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
-  const serverRecords = recordsOn(server);
+  const serverRecords = recordsOn(server, screen);
 
   const handleStart = useCallback(async () => {
     window.localStorage.setItem("screens-lab-user", userId);
@@ -191,6 +202,7 @@ export function ScreensLab() {
           {started && screen === "customers" ? <CustomersPage /> : null}
           {started && screen === "products" ? <ProductsPage /> : null}
           {started && screen === "sale" ? <SalePage /> : null}
+          {started && screen === "stock" ? <InventoryPage /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

@@ -205,18 +205,21 @@ export interface StockRow {
 }
 
 export function stockRows(
-  entries: readonly InventoryBalanceEntryReadModel[]
+  entries: readonly InventoryBalanceEntryReadModel[],
+  costUnavailable = false
 ): StockRow[] {
   return entries.map((entry) => ({
     archived: entry.productStatus === "archived",
-    costText: costText(entry.movingAverageCost),
-    costUnknown: entry.movingAverageCost === null,
+    costText: costUnavailable
+      ? "Com conexão"
+      : costText(entry.movingAverageCost),
+    costUnknown: !costUnavailable && entry.movingAverageCost === null,
     id: entry.variantId,
     productName: entry.productName,
     quantity: entry.quantity,
     quantityText: formatQuantity(entry.quantity),
     skuText: entry.sku,
-    target: stockTarget(entry),
+    target: stockTarget(entry, { costUnavailable }),
     tone: entry.quantity === 0 ? "empty" : "ok",
     updatedText:
       entry.updatedAt === null
@@ -248,7 +251,8 @@ export type StockListView =
 
 export function stockListView(
   state: StockListState,
-  filters: StockFilters
+  filters: StockFilters,
+  costUnavailable = false
 ): StockListView {
   if (state.status === "loading") {
     return { kind: "loading", message: "Carregando o estoque…" };
@@ -267,7 +271,7 @@ export function stockListView(
       showCatalogLink: unfiltered,
     };
   }
-  return { kind: "ready", rows: stockRows(state.entries) };
+  return { kind: "ready", rows: stockRows(state.entries, costUnavailable) };
 }
 
 export interface StockMoreView {

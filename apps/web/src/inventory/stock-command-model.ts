@@ -11,12 +11,12 @@ import {
   normalizeWriteOffStockInput,
   type WriteOffReasonCode,
 } from "@polaris/domain/inventory/write-off-stock";
+import { isCalendarDate } from "../lib/dates";
 import {
   formatBrlAmount,
   formatCalendarDate,
   formatQuantity,
 } from "../lib/format";
-import { isCalendarDate } from "../lib/dates";
 import {
   isDefiniteRpcRejection,
   rpcErrorCode,
@@ -55,10 +55,10 @@ export const STOCK_ACTIONS: readonly StockAction[] = [
 
 interface ActionLabels {
   confirm: string;
-  /** The short button label on a row. */
-  trigger: string;
   noun: string;
   title: string;
+  /** The short button label on a row. */
+  trigger: string;
 }
 
 export const STOCK_ACTION_LABELS: Readonly<Record<StockAction, ActionLabels>> =
@@ -226,7 +226,7 @@ function codePointCount(text: string): number {
 /* Validation                                                                 */
 /* -------------------------------------------------------------------------- */
 
-type StockCall =
+export type StockCall =
   | { action: "count"; input: CountInput }
   | { action: "receive"; input: ReceiveInput }
   | { action: "write_off"; input: WriteOffInput };
@@ -276,7 +276,8 @@ export function stockActionBlock(
   if (
     action === "receive" &&
     target.quantity > 0 &&
-    target.movingAverageCost === null
+    target.movingAverageCost === null &&
+    !target.costUnavailable
   ) {
     return "O recebimento está bloqueado: este saldo não tem custo conhecido, e o servidor não inventa um. Faça antes uma contagem informando o custo unitário (valoração).";
   }
@@ -288,7 +289,7 @@ export function stockActionBlock(
 
 /** The valuation field exists only while the average cost is unknown. */
 export function valuationApplies(target: StockTarget): boolean {
-  return target.movingAverageCost === null;
+  return target.movingAverageCost === null && !target.costUnavailable;
 }
 
 function issue(
@@ -546,6 +547,9 @@ function receiveCostLine(
   body: Extract<StockBody, { action: "receive" }>,
   target: StockTarget
 ): SummaryLine | null {
+  if (target.costUnavailable) {
+    return null;
+  }
   try {
     const average = calculateMovingAverageCost({
       currentAverageCost: target.movingAverageCost,
@@ -607,7 +611,11 @@ export function stockSummary(
         label: "Custo unitário informado",
         value: formatBrlAmount(body.valuationUnitCost),
       });
-    } else if (target.movingAverageCost === null && body.physicalQuantity > 0) {
+    } else if (
+      target.movingAverageCost === null &&
+      !target.costUnavailable &&
+      body.physicalQuantity > 0
+    ) {
       lines.push({
         label: "Custo",
         value: "continua desconhecido (nenhum custo informado)",
@@ -857,6 +865,8 @@ type StockSubmission =
       balance: InventoryBalanceReadModel;
       message: string;
       phase: "success";
+      /** Kept on this device until the server confirms it (no connection). */
+      queued: boolean;
       replayed: boolean;
     };
 
@@ -1114,11 +1124,29 @@ export function prepareStockSubmission(input: {
   };
 }
 
-function stockSuccessMessage(
+function queuedStockMessage(
   action: StockAction,
   result: StockResult,
   before: StockTarget
 ): string {
+  const balanceText = `Saldo no aparelho: ${unitsText(result.balance.quantity)}.`;
+  const { noun } = STOCK_ACTION_LABELS[action];
+  const delta =
+    action === "count"
+      ? ` (${signedUnits(result.balance.quantity - before.quantity)})`
+      : "";
+  return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} guardad${noun.startsWith("a ") ? "a" : "o"} neste aparelho${delta}. ${balanceText} Só vale quando o servidor confirmar, assim que houver conexão (acompanhe em Pendências).`;
+}
+
+function stockSuccessMessage(
+  action: StockAction,
+  result: StockResult,
+  before: StockTarget,
+  queued: boolean
+): string {
+  if (queued) {
+    return queuedStockMessage(action, result, before);
+  }
   const balanceText = `Saldo atual: ${unitsText(result.balance.quantity)}.`;
   if (result.replayed) {
     return `Este mesmo pedido já tinha sido registrado. Nada foi duplicado. ${balanceText}`;
@@ -1137,15 +1165,17 @@ function stockSuccessMessage(
 
 export function stockSucceeded(
   state: StockCommandState,
-  result: StockResult
+  result: StockResult,
+  queued = false
 ): StockCommandState {
   return {
     ...state,
     attempt: null,
     submission: {
       balance: result.balance,
-      message: stockSuccessMessage(state.action, result, state.target),
+      message: stockSuccessMessage(state.action, result, state.target, queued),
       phase: "success",
+      queued,
       replayed: result.replayed,
     },
     target: retarget(state.target, result.balance),
@@ -1169,6 +1199,27 @@ export function stockFailed(
     attempt: failure.discardAttempt ? null : state.attempt,
     step: "editing",
     submission: { failure, phase: "failed" },
+  };
+}
+
+/**
+ * Nothing could be kept on the device (not enough stock there, an expired
+ * authorization, no room): a definite failure, editing reopens and the same
+ * attempt can be tried again.
+ */
+export function stockQueueFailed(
+  state: StockCommandState,
+  error: unknown
+): StockCommandState {
+  const insufficient =
+    error instanceof Error && error.name === "InsufficientLocalStockError";
+  const message = insufficient
+    ? "Estoque insuficiente neste aparelho: a baixa deixaria o saldo abaixo de zero. Reduza a quantidade."
+    : "Não foi possível guardar neste aparelho. Confira a validade da autorização offline e o espaço do aparelho, e tente de novo. Nada foi guardado.";
+  return {
+    ...state,
+    step: "editing",
+    submission: { failure: stockFailure(message), phase: "failed" },
   };
 }
 
