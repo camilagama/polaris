@@ -1,6 +1,7 @@
 export type NavId =
   | "categories"
   | "customers"
+  | "devices"
   | "history"
   | "inventory"
   | "payment-profiles"
@@ -11,6 +12,7 @@ export type RouteId =
   | "attention"
   | "categories"
   | "customers"
+  | "devices"
   | "inventory"
   | "payment-profiles"
   | "products"
@@ -40,6 +42,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
 ];
 
+/**
+ * Menu items that only exist while the offline runtime is on (a device is
+ * registered only then), so they are not part of the main menu above.
+ */
+export const OFFLINE_NAV_ITEMS: readonly NavItem[] = [
+  { href: "/devices", id: "devices", label: "Aparelhos" },
+];
+
 interface RouteDefinition {
   id: RouteId;
   /** The menu item shown as current; null keeps the menu without one. */
@@ -60,6 +70,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   },
   "/categories": { id: "categories", navId: "categories", title: "Categorias" },
   "/customers": { id: "customers", navId: "customers", title: "Clientes" },
+  "/devices": { id: "devices", navId: "devices", title: "Aparelhos" },
   "/inventory": { id: "inventory", navId: "inventory", title: "Estoque" },
   "/payment-profiles": {
     id: "payment-profiles",
