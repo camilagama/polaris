@@ -1,6 +1,6 @@
 # Polaris — acompanhamento da implementação
 
-Atualizado em 8 de outubro de 2026.
+Atualizado em 10 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -212,7 +212,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Revisão independente | Concluída, sem achados Critical/Important | Um achado Minor sobre registro incremental de fixtures foi corrigido; revisão final recomendou seguir. |
 | Check e build finais | Concluídos | `bun run check`: lint, formato, typecheck, boundaries, Knip e 79 testes em 13 arquivos passaram. `bun run build` passou nos oito workspaces. |
 | Draft PR e CI | Concluídos no commit de implementação | Draft PR [#22](https://github.com/camilagama/polaris/pull/22) publicado sobre `codex/pr23-tenant-audit`; CI 6/6 verde no commit `a1de720`. Continua draft e sem merge. |
-| Próxima etapa | Revisão do responsável | Aguardar revisão do PR #22. O PR24 completo — UI, archive/delete e leitura offline — fica adiado até a revisão deste checkpoint; schema e operações mínimos do slice serão reutilizados. |
+| Próxima etapa | PR24 em andamento | O responsável autorizou avançar antes da revisão humana do PR #22. PR24 fica empilhado sobre o PR22 draft; ambos permanecem sem merge até revisão. |
 ### PR23 — checkpoint para revisão
 
 | Subetapa | Status | Evidência / dependência |
@@ -227,6 +227,52 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Draft PR e CI remoto | Concluídos | [GitHub PR #21](https://github.com/camilagama/polaris/pull/21), draft empilhado sobre PR #20; os seis checks passaram no commit bab4ce7, incluindo o gate de navegador offline. |
 | Revisão do usuário | Pendente | PR #21 aguarda sua revisão; nenhum merge foi feito. |
 | Retenção e histórico de audit | Adiados | Sem expiração automática ou leitor de eventos; decidir retenção/legal hold e autorização de leitura antes do go-live. |
+
+### PR24 — Categories (em andamento; revisão humana pendente)
+
+| Subetapa | Status | Evidência / trabalho restante |
+| --- | --- | --- |
+| Sequência e worktree | Concluídos | Por autorização do responsável (“prossiga”), branch `codex/pr24-categories` foi criada sobre o head `afe056d` do PR22 antes da revisão humana. PR22 segue draft; PR24 será empilhado nele e nenhum dos dois será mesclado nesta etapa. |
+| Regras de catálogo | Definidas | Nomes únicos por organização ignorando caixa/espaços externos conforme resposta do responsável; rename em ativos/arquivados; archive reversível; tombstone terminal sem hard-delete. Produtos ainda não existem; PR25 deverá bloquear remoção com referência ativa. |
+| Schema e RPC | Implementados e aplicados à branch de teste | Migration 0013 adiciona lifecycle, índice único, policy/grant UPDATE sem DELETE físico; procedures create/list/rename/archive/restore/delete registram auditoria transacional. Aplicada na branch descartável `gate2-runtime-proof`, PostgreSQL 18.6. |
+| Read contract e UI | Implementados localmente | DTO estável com UUID, organização, nome, estado e timestamps serializados; tela de gestão responsiva com temas claro/escuro. Cache, comandos e sync offline e UI de login permanecem adiados. |
+| Verificação local | Concluída | `bun run check`: lint, format, types, boundaries, Knip e 91 testes em 14 arquivos passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou mudanças adicionais. |
+| Gate Neon PostgreSQL + Worker | Concluído | O gate PostgreSQL passou em 18.6: RLS/grants, isolamento cross-tenant, unicidade dentro da organização e nome repetido permitido entre organizações, lifecycle, auditoria, rollback e cascade. O gate Worker local passou autenticação, onboarding idempotente, capabilities, conflito/rename, lifecycle, leitura e auditoria. Produção não foi tocada. Uma primeira fixture de rename usou outra organização e foi corrigida; a falha inicial do Worker não se reproduziu no gate completo posterior. |
+| Cleanup da branch Neon | Pendente de expiração automática | Não restaram categorias, organizações ou memberships dos gates, nem roles temporárias `polaris_g2_*`. Um registro de usuário de teste `Gate 2 unverified` permanece sem memberships, sessões ou accounts, após uma execução anterior com falha de cleanup; a branch descartável expira automaticamente. Nenhum dado de produção foi alterado. |
+| Revisão independente | Concluída após correção | A revisão identificou que `maxLength` do HTML limita unidades UTF-16 e poderia truncar nomes com emojis. A documentação Zod 4.6.5 confirma que `.max()` conta code points; o contrato e a UI agora usam validação/contador explícitos alinhados ao domínio. Regressão RPC confirma 100 emojis aceitos e 101 rejeitados. Nenhum outro achado concreto foi reportado. |
+| Draft PR e CI | Concluídos no commit de implementação | [PR #23](https://github.com/camilagama/polaris/pull/23), draft empilhado sobre PR #22. Commit `3b387f5` publicado; GitHub Actions 6/6 passaram, incluindo o gate Playwright. PR permanece draft, sem conflito e sem merge. |
+
+### PR25 — Products (draft publicado; revisão do usuário pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Sequência e regra de variantes | Concluídas | PR25 adiciona a estrutura mínima de product_variants e cria a variante padrão na mesma transação do produto. PR26 foi atualizado para ampliar essa tabela e trocar a variante padrão por combinações atomicamente. Nomes repetidos são permitidos conforme decisão do responsável; não foi inventado limite de comprimento. |
+| Schema e migrations 0014/0015 | Concluídas | Migration 0014 cria products/product_variants com FKs compostas; migration 0015 adiciona índice `(organization_id, category_id)` para o guard de tombstone. Ambas aplicadas somente à branch Neon descartável PostgreSQL 18.6. |
+| Invariantes e RLS | Concluídos | RLS habilitado/forçado, policies e grants restritos; trigger diferido exige variante; categoria arquivada não recebe novos vínculos; tombstone é bloqueado enquanto produtos a referenciam. Gate PostgreSQL 18.6 passou após 0015; `pg_indexes` confirmou o novo índice; isolamento, UUIDv7, lifecycle/version, auditoria, rollback e cascade passaram. |
+| RPC, domínio e UI | Concluídos | Criar/listar/editar/arquivar/restaurar com capabilities, optimistic version e auditoria; página de produtos com criação, edição, categorias, status, loading/vazio/erro. Estoque, custo, preço, SKU, opções, mídia, escrita offline e exclusão de produto ficam adiados. |
+| Gate Worker | Concluído em branch descartável | Worker local autenticado provou onboarding, categorias e produtos, duplicatas, variante default, isolamento, lifecycle/version, bloqueio do tombstone e auditoria. A emulação local de Hyperdrive aponta timeout de conexão no SELECT de sessão; o harness usa override de 30 s, enquanto o default fora do gate permanece 5 s. |
+| Verificação local | Concluída após 0015 | `bun run check`: 101 testes em 17 arquivos; lint, format, typecheck, boundaries e Knip passaram. `bun run build` passou nos oito workspaces. `db:generate` não encontrou drift. |
+| Revisão independente | Concluída | A revisão apontou ausência de índice para o predicado do guard de tombstone. Migration 0015 corrigiu o caminho; a revisão focada do follow-up não encontrou achados. |
+| Draft PR e CI | Concluídos | [PR #24](https://github.com/camilagama/polaris/pull/24) está como draft, empilhado sobre [PR #23](https://github.com/camilagama/polaris/pull/23); CI 6/6 passou no commit `cb60ef7`, incluindo o gate Playwright. Permanece sem merge e aguarda revisão do responsável. |
+| Branch Neon descartável | Expiração automática | `gate2-runtime-proof` (`br-autumn-resonance-b6jkwg2y`) está no projeto `polaris-pr11-rls-gate`, PostgreSQL 18.6, São Paulo, e expira em 2026-10-09 13:02 (America/Sao_Paulo). Migrations 0014/0015 permanecem apenas nessa branch de teste. |
+
+### PR26 — Variants (implementado; publicação pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Regras de domínio | Concluídas | O responsável confirmou subconjuntos de Modelo/Cor/Tamanho; valores aparados, não vazios, preservando caixa e únicos por opção sem distinção de caixa; combinação completa e única; teto 50 no estado final da transação. PR26 configura uma vez; reconfiguração/remoção aguardam regras de preservação dos IDs para SKU/estoque. |
+| Worktree e baseline | Concluídos | Branch `codex/pr26-variants` criada sobre o head `8230577` do PR25. `bun install --frozen-lockfile`, `bun run check` (101 testes) e `bun run build` dos oito workspaces passaram antes da implementação. |
+| Domínio | Concluído | Normalização valida subconjuntos, valores únicos e combinações completas e não repetidas; 7 testes red-first passaram. Configuração inicial versionada e auditada; edição posterior está adiada. |
+| Schema, repositório e migration 0016 | Concluídos em branch descartável | Novas tabelas com FKs compostas tenant/product, RLS/grants mínimos, UUIDv7, posições estáveis e constraints diferidas. Migration aplicada somente à branch Neon `gate2-runtime-proof` (PostgreSQL 18.6). |
+| Contratos e RPC | Concluídos | `product.getVariants` exige `catalog:read`; `product.configureVariants` exige `product:update`, `expectedVersion` e audita a troca inicial do default. Testes RPC confirmam capabilities, versões e erros. |
+| UI | Concluída | Painel acessível seleciona opções, cadastra valores e combinações manualmente e lista variantes após configuração. Sem geração cartesiana; edição posterior adiada por preservação dos IDs. |
+| Verificação local | Concluída | `bun run check`: 111 testes em 18 arquivos; lint, format, typecheck, boundaries, Knip passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou drift. |
+| Gate Neon PostgreSQL 18 | Concluído | PostgreSQL 18.6 após a correção de leitura: RLS/grants, incluindo `FOR SHARE` com o papel runtime, e isolamento; troca default→combinações explícitas (3 de 4 possíveis); UUIDv7 e audit; configuração única; concorrência com um vencedor; teto final 50 aceito e 51 rejeitado; lifecycle, rollback e cascade. |
+| Gate Worker | Concluído | Runtime local autenticado passou onboarding e RPC de variantes: criação, configuração, releitura, audit, negação cross-tenant e conflito ao tentar reconfigurar. Fixtures temporárias limpas. |
+| Revisão independente | Concluída | Revisão sem blockers. O revisor identificou uma corrida entre a leitura do marcador e as consultas das variantes; `getProductVariants` agora trava a linha do produto com `FOR SHARE`, serializando a resposta com a configuração `FOR UPDATE`. O follow-up confirmou grants/RLS, compatibilidade com `READ COMMITTED` e efeito de espera breve sobre alterações concorrentes no produto. |
+| Draft PR e CI | Concluídos | [GitHub PR #25](https://github.com/camilagama/polaris/pull/25) publicado como draft, empilhado sobre PR #24; CI 6/6 verde no commit de código `e9f9f5a`; sem merge. |
+| Branch Neon descartável | Expiração automática | `gate2-runtime-proof` (`br-autumn-resonance-b6jkwg2y`) no projeto `polaris-pr11-rls-gate`, PostgreSQL 18.6, São Paulo, expira em 2026-10-09 13:02 (America/Sao_Paulo). Migration 0016 e fixtures de gate permanecem apenas nessa branch. |
+
 ## Publicação GitHub
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
@@ -248,4 +294,162 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 - PR20 está como draft em https://github.com/camilagama/polaris/pull/18, empilhado sobre PR19. `bun run check` passou com 58 testes; `bun run build` passou nos oito workspaces; CI remoto 6/6 verde no commit `f6e3cda`. O gate PG18 descartável verificou criação, retry idempotente, concorrência, email/timezone, privilégios runtime e limpeza. Revisão independente sem blockers. PR21 foi autorizado pelo usuário em 8 de outubro; o mapa local foi implementado e revisado sem blockers, com draft PR/CI pendentes.
 - PR21 está como draft em https://github.com/camilagama/polaris/pull/19, empilhado sobre PR20. O mapa owner→capabilities está centralizado no package domain; roles/capabilities desconhecidos falham fechado. `bun run check` passou com 62 testes; build dos oito workspaces passou; CI remoto 6/6 verde no commit `99d1860`; revisão independente sem blockers. PR22 foi implementado na branch `codex/pr22-tenant-context`; gate Neon PostgreSQL 18.6 e check/build locais passaram. O review encontrou e levou à remoção do INSERT runtime baseado em GUC; follow-up sem achados; draft PR #20 publicado e CI 6/6 verde no commit `17dff66`; revisão do usuário pendente. PR #19 permanece draft sem merge.
 - A etapa PR23 está como draft no [GitHub PR #21](https://github.com/camilagama/polaris/pull/21), empilhada sobre PR #20; bun run check (75 testes), build em oito workspaces, gate Neon PostgreSQL 18.6 e revisão independente passaram; CI remoto 6/6 passou no commit de código bab4ce7. Retenção/legal hold e leitor do histórico de audit permanecem adiados até antes do go-live; revisão do usuário pendente, sem merge.
+- PR25 Products está publicado como [GitHub PR #24](https://github.com/camilagama/polaris/pull/24), draft empilhado sobre PR #23; migration 0015, gate PostgreSQL 18.6 e revisão independente passaram; CI remoto 6/6 passou no commit `cb60ef7`. O PR aguarda revisão e segue sem merge.
+- PR26 Variants está publicado como [GitHub PR #25](https://github.com/camilagama/polaris/pull/25), draft empilhado sobre PR #24. `bun run check` passou com 111 testes; build dos oito workspaces, gate Neon PostgreSQL 18.6, gate Worker local e revisão independente passaram. CI remoto 6/6 verde no commit de código `e9f9f5a`. Configuração é inicial; edição/remoção aguardam decisão sobre referências de SKU/estoque. O PR segue sem merge.
+
+### PR27 — SKU (regras confirmadas; implementação em andamento)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Escopo documentado | Concluído | PR27 adiciona SKU opcional à variante, único por organização; o mesmo valor em organizações diferentes é permitido. Código de barras segue fora da V1. |
+| Normalização | Concluída | O responsável confirmou aparar espaços, tratar vazio como ausência, preservar a grafia e comparar sem distinção de caixa dentro da organização, sem limite inventado de tamanho/formato. |
+| Worktree e baseline | Concluídos | Branch `codex/pr27-sku` criada sobre o head `3633d3f` do PR26. `bun install --frozen-lockfile`, `bun run check` (111 testes) e `bun run build` nos oito workspaces passaram sem mudanças de código. |
+| Troca/limpeza de SKU | Concluída | O responsável confirmou atribuir, trocar ou limpar o SKU em uma variante existente; mudanças reais usam `expectedVersion` do produto, incrementam a versão, gravam auditoria e preservam o UUID da variante. |
+| SKU na variante padrão | Concluído | O responsável confirmou bloquear configuração de opções enquanto a variante padrão tiver SKU; ele deve ser limpo e atribuído à combinação correta após configurar. A camada de domínio e o banco rejeitam a exclusão que perderia esse SKU. |
+| Implementação | Concluída | Migration 0017, normalização, índice tenant-scoped case-insensitive, update column-level sob RLS, mutation versionada/auditada e edição dos SKUs no painel. Configuração da variante padrão é bloqueada enquanto houver SKU; o SKU precisa ser limpo antes de a configuração inicial substituí-la. |
+| Verificação local | Concluída | `bun run check`: 117 testes em 19 arquivos; lint, formatação, tipos, boundaries e Knip passaram. `bun run build` passou nos oito workspaces; `db:generate` não encontrou drift. |
+| Gate Neon PostgreSQL 18 | Concluído em branch descartável | A branch antiga `gate2-runtime-proof` expirou. Criada `pr27-sku-gate` no projeto `polaris-pr11-rls-gate`, região São Paulo, PostgreSQL 18.6, com auto-expiração em 2026-10-10 17:37 (America/Sao_Paulo). Migrations 0012–0017 foram aplicadas pelo SQL Editor e registradas no journal Drizzle. `poc:gate2:verify` passou: RLS/grants, onboarding, categorias, lifecycle, variantes, SKU, auditoria, concorrência, limite, rollback e cascade. Provas SQL adicionais passaram; fixtures, logins temporários e SKUs foram removidos, e a membership temporária foi revogada/restaurada. |
+| Gate Worker | Concluído localmente | `test:gate2-worker` terminou com exit code 0 na branch descartável. Passaram autenticação, onboarding, isolamento, categorias, produtos, variantes, SKU (normalização, conflito, troca/limpeza e auditoria) e lifecycle. Logins/fixtures temporários foram limpos; produção e recursos Cloudflare remotos não foram alterados. |
+| Revisão independente | Concluída | Revisão do commit `464d1c1` sem achados; o revisor confirmou consistência da migration/RLS, versionamento e auditoria atômicos, conflitos de unicidade, limpeza/reuso e bloqueio de perda do SKU padrão. |
+| Draft PR e CI | Concluídos | [PR #26](https://github.com/camilagama/polaris/pull/26) publicado em draft, empilhado sobre PR #25. CI remoto passou 6/6 nos commits `d1d945b` e `bc74545`; sem merge. |
+
+### PR28 — Inventory ledger (implementação e gates concluídos; draft PR #27 aberto; revisão do usuário pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Regras confirmadas | Concluídas | O responsável confirmou um saldo por organização e variante, sem locais/depósitos; variante sem movimentos lê como quantidade zero. Também confirmou bloquear a configuração inicial depois de qualquer movimento na variante padrão, preservando UUID e histórico sem transferência presumida. |
+| Worktree e baseline | Concluídos | Branch `codex/pr28-inventory` criada sobre `codex/pr27-sku`; `bun install --frozen-lockfile`, `bun run check` (117 testes) e `bun run build` nos oito workspaces passaram antes das mudanças. |
+| Modelo e implementação | Concluídos | Schema, migration 0018, RLS/grants, projeção lazy e primitivo interno de movimento+saldo+audit em transação tenant-scoped; sem UI/RPC nem command genérico. Os commands `receiveStock`, `writeOffStock` e `inventoryCount` seguem para PR29–31; custo médio e rounding para PR29. |
+| Verificação local | Concluída | `bun run check`: 122 testes, lint, formato, typecheck, boundaries e Knip passaram; `bun run build`: oito workspaces passaram. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration aplicada e gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`; verificou RLS/grants, rollback atômico, concorrência, saldo não negativo, isolamento, ledger append-only e bloqueio da variante padrão mesmo após saldo voltar a zero. A branch expira automaticamente em 2026-10-10 18:47 BRT; as fixtures são sintéticas e ficam nela até expirar. |
+| Purge físico com histórico | Adiado | ON DELETE RESTRICT e ledger append-only bloqueiam purge físico de organização com movimentos. PR107 precisa definir e validar um caminho privilegiado compatível com retenção/deletion ledger antes do go-live. |
+| Revisão independente | Concluída | Revisor independente sem achados; confirmou as transações, RLS, grants, proteção de histórico, gate PostgreSQL 18 e a dependência de purge registrada para PR107. |
+| Draft PR e CI remoto | Concluídos | [PR #27](https://github.com/camilagama/polaris/pull/27), draft empilhado sobre PR #26; CI remoto 6/6 passou no commit `5043a51`; sem merge. |
+| Revisão do usuário | Pendente | PR #27 aguarda revisão; não será mergeado sem autorização. |
+
+### PR29 — Receive stock (implementação, gates e CI concluídos; PR #28 draft; revisão pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base isolada | Concluída | Branch local codex/pr29-recovery baseada no head c9f94a1 do PR #27; alterações de PR29 isoladas da branch principal. |
+| Política monetária e data de ocorrência | Concluída | Custo unitário/médio com até 18 dígitos inteiros e 6 casas, aritmética decimal exata e half-up após cada recebimento; occurredOn é data de calendário e a média segue a ordem de confirmação no servidor. ADR 0008 registra a escolha. |
+| Compatibilidade de histórico anterior | Concluída | PR28 podia criar receipts internos sem custo; a migration 0020 usa CHECK NOT VALID para preservar linhas append-only existentes sem inventar valoração. PostgreSQL ainda aplica a constraint aos novos writes. ADR 0009 documenta o comportamento. |
+| Implementação | Concluída | receiveStock valida data/custo/quantidade, calcula custo médio exato, persiste custo e metadados idempotentes, grava ledger+saldo+audit na mesma transação e exige inventory:adjust. O writer genérico rejeita receipts; migrations 0019–0020 acrescentam campos e constraints. |
+| Verificação local | Concluída | bun run check: lint, formato, typecheck nos oito workspaces, boundaries, Knip e 135 testes passaram. bun run build: oito workspaces passaram; Wrangler emitiu aviso EPERM ao gravar log local, mas o build terminou com exit code 0. |
+| Revisão independente | Concluída | A revisão encontrou risco de compatibilidade com receipts PR28 sem custo; migration 0020 foi alterada para NOT VALID e o gate agora prova compatibilidade do histórico e rejeição de novos receipts inválidos. Revisor não encontrou outros achados críticos/importantes. |
+| Gate Neon PostgreSQL 18 | Concluído | O gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`; migrations 0019–0020 aplicadas e 19 verificações passaram, incluindo RLS/grants, rollback atômico, idempotência, custo médio half-up, concorrência sem saldo negativo, append-only, proteção de variantes com histórico e auditoria. O resultado reportou 15 movimentos; fixtures sintéticas permanecem até a expiração automática da branch em 2026-10-10 18:47 BRT. A branch schema-only `pr29-receive-stock-gate`, sem dados, também permanece até 2026-10-10 23:58 BRT e não foi usada neste gate. |
+| Saldo positivo com custo desconhecido | Adiada | receiveStock bloqueia o recebimento se o saldo for positivo e o custo médio nulo. PR31 deve definir a valoração da contagem inicial; nenhum custo histórico é presumido. |
+| Push e PR draft | Concluídos | Branch `codex/pr29-receive-stock` publicada e [PR #28](https://github.com/camilagama/polaris/pull/28) aberto em draft contra `codex/pr28-inventory` (PR #27); os dois commits locais estão no PR. Nenhum merge foi feito. |
+| CI remoto | Concluído | GitHub Actions run #70 passou 6/6 no commit `d3113cc`: build, Knip, lint/boundaries, typecheck, 135 unit tests e offline persistence browser gate. |
+| Revisão do usuário | Pendente | PR #28 segue em draft e aguarda revisão; nenhum merge será feito sem autorização. |
+
+### PR30 — Write-off stock (implementação, gate remoto e CI concluídos; revisão do usuário pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Worktree e baseline | Concluídos | Worktree isolado `D:\2 - Dev\2 - Worktree\pr30-write-off\polaris`, branch `codex/pr30-write-off-stock` baseada no commit `5ed1f5d` do PR #28; dependências instaladas do lockfile. O CI de base passou 6/6. |
+| Motivo estruturado | Concluído | Usuário confirmou a lista fechada `damaged`, `expired`, `lost`, `stolen`, `internal_use`, `other`, com nota obrigatória para `other`. |
+| Data de ocorrência | Concluída | Usuário confirmou `occurredOn` obrigatório como data de calendário da organização, seguindo `receiveStock`. |
+| Valoração da baixa | Proposta para revisão | Implementação proposta preserva a média móvel, captura o snapshot unitário quando conhecido, permite baixar saldo sem custo conhecido com snapshot nulo e não cria lançamento de despesa. Decisão está em ADR 0010. |
+| Implementação | Concluída | `writeOffStock` nomeado grava ledger, saldo, audit e metadados na transação tenant-scoped; writer genérico rejeita write-offs. Contrato RPC, validação/versionamento, idempotência, motivo estruturado, snapshot de custo e compatibilidade append-only estão cobertos. Migration 0021 adiciona motivo/nota e constraint `NOT VALID`, preservando baixas históricas sem metadados. |
+| Revisão independente | Concluída | Sem achados restantes após fechar limite de nota em 500 pontos de código, equivalência do trimming Unicode entre JS e PostgreSQL e status proposto da valoração no ADR. |
+| Verificação local | Concluída | `bun run db:generate` não encontrou drift; `bun run check` passou com 144 testes; `bun run build` passou nos oito workspaces. O build foi repetido isoladamente após uma corrida transitória com a fixture temporária de boundaries do check. |
+| Gate Neon PostgreSQL 18 | Concluído | Migration 0021 aplicada; gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`. Verificou RLS/grants, motivo/data/nota, limite e trimming Unicode, snapshot de custo, replay/conflito, saldo não negativo, custo desconhecido, concorrência, isolamento e audit. Resultado: 18 movimentos; fixtures sintéticas permanecem até a expiração automática da branch em 2026-10-10 18:47 BRT. |
+| Push e PR draft | Concluídos | Branch `codex/pr30-write-off-stock` publicada; [PR #29](https://github.com/camilagama/polaris/pull/29) aberto em draft, empilhado sobre PR #28. |
+| CI remoto | Concluído na revisão atual | GitHub Actions passou 6/6 no commit `8826a63` (build, Knip, lint/boundaries, typecheck, testes unitários e offline browser gate). |
+| Revisão do usuário | Pendente | Revisar a proposta de valoração em ADR 0010 e o PR draft; decisão sobre custo permanece proposta, não aprovada. |
+
+### PR31 — Inventory count (implementação e publicação concluídas; CI passou; gate remoto e revisão pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base isolada | Concluída | Branch `codex/pr31-inventory-count` criada em clone isolado; a branch principal permaneceu intacta. |
+| Contrato e concorrência | Concluídos | `inventory.getBalance` expõe a versão do saldo; `inventoryCount` exige `expectedVersion`, quantidade física absoluta e identidade idempotente. A checagem ocorre sob lock da variante; versões antigas conflitam. |
+| Evento de contagem sem diferença | Concluído | Delta zero é persistido como `inventory_count`, auditado e incrementa a versão do saldo; replay compara quantidade absoluta e versão originais, inclusive após comandos posteriores. |
+| Valoração | Proposta para revisão | Custo conhecido é preservado; custo desconhecido permanece `NULL` salvo `valuationUnitCost` explícito em uma contagem positiva. Custo zero não é presumido; recebimentos continuam bloqueados com saldo positivo sem valoração. Decisão está no ADR 0011, proposto. |
+| Migration 0022 | Implementada localmente | Armazena quantidade física, versão esperada e input de valoração explícita separado do snapshot efetivo; CHECKs `NOT VALID` preservam movimentos `inventory_count` históricos append-only e impedem valoração explícita com quantidade física zero. Aplicação em Neon ainda pendente. |
+| Revisão independente | Concluída | O revisor encontrou replay que podia omitir uma valoração explícita; input separado e comparação idempotente foram adicionados. Também identificou e verificou a constraint DB contra valuation explícita com quantidade zero; sem achados restantes no follow-up. |
+| Verificação local | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 154 testes em 25 arquivos. |
+| Build local | Concluído | `bun run build` passou nos oito workspaces após a implementação. Wrangler exibiu `EPERM` ao gravar log local, mas o build terminou com exit code 0. |
+| Perfis de CLI | Corrigidos | A política separa as identidades: Cloudflare `junior-pessoal` → `contato.juniordiniz@gmail.com`; Neon `junior-pessoal` → `juniordiniz56@gmail.com`. O runbook em `docs/runbooks/cli-profile-policy.md` é a fonte autoritativa; Neon plugin conectado continua fora de uso. |
+| Gate Neon PostgreSQL 18 | Pendente | Migration 0022 ainda não foi aplicada. A URL de conexão anterior não foi reutilizada; para provar migration, RLS, idempotência e concorrência é necessária uma branch descartável acessível. O caminho pelo console Neon não ficou disponível nesta sessão. |
+| UI de contagem | Adiada | O PR31 no plano define o command e os dados, mas não especifica fluxo/tela de contagem; não inventar interação visual sem critério de aceite. |
+| Push e PR draft | Concluídos | Branch `codex/pr31-inventory-count` publicada e [PR #30](https://github.com/camilagama/polaris/pull/30) aberto em draft contra `main`. Nenhum merge foi feito. |
+| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `95dbc20`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. O PR está limpo e mergeable, mas permanece draft. |
+| Revisão do usuário | Pendente | Revisar o PR #30 e ADR 0011, especialmente a proposta de `valuationUnitCost` opcional. Nenhum merge será feito sem autorização. |
+
+### PR32 — Archive/delete catalog (implementação, revisão estática, verificações locais e remotas, publicação e CI concluídos; revisão do usuário pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base isolada | Concluída | Branch codex/pr32-archive-catalog criada sobre o head 95dbc20 do PR31; branch principal e PR31 permaneceram intactos. |
+| Correção da identidade Neon | Concluída | O perfil `junior-pessoal` usa `juniordiniz56@gmail.com`, confirmado por `neon me` antes do gate. As operações de banco ficaram restritas à branch descartável `pr32-archive-catalog-gate`. |
+| Regra de tombstone | Confirmada | Usuário aprovou tombstone terminal com saldo agregado zero, mesmo havendo movimentos históricos; preservar variantes, UUIDs, SKUs, ledger, vínculos e auditoria; saldo positivo bloqueia. |
+| Archive/restore | Reutilizados | Já implementados no PR25. PR32 não os duplica; adiciona somente o comando terminal de remoção lógica. |
+| Domínio e RPC | Implementados localmente | product.delete exige expectedVersion, atualiza lifecycle e auditoria na transação; repetição é idempotente. Produto tombstoned não admite restore, edição, SKU, configuração de variante ou novos movimentos; leitura histórica e replay permanecem válidos. |
+| Migration 0023 | Aplicada e validada | `drizzle-kit migrate` aplicou as migrations pendentes 0019–0023 na branch Neon descartável `pr32-archive-catalog-gate`; `bun run db:generate` não encontrou drift. |
+| Gate PostgreSQL | Implementado localmente | verify-inventory-gate.ts agora cobre tombstone com histórico e saldo zero, bloqueio de saldo positivo, proteção SQL direta, replay idempotente e corrida entre recebimento e tombstone. |
+| Verificação local | Concluída | bun run check passou: lint, formatação, typecheck nos oito workspaces, boundaries, Knip e 157 testes em 25 arquivos. O check precisou rodar fora do sandbox devido a paths temporários inacessíveis do Vitest no sandbox do Windows. |
+| Build local | Concluído | bun run build passou nos oito workspaces. |
+| Gate Neon PostgreSQL 18 | Concluído | Gate passou em PostgreSQL 18.6 na branch `pr32-archive-catalog-gate`, derivada de `production`, com 26 movimentos e todos os cenários listados aprovados. A branch expira em 2026-10-10 13:00 BRT; fixtures sintéticas permanecem até a expiração. A connection string ficou somente no ambiente do processo. |
+| UI de exclusão | Adiada | O plano não define affordance nem confirmação para uma ação terminal; archive/restore continuam como já implementados. |
+| Revisão independente | Concluída sem achados | Revisão do diff `95dbc20..b3781fd`: nenhum achado crítico, importante ou menor. O gate PostgreSQL 18 passou na branch descartável `pr32-archive-catalog-gate`. |
+| Push e PR draft | Concluídos | Branch `codex/pr32-archive-catalog` publicada; [PR #31](https://github.com/camilagama/polaris/pull/31) aberto em draft sobre `codex/pr31-inventory-count` (PR #30). Nenhum merge foi feito. |
+| CI remoto | Concluído | GitHub Actions passou 6/6 no commit `5c3704a`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. |
+### PR33 — Media schema (implementação, revisão independente, checks locais, gate Neon, publicação e CI concluídos; revisão do usuário pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Branch isolada | Concluída | `codex/pr33-media-schema` foi criada sobre o head `d0c6640` do PR32; ainda local, sem push. |
+| Decisões de domínio | Confirmadas | Assets são por organização e vinculam a no máximo um produto; `variant_media` reutiliza o asset do mesmo produto. As tabelas de associação têm `position` ordenada, sem semântica separada de capa. |
+| Migration 0024 | Implementada e aplicada | `media_assets`, `product_media` e `variant_media` com UUIDv7, FKs compostas, unicidade por produto/posição e `ON DELETE RESTRICT`. Storage/provider metadata e upload ficam para PR34. |
+| RLS e grants | Concluídos | FORCE RLS nas três tabelas; runtime recebe somente SELECT neste schema-only PR. Triggers sincronizam escrita de associações com a linha do produto e bloqueiam mutações após tombstone. |
+| Gate Neon PostgreSQL 18 | Concluído | Gate passou em PostgreSQL 18.6 na branch descartável `pr33-media-schema-gate`, derivada de `production`; oito grupos de cenário passaram. A branch expira em 2026-10-11 às 13:00 BRT; fixtures são sintéticas e permanecem até a expiração. URLs ficaram somente no ambiente dos processos. |
+| Verificação local | Concluída | `bun run check` passou com 157 testes em 25 arquivos; lint, formato, typecheck, boundaries e Knip também passaram. `bun run db:generate` não encontrou drift. |
+| Build local | Concluído | `bun run build` passou nos oito workspaces (exit code 0). Wrangler mostrou `EPERM` somente ao gravar log fora do repositório. |
+| Upload, locator e metadata | Adiados | PR33 não faz upload e não persiste provider-specific fields; pipeline Cloudflare Images → WebP → R2 fica para PR34; derivados e cleanup para PR35. R2 permanece privado. |
+| Quotas Free/Pro | Adiadas | `PRODUCT.md` classifica os limites como hipóteses ajustáveis; PR33 não fixa contagens em constraints. Enforcement fica no modelo de entitlements. |
+| Revisão independente | Concluída sem achados | Revisão do diff `d0c6640..caf8824`: nenhum achado Critical, Important ou Minor; migration 0024, RLS/grants, guard de tombstone e gate revisados. |
+| Push, PR draft e CI remoto | Concluídos | Branch `codex/pr33-media-schema` publicada; [PR #32](https://github.com/camilagama/polaris/pull/32) aberto em draft sobre `codex/pr32-archive-catalog` (PR #31). CI passou 6/6 no commit `5e66fba`: build, Knip, lint/boundaries, typecheck, testes unitários e offline persistence browser gate. Nenhum merge foi feito. |
+| Revisão do usuário | Pendente | Revisar o PR33 draft e ADR 0013 depois da publicação. Nenhum merge será feito sem autorização. |
+
+### PR34 — Upload/crop pipeline (implementação, gates, preview e validação no iPhone concluídos; revisão do PR pendente)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Branch isolada | Concluída | `codex/pr34-media-upload` criada no clone de trabalho sobre `codex/pr33-media-schema`; `main` permaneceu intacta. |
+| HEIC, recorte e saída | Concluídos localmente | Conversão HEIC/HEIF para JPEG no navegador, com fallback `<img>` para Safari; seleção de recorte por arraste/toque e teclado; recorte normalizado; Cloudflare Images configurado para WebP quality 85, limite de 1200 px e `scale-down` sem ampliação. |
+| Migration 0025 e RLS/grants | Concluídos | Metadados de storage, tamanho, MIME, dimensões, fingerprint e upload command; runtime recebe `SELECT` e `INSERT`, sem `UPDATE`/`DELETE`; asset exige associação ao produto por trigger deferred. Migration aborta com mensagem explícita se `media_assets` já contiver linhas sem metadados migráveis. `bun run db:generate` não encontrou drift. |
+| Rotas, repositório e painel | Concluídos localmente | Upload binário autenticado e tenant-scoped, leitura privada, fingerprint idempotente, posições append-only, auditoria e associação do mesmo asset a variantes do produto. IDs de variante são validados antes do R2. A chave R2 contém organização, produto, comando e fingerprint. Rejeições determinísticas antes do commit removem o objeto recém-criado; falhas ambíguas de commit podem deixar objeto privado órfão, cuja reconciliação geral fica para PR35. |
+| Gate Neon PostgreSQL 18 | Concluído | `0025` aplicada e gate passou em PostgreSQL `18.6` na branch descartável `pr34-media-upload-gate`, projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Verificou RLS/grants, inserts tenant-scoped, replay/conflito, mesma imagem associada a duas variantes do produto, bloqueio de associação do asset a outro produto, auditoria, constraints, asset órfão, cross-tenant em `media_assets`, `product_media` e `variant_media`, tombstone e imutabilidade. A branch expira em `2026-10-11 13:00 BRT`; fixtures sintéticas ficam até a expiração. URLs não foram registradas. |
+| Verificação local | Concluída | `bun run check`: lint, formatação, tipos, boundaries, Knip e 189 testes em 30 arquivos passaram. |
+| Build local | Concluído | `bun run build` passou nos oito workspaces. |
+| Gate real Cloudflare Images/R2 | Concluído com ressalva registrada | O perfil `junior-pessoal` foi confirmado pela CLI `cf` como `contato.juniordiniz@gmail.com`; todos os comandos Cloudflare desta etapa usaram `--profile junior-pessoal`. A instalação global `cf` beta12 falhava ao iniciar `cf dev --remote` com `spawn EFTYPE`; `cf@1.0.0-beta.14` em execução isolada contornou o problema. Após o responsável habilitar R2 no Dashboard, `cf r2 buckets create --name polaris-media --profile junior-pessoal` criou o bucket. Workers temporários provaram Images e R2 separadamente e combinados: JPEG sintético 320×240 com crop central virou WebP 160×120, 292 bytes, assinatura RIFF/WEBP; R2 passou put/get, metadados, delete e confirmação de remoção. No teste combinado instrumentado, tanto o fluxo com resultado textual quanto o fluxo que gravou bytes WebP passaram e os objetos foram lidos e removidos. Uma primeira tentativa combinada respondeu HTTP 404/código 1042; o erro não se reproduziu no retry instrumentado e sua causa exata permanece desconhecida. Os Workers foram removidos; os prefixos de gate ficaram vazios. O bucket permanente `polaris-media` permanece criado e vazio. |
+| Preview completo da aplicação | Concluído; recursos temporários removidos | O Worker `polaris-pr34-upload-preview` foi publicado com `cf@1.0.0-beta.14 --profile junior-pessoal` usando uma cópia isolada. A migração Wrangler→`cloudflare.config.ts` e o plugin Vite v2 beta ficaram somente nessa cópia; checkout e lockfile do PR não mudaram. Hyperdrive temporário `d146d27dfa3c40afb4637313b5477bbc` apontou para a branch descartável PR34 com o role `polaris_pr11_runtime`; o Worker usou R2 `polaris-media` e Images. Smoke headless confirmou sessão Better Auth, catálogo e painel “Imagens”, sem erros de página/RPC. Após o teste manual, o Worker (incluindo versões, deployments e secrets) e o Hyperdrive foram excluídos. O endpoint retorna 404, e a lista de Hyperdrive mantém apenas a configuração anterior do PR11. |
+| Safari/iPhone | Concluído pelo responsável | No iPhone 12/iOS 26.6.2, em navegação Safari normal, o responsável confirmou que o fluxo de seleção HEIC, conversão, recorte, envio e exibição da miniatura funcionou como esperado, sem erros. O único objeto R2 do fixture foi apagado e o prefixo da organização ficou vazio; o bucket permanente `polaris-media` permanece criado e vazio. Usuário, organização, produto, sessão, associações de mídia e auditoria do fixture foram removidos da branch Neon; os demais fixtures do gate anterior não foram tocados. |
+| Revisão independente | Concluída | Duas revisões estáticas corrigiram o gesto sem arraste, validação de variante pós-R2, cobertura cross-tenant de `variant_media` e compensação para rejeições determinísticas após storage. A reconciliação de falhas ambíguas permanece agendada para PR35. |
+| Push da branch | Concluído | `codex/pr34-media-upload` publicada em `origin` sobre `codex/pr33-media-schema`; [PR #33](https://github.com/camilagama/polaris/pull/33) permanece em draft. |
+| Draft PR e CI remoto | Concluídos | O workflow `38072317058` passou 6/6 no commit `a4d8708`: build, browser gate offline, unit tests, typecheck, lint/boundaries e Knip. Este checkpoint só altera documentação; PR #33 permanece draft e nenhum merge foi feito. |
+| Revisão do usuário | Pendente | Revisar as regras documentadas, o diff do PR34 e os gates pendentes antes de qualquer merge. |
+
+### PR35 — Derivatives e media cleanup (PR #34 em draft; correção da migration e gate PG18 concluídos; review/CI pendentes)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Branch/worktree isolada | Concluída localmente | Worktree `D:\\2 - Dev\\2 - Worktree\\pr35-media-derivatives\\polaris`, branch `codex/pr35-media-derivatives`, baseada no head `87cbc27` do PR34. O checkout principal permaneceu intacto. |
+| Derivados 320/640 | Implementados | Derivação sob demanda via Cloudflare Images, `scale-down`, sem upscale, WebP quality 85; keys `media/derivatives/v1/{assetId}/{size}.webp`. A rota continua tenant-authorized e entrega privada `no-store`. O painel atual solicita o derivado 320. |
+| Tentativas físicas e staging | Implementados | Chave master v2 inclui UUID exclusivo por tentativa. Marker privado `media/staging/v1/{UTC}/{attemptId}.json` é gravado antes do master e removido após commit confirmado; falhas mantêm o marker. |
+| Migration 0026, lock e grants | Corrigida; replay PG18 passou | O replay Neon revelou que `ALTER FUNCTION OWNER` exige SET ROLE, os REVOKEs precisam executar como owner e o trigger precisa ser criado antes de retirar EXECUTE do migrator. A migration agora concede SET temporário, transfere ownership, instala o trigger na mesma transação, usa `SET ROLE polaris_media_cleanup_owner` para revogar PUBLIC/tenant e conceder claim só ao cleanup, depois reseta e revoga o SET explícito. ACL pós-migration verificada: tenant/PUBLIC sem EXECUTE, cleanup só no claim, owner sem SET residual. |
+| Escopo de purge futuro | Adiado | PR35 não adiciona hard-delete de assets. A futura purge física deve remover também `media/derivatives/v1/{assetId}/`; o tombstone de produto atual preserva assets. |
+| Gate Neon PostgreSQL 18 | Concluído após correção | Replay 0000–0026 e verificador passaram em PostgreSQL 18.6 na branch schema-only `pr36-customers-gate`, projeto `green-tooth-16857010`, perfil `junior-pessoal` / `juniordiniz56@gmail.com`. Dez verificações confirmaram FORCE RLS, owner/ACLs sem EXECUTE de PUBLIC/tenant, claim só no cleanup runtime, idempotência, bloqueio de insert após claim e corrida real insert/cleanup. Login de teste removido; fixtures sintéticas permanecem até expiração automática `2026-10-11 15:00 UTC`. |
+| Gate Cloudflare Images/R2/Hyperdrive | Concluído | Perfil `junior-pessoal` confirmado como `contato.juniordiniz@gmail.com`; comandos usaram o perfil explicitamente. Um JPEG sintético 1600×1200 virou master WebP 1200×900 e derivados 320×240 e 640×480; os dois caches passaram put/get com bytes iguais. O reconciliador remoto apagou um master órfão e seu marker via Hyperdrive cleanup, sem falhas. |
+| Teardown remoto | Concluído e verificado | Worker e preview removidos; `cf workers list` e a lista de previews voltaram vazias. Hyperdrive temporário foi removido; a lista mantém somente a configuração anterior do PR11. As roles/login de cleanup de teste foram removidas da branch Neon. Os prefixes R2 `media/staging/v1/`, `media/derivatives/v1/` e `media/v2/` estão vazios; o bucket privado permanente permanece criado. |
+| Observação do preview | Registrada | Deploy comum retornou HTTP 1042 quando a rota `workers.dev` não estava ativa; o Preview temporário serviu os endpoints autenticados do gate. A URL raiz `/health` do preview mínimo serviu a página estática 404; `/gate?stage=image`, `r2`, `database` e o fluxo completo responderam 200. |
+| Verificação local final | Concluída | `bun run check` passou: lint, formatação, typecheck nos oito workspaces, import boundaries, Knip e 203 testes em 31 arquivos. `bun run build` passou nos oito workspaces; `bun run --filter @polaris/db db:generate` confirmou que não há drift. |
+| Revisão independente | Repetir após correção | A revisão do diff `87cbc27..1f7262a` foi limpa, mas precede a correção de owner/ACL da migration 0026. |
+| Push e PR draft | PR existente; follow-up local | Branch `codex/pr35-media-derivatives` e [PR #34](https://github.com/camilagama/polaris/pull/34) continuam em draft sobre `codex/pr34-media-upload` (PR #33). O follow-up da migration ainda não foi publicado; sem merge ou deploy de produção. |
+| CI remoto | Nova execução pendente | Os runs `38094938994` e `38095066531` passaram 6/6 no código anterior. O novo fix ainda precisa ser revisado, enviado e validado pelo CI. |
+| Revisão do usuário | Pendente | Revisar o diff, ADR 0014, migration 0026 e evidências dos gates antes de qualquer merge. |
+
+
 Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para revisão.

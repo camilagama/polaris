@@ -4,7 +4,7 @@
 - No onboarding V1, uma regra de domínio limita o usuário a uma organização; a chave de membership é `(organization_id, user_id)` e o modelo permite múltiplas organizações no futuro.
 - A criação de organização exige email verificado e valida essa condição no servidor; ver [authentication.md](authentication.md).
 - A criação V1 começa com membership `owner` e `active`; o banco limita os valores atuais a esses estados até uma migration adicionar novos valores. Autorização é verificada por capabilities, não pelo papel informado pelo cliente.
-- No mapa V1, `owner` recebe `catalog:read`, `product:create`, `product:update`, `inventory:adjust`, `sale:create`, `customer:update`, `expense:create`, `organization:manage` e `category:create`. Roles ou capabilities desconhecidos não concedem acesso.
+- No mapa V1, `owner` recebe `catalog:read`, `product:create`, `product:update`, `inventory:adjust`, `sale:create`, `customer:update`, `expense:create`, `organization:manage`, `category:create` e `category:manage`. Roles ou capabilities desconhecidos não concedem acesso.
 - Os estados de organização são `active`, `suspended` e `closed`. Estados de billing como `free`, `trialing` e `past_due` não são estados da organização.
 - A V1 opera em BRL. Cada organização tem timezone IANA confirmado no onboarding; o servidor valida esse valor, enquanto instantes técnicos são UTC.
 - `createInitialOrganization()` é idempotente por usuário: após obter lock transacional, retorna a organização existente sem alterá-la, inclusive em retry com payload diferente. Requests simultâneas para o mesmo usuário não podem criar outra. Se houver mais de um membership preexistente, a operação falha fechado para revisão de dados.

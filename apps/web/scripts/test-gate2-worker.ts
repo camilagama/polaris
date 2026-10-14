@@ -45,6 +45,29 @@ function redact(value: string): string {
   return result;
 }
 
+function summarizeError(error: unknown): string {
+  const visited = new Set<object>();
+  const details: string[] = [];
+  let current = error;
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      break;
+    }
+    visited.add(current);
+    const candidate = current as {
+      cause?: unknown;
+      code?: unknown;
+      message?: unknown;
+      name?: unknown;
+    };
+    details.push(
+      `${String(candidate.name ?? "Error")}[${String(candidate.code ?? "-")}]: ${String(candidate.message ?? "")}`
+    );
+    current = candidate.cause;
+  }
+  return redact(details.join(" <- ")).slice(-2000);
+}
+
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -124,7 +147,17 @@ async function createTemporaryLogin(
   try {
     const result = await rolePool.query<{
       categoryInsert: boolean;
+      categoryDelete: boolean;
       categorySelect: boolean;
+      categoryUpdate: boolean;
+      productSelect: boolean;
+      productInsert: boolean;
+      productUpdate: boolean;
+      productDelete: boolean;
+      variantSelect: boolean;
+      variantInsert: boolean;
+      variantUpdate: boolean;
+      variantDelete: boolean;
       currentUser: string;
       functionExecute: boolean;
       member: boolean;
@@ -133,6 +166,16 @@ async function createTemporaryLogin(
         "pg_has_role(current_user, $1, 'MEMBER') AS member, " +
         "has_table_privilege(current_user, 'public.categories', 'SELECT') AS \"categorySelect\", " +
         "has_table_privilege(current_user, 'public.categories', 'INSERT') AS \"categoryInsert\", " +
+        "has_table_privilege(current_user, 'public.categories', 'UPDATE') AS \"categoryUpdate\", " +
+        "has_table_privilege(current_user, 'public.categories', 'DELETE') AS \"categoryDelete\", " +
+        "has_table_privilege(current_user, 'public.products', 'SELECT') AS \"productSelect\", " +
+        "has_table_privilege(current_user, 'public.products', 'INSERT') AS \"productInsert\", " +
+        "has_table_privilege(current_user, 'public.products', 'UPDATE') AS \"productUpdate\", " +
+        "has_table_privilege(current_user, 'public.products', 'DELETE') AS \"productDelete\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'SELECT') AS \"variantSelect\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'INSERT') AS \"variantInsert\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'UPDATE') AS \"variantUpdate\", " +
+        "has_table_privilege(current_user, 'public.product_variants', 'DELETE') AS \"variantDelete\", " +
         "EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace " +
         "WHERE n.nspname = 'public' AND p.proname = 'create_initial_organization' " +
         "AND has_function_privilege(current_user, p.oid, 'EXECUTE')) AS \"functionExecute\"",
@@ -144,13 +187,69 @@ async function createTemporaryLogin(
     assert.equal(row.member, true);
     if (baseRole === "polaris_pr11_runtime") {
       assert.deepEqual(
-        [row.categorySelect, row.categoryInsert, row.functionExecute],
-        [true, true, false]
+        [
+          row.categorySelect,
+          row.categoryInsert,
+          row.categoryUpdate,
+          row.categoryDelete,
+          row.productSelect,
+          row.productInsert,
+          row.productUpdate,
+          row.productDelete,
+          row.variantSelect,
+          row.variantInsert,
+          row.variantUpdate,
+          row.variantDelete,
+          row.functionExecute,
+        ],
+        [
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          false,
+          true,
+          false,
+        ]
       );
     } else {
       assert.deepEqual(
-        [row.categorySelect, row.categoryInsert, row.functionExecute],
-        [false, false, true]
+        [
+          row.categorySelect,
+          row.categoryInsert,
+          row.categoryUpdate,
+          row.categoryDelete,
+          row.productSelect,
+          row.productInsert,
+          row.productUpdate,
+          row.productDelete,
+          row.variantSelect,
+          row.variantInsert,
+          row.variantUpdate,
+          row.variantDelete,
+          row.functionExecute,
+        ],
+        [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          true,
+        ]
       );
     }
   } catch (error) {
@@ -222,6 +321,8 @@ function workerEnvironment(
   }
 
   return {
+    // Local Hyperdrive emulation opens direct Neon connections during cold start.
+    AUTH_DATABASE_CONNECT_TIMEOUT_MS: "30000",
     ...environment,
     BETTER_AUTH_BASE_URL: baseURL,
     BETTER_AUTH_SECRET: secret,
@@ -485,16 +586,27 @@ async function main() {
 
     await assert.rejects(
       anonymousClient.category.list({ organizationId: randomUUID() }),
-      (error: unknown) => hasRpcCode(error, "UNAUTHORIZED")
+      (error: unknown) => hasRpcCode(error, "UNAUTHORIZED"),
+      "anonymous category list must be unauthorized"
     );
+    console.log("gate2_worker_anonymous_denial=passed");
 
-    const organizationA = await clientA.organization.createInitial({
-      name: "Gate 2 Tenant A",
-      timezone: "America/Sao_Paulo",
-    });
+    const organizationA = await clientA.organization
+      .createInitial({
+        name: "Gate 2 Tenant A",
+        timezone: "America/Sao_Paulo",
+      })
+      .catch((error: unknown) => {
+        console.error(
+          "gate2_worker_organization_a_error",
+          summarizeError(error)
+        );
+        throw error;
+      });
     fixtureOrganizations.push(organizationA.organization.id);
     assert.equal(organizationA.created, true);
     assert.equal(organizationA.organization.currency, "BRL");
+    console.log("gate2_worker_organization_a=passed");
 
     const retryA = await clientA.organization.createInitial({
       name: "Changed retry",
@@ -503,48 +615,470 @@ async function main() {
     assert.equal(retryA.created, false);
     assert.equal(retryA.organization.id, organizationA.organization.id);
     assert.equal(retryA.organization.name, "Gate 2 Tenant A");
+    console.log("gate2_worker_onboarding_retry=passed");
 
     const organizationB = await clientB.organization.createInitial({
       name: "Gate 2 Tenant B",
       timezone: "America/Sao_Paulo",
     });
     fixtureOrganizations.push(organizationB.organization.id);
+    console.log("gate2_worker_organization_b=passed");
 
     await assert.rejects(
       unverifiedClient.organization.createInitial({
         name: "Unverified",
         timezone: "America/Sao_Paulo",
       }),
-      (error: unknown) => hasRpcCode(error, "FORBIDDEN")
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "unverified organization onboarding must be forbidden"
     );
+    console.log("gate2_worker_unverified_denial=passed");
 
     const categoryA = await clientA.category.create({
       organizationId: organizationA.organization.id,
       name: "  Escritório  ",
     });
     assert.equal(categoryA.name, "Escritório");
+    assert.equal(categoryA.status, "active");
+    assert.equal(typeof categoryA.createdAt, "string");
+    console.log("gate2_worker_category_a_create=passed");
+    const sameNameInOtherOrganization = await clientB.category.create({
+      organizationId: organizationB.organization.id,
+      name: "Escritório",
+    });
+    assert.equal(sameNameInOtherOrganization.name, categoryA.name);
+    console.log("gate2_worker_same_name_other_organization=passed");
+    const renameConflictCategory = await clientA.category.create({
+      organizationId: organizationA.organization.id,
+      name: "Outro",
+    });
+    console.log("gate2_worker_same_organization_conflict_fixture=passed");
+    await assert.rejects(
+      clientA.category.create({
+        organizationId: organizationA.organization.id,
+        name: "escritório",
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "duplicate category create in one organization must conflict"
+    );
+    await assert.rejects(
+      clientA.category.rename({
+        id: categoryA.id,
+        name: "outro",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "rename to a name in the same organization must conflict"
+    );
+    const renameConflictCleanup = await pool.query(
+      "DELETE FROM public.categories WHERE id = $1 AND organization_id = $2",
+      [renameConflictCategory.id, organizationA.organization.id]
+    );
+    assert.equal(renameConflictCleanup.rowCount, 1);
+    const renamedCategory = await clientA.category.rename({
+      id: categoryA.id,
+      name: "Acessórios",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(renamedCategory.changed, true);
+    assert.equal(renamedCategory.category.name, "Acessórios");
+    console.log("gate2_worker_rename=passed");
+    const renameRetry = await clientA.category.rename({
+      id: categoryA.id,
+      name: "Acessórios",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(renameRetry.changed, false);
     const categoriesA = await clientA.category.list({
       organizationId: organizationA.organization.id,
     });
-    assert.deepEqual(categoriesA.categories, [categoryA]);
+    assert.deepEqual(categoriesA.categories, [renamedCategory.category]);
     const categoriesB = await clientB.category.list({
       organizationId: organizationB.organization.id,
     });
-    assert.deepEqual(categoriesB.categories, []);
+    assert.deepEqual(categoriesB.categories, [sameNameInOtherOrganization]);
+    console.log("gate2_worker_tenant_category_lists=passed");
 
     await assert.rejects(
       clientA.category.list({
         organizationId: organizationB.organization.id,
       }),
-      (error: unknown) => hasRpcCode(error, "FORBIDDEN")
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "cross-tenant category list must be forbidden"
     );
     await assert.rejects(
       clientA.category.create({
         organizationId: organizationB.organization.id,
         name: "Cross-tenant",
       }),
-      (error: unknown) => hasRpcCode(error, "FORBIDDEN")
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "cross-tenant category create must be forbidden"
     );
+
+    const productA = await clientA.product.create({
+      categoryId: categoryA.id,
+      description: "  ",
+      name: "Bolsa",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(productA.description, null);
+    assert.equal(productA.categoryId, categoryA.id);
+    assert.equal(productA.status, "active");
+    assert.equal(productA.version, 1);
+    const duplicateProductA = await clientA.product.create({
+      name: "Bolsa",
+      organizationId: organizationA.organization.id,
+    });
+    const productB = await clientB.product.create({
+      categoryId: sameNameInOtherOrganization.id,
+      name: "Bolsa",
+      organizationId: organizationB.organization.id,
+    });
+    assert.notEqual(productA.id, duplicateProductA.id);
+    assert.equal(productA.name, duplicateProductA.name);
+    assert.equal(productB.name, productA.name);
+
+    const defaultVariants = await pool.query<{
+      product_id: string;
+      variant_count: string;
+      all_default: boolean;
+      id_version: number;
+    }>(
+      "SELECT product_id::text, count(*)::text AS variant_count, " +
+        "bool_and(is_default) AS all_default, " +
+        "min(uuid_extract_version(id)) AS id_version " +
+        "FROM public.product_variants WHERE product_id = ANY($1::uuid[]) " +
+        "GROUP BY product_id ORDER BY product_id",
+      [[productA.id, duplicateProductA.id, productB.id]]
+    );
+    assert.equal(defaultVariants.rows.length, 3);
+    assert.ok(
+      defaultVariants.rows.every(
+        (row) =>
+          row.variant_count === "1" && row.all_default && row.id_version === 7
+      )
+    );
+    console.log("gate2_worker_product_create_default_variant_uuidv7=passed");
+
+    const productsA = await clientA.product.list({
+      organizationId: organizationA.organization.id,
+    });
+    assert.deepEqual(
+      productsA.products.map((product) => product.id).sort(),
+      [productA.id, duplicateProductA.id].sort()
+    );
+    const productsB = await clientB.product.list({
+      organizationId: organizationB.organization.id,
+    });
+    assert.deepEqual(
+      productsB.products.map((product) => product.id),
+      [productB.id]
+    );
+    await assert.rejects(
+      clientA.product.list({
+        organizationId: organizationB.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
+      "cross-tenant product list must be forbidden"
+    );
+    await assert.rejects(
+      clientA.product.create({
+        categoryId: sameNameInOtherOrganization.id,
+        name: "Categoria cruzada",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "product cannot use a category owned by another organization"
+    );
+    console.log(
+      "gate2_worker_product_tenant_isolation_and_duplicate_names=passed"
+    );
+
+    const updatedProduct = await clientA.product.update({
+      categoryId: categoryA.id,
+      description: "Lona resistente",
+      expectedVersion: 1,
+      id: productA.id,
+      name: "Bolsa transversal",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(updatedProduct.changed, true);
+    assert.equal(updatedProduct.product.version, 2);
+    await assert.rejects(
+      clientA.product.update({
+        categoryId: categoryA.id,
+        description: "Concorrência obsoleta",
+        expectedVersion: 1,
+        id: productA.id,
+        name: "Bolsa antiga",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "stale product version must conflict"
+    );
+    const archivedProduct = await clientA.product.archive({
+      expectedVersion: 2,
+      id: productA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(archivedProduct.changed, true);
+    assert.equal(archivedProduct.product.status, "archived");
+    assert.equal(archivedProduct.product.version, 3);
+    const productArchiveRetry = await clientA.product.archive({
+      expectedVersion: 2,
+      id: productA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(productArchiveRetry.changed, false);
+    const archivedProducts = await clientA.product.list({
+      organizationId: organizationA.organization.id,
+      status: "archived",
+    });
+    assert.deepEqual(
+      archivedProducts.products.map((product) => product.id),
+      [productA.id]
+    );
+    const restoredProduct = await clientA.product.restore({
+      expectedVersion: 3,
+      id: productA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(restoredProduct.changed, true);
+    assert.equal(restoredProduct.product.status, "active");
+    assert.equal(restoredProduct.product.version, 4);
+
+    await assert.rejects(
+      clientA.category.delete({
+        id: categoryA.id,
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "category tombstone must be blocked while a product references it"
+    );
+    const unlinkedProduct = await clientA.product.update({
+      categoryId: null,
+      description: "Lona resistente",
+      expectedVersion: 4,
+      id: productA.id,
+      name: "Bolsa transversal",
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(unlinkedProduct.changed, true);
+    assert.equal(unlinkedProduct.product.categoryId, null);
+    assert.equal(unlinkedProduct.product.version, 5);
+
+    const variantProduct = await clientA.product.create({
+      name: "Produto com combinações explícitas",
+      organizationId: organizationA.organization.id,
+    });
+    const variantConfiguration = await clientA.product.configureVariants({
+      expectedVersion: 1,
+      id: variantProduct.id,
+      options: [
+        { name: "color", values: ["Azul", "Preto"] },
+        { name: "size", values: ["P", "M"] },
+      ],
+      organizationId: organizationA.organization.id,
+      variants: [
+        { values: { color: "Azul", size: "P" } },
+        { values: { color: "Azul", size: "M" } },
+        { values: { color: "Preto", size: "M" } },
+      ],
+    });
+    assert.equal(variantConfiguration.product.version, 2);
+    assert.equal(variantConfiguration.configuration.configured, true);
+    assert.equal(variantConfiguration.configuration.variants.length, 3);
+    assert.deepEqual(
+      variantConfiguration.configuration.variants.map((variant) =>
+        variant.values.map((value) => value.optionValueName)
+      ),
+      [
+        ["Azul", "P"],
+        ["Azul", "M"],
+        ["Preto", "M"],
+      ]
+    );
+    const rereadVariants = await clientA.product.getVariants({
+      id: variantProduct.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.deepEqual(rereadVariants, variantConfiguration.configuration);
+    const [skuVariant, duplicateSkuVariant] =
+      variantConfiguration.configuration.variants;
+    assert.ok(skuVariant && duplicateSkuVariant);
+    const assignedSku = await clientA.product.setVariantSku({
+      expectedVersion: 2,
+      organizationId: organizationA.organization.id,
+      productId: variantProduct.id,
+      sku: "  sku-AbC  ",
+      variantId: skuVariant.id,
+    });
+    assert.equal(assignedSku.changed, true);
+    assert.equal(assignedSku.product.version, 3);
+    assert.equal(assignedSku.configuration.variants[0]?.sku, "sku-AbC");
+    await assert.rejects(
+      clientA.product.setVariantSku({
+        expectedVersion: 3,
+        organizationId: organizationA.organization.id,
+        productId: variantProduct.id,
+        sku: "SKU-abc",
+        variantId: duplicateSkuVariant.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "SKU uniqueness is case-insensitive within an organization"
+    );
+    const changedSkuCase = await clientA.product.setVariantSku({
+      expectedVersion: 3,
+      organizationId: organizationA.organization.id,
+      productId: variantProduct.id,
+      sku: "SKU-ABC",
+      variantId: skuVariant.id,
+    });
+    assert.equal(changedSkuCase.product.version, 4);
+    assert.equal(changedSkuCase.configuration.variants[0]?.sku, "SKU-ABC");
+    const clearedSku = await clientA.product.setVariantSku({
+      expectedVersion: 4,
+      organizationId: organizationA.organization.id,
+      productId: variantProduct.id,
+      sku: "  ",
+      variantId: skuVariant.id,
+    });
+    assert.equal(clearedSku.product.version, 5);
+    assert.equal(clearedSku.configuration.variants[0]?.sku, null);
+    assert.deepEqual(
+      clearedSku.configuration.variants.map((variant) => variant.id),
+      variantConfiguration.configuration.variants.map((variant) => variant.id)
+    );
+    const variantAudit = await pool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 ORDER BY event_type",
+      [variantProduct.id]
+    );
+    assert.deepEqual(
+      variantAudit.rows.map((row) => row.event_type),
+      ["product.created", "product.variants_configured"]
+    );
+    const skuAudit = await pool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE entity_id = $1 ORDER BY created_at",
+      [skuVariant.id]
+    );
+    assert.deepEqual(
+      skuAudit.rows.map((row) => row.event_type),
+      [
+        "product_variant.sku_changed",
+        "product_variant.sku_changed",
+        "product_variant.sku_changed",
+      ]
+    );
+    await assert.rejects(
+      clientA.product.configureVariants({
+        expectedVersion: 5,
+        id: variantProduct.id,
+        options: [{ name: "model", values: ["Modelo novo"] }],
+        organizationId: organizationA.organization.id,
+        variants: [{ values: { model: "Modelo novo" } }],
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "configured variants cannot be replaced in PR26"
+    );
+    await assert.rejects(
+      clientB.product.getVariants({
+        id: variantProduct.id,
+        organizationId: organizationB.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "NOT_FOUND"),
+      "cross-tenant product variants are not visible"
+    );
+    await assert.rejects(
+      clientB.product.setVariantSku({
+        expectedVersion: 5,
+        organizationId: organizationB.organization.id,
+        productId: variantProduct.id,
+        sku: "cross-tenant-attempt",
+        variantId: skuVariant.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "NOT_FOUND"),
+      "cross-tenant SKU updates are not visible"
+    );
+    console.log("gate2_worker_product_variant_sku=passed");
+    console.log("gate2_worker_product_variants_explicit_and_audited=passed");
+    console.log(
+      "gate2_worker_product_update_lifecycle_and_tombstone_guard=passed"
+    );
+
+    const archivedCategory = await clientA.category.archive({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(archivedCategory.changed, true);
+    assert.equal(archivedCategory.category.status, "archived");
+    const activeAfterArchive = await clientA.category.list({
+      organizationId: organizationA.organization.id,
+    });
+    assert.deepEqual(activeAfterArchive.categories, []);
+    const archivedCategories = await clientA.category.list({
+      organizationId: organizationA.organization.id,
+      status: "archived",
+    });
+    assert.deepEqual(archivedCategories.categories, [
+      archivedCategory.category,
+    ]);
+    const archiveRetry = await clientA.category.archive({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(archiveRetry.changed, false);
+
+    const restoredCategory = await clientA.category.restore({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(restoredCategory.changed, true);
+    assert.equal(restoredCategory.category.status, "active");
+
+    const deletedCategory = await clientA.category.delete({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(deletedCategory.changed, true);
+    assert.equal(deletedCategory.category.status, "deleted");
+    await assert.rejects(
+      clientA.category.restore({
+        id: categoryA.id,
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "deleted category cannot be restored"
+    );
+    await assert.rejects(
+      clientA.category.rename({
+        id: categoryA.id,
+        name: "Outro nome",
+        organizationId: organizationA.organization.id,
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "deleted category cannot be renamed"
+    );
+    await assert.rejects(
+      clientA.category.create({
+        organizationId: organizationA.organization.id,
+        name: "acessórios",
+      }),
+      (error: unknown) => hasRpcCode(error, "CONFLICT"),
+      "tombstoned category name remains reserved"
+    );
+    const tombstones = await clientA.category.list({
+      organizationId: organizationA.organization.id,
+      status: "all",
+    });
+    assert.deepEqual(tombstones.categories, [deletedCategory.category]);
+    const deleteRetry = await clientA.category.delete({
+      id: categoryA.id,
+      organizationId: organizationA.organization.id,
+    });
+    assert.equal(deleteRetry.changed, false);
+    console.log("gate2_worker_category_lifecycle=passed");
 
     const organizationEvents = await pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM public.tenant_audit_event " +
@@ -558,13 +1092,38 @@ async function main() {
         "WHERE event_type = 'category.created' AND organization_id = $1",
       [organizationA.organization.id]
     );
-    assert.equal(categoryEvents.rows[0]?.count, "1");
+    assert.equal(categoryEvents.rows[0]?.count, "2");
+    const lifecycleEvents = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.tenant_audit_event " +
+        "WHERE event_type IN ('category.renamed', 'category.archived', 'category.restored', 'category.deleted') " +
+        "AND entity_id = $1",
+      [categoryA.id]
+    );
+    assert.equal(lifecycleEvents.rows[0]?.count, "4");
+    const productLifecycleEvents = await pool.query<{
+      event_type: string;
+      count: string;
+    }>(
+      "SELECT event_type, count(*)::text AS count " +
+        "FROM public.tenant_audit_event WHERE entity_id = $1 " +
+        "GROUP BY event_type ORDER BY event_type",
+      [productA.id]
+    );
+    assert.deepEqual(productLifecycleEvents.rows, [
+      { event_type: "product.archived", count: "1" },
+      { event_type: "product.created", count: "1" },
+      { event_type: "product.restored", count: "1" },
+      { event_type: "product.updated", count: "2" },
+    ]);
 
     workerGatePassed = true;
     console.log("gate2_worker_authentication=passed");
     console.log("gate2_worker_onboarding_and_retry=passed");
-    console.log("gate2_worker_category_rls_and_capability=passed");
-    console.log("gate2_worker_audit=passed");
+    console.log(
+      "gate2_worker_category_rename_lifecycle_and_offline_read=passed"
+    );
+    console.log("gate2_worker_unique_names_capability_and_audit=passed");
+    console.log("gate2_worker_products_audit_and_tenant_lifecycle=passed");
   } finally {
     try {
       await stopLocalWorker(worker);

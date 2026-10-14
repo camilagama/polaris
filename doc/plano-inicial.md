@@ -1430,23 +1430,24 @@ Com as duas provas verdes, o Gate 2 está aprovado tecnicamente para este escopo
 
 
 
-Completar o módulo após o Gate 2 aprovado. O slice pré-gate pode já ter criado schema e operações mínimas de leitura/criação; reutilizar esses objetos, sem migrations duplicadas. PR24 completa domínio, regras de archive/delete, contrato de leitura offline e UI mínima.
+Completar o módulo usando a tabela `categories`, o RPC de criação/listagem e o Gate 2 do PR22. Por autorização explícita do responsável (“prossiga”), o PR24 começou empilhado sobre `codex/gate2-runtime-proof` antes da revisão humana do PR22. PR22 permanece draft; este PR também deve permanecer sem merge até revisão.
 
+### Invariantes
 
+- Categoria de catálogo é distinta de categoria de despesas, pertence a uma organização e é opcional para produto.
+- Nome tem no máximo 100 code points, é aparado nas extremidades, preserva a caixa e é único por organização sem distinção de caixa ou espaços externos. A unicidade inclui registros arquivados e tombstones.
+- Lifecycle: `active` → `archived` → `active`; `active`/`archived` → `deleted` (tombstone). Remoção não faz hard-delete; tombstone é terminal e preserva o nome.
+- O tombstone só é permitido quando o domínio não tem referências dependentes. Ainda não existe tabela products nesta etapa; PR25 deverá bloquear a remoção quando adicionar um vínculo opcional de produto.
+- `catalog:read` protege leitura, `category:create` criação e `category:manage` renomear/arquivar/restaurar/remover. RLS continua habilitado e forçado; a role tenant não recebe DELETE.
+- `category.created`, `category.renamed`, `category.archived`, `category.restored` e `category.deleted` são auditados na mesma transação. Repetições idempotentes não duplicam eventos.
+- O read contract contém ID estável, organização, nome, lifecycle e timestamps serializados para futura leitura offline. PR24 não implementa cache local, comandos offline ou sync.
+- UI mínima de gestão cobre organização autenticada, criação, listagem e lifecycle com estados vazio, carregando, sucesso e erro. UI de login/providers reais permanece pré-go-live.
 
-Categoria:
+### Verificação e sequência
 
-
-
-- tenant-scoped;
-
-- opcional para produto;
-
-- archive/delete rules simples.
-
-
-
-Adicionar offline-read compatibility desde o contrato, mas não sync ainda.
+- Gerar migration 0013 via Drizzle e aplicá-la somente a uma branch Neon descartável PostgreSQL 18; provar unicidade concorrente, grants/policy UPDATE, negação de cross-tenant, lifecycle, auditoria, rollback e cascade.
+- Executar o Worker local com sessão fixture para provar RPCs, capabilities e fluxo completo; confirmar cleanup de fixtures e roles.
+- `bun run check`, `bun run build` e revisão independente antes de publicar draft PR empilhado sobre PR22. Nenhum merge ou recurso de produção faz parte desta etapa.
 
 
 
@@ -1456,100 +1457,99 @@ Adicionar offline-read compatibility desde o contrato, mas não sync ainda.
 
 # PR 25 — Products
 
+Introduzir o catálogo de produtos como uma fatia vertical tenant, com criação,
+consulta, edição, arquivamento e restauração.
 
+Criar as tabelas products e a estrutura mínima product_variants necessária
+para tornar verdadeira desde esta etapa a regra canônica de que todo produto tem
+ao menos uma variante. A variante padrão nasce na mesma transação do produto.
+PR26 amplia essa estrutura com opções e variantes configuráveis.
 
-Criar:
+Campos de produto:
 
+- id UUIDv7, com default PostgreSQL 18 uuidv7();
+- organização;
+- nome obrigatório, aparado e não vazio; duplicatas são permitidas;
+- descrição opcional;
+- categoria de catálogo opcional, pertencente à mesma organização;
+- estado derivado: active ou archived;
+- timestamps técnicos e versão positiva iniciada em 1.
 
+Sem limite de nome neste PR: as fontes não definem um e não devemos inventá-lo.
+A versão é incrementada em alterações reais; update exige expectedVersion e
+rejeita concorrência obsoleta. Repetir archive/restore já aplicado é idempotente.
 
-```text
+A categoria só pode ser atribuída em criação ou troca para categoria ativa da
+mesma organização. Arquivar a categoria preserva referências existentes; a
+remoção terminal (tombstone) é recusada enquanto houver produtos vinculados.
+A proteção deve existir no domínio e no banco, incluindo concorrência entre
+atribuição e tombstone.
 
-products
+Cada criação grava produto, variante padrão e audit event na mesma transação.
+RLS é habilitado e forçado nas duas tabelas, com policies e grants para a role
+tenant limitados a SELECT/INSERT/UPDATE necessários. A role não recebe DELETE.
+O banco deve rejeitar commit de produto sem variante.
 
-```
+Não incluir estoque, saldo, custo, preço, SKU, código de barras, mídia, opções,
+combinações, escrita offline nem hard-delete de produto. SKU continua planejado
+para PR27. Exclusão/tombstone de produto fica adiada até as regras de estoque e
+histórico permitirem definir quando ela é segura.
 
+UI mínima cobre organização existente, criação, listagem, edição, archive e
+restore, com estados carregando, vazio, sucesso e erro. Produto sem opções usa a
+variante padrão invisível na UI.
 
-
-Campos:
-
-
-
-- id UUIDv7;
-
-- organization;
-
-- name;
-
-- description;
-
-- category;
-
-- status;
-
-- timestamps/version.
-
-
-
-Não adicionar estoque.
-
-
+Gate: aplicar migrations 0014 e 0015 em branch Neon descartável PostgreSQL 18;
+a 0015 inclui o índice composto `(organization_id, category_id)` usado pelo guard de
+tombstone. Provar UUIDv7, criação atômica e variante obrigatória, FK de organização,
+bloqueio de categoria tombstone, lifecycle/version, audit, grants/RLS e negação
+cross-tenant. Executar bun run check, bun run build e CI. Publicar draft PR
+empilhado sobre PR24; não fazer merge nem alterar recursos de produção.
+draft PR empilhado sobre PR24; não fazer merge nem alterar recursos de produção.
 
 ---
-
 
 
 # PR 26 — Variants
 
+Expandir product_variants, introduzida com a variante padrão mínima no PR25, e
+criar:
 
-
-Criar:
-
-
-
-```text
-
-product_variants
-
-product_options
-
-product_option_values
-
-variant_option_values
-
-```
-
-
+- product_options;
+- product_option_values;
+- variant_option_values.
 
 Opções fixas de UX:
 
-
-
 - Modelo;
-
 - Cor;
-
 - Tamanho.
 
+Cada produto escolhe qualquer subconjunto dessas opções. Valores são aparados,
+não vazios, preservam a grafia exibida e são únicos dentro da opção sem
+distinção de caixa. Cada variante informa exatamente um valor por opção
+selecionada; combinações duplicadas são rejeitadas. Criar combinações somente
+de forma explícita, sem gerar o produto cartesiano.
 
+Cada produto aceita no máximo 50 variantes. Criar combinações explicitamente;
+o teto considera o estado persistido no fim da transação, permitindo substituir
+a variante padrão por até 50 variantes configuráveis. Produto sem opções mantém
+sua variante padrão. Ao configurar combinações, inserir opções, valores,
+variantes e suas associações e remover a variante padrão na mesma transação; o
+produto nunca pode ficar sem variante em um commit.
 
-Máximo:
+PR26 permite somente a configuração inicial. Reconfigurar ou remover variantes
+fica adiado até definir como preservar os IDs que SKU e estoque poderão
+referenciar.
 
+Não incluir SKU (PR27), preço, estoque, mídia ou escrita offline.
 
-
-```text
-
-50 variantes por produto
-
-```
-
-
-
-Produto sem opções recebe default variant.
-
-
+Testar unicidade e limites por produto, combinações inválidas, isolamento de
+organização, lifecycle, RLS e a substituição atômica da variante padrão.
+Executar bun run check, bun run build e o gate PostgreSQL 18 em branch Neon
+descartável.
 
 ---
-
 
 
 # PR 27 — SKU
@@ -1557,6 +1557,18 @@ Produto sem opções recebe default variant.
 
 
 Adicionar SKU opcional na variante.
+
+
+
+Regra confirmada pelo responsável: aparar espaços externos; valor vazio equivale a SKU não informado; preservar a grafia; comparar sem distinção de maiúsculas/minúsculas dentro da organização; permitir o mesmo SKU em organizações diferentes. Não inventar limite de comprimento ou formato.
+
+
+
+SKU pode ser atribuído, trocado ou limpo em uma variante existente. Cada mudança real exige `expectedVersion` do produto, incrementa a versão e grava auditoria na mesma transação; variantes não são criadas, removidas ou reconfiguradas neste PR.
+
+
+
+Se a variante padrão oculta tiver SKU, bloquear a configuração inicial de opções até esse SKU ser limpo. Não transferir automaticamente o código para uma combinação.
 
 
 
@@ -1608,6 +1620,16 @@ Mutation do saldo e ledger na mesma transaction.
 
 
 
+Escopo V1 confirmado: uma organização tem um único saldo por variante, sem local/depósito; se não houver linha em `inventory_balances`, a leitura representa quantidade zero e o primeiro movimento materializa a projeção. O movimento preserva o UUID estável da variante. Se a variante padrão oculta já tiver qualquer movimento, a configuração inicial de opções é recusada; não presumir uma combinação para receber sua história ou quantidade.
+
+
+
+PR28 cria a persistência e um primitivo interno, transacional e tenant-scoped para registrar movimento e atualizar o saldo; não expõe `updateStock` genérico nem UI/RPC de estoque. Os comandos públicos continuam nomeados e chegam em PR29–31. A quantidade é inteira, o delta do ledger é assinado e nenhum commit pode deixar saldo negativo. O runtime lê movimentos e só os insere; UPDATE/DELETE são revogados e o histórico impede hard-delete da variante. O custo médio fica em PostgreSQL `numeric` exato; PR28 não calcula nem arredonda custos. PR29 deve definir precisão/arredondamento antes de implementar o custo médio, conforme `docs/business-rules/money.md`. A deduplicação fica nos commands nomeados, cuja chave identifica uma operação completa e suas linhas.
+
+Limitação registrada: a referência RESTRICT e o ledger append-only também bloqueiam purge físico de uma organização com histórico de estoque. PR107 precisa definir e validar um caminho privilegiado de purge compatível com a retenção e o deletion ledger antes do go-live.
+
+
+
 ---
 
 
@@ -1647,6 +1669,14 @@ Atualizar moving weighted average.
 
 
 Criar testes matemáticos/property-based.
+
+
+
+Política PR29 V1: custo unitário não negativo em string decimal BRL, até 18 dígitos inteiros e 6 casas; custo médio em numeric exato com 6 casas. Recalcular após cada recebimento e arredondar half-up para 6 casas usando aritmética decimal/inteira, sem IEEE-754. A faixa é política interna, não escala exigida pelo CPC 16(R1). Custo zero é válido. Saldo positivo com média nula representa custo desconhecido e bloqueia recebimento até regra de valoração ser definida; PR31 deve definir como uma contagem inicial com quantidade positiva recebe valor.
+
+
+
+O command recebe commandId UUID e versão 1. A primeira aplicação grava o movimento; replay idêntico não altera saldo nem ledger; payload diferente para o mesmo commandId conflita. occurredOn é uma data de calendário da organização, registrada para histórico; a média muda na ordem de confirmação do servidor e recebimentos retroativos não reprecificam vendas já confirmadas.
 
 
 
@@ -1712,6 +1742,10 @@ physical quantity = X
 
 Servidor calcula diferença e cria movimento.
 
+O command exige `commandId`, `commandVersion`, `occurredOn` e `expectedVersion` obtida de `inventory.getBalance`; o servidor compara a versão novamente dentro do lock da variante e rejeita contagem baseada em saldo antigo. A linha do ledger guarda a quantidade física absoluta e a versão lida para replay idempotente. Delta zero continua sendo evento de contagem auditável e avança a versão.
+
+O custo médio conhecido é preservado. Se ainda é desconhecido, a quantidade pode ser corrigida mantendo `NULL`; opcionalmente, `valuationUnitCost` explícito pode iniciar a média quando a contagem física é positiva. Não inferir custo zero. A decisão de valoração está registrada como proposta em [ADR 0011](../docs/adr/0011-inventory-count.md); sem custo conhecido, recebimentos seguem bloqueados até valoração explícita.
+
 
 
 Não permitir mutation direta do balance.
@@ -1724,103 +1758,67 @@ Não permitir mutation direta do balance.
 
 # PR 32 — Archive/delete catalog
 
+O lifecycle de produto active/archived, com archive e restore reversíveis, já foi implementado no PR25. Este PR acrescenta o tombstone terminal do produto; não duplica as operações existentes.
 
+### Regras de domínio
 
-Implementar:
+- Produto active ou archived pode transicionar para deleted; repetir delete é idempotente. Tombstone é terminal: archive, restore, edição, SKU, configuração de variante e novos movimentos de estoque são rejeitados depois dele.
+- O tombstone só é permitido quando o saldo agregado atual de todas as variantes é zero. Variante sem linha materializada de saldo conta como zero; saldo positivo em qualquer variante bloqueia a operação.
+- Histórico de movimentos não bloqueia o tombstone quando o saldo é zero. Produto, variantes, UUIDs, SKUs, saldos materializados, movimentos, vínculos de categoria e auditoria permanecem; nenhuma operação normal faz hard-delete. SKUs continuam reservados pela unicidade existente.
+- Leituras do produto removido e do saldo/histórico permanecem disponíveis; listagem normal o omite e status "deleted" o encontra.
+- product.delete exige expectedVersion, bloqueia a linha do produto, atualiza deleted_at e version e grava product.deleted na mesma transação. Repetições não duplicam auditoria.
+- Tombstone e comandos de estoque usam o mesmo lock de produto. Triggers de banco repetem a proteção contra saldo positivo e bloqueiam writes diretos de saldo/movimento depois do tombstone.
+- Categoria tombstone continua bloqueado enquanto qualquer produto a referencia; tombstonar o produto preserva o vínculo e não apaga a referência histórica.
+- A UI de exclusão não está especificada neste PR. A operação é exposta pelo RPC; confirmação e affordance visual ficam adiadas até haver critério de interação.
 
+### Gate e sequência
 
-
-- archive;
-
-- restore;
-
-- tombstone delete.
-
-
-
-Delete só quando domínio permitir.
-
-
-
-Sem hard-delete operacional.
-
-
-
----
-
-
+- Aplicar migration 0023 em branch Neon descartável PostgreSQL 18. Provar tombstone permitido com saldo zero e histórico/SKU preservados; bloqueio com saldo positivo tanto pelo repositório quanto pelo banco; lifecycle terminal, idempotência, auditoria, RLS, ausência de hard-delete e writes recusados após o tombstone.
+- Correr em paralelo recebimento e tombstone na mesma variante: um único resultado deve confirmar; nunca pode existir produto tombstoned com saldo positivo.
+- Provar replay de command de estoque existente depois do tombstone e rejeição de um command novo. A branch Neon de produção permanece intacta.
+- Executar bun run check, bun run build, CI e revisão independente. Publicar PR draft empilhado sobre codex/pr31-inventory-count; não fazer merge nem alterar recursos de produção.
 
 # PR 33 — Media schema
 
+### Decisões confirmadas
 
+- Asset pertence a uma organização e se associa a no máximo um produto por `product_media`.
+- `variant_media` reutiliza o asset de `product_media` desse mesmo produto; uma imagem pode servir várias variantes sem duplicação.
+- `position` é não negativa e única por produto ou variante. Ordena imagens e não cria regra especial de capa.
+- Tombstone preserva vínculos de mídia e bloqueia mudanças posteriores nas associações. Hard-delete e purge permanecem fora do fluxo normal.
+- Esta etapa persiste identidade UUIDv7, organização, timestamps e associações. Upload, locator/provider e metadados do arquivo ficam para PR34.
+- Limites de imagens Free/Pro seguem como hipóteses em `PRODUCT.md`; PR33 não os impõe no banco.
 
-Criar:
+### Escopo
 
+Criar `media_assets`, `product_media` e `variant_media`, com FKs compostas que garantem mesmo tenant, vínculo de variante ao produto proprietário do asset, RLS forçada e leitura tenant-scoped. Sem upload, URLs públicas ou rotas de mídia.
 
+### Gate
 
-```text
-
-media_assets
-
-product_media
-
-variant_media
-
-```
-
-
-
-Sem upload ainda.
-
-
-
-Separar asset de produto/variante.
-
-
-
----
-
-
+- Provar no PostgreSQL 18 criação das três tabelas, FKs, unicidade do asset por produto, associação do asset a várias variantes do mesmo produto, posições e rejeição de valores/associações inválidos.
+- Provar isolamento RLS, privilégio runtime somente leitura nesta etapa e preservação de associações no tombstone; owner SQL não pode criar, reordenar nem remover vínculos após o tombstone.
+- Executar `bun run check`, `bun run build`, CI e revisão independente; publicar draft empilhado sobre `codex/pr32-archive-catalog`. Não fazer merge nem alterar recursos de produção.
 
 # PR 34 — Upload/crop pipeline
 
+### Decisões de implementação
 
+- O navegador aceita JPEG, PNG e WebP diretamente. HEIC/HEIF é convertido para JPEG no dispositivo, com orientação da imagem preservada, conforme confirmado pelo responsável.
+- O arquivo original tem limite de 20 MB. O servidor valida o formato real decodificado; não confia somente no `Content-Type` informado pelo navegador.
+- O recorte é enviado como coordenadas normalizadas e convertido para pixels usando as dimensões decodificadas da imagem.
+- Cloudflare Images aplica o recorte antes do `scale-down`, preserva a proporção, não amplia imagens menores, limita cada aresta a 1200 px e produz WebP com qualidade 85. A saída é validada antes de ser gravada.
+- O WebP é armazenado no bucket R2 privado. A chave inclui organização, produto, identidade do comando e fingerprint do conteúdo para isolar tentativas concorrentes com payloads diferentes.
+- O banco persiste tamanho, tipo, dimensões, chave de storage, fingerprint e identidade idempotente. Cada asset precisa estar associado a exatamente um produto; associações a variantes só podem apontar para variantes desse produto.
+- Upload, associação e auditoria são tenant-scoped; o runtime recebe somente `SELECT` e `INSERT` nas tabelas de mídia. Repetições idênticas são idempotentes; reutilizar o mesmo comando com outro payload conflita.
+- Erros determinísticos que impedem a criação do registro removem o objeto recém-criado. Falhas ambíguas de commit podem deixar objetos privados sem registro; a reconciliação geral desses objetos fica para PR35.
 
-Implementar:
+### Gate
 
-
-
-```text
-
-upload
-
-→ crop coords
-
-→ Cloudflare Images
-
-→ WebP 1200
-
-→ R2
-
-```
-
-
-
-Testar:
-
-
-
-- arquivo inválido;
-
-- tamanho excessivo;
-
-- orientation;
-
-- crop;
-
-- no-upscale;
-
-- metadata stripped.
+- Cobrir arquivo inválido, MIME divergente, entrada acima de 20 MB, HEIC, orientação, coordenadas de crop, saída WebP, teto de 1200 px, no-upscale e remoção de metadata.
+- No PostgreSQL 18, provar migration, RLS/grants, criação tenant-scoped, idempotência/conflito, posições, associações a variantes, auditoria, vínculo obrigatório de asset, isolamento cross-tenant, tombstone e imutabilidade.
+- Testar a transformação real Cloudflare Images (crop, orientação, WebP e metadata) e o binding R2 privado em um recurso descartável antes de produção. O mock local não comprova esses comportamentos do provedor.
+- Validar manualmente o fluxo HEIC/crop/upload em Safari no iPhone após publicar um preview temporário autorizado.
+- Executar `bun run check`, `bun run build`, CI e revisão independente; publicar draft empilhado sobre `codex/pr33-media-schema`. Não fazer merge nem alterar recursos de produção.
 
 
 
@@ -1830,32 +1828,33 @@ Testar:
 
 # PR 35 — Derivatives e media cleanup
 
+## Escopo
 
+- Gerar sob demanda e persistir no R2 privado derivados WebP com caixas máximas de 320×320 e 640×640.
+- Usar `scale-down`, manter proporção e nunca ampliar imagens menores. As rotas só geram ou entregam um derivado depois da autorização tenant-scoped.
+- Chaves de cache são versionadas por transform e asset ID; o cache é regenerável e não exige colunas duplicadas no banco. Respostas permanecem `private, no-store`.
+- Escrever marker privado de staging antes do master. Removê-lo após commit confirmado; manter em caso de falha ou resultado ambíguo.
+- Reter markers por pelo menos 24 horas, usando o timestamp real `R2Object.uploaded`; o prefixo UTC ordenável serve à paginação, não substitui a verificação de idade.
+- Executar reconciliador horário (minuto 17 UTC) em páginas R2; masters sem referência são excluídos somente após claim no banco. Assets referenciados mantêm o master e perdem apenas o marker.
+- Manter R2 privado. Nenhum bucket público, URL pública ou cache compartilhado é introduzido.
 
-Gerar/cachear:
+## Concorrência e privilégios
 
+- Cada tentativa física recebe um UUID próprio na chave master v2. Uploads concorrentes/replays nunca reutilizam um objeto físico; o banco continua determinando o asset canônico.
+- Migration 0026 adiciona tombstones internos com FORCE RLS, função SECURITY DEFINER de `search_path` fixo e uma role cleanup sem login/BYPASSRLS. Para transferir ownership no PostgreSQL, a migration concede `SET ROLE` temporário ao executor CREATEROLE; como owner, a role cleanup remove EXECUTE de `PUBLIC` e da role tenant e concede somente EXECUTE de claim ao grupo cleanup. A migration executa `RESET ROLE` e revoga a membership SET explícita; runtime e login cleanup não são membros do owner.
+- O trigger BEFORE INSERT em `media_assets` e o claim do reconciliador obtêm o mesmo advisory transaction lock por chave. O reconciliador obtém o lock e consulta/reivindica em comandos SQL separados sob READ COMMITTED; o trigger rejeita uma referência nova para chave tombstoned.
+- A Worker binding cleanup usa Hyperdrive próprio com cache desabilitado e uma role login NOBYPASSRLS membro apenas do grupo de cleanup. Sem a binding, o cron falha explicitamente.
+- Derivados só existem para assets persistidos e o domínio atual não oferece hard-delete de mídia. A futura purge física de privacidade deve remover também `media/derivatives/v1/{assetId}/`; essa remoção permanece no fluxo de purge, fora do reconciliador de upload do PR35.
 
+## Gate de aceitação
 
-- 320;
-
-- 640.
-
-
-
-Staging lifecycle.
-
-
-
-Orphan reconciler.
-
-
-
-Sem bucket público.
-
-
+- Verificação local: derivados preservam formato/proporção, respeitam os limites e não ampliam fontes pequenas; rotas preservam autenticação tenant e cache privado; reconciliador trata markers recentes, referenciados, órfãos, inválidos e falhas de storage/DB.
+- Neon PostgreSQL 18: migration reproduzível; FORCE RLS/grants; role cleanup sem acesso direto; função indisponível à role tenant; inserção bloqueada após claim; corrida real entre insert em andamento e claim deve aguardar e observar o commit.
+- Cloudflare descartável: Images gera master e derivados 320/640, R2 passa put/get/delete e o reconciliador apaga master/marker órfãos pelo Hyperdrive dedicado. Confirmar que os prefixes temporários ficam vazios.
+- Rodar `bun run check`, `bun run build`, CI e revisão independente. Publicar draft empilhado sobre PR34; não fazer merge nem alterar recursos de produção.
+- Após as verificações, documentar fixtures sintéticas e a expiração automática da branch Neon; nenhum segredo ou URL de conexão deve aparecer nos logs.
 
 ---
-
 
 
 # GATE 3

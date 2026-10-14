@@ -1,6 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { describe, expect, it, vi } from "vitest";
+import { CategoryNameConflictError } from "@polaris/domain/catalog/category";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
@@ -29,17 +30,25 @@ function createRpcClient(router = createRpcRouter()) {
 
   return createORPCClient(link) as unknown as {
     category: {
-      create: (input: unknown) => Promise<{
-        id: string;
-        organizationId: string;
-        name: string;
+      archive: (input: unknown) => Promise<{
+        category: CategoryReadModelForTest;
+        changed: boolean;
+      }>;
+      create: (input: unknown) => Promise<CategoryReadModelForTest>;
+      delete: (input: unknown) => Promise<{
+        category: CategoryReadModelForTest;
+        changed: boolean;
       }>;
       list: (input: unknown) => Promise<{
-        categories: Array<{
-          id: string;
-          organizationId: string;
-          name: string;
-        }>;
+        categories: CategoryReadModelForTest[];
+      }>;
+      rename: (input: unknown) => Promise<{
+        category: CategoryReadModelForTest;
+        changed: boolean;
+      }>;
+      restore: (input: unknown) => Promise<{
+        category: CategoryReadModelForTest;
+        changed: boolean;
       }>;
     };
     organization: {
@@ -56,6 +65,27 @@ function createRpcClient(router = createRpcRouter()) {
     };
   };
 }
+
+interface CategoryReadModelForTest {
+  archivedAt: string | null;
+  createdAt: string;
+  deletedAt: string | null;
+  id: string;
+  name: string;
+  organizationId: string;
+  status: "active" | "archived" | "deleted";
+  updatedAt: string;
+}
+
+const categoryRow = {
+  archivedAt: null,
+  createdAt: new Date("2026-10-08T12:00:00.000Z"),
+  deletedAt: null,
+  id: "4e7d8c0e-ea70-4ec4-a610-75818d4ab927",
+  name: "Escritório",
+  organizationId: "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0",
+  updatedAt: new Date("2026-10-08T12:00:00.000Z"),
+};
 
 describe("tenant RPCs", () => {
   it("rejects category reads when there is no Better Auth session", async () => {
@@ -85,7 +115,7 @@ describe("tenant RPCs", () => {
         authorizedIdentity: typeof identity,
         input: { name: string }
       ) => ({
-        id: "4e7d8c0e-ea70-4ec4-a610-75818d4ab927",
+        ...categoryRow,
         name: input.name,
         organizationId: authorizedIdentity.organizationId,
       })
@@ -112,15 +142,190 @@ describe("tenant RPCs", () => {
     await expect(
       client.category.create({ name: "  Escritório  ", organizationId })
     ).resolves.toEqual({
+      archivedAt: null,
+      createdAt: "2026-10-08T12:00:00.000Z",
+      deletedAt: null,
       id: "4e7d8c0e-ea70-4ec4-a610-75818d4ab927",
       name: "Escritório",
       organizationId,
+      status: "active",
+      updatedAt: "2026-10-08T12:00:00.000Z",
     });
     expect(observedCapability).toBe("category:create");
     expect(createCategory).toHaveBeenCalledWith({}, identity, {
       name: "Escritório",
       requestId: expect.stringMatching(requestIdPattern),
     });
+  });
+
+  it("counts category name limits in Unicode code points at the RPC boundary", async () => {
+    const emojiName = "😀".repeat(100);
+    const identity = {
+      capability: "category:create",
+      organizationId: categoryRow.organizationId,
+      role: "owner",
+      userId: "verified-session-user",
+    };
+    const createCategory = vi.fn(
+      async (
+        _transaction: unknown,
+        _authorizedIdentity: typeof identity,
+        input: { name: string }
+      ) => ({ ...categoryRow, name: input.name })
+    );
+    const rpcRouter = createRpcRouter({
+      createCategory,
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => input.operation({}, identity),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(rpcRouter);
+
+    await expect(
+      client.category.create({
+        name: emojiName,
+        organizationId: categoryRow.organizationId,
+      })
+    ).resolves.toMatchObject({ name: emojiName });
+    await expect(
+      client.category.create({
+        name: `${emojiName}😀`,
+        organizationId: categoryRow.organizationId,
+      })
+    ).rejects.toBeDefined();
+    expect(createCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps duplicate normalized category names to a conflict", async () => {
+    const identity = {
+      capability: "category:create",
+      organizationId: categoryRow.organizationId,
+      role: "owner",
+      userId: "verified-session-user",
+    };
+    const router = createRpcRouter({
+      createCategory: vi.fn(() =>
+        Promise.reject(new CategoryNameConflictError())
+      ),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => input.operation({}, identity),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.category.create({
+        name: "escritório",
+        organizationId: categoryRow.organizationId,
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  for (const action of ["archive", "restore", "delete", "rename"] as const) {
+    it(`requires the category management capability to ${action} a category`, async () => {
+      const repositoryName = {
+        archive: "archiveCategory",
+        delete: "deleteCategory",
+        rename: "renameCategory",
+        restore: "restoreCategory",
+      }[action];
+      const lifecycleOperation = vi.fn(async () => ({
+        category: categoryRow,
+        changed: true,
+      }));
+      const identity = {
+        capability: "category:manage",
+        organizationId: categoryRow.organizationId,
+        role: "owner",
+        userId: "verified-session-user",
+      };
+      let observedCapability = "";
+      const router = createRpcRouter({
+        [repositoryName]: lifecycleOperation,
+        withTenantRequestContext: (input: {
+          capability: string;
+          operation: (
+            transaction: unknown,
+            authorizedIdentity: typeof identity
+          ) => Promise<unknown>;
+        }) => {
+          observedCapability = input.capability;
+          return input.operation({}, identity);
+        },
+      } as unknown as Parameters<typeof createRpcRouter>[0]);
+      const client = createRpcClient(router);
+
+      await client.category[action]({
+        id: categoryRow.id,
+        name: categoryRow.name,
+        organizationId: categoryRow.organizationId,
+      });
+
+      expect(observedCapability).toBe("category:manage");
+      expect(lifecycleOperation).toHaveBeenCalledOnce();
+    });
+  }
+
+  it("serializes lifecycle timestamps for a read-only offline contract", async () => {
+    const archivedAt = new Date("2026-10-08T13:30:00.000Z");
+    let observedStatus = "";
+    const identity = {
+      capability: "catalog:read",
+      organizationId: categoryRow.organizationId,
+      role: "owner",
+      userId: "verified-session-user",
+    };
+    const listCategories = vi.fn(
+      (
+        _transaction: unknown,
+        _identity: typeof identity,
+        options?: { status?: string }
+      ) => {
+        observedStatus = options?.status ?? "active";
+        return [{ ...categoryRow, archivedAt }];
+      }
+    );
+    const router = createRpcRouter({
+      listCategories,
+      withTenantRequestContext: (input: {
+        capability: string;
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => input.operation({}, identity),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.category.list({
+        organizationId: categoryRow.organizationId,
+        status: "archived",
+      })
+    ).resolves.toEqual({
+      categories: [
+        {
+          archivedAt: archivedAt.toISOString(),
+          createdAt: categoryRow.createdAt.toISOString(),
+          deletedAt: null,
+          id: categoryRow.id,
+          name: categoryRow.name,
+          organizationId: categoryRow.organizationId,
+          status: "archived",
+          updatedAt: categoryRow.updatedAt.toISOString(),
+        },
+      ],
+    });
+    expect(listCategories).toHaveBeenCalledWith({}, identity, {
+      status: "archived",
+    });
+    expect(observedStatus).toBe("archived");
   });
 
   it("uses the Better Auth session user for initial organization creation", async () => {

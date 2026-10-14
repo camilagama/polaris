@@ -2,12 +2,14 @@ export const CAPABILITIES = Object.freeze([
   "catalog:read",
   "product:create",
   "product:update",
+  "inventory:read",
   "inventory:adjust",
   "sale:create",
   "customer:update",
   "expense:create",
   "organization:manage",
   "category:create",
+  "category:manage",
 ] as const);
 
 export type Capability = (typeof CAPABILITIES)[number];

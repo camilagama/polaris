@@ -6,6 +6,7 @@
 - Encerramento de organização bloqueia novas operações, revoga acesso e autorização offline e despublica o catálogo; dados elegíveis são apagados após a janela de recuperação documentada.
 - Exportação ocorre mediante pedido autorizado, em artefato privado temporário com validade curta.
 - Purge abrange banco, masters de imagem, derivados, caches e cópias de staging. Restore reaplica o deletion ledger antes de reutilizar o ambiente.
+- PR28 torna movimentos de estoque append-only para o runtime e referencia a variante com ON DELETE RESTRICT. Um purge físico de organização com histórico de estoque fica bloqueado até PR107 definir um caminho privilegiado de purge que respeite retenção e deletion ledger; isso é pré-requisito para go-live.
 - Prazos legais de retenção e de incidentes exigem revisão jurídica e contábil antes do go-live.
 - Emails de verificação e recuperação enviados via Resend compartilham com o provider o endereço destinatário, link/token transacional e metadados de entrega. Antes de habilitar envio real, incluir esse tratamento na política de privacidade e revisar termos/DPA, região e retenção do provider; não enviar dados de negócio nesses emails.
 - Turnstile é usado como proteção antifraude nas operações públicas de autenticação. Antes da ativação em produção, incluir o serviço na descrição do tratamento de dados de autenticação e revisar os termos/DPA e as configurações do widget com Cloudflare.

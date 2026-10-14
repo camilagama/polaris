@@ -57,6 +57,7 @@
       "name": "@polaris/contracts",
       "dependencies": {
         "@orpc/contract": "^1.15.4",
+        "@polaris/domain": "workspace:*",
         "zod": "^4.6.5",
       },
     },

@@ -20,6 +20,20 @@
       "binding": "ONBOARDING_HYPERDRIVE",
       "id": "local-only",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "MEDIA_CLEANUP_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "polaris-media"
     }
   ],
   // Reserve unique account-level namespace IDs before deploying these bindings.
@@ -35,6 +49,9 @@
       "simple": { "limit": 3, "period": 60 }
     }
   ],
+  "triggers": {
+    "crons": ["17 * * * *"]
+  },
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*"]

@@ -4,7 +4,14 @@
   "type": "module",
   "exports": {
     "./authorization/capabilities": "./src/authorization/capabilities.ts",
-    "./catalog/category": "./src/catalog/category.ts"
+    "./catalog/category": "./src/catalog/category.ts",
+    "./catalog/media": "./src/catalog/media.ts",
+    "./catalog/product": "./src/catalog/product.ts",
+    "./inventory/inventory": "./src/inventory/inventory.ts",
+    "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",
+    "./inventory/inventory-count": "./src/inventory/inventory-count.ts",
+    "./inventory/receive-stock": "./src/inventory/receive-stock.ts",
+    "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

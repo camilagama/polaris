@@ -23,13 +23,31 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Produto:** descrição comercial apresentada pelo revendedor ou comprador.
 
+**Categoria de catálogo:** agrupamento opcional de produtos definido pela organização. Não é a categoria usada para classificar despesas.
+
+**Categoria ativa:** categoria disponível para uso no catálogo.
+
 **Variante:** forma vendável de um produto, como modelo, cor ou tamanho.
+
+**SKU:** código comercial opcional associado a uma variante, trocável ou removível sem mudar a identidade estável da variante, e único dentro da organização.
+
+**Opção de variante:** característica escolhida para distinguir formas vendáveis de um produto; nesta etapa, Modelo, Cor ou Tamanho.
+
+**Valor de opção:** escolha concreta de uma opção, como Azul para Cor ou P para Tamanho, atribuída a uma variante.
 
 **Saldo de estoque:** visão atual de quantidade e custo de uma variante.
 
 **Movimento de estoque:** registro de entrada, baixa, inventário, venda, devolução ou outra mudança de estoque.
 
-**Asset:** mídia armazenada, como uma imagem de produto.
+**Motivo da baixa:** classificação que explica por que uma quantidade deixou de estar disponível para venda.
+
+**Categoria arquivada:** categoria preservada, mas fora das opções ativas do catálogo; pode ser restaurada.
+
+**Categoria removida:** categoria preservada como tombstone para manter histórico e leitura offline; não pode ser restaurada nem apagada fisicamente pela operação normal.
+
+**Tombstone:** registro com `deleted_at` que representa uma remoção lógica e preserva identidade e timestamps para histórico/leitura offline; não é um hard-delete.
+
+**Asset de mídia (asset):** imagem pertencente a uma organização e vinculada a um produto; pode ser associada a várias variantes desse produto sem duplicar o asset.
 
 ## Vendas e clientes
 
