@@ -224,3 +224,5 @@ jobs:
         working-directory: apps/web
       - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated
         working-directory: apps/web
+      - run: bun run test:pwa
+        working-directory: apps/web

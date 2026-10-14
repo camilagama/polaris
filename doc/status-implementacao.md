@@ -881,6 +881,20 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Aparelho físico | **Adiado (bloqueia ligar a escrita offline)** | iPhone real (Safari e PWA instalado), Android real (Chrome), matar e reabrir durante envio, duas abas, saída com pendências e relógio errado: checklist no runbook, nada executado. |
 | Limites | Registrados | A interface offline (telas) e o botão "Sair" ainda não estão montados no app; PWA, service worker e atualização (PR60 a PR62 do plano) não foram feitos; promover os jobs de CI `database` e `audit` a obrigatórios é decisão do responsável. |
 
+### PR60 — Service worker do app shell (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr60-pwa-service-worker` sobre `codex/pr59-logout-pending`. |
+| Decisões | Tomadas pelo projeto | [ADR 0040](../docs/adr/0040-service-worker-do-app-shell.md): worker próprio de três funções (pré-guardar o shell, navegação rede-primeiro com o shell como reserva, arquivos pré-guardados do cache); nunca intercepta `/rpc`, `/api`, `/health`, `/ready`; cache por build; sem `skipWaiting` nem `clients.claim()`; sem biblioteca de PWA. |
+| Worker | Concluído | `src/pwa/sw.ts` (roteamento, nome de cache ordenável, limpeza que mantém a build atual e a anterior, mensagem `SKIP_WAITING`); busca ignorando `Vary`. |
+| Build | Concluído | `pwa/service-worker-plugin.ts` emite `sw.js` com o id da build, o instante e a lista de arquivos; `public/_headers` revalida `/sw.js`. |
+| Instalável | Concluído | `manifest.webmanifest`, ícones PNG (any, maskable, apple-touch) por `scripts/generate-pwa-icons.mjs`, links no `index.html`. |
+| Registro | Concluído | `src/pwa/register.ts` (produção, suporte, contexto seguro, depois do `load`, nunca nos laboratórios offline); chamado em `main.tsx`. |
+| Testes | Concluído | 14 do worker e do manifesto de build (inclusive a simulação do worker compilado) e 3 do registro, mais o teste dos cabeçalhos. |
+| Prova em navegador | Concluída | `e2e-pwa/app-shell.e2e.ts` (`bun run test:pwa`, no job de navegador do CI): instala e controla a página; abre offline, inclusive em rota interna; a API não passa pelo cache; manifesto e ícones; os laboratórios não registram o worker. Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | O ciclo de atualização para o usuário (aviso, esperar a fila vazia, recarregar sem perder trabalho) é o PR61; as telas ainda não leem os dados locais offline; Safari de iPhone e instalação na tela inicial dependem do checklist físico do Gate 5. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

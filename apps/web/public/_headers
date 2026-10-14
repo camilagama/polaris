@@ -9,3 +9,7 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
+
+# The service worker script is always revalidated, so a new build is found at once.
+/sw.js
+  Cache-Control: no-cache

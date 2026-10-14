@@ -6,8 +6,10 @@ import { SECURITY_HEADERS } from "./security-policy";
 
 const lineBreakPattern = /\r?\n/;
 
-function parseStaticHeaders(source: string): Record<string, string> {
-  const headers: Record<string, string> = {};
+function parseStaticHeaders(
+  source: string
+): Record<string, Record<string, string>> {
+  const rules: Record<string, Record<string, string>> = {};
   let rule: string | undefined;
 
   for (const line of source.split(lineBreakPattern)) {
@@ -18,19 +20,29 @@ function parseStaticHeaders(source: string): Record<string, string> {
       rule = line.trim();
       continue;
     }
-    if (rule !== "/*") {
+    if (rule === undefined || !["/*", "/sw.js"].includes(rule)) {
       throw new Error(`Unexpected _headers rule: ${rule}`);
     }
     const separator = line.indexOf(":");
+    const headers = rules[rule] ?? {};
     headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+    rules[rule] = headers;
   }
 
-  return headers;
+  return rules;
 }
 
 describe("security headers", () => {
   it("keeps public/_headers identical to the Worker policy", () => {
-    expect(parseStaticHeaders(staticHeadersFile)).toEqual(SECURITY_HEADERS);
+    expect(parseStaticHeaders(staticHeadersFile)["/*"]).toEqual(
+      SECURITY_HEADERS
+    );
+  });
+
+  it("always revalidates the service worker script", () => {
+    expect(parseStaticHeaders(staticHeadersFile)["/sw.js"]).toEqual({
+      "Cache-Control": "no-cache",
+    });
   });
 
   it("applies the shared policy to Worker responses", async () => {

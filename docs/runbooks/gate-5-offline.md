@@ -38,6 +38,7 @@ Nada desta lista foi executado. Registre o resultado de cada item com a versão 
 
 - [ ] **iPhone real (Safari, e instalado na tela inicial como PWA):** abrir o laboratório offline de persistência, o do outbox e o das coleções locais; confirmar que OPFS e IndexedDB funcionam, que `navigator.storage.persist()` responde e que o armazenamento não é descartado após dias sem uso (política do ITP do Safari para sites não instalados).
 - [ ] **Android real (Chrome):** os mesmos laboratórios, e o ciclo completo: criar cliente, produto com estoque, entrada, venda e contagem sem rede; religar a rede; conferir o resultado no servidor.
+- [ ] **Shell offline (PR60):** instalar o app, ativar o modo avião e abrir de novo: o shell abre, inclusive numa rota interna; no iPhone, repetir com o app instalado na tela inicial e depois de alguns dias sem abrir.
 - [ ] **Matar e reabrir o app** no meio de um envio (modo avião durante a sincronização): a fila volta inteira, o comando `sending` é reenviado e confirmado uma vez.
 - [ ] **Duas abas** do mesmo usuário e organização: a fila e as coleções são as mesmas; um comando não é enviado duas vezes.
 - [ ] **Sair com pendências** no aparelho: bloqueia, oferece tentar de novo e descartar em duas etapas; depois de sair, os dados locais da organização somem.

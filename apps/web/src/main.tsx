@@ -3,6 +3,10 @@ import { App } from "./app-shell/app";
 import "./styles.css";
 import "./styles/tokens.css";
 import "./styles/ui.css";
+import {
+  browserRegisterEnvironment,
+  registerServiceWorker,
+} from "./pwa/register";
 
 const rootElement = document.getElementById("root");
 
@@ -110,4 +114,11 @@ if (isLogoutLabRoute) {
   loadOfflineLab().catch(() => undefined);
 } else {
   root.render(<App />);
+  const pwaEnvironment = browserRegisterEnvironment();
+  if (pwaEnvironment) {
+    // After the first paint: the shell cache never competes with the app for the network.
+    window.addEventListener("load", () => {
+      registerServiceWorker(pwaEnvironment).catch(() => undefined);
+    });
+  }
 }
