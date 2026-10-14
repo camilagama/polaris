@@ -1,7 +1,11 @@
 import type { RuntimeContext } from "../offline/runtime/offline-runtime";
 import type { ConfirmedLinePrices } from "./last-prices-model";
-import { queueOfflineSale } from "./queue-offline-sale";
 import {
+  DeviceSaleNotCarriableError,
+  queueOfflineSale,
+} from "./queue-offline-sale";
+import {
+  localDay,
   type PreparedConfirmation,
   queuedSubmission,
   rejectSubmission,
@@ -21,6 +25,9 @@ export interface ConfirmationOutcome {
   prices: { day: string; lines: readonly ConfirmedLinePrices[] } | null;
   submission: SubmissionState;
 }
+
+const NOT_CARRIABLE =
+  "Esta venda tem perfil de pagamento ou data própria, e o aparelho não os guarda: ela só pode ser confirmada com conexão.";
 
 const QUEUE_FAILURE =
   "Não foi possível guardar a venda neste aparelho. Confira a validade da autorização offline e o espaço do aparelho, e tente de novo. Nada foi guardado.";
@@ -44,17 +51,21 @@ export async function confirmOnDevice(
       attempt: null,
       completed: true,
       prices: {
-        day: prepared.request.occurredAt.slice(0, 10),
+        day: localDay(prepared.request.occurredAt),
         lines: prepared.request.items,
       },
       submission: queuedSubmission(queued),
     };
-  } catch {
+  } catch (error) {
     return {
       attempt: prepared.attempt,
       completed: false,
       prices: null,
-      submission: rejectSubmission(QUEUE_FAILURE),
+      submission: rejectSubmission(
+        error instanceof DeviceSaleNotCarriableError
+          ? NOT_CARRIABLE
+          : QUEUE_FAILURE
+      ),
     };
   }
 }

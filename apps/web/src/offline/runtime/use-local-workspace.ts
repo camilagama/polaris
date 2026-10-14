@@ -27,8 +27,10 @@ export function useLocalWorkspace(
   const bootstrapped = snapshot?.bootstrapped ?? false;
   const dataVersion = snapshot?.dataVersion ?? 0;
   const online = snapshot?.online ?? true;
+  const sessionRefused = snapshot?.sessionRefused ?? false;
   return useMemo(() => {
-    if (!runtime || phase !== "ready" || !bootstrapped) {
+    // A server that said "not signed in" or "not allowed" is not one the copy may stand in for.
+    if (!runtime || phase !== "ready" || !bootstrapped || sessionRefused) {
       return null;
     }
     const stores = runtime.context();
@@ -37,5 +39,13 @@ export function useLocalWorkspace(
     }
     return { dataVersion, online, runtime, stores };
     // dataVersion is part of the key on purpose: a new version means new rows to read.
-  }, [runtime, phase, bootstrapped, dataVersion, online, organizationId]);
+  }, [
+    runtime,
+    phase,
+    bootstrapped,
+    dataVersion,
+    online,
+    organizationId,
+    sessionRefused,
+  ]);
 }

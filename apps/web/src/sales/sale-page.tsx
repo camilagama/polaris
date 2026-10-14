@@ -91,6 +91,7 @@ import {
   rejectSubmission,
   removeAdjustment,
   removeItem,
+  saleModeIsOffline,
   requestDiscard,
   SALE_DATE_HINT,
   SALE_METHODS,
@@ -1081,14 +1082,23 @@ export function SalePage() {
   const [submission, setSubmission] = useState<SubmissionState>(idleSubmission);
   const submissionRef = useRef(submission);
   submissionRef.current = submission;
+  const formRef = useRef(form);
+  formRef.current = form;
   // Money and stock go to the server whenever it is reachable; only without a
-  // connection is the sale kept on this device. A sale whose outcome on the
-  // server is unknown (locked) is only ever resent there, unchanged: moving it
-  // to the device under a different payload could record it twice.
+  // connection is the sale kept on this device. The mode is FROZEN while a sale
+  // is in flight or locked (outcome unknown): the connection dropping during the
+  // request must not swap the catalog, the profiles or the form under a sale
+  // that may already be on the server. It follows the connection again once the
+  // sale settles.
+  const connectionIsDown = workspace !== null && !workspace.online;
+  const modeRef = useRef(connectionIsDown);
+  modeRef.current = saleModeIsOffline(
+    modeRef.current,
+    connectionIsDown,
+    submission
+  );
   const offlineWorkspace =
-    workspace !== null && !workspace.online && submission.phase !== "locked"
-      ? workspace
-      : null;
+    modeRef.current && workspace !== null ? workspace : null;
   const offline = offlineWorkspace !== null;
   const [showRequired, setShowRequired] = useState(false);
   const [restoredAttempt] = useState<SaleAttempt | null>(() =>
@@ -1116,16 +1126,25 @@ export function SalePage() {
     handleProfilesLoaded,
     offlineWorkspace
   );
+  const refreshRef = useRef(catalog.refresh);
+  refreshRef.current = catalog.refresh;
+  const modeApplied = useRef<boolean>(false);
   useEffect(() => {
     // Going offline fills in what the offline sale uses (no profile, dated now);
     // coming back online undoes the "no profile" choice made for the person.
-    // Never while a sale is in flight or locked: its payload must stay as sent.
-    setForm((current) => {
-      if (isFormLocked(submissionRef.current)) {
-        return current;
-      }
-      return offline ? formForOfflineSale(current) : formForOnlineSale(current);
-    });
+    // The mode never changes while a sale is in flight or locked (see above).
+    setForm((current) =>
+      offline ? formForOfflineSale(current) : formForOnlineSale(current)
+    );
+    if (modeApplied.current) {
+      // the lines on the sale keep the balances of the OTHER source otherwise
+      refreshRef.current(
+        formRef.current.items
+          .map((item) => item.variantId)
+          .filter((variantId) => variantId !== "")
+      );
+    }
+    modeApplied.current = true;
   }, [offline]);
   const localWriter = offlineWorkspace?.stores.writer;
   const localOutbox = offlineWorkspace?.stores.outbox;
@@ -1311,7 +1330,9 @@ export function SalePage() {
         return;
       }
       const blank = createBlankSaleForm(newId);
-      setForm(device ? formForOfflineSale(blank) : blank);
+      // by the mode the screen is in now: a locked sale kept on the device while
+      // the screen is in the server mode must not leave "no profile" preselected
+      setForm(offline ? formForOfflineSale(blank) : blank);
       setShowRequired(false);
       resetStock();
       if (device) {
@@ -1321,7 +1342,7 @@ export function SalePage() {
         device.runtime.syncNow().catch(() => undefined);
       }
     },
-    [lastPrices, organizationId, rememberAttempt, resetStock]
+    [lastPrices, offline, organizationId, rememberAttempt, resetStock]
   );
 
   /** Tries the confirmation (on the server, or on the device when offline) and applies its outcome. */
@@ -1391,11 +1412,9 @@ export function SalePage() {
       submission,
     ]
   );
-  const keepLockedAllowed = canKeepLockedSaleOnDevice(
-    submission,
-    attemptRef.current,
-    evaluation
-  );
+  const keepLockedAllowed =
+    workspace !== null &&
+    canKeepLockedSaleOnDevice(submission, attemptRef.current, evaluation);
   /**
    * An unknown outcome on the server, moved to the device as the SAME sale
    * (same command ID and payload). If the device cannot keep it, the sale stays
@@ -1441,6 +1460,19 @@ export function SalePage() {
       );
       if (outcome.completed) {
         applyOutcome(outcome, { runtime: workspace.runtime, stores });
+      } else if (before.phase === "locked") {
+        // still locked, never unlocked for editing; the reason it could not be kept is said
+        const reason =
+          outcome.submission.phase === "failed"
+            ? `${outcome.submission.failure.message} `
+            : "";
+        setSubmission({
+          ...before,
+          failure: {
+            ...before.failure,
+            message: `${reason}${before.failure.message}`,
+          },
+        });
       } else {
         setSubmission(before);
       }

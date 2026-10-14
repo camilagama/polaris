@@ -44,10 +44,17 @@ function world(options: { leaseHours?: number } = {}) {
   const labels: (string | null)[] = [];
   const owners = new Map<string, string>();
   const session = { user: userId };
-  const failures: { issueLease: Error[]; push: boolean } = {
+  const failures: {
+    issueLease: Error[];
+    push: boolean;
+    /** The oRPC code the failing push carries (UNAUTHORIZED, FORBIDDEN...), if any. */
+    pushCode?: string;
+  } = {
     issueLease: [],
     push: false,
   };
+  /** Makes closing the stores wait, to catch stop/start overlapping. */
+  const gates: { close?: Promise<void> | undefined } = {};
   const keyValues = memoryKeyValues();
   const stores = new Map<string, { outbox: Outbox; writer: FakeWriter }>();
   const closed: string[] = [];
@@ -113,7 +120,13 @@ function world(options: { leaseHours?: number } = {}) {
     push: () => (input) => {
       calls.push += 1;
       if (failures.push) {
-        return Promise.reject(new Error("server down"));
+        return Promise.reject(
+          Object.assign(new Error("server down"), {
+            ...(failures.pushCode === undefined
+              ? {}
+              : { code: failures.pushCode }),
+          })
+        );
       }
       return server.push(input);
     },
@@ -158,6 +171,7 @@ function world(options: { leaseHours?: number } = {}) {
         const opened: OpenedStores = {
           close: () => {
             closed.push(namespace.key);
+            return gates.close;
           },
           ...value,
         };
@@ -175,6 +189,7 @@ function world(options: { leaseHours?: number } = {}) {
     calls,
     closed,
     failures,
+    gates,
     keyValues,
     labels,
     make,
@@ -574,5 +589,69 @@ describe("two tabs of the same namespace", () => {
     const before = second.getSnapshot().dataVersion;
     first.localDataChanged();
     expect(second.getSnapshot().dataVersion).toBe(before);
+  });
+});
+
+describe("switching organization", () => {
+  it("a stop that was still closing the old stores does not undo the organization opened after it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    let release: () => void = () => undefined;
+    w.gates.close = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // the cleanup of the old organization is not awaited; the new one starts at once
+    const stopping = runtime.stop();
+    await runtime.start("org-2");
+    w.gates.close = undefined;
+    release();
+    await stopping;
+
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()?.organizationId).toBe("org-2");
+  });
+});
+
+describe("a session the server refuses", () => {
+  it("is flagged only when the server says not signed in or not allowed, and clears with a sync that works", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+
+    w.failures.push = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      reason: "sync_failed",
+      sessionRefused: false,
+    });
+
+    for (const code of ["UNAUTHORIZED", "FORBIDDEN"]) {
+      w.failures.pushCode = code;
+      // biome-ignore lint/performance/noAwaitInLoops: each code is tried after the previous sync settled
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().sessionRefused).toBe(true);
+    }
+
+    w.failures.push = false;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      reason: null,
+      sessionRefused: false,
+    });
+  });
+
+  it("stopping forgets the last figures of the organization that was open", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().lastSyncAt).not.toBeNull();
+    await runtime.stop();
+    expect(runtime.getSnapshot()).toMatchObject({
+      lastSyncAt: null,
+      leaseExpiresAt: null,
+    });
   });
 });

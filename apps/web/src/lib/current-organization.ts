@@ -26,6 +26,7 @@ import {
 } from "./current-organization-model";
 import { orpcClient } from "./orpc";
 import { rpcErrorCode } from "./rpc-error";
+import { isSigningOut } from "./sign-out";
 
 interface OrganizationContextValue {
   load: OrganizationLoad;
@@ -61,7 +62,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       .then(({ organizations }) => {
         if (request === latestRequest.current) {
           fromCache.current = false;
-          if (OFFLINE_RUNTIME_ENABLED) {
+          if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
             writeOrganizationsCache(browserStorage(), organizations);
           }
           setLoad(

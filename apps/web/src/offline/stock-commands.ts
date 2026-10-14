@@ -37,6 +37,14 @@ export interface StockSnapshot {
   version: number;
 }
 
+/** The balance the person counted against is not the one the device shows any more. */
+class StaleLocalCountError extends Error {
+  constructor() {
+    super("stale_local_count");
+    this.name = "StaleLocalCountError";
+  }
+}
+
 export class InsufficientLocalStockError extends Error {
   constructor() {
     super("insufficient_local_stock");
@@ -72,6 +80,13 @@ export interface WriteOffRequest extends StockRequestBase {
 }
 
 export interface CountRequest extends StockRequestBase {
+  /**
+   * The version of the balance the person reviewed. When given, the count is
+   * refused (`StaleLocalCountError`) if the device's balance has moved since,
+   * like the server's `expectedVersion`; otherwise it is made against the
+   * balance as the device shows it now.
+   */
+  expectedVersion?: number;
   occurredOn?: string;
   physicalQuantity: number;
   /** Cost to value the counted stock at, when the variant has no average yet. */
@@ -292,6 +307,12 @@ export async function countStockOffline(request: CountRequest) {
     request.reader,
     request.variantId
   );
+  if (
+    request.expectedVersion !== undefined &&
+    request.expectedVersion !== base.version
+  ) {
+    throw new StaleLocalCountError();
+  }
   const input = normalizeInventoryCountInput({
     commandId: placeholderCommandId,
     commandVersion: 1,

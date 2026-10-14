@@ -13,6 +13,14 @@ type ConfirmRequest = Extract<PreparedConfirmation, { ok: true }>["request"];
  * connection is back, taking the stock under its own locks; a sale it cannot
  * fit is refused there and waits in Pendências, never silently dropped.
  */
+/** The device command carries neither a payment profile nor a typed date. */
+export class DeviceSaleNotCarriableError extends Error {
+  constructor() {
+    super("device_sale_not_carriable");
+    this.name = "DeviceSaleNotCarriableError";
+  }
+}
+
 export async function queueOfflineSale(input: {
   /** Product and variant text by variant ID, for the stock warnings. */
   labels: ReadonlyMap<string, string>;
@@ -20,6 +28,16 @@ export async function queueOfflineSale(input: {
   stores: RuntimeContext;
 }): Promise<QueuedSaleView> {
   const { labels, request, stores } = input;
+  if (request.organizationId !== stores.organizationId) {
+    // the organization changed under the screen: never queue under another one's outbox
+    throw new Error("organization_changed");
+  }
+  if (
+    request.paymentProfile !== null ||
+    request.occurredAt !== request.recordedAt
+  ) {
+    throw new DeviceSaleNotCarriableError();
+  }
   const result = await createOfflineSale({
     adjustments: request.adjustments,
     deviceId: stores.deviceId,
