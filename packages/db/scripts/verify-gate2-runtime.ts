@@ -792,6 +792,8 @@ async function main() {
         'c.condeferred AS "initiallyDeferred" ' +
         "FROM pg_trigger AS t LEFT JOIN pg_constraint AS c ON c.oid = t.tgconstraint " +
         "WHERE NOT t.tgisinternal AND t.tgrelid = ANY($1::regclass[]) " +
+        // The sync change-log triggers are proven by the sync-log gate.
+        "AND t.tgname NOT LIKE 'sync_record_%' " +
         "ORDER BY t.tgname",
       [
         [

@@ -206,6 +206,12 @@ import {
 import { pingSystem } from "../use-cases/system-ping";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
+import { createSyncRpcHandlers } from "./sync-handlers";
+import {
+  getSyncCursor,
+  InvalidSyncCursorError,
+  pullSyncChanges,
+} from "@polaris/db/sync-repository";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 
@@ -252,6 +258,7 @@ interface RpcRouterDependencies {
   getProductVariants: typeof getProductVariants;
   getSale: typeof getSale;
   getSaleCustomerLink: typeof getSaleCustomerLink;
+  getSyncCursor: typeof getSyncCursor;
   inventoryCount: typeof inventoryCount;
   issueOfflineLeaseGrant: typeof issueOfflineLeaseGrant;
   listCategories: typeof listCategories;
@@ -262,6 +269,7 @@ interface RpcRouterDependencies {
   listProducts: typeof listProducts;
   listSales: typeof listSales;
   listUserOrganizations: typeof listUserOrganizations;
+  pullSyncChanges: typeof pullSyncChanges;
   receiveStock: typeof receiveStock;
   registerDevice: typeof registerDevice;
   renameCategory: typeof renameCategory;
@@ -567,6 +575,7 @@ const badRequestRpcErrors = [
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
   [
     InvalidDeviceLabelError,
+    InvalidSyncCursorError,
     InvalidVariantListPriceError,
     InvalidOfflineGrantWindowError,
     InvalidOfflineGrantRevokeReasonError,
@@ -1095,6 +1104,14 @@ export function createRpcRouter(
     revokeDevice: overrides.revokeDevice,
     toRpcError,
     withAuthenticatedRequestContext: authenticatedRequest,
+    withTenantRequestContext: tenantRequest,
+  });
+  const syncHandlers = createSyncRpcHandlers({
+    defaultGetSyncCursor: getSyncCursor,
+    defaultPullSyncChanges: pullSyncChanges,
+    getSyncCursor: overrides.getSyncCursor,
+    pullSyncChanges: overrides.pullSyncChanges,
+    toRpcError,
     withTenantRequestContext: tenantRequest,
   });
   const organizationHandlers = createOrganizationRpcHandlers({
@@ -1690,6 +1707,7 @@ export function createRpcRouter(
       return: saleHandlers.return,
       unassignCustomer: saleHandlers.unassignCustomer,
     },
+    sync: syncHandlers,
     system: { ping },
   });
 }

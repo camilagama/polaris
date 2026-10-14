@@ -41,7 +41,9 @@
     "./device-repository": "./src/device-repository.ts",
     "./offline-lease-repository": "./src/offline-lease-repository.ts",
     "./authorization-epoch": "./src/authorization-epoch.ts",
-    "./user-transaction": "./src/user-transaction.ts"
+    "./user-transaction": "./src/user-transaction.ts",
+    "./sync-repository": "./src/sync-repository.ts",
+    "./sync-schema": "./src/schema/sync.ts"
   },
   "scripts": {
     "build": "bun run typecheck",
@@ -72,6 +74,7 @@
     "poc:sales:return:verify": "bun scripts/verify-sale-return-gate.ts",
     "poc:sales:transaction:verify": "bun scripts/verify-sale-transaction-gate.ts",
     "poc:sales:verify": "bun scripts/verify-sales-aggregate-gate.ts",
+    "poc:sync-log:verify": "bun scripts/verify-sync-log-gate.ts",
     "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts",
     "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"

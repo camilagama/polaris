@@ -52,5 +52,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0027](adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md) | Separação de roles auth e tenant, superfícies PoC | aceito |
 | [0028](adr/0028-dispositivos-e-grants-offline.md) | Dispositivos e grants de autorização offline | aceito |
 | [0029](adr/0029-lease-de-autorizacao-offline.md) | Lease de autorização offline e época de autorização | aceito |
+| [0030](adr/0030-change-log-de-sincronizacao.md) | Change log de sincronização com sequência por organização | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

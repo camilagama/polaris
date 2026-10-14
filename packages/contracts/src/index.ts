@@ -648,6 +648,24 @@ const deviceReadModel = z.object({
 
 export type DeviceReadModel = z.infer<typeof deviceReadModel>;
 
+/** A change-log sequence, as decimal text so it survives JSON unchanged. */
+const syncCursorText = z.string().regex(/^\d{1,16}$/);
+
+const syncChange = z.object({
+  entityId: z.string().uuid(),
+  entityType: z.enum([
+    "category",
+    "customer",
+    "inventory_balance",
+    "payment_profile",
+    "product",
+    "sale",
+  ]),
+  seq: z.number().int().positive(),
+});
+
+export type SyncChangeReadModel = z.infer<typeof syncChange>;
+
 export const polarisContract = {
   category: {
     archive: oc
@@ -1201,6 +1219,30 @@ export const polarisContract = {
     unassignCustomer: oc
       .input(saleCustomerLinkTarget)
       .output(saleCustomerLinkChange),
+  },
+  sync: {
+    // The latest committed change sequence of the organization. A device records
+    // it before reading a snapshot and pulls from it afterwards.
+    getCursor: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(z.object({ cursor: syncCursorText })),
+    // The changes after a cursor, in commit order. Entities changed several
+    // times in the page appear once, at their latest sequence.
+    pull: oc
+      .input(
+        z.object({
+          cursor: syncCursorText.nullish(),
+          limit: z.number().int().min(1).max(500).default(200),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          changes: z.array(syncChange),
+          hasMore: z.boolean(),
+          nextCursor: syncCursorText,
+        })
+      ),
   },
   system: {
     ping: oc.output(z.object({ message: z.literal("pong") })),

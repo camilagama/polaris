@@ -756,6 +756,17 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Interface | Concluída | Seção "Preço de tabela das variantes" no painel de variantes (vírgula ou ponto, vazio remove) e pré-preenchimento dos preços do item ao escolher a variante na venda. |
 | Gate Neon PostgreSQL 18 | Concluído | `gate2-runtime` cobre normalização, versão, repetição sem mudança, conflito de versão, valores inválidos e os CHECKs do banco; `read-models` continua verde. |
 
+### PR51 — Sync change log (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Ordem | Alterada pelo projeto | O PR51 vem **antes** do PR50b (coleções locais e bootstrap): o bootstrap consistente depende do cursor do log (cursor, snapshot por páginas, pull a partir do cursor). Branch `codex/pr51-sync-change-log` sobre `codex/pr50a-variant-list-price`. |
+| Decisões | Tomadas pelo projeto | [ADR 0030](../docs/adr/0030-change-log-de-sincronizacao.md): registro por gatilho nas tabelas de domínio; sequência por organização atribuída no COMMIT sob lock do contador (ordem de commit, sem buracos, sem consumo por rollback); escrita só por funções `SECURITY DEFINER`, runtime só lê; o log leva chaves (tipo, id, seq), não conteúdo; capability `sync:read`. |
+| Banco, migration 0045 | Concluída | `sync_changes` (RLS, append-only por gatilho) e `sync_cursors`; triggers em categorias, produtos, variantes, saldos, clientes, perfis de pagamento, regras, vendas, cancelamentos, devoluções e vínculos. |
+| Repositório e RPC | Concluídos | `getSyncCursor`, `pullSyncChanges` (dedupe por entidade, páginas, cursor validado), procedimentos `sync.getCursor` e `sync.pull`. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:sync-log:verify` (`sync-log`, suíte `gate5`): privilégios e funções, mudança por escrita de cada tipo, sequência por organização sem buracos, rollback sem consumo, dedupe e páginas, runtime sem escrita (inclusive dono sem editar), escrita por SQL manual registrada e escritores concorrentes com leitor em polling sem nenhum salto. |
+| Limites | Registrados | Sem retenção do log (sem piso de cursor); o pull devolve chaves e o conteúdo vem do cliente (PR50b); `payment_profile` e `sale` entram por já serem necessários ao offline de vendas. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
