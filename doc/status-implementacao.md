@@ -767,6 +767,18 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:sync-log:verify` (`sync-log`, suíte `gate5`): privilégios e funções, mudança por escrita de cada tipo, sequência por organização sem buracos, rollback sem consumo, dedupe e páginas, runtime sem escrita (inclusive dono sem editar), escrita por SQL manual registrada e escritores concorrentes com leitor em polling sem nenhum salto. |
 | Limites | Registrados | Sem retenção do log (sem piso de cursor); o pull devolve chaves e o conteúdo vem do cliente (PR50b); `payment_profile` e `sale` entram por já serem necessários ao offline de vendas. |
 
+### PR50b — Coleções locais e bootstrap (implementação, gates Neon e de navegador, verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr50b-local-collections` sobre `codex/pr51-sync-change-log`. É a segunda metade do PR50 do plano (a primeira é o preço de tabela, PR50a). |
+| Decisões | Tomadas pelo projeto | [ADR 0031](../docs/adr/0031-colecoes-locais-e-bootstrap.md): uma base OPFS por usuário e organização (nome por hash); seis coleções com modelos de leitura menores (sem custo, sem auditoria); bootstrap em três tempos com o cursor do PR51 registrado antes da leitura; estado `bootstrapping` retomável; falha fechada; apagar o namespace como gancho do logout. |
+| Servidor | Concluído | `sync.bootstrapPage` (páginas por chave de cinco coleções, ou entidades por id; variantes por produto) sobre `bootstrap-repository.ts`; as vendas recentes usam `sale.list`. |
+| Cliente | Concluído | `apps/web/src/offline/`: `namespace`, `bootstrap` (orquestração pura), `local-store` (TanStack DB sobre SQLite WASM em OPFS) e `orpc-source`. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:bootstrap:verify` (`bootstrap`, suíte `gate5`): páginas de dois e de 500 cobrem cada linha uma vez em ordem de id, linhas sem custo nem dados de organização, releitura por id (variantes por produto, saldos por variante), isolamento entre organizações e entradas inválidas recusadas. |
+| Gate de navegador | Concluído em Chromium | `e2e/offline-local-collections.e2e.ts` no laboratório `/offline-local-lab` (só no modo offline-poc): sincronização do zero, persistência após recarregar sem servidor, catch-up por cursor, bootstrap interrompido retomado, isolamento entre usuários e organizações e apagar só o namespace escolhido; seis cenários em Chromium desktop e em Pixel 5 emulado. Android físico, Edge real e Safari continuam sem prova desta etapa. |
+| Limites | Registrados | Ainda não está montado no aplicativo (o worker OPFS é carregado sob demanda e a montagem vem com a primeira tela offline, PR52+); sem mutações offline; a prova em Android real do ADR 0015 continua bloqueando o PR52. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

@@ -42,6 +42,7 @@
     "./offline-lease-repository": "./src/offline-lease-repository.ts",
     "./authorization-epoch": "./src/authorization-epoch.ts",
     "./user-transaction": "./src/user-transaction.ts",
+    "./bootstrap-repository": "./src/bootstrap-repository.ts",
     "./sync-repository": "./src/sync-repository.ts",
     "./sync-schema": "./src/schema/sync.ts"
   },
@@ -55,6 +56,7 @@
     "gates:gate3": "bun scripts/run-gates.ts gate3",
     "gates:gate4": "bun scripts/run-gates.ts gate4",
     "poc": "bun scripts/poc.ts",
+    "poc:bootstrap:verify": "bun scripts/verify-bootstrap-gate.ts",
     "poc:customers:verify": "bun scripts/verify-customers-gate.ts",
     "poc:gate2:verify": "bun scripts/verify-gate2-runtime.ts",
     "poc:gate4:verify": "bun scripts/verify-gate4-sales-core.ts",

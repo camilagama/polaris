@@ -53,5 +53,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0028](adr/0028-dispositivos-e-grants-offline.md) | Dispositivos e grants de autorização offline | aceito |
 | [0029](adr/0029-lease-de-autorizacao-offline.md) | Lease de autorização offline e época de autorização | aceito |
 | [0030](adr/0030-change-log-de-sincronizacao.md) | Change log de sincronização com sequência por organização | aceito |
+| [0031](adr/0031-colecoes-locais-e-bootstrap.md) | Coleções locais por usuário e organização, e bootstrap | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

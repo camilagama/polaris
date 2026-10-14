@@ -6,6 +6,7 @@ import {
   type ProductReadModel,
   polarisContract,
 } from "@polaris/contracts";
+import { readBootstrapPage } from "@polaris/db/bootstrap-repository";
 import {
   archiveCategory,
   createCategory,
@@ -70,6 +71,11 @@ import {
 import { getSale, listSales } from "@polaris/db/sale-query-repository";
 import { confirmSale } from "@polaris/db/sale-repository";
 import { createSaleReturn } from "@polaris/db/sale-return-repository";
+import {
+  getSyncCursor,
+  InvalidSyncCursorError,
+  pullSyncChanges,
+} from "@polaris/db/sync-repository";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
   CategoryDeletedError,
@@ -206,14 +212,9 @@ import {
 import { pingSystem } from "../use-cases/system-ping";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
-import { createSyncRpcHandlers } from "./sync-handlers";
-import {
-  getSyncCursor,
-  InvalidSyncCursorError,
-  pullSyncChanges,
-} from "@polaris/db/sync-repository";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
+import { createSyncRpcHandlers } from "./sync-handlers";
 
 export interface PolarisRpcContext {
   bindings: WorkerBindings;
@@ -270,6 +271,7 @@ interface RpcRouterDependencies {
   listSales: typeof listSales;
   listUserOrganizations: typeof listUserOrganizations;
   pullSyncChanges: typeof pullSyncChanges;
+  readBootstrapPage: typeof readBootstrapPage;
   receiveStock: typeof receiveStock;
   registerDevice: typeof registerDevice;
   renameCategory: typeof renameCategory;
@@ -1109,8 +1111,10 @@ export function createRpcRouter(
   const syncHandlers = createSyncRpcHandlers({
     defaultGetSyncCursor: getSyncCursor,
     defaultPullSyncChanges: pullSyncChanges,
+    defaultReadBootstrapPage: readBootstrapPage,
     getSyncCursor: overrides.getSyncCursor,
     pullSyncChanges: overrides.pullSyncChanges,
+    readBootstrapPage: overrides.readBootstrapPage,
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });

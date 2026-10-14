@@ -159,3 +159,106 @@ describe("sync.pull", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });
+
+describe("sync.bootstrapPage", () => {
+  const categoryId = "0199c2d0-0000-7000-8000-0000000000c1";
+
+  function bootstrapClient(overrides: Record<string, unknown>) {
+    return createClient(overrides) as unknown as {
+      sync: { bootstrapPage: (input: unknown) => Promise<unknown> };
+    };
+  }
+
+  it("reads a page with sync:read for the requested organization", async () => {
+    const withTenantRequestContext = tenantContext();
+    const readBootstrapPage = vi.fn(() =>
+      Promise.resolve({
+        collection: "categories",
+        nextAfterId: categoryId,
+        rows: [
+          {
+            archivedAt: null,
+            deletedAt: null,
+            id: categoryId,
+            name: "Camisetas",
+            updatedAt: "2026-10-14T12:00:00.000Z",
+          },
+        ],
+      })
+    );
+    const client = bootstrapClient({
+      readBootstrapPage,
+      withTenantRequestContext,
+    });
+
+    const result = await client.sync.bootstrapPage({
+      collection: "categories",
+      limit: 50,
+      organizationId,
+    });
+
+    expect(withTenantRequestContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: "sync:read",
+        requestedOrganizationId: organizationId,
+      })
+    );
+    expect(readBootstrapPage).toHaveBeenCalledWith({}, identity, {
+      afterId: null,
+      collection: "categories",
+      ids: null,
+      limit: 50,
+    });
+    expect(result).toMatchObject({
+      collection: "categories",
+      nextAfterId: categoryId,
+    });
+  });
+
+  it("passes keyset positions and ids through", async () => {
+    const readBootstrapPage = vi.fn(() =>
+      Promise.resolve({ collection: "variants", nextAfterId: null, rows: [] })
+    );
+    const client = bootstrapClient({
+      readBootstrapPage,
+      withTenantRequestContext: tenantContext(),
+    });
+    await client.sync.bootstrapPage({
+      afterId: categoryId,
+      collection: "variants",
+      ids: [categoryId],
+      organizationId,
+    });
+    expect(readBootstrapPage).toHaveBeenCalledWith({}, identity, {
+      afterId: categoryId,
+      collection: "variants",
+      ids: [categoryId],
+      limit: 200,
+    });
+  });
+
+  it("rejects unknown collections, bad ids and bad limits before the repository", async () => {
+    const readBootstrapPage = vi.fn();
+    const client = bootstrapClient({
+      readBootstrapPage,
+      withTenantRequestContext: tenantContext(),
+    });
+    for (const input of [
+      { collection: "sales", organizationId },
+      { collection: "categories", ids: ["nope"], organizationId },
+      { collection: "categories", limit: 0, organizationId },
+      { collection: "categories", limit: 501, organizationId },
+      {
+        collection: "categories",
+        ids: Array.from({ length: 201 }, () => categoryId),
+        organizationId,
+      },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each input is verified on its own
+      await expect(client.sync.bootstrapPage(input)).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    }
+    expect(readBootstrapPage).not.toHaveBeenCalled();
+  });
+});

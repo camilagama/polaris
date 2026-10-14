@@ -666,6 +666,93 @@ const syncChange = z.object({
 
 export type SyncChangeReadModel = z.infer<typeof syncChange>;
 
+/**
+ * The read models a device keeps locally (plan PR50): smaller than the online
+ * ones, instants as ISO text, no costs and no audit data.
+ */
+const localCategory = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  deletedAt: z.string().datetime().nullable(),
+  id: z.string().uuid(),
+  name: z.string(),
+  updatedAt: z.string().datetime(),
+});
+const localCustomer = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  email: z.string().nullable(),
+  id: z.string().uuid(),
+  name: z.string(),
+  notes: z.string().nullable(),
+  phone: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+const localProduct = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  categoryId: z.string().uuid().nullable(),
+  deletedAt: z.string().datetime().nullable(),
+  description: z.string().nullable(),
+  id: z.string().uuid(),
+  name: z.string(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+const localVariant = z.object({
+  id: z.string().uuid(),
+  isDefault: z.boolean(),
+  listPrice: listPriceText.nullable(),
+  position: z.number().int().nonnegative().nullable(),
+  productId: z.string().uuid(),
+  sku: z.string().nullable(),
+  values: z.array(
+    z.object({ optionName: z.string(), optionValueName: z.string() })
+  ),
+});
+const localInventory = z.object({
+  productId: z.string().uuid(),
+  quantity: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+  variantId: z.string().uuid(),
+  version: z.number().int().nonnegative(),
+});
+
+export type LocalCategoryReadModel = z.infer<typeof localCategory>;
+export type LocalCustomerReadModel = z.infer<typeof localCustomer>;
+export type LocalProductReadModel = z.infer<typeof localProduct>;
+export type LocalVariantReadModel = z.infer<typeof localVariant>;
+export type LocalInventoryReadModel = z.infer<typeof localInventory>;
+
+const bootstrapNextAfterId = z.string().uuid().nullable();
+const bootstrapPageOutput = z.discriminatedUnion("collection", [
+  z.object({
+    collection: z.literal("categories"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localCategory),
+  }),
+  z.object({
+    collection: z.literal("customers"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localCustomer),
+  }),
+  z.object({
+    collection: z.literal("inventory"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localInventory),
+  }),
+  z.object({
+    collection: z.literal("products"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localProduct),
+  }),
+  z.object({
+    collection: z.literal("variants"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localVariant),
+  }),
+]);
+
+export type BootstrapPageReadModel = z.infer<typeof bootstrapPageOutput>;
+
 export const polarisContract = {
   category: {
     archive: oc
@@ -1221,6 +1308,26 @@ export const polarisContract = {
       .output(saleCustomerLinkChange),
   },
   sync: {
+    // One page of one local collection, keyed by id, or specific entities
+    // (`ids`) to re-read after a change. A device records the cursor first, reads
+    // its snapshot page by page, then pulls from the cursor.
+    bootstrapPage: oc
+      .input(
+        z.object({
+          afterId: z.string().uuid().nullish(),
+          collection: z.enum([
+            "categories",
+            "customers",
+            "inventory",
+            "products",
+            "variants",
+          ]),
+          ids: z.array(z.string().uuid()).max(200).nullish(),
+          limit: z.number().int().min(1).max(500).default(200),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(bootstrapPageOutput),
     // The latest committed change sequence of the organization. A device records
     // it before reading a snapshot and pulls from it afterwards.
     getCursor: oc

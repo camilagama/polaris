@@ -1,5 +1,6 @@
 import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
+import type { readBootstrapPage } from "@polaris/db/bootstrap-repository";
 import type {
   getSyncCursor,
   pullSyncChanges,
@@ -16,8 +17,10 @@ interface SyncRpcContext {
 interface SyncRpcDependencies {
   defaultGetSyncCursor: typeof getSyncCursor;
   defaultPullSyncChanges: typeof pullSyncChanges;
+  defaultReadBootstrapPage: typeof readBootstrapPage;
   getSyncCursor: typeof getSyncCursor | undefined;
   pullSyncChanges: typeof pullSyncChanges | undefined;
+  readBootstrapPage: typeof readBootstrapPage | undefined;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
@@ -50,6 +53,27 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
         .catch(dependencies.toRpcError)
   );
 
+  const bootstrapRepository =
+    dependencies.readBootstrapPage ?? dependencies.defaultReadBootstrapPage;
+  const bootstrapPage = implementContract.sync.bootstrapPage.handler(
+    ({ context, input }) =>
+      dependencies
+        .withTenantRequestContext({
+          bindings: context.bindings,
+          capability: "sync:read",
+          operation: (transaction, identity) =>
+            bootstrapRepository(transaction, identity, {
+              afterId: input.afterId ?? null,
+              collection: input.collection,
+              ids: input.ids ?? null,
+              limit: input.limit,
+            }),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        })
+        .catch(dependencies.toRpcError)
+  );
+
   const pull = implementContract.sync.pull.handler(({ context, input }) =>
     dependencies
       .withTenantRequestContext({
@@ -72,5 +96,5 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
       .catch(dependencies.toRpcError)
   );
 
-  return { getCursor, pull };
+  return { bootstrapPage, getCursor, pull };
 }
