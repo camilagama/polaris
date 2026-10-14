@@ -23,6 +23,9 @@ O ADR 0045 deixou a edição offline de fora de propósito: não havia comando d
 - Corrigir o telefone de um cliente sem rede passa a funcionar, e o único custo de duas pessoas editarem o mesmo cliente sem rede é uma alteração recusada à vista, nunca um dado sobrescrito em silêncio.
 - Uma edição recusada bloqueia a fila, que é ordenada: o que vem depois espera até a pessoa descartá-la em Pendências.
 - A linha local pode mostrar, de uma edição recusada, o cadastro de antes da edição até o próximo pull que traga a versão nova; a tela diz que a alteração foi recusada e a causa está em Pendências.
+- Entre o servidor aceitar a edição e o pull seguinte gravar a linha nova, a sobreposição já saiu (o comando deixou o outbox) e a linha local ainda é a antiga: a tela pode mostrar por instantes o cadastro de antes. Se esse pull falhar, a linha só se corrige na próxima sincronização bem-sucedida; editar de novo nesse intervalo parte da versão antiga e é recusado como conflito (nada é sobrescrito; descartar e refazer). É a mesma janela do cadastro offline, aceita.
+- A checagem de "uma edição por cliente" lê e grava o outbox em duas etapas: duas abas no mesmo instante podem enfileirar duas edições do mesmo cliente; a segunda é recusada por conflito (nada é sobrescrito).
+- Edição de entrada inválida (`baseVersion` ausente ou inválido) é recusada como `invalid_payload`, não repetida para sempre.
 - Quem edita sem rede um cliente que o outro aparelho também editou perde a digitação ao descartar; o painel mostra o nome digitado no título para a pessoa refazer.
 
 ## Alternativas rejeitadas

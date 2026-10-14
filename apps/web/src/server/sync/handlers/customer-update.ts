@@ -29,7 +29,11 @@ export function createCustomerUpdateHandler(
       if (error instanceof CustomerNotFoundError) {
         return "customer_not_found";
       }
-      if (error instanceof InvalidCustomerProfileError) {
+      if (
+        error instanceof InvalidCustomerProfileError ||
+        error instanceof InvalidSyncPayloadError
+      ) {
+        // a refusal of the command, not a failure to retry forever
         return "invalid_payload";
       }
       return null;

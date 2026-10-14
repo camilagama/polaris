@@ -108,6 +108,10 @@ describe("customer.update handler", () => {
     expect(handler.classify(new InvalidCustomerProfileError())).toBe(
       "invalid_payload"
     );
+    // a bad base version is thrown by execute: it must become a refusal, not a retry loop
+    expect(handler.classify(new InvalidSyncPayloadError())).toBe(
+      "invalid_payload"
+    );
     expect(handler.classify(new Error("db down"))).toBeNull();
   });
 });

@@ -881,23 +881,37 @@ export function CustomersPage() {
     setNotice(null);
   }, []);
 
-  const handleUseExisting = useCallback((customer: CustomerReadModel) => {
-    setStatus(customer.status);
-    setEditingCustomer(customer);
-    setDraft({
-      email: customer.email ?? "",
-      name: customer.name,
-      notes: customer.notes ?? "",
-      phone: customer.phone ?? "",
-    });
-    setDuplicateMatches([]);
-    setError(null);
-    setNotice(
-      customer.status === "archived"
-        ? "Cadastro existente selecionado. Ele continua arquivado até você restaurá-lo."
-        : "Cadastro existente selecionado para revisão. Nenhum dado foi mesclado."
-    );
-  }, []);
+  const handleUseExisting = useCallback(
+    (customer: CustomerReadModel) => {
+      const locked = lockedReasonFor(
+        syncStates.get(customer.id),
+        updateStates.get(customer.id)
+      );
+      if (locked) {
+        // the same lock as the card: nothing is edited on top of an unconfirmed change
+        setError(locked);
+        setNotice(null);
+        setDuplicateMatches([]);
+        return;
+      }
+      setStatus(customer.status);
+      setEditingCustomer(customer);
+      setDraft({
+        email: customer.email ?? "",
+        name: customer.name,
+        notes: customer.notes ?? "",
+        phone: customer.phone ?? "",
+      });
+      setDuplicateMatches([]);
+      setError(null);
+      setNotice(
+        customer.status === "archived"
+          ? "Cadastro existente selecionado. Ele continua arquivado até você restaurá-lo."
+          : "Cadastro existente selecionado para revisão. Nenhum dado foi mesclado."
+      );
+    },
+    [syncStates, updateStates]
+  );
 
   const handleCancelEdit = useCallback(() => {
     setEditingCustomer(null);
@@ -909,8 +923,13 @@ export function CustomersPage() {
 
   const findDraftDuplicates = useCallback(async () => {
     if (workspace) {
+      const [rows, snapshot] = await Promise.all([
+        workspace.stores.writer.rows("customers"),
+        workspace.stores.outbox.snapshot(),
+      ]);
       return findLocalDuplicates(
-        await workspace.stores.writer.rows("customers"),
+        // a phone or e-mail changed by an edit that is still waiting counts
+        overlayPendingCustomerEdits(rows, snapshot.commands),
         organizationId,
         { email: draft.email, phone: draft.phone }
       );
