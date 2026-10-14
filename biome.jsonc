@@ -91,6 +91,70 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/db/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "react",
+                      "react/**",
+                      "react-dom",
+                      "react-dom/**",
+                      "hono",
+                      "hono/**",
+                      "@orpc/**",
+                      "@polaris/web",
+                      "@polaris/web/**",
+                      "../../../apps/**",
+                      "../../apps/**"
+                    ],
+                    "message": "packages/db must not depend on the web app, the UI or the HTTP layer."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/src/**", "!apps/web/src/server/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/db",
+                      "@polaris/db/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "better-auth",
+                      "better-auth/**",
+                      "../server/**",
+                      "../../server/**",
+                      "../../../server/**"
+                    ],
+                    "message": "Browser code must not import the database, the server layer or server-only libraries."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

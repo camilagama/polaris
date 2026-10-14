@@ -1,3 +1,4 @@
+import { isValidCalendarDate } from "./calendar-date";
 import {
   InventoryQuantityLimitError,
   MAX_INVENTORY_QUANTITY,
@@ -17,7 +18,6 @@ export const MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS = 500;
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const occurredOnPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export interface WriteOffStockCommandInput {
   commandId: string;
@@ -61,37 +61,6 @@ export function isWriteOffReasonCode(
   value: string
 ): value is WriteOffReasonCode {
   return WRITE_OFF_REASON_CODES.some((reasonCode) => reasonCode === value);
-}
-
-function isValidCalendarDate(value: string): boolean {
-  const match = occurredOnPattern.exec(value);
-  if (!match) {
-    return false;
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (year < 1 || month < 1 || month > 12 || day < 1) {
-    return false;
-  }
-
-  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const daysInMonth = [
-    31,
-    leapYear ? 29 : 28,
-    31,
-    30,
-    31,
-    30,
-    31,
-    31,
-    30,
-    31,
-    30,
-    31,
-  ];
-  return day <= (daysInMonth[month - 1] ?? 0);
 }
 
 /**

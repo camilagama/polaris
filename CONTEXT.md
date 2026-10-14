@@ -45,7 +45,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Categoria removida:** categoria preservada como tombstone para manter histórico e leitura offline; não pode ser restaurada nem apagada fisicamente pela operação normal.
 
-**Tombstone:** registro com `deleted_at` que representa uma remoção lógica e preserva identidade e timestamps para histórico/leitura offline; não é um hard-delete.
+**Tombstone:** registro que representa uma remoção lógica e preserva identidade e datas para histórico e leitura offline; não é um hard-delete.
 
 **Asset de mídia (asset):** imagem pertencente a uma organização e vinculada a um produto; pode ser associada a várias variantes desse produto sem duplicar o asset.
 
@@ -63,10 +63,14 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Prazo esperado de recebimento:** estimativa em número de dias da regra de pagamento; não cria data de liquidação nem contas a receber.
 
 **Devolução:** registro de itens devolvidos e da quantidade que volta ao estoque vendável.
-**Cancelamento da venda:** registro compensatório que desfaz a venda inteira devolvendo ao estoque as quantidades de todos os itens; a venda confirmada e seus movimentos originais permanecem. Uma venda é cancelada uma vez e não pode ser cancelada se já tiver devoluções.
-**Quantidade devolvida e quantidade reposta:** em cada linha de devolução, a quantidade que o comprador devolveu e a parte dela que volta ao estoque vendável; a reposta nunca excede a devolvida, e a devolvida nunca excede o que ainda estava disponível para devolução.
-**Momento comercial, data comercial e evidência local:** o momento comercial (`occurred_at`) é o instante em que a venda aconteceu, informado pelo operador; a data comercial (`occurred_on`) é a data desse instante no calendário da organização e é a data dos movimentos de estoque da venda; a evidência local (`recorded_at`) é o horário do dispositivo ao criar a venda e não decide nenhuma regra. A confirmação (`confirmed_at`) é sempre o relógio do servidor.
-**Janela retroativa:** quantos dias de calendário, no fuso da organização, um papel pode voltar ao registrar uma venda: 30 para o owner na V1.
+**Registro compensatório:** registro novo que corrige uma venda confirmada sem editá-la; cancelamento e devolução são registros compensatórios.
+**Cancelamento da venda:** registro compensatório que desfaz a venda inteira devolvendo ao estoque as quantidades de todos os itens; a venda confirmada e seus movimentos originais permanecem. Regras em [vendas](docs/business-rules/sales.md).
+**Quantidade devolvida e quantidade reposta:** em cada linha de devolução, a quantidade que o comprador devolveu e a parte dela que volta ao estoque vendável; as duas são registradas separadamente.
+**Momento comercial:** o instante em que a venda aconteceu, informado pelo operador.
+**Data comercial:** a data do momento comercial no calendário da organização; é a data dos movimentos de estoque da venda.
+**Evidência local:** o horário do dispositivo ao criar a venda; não decide nenhuma regra.
+**Confirmação da venda:** o momento em que o servidor aceita a venda, pelo relógio do servidor.
+**Janela retroativa:** quantos dias de calendário, no fuso da organização, um papel pode voltar ao registrar uma venda. O valor e as demais regras de datas estão em [tempo e datas](docs/business-rules/time-and-dates.md).
 
 **Cliente:** pessoa ou organização que o revendedor escolhe cadastrar ou associar a uma venda. Uma venda não exige cliente.
 

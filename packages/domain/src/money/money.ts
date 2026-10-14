@@ -10,7 +10,11 @@ const percentageFactor = 10n ** BigInt(PERCENTAGE_SCALE);
 const maxMoneyMinorUnits =
   10n ** BigInt(MAX_MONEY_INTEGER_DIGITS + MONEY_SCALE) - 1n;
 const decimalPattern = /^(-?)(\d+)(?:\.(\d+))?$/;
-const leadingZeroPattern = /^0+(?=\d)$/;
+const leadingZeroPattern = /^0+(?=\d)/;
+/** Longest decimal text accepted before any BigInt work. */
+const MAX_DECIMAL_TEXT_LENGTH = 64;
+/** Largest fee or adjustment rate, in percentage points. */
+export const MAX_RATE_PERCENTAGE_POINTS = 100;
 const trailingZeroPattern = /0+$/;
 
 export class InvalidMoneyError extends Error {
@@ -87,7 +91,11 @@ function parseDecimal(
     throw invalid();
   }
 
-  const match = decimalPattern.exec(value.trim());
+  const trimmed = value.trim();
+  if (trimmed.length > MAX_DECIMAL_TEXT_LENGTH) {
+    throw invalid();
+  }
+  const match = decimalPattern.exec(trimmed);
   if (!match) {
     throw invalid();
   }
@@ -321,6 +329,18 @@ export class Percentage {
       BigInt(parsed.whole) * percentageFactor +
         BigInt(parsed.fraction.padEnd(PERCENTAGE_SCALE, "0") || "0")
     );
+  }
+
+  /**
+   * A fee or adjustment rate: nonnegative and at most 100 percentage points.
+   * A mistyped 250 (for 2.50) is refused here instead of distorting a sale.
+   */
+  static fromRate(value: string): Percentage {
+    const rate = Percentage.from(value);
+    if (rate.units > BigInt(MAX_RATE_PERCENTAGE_POINTS) * percentageFactor) {
+      throw new InvalidPercentageError();
+    }
+    return rate;
   }
 
   applyTo(amount: Money): DecimalAmount {

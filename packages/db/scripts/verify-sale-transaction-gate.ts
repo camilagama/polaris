@@ -43,6 +43,7 @@ import {
   disposableHostPattern,
   expectSqlState,
   gateBranchPattern,
+  journalMigrationCount,
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
@@ -114,7 +115,7 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok(Number(migrations.rows[0]?.count) >= 35);
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
     tests.push(
       "migrations 0000-0034 (and any later ones) were replayed from scratch"
     );
@@ -1235,8 +1236,11 @@ async function run() {
       "six concurrent deliveries of one command ID create one sale and one set of stock movements; the rest replay"
     );
 
+    // Six sales (three per order) all queue behind the same two product locks;
+    // each holds them for a full transaction, so more would only measure how far
+    // away the database is from the machine running the gate.
     const orderedPairs = await Promise.allSettled(
-      Array.from({ length: 12 }, (_, index) =>
+      Array.from({ length: 6 }, (_, index) =>
         confirm(
           tenantA,
           command(productA1.variantId, {
@@ -1372,6 +1376,10 @@ async function run() {
             );
           }
           if (options.movement !== false) {
+            // the product may hold no stock: a receipt keeps the ledger at the balance
+            await transaction.execute(
+              sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta, unit_cost) VALUES (${org}, ${randomUUID()}, 0, 1, '2026-10-13', 'receipt', ${product.productId}, ${product.variantId}, 1, '1.000000')`
+            );
             await transaction.execute(
               sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta) VALUES (${org}, ${commandId}, 0, 1, ${options.movementOn ?? "2026-10-13"}, 'sale', ${product.productId}, ${product.variantId}, -1)`
             );

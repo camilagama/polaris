@@ -2,9 +2,9 @@
   min-width: 0;
   padding: clamp(1rem, 2.5vw, 1.5rem);
   margin: 1rem 0;
-  color: var(--category-ink);
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.85rem;
 }
 
@@ -19,7 +19,7 @@
   min-width: 0;
   padding: 0.85rem;
   margin: 0.8rem 0;
-  border: 1px solid var(--category-line);
+  border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
 }
 
@@ -27,7 +27,7 @@
   padding: 0 0.35rem;
   font-size: 0.82rem;
   font-weight: 750;
-  color: var(--category-muted);
+  color: var(--ui-muted);
 }
 
 .sale-cancel select,
@@ -35,9 +35,9 @@
   width: 100%;
   padding: 0.6rem 0.8rem;
   font: inherit;
-  color: var(--category-ink);
-  background: var(--category-surface);
-  border: 1px solid var(--category-line);
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
   border-radius: 0.55rem;
 }
 
@@ -50,7 +50,7 @@
 }
 
 .sale-cancel [aria-invalid="true"] {
-  border-color: var(--category-danger);
+  border-color: var(--ui-danger);
 }
 
 .sale-cancel-fields:disabled {
@@ -58,6 +58,6 @@
 }
 
 .sale-danger {
-  color: var(--category-danger-strong);
-  border-color: color-mix(in srgb, var(--category-danger) 45%, transparent);
+  color: var(--ui-danger-strong);
+  border-color: color-mix(in srgb, var(--ui-danger) 45%, transparent);
 }

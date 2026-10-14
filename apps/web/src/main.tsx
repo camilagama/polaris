@@ -1,13 +1,8 @@
 import { createRoot } from "react-dom/client";
-import { CategoriesPage } from "./catalog/categories-page";
-import { ProductsPage } from "./catalog/products-page";
-import { CustomersPage } from "./customers/customers-page";
-import { PaymentProfilesPage } from "./payment-profiles/payment-profiles-page";
-import { SaleCustomerPage } from "./sales/sale-customer-page";
-import { SaleDetailPage } from "./sales/sale-detail-page";
-import { SaleHistoryPage } from "./sales/sale-history-page";
-import { SalePage } from "./sales/sale-page";
+import { App } from "./app-shell/app";
 import "./styles.css";
+import "./styles/tokens.css";
+import "./styles/ui.css";
 
 const rootElement = document.getElementById("root");
 
@@ -44,29 +39,5 @@ if (isOfflinePocRoute) {
   };
   loadOfflineLab().catch(() => undefined);
 } else {
-  switch (window.location.pathname) {
-    case "/products":
-      root.render(<ProductsPage />);
-      break;
-    case "/customers":
-      root.render(<CustomersPage />);
-      break;
-    case "/payment-profiles":
-      root.render(<PaymentProfilesPage />);
-      break;
-    case "/sales/history":
-      root.render(<SaleHistoryPage />);
-      break;
-    case "/sales/detail":
-      root.render(<SaleDetailPage />);
-      break;
-    case "/sales/customer":
-      root.render(<SaleCustomerPage />);
-      break;
-    case "/sales":
-      root.render(<SalePage />);
-      break;
-    default:
-      root.render(<CategoriesPage />);
-  }
+  root.render(<App />);
 }

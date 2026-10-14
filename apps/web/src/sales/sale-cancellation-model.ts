@@ -5,11 +5,8 @@ import {
   MAX_CANCELLATION_NOTE_CODE_POINTS,
   normalizeCancelSaleCommand,
 } from "@polaris/domain/sales/sale-cancellation";
-import {
-  isDefiniteRejection,
-  rpcErrorCode,
-  rpcErrorReason,
-} from "./sale-form-model";
+import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import { isDefiniteRejection } from "./sale-form-model";
 
 type CancelSaleRequest = Parameters<PolarisRpcClient["sale"]["cancel"]>[0];
 export type CancelSaleResult = Awaited<

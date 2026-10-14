@@ -25,6 +25,12 @@ import {
   type SaleAdjustmentCalculation,
   SaleDiscountExceedsSubtotalError,
 } from "@polaris/domain/sales/sale-adjustments";
+import {
+  formatBrlAmount,
+  formatCalendarDate,
+  formatInstant,
+} from "../lib/format";
+import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
 
 /* -------------------------------------------------------------------------- */
 /* Types and constants                                                        */
@@ -129,25 +135,7 @@ export type Loadable<T> =
 /* -------------------------------------------------------------------------- */
 
 const decimalTextPattern = /^(-?)(\d+)(?:\.(\d+))?$/;
-const thousandsPattern = /\B(?=(\d{3})+(?!\d))/g;
 const trailingZerosPattern = /0+$/;
-const instantFormatter = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
-
-/** Formats an exact decimal string as BRL without going through a float. */
-export function formatBrlAmount(value: string): string {
-  const match = decimalTextPattern.exec(value.trim());
-  if (!match) {
-    return value;
-  }
-  const sign = match[1] ?? "";
-  const whole = (match[2] ?? "0").replace(thousandsPattern, ".");
-  const trimmed = (match[3] ?? "").replace(trailingZerosPattern, "");
-  const fraction = trimmed.padEnd(2, "0");
-  return `${sign}R$ ${whole},${fraction}`;
-}
 
 /** Formats a percentage in percentage points: "2.500000" becomes "2,5%". */
 export function formatPercentage(value: string): string {
@@ -158,11 +146,6 @@ export function formatPercentage(value: string): string {
   const trimmed = (match[3] ?? "").replace(trailingZerosPattern, "");
   const whole = match[2] ?? "0";
   return `${whole}${trimmed ? `,${trimmed}` : ""}%`;
-}
-
-export function formatInstant(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);
 }
 
 function signedBrl(sign: "+" | "-", amount: string): string {
@@ -498,14 +481,6 @@ export type CatalogView =
   | { kind: "error"; message: string }
   | { kind: "empty"; message: string }
   | { kind: "ready"; options: ChoiceOption[] };
-
-export function rpcErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  const { code } = error as { code?: unknown };
-  return typeof code === "string" ? code : undefined;
-}
 
 /** Message for a failed read of products, profiles, variants or stock. */
 export function loadErrorMessage(error: unknown, subject: string): string {
@@ -1844,19 +1819,6 @@ function failure(
   };
 }
 
-/** Reads the stable domain code from an oRPC error's `data.reason`. */
-export function rpcErrorReason(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("data" in error)) {
-    return undefined;
-  }
-  const { data } = error as { data?: unknown };
-  if (typeof data !== "object" || data === null || !("reason" in data)) {
-    return undefined;
-  }
-  const { reason } = data as { reason?: unknown };
-  return typeof reason === "string" ? reason : undefined;
-}
-
 /** Failures the server answered definitively, from the oRPC code alone. */
 function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
   switch (code) {
@@ -2060,14 +2022,8 @@ function confirmedPaymentDetails(
   ];
 }
 
-/** dd/mm/aaaa from a YYYY-MM-DD calendar date, without any time zone shift. */
-export function formatCalendarDate(value: string): string {
-  const [year, month, day] = value.split("-");
-  return year && month && day ? `${day}/${month}/${year}` : value;
-}
-
 const timeFormatter = new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" });
-function localDay(instant: string): string {
+export function localDay(instant: string): string {
   const date = new Date(instant);
   if (Number.isNaN(date.getTime())) {
     return "";

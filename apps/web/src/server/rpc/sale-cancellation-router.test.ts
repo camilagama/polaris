@@ -46,8 +46,6 @@ const identity: TenantRequestIdentity = {
 const testBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
-  DB_POC_ENABLED: "false",
-  DB_RLS_POC_ENABLED: "false",
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   ONBOARDING_HYPERDRIVE: {
     connectionString: "postgresql://onboarding.invalid/neondb",
@@ -78,6 +76,7 @@ function createRpcClient(router = createRpcRouter()) {
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
     method: "POST",
+    headers: { origin: "https://polaris.example.invalid" },
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
   return createORPCClient(link) as unknown as {
@@ -261,10 +260,12 @@ describe("sale.list and sale.get RPCs", () => {
         cancelledAt: null,
         confirmedAt: new Date("2026-10-13T18:30:01.000Z"),
         customerId: null,
+        customerName: null,
         hasReturns: false,
         id: saleId,
         itemCount: 1,
         occurredAt: new Date("2026-10-13T18:30:00.000Z"),
+        occurredOn: "2026-10-13",
         paymentMethod: "pix",
         status: "confirmed" as const,
         totalDue: "99.80",
@@ -273,10 +274,12 @@ describe("sale.list and sale.get RPCs", () => {
         cancelledAt: new Date("2026-10-13T21:00:00.000Z"),
         confirmedAt: new Date("2026-10-13T19:00:01.000Z"),
         customerId: "0199c2d0-0000-7000-8000-000000000031",
+        customerName: "Ana Souza",
         hasReturns: false,
         id: "0199c2d0-0000-7000-8000-000000000005",
         itemCount: 2,
         occurredAt: new Date("2026-10-13T19:00:00.000Z"),
+        occurredOn: "2026-10-13",
         paymentMethod: "cash",
         status: "cancelled" as const,
         totalDue: "10.00",

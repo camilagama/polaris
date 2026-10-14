@@ -134,10 +134,12 @@ function saleListEntryReadModel(entry: SaleListEntry): SaleListEntryReadModel {
     cancelledAt: entry.cancelledAt?.toISOString() ?? null,
     confirmedAt: entry.confirmedAt.toISOString(),
     customerId: entry.customerId,
+    customerName: entry.customerName,
     hasReturns: entry.hasReturns,
     id: entry.id,
     itemCount: entry.itemCount,
     occurredAt: entry.occurredAt.toISOString(),
+    occurredOn: entry.occurredOn,
     paymentMethod: entry.paymentMethod as PaymentMethod | null,
     status: entry.status,
     totalDue: entry.totalDue,
@@ -292,10 +294,16 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .withTenantRequestContext({
         bindings: context.bindings,
         capability: "sale:read",
+        isolationLevel: "repeatable read",
         operation: (transaction, identity) =>
           listRepository(transaction, identity, {
+            customerQuery: input.customerQuery,
             limit: input.limit,
+            occurredFrom: input.occurredFrom,
+            occurredTo: input.occurredTo,
             offset: input.offset,
+            query: input.query,
+            status: input.status,
           }),
         request: context.request,
         requestedOrganizationId: input.organizationId,
@@ -312,6 +320,7 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .withTenantRequestContext({
         bindings: context.bindings,
         capability: "sale:read",
+        isolationLevel: "repeatable read",
         operation: (transaction, identity) =>
           getRepository(transaction, identity, input.saleId),
         request: context.request,

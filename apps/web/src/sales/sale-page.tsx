@@ -1,3 +1,7 @@
+import type {
+  InventoryBalanceEntryReadModel,
+  PaymentProfileReadModel,
+} from "@polaris/contracts";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -9,55 +13,69 @@ import {
   useRef,
   useState,
 } from "react";
-import type { PaymentProfileReadModel } from "@polaris/contracts";
+import { useCurrentOrganization } from "../lib/current-organization";
+import { browserStorage } from "../lib/current-organization-model";
+import { focusLater } from "../lib/focus";
+import { formatBrlAmount } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
-import "../catalog/categories-page.css";
+import { useNow } from "../lib/use-now";
 import "./sale-page.css";
 import {
+  mergeLastPrices,
+  type RememberedPrices,
+  readLastPrices,
+  suggestionHint,
+  suggestPrices,
+  withSuggestedPrices,
+  writeLastPrices,
+} from "./last-prices-model";
+import {
+  readSaleAttempt,
+  sessionStorageOrNull,
+  writeSaleAttempt,
+} from "./sale-attempt-storage";
+import { SaleCustomerDisclosure } from "./sale-customer-panel";
+import {
   ADJUSTMENT_KINDS,
-  acknowledgeProfileReview,
-  attemptAfterFailure,
-  cancelDiscard,
-  discardLockedSale,
-  editSaleForm,
-  isFormLocked,
-  requestDiscard,
   type AdjustmentDraft,
+  acknowledgeProfileReview,
   addAdjustment,
   addItem,
   adjustmentFieldKey,
-  autoSelectOnlyVariants,
+  attemptAfterFailure,
   type CatalogView,
   type ChoiceOption,
-  canStartSubmission,
-  chooseItemVariant,
   type ConfirmedSaleView,
+  cancelDiscard,
+  canStartSubmission,
   confirmSubmission,
   createBlankSaleForm,
-  editSaleDate,
+  discardLockedSale,
   type EvaluationContext,
+  editSaleDate,
+  editSaleForm,
   evaluateSaleForm,
-  failSubmission,
   type FeeLine,
   type FeePreview,
-  formatBrlAmount,
+  failSubmission,
   formFieldKeys,
-  SALE_DATE_HINT,
   INSTALLMENT_PLANS,
-  idleSubmission,
-  isSubmitting,
   type ItemDraft,
+  idleSubmission,
+  isFormLocked,
+  isSubmitting,
   itemFieldKey,
   MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
   NO_PROFILE_CHOICE,
   prepareConfirmation,
-  productsView,
   profilesView,
   reconcileProfileReload,
   rejectSubmission,
   removeAdjustment,
   removeItem,
+  requestDiscard,
+  SALE_DATE_HINT,
   SALE_METHODS,
   type SaleAttempt,
   type SaleEvaluation,
@@ -65,7 +83,6 @@ import {
   type SaleMethod,
   type SaleSummary,
   type SubmissionState,
-  selectItemProduct,
   selectPaymentMethod,
   selectProfileChoice,
   startSubmission,
@@ -74,13 +91,14 @@ import {
   updateAdjustment,
   updateItem,
   updatePayment,
-  type VariantConfigurations,
-  variantsView,
 } from "./sale-form-model";
-import { SaleCustomerDisclosure } from "./sale-customer-panel";
 import { saleDetailHref } from "./sale-history-model";
 import { SaleSnapshot } from "./sale-snapshot";
-import { readOrganizationId, SalesTopbar } from "./sales-shell";
+import { VariantSearch } from "./sale-variant-picker";
+import {
+  clearedItemChanges,
+  itemChangesForEntry,
+} from "./sale-variant-picker-model";
 import { useSaleCatalog } from "./use-sale-catalog";
 
 const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
@@ -283,15 +301,13 @@ interface ItemEditorProps {
   index: number;
   item: ItemDraft;
   onChange: (draftId: string, changes: Partial<ItemDraft>) => void;
-  onProductChange: (draftId: string, productId: string) => void;
+  onClearVariant: (draftId: string) => void;
+  onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
   onRemove: (draftId: string) => void;
-  onVariantChange: (draftId: string, variantId: string) => void;
-  onRetry: () => void;
-  productOptions: readonly ChoiceOption[];
-  productsLoading: boolean;
+  organizationId: string;
+  priceHint: string | null;
   stock: EvaluationContext["stock"];
   stockWarning: string | undefined;
-  variants: VariantConfigurations[string] | undefined;
 }
 
 function ItemEditor({
@@ -300,26 +316,27 @@ function ItemEditor({
   index,
   item,
   onChange,
-  onProductChange,
+  onClearVariant,
+  onPick,
   onRemove,
-  onRetry,
-  onVariantChange,
-  productOptions,
-  productsLoading,
+  organizationId,
+  priceHint,
   stock,
   stockWarning,
-  variants,
 }: ItemEditorProps) {
   const prefix = `sale-item-${item.draftId}`;
-  const variantView = variantsView(variants);
-  const stockState = item.variantId ? stockView(stock[item.variantId]) : null;
-  const handleProduct = useCallback(
-    (value: string) => onProductChange(item.draftId, value),
-    [item.draftId, onProductChange]
+  const chosen = item.variantId !== "";
+  const stockState = chosen ? stockView(stock[item.variantId]) : null;
+  const pickError =
+    errors[itemFieldKey(item.draftId, "product")] ??
+    errors[itemFieldKey(item.draftId, "variant")];
+  const handlePick = useCallback(
+    (entry: InventoryBalanceEntryReadModel) => onPick(item.draftId, entry),
+    [item.draftId, onPick]
   );
-  const handleVariant = useCallback(
-    (value: string) => onVariantChange(item.draftId, value),
-    [item.draftId, onVariantChange]
+  const handleClear = useCallback(
+    () => onClearVariant(item.draftId),
+    [item.draftId, onClearVariant]
   );
   const handleQuantity = useCallback(
     (value: string) => onChange(item.draftId, { quantity: value }),
@@ -340,35 +357,25 @@ function ItemEditor({
   return (
     <fieldset className="sale-item">
       <legend>Item {index + 1}</legend>
-      <div className="sale-grid">
-        <SelectField
-          disabled={productsLoading}
-          error={errors[itemFieldKey(item.draftId, "product")]}
-          id={`${prefix}-product`}
-          label="Produto"
-          onChange={handleProduct}
-          options={productOptions}
-          placeholder={productsLoading ? "Carregando…" : "Escolha um produto"}
-          value={item.productId}
+      {chosen ? (
+        <div className="sale-chosen">
+          <p className="sale-chosen-label">{item.label}</p>
+          <button
+            className="quiet-button sale-chosen-change"
+            onClick={handleClear}
+            type="button"
+          >
+            Trocar variante
+          </button>
+        </div>
+      ) : (
+        <VariantSearch
+          error={pickError}
+          id={prefix}
+          onPick={handlePick}
+          organizationId={organizationId}
         />
-        {item.productId ? (
-          <SelectField
-            disabled={variantView?.kind !== "ready"}
-            error={errors[itemFieldKey(item.draftId, "variant")]}
-            id={`${prefix}-variant`}
-            label="Variante"
-            onChange={handleVariant}
-            options={optionsOf(variantView)}
-            placeholder={
-              variantView?.kind === "loading"
-                ? "Carregando…"
-                : "Escolha a variante"
-            }
-            value={item.variantId}
-          />
-        ) : null}
-      </div>
-      <CatalogNotice onRetry={onRetry} view={variantView} />
+      )}
       {stockState ? (
         <p
           className={`sale-stock is-${stockState.tone}`}
@@ -416,6 +423,11 @@ function ItemEditor({
           value={item.chargedUnitPrice}
         />
       </div>
+      {priceHint ? (
+        <p className="sale-hint" role="note">
+          {priceHint}
+        </p>
+      ) : null}
       {canRemove ? (
         <button className="sale-remove" onClick={handleRemove} type="button">
           Remover item {index + 1}
@@ -579,6 +591,7 @@ interface PaymentSectionProps {
   evaluation: SaleEvaluation;
   form: SaleFormState;
   onAcknowledgeReview: () => void;
+  onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onInstallmentPlanChange: (value: string) => void;
   onInstallmentsChange: (value: string) => void;
   onMethodChange: (value: string) => void;
@@ -586,7 +599,6 @@ interface PaymentSectionProps {
   onRetry: () => void;
   profileOptions: readonly ChoiceOption[];
   profilesView: CatalogView;
-  onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }
 
 function PaymentSection({
@@ -983,14 +995,31 @@ function focusFirstInvalidField() {
   });
 }
 
+/** Re-evaluating the form every minute keeps "now" honest on a form left open. */
+const CLOCK_TICK_MS = 60_000;
+
 export function SalePage() {
-  const [organizationId] = useState(readOrganizationId);
+  const { organizationId } = useCurrentOrganization();
+  const now = useNow(CLOCK_TICK_MS);
+  const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
+    readLastPrices(browserStorage(), organizationId)
+  );
   const [form, setForm] = useState<SaleFormState>(() =>
     createBlankSaleForm(newId)
   );
   const [submission, setSubmission] = useState<SubmissionState>(idleSubmission);
   const [showRequired, setShowRequired] = useState(false);
-  const attemptRef = useRef<SaleAttempt | null>(null);
+  const [restoredAttempt] = useState<SaleAttempt | null>(() =>
+    readSaleAttempt(sessionStorageOrNull(), organizationId, new Date())
+  );
+  const attemptRef = useRef<SaleAttempt | null>(restoredAttempt);
+  const rememberAttempt = useCallback(
+    (attempt: SaleAttempt | null) => {
+      attemptRef.current = attempt;
+      writeSaleAttempt(sessionStorageOrNull(), organizationId, attempt);
+    },
+    [organizationId]
+  );
   const inFlightRef = useRef<boolean>(false);
   const confirmedRef = useRef<HTMLElement | null>(null);
 
@@ -1001,55 +1030,23 @@ export function SalePage() {
     []
   );
   const catalog = useSaleCatalog(organizationId, handleProfilesLoaded);
-  const { ensureStock, ensureVariants, refreshAll, resetStock } = catalog;
+  const { refresh, resetStock, seedStock } = catalog;
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),
     [catalog.profiles]
   );
-  const productNames = useMemo(
-    () =>
-      new Map<string, string>(
-        catalog.products.status === "ready"
-          ? catalog.products.value.map((product) => [product.id, product.name])
-          : []
-      ),
-    [catalog.products]
-  );
-  const productsState = productsView(catalog.products);
   const profilesState = profilesView(catalog.profiles);
   const evaluation = useMemo(
     () =>
       evaluateSaleForm(
         form,
         { profiles: activeProfiles, stock: catalog.stock },
-        { now: new Date(), showRequired }
+        { now, showRequired }
       ),
-    [activeProfiles, catalog.stock, form, showRequired]
+    [activeProfiles, catalog.stock, form, now, showRequired]
   );
 
-  const ensureItemData = useCallback(
-    (items: readonly ItemDraft[]) => {
-      for (const item of items) {
-        if (item.productId !== "") {
-          ensureVariants(item.productId);
-        }
-        if (item.variantId !== "") {
-          ensureStock(item.variantId);
-        }
-      }
-    },
-    [ensureStock, ensureVariants]
-  );
-  useEffect(() => {
-    ensureItemData(form.items);
-  }, [ensureItemData, form.items]);
-  useEffect(() => {
-    const next = autoSelectOnlyVariants(form, catalog.variants, productNames);
-    if (next !== form) {
-      setForm(next);
-    }
-  }, [catalog.variants, form, productNames]);
   useEffect(() => {
     if (submission.phase === "confirmed") {
       confirmedRef.current?.focus();
@@ -1057,9 +1054,12 @@ export function SalePage() {
   }, [submission.phase]);
 
   const handleRefresh = useCallback(() => {
-    refreshAll();
-    ensureItemData(form.items);
-  }, [ensureItemData, form.items, refreshAll]);
+    refresh(
+      form.items
+        .map((item) => item.variantId)
+        .filter((variantId) => variantId !== "")
+    );
+  }, [form.items, refresh]);
 
   const editForm = useCallback(
     (edit: (current: SaleFormState) => SaleFormState) =>
@@ -1071,23 +1071,39 @@ export function SalePage() {
       editForm((current) => updateItem(current, draftId, changes)),
     [editForm]
   );
-  const handleProductChange = useCallback(
-    (draftId: string, productId: string) =>
-      editForm((current) => selectItemProduct(current, draftId, productId)),
+  const handleClearVariant = useCallback(
+    (draftId: string) => {
+      editForm((current) => updateItem(current, draftId, clearedItemChanges));
+      focusLater(() =>
+        document.getElementById(`sale-item-${draftId}-search`)?.focus()
+      );
+    },
     [editForm]
   );
-  const handleVariantChange = useCallback(
-    (draftId: string, variantId: string) =>
-      editForm((current) =>
-        chooseItemVariant(
-          current,
-          draftId,
-          variantId,
-          catalog.variants,
-          productNames
-        )
-      ),
-    [catalog.variants, editForm, productNames]
+  const handlePickVariant = useCallback(
+    (draftId: string, entry: InventoryBalanceEntryReadModel) => {
+      seedStock([entry]);
+      const suggestion = suggestPrices(lastPrices, entry.variantId);
+      editForm((current) => {
+        const item = current.items.find(
+          (candidate) => candidate.draftId === draftId
+        );
+        const prices = item ? withSuggestedPrices(item, suggestion) : null;
+        return updateItem(current, draftId, {
+          ...itemChangesForEntry(entry),
+          ...(prices
+            ? {
+                chargedUnitPrice: prices.chargedUnitPrice,
+                listedUnitPrice: prices.listedUnitPrice,
+              }
+            : {}),
+        });
+      });
+      focusLater(() =>
+        document.getElementById(`sale-item-${draftId}-quantity`)?.focus()
+      );
+    },
+    [editForm, lastPrices, seedStock]
   );
   const handleAddItem = useCallback(
     () => editForm((current) => addItem(current, newId())),
@@ -1165,20 +1181,23 @@ export function SalePage() {
         return;
       }
       setShowRequired(true);
-      const { body } = evaluation;
-      if (
-        !organizationId ||
-        body === null ||
-        !canStartSubmission(submission, evaluation)
-      ) {
+      // The clock is read at the click, not taken from the last render.
+      const submittedAt = new Date();
+      const fresh = evaluateSaleForm(
+        form,
+        { profiles: activeProfiles, stock: catalog.stock },
+        { now: submittedAt, showRequired: true }
+      );
+      const { body } = fresh;
+      if (body === null || !canStartSubmission(submission, fresh)) {
         focusFirstInvalidField();
         return;
       }
       const prepared = prepareConfirmation({
-        occurredAtOverride: evaluation.occurredAtOverride,
         body,
         createId: newId,
-        now: new Date(),
+        now: submittedAt,
+        occurredAtOverride: fresh.occurredAtOverride,
         organizationId,
         previousAttempt: attemptRef.current,
       });
@@ -1186,25 +1205,41 @@ export function SalePage() {
         setSubmission(rejectSubmission(prepared.message));
         return;
       }
-      attemptRef.current = prepared.attempt;
+      rememberAttempt(prepared.attempt);
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {
         const sale = await orpcClient.sale.confirm(prepared.request);
-        attemptRef.current = null;
+        rememberAttempt(null);
+        const remembered = mergeLastPrices(
+          lastPrices,
+          sale.items,
+          sale.sale.occurredOn
+        );
+        setLastPrices(remembered);
+        writeLastPrices(browserStorage(), organizationId, remembered);
         setSubmission(confirmSubmission(sale));
         setForm(createBlankSaleForm(newId));
         setShowRequired(false);
         resetStock();
       } catch (error) {
         const failed = failSubmission(error);
-        attemptRef.current = attemptAfterFailure(failed, prepared.attempt);
+        rememberAttempt(attemptAfterFailure(failed, prepared.attempt));
         setSubmission(failed);
       } finally {
         inFlightRef.current = false;
       }
     },
-    [evaluation, organizationId, resetStock, submission]
+    [
+      activeProfiles,
+      catalog.stock,
+      form,
+      lastPrices,
+      organizationId,
+      rememberAttempt,
+      resetStock,
+      submission,
+    ]
   );
   const handleDiscardRequest = useCallback(
     () => setSubmission((current) => requestDiscard(current)),
@@ -1219,12 +1254,12 @@ export function SalePage() {
     if (discarded === null) {
       return;
     }
-    attemptRef.current = discarded.attempt;
+    rememberAttempt(discarded.attempt);
     setForm(discarded.form);
     setSubmission(discarded.submission);
     setShowRequired(false);
     resetStock();
-  }, [resetStock, submission]);
+  }, [rememberAttempt, resetStock, submission]);
   const handleSubmitEvent = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       handleSubmit(event).catch(() => undefined);
@@ -1232,172 +1267,146 @@ export function SalePage() {
     [handleSubmit]
   );
 
-  if (!organizationId) {
-    return (
-      <div className="categories-page sale-page">
-        <SalesTopbar current="sale" />
-        <main className="categories-content">
-          <section aria-labelledby="sale-title" className="sale-empty-page">
-            <p className="categories-eyebrow">Vendas</p>
-            <h1 id="sale-title">Nova venda</h1>
-            <p>Abra ou crie uma organização para registrar vendas.</p>
-            <a className="primary-button sale-link" href="/">
-              Ir para a página inicial
-            </a>
-          </section>
-        </main>
-      </div>
-    );
-  }
-
   const locked = isFormLocked(submission);
-  const productOptions = optionsOf(productsState);
   const profileOptions = optionsOf(profilesState);
   return (
-    <div className="categories-page sale-page">
-      <SalesTopbar current="sale" />
-      <main className="categories-content">
-        <section className="categories-heading">
-          <div>
-            <p className="categories-eyebrow">Vendas</p>
-            <h1>Nova venda</h1>
-            <p className="categories-intro-copy">
-              Monte a venda inteira e confirme uma única vez. Nada é salvo como
-              rascunho: a venda só existe depois de confirmada pelo servidor.
-            </p>
-          </div>
-        </section>
-        {submission.phase === "confirmed" ? (
-          <ConfirmedSalePanel
-            key={submission.sale.saleId}
-            organizationId={organizationId}
-            panelRef={confirmedRef}
-            sale={submission.sale}
-          />
-        ) : null}
-        <form
-          aria-label="Nova venda"
-          className="sale-workspace"
-          noValidate
-          onSubmit={handleSubmitEvent}
-        >
-          <div className="sale-main">
-            <fieldset className="sale-section" disabled={locked}>
-              <legend>Itens da venda</legend>
-              <div className="sale-toolbar">
-                <p className="sale-help">
-                  Informe os preços: o catálogo não tem preço. A diferença entre
-                  tabela e cobrado é a negociação do item e já entra no
-                  subtotal.
-                </p>
-                <button
-                  className="quiet-button"
-                  onClick={handleRefresh}
-                  type="button"
-                >
-                  Atualizar produtos, estoque e perfis
-                </button>
-              </div>
-              <CatalogNotice onRetry={handleRefresh} view={productsState} />
-              {form.items.map((item, index) => (
-                <ItemEditor
-                  canRemove={form.items.length > 1}
-                  errors={evaluation.errors}
-                  index={index}
-                  item={item}
-                  key={item.draftId}
-                  onChange={handleItemChange}
-                  onProductChange={handleProductChange}
-                  onRemove={handleRemoveItem}
-                  onRetry={handleRefresh}
-                  onVariantChange={handleVariantChange}
-                  productOptions={productOptions}
-                  productsLoading={productsState.kind === "loading"}
-                  stock={catalog.stock}
-                  stockWarning={evaluation.stockWarnings[item.draftId]}
-                  variants={catalog.variants[item.productId]}
-                />
-              ))}
-              <button
-                className="quiet-button"
-                disabled={form.items.length >= MAX_SALE_ITEMS}
-                onClick={handleAddItem}
-                type="button"
-              >
-                Adicionar item
-              </button>
-            </fieldset>
-            <fieldset className="sale-section" disabled={locked}>
-              <legend>Ajustes da venda</legend>
+    <div className="sale-page">
+      <section className="categories-heading">
+        <div>
+          <p className="categories-eyebrow">Vendas</p>
+          <h1>Nova venda</h1>
+          <p className="categories-intro-copy">
+            Monte a venda inteira e confirme uma única vez. Nada é salvo como
+            rascunho: a venda só existe depois de confirmada pelo servidor.
+          </p>
+        </div>
+      </section>
+      {submission.phase === "confirmed" ? (
+        <ConfirmedSalePanel
+          key={submission.sale.saleId}
+          organizationId={organizationId}
+          panelRef={confirmedRef}
+          sale={submission.sale}
+        />
+      ) : null}
+      <form
+        aria-label="Nova venda"
+        className="sale-workspace"
+        noValidate
+        onSubmit={handleSubmitEvent}
+      >
+        <div className="sale-main">
+          <fieldset className="sale-section" disabled={locked}>
+            <legend>Itens da venda</legend>
+            <div className="sale-toolbar">
               <p className="sale-help">
-                Desconto, acréscimo, frete e sobretaxa de pagamento. Percentuais
-                usam o mesmo subtotal e o total de descontos não pode
-                ultrapassá-lo.
+                Informe os preços: o catálogo não tem preço. A diferença entre
+                tabela e cobrado é a negociação do item e já entra no subtotal.
               </p>
-              {form.adjustments.length === 0 ? (
-                <p className="sale-empty">Nenhum ajuste nesta venda.</p>
-              ) : null}
-              {form.adjustments.map((adjustment, index) => (
-                <AdjustmentEditor
-                  adjustment={adjustment}
-                  error={
-                    evaluation.errors[adjustmentFieldKey(adjustment.draftId)]
-                  }
-                  index={index}
-                  key={adjustment.draftId}
-                  onChange={handleAdjustmentChange}
-                  onRemove={handleRemoveAdjustment}
-                />
-              ))}
-              {evaluation.errors[formFieldKeys.adjustments] ? (
-                <p className="sale-error" role="alert">
-                  {evaluation.errors[formFieldKeys.adjustments]}
-                </p>
-              ) : null}
               <button
                 className="quiet-button"
-                disabled={form.adjustments.length >= MAX_SALE_ADJUSTMENTS}
-                onClick={handleAddAdjustment}
+                onClick={handleRefresh}
                 type="button"
               >
-                Adicionar ajuste
+                Atualizar estoque e perfis
               </button>
-            </fieldset>
-            <DateSection
-              disabled={locked}
-              error={evaluation.errors[formFieldKeys.occurredAt]}
-              onChange={handleDateChange}
-              value={form.occurredAtLocal}
-            />
-            <PaymentSection
-              disabled={locked}
-              errors={evaluation.errors}
-              evaluation={evaluation}
-              form={form}
-              onAcknowledgeReview={handleAcknowledgeReview}
-              onAnticipationChange={handleAnticipationChange}
-              onInstallmentPlanChange={handlePlanChange}
-              onInstallmentsChange={handleInstallmentsChange}
-              onMethodChange={handleMethodChange}
-              onProfileChange={handleProfileChange}
-              onRetry={handleRefresh}
-              profileOptions={profileOptions}
-              profilesView={profilesState}
-            />
-          </div>
-          <SummaryPanel
+            </div>
+            {form.items.map((item, index) => (
+              <ItemEditor
+                canRemove={form.items.length > 1}
+                errors={evaluation.errors}
+                index={index}
+                item={item}
+                key={item.draftId}
+                onChange={handleItemChange}
+                onClearVariant={handleClearVariant}
+                onPick={handlePickVariant}
+                onRemove={handleRemoveItem}
+                organizationId={organizationId}
+                priceHint={suggestionHint(lastPrices, item)}
+                stock={catalog.stock}
+                stockWarning={evaluation.stockWarnings[item.draftId]}
+              />
+            ))}
+            <button
+              className="quiet-button"
+              disabled={form.items.length >= MAX_SALE_ITEMS}
+              onClick={handleAddItem}
+              type="button"
+            >
+              Adicionar item
+            </button>
+          </fieldset>
+          <fieldset className="sale-section" disabled={locked}>
+            <legend>Ajustes da venda</legend>
+            <p className="sale-help">
+              Desconto, acréscimo, frete e sobretaxa de pagamento. Percentuais
+              usam o mesmo subtotal e o total de descontos não pode
+              ultrapassá-lo.
+            </p>
+            {form.adjustments.length === 0 ? (
+              <p className="sale-empty">Nenhum ajuste nesta venda.</p>
+            ) : null}
+            {form.adjustments.map((adjustment, index) => (
+              <AdjustmentEditor
+                adjustment={adjustment}
+                error={
+                  evaluation.errors[adjustmentFieldKey(adjustment.draftId)]
+                }
+                index={index}
+                key={adjustment.draftId}
+                onChange={handleAdjustmentChange}
+                onRemove={handleRemoveAdjustment}
+              />
+            ))}
+            {evaluation.errors[formFieldKeys.adjustments] ? (
+              <p className="sale-error" role="alert">
+                {evaluation.errors[formFieldKeys.adjustments]}
+              </p>
+            ) : null}
+            <button
+              className="quiet-button"
+              disabled={form.adjustments.length >= MAX_SALE_ADJUSTMENTS}
+              onClick={handleAddAdjustment}
+              type="button"
+            >
+              Adicionar ajuste
+            </button>
+          </fieldset>
+          <DateSection
+            disabled={locked}
+            error={evaluation.errors[formFieldKeys.occurredAt]}
+            onChange={handleDateChange}
+            value={form.occurredAtLocal}
+          />
+          <PaymentSection
+            disabled={locked}
             errors={evaluation.errors}
             evaluation={evaluation}
-            onDiscardCancel={handleDiscardCancel}
-            onDiscardConfirm={handleDiscardConfirm}
-            onDiscardRequest={handleDiscardRequest}
-            onRefresh={handleRefresh}
-            showRequired={showRequired}
-            submission={submission}
-            summary={evaluation.summary}
+            form={form}
+            onAcknowledgeReview={handleAcknowledgeReview}
+            onAnticipationChange={handleAnticipationChange}
+            onInstallmentPlanChange={handlePlanChange}
+            onInstallmentsChange={handleInstallmentsChange}
+            onMethodChange={handleMethodChange}
+            onProfileChange={handleProfileChange}
+            onRetry={handleRefresh}
+            profileOptions={profileOptions}
+            profilesView={profilesState}
           />
-        </form>
-      </main>
+        </div>
+        <SummaryPanel
+          errors={evaluation.errors}
+          evaluation={evaluation}
+          onDiscardCancel={handleDiscardCancel}
+          onDiscardConfirm={handleDiscardConfirm}
+          onDiscardRequest={handleDiscardRequest}
+          onRefresh={handleRefresh}
+          showRequired={showRequired}
+          submission={submission}
+          summary={evaluation.summary}
+        />
+      </form>
     </div>
   );
 }

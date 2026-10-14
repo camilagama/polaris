@@ -1,5 +1,11 @@
 # Direção de design do Polaris
 
+## Autoridade
+
+Este documento é a fonte de verdade para a **direção visual, os tokens de interface, as telas e o comportamento de interação**. Termos estão em [CONTEXT.md](CONTEXT.md), invariantes de negócio em [docs/business-rules/](docs/business-rules/), estrutura do sistema em [docs/architecture/](docs/architecture/) e a sequência de implementação em [doc/plano-inicial.md](doc/plano-inicial.md). Regras de negócio não descrevem comportamento de interface; ele vive aqui.
+
+Seções marcadas como "diretriz" descrevem o que foi decidido para telas e navegação que ainda não existem; elas não afirmam que o código já as implementa. O resto descreve o que existe em `apps/web/src`.
+
 ## Sensação do produto
 
 A direção visual é **Minimalismo Essencial**: uma interface operacional, densa o suficiente para o trabalho diário sem parecer carregada.
@@ -10,24 +16,115 @@ A direção visual é **Minimalismo Essencial**: uma interface operacional, dens
 - Oferecer interação acessível e temas claro e escuro.
 - Tratar explicitamente estados vazios, carregamento, sucesso e erro.
 
-## Limite deste documento
+Este arquivo define direção visual e de interação, não bibliotecas.
 
-Este arquivo define direção visual e de interação, não bibliotecas. Os primeiros tokens de interface foram definidos abaixo para o módulo Categories e podem ser estendidos por telas futuras.
+## Tokens
 
-## Tokens iniciais — Categories
+Os tokens vivem como variáveis CSS `--category-*` no contêiner `.categories-page` de `apps/web/src/catalog/categories-page.css` e são reutilizados por todas as telas, que importam esse arquivo e usam `categories-page` na raiz. A tela de perfis de pagamento redefine os mesmos valores com o prefixo `--payment-*`; a duplicação é dívida a eliminar, e os valores são idênticos.
 
-O PR24 aplica a direção Minimalismo Essencial à primeira interface de catálogo:
+| Token | Tema claro | Tema escuro | Uso |
+| --- | --- | --- | --- |
+| canvas | `#f4f2eb` | `#111915` | Fundo da página. |
+| surface | `#fffefa` | `#1b2520` | Painéis, campos e cartões. |
+| surface-muted | `#f7f6f0` | `#202d27` | Cabeçalhos de tabela, itens aninhados, estados neutros. |
+| ink | `#18221d` | `#e8f0eb` | Texto principal. |
+| muted | `#607067` | `#a0b0a6` | Texto de apoio, rótulos secundários. |
+| line | `#d9dfd8` | `#35453c` | Bordas e divisores. |
+| accent | `#17654d` | `#7fc7a5` | Ação, foco, estado ativo e confirmado. |
+| accent-strong | `#104b39` | `#a3dfbf` | Texto sobre fundo `accent-soft`, hover. |
+| accent-soft | `#e5f0e9` | `#243d31` | Fundos de estado ativo e sucesso. |
+| warning / warning-soft | `#785c1d` / `#f5efd9` | `#dfc57d` / `#3d3623` | Estados arquivado, aviso, custo ou taxa desconhecidos. |
+| danger / danger-strong / danger-soft | `#a84038` / `#842e29` / `#f7e9e6` | `#f09a8e` / `#ffb4a7` / `#452b2a` | Erro, cancelamento, ações destrutivas. |
+| shadow | `0 18px 52px rgb(26 43 34 / 8%)` | `0 18px 52px rgb(0 0 0 / 22%)` | Painéis elevados. |
 
-- Corpo usa a pilha sans-serif do sistema para leitura densa; títulos usam Georgia como acento editorial discreto.
-- Tema claro: canvas `#f4f2eb`, superfície `#fffefa`, texto `#18221d`, linha `#d9dfd8` e acento verde `#17654d`.
-- Tema escuro: canvas `#111915`, superfície `#1b2520`, texto `#e8f0eb`, linha `#35453c` e acento verde `#7fc7a5`.
-- Erros usam vermelho terroso; estados ativos, arquivados e removidos têm rótulos e cores distintas, sempre com texto além da cor.
-- Tabelas viram cartões em telas estreitas. Controles mantêm foco visível, rótulos explícitos e estados de carregamento, vazio, sucesso e erro.
+- **Tema:** segue `prefers-color-scheme`, declarado com `color-scheme` na raiz da tela. Não há alternância manual. O botão primário usa o verde escuro fixo (`#17654d`, hover `#104b39`) com texto branco nos dois temas, fora dos tokens. A meta `theme-color` do documento é fixa em claro (`#ffffff`).
+- **Tipografia:** corpo na pilha sans-serif do sistema (`system-ui`); títulos de página e de painel em Georgia, como acento editorial discreto. Título de página `clamp(2.25rem, 5vw, 3.6rem)` com peso 500; títulos de painel entre 1,15 rem e 1,55 rem; campos e texto de tabela entre 0,86 rem e 0,94 rem; rótulo de campo 0,83 rem com peso 700; sobretítulo (eyebrow) 0,74 rem em maiúsculas com espaçamento de 0,11 em; cabeçalho de tabela 0,7 rem em maiúsculas; identificadores em monoespaçada. Valores monetários e quantidades usam `font-variant-numeric: tabular-nums`.
+- **Forma e espaço:** conteúdo em `min(100% - 2rem, 76rem)`, com margem de 1 rem em telas estreitas; raio de 0,55 rem em campos e botões, 0,65 rem em blocos internos, 0,85 a 0,9 rem em painéis e 999 px em selos de estado.
+- **Movimento:** painéis entram com um desvanecer de 220 ms apenas sob `prefers-reduced-motion: no-preference`. Não há outras animações.
 
-## Catálogo — Variantes
+## Estados e feedback
 
-- O formulário permite selecionar Modelo, Cor e Tamanho, informar valores legíveis e adicionar combinações manualmente.
-- Combinações nunca são geradas automaticamente. Cada linha mostra uma escolha por opção selecionada e o total visível respeita o limite de 50.
-- A lista de variantes mantém a ordem de cadastro, com a variante padrão oculta enquanto o produto não foi configurado.
-- Depois da configuração inicial, a interface apresenta as combinações em leitura; edição ou remoção aguarda regras para preservar referências futuras de SKU e estoque.
-- A configuração deve manter rótulos explícitos, validação junto aos campos e navegação por teclado nos temas claro e escuro.
+- Toda tela trata carregamento (`aria-busy` na lista ou texto de status), vazio (texto explicativo, sem ilustração), erro e sucesso.
+- Mensagens de erro usam `role="alert"`; avisos de estado, confirmações e carregamento usam `role="status"`; resultados que mudam sem foco (totais, resumo) usam `aria-live="polite"`.
+- Estados de ciclo de vida (ativo, arquivado, removido, confirmada, cancelada, com devoluções) aparecem como selo com texto e cor; **nunca só cor**.
+- Validação fica junto do campo (`aria-invalid` e texto de erro associado por `aria-describedby`); campos desabilitados mostram opacidade reduzida e cursor de bloqueio.
+- Ações que alteram dados mostram o estado pendente no próprio botão e impedem reenvio.
+- **Ação irreversível em duas etapas:** cancelamento e devolução pedem os campos, depois um resumo do efeito ("isso não poderá ser desfeito") e só então a confirmação, com opção de voltar.
+- **Resultado desconhecido** (falha de rede, 5xx) trava a tentativa: o formulário não é editável, só a repetição exata da mesma tentativa é oferecida, e descartar exige uma segunda confirmação que avisa que a operação pode já ter sido registrada. Falhas definitivas com motivo explicam a causa e liberam a edição, que gera uma nova tentativa. O contrato de repetição está em [vendas](docs/business-rules/sales.md).
+- **Custo ou taxa desconhecidos** nunca aparecem como zero: usam texto explícito, estilo itálico com borda tracejada e a cor de aviso.
+
+## Responsividade e toque
+
+- Largura mínima suportada: 360 px (o `body` tem `min-width: 320px`). Nenhuma tela foi verificada em navegador a 360 px; a verificação é pendência antes da Fase 5.
+- Pontos de quebra: 560 px (topo e grades da venda em coluna), 600 px (mídia), 640 px (tabela de devolução), 760 px (catálogo, produtos, clientes e categorias: tabelas viram cartões), 900 px (venda e perfis de pagamento em uma coluna; o resumo da venda deixa de ser fixo).
+- Tabelas viram cartões em telas estreitas, com o rótulo de cada coluna repetido por `data-label`; o cabeçalho continua disponível a leitores de tela.
+- **Alvo de toque:** controles interativos devem ter pelo menos 44 px (2,75 rem) de altura. Campos de texto e seletores de formulário (2,8 rem) e abas (2,75 rem) cumprem. Ficam abaixo e devem ser corrigidos: botões primário, silencioso e de perigo (2,7 rem, 43 px), navegação superior (2,15 rem), botão de texto de perigo (2,3 rem), campo de renomear categoria (2,45 rem), campo de quantidade da devolução (2,4 rem), seletor de regra de pagamento (2,65 rem), opção de variante da mídia (2,5 rem) e as caixas de seleção e links de texto da venda.
+
+## Acessibilidade
+
+- Foco visível em todos os controles: contorno de 3 px na cor `accent`, com deslocamento de 2 a 3 px.
+- Todo campo tem rótulo explícito (`label` associado ou `legend` de grupo); grupos de campos usam `fieldset`.
+- Navegação por teclado em todo o fluxo. O recorte da mídia tem um rótulo ("Área de recorte. Arraste ou use as setas para ajustar.") e responde às setas, mas não expõe `aria-valuetext` e usa `touch-action: none` no arraste.
+- Contraste: tokens definidos para os dois temas; não foi feita medição formal de contraste.
+- Texto de interface em português do Brasil (`lang="pt-BR"`); valores em BRL.
+- Não há `ErrorBoundary`, carregamento por rota nem página 404; erros de renderização derrubam a tela.
+
+## Navegação
+
+**Hoje**, cada página monta o próprio topo (marca "Polaris" e navegação em barra de links). Há duas variações da mesma barra: Categorias, Produtos, Clientes e Perfis de pagamento nas telas de catálogo; essas e mais "Nova venda", "Histórico" e "Cliente da venda" nas telas de venda. A rota `/` abre Categorias. O item atual usa `aria-current="page"`. A organização usada pelas telas vem de `localStorage` e é gravada pelo onboarding; sem ela, cada tela mostra um cartão "Abra uma organização". A tela "Cliente da venda" pede o identificador da venda digitado.
+
+**Diretriz (decidida na revisão do checkpoint Gate 4, 13/10/2026, ainda não implementada):** um único shell de aplicação compartilhado por todas as telas, com a mesma navegação e o item atual marcado; a organização resolvida a partir da sessão (RPC `organization.listMine`), sem valor digitado; a entrada de uma venda a partir do histórico, sem pedir identificador; e uma página inicial operacional em vez de Categorias. A interface de login permanece pré-go-live.
+
+## Telas existentes
+
+### Categorias (`/`)
+Lista com abas Ativas, Arquivadas e Removidas; formulário de criação; renomear em linha, arquivar, restaurar e remover. Remover pede confirmação em linha e explica que o registro permanece como tombstone, sem restauração. Estados ativo, arquivado e removido têm selo com texto e cor.
+
+### Produtos (`/products`)
+Formulário de cadastro e edição (nome, descrição, categoria) e lista ativa ou arquivada com selo de estado. O formulário de variantes permite escolher Modelo, Cor e Tamanho, informar valores legíveis e adicionar combinações manualmente. Combinações nunca são geradas automaticamente; cada linha mostra uma escolha por opção selecionada e o total visível respeita o limite de 50. A ordem de cadastro é preservada e a variante padrão fica oculta enquanto o produto não foi configurado. Depois da configuração inicial, as combinações aparecem em leitura. A tela não tem estoque: a interface avisa que o estoque será definido em uma etapa própria.
+
+### Mídia do produto
+Painel dentro do produto: envio de imagem (JPEG, PNG, WebP e HEIC/HEIF), área de recorte com arraste ou setas, escolha das variantes que usam a imagem e lista das imagens com miniatura de 4,5 rem. A imagem é servida por rota autorizada, nunca por URL pública. Mensagens de erro e de sucesso seguem os papéis `alert` e `status`.
+
+### Clientes (`/customers`)
+Formulário (nome e pelo menos um contato: telefone ou e-mail; observações), lista ativa ou arquivada, arquivar e restaurar. Ao criar, a tela consulta possíveis duplicados e mostra "Encontramos possíveis clientes existentes", com as opções de usar o existente (abre para revisão, sem mesclar) ou criar mesmo assim. Dados do cliente nunca vão para a URL.
+
+### Perfis de pagamento (`/payment-profiles`)
+Formulário de perfil com regras por método, parcelamento, prazo esperado e taxas (processamento e antecipação: desconhecida, zero, fixa, percentual ou fixa mais percentual), lista de perfis em cartões com opção de mostrar arquivados, e estado vazio "Nenhum perfil cadastrado". Editar usa a versão vista (conflito de versão é reportado).
+
+### Nova venda (`/sales`)
+Formulário único em duas colunas (principal e resumo fixo; uma coluna até 900 px). Seções: itens (produto, variante, quantidade, preço de tabela e preço cobrado, com aviso de estoque nos tons ok, aviso ou neutro), ajustes (desconto, acréscimo, frete e sobretaxa de pagamento, fixos ou percentuais), data e hora opcional da venda (`datetime-local`, com dica e "Usar agora"; a interface rotula "Venda retroativa" comparando com o dia local do dispositivo, que pode errar perto da meia-noite, e o servidor decide) e pagamento (método, perfil, parcelas e modalidade, intenção de antecipar). A prévia de taxas e prazo é informativa; mudar o perfil exibe um aviso e exige "Revisei a prévia atualizada". O resumo mostra linhas, subtotal, ajustes e total devido com totais em `aria-live`. O botão "Atualizar produtos, estoque e perfis" recarrega os dados. Nada é salvo como rascunho. A confirmação mostra um painel de venda confirmada com as três datas; o estado de resultado desconhecido segue a regra acima. O catálogo ainda não tem preço, então o operador digita os dois preços em cada item; a lembrança local do último preço por variante é diretriz decidida ([ADR 0026](docs/adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md)).
+
+### Histórico (`/sales/history`) e detalhe (`/sales/detail?saleId=…`)
+O histórico lista as vendas confirmadas e canceladas, com selos de estado ("Confirmada", "Cancelada", "Com devoluções"), total, método, cliente e data da venda, e abre o detalhe. Não há filtro nem busca; a paginação usa "Carregar mais". O detalhe mostra o snapshot completo, as três datas, o cancelamento (quando houver, com nota de que o registro original foi preservado) e a lista de devoluções com linhas. O identificador da venda fica na URL por não ser dado pessoal.
+
+### Cancelamento
+Painel do detalhe: explica o efeito, pede motivo opcional (nota obrigatória para "outro"), mostra um resumo com a frase de irreversibilidade e só então confirma, com "Voltar".
+
+### Devolução
+Painel do detalhe: tabela com uma linha por item, mostrando vendido, já devolvido e disponível, e dois campos numéricos (devolvido e reposto). Em telas estreitas a tabela vira cartões. Motivo estruturado opcional, resumo de confirmação e confirmação em duas etapas.
+
+### Cliente da venda (`/sales/customer`)
+Associar, trocar ou remover o cliente de uma venda confirmada, com a versão vista e a lista de clientes ativos. Hoje a tela pede o identificador da venda digitado.
+
+### Laboratório offline (`/offline-poc`)
+Rota de desenvolvimento e de build de prova, com CSS próprio; não faz parte do produto e sai do bundle de produção ([ADR 0027](docs/adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)).
+
+## Estoque (diretriz)
+
+Decidido na revisão do checkpoint Gate 4 (13/10/2026) e ainda não implementado ([ADR 0026](docs/adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md)). As telas consomem os commands existentes, sem alterar o domínio, e seguem os tokens e os estados deste documento:
+
+- **Saldo por variante:** quantidade, custo médio e versão do saldo; custo desconhecido aparece como texto explícito, nunca como zero.
+- **Receber:** custo unitário em BRL, data de ocorrência, identificador de comando gerado pela tela.
+- **Baixar:** quantidade, motivo da lista fixa e nota (obrigatória para "outro"), sem permitir saldo negativo.
+- **Contar:** quantidade física; conflito de versão reapresenta o saldo atualizado, e o valor de valoração só é oferecido quando o custo é desconhecido e a quantidade é positiva.
+- **Histórico por variante:** movimentos do ledger em ordem de confirmação, somente leitura.
+- Mensagens de erro de domínio traduzem o código estável (`data.reason`) em texto compreensível, como na venda.
+- A navegação de estoque entra no shell único descrito acima.
+
+## Lacunas conhecidas
+
+- Nenhuma tela foi verificada em navegador a 360 px nem no iPhone nesta fase; as telas de cancelamento, devolução e datas da venda só têm testes dos modelos de visão.
+- Alvos de toque abaixo de 44 px listados acima; CSS compartilhado vive em `categories-page.css` e há uma cópia de tokens em perfis de pagamento.
+- Sem `ErrorBoundary`, carregamento por rota ou 404; `theme-color` fixo em claro; recorte de mídia sem `aria-valuetext`.
+- Histórico de vendas sem filtro nem busca (a paginação usa "Carregar mais"); a lista mostra o momento comercial e só o detalhe mostra as três datas.

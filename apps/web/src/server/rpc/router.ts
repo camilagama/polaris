@@ -25,10 +25,13 @@ import {
 } from "@polaris/db/customer-repository";
 import {
   getInventoryBalance,
+  InvalidInventoryBalanceCursorError,
   inventoryCount,
+  listInventoryBalances,
   receiveStock,
   writeOffStock,
 } from "@polaris/db/inventory-repository";
+import { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import {
   archivePaymentProfile,
   createPaymentProfile,
@@ -70,7 +73,9 @@ import {
   deriveProductLifecycle,
   ProductCategoryUnavailableError,
   ProductDefaultVariantSkuConflictError,
+  ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
+  ProductDescriptionError,
   ProductLifecycleError,
   ProductNameError,
   ProductNotFoundError,
@@ -91,6 +96,7 @@ import {
 import {
   InsufficientStockError,
   InvalidStockMovementError,
+  InventoryOccurredInFutureError,
   InventoryQuantityLimitError,
   InventoryVariantNotFoundError,
   InventoryVersionConflictError,
@@ -180,6 +186,7 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
+import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 
 export interface PolarisRpcContext {
@@ -228,9 +235,11 @@ interface RpcRouterDependencies {
   inventoryCount: typeof inventoryCount;
   listCategories: typeof listCategories;
   listCustomers: typeof listCustomers;
+  listInventoryBalances: typeof listInventoryBalances;
   listPaymentProfiles: typeof listPaymentProfiles;
   listProducts: typeof listProducts;
   listSales: typeof listSales;
+  listUserOrganizations: typeof listUserOrganizations;
   receiveStock: typeof receiveStock;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
@@ -430,6 +439,7 @@ function initialOrganizationErrorCode(
     case "organization_not_available":
       return "CONFLICT";
     case "invalid_user_id":
+    case "invalid_organization_id":
     case "invalid_organization_name":
     case "invalid_timezone":
       return "BAD_REQUEST";
@@ -519,10 +529,16 @@ function isRpcErrorInGroup(
 }
 
 const badRequestRpcErrors = [
-  [CategoryNameError, ProductNameError, InvalidPaymentProfileError],
+  [
+    CategoryNameError,
+    ProductNameError,
+    ProductDescriptionError,
+    InvalidPaymentProfileError,
+  ],
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
   [
     InvalidStockMovementError,
+    InventoryOccurredInFutureError,
     InvalidUnitCostError,
     InventoryCostLimitError,
     InvalidReceiveStockInputError,
@@ -533,6 +549,7 @@ const badRequestRpcErrors = [
     UnsupportedInventoryCountCommandVersionError,
     InvalidWriteOffStockInputError,
     UnsupportedWriteOffStockCommandVersionError,
+    InvalidInventoryBalanceCursorError,
   ],
   [
     InvalidConfirmSaleCommandError,
@@ -582,6 +599,7 @@ const conflictRpcErrors = [
     ProductLifecycleError,
     ProductStockNotEmptyError,
     ProductDefaultVariantSkuConflictError,
+    ProductDefaultVariantStockHistoryConflictError,
     ProductVariantSkuConflictError,
   ],
   [
@@ -1017,11 +1035,19 @@ export function createRpcRouter(
   const inventoryHandlers = createInventoryRpcHandlers({
     defaultGetInventoryBalance: getInventoryBalance,
     defaultInventoryCount: inventoryCount,
+    defaultListInventoryBalances: listInventoryBalances,
     getInventoryBalance: overrides.getInventoryBalance,
     inventoryCount: overrides.inventoryCount,
+    listInventoryBalances: overrides.listInventoryBalances,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
+  });
+  const organizationHandlers = createOrganizationRpcHandlers({
+    defaultListUserOrganizations: listUserOrganizations,
+    listUserOrganizations: overrides.listUserOrganizations,
+    toRpcError,
+    withAuthenticatedRequestContext: authenticatedRequest,
   });
   const customerHandlers = createCustomerRpcHandlers({
     ...overrides,
@@ -1550,10 +1576,11 @@ export function createRpcRouter(
     inventory: {
       getBalance: inventoryHandlers.getBalance,
       inventoryCount: inventoryHandlers.count,
+      listBalances: inventoryHandlers.listBalances,
       receiveStock: receiveStockRecord,
       writeOffStock: writeOffStockRecord,
     },
-    organization: { createInitial },
+    organization: { createInitial, listMine: organizationHandlers.listMine },
     paymentProfile: paymentProfileHandlers,
     product: {
       archive: archiveProductRecord,

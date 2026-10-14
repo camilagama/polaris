@@ -46,3 +46,14 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - Instalar pelo lockfile com **bun install --frozen-lockfile**.
 - Executar **bun run check** e **bun run build** para a baseline.
 - Relatar os checks executados e qualquer gate restante; não afirmar que um check não executado passou.
+
+## Decisões e integração
+
+- Mudança de ordem de fases, de escopo de gate ou decisão estrutural que contradiga o plano exige um ADR curto e a atualização do plano no mesmo pull request ([ADR 0016](docs/adr/0016-ordem-das-fases-gate-auth-e-gate-2.md)).
+- Não faça merge, não ative auto-merge e não integre branches sem autorização do responsável. A integração recomendada é por fase, com CI verde e gates reexecutados ([ADR 0023](docs/adr/0023-integracao-da-cadeia-de-prs.md)). Branches `codex/prNN-...` são aceitas.
+- Preencha o [template de pull request](.github/PULL_REQUEST_TEMPLATE.md): problema, resultado esperado, arquivos alterados, risco, testes, critério de aceite, documentação afetada, verificação executada e limites.
+- Regras de negócio não citam números de PR nem comportamento de interface; modelo de dados e fluxos ficam em docs/architecture/, a razão das decisões em docs/adr/ e o estado de entrega em doc/status-implementacao.md.
+
+## Autoridade
+
+Este documento é a fonte de verdade para o fluxo de trabalho e os guardrails de agentes neste repositório. Ele não define produto, terminologia, design, arquitetura nem invariantes de negócio: para esses assuntos, a autoridade é o documento indicado em "Leia a fonte que governa o assunto". Quando houver divergência, vale a fonte do assunto; ajuste este arquivo no mesmo pull request.

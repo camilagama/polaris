@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   calculatePaymentFee,
   InvalidPaymentProfileError,
-  normalizePaymentProfile,
-  snapshotPaymentProfileForSale,
   type NormalizedPaymentProfileRule,
+  normalizePaymentProfile,
   type PaymentProfileForSale,
+  snapshotPaymentProfileForSale,
 } from "./payment-profile";
 
 const zeroFee = { mode: "none" as const };
@@ -88,9 +88,9 @@ describe("normalizePaymentProfile", () => {
 
   it("requires an exact card installment rule and a supported plan", () => {
     for (const invalid of [
-      { installments: 0, installmentPlan: "merchant" },
-      { installments: 1, installmentPlan: null },
-      { installments: 2_147_483_648, installmentPlan: "issuer" },
+      { installmentPlan: "merchant", installments: 0 },
+      { installmentPlan: null, installments: 1 },
+      { installmentPlan: "issuer", installments: 2_147_483_648 },
     ]) {
       expect(() =>
         normalizePaymentProfile({
@@ -98,8 +98,8 @@ describe("normalizePaymentProfile", () => {
           rules: [
             {
               anticipationFee: zeroFee,
-              installments: invalid.installments,
               installmentPlan: invalid.installmentPlan as never,
+              installments: invalid.installments,
               method: "credit_card",
               processingFee: zeroFee,
             },
@@ -320,5 +320,53 @@ describe("snapshotPaymentProfileForSale", () => {
         null
       )
     ).toThrow(InvalidPaymentProfileError);
+  });
+});
+
+describe("payment profile limits", () => {
+  const ruleWith = (override: Record<string, unknown>) => ({
+    method: "pix",
+    ...override,
+  });
+  const unknownFee = {
+    fixedAmount: null,
+    mode: "unknown",
+    percentage: null,
+  } as const;
+
+  it("refuses a fee percentage above 100 points and an absurd settlement estimate", () => {
+    const build = (ruleOverride: Record<string, unknown>) =>
+      normalizePaymentProfile({
+        name: "Limites",
+        rules: [
+          ruleWith({
+            anticipationFee: unknownFee,
+            processingFee: unknownFee,
+            ...ruleOverride,
+          }),
+        ],
+      } as never);
+    expect(() =>
+      build({
+        processingFee: {
+          fixedAmount: null,
+          mode: "percentage",
+          percentage: "250",
+        },
+      })
+    ).toThrow(InvalidPaymentProfileError);
+    expect(() =>
+      build({
+        processingFee: {
+          fixedAmount: null,
+          mode: "percentage",
+          percentage: "100",
+        },
+      })
+    ).not.toThrow();
+    expect(() => build({ expectedSettlementDays: 3651 })).toThrow(
+      InvalidPaymentProfileError
+    );
+    expect(() => build({ expectedSettlementDays: 3650 })).not.toThrow();
   });
 });

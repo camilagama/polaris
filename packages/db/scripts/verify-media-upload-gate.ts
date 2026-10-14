@@ -22,7 +22,13 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 
-const expectedBranch = "pr34-media-upload-gate";
+const gateDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
+const expectedBranch =
+  process.env.POLARIS_GATE_BRANCH ?? "pr34-media-upload-gate";
 const runtimeRole = "polaris_pr11_runtime";
 const mediaTables = ["media_assets", "product_media", "variant_media"];
 const expectedChecks = [
@@ -173,15 +179,18 @@ function createAssetInput(input: {
   variantIds?: string[];
 }): CreateProductMediaAssetInput {
   const uploadCommandId = input.uploadCommandId ?? randomUUID();
+  const inputFingerprint =
+    input.fingerprint ??
+    createHash("sha256").update(randomUUID()).digest("hex");
   return {
     byteSize: 2048,
     height: 480,
-    inputFingerprint:
-      input.fingerprint ??
-      createHash("sha256").update(randomUUID()).digest("hex"),
+    inputFingerprint,
     productId: input.productId,
     requestId: randomUUID(),
-    storageKey: `pr34-gate/${input.organizationId}/${uploadCommandId}.webp`,
+    // The v2 key built from the asset's own organization, command and fingerprint
+    // (the database refuses any other shape).
+    storageKey: `media/v2/${input.organizationId}/${input.productId}/${uploadCommandId}/${inputFingerprint}/${randomUUID()}.webp`,
     uploadCommandId,
     variantIds: input.variantIds ?? [],
     width: 640,
@@ -194,6 +203,10 @@ async function createRuntimeClient(connectionString: string): Promise<Client> {
     connectionTimeoutMillis: 5000,
   });
   await client.connect();
+  if (process.env.POLARIS_GATE_RUNTIME_LOGIN) {
+    // The unified gate runner connects through a temporary login that is a member of the runtime role.
+    await client.query(`SET ROLE ${runtimeRole}`);
+  }
   const role = await client.query<{ role: string }>(
     "SELECT current_user AS role"
   );
@@ -236,6 +249,9 @@ async function insertRawAsset(
   } = {}
 ): Promise<string> {
   const uploadCommandId = input.uploadCommandId ?? randomUUID();
+  const fingerprint =
+    input.fingerprint ??
+    createHash("sha256").update(randomUUID()).digest("hex");
   const result = await client.query<{ id: string }>(
     "INSERT INTO public.media_assets " +
       "(organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width) " +
@@ -245,9 +261,9 @@ async function insertRawAsset(
       input.byteSize ?? 2048,
       input.contentType ?? "image/webp",
       input.height ?? 480,
-      input.fingerprint ??
-        createHash("sha256").update(randomUUID()).digest("hex"),
-      input.storageKey ?? `pr34-gate/${organizationId}/${uploadCommandId}.webp`,
+      fingerprint,
+      input.storageKey ??
+        `media/v2/${organizationId}/${randomUUID()}/${uploadCommandId}/${fingerprint}/${randomUUID()}.webp`,
       uploadCommandId,
       input.width ?? 640,
     ]
@@ -278,11 +294,14 @@ async function main(): Promise<void> {
     assert.equal(candidate.protocol, "postgresql:");
     assert.equal(candidate.hostname, expectedHostname);
     assert.match(candidate.hostname, disposableHostPattern);
-    assert.equal(candidate.pathname, "/neondb");
+    assert.equal(candidate.pathname, `/${gateDatabase}`);
     assert.equal(candidate.searchParams.get("sslmode"), "verify-full");
     assert.doesNotMatch(candidate.hostname, poolerPattern);
   }
-  assert.equal(decodeURIComponent(runtimeConnection.username), runtimeRole);
+  assert.equal(
+    decodeURIComponent(runtimeConnection.username),
+    process.env.POLARIS_GATE_RUNTIME_LOGIN ?? runtimeRole
+  );
 
   const admin = createDatabase(connectionString, { maxConnections: 8 });
   const runtimeDatabase = createDatabase(runtimeConnectionString, {
@@ -714,7 +733,7 @@ async function main(): Promise<void> {
 
     const report = {
       branch: expectedBranch,
-      database: "neondb",
+      database: gateDatabase,
       fixtures: "synthetic fixtures retained until branch auto-expiry",
       serverVersion: serverInfo.server_version,
       status: "passed",

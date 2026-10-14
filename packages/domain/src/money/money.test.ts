@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
 import {
-  assert as fcAssert,
   bigInt,
+  assert as fcAssert,
   integer,
   property,
   tuple,
 } from "fast-check";
+import { describe, expect, it } from "vitest";
 import {
   DecimalAmount,
   DecimalAmountScaleError,
@@ -37,6 +37,52 @@ function roundedHalfUpUnits(units: bigint, placesToRemove: number): bigint {
   return units < 0n ? -rounded : rounded;
 }
 
+describe("decimal text limits", () => {
+  it("strips any number of leading zeros before the 18-digit check", () => {
+    expect(Money.from("000000000000000000001.00").toString()).toBe("1.00");
+    expect(Money.from("0000000000000000000000000000.5").toString()).toBe(
+      "0.50"
+    );
+    expect(Percentage.from("0000000000000000000000002.5").toString()).toBe(
+      "2.500000"
+    );
+    expect(() => Money.from("1000000000000000000")).toThrow(MoneyLimitError);
+  });
+
+  it("refuses absurdly long decimal text before any BigInt work", () => {
+    const huge = `${"9".repeat(40)}${"0".repeat(40)}`;
+    expect(() => Money.from(huge)).toThrow(InvalidMoneyError);
+    expect(() => Percentage.from(huge)).toThrow(InvalidPercentageError);
+  });
+});
+
+describe("Percentage.fromRate", () => {
+  it("accepts 0 through 100 percentage points and refuses anything above", () => {
+    expect(Percentage.fromRate("0").toString()).toBe("0.000000");
+    expect(Percentage.fromRate("2.5").toString()).toBe("2.500000");
+    expect(Percentage.fromRate("100").toString()).toBe("100.000000");
+    expect(() => Percentage.fromRate("100.000001")).toThrow(
+      InvalidPercentageError
+    );
+    expect(() => Percentage.fromRate("250")).toThrow(InvalidPercentageError);
+    expect(() => Percentage.fromRate("99999999999999999999")).toThrow(
+      InvalidPercentageError
+    );
+    expect(() => Percentage.fromRate("-1")).toThrow(InvalidPercentageError);
+  });
+
+  it("agrees with Percentage.from for every rate up to 100 (property)", () => {
+    fcAssert(
+      property(integer({ max: 100_000_000, min: 0 }), (units) => {
+        const text = decimalFromUnits(BigInt(units), 6);
+        expect(Percentage.fromRate(text).toString()).toBe(
+          Percentage.from(text).toString()
+        );
+      }),
+      { numRuns: 300 }
+    );
+  });
+});
 describe("Money", () => {
   it("normalizes BRL to cents and rejects excess scale or integer range", () => {
     expect(Money.from("0001.2").toString()).toBe("1.20");
@@ -54,8 +100,8 @@ describe("Money", () => {
   it("adds exact cents for all generated signed values", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -PROPERTY_MAX_CENTS, max: PROPERTY_MAX_CENTS }),
-        bigInt({ min: -PROPERTY_MAX_CENTS, max: PROPERTY_MAX_CENTS }),
+        bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
+        bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
         (leftCents, rightCents) => {
           const result = Money.fromMinorUnits(leftCents).add(
             Money.fromMinorUnits(rightCents)
@@ -71,8 +117,8 @@ describe("Money", () => {
     await fcAssert(
       property(
         tuple(
-          bigInt({ min: 0n, max: PROPERTY_MAX_CENTS }),
-          bigInt({ min: 0n, max: PROPERTY_MAX_CENTS })
+          bigInt({ max: PROPERTY_MAX_CENTS, min: 0n }),
+          bigInt({ max: PROPERTY_MAX_CENTS, min: 0n })
         ).map(([grossCents, candidateDiscount]) => ({
           discountCents: candidateDiscount % (grossCents + 1n),
           grossCents,
@@ -92,8 +138,8 @@ describe("Money", () => {
   it("multiplies exact cents by an integer quantity", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -1_000_000_000_000_000n, max: 1_000_000_000_000_000n }),
-        integer({ min: 1, max: 1000 }),
+        bigInt({ max: 1_000_000_000_000_000n, min: -1_000_000_000_000_000n }),
+        integer({ max: 1000, min: 1 }),
         (minorUnits, quantity) => {
           expect(
             Money.fromMinorUnits(minorUnits).multiplyByQuantity(quantity)
@@ -123,8 +169,8 @@ describe("DecimalAmount", () => {
   it("adds mixed-scale intermediate decimals exactly", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -1_000_000n, max: 1_000_000n }),
-        bigInt({ min: -1_000_000_000n, max: 1_000_000_000n }),
+        bigInt({ max: 1_000_000n, min: -1_000_000n }),
+        bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
         (milliUnits, microUnits) => {
           const left = DecimalAmount.from(decimalFromUnits(milliUnits, 3));
           const right = DecimalAmount.from(decimalFromUnits(microUnits, 6));
@@ -141,8 +187,8 @@ describe("DecimalAmount", () => {
   it("subtracts mixed-scale intermediate decimals exactly", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -1_000_000n, max: 1_000_000n }),
-        bigInt({ min: -1_000_000_000n, max: 1_000_000_000n }),
+        bigInt({ max: 1_000_000n, min: -1_000_000n }),
+        bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
         (milliUnits, microUnits) => {
           const left = DecimalAmount.from(decimalFromUnits(milliUnits, 3));
           const right = DecimalAmount.from(decimalFromUnits(microUnits, 6));
@@ -159,8 +205,8 @@ describe("DecimalAmount", () => {
   it("multiplies exact intermediate values by a positive quantity", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -1_000_000_000n, max: 1_000_000_000n }),
-        integer({ min: 1, max: 1000 }),
+        bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
+        integer({ max: 1000, min: 1 }),
         (microUnits, quantity) => {
           const exact = DecimalAmount.from(decimalFromUnits(microUnits, 6));
           const expected = DecimalAmount.from(
@@ -192,7 +238,7 @@ describe("DecimalAmount", () => {
   it("rounds generated three-place values half-up to cents", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -PROPERTY_MAX_CENTS, max: PROPERTY_MAX_CENTS }),
+        bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
         (milliUnits) => {
           const exact = DecimalAmount.from(decimalFromUnits(milliUnits, 3));
           const expectedCents = roundedHalfUpUnits(milliUnits, 1);
@@ -224,8 +270,8 @@ describe("Percentage", () => {
   it("applies percentage points exactly before rounding", async () => {
     await fcAssert(
       property(
-        bigInt({ min: -1_000_000_000_000n, max: 1_000_000_000_000n }),
-        bigInt({ min: 0n, max: 1_000_000_000n }),
+        bigInt({ max: 1_000_000_000_000n, min: -1_000_000_000_000n }),
+        bigInt({ max: 1_000_000_000n, min: 0n }),
         (minorUnits, percentageUnits) => {
           const amount = Money.fromMinorUnits(minorUnits);
           const percentage = Percentage.from(

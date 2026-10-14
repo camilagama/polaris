@@ -1,7 +1,8 @@
 import type { SaleDetailReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import "../catalog/categories-page.css";
+import "./sale-page.css";
 import "./sale-history.css";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
@@ -15,12 +16,12 @@ import type { Loadable } from "./sale-form-model";
 import {
   detailLoadErrorMessage,
   type SaleDetailView,
+  saleCustomerHref,
   saleDetailView,
 } from "./sale-history-model";
 import { SaleReturnPanel } from "./sale-return-panel";
 import { SaleIdForm } from "./sale-id-form";
 import { SaleSnapshot } from "./sale-snapshot";
-import { readOrganizationId, SalesTopbar } from "./sales-shell";
 import { useSaleIdParam } from "./use-sale-id-param";
 
 interface DetailContentProps {
@@ -235,63 +236,53 @@ function ReadyDetail({
         organizationId={organizationId}
         saleId={saleId}
       />
+      <p className="sale-hint">
+        <a href={saleCustomerHref(saleId)}>
+          Abrir o ajuste de cliente em uma página própria
+        </a>
+      </p>
     </>
   );
 }
 
 /** One sale in full: its snapshot, cancellation, and customer attribution. */
 export function SaleDetailPage() {
-  const [organizationId] = useState(readOrganizationId);
+  const { organizationId } = useCurrentOrganization();
   const { clear, initialError, open, saleId } = useSaleIdParam();
   return (
-    <div className="categories-page sale-page">
-      <SalesTopbar current="history" />
-      <main className="categories-content">
-        <section className="categories-heading">
-          <div>
-            <p className="categories-eyebrow">Vendas</p>
-            <h1>Detalhe da venda</h1>
-            <p className="categories-intro-copy">
-              A venda confirmada é um registro que não muda. Cancelamento e
-              cliente são registros à parte.
-            </p>
-          </div>
-        </section>
-        <p className="sale-hint">
-          <a href="/sales/history">Voltar ao histórico</a>
-          {saleId === null ? null : (
-            <>
-              {" "}
-              ·{" "}
-              <button
-                className="sale-link-button"
-                onClick={clear}
-                type="button"
-              >
-                Abrir outra venda
-              </button>
-            </>
-          )}
-        </p>
-        {organizationId ? null : (
-          <section className="sale-empty-page">
-            <p>Abra ou crie uma organização para ver vendas.</p>
-            <a className="primary-button sale-link" href="/">
-              Ir para a página inicial
-            </a>
-          </section>
+    <div className="sale-page">
+      <section className="categories-heading">
+        <div>
+          <p className="categories-eyebrow">Vendas</p>
+          <h1>Detalhe da venda</h1>
+          <p className="categories-intro-copy">
+            A venda confirmada é um registro que não muda. Cancelamento e
+            cliente são registros à parte.
+          </p>
+        </div>
+      </section>
+      <p className="sale-hint">
+        <a href="/sales/history">Voltar ao histórico</a>
+        {saleId === null ? null : (
+          <>
+            {" "}
+            ·{" "}
+            <button className="sale-link-button" onClick={clear} type="button">
+              Abrir outra venda
+            </button>
+          </>
         )}
-        {organizationId && saleId === null ? (
-          <SaleIdForm initialError={initialError} onOpen={open} />
-        ) : null}
-        {organizationId && saleId !== null ? (
-          <SaleDetailContent
-            key={saleId}
-            organizationId={organizationId}
-            saleId={saleId}
-          />
-        ) : null}
-      </main>
+      </p>
+      {saleId === null ? (
+        <SaleIdForm initialError={initialError} onOpen={open} />
+      ) : null}
+      {saleId === null ? null : (
+        <SaleDetailContent
+          key={saleId}
+          organizationId={organizationId}
+          saleId={saleId}
+        />
+      )}
     </div>
   );
 }

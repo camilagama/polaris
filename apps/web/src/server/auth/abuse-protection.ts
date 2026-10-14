@@ -76,7 +76,11 @@ export function isAuthAbuseProtectionApplicable(request: Request): boolean {
   return actionForRequest(request) !== undefined;
 }
 
-async function limiterKey(secret: string, scope: string, ip: string) {
+export async function limiterKey(
+  secret: string,
+  scope: string,
+  identity: string
+) {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -88,7 +92,7 @@ async function limiterKey(secret: string, scope: string, ip: string) {
     await crypto.subtle.sign(
       "HMAC",
       key,
-      new TextEncoder().encode(`${scope}\u0000${ip}`)
+      new TextEncoder().encode(`${scope}\u0000${identity}`)
     )
   );
   const digest = Array.from(signature, (byte) =>

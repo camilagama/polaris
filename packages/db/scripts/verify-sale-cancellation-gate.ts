@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { CustomerNotFoundError } from "@polaris/domain/customers/customer";
-import { SaleProductUnavailableError } from "@polaris/domain/sales/confirm-sale";
 import {
   InvalidSaleCancellationError,
   SaleAlreadyCancelledError,
@@ -26,6 +25,7 @@ import {
   disposableHostPattern,
   expectSqlState,
   gateBranchPattern,
+  journalMigrationCount,
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
@@ -84,7 +84,7 @@ async function run() {
     const migrations = await admin.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
     );
-    assert.ok(Number(migrations.rows[0]?.count) >= 37);
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
     tests.push(
       "migrations 0000-0036 (and any later ones) were replayed from scratch"
     );
@@ -420,19 +420,31 @@ async function run() {
     );
     const removedCommand = randomUUID();
     const removedRequest = randomUUID();
-    await expectRejected(
-      () =>
-        cancel(tenantA, {
-          commandId: removedCommand,
-          requestId: removedRequest,
-          saleId: removedSale.sale.id,
-        }),
-      SaleProductUnavailableError,
-      "a removed product cannot take its units back"
-    );
-    assert.equal(await cancellationCount(tenantA, removedSale.sale.id), 0);
+    // A removed product has frozen, zero stock: the cancellation is recorded,
+    // but its items take no units back and no movement is written for them.
+    const removedCancellation = await cancel(tenantA, {
+      commandId: removedCommand,
+      requestId: removedRequest,
+      saleId: removedSale.sale.id,
+    });
+    assert.equal(removedCancellation.replayed, false);
+    assert.deepEqual(removedCancellation.restocked, []);
+    assert.equal(await cancellationCount(tenantA, removedSale.sale.id), 1);
     assert.equal((await movementsOf(tenantA, removedCommand)).length, 0);
-    assert.equal(await auditCount(tenantA, removedRequest), 0);
+    assert.equal(await auditCount(tenantA, removedRequest), 1);
+    assert.equal(
+      (await balance(tenantA, removedProduct.variantId)).quantity,
+      0,
+      "the removed product's stock stays frozen at zero"
+    );
+    const removedReplay = await cancel(tenantA, {
+      commandId: removedCommand,
+      requestId: removedRequest,
+      saleId: removedSale.sale.id,
+    });
+    assert.equal(removedReplay.replayed, true);
+    assert.deepEqual(removedReplay.restocked, []);
+    assert.equal(await auditCount(tenantA, removedRequest), 1);
 
     const saleOfB = await (async () => {
       const productB = await createSellableProduct(rt, tenantB, "B", {
@@ -510,7 +522,7 @@ async function run() {
       );
     }
     tests.push(
-      "an archived product still takes units back, a removed product blocks the cancellation with nothing written, and unknown or cross-organization sales, missing capability, no membership, and invalid reasons are rejected"
+      "an archived product still takes units back, a removed product is cancelled without any movement (frozen zero stock, replay included), and unknown or cross-organization sales, missing capability, no membership, and invalid reasons are rejected"
     );
 
     // ------------------------------------------------ 5. injected failures
@@ -799,6 +811,11 @@ async function run() {
             item.unit_cost,
           ]
         );
+        // the balance is a projection of the ledger and must move with it
+        await client.query(
+          "UPDATE public.inventory_balances SET quantity = quantity + $3 WHERE organization_id = $1 AND variant_id = $2",
+          [tenantA.organizationId, item.variant_id, item.quantity]
+        );
       }
     });
     assert.equal(await cancellationCount(tenantA, guardSale.sale.id), 1);
@@ -846,6 +863,11 @@ async function run() {
               movement.quantity,
               movement.unitCost,
             ]
+          );
+          // the balance is a projection of the ledger and must move with it
+          await client.query(
+            "UPDATE public.inventory_balances SET quantity = quantity + $3 WHERE organization_id = $1 AND variant_id = $2",
+            [tenantA.organizationId, movement.variantId, movement.quantity]
           );
         }
       });

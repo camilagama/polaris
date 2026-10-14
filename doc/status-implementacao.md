@@ -6,7 +6,7 @@ Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitet
 
 ## Revisão e correções
 
-**Status: concluída para o escopo inicial; fundação ainda em andamento.**
+**Status: concluída; a fundação e as Fases 2 a 4 (até o Gate 4) estão implementadas e revisadas, ver as seções finais.**
 
 - Os dois anexos foram lidos integralmente.
 - A formatação Markdown foi normalizada: títulos, listas, ênfases, identificadores e espaços escapados agora renderizam como Markdown normal.
@@ -213,6 +213,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Check e build finais | Concluídos | `bun run check`: lint, formato, typecheck, boundaries, Knip e 79 testes em 13 arquivos passaram. `bun run build` passou nos oito workspaces. |
 | Draft PR e CI | Concluídos no commit de implementação | Draft PR [#22](https://github.com/camilagama/polaris/pull/22) publicado sobre `codex/pr23-tenant-audit`; CI 6/6 verde no commit `a1de720`. Continua draft e sem merge. |
 | Próxima etapa | PR24 em andamento | O responsável autorizou avançar antes da revisão humana do PR #22. PR24 fica empilhado sobre o PR22 draft; ambos permanecem sem merge até revisão. |
+
 ### PR23 — checkpoint para revisão
 
 | Subetapa | Status | Evidência / dependência |
@@ -277,6 +278,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 
 - `origin` aponta para https://github.com/camilagama/polaris.git; o checkout de referência permanece em `main`.
 - PRs draft empilhados: #1 chore/workspace-boundaries → main; #2 docs/canonical-docs → #1; #3 ci/baseline → #2; #4 chore/renovate-policy → #3; #5 feat/web-worker → #4; #6 feat/hono-shell → #5; #7 feat/orpc-poc → #6; #8 feat/postgres-hyperdrive-poc → #7; #9 codex/pr11-rls-hyperdrive-gate → #8; #10 codex/pr12-offline-persistence → #9; #11 codex/pr13-better-auth → #10; #12 codex/pr14-google → #11; #13 codex/pr15-password → #12; #14 codex/pr16-turnstile → #13; #15 codex/pr17-account-linking → #14; #16 codex/pr18-sessions → #15; #17 codex/pr19-organizations → #16; #18 codex/pr20-onboarding → #17; #19 codex/pr21-capabilities → #18; #20 codex/pr22-tenant-context → #19; #21 codex/pr23-tenant-audit → #20.
+- Mapa PR ↔ GitHub: PR03–06 → #1–4; PR07–23 → #5–21; Gate 2 → #22; PR24–47 → #23–46 (número do GitHub = número do PR − 1); o PR31 (#30) foi aberto contra main. As cinco branches da rodada de revisão ficam sobre codex/pr47-sale-dates e estão publicadas como rascunhos empilhados: [#47](https://github.com/camilagama/polaris/pull/47) (integridade do banco, base codex/pr47-sale-dates) → [#48](https://github.com/camilagama/polaris/pull/48) (borda) → [#49](https://github.com/camilagama/polaris/pull/49) (interface) → [#50](https://github.com/camilagama/polaris/pull/50) (documentação) → [#51](https://github.com/camilagama/polaris/pull/51) (CI e ferramentas).
 - PR07 foi publicado em https://github.com/camilagama/polaris/pull/5; CI remoto verde e draft aguardando revisão/merge.
 - PR08 foi publicado em https://github.com/camilagama/polaris/pull/6; CI remoto verde e draft aguardando revisão/merge.
 - PR09 foi publicado em https://github.com/camilagama/polaris/pull/7; CI remoto verde e draft aguardando revisão/merge.
@@ -654,6 +656,69 @@ Os status serão atualizados ao concluir ou adiar cada etapa e apresentados para
 | Dossiê para a revisão completa | Concluído | [`doc/checkpoint-gate4.md`](checkpoint-gate4.md): mapa PR01–PR47, decisões tomadas pelo projeto, perguntas, lacunas e próximos passos. |
 | Checkpoint seguro | Alcançado | Fim da Fase 4. Nada foi integrado ao `main` nem implantado; PRs permanecem em draft. A próxima etapa seria a Fase 5 (PR48), mas o responsável pediu parar aqui para rever tudo desde a etapa 1. |
 
+## Rodada de correções pós-revisão (checkpoint Gate 4)
+
+**Status: implementada em cinco branches empilhadas (rascunho); validação em Neon descartável concluída; merge e itens de nuvem pendentes com o responsável.**
+
+A revisão completa ([`doc/revisao-checkpoint-gate4.md`](revisao-checkpoint-gate4.md)) gerou 5 frentes de correção, cada uma em uma branch empilhada sobre `codex/pr47-sale-dates`: `codex/review-1-db-integrity` → `codex/review-2-security-edge` → `codex/review-3-product-ui` → `codex/review-4-docs-adrs` → `codex/review-5-tooling`.
+
+### Decisões tomadas pelo projeto (delegadas pelo responsável)
+
+| Decisão | Escolha | Efeito |
+| --- | --- | --- |
+| D-1 — produto removido e compensações | (a) Cancelamento e devolução continuam possíveis; itens de produto removido não geram movimento de estoque | `sale-cancellation-repository.ts`, gatilho `check_sale_cancellation_complete` (conta só itens de produtos vivos), gate de cancelamento |
+| D-2 — custo desconhecido na reposição | Saldo zero → custo médio desconhecido (`null`); saldo positivo mantém a média | `restockMovingAverageCost`, ADR 0020, testes de propriedade |
+| D-3 — instantes | Todas as colunas de instante viram `timestamptz` | Migration 0039 (inclui `create_initial_organization`, que retornava `timestamp without time zone`) |
+| D-4 — custo de venda retroativa | Usa a média vigente hoje; documentado | ADR 0020, runbook do Gate 4 |
+| D-5 — integração da cadeia | Integrar por fase (Gate 0–4) antes da Fase 5; **nenhum merge foi feito** | Decisão do responsável executar |
+| D-6 — preço de tabela | Entra na variante no PR50 | `doc/plano-inicial.md` |
+| D-7 — UI de estoque e organização pela sessão | Antes do Gate 5, já implementados | `organization.listMine`, `inventory.listBalances`, telas de estoque |
+
+### Banco (frente 1)
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Migration 0039 — `timestamptz` | Concluída | Recria políticas e gatilhos dependentes, converte todas as colunas e a função de onboarding |
+| Migration 0040 — integridade do razão | Concluída | `variant_sequence` por variante (gatilho + índice único); gatilho diferido de reconciliação razão × saldo; GRANT UPDATE por coluna para o runtime; CHECKs de limites; CHECK de chave de mídia; endurecimento de funções (`search_path` fixo, `REVOKE` de PUBLIC) |
+| Migration 0041 — role de autenticação | Concluída | `polaris_auth_runtime` (NOLOGIN) detém user/account/session/verification/auditoria de auth; o runtime de tenant perde acesso a essas tabelas |
+| Timeouts e isolamento da transação tenant | Concluídos | `statement_timeout` 30 s, `lock_timeout` 20 s, `idle_in_transaction_session_timeout` 60 s; `REPEATABLE READ` opcional (leituras de venda) |
+| Estoque operado em data futura | Recusado | `InventoryOccurredInFutureError` |
+| Comandos de devolução/cancelamento com `commandId` de outro namespace | Recusados | `SaleReturnCommandConflictError`, `SaleCancellationCommandConflictError` |
+| Limites de texto e de taxas | Concluídos | Domínio, contratos e CHECKs SQL; `Percentage.fromRate` ≤ 100 |
+
+### Borda e segurança (frente 2)
+
+Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS em `public/_headers`, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
+
+### Produto e interface (frente 3)
+
+Seleção de organização pela sessão (`organization.listMine`), tentativa de venda não confirmada preservada em `sessionStorage` por organização (30 min) para o reenvio idêntico após recarregar a página, saldos de estoque (`inventory.listBalances`) com busca, filtros e paginação por cursor, telas de receber, contar e baixar estoque, shell do aplicativo, página 404 e `ErrorBoundary`, rotas com carregamento tardio, seletor de produto da venda com preços lembrados, filtros do histórico de vendas e correções de acessibilidade.
+
+### Ferramentas e CI (frente 5)
+
+Corredor único de gates (`packages/db/scripts/run-gates.ts`, suítes `gate3`, `gate4`, `ci`), gate de endurecimento da revisão e gate dos modelos de leitura; CI com `format:check`, checagem de drift do Drizzle, job consultivo `database` (Postgres 18) e job consultivo `audit`; verificadores próprios de fronteiras de importação (17 fixtures negativos) e de ciclos (Tarjan); `turbo.json` com `agentGuidance: false`.
+
+### Evidência
+
+| Verificação | Resultado |
+| --- | --- |
+| Branch Neon descartável `pr472-review-final-gate` (schema-only; database `polaris_pr472_gate`) | Migrations 0000–0041 aplicadas do zero em PostgreSQL 18 |
+| Gates em sequência a partir do head final (`run-gates.ts`, um por vez) | Passaram: `sales-aggregate`, `sale-transaction`, `sale-customer-link`, `sale-cancellation`, `sale-return`, `sale-dates`, `gate4`, `read-models`, `gate2-runtime`, `inventory`, `customers`, `media-upload`. O `review-hardening` falhou duas vezes na primeira passada por defeitos reais (abaixo) e por fixtures do próprio gate; depois das correções passou inteiro |
+| Defeitos reais encontrados pelos gates em banco novo | (1) `create_initial_organization` ainda retornava `timestamp without time zone` depois da 0039 e quebrava o onboarding; (2) o repositório do razão trocava um `null` legítimo do cálculo de média pela média antiga (`?? currentAverageCost`), então D-2 não tinha efeito na reposição de venda de custo desconhecido em saldo zero |
+| `bun run check` no head final | lint, formato, tipos, fronteiras (17 fixtures negativos), ciclos (158 arquivos), Knip e 899 testes em 78 arquivos passaram |
+| `bun run build` e `db:generate` | Build dos oito workspaces passou; `db:generate` sem mudanças |
+
+### Backlog registrado (não bloqueia a Fase 5)
+
+- Manutenibilidade: dividir `apps/web/src/server/router.ts`, `packages/contracts/src/index.ts`, `sale-form-model.ts` e `sale-page.tsx`; unificar os helpers de gates (`sales-gate-support.ts` e os scripts mais antigos).
+- Repositório de estoque: `recordStockMovement` é exportado apenas como ponto de teste dos gates; `getProductVariants` ainda lê com `FOR SHARE`; `inventory_quantity_limit` e `insufficient_stock` compartilham o mesmo status HTTP.
+- Capabilities: `expense:create` ainda não é usada por nenhum procedimento; algumas leituras exigem capabilities de escrita (`customer:update`, `organization:manage`) até a Fase de papéis finos.
+- `/offline-poc` continua empacotada fora do modo DEV; remover ou proteger antes de produção.
+- Mídia: prova de EXIF/orientação em Cloudflare Images real, consumo de memória por upload e comandos de remover/substituir/reordenar mídia (antes da Fase 7).
+- CI: promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde.
+### Pendências que só o responsável pode executar
+
+Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDRIVE`); reservar os namespaces de rate limit; apagar Workers e Hyperdrive de PoC implantados (`ebe151e5081344479947edb6028279bb`); rotacionar a credencial owner usada no PR11; testar em Android físico; provar EXIF/orientação em Cloudflare Images real; verificar os cabeçalhos em staging; decidir o merge da cadeia de PRs.
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
