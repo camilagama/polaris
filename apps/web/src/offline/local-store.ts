@@ -191,6 +191,9 @@ function createWriter(
         keys
       );
     },
+    async recentSalesRows() {
+      return await collections.recentSales.toArrayWhenReady();
+    },
     async replaceRecentSales(rows) {
       await upsertInto(collections.recentSales, (row) => row.id, rows);
       const wanted = new Set(rows.map((row) => row.id));

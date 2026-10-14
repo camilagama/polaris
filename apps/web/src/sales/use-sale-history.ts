@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { useDebouncedValue } from "../lib/use-debounced-value";
+import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { filterLocalSales } from "./local-history";
 import {
   canLoadMore,
   emptyHistoryFilters,
@@ -36,8 +38,14 @@ interface SaleHistory {
  * The sale list for an organization: filtered on the server, one read per
  * page, text filters debounced, and answers that arrive late for an older
  * filter are ignored. No customer list is loaded: names come with the rows.
+ *
+ * With a local workspace (no connection) the list is the device's window of
+ * recent sales, filtered here, read again whenever the local rows change.
  */
-export function useSaleHistory(organizationId: string): SaleHistory {
+export function useSaleHistory(
+  organizationId: string,
+  local: LocalWorkspace | null = null
+): SaleHistory {
   const [filters, setFiltersState] = useState(emptyHistoryFilters);
   const [state, setState] = useState(initialHistoryState);
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -60,6 +68,8 @@ export function useSaleHistory(organizationId: string): SaleHistory {
   );
   const period = periodError(filters);
   const effectivePeriod = periodError(effective);
+  const localWriter = local?.stores.writer;
+  const localVersion = local?.dataVersion ?? -1;
 
   useEffect(() => {
     latest.current += 1;
@@ -68,6 +78,25 @@ export function useSaleHistory(organizationId: string): SaleHistory {
     }
     const request = latest.current;
     setState(historyLoading);
+    if (localWriter && localVersion >= 0) {
+      localWriter
+        .recentSalesRows()
+        .then((rows) => {
+          if (request === latest.current) {
+            setState((current) =>
+              historyLoaded(current, filterLocalSales(rows, effective))
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          if (request === latest.current) {
+            setState((current) => historyLoadFailed(current, error));
+          }
+        });
+      return () => {
+        latest.current += 1;
+      };
+    }
     orpcClient.sale
       .list(historyListRequest(organizationId, effective, 0))
       .then((page) => {
@@ -83,7 +112,14 @@ export function useSaleHistory(organizationId: string): SaleHistory {
     return () => {
       latest.current += 1;
     };
-  }, [effective, effectivePeriod, organizationId, reloadVersion]);
+  }, [
+    effective,
+    effectivePeriod,
+    localVersion,
+    localWriter,
+    organizationId,
+    reloadVersion,
+  ]);
 
   const loadMore = useCallback(() => {
     if (!canLoadMore(state)) {

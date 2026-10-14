@@ -1,5 +1,7 @@
 import { type ChangeEvent, useCallback } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { PendingSalesPanel } from "./offline-sale-panels";
 import "./sale-page.css";
 import "./sale-history.css";
 import {
@@ -17,6 +19,8 @@ function isStatusFilter(value: string): value is HistoryStatusFilter {
 }
 
 interface FiltersProps {
+  /** Without a connection the text search over the items is not available. */
+  offline: boolean;
   filters: HistoryFilters;
   onChange: (changes: Partial<HistoryFilters>) => void;
   onReset: () => void;
@@ -25,6 +29,7 @@ interface FiltersProps {
 
 function HistoryFiltersBar({
   filters,
+  offline,
   onChange,
   onReset,
   period,
@@ -110,9 +115,10 @@ function HistoryFiltersBar({
         <label htmlFor="history-query">Busca</label>
         <input
           autoComplete="off"
+          disabled={offline}
           id="history-query"
           onChange={handleQuery}
-          placeholder="Produto vendido"
+          placeholder={offline ? "Só com conexão" : "Produto vendido"}
           type="search"
           value={filters.query}
         />
@@ -143,8 +149,14 @@ function HistoryFiltersBar({
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
 export function SaleHistoryPage() {
   const { organizationId } = useCurrentOrganization();
+  const workspace = useLocalWorkspace(organizationId);
+  // The server's history whenever it is reachable; only without a connection
+  // the device's window of recent sales.
+  const offlineWorkspace =
+    workspace !== null && !workspace.online ? workspace : null;
+  const offline = offlineWorkspace !== null;
   const { filters, loadMore, period, reload, reset, setFilters, state } =
-    useSaleHistory(organizationId);
+    useSaleHistory(organizationId, offlineWorkspace);
   const view = historyView(state, filters);
   const more = loadMoreView(state);
 
@@ -161,8 +173,17 @@ export function SaleHistoryPage() {
           </p>
         </div>
       </section>
+      {offline ? (
+        <p className="sale-message is-warning" role="status">
+          Sem conexão. Estas são as vendas mais recentes guardadas neste
+          aparelho (as últimas 100 que o servidor confirmou); detalhes, busca
+          por item e vendas mais antigas só com conexão.
+        </p>
+      ) : null}
+      {workspace ? <PendingSalesPanel workspace={workspace} /> : null}
       <HistoryFiltersBar
         filters={filters}
+        offline={offline}
         onChange={setFilters}
         onReset={reset}
         period={period}
@@ -191,12 +212,27 @@ export function SaleHistoryPage() {
           {view.rows.map((row) => (
             <li key={row.id}>
               <div className="sale-history-main">
-                <a href={row.detailHref}>
-                  {row.dateText}
-                  {row.timeText ? (
-                    <span className="sale-history-time"> · {row.timeText}</span>
-                  ) : null}
-                </a>
+                {offline ? (
+                  <span>
+                    {row.dateText}
+                    {row.timeText ? (
+                      <span className="sale-history-time">
+                        {" "}
+                        · {row.timeText}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <a href={row.detailHref}>
+                    {row.dateText}
+                    {row.timeText ? (
+                      <span className="sale-history-time">
+                        {" "}
+                        · {row.timeText}
+                      </span>
+                    ) : null}
+                  </a>
+                )}
                 <span className={`sale-badge is-${row.statusTone}`}>
                   {row.statusLabel}
                 </span>

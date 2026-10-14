@@ -1,5 +1,6 @@
 import type {
   LocalProductReadModel,
+  SaleListEntryReadModel,
   LocalVariantReadModel,
 } from "@polaris/contracts";
 import type { BootstrapCollectionName, LocalRows } from "../offline/bootstrap";
@@ -49,7 +50,40 @@ const variants: LocalVariantReadModel[] = [
   },
 ];
 
+const recent = (
+  n: number,
+  overrides: Partial<SaleListEntryReadModel> = {}
+): SaleListEntryReadModel => ({
+  cancelledAt: null,
+  confirmedAt: "2026-10-14T12:00:00.000Z",
+  customerId: null,
+  customerName: null,
+  hasReturns: false,
+  id: `0199c2d0-0000-7000-8000-${String(900 + n).padStart(12, "0")}`,
+  itemCount: 1,
+  occurredAt: `2026-10-${String(10 + n).padStart(2, "0")}T12:00:00.000Z`,
+  occurredOn: `2026-10-${String(10 + n).padStart(2, "0")}`,
+  paymentMethod: "pix",
+  status: "confirmed",
+  totalDue: "50.00",
+  ...overrides,
+});
+
+const recentSalesWindow: SaleListEntryReadModel[] = [
+  recent(1, { customerId: PRODUCT_ID, customerName: "Ângela Souza" }),
+  recent(2, {
+    cancelledAt: "2026-10-13T12:00:00.000Z",
+    status: "cancelled",
+    totalDue: "20.00",
+  }),
+  recent(3, { hasReturns: true, totalDue: "30.00" }),
+];
+
 export class SaleLabServer extends FakeStockServer {
+  override recentSales() {
+    return Promise.resolve(recentSalesWindow);
+  }
+
   constructor() {
     super();
     this.seed(SHIRT, 5, 1);
