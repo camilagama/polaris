@@ -2,9 +2,41 @@
   "name": "@polaris/db",
   "private": true,
   "type": "module",
+  "exports": {
+    "./auth-schema": "./src/schema/auth.ts",
+    "./security-audit-schema": "./src/schema/security-audit.ts",
+    "./tenant-audit-schema": "./src/schema/tenant-audit.ts",
+    "./organization-schema": "./src/schema/organization.ts",
+    "./organization-repository": "./src/organization-repository.ts",
+    "./client": "./src/client.ts",
+    "./schema/poc": "./src/schema/poc.ts",
+    "./rls-poc-client": "./src/rls-poc-client.ts",
+    "./rls-poc-gate": "./src/rls-poc-gate.ts",
+    "./tenant-transaction": "./src/tenant-transaction.ts",
+    "./tenant-audit": "./src/tenant-audit.ts",
+    "./category-schema": "./src/schema/category.ts",
+    "./category-repository": "./src/category-repository.ts"
+  },
   "scripts": {
-    "build": "tsc --noEmit",
-    "check": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "bun run typecheck",
+    "check": "bun run typecheck",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
+    "poc": "bun scripts/poc.ts",
+    "poc:gate2:verify": "bun scripts/verify-gate2-runtime.ts",
+    "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
+    "poc:rls:verify": "bun scripts/verify-rls-gate.ts",
+    "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts",
+    "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
+  },
+  "dependencies": {
+    "@polaris/domain": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.5"
   }
 }

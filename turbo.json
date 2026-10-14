@@ -12,6 +12,13 @@
     "typecheck": {
       "dependsOn": ["^typecheck"],
       "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "passThroughEnv": [
+        "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE"
+      ],
+      "persistent": true
     }
   }
 }

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": [
+        "dist/**",
+        "!dist/polaris_web/.dev.vars",
+        "!dist/polaris_web/.dev.vars.*"
+      ]
+    }
+  }
+}

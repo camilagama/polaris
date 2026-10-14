@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": [
+    "vite.config.ts",
+    "vite.offline.config.ts",
+    "playwright.offline-poc.config.ts",
+    "e2e/**/*.ts",
+    "scripts/**/*.ts"
+  ]
+}

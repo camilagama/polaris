@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "polaris-pr11-rls-gate",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./worker/pr11.ts",
+  "vars": {
+    "DB_POC_ENABLED": "false",
+    "DB_RLS_POC_ENABLED": "true"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ebe151e5081344479947edb6028279bb"
+    }
+  ]
+}

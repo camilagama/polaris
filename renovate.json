@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Group TanStack packages",
+      "matchPackageNames": ["@tanstack/**"],
+      "groupName": "TanStack"
+    },
+    {
+      "description": "Group Cloudflare packages",
+      "matchPackageNames": ["@cloudflare/**", "wrangler"],
+      "groupName": "Cloudflare"
+    },
+    {
+      "description": "Group Biome and Ultracite",
+      "matchPackageNames": ["@biomejs/**", "ultracite"],
+      "groupName": "Biome and Ultracite"
+    },
+    {
+      "description": "Group Vitest packages",
+      "matchPackageNames": ["vitest", "@vitest/**"],
+      "groupName": "Vitest"
+    },
+    {
+      "description": "Group Playwright packages",
+      "matchPackageNames": ["playwright", "playwright-core", "@playwright/**"],
+      "groupName": "Playwright"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Require dashboard approval for major updates",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    }
+  ]
+}

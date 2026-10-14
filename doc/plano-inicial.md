@@ -12,6 +12,8 @@
 
 **Regra principal:** nenhum módulo posterior pode contornar ou duplicar uma decisão já consolidada na fundação.
 
+**Autoridade:** este arquivo rege a sequência e os critérios de implementação. Objetivos, terminologia, design, arquitetura e invariantes de negócio têm seus homes canônicos nos arquivos de raiz e em docs/. Detalhes antigos ainda não migrados são propostas e não autorizam implementação sem validação.
+
 
 
 ---
@@ -1149,11 +1151,9 @@ Adicionar:
 
 
 
-Aplicar política de senha decidida.
+Aplicar [docs/business-rules/authentication.md](../docs/business-rules/authentication.md): 15–128 pontos de código Unicode após NFC, espaços permitidos, sem composição arbitrária nem expiração periódica; verificar HIBP antes de estabelecer/alterar credencial e falhar fechado se a consulta não estiver disponível. Reset revoga todas as sessões.
 
-
-
-Integrar HIBP.
+Usar Resend com templates React Email minimalistas, idempotency key por token e secrets `RESEND_API_KEY` + `AUTH_EMAIL_FROM` de domínio verificado. Os fluxos ficam indisponíveis sem sender configurado e só são expostos após PR16 (rate limiting e Turnstile). O outbox/Queue e webhooks de delivery da proposta inicial ficam adiados para hardening pré-go-live; PR15 usa callback síncrono idempotente. `EMAIL_PASSWORD_AUTH_ENABLED` permanece `false` por padrão e só deve ser ligado após o PR16.
 
 
 
@@ -1165,19 +1165,23 @@ Integrar HIBP.
 
 
 
-Adicionar Turnstile em:
+Adicionar verificação Turnstile server-side e rate limiting para as operações públicas de email/senha:
 
 
 
-- signup;
+- signup e envio de verificação;
 
 - password login;
 
-- password reset.
+- solicitação e conclusão do reset de senha.
 
 
 
-Adicionar rate limiting.
+O Worker deve validar o token pelo Siteverify, conferir `action` e o hostname configurado do Better Auth, limitar tentativas antes de chamar o provider e falhar fechado se a configuração ou a verificação estiver indisponível. O token chega no header `x-turnstile-token`; token ausente/inválido não deve chegar ao Better Auth.
+
+Usar bindings nativos de rate limiting do Workers para um limite geral por IP e um limite menor para operações que enviam email. As chaves não devem conter IP em claro. Os contadores desses bindings são locais por região Cloudflare, então não representam uma quota global; registrar a limitação e reavaliar uma proteção distribuída antes de lançar caso o risco exija.
+
+A interface de autenticação ainda não existe. Este PR fecha os endpoints; a tela futura deve renderizar o widget com a site key pública, enviar o token no header acima e usar a ação correspondente ao endpoint. Manter os fluxos de senha desligados até secret, hostnames, bindings e widget estarem configurados.
 
 
 
@@ -1187,11 +1191,14 @@ Testar:
 
 - token ausente;
 
-- inválido;
+- token inválido e ação/hostname divergentes;
 
-- replay;
+- replay de token;
 
-- limite excedido.
+- limite de IP e limite de envio de email excedidos;
+- timeout/erro do Siteverify e ausência de configuração.
+
+Registrar configuração, limites, contrato do header, privacidade e passos de ativação em runbook.
 
 
 
@@ -1203,7 +1210,7 @@ Testar:
 
 
 
-Implementar Google + password linking seguro.
+Implementar vínculo explícito entre uma conta Better Auth de senha e a identidade Google. Não vincular automaticamente durante login social. O endpoint `link-social` exige sessão com email verificado, rejeita `idToken` enviado pelo cliente e inicia o fluxo OAuth com redirect/PKCE. Manter `disableImplicitLinking: true`, `trustedProviders: []`, `allowDifferentEmails: false` e não substituir o perfil local pelos dados do Google ao vincular.
 
 
 
@@ -1223,7 +1230,19 @@ different email → reject
 
 
 
-Testar account takeover scenarios.
+O email local e a afirmação de email do Google precisam estar verificados e ser iguais sem distinção de caixa. Uma sessão Google verificada pode adicionar senha pelo método server-only `auth.api.setPassword`, desde que siga a política de senha do PR15; sessão com email não verificado é rejeitada. O fluxo permanece atrás da configuração de email/senha.
+
+Testar:
+
+- vínculo explícito com sessão e mesmo email verificado;
+- email local não verificado;
+- email Google não verificado;
+- email diferente;
+- sessão ausente;
+- tentativa de vincular por `idToken` enviado pelo cliente;
+- login Google sem vínculo implícito de uma conta de senha existente;
+- adicionar senha a uma sessão Google verificada e confirmar que ambos os métodos usam o mesmo user ID;
+- chamadas de `set-password` rejeitadas quando email/senha está desligado.
 
 
 
@@ -1233,93 +1252,40 @@ Testar account takeover scenarios.
 
 # PR 18 — Sessões
 
-
-
 Implementar:
 
-
-
-- 7 dias idle;
-
-- 30 dias absolute;
-
-- múltiplas sessões;
-
-- session list;
-
-- revoke session;
-
-- logout.
-
-
-
-Reset de senha revoga todas.
-
-
+- TTL idle de 7 dias (`expiresIn`) com renovação no máximo a cada 24 horas (`updateAge`) durante uso autenticado; desativar cookie cache para validar revogação no servidor.
+- Limite absoluto de 30 dias desde a criação. O Worker revoga sessões vencidas antes de encaminhar qualquer rota Better Auth; a migration PostgreSQL limita `expires_at` no INSERT/UPDATE, preserva `created_at` e ajusta linhas existentes.
+- Permitir múltiplas sessões e usar os endpoints Better Auth de listagem, revogação individual e logout, verificando isolamento por usuário. A listagem exige sessão fresca de até 24 horas.
+- Reset de senha revoga todas as sessões.
+- Testar idle e absolute expiry, refresh perto do limite, múltiplas sessões, listagem/revogação do próprio usuário, logout, token cru e reset em duas sessões.
+- Aplicar a migration e verificar o limite absoluto em PostgreSQL 18.
 
 ---
 
-
-
 # PR 19 — Organizations e memberships
 
+Criar schema e migration PostgreSQL para `organizations` e `memberships`.
 
-
-Criar schema:
-
-
+Campos mínimos de organização:
 
 ```text
-
-organizations
-
-memberships
-
+id
+name
+timezone
+currency
+status
 ```
 
+Membership é identificado pela chave composta `(organization_id, user_id)` e inicia com `role = owner` e `status = active`; checks no banco limitam o vocabulário desta etapa a esses dois valores até que novos roles ou estados sejam definidos por migration. Não adicionar unicidade global a `user_id`: permitir múltiplas organizações no modelo preserva a evolução futura; a regra V1 de uma organização por usuário será imposta no domínio durante o PR20.
 
+A V1 opera em BRL. A organização mantém timezone IANA; o PR20 valida o identificador no servidor durante o onboarding. A criação exige email verificado e essa condição é conferida no servidor, conforme `docs/business-rules/organization-and-access.md`.
 
-Campos mínimos:
+Estados de organização: `active`, `suspended` e `closed`; não misturar estado operacional com estado de billing. A FK de membership para usuário usa `ON DELETE RESTRICT`; portanto, a exclusão física de um usuário com vínculo fica bloqueada. Fluxo de transferência/encerramento antes da exclusão ainda precisa ser definido.
 
+Não impor acoplamento estrutural irreversível. Este PR cria somente schema: sem grant para role de runtime, políticas RLS ou rotas tenant. Grants/RLS entram junto da autorização e do contexto tenant, antes de operações tenant serem expostas.
 
-
-```text
-
-organization.id
-
-organization.name
-
-organization.timezone
-
-organization.currency
-
-organization.status
-
-```
-
-
-
-Membership:
-
-
-
-```text
-
-owner
-
-active
-
-```
-
-
-
-V1 impede múltiplas orgs via regra de domínio.
-
-
-
-Não impor acoplamento estrutural irreversível.
-
-
+Gate: gerar e reaplicar a migration em branch Neon descartável PostgreSQL 18; provar checks de status/moeda e de role/status do membership, chave composta e FKs; confirmar que `polaris_pr11_runtime` continua sem `SELECT` nas novas tabelas e que a branch production não foi alterada.
 
 ---
 
@@ -1327,86 +1293,53 @@ Não impor acoplamento estrutural irreversível.
 
 # PR 20 — Onboarding idempotente
 
-
-
-Implementar use case:
-
-
+Implementar o use case interno:
 
 ```text
-
 createInitialOrganization()
-
 ```
 
+O use case recebe o `userId` obtido de uma sessão autenticada no servidor e valida `user.email_verified` diretamente no banco. Não aceitar identidade ou estado de verificação enviados pelo cliente. Validar e normalizar nome e timezone IANA antes de iniciar a transação.
 
+Dentro de uma transação PostgreSQL `READ COMMITTED`:
 
-Transação cria:
+1. obter advisory lock transaction-scoped em namespace próprio e chave derivada do usuário;
+2. bloquear a linha de usuário para leitura enquanto confere email verificado;
+3. procurar memberships existentes;
+4. se houver exatamente um, retornar a organização existente sem alterar nome/timezone (retry idempotente); se houver mais de um, falhar fechado;
+5. se não houver, inserir organization e membership owner/active na mesma transação.
 
+A regra V1 de uma organização por usuário é a fronteira de idempotência; não criar tabela de idempotency keys nem constraint global em `memberships.user_id`. O use case não persiste uma chave por request: retry para o mesmo `userId` retorna a organização existente sem alterá-la; payloads concorrentes diferentes para o mesmo usuário também retornam o primeiro resultado. O lock é liberado automaticamente no commit/rollback.
 
+“Defaults essenciais” neste PR são os defaults já definidos no schema: currency BRL, organization status active, membership role owner e status active. Não há regra de produto para semear categorias, produtos ou outros registros; não inventar seed data.
 
-- organization;
+Este PR entrega o use case interno e seu gate, sem rota HTTP ou grants para `polaris_pr11_runtime`. Expor onboarding só depois de capabilities, contexto de autorização e RLS conforme PR21/22.
 
-- owner membership;
-
-- defaults essenciais.
-
-
-
-Usar idempotency/advisory mechanism apropriado.
-
-
-
-Testar request duplicada.
-
-
-
+Testar: repetir o mesmo comando retorna o mesmo ID sem alterar campos; requests concorrentes para o mesmo usuário, com payloads distintos, criam exatamente uma organização e um membership owner; usuário não verificado/ausente, timezone inválido e memberships preexistentes múltiplos são rejeitados. Executar gate em PostgreSQL 18 de branch Neon descartável; a branch production permanece intacta.
 ---
 
 
 
 # PR 21 — Capabilities tenant
 
-
-
-Criar autorização baseada em capabilities.
-
-
-
-Mesmo só existindo `owner`, definir mapa.
-
-
-
-Exemplos:
-
-
+Criar em `packages/domain` um mapa único de role→capability. No V1, `owner` recebe somente o conjunto nomeado abaixo:
 
 ```text
-
 catalog:read
-
 product:create
-
 product:update
-
 inventory:adjust
-
 sale:create
-
 customer:update
-
 expense:create
-
 organization:manage
-
 ```
 
+Centralizar a consulta em `capabilitiesForRole()`/`hasCapabilityForRole()`; não espalhar comparações de role pela aplicação. Role desconhecido ou capability desconhecida falha fechado, sem permissão.
 
+Este mapa puro não autentica usuário, não verifica membership/status e não escolhe organização. Essas etapas pertencem ao contexto de request do PR22. Não adicionar rota tenant neste PR.
 
-Não espalhar checks de role.
-
-
-
+Testar o conjunto exato de capabilities de `owner`, allow para cada capability declarada, deny para role/capability desconhecidos e imutabilidade do mapa exportado.
 ---
 
 
@@ -1449,60 +1382,42 @@ Criar testes cross-tenant.
 
 # PR 23 — Audit events tenant
 
+Criar a tabela tenant-specific `tenant_audit_event`, separada da auditoria global de autenticação `auth_security_audit_event`.
 
+O evento registra apenas organization ID, actor user ID interno, códigos event/entity type limitados, entity ID opaco em formato UUID e request ID UUID opcional. O writer e os checks do banco rejeitam campos fora desse contrato. Não armazenar payloads, snapshots before/after, email, IP, user-agent, tokens ou outros segredos.
 
-Criar audit trail transacional.
+`recordTenantAuditEvent(transaction, identity, event)` escreve na transação já aberta e usa a identidade validada do contexto tenant. Não iniciar uma segunda transação no writer. Eventos de mutação crítica devem comitar ou sofrer rollback junto com a mutação.
 
+A primeira mutação auditada é `organization.created`, escrita junto com organização e membership no onboarding interno. Retry idempotente não cria outro evento. Mutações de catálogo, estoque e vendas ainda não existem e serão auditadas nos PRs de cada domínio.
 
+A tabela usa `ENABLE` e `FORCE ROW LEVEL SECURITY`. O runtime recebe somente `INSERT`; não recebe `SELECT`, `UPDATE` ou `DELETE`. A policy exige o contexto de user/organization, membership ativa e organização ativa. GUCs são alteráveis pelo runtime: RLS ajuda contra contexto incorreto, mas não protege contra SQL arbitrário. Esta etapa não expõe histórico de auditoria à aplicação.
 
-Para mutações críticas:
-
-
-
-```text
-
-business mutation + audit event
-
-```
-
-
-
-na mesma transaction quando necessário.
-
-
-
-Nunca logar secrets.
-
-
-
----
-
-
+O gate PostgreSQL 18 em branch Neon descartável deve provar o evento de onboarding no mesmo commit, INSERT autorizado pelo contexto, negação cross-tenant, ausência de leitura/alteração pelo runtime, rollback do evento junto com a mutação e purge dos eventos ao remover a organização. A exclusão da organização remove seus eventos por cascade. Não há expiração automática; retenção legal e eventual legal hold devem ser definidos antes do go-live.
 
 # GATE 2
 
-
-
 Antes do catálogo:
 
+- sessão autenticada integrada ao runtime;
+- onboarding inicial da organização validado;
+- tenancy comprovada em uma operação real;
+- RLS aplicado a uma entidade de negócio;
+- capability checks centralizados e usados nas operações.
 
+## Fechamento do Gate 2 — concluído antes do PR24 completo
 
-- auth completo;
+A auditoria do checkpoint PR23 confirmou que Better Auth, onboarding idempotente, transação tenant, RLS de organizations/memberships e o mapa de capabilities tinham provas isoladas, mas ainda não formavam um fluxo autenticado com uma entidade de negócio protegida. Foi criada uma etapa prévia e limitada para fechar essas lacunas antes do PR24 completo.
 
-- organization criada;
+O slice pré-gate foi implementado e seus gates passaram na branch Neon descartável `gate2-runtime-proof`, PostgreSQL 18.6, AWS South America East 1 (São Paulo):
 
-- tenancy comprovada;
+- onboarding `organization.createInitial` exige sessão Better Auth com email verificado; o ator vem da sessão, e a escrita passa pela função SECURITY DEFINER em `ONBOARDING_HYPERDRIVE` com a role dedicada `polaris_onboarding_runtime`;
+- a migration 0012 cria `categories` com ENABLE/FORCE RLS e grants mínimos de SELECT/INSERT; `category.list/create` usam o compositor tenant e as capabilities centralizadas;
+- o gate PostgreSQL confirmou idempotência, auditoria transacional, negação de DML direto, separação de roles, isolamento RLS, rollback e cascade; o Worker local confirmou autenticação, onboarding, leitura/criação, negação cross-tenant e auditoria;
+- UI, archive/delete, produto, estoque e sync ficaram fora deste slice. O PR24 completo reutiliza o schema e as operações já criadas, sem migrations duplicadas.
 
-- RLS em entidades reais;
-
-- capability checks centralizados.
-
-
+Com as duas provas verdes, o Gate 2 está aprovado tecnicamente para este escopo. O draft PR [#22](https://github.com/camilagama/polaris/pull/22) foi publicado sobre PR23 e o CI passou 6/6 no commit de implementação `a1de720`; aguarda revisão do responsável e não foi mesclado. A implementação completa do PR24 começa depois da revisão deste checkpoint. Credenciais reais dos providers e configurações persistentes de produção continuam pré-go-live. A função SECURITY DEFINER usa search_path fixo e confiável, objetos qualificados, sem SQL dinâmico, EXECUTE revogado de PUBLIC e concedido somente à role `polaris_onboarding_runtime` conectada por `ONBOARDING_HYPERDRIVE`; a role tenant comum não tem esse privilégio. A função não valida sessão e só pode ser chamada depois da autorização no Worker. Ver [PostgreSQL CREATE FUNCTION](https://www.postgresql.org/docs/18/sql-createfunction.html).
 
 ---
-
-
-
 # FASE 3 — CATÁLOGO, VARIANTES E ESTOQUE
 
 
@@ -1515,7 +1430,7 @@ Antes do catálogo:
 
 
 
-Schema + domínio + API + UI mínima.
+Completar o módulo após o Gate 2 aprovado. O slice pré-gate pode já ter criado schema e operações mínimas de leitura/criação; reutilizar esses objetos, sem migrations duplicadas. PR24 completa domínio, regras de archive/delete, contrato de leitura offline e UI mínima.
 
 
 
@@ -6970,4 +6885,3 @@ A prioridade correta é:
 
 
 > **provar as partes arriscadas primeiro, estabilizar as invariantes e só depois acelerar a construção das funcionalidades.**
-

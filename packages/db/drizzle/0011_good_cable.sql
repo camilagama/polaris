@@ -1,0 +1,2 @@
+ALTER TABLE "tenant_audit_event" DROP CONSTRAINT "tenant_audit_entity_id_format";--> statement-breakpoint
+ALTER TABLE "tenant_audit_event" ADD CONSTRAINT "tenant_audit_entity_id_uuid" CHECK (char_length("tenant_audit_event"."entity_id") = 36 AND "tenant_audit_event"."entity_id" ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');

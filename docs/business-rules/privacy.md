@@ -1,0 +1,14 @@
+# Privacidade
+
+- Coletar dado pessoal somente para propósito declarado de produto, operação, segurança ou obrigação legal. Ao adicionar campo, registrar implicações para offline, exportação, logs, retenção e exclusão.
+- Polaris atua como controlador para conta, autenticação, assinatura, segurança, antifraude e suporte. Em geral, atua como operador dos dados de clientes cadastrados pelo revendedor; confirmar o papel por atividade de tratamento antes do lançamento.
+- Pedido de privacidade de cliente do revendedor normalmente é tratado pelo revendedor como controlador. Não apagar dado tenant só porque terceiro sem autoridade enviou email ao Polaris.
+- Encerramento de organização bloqueia novas operações, revoga acesso e autorização offline e despublica o catálogo; dados elegíveis são apagados após a janela de recuperação documentada.
+- Exportação ocorre mediante pedido autorizado, em artefato privado temporário com validade curta.
+- Purge abrange banco, masters de imagem, derivados, caches e cópias de staging. Restore reaplica o deletion ledger antes de reutilizar o ambiente.
+- Prazos legais de retenção e de incidentes exigem revisão jurídica e contábil antes do go-live.
+- Emails de verificação e recuperação enviados via Resend compartilham com o provider o endereço destinatário, link/token transacional e metadados de entrega. Antes de habilitar envio real, incluir esse tratamento na política de privacidade e revisar termos/DPA, região e retenção do provider; não enviar dados de negócio nesses emails.
+- Turnstile é usado como proteção antifraude nas operações públicas de autenticação. Antes da ativação em produção, incluir o serviço na descrição do tratamento de dados de autenticação e revisar os termos/DPA e as configurações do widget com Cloudflare.
+- Better Auth guarda IP e user-agent associados às sessões para segurança e oferece ao usuário a lista das próprias sessões. Incluir esses metadados, finalidade e retenção na política de privacidade antes do go-live.
+- Eventos de auditoria tenant guardam somente organização, ID interno do ator, códigos de tipo limitados, ID opaco UUID de entidade, request ID UUID opcional e timestamp; writer e banco rejeitam campos fora do contrato. Não guardar payloads, snapshots, email, IP, user-agent ou secrets. A purga física da organização remove esses eventos. Não há expiração automática; retenção legal e legal hold exigem decisão antes do go-live.
+- O vínculo com Google associa o identificador da conta do provider ao usuário Polaris. Tokens OAuth são cifrados pelo Better Auth e o `id_token` não é persistido; incluir esse vínculo na descrição de dados de conta/autenticação antes do lançamento.
