@@ -6,6 +6,7 @@ import {
   type ProductReadModel,
   polarisContract,
 } from "@polaris/contracts";
+import { readBootstrapPage } from "@polaris/db/bootstrap-repository";
 import {
   archiveCategory,
   createCategory,
@@ -24,6 +25,15 @@ import {
   updateCustomer,
 } from "@polaris/db/customer-repository";
 import {
+  DeviceLimitError,
+  DeviceNotFoundError,
+  DeviceRevokedError,
+  listDevices,
+  OfflineGrantNotFoundError,
+  registerDevice,
+  revokeDevice,
+} from "@polaris/db/device-repository";
+import {
   getInventoryBalance,
   InvalidInventoryBalanceCursorError,
   inventoryCount,
@@ -31,6 +41,7 @@ import {
   receiveStock,
   writeOffStock,
 } from "@polaris/db/inventory-repository";
+import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
 import { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import {
   archivePaymentProfile,
@@ -48,6 +59,7 @@ import {
   getProductVariants,
   listProducts,
   restoreProduct,
+  setProductVariantListPrice,
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
@@ -59,6 +71,11 @@ import {
 import { getSale, listSales } from "@polaris/db/sale-query-repository";
 import { confirmSale } from "@polaris/db/sale-repository";
 import { createSaleReturn } from "@polaris/db/sale-return-repository";
+import {
+  getSyncCursor,
+  InvalidSyncCursorError,
+  pullSyncChanges,
+} from "@polaris/db/sync-repository";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
   CategoryDeletedError,
@@ -71,6 +88,7 @@ import {
 } from "@polaris/domain/catalog/category";
 import {
   deriveProductLifecycle,
+  InvalidVariantListPriceError,
   ProductCategoryUnavailableError,
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
@@ -129,6 +147,12 @@ import {
   MoneyLimitError,
 } from "@polaris/domain/money/money";
 import {
+  InvalidDeviceLabelError,
+  InvalidOfflineGrantRevokeReasonError,
+  InvalidOfflineGrantWindowError,
+} from "@polaris/domain/offline/offline-grant";
+import { OfflineLeaseNotAvailableError } from "@polaris/domain/offline/offline-lease";
+import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -175,6 +199,7 @@ import {
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
+import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -186,8 +211,13 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
+import { createOfflineRpcHandlers } from "./offline-handlers";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
+import { createSyncRpcHandlers } from "./sync-handlers";
+import { runSyncCommand } from "@polaris/db/sync-command-repository";
+import type { SyncCommandHandler } from "../sync/push";
+import { syncCommandHandlers } from "../sync/registry";
 
 export interface PolarisRpcContext {
   bindings: WorkerBindings;
@@ -232,20 +262,30 @@ interface RpcRouterDependencies {
   getProductVariants: typeof getProductVariants;
   getSale: typeof getSale;
   getSaleCustomerLink: typeof getSaleCustomerLink;
+  getSyncCursor: typeof getSyncCursor;
   inventoryCount: typeof inventoryCount;
+  issueOfflineLeaseGrant: typeof issueOfflineLeaseGrant;
   listCategories: typeof listCategories;
   listCustomers: typeof listCustomers;
+  listDevices: typeof listDevices;
   listInventoryBalances: typeof listInventoryBalances;
   listPaymentProfiles: typeof listPaymentProfiles;
   listProducts: typeof listProducts;
   listSales: typeof listSales;
   listUserOrganizations: typeof listUserOrganizations;
+  pullSyncChanges: typeof pullSyncChanges;
+  readBootstrapPage: typeof readBootstrapPage;
   receiveStock: typeof receiveStock;
+  registerDevice: typeof registerDevice;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
   restoreCustomer: typeof restoreCustomer;
   restorePaymentProfile: typeof restorePaymentProfile;
   restoreProduct: typeof restoreProduct;
+  revokeDevice: typeof revokeDevice;
+  runSyncCommand: typeof runSyncCommand;
+  syncCommandHandlers: readonly SyncCommandHandler[];
+  setProductVariantListPrice: typeof setProductVariantListPrice;
   setProductVariantSku: typeof setProductVariantSku;
   updateCustomer: typeof updateCustomer;
   updatePaymentProfile: typeof updatePaymentProfile;
@@ -480,6 +520,10 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("FORBIDDEN", { cause: error });
   }
 
+  if (error instanceof OfflineLeaseUnavailableError) {
+    throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+  }
+
   if (isRpcErrorInGroup(error, badRequestRpcErrors)) {
     throw clientRpcError("BAD_REQUEST", error);
   }
@@ -536,6 +580,13 @@ const badRequestRpcErrors = [
     InvalidPaymentProfileError,
   ],
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
+  [
+    InvalidDeviceLabelError,
+    InvalidSyncCursorError,
+    InvalidVariantListPriceError,
+    InvalidOfflineGrantWindowError,
+    InvalidOfflineGrantRevokeReasonError,
+  ],
   [
     InvalidStockMovementError,
     InventoryOccurredInFutureError,
@@ -610,6 +661,7 @@ const conflictRpcErrors = [
     PaymentProfileLifecycleError,
   ],
   [SaleCommandConflictError, SaleProductUnavailableError],
+  [DeviceRevokedError, DeviceLimitError, OfflineLeaseNotAvailableError],
   [SaleAlreadyCancelledError, SaleCancellationCommandConflictError],
   [
     SaleHasReturnsError,
@@ -632,6 +684,7 @@ const notFoundRpcErrors = [
     InventoryVariantNotFoundError,
   ],
   [SaleNotFoundError],
+  [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;
 
 async function productLifecycleCommand(
@@ -998,6 +1051,7 @@ function createPaymentProfileRpcHandlers(
   return { archive, create, list, restore, update };
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one `overrides.x ?? x` per dependency; splitting the router is tracked in the review backlog.
 export function createRpcRouter(
   overrides: Partial<RpcRouterDependencies> = {}
 ) {
@@ -1024,6 +1078,8 @@ export function createRpcRouter(
     overrides.configureProductVariants ?? configureProductVariants;
   const setTenantProductVariantSku =
     overrides.setProductVariantSku ?? setProductVariantSku;
+  const setTenantProductVariantListPrice =
+    overrides.setProductVariantListPrice ?? setProductVariantListPrice;
   const updateTenantProduct = overrides.updateProduct ?? updateProduct;
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
 
@@ -1040,6 +1096,34 @@ export function createRpcRouter(
     inventoryCount: overrides.inventoryCount,
     listInventoryBalances: overrides.listInventoryBalances,
     requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const offlineHandlers = createOfflineRpcHandlers({
+    defaultIssueOfflineLeaseGrant: issueOfflineLeaseGrant,
+    defaultListDevices: listDevices,
+    defaultRegisterDevice: registerDevice,
+    defaultRevokeDevice: revokeDevice,
+    issueOfflineLeaseGrant: overrides.issueOfflineLeaseGrant,
+    listDevices: overrides.listDevices,
+    registerDevice: overrides.registerDevice,
+    requestAuditId,
+    revokeDevice: overrides.revokeDevice,
+    toRpcError,
+    withAuthenticatedRequestContext: authenticatedRequest,
+    withTenantRequestContext: tenantRequest,
+  });
+  const syncHandlers = createSyncRpcHandlers({
+    commandHandlers: overrides.syncCommandHandlers ?? syncCommandHandlers,
+    defaultRunSyncCommand: runSyncCommand,
+    now: () => new Date(),
+    runSyncCommand: overrides.runSyncCommand,
+    defaultGetSyncCursor: getSyncCursor,
+    defaultPullSyncChanges: pullSyncChanges,
+    defaultReadBootstrapPage: readBootstrapPage,
+    getSyncCursor: overrides.getSyncCursor,
+    pullSyncChanges: overrides.pullSyncChanges,
+    readBootstrapPage: overrides.readBootstrapPage,
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });
@@ -1467,6 +1551,35 @@ export function createRpcRouter(
       }
     );
 
+  const setProductVariantListPriceRecord =
+    implementContract.product.setVariantListPrice.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "product:update",
+            operation: (transaction, identity) =>
+              setTenantProductVariantListPrice(transaction, identity, {
+                expectedVersion: input.expectedVersion,
+                id: input.productId,
+                listPrice: input.listPrice,
+                requestId: requestAuditId(context.requestId),
+                variantId: input.variantId,
+              }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            changed: result.changed,
+            configuration: result.configuration,
+            product: productReadModel(result.product),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
   const receiveStockRecord = implementContract.inventory.receiveStock.handler(
     async ({ context, input }) => {
       try {
@@ -1573,6 +1686,7 @@ export function createRpcRouter(
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     customer: customerHandlers,
+    device: offlineHandlers.device,
     inventory: {
       getBalance: inventoryHandlers.getBalance,
       inventoryCount: inventoryHandlers.count,
@@ -1580,6 +1694,7 @@ export function createRpcRouter(
       receiveStock: receiveStockRecord,
       writeOffStock: writeOffStockRecord,
     },
+    offline: offlineHandlers.offline,
     organization: { createInitial, listMine: organizationHandlers.listMine },
     paymentProfile: paymentProfileHandlers,
     product: {
@@ -1590,6 +1705,7 @@ export function createRpcRouter(
       getVariants: getProductVariantsRecord,
       list: listProduct,
       restore: restoreProductRecord,
+      setVariantListPrice: setProductVariantListPriceRecord,
       setVariantSku: setProductVariantSkuRecord,
       update: updateProductRecord,
     },
@@ -1604,6 +1720,7 @@ export function createRpcRouter(
       return: saleHandlers.return,
       unassignCustomer: saleHandlers.unassignCustomer,
     },
+    sync: syncHandlers,
     system: { ping },
   });
 }

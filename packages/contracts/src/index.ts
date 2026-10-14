@@ -248,9 +248,13 @@ const productVariantOptionAssignment = z.object({
   optionValueName: z.string().min(1),
 });
 
+/** A BRL list price as the server writes it: whole reais and two decimals. */
+const listPriceText = z.string().regex(/^\d{1,18}\.\d{2}$/);
+
 const productVariant = z.object({
   id: z.string().uuid(),
   isDefault: z.boolean(),
+  listPrice: listPriceText.nullable(),
   position: z.number().int().nonnegative().nullable(),
   sku: z.string().nullable(),
   values: z.array(productVariantOptionAssignment),
@@ -347,6 +351,7 @@ export type InventoryCountMovementReadModel = z.infer<
 
 const inventoryBalanceEntry = z.object({
   isDefaultVariant: z.boolean(),
+  listPrice: listPriceText.nullable(),
   movingAverageCost: normalizedBrlCost.nullable(),
   productId: z.string().uuid(),
   productName: z.string().min(1),
@@ -633,6 +638,146 @@ export type OrganizationMembershipReadModel = z.infer<
   typeof organizationMembership
 >;
 
+const deviceReadModel = z.object({
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+  label: z.string().nullable(),
+  lastSeenAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable(),
+});
+
+export type DeviceReadModel = z.infer<typeof deviceReadModel>;
+
+/** One queued offline command as the outbox sends it (plan PR52/PR53). */
+const pushCommand = z.object({
+  baseVersion: z.number().int().nonnegative().nullable(),
+  commandId: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  deviceId: z.string().uuid(),
+  lease: z.string().min(1).max(4096),
+  payload: z.json(),
+  type: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/)
+    .max(100),
+});
+
+const pushResult = z.object({
+  code: z.string().nullable(),
+  commandId: z.string().uuid(),
+  replayed: z.boolean(),
+  result: z.json().nullable(),
+  status: z.enum(["accepted", "rejected", "not_processed"]),
+});
+
+export type PushCommandReadModel = z.infer<typeof pushCommand>;
+export type PushResultReadModel = z.infer<typeof pushResult>;
+
+/** A change-log sequence, as decimal text so it survives JSON unchanged. */
+const syncCursorText = z.string().regex(/^\d{1,16}$/);
+
+const syncChange = z.object({
+  entityId: z.string().uuid(),
+  entityType: z.enum([
+    "category",
+    "customer",
+    "inventory_balance",
+    "payment_profile",
+    "product",
+    "sale",
+  ]),
+  seq: z.number().int().positive(),
+});
+
+export type SyncChangeReadModel = z.infer<typeof syncChange>;
+
+/**
+ * The read models a device keeps locally (plan PR50): smaller than the online
+ * ones, instants as ISO text, no costs and no audit data.
+ */
+const localCategory = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  deletedAt: z.string().datetime().nullable(),
+  id: z.string().uuid(),
+  name: z.string(),
+  updatedAt: z.string().datetime(),
+});
+const localCustomer = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  email: z.string().nullable(),
+  id: z.string().uuid(),
+  name: z.string(),
+  notes: z.string().nullable(),
+  phone: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+const localProduct = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  categoryId: z.string().uuid().nullable(),
+  deletedAt: z.string().datetime().nullable(),
+  description: z.string().nullable(),
+  id: z.string().uuid(),
+  name: z.string(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+const localVariant = z.object({
+  id: z.string().uuid(),
+  isDefault: z.boolean(),
+  listPrice: listPriceText.nullable(),
+  position: z.number().int().nonnegative().nullable(),
+  productId: z.string().uuid(),
+  sku: z.string().nullable(),
+  values: z.array(
+    z.object({ optionName: z.string(), optionValueName: z.string() })
+  ),
+});
+const localInventory = z.object({
+  productId: z.string().uuid(),
+  quantity: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+  variantId: z.string().uuid(),
+  version: z.number().int().nonnegative(),
+});
+
+export type LocalCategoryReadModel = z.infer<typeof localCategory>;
+export type LocalCustomerReadModel = z.infer<typeof localCustomer>;
+export type LocalProductReadModel = z.infer<typeof localProduct>;
+export type LocalVariantReadModel = z.infer<typeof localVariant>;
+export type LocalInventoryReadModel = z.infer<typeof localInventory>;
+
+const bootstrapNextAfterId = z.string().uuid().nullable();
+const bootstrapPageOutput = z.discriminatedUnion("collection", [
+  z.object({
+    collection: z.literal("categories"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localCategory),
+  }),
+  z.object({
+    collection: z.literal("customers"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localCustomer),
+  }),
+  z.object({
+    collection: z.literal("inventory"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localInventory),
+  }),
+  z.object({
+    collection: z.literal("products"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localProduct),
+  }),
+  z.object({
+    collection: z.literal("variants"),
+    nextAfterId: bootstrapNextAfterId,
+    rows: z.array(localVariant),
+  }),
+]);
+
+export type BootstrapPageReadModel = z.infer<typeof bootstrapPageOutput>;
+
 export const polarisContract = {
   category: {
     archive: oc
@@ -739,6 +884,20 @@ export const polarisContract = {
           .superRefine(requireCustomerContact)
       )
       .output(z.object({ changed: z.boolean(), customer })),
+  },
+  device: {
+    // Devices belong to the signed-in user, never to an organization: no
+    // organization or user field to trust, the server reads the session.
+    list: oc.output(z.object({ devices: z.array(deviceReadModel) })),
+    register: oc
+      .input(z.object({ label: z.string().max(200).nullish() }))
+      .output(z.object({ device: deviceReadModel })),
+    revoke: oc.input(z.object({ deviceId: z.string().uuid() })).output(
+      z.object({
+        device: deviceReadModel,
+        revokedGrantIds: z.array(z.string().uuid()),
+      })
+    ),
   },
   inventory: {
     getBalance: oc
@@ -852,6 +1011,25 @@ export const polarisContract = {
           balance: inventoryBalance,
           movement: stockWriteOffMovement,
           replayed: z.boolean(),
+        })
+      ),
+  },
+  offline: {
+    // Issues (or renews) the signed authorization lease of a device for one
+    // organization: at most 72 hours, revalidated by the server at sync.
+    issueLease: oc
+      .input(
+        z.object({
+          deviceId: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          expiresAt: z.string().datetime(),
+          grantId: z.string().uuid(),
+          issuedAt: z.string().datetime(),
+          lease: z.string().min(1),
         })
       ),
   },
@@ -1008,6 +1186,24 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
+    setVariantListPrice: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          // A BRL amount with at most two decimals, or null to clear it.
+          listPrice: z.string().max(64).nullable(),
+          organizationId: z.string().trim().min(1),
+          productId: z.string().uuid(),
+          variantId: z.string().uuid(),
+        })
+      )
+      .output(
+        z.object({
+          changed: z.boolean(),
+          configuration: productVariantConfiguration,
+          product,
+        })
+      ),
     setVariantSku: oc
       .input(
         z.object({
@@ -1135,6 +1331,63 @@ export const polarisContract = {
     unassignCustomer: oc
       .input(saleCustomerLinkTarget)
       .output(saleCustomerLinkChange),
+  },
+  sync: {
+    // One page of one local collection, keyed by id, or specific entities
+    // (`ids`) to re-read after a change. A device records the cursor first, reads
+    // its snapshot page by page, then pulls from the cursor.
+    bootstrapPage: oc
+      .input(
+        z.object({
+          afterId: z.string().uuid().nullish(),
+          collection: z.enum([
+            "categories",
+            "customers",
+            "inventory",
+            "products",
+            "variants",
+          ]),
+          ids: z.array(z.string().uuid()).max(200).nullish(),
+          limit: z.number().int().min(1).max(500).default(200),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(bootstrapPageOutput),
+    // The latest committed change sequence of the organization. A device records
+    // it before reading a snapshot and pulls from it afterwards.
+    getCursor: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(z.object({ cursor: syncCursorText })),
+    // The changes after a cursor, in commit order. Entities changed several
+    // times in the page appear once, at their latest sequence.
+    pull: oc
+      .input(
+        z.object({
+          cursor: syncCursorText.nullish(),
+          limit: z.number().int().min(1).max(500).default(200),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          changes: z.array(syncChange),
+          hasMore: z.boolean(),
+          nextCursor: syncCursorText,
+        })
+      ),
+    // Sends queued offline commands, in order. Each carries its own ID (the
+    // idempotency key), the lease it was made under and its payload. The server
+    // revalidates everything per command and answers each one: accepted,
+    // rejected with a stable code, or not processed because a command before it
+    // was rejected. The same command again returns the same outcome.
+    push: oc
+      .input(
+        z.object({
+          commands: z.array(pushCommand).min(1).max(50),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ results: z.array(pushResult) })),
   },
   system: {
     ping: oc.output(z.object({ message: z.literal("pong") })),

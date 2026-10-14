@@ -295,6 +295,41 @@
       "when": 1791928344970,
       "tag": "0041_auth_runtime_role",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791935351309,
+      "tag": "0042_offline_devices_and_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791936241688,
+      "tag": "0043_offline_authorization_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791937211458,
+      "tag": "0044_variant_list_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791938038710,
+      "tag": "0045_sync_change_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791941738863,
+      "tag": "0046_sync_commands",
+      "breakpoints": true
     }
   ]
 }

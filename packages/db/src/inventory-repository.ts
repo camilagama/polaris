@@ -1,4 +1,7 @@
-import { ProductDeletedError } from "@polaris/domain/catalog/product";
+import {
+  normalizeVariantListPrice,
+  ProductDeletedError,
+} from "@polaris/domain/catalog/product";
 import {
   InvalidStockMovementError,
   InventoryOccurredInFutureError,
@@ -943,6 +946,8 @@ export interface ListInventoryBalancesOptions {
 
 export interface InventoryBalanceEntry {
   isDefaultVariant: boolean;
+  /** The variant's optional list price (BRL, two decimals). */
+  listPrice: string | null;
   movingAverageCost: string | null;
   productId: string;
   productName: string;
@@ -1118,6 +1123,7 @@ export async function listInventoryBalances(
     .select({
       archivedAt: products.archivedAt,
       isDefault: productVariants.isDefault,
+      listPrice: productVariants.listPrice,
       movingAverageCost: inventoryBalances.movingAverageCost,
       position: sql<number>`${position}`.mapWith(Number),
       productId: products.id,
@@ -1206,6 +1212,7 @@ export async function listInventoryBalances(
   return {
     entries: rows.map((row) => ({
       isDefaultVariant: row.isDefault,
+      listPrice: normalizeVariantListPrice(row.listPrice),
       movingAverageCost:
         row.movingAverageCost === null
           ? null

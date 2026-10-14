@@ -59,6 +59,11 @@ const gates: Gate[] = [
   ["gate4", "verify-gate4-sales-core.ts"],
   ["review-hardening", "verify-review-hardening-gate.ts"],
   ["read-models", "verify-read-models-gate.ts"],
+  ["offline-devices", "verify-offline-devices-gate.ts"],
+  ["offline-lease", "verify-offline-lease-gate.ts"],
+  ["sync-log", "verify-sync-log-gate.ts"],
+  ["bootstrap", "verify-bootstrap-gate.ts"],
+  ["sync-push", "verify-sync-push-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
@@ -122,6 +127,11 @@ const suites: Record<string, string[]> = {
     "gate4",
     "review-hardening",
     "read-models",
+    "offline-devices",
+    "offline-lease",
+    "sync-log",
+    "bootstrap",
+    "sync-push",
   ],
   gate3: ["gate2-runtime", "inventory", "media-upload", "review-hardening"],
   gate4: [
@@ -134,6 +144,14 @@ const suites: Record<string, string[]> = {
     "gate4",
     "customers",
     "read-models",
+  ],
+  // Phase 5 (offline): grows with every offline gate.
+  gate5: [
+    "offline-devices",
+    "offline-lease",
+    "sync-log",
+    "bootstrap",
+    "sync-push",
   ],
 };
 

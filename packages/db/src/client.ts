@@ -3,15 +3,18 @@ import { Pool } from "pg";
 import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
+import { devices, offlineGrants } from "./schema/device";
+import { syncChanges, syncCursors } from "./schema/sync";
+import { syncCommands } from "./schema/sync-command";
+import { inventoryBalances, stockMovements } from "./schema/inventory";
+import { mediaAssets, productMedia, variantMedia } from "./schema/media";
+import { mediaCleanupClaims } from "./schema/media-cleanup";
 import { organizationSchema } from "./schema/organization";
 import { paymentProfileRules, paymentProfiles } from "./schema/payment-profile";
 import { dbPocOperations } from "./schema/poc";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
-import { inventoryBalances, stockMovements } from "./schema/inventory";
-import { mediaAssets, productMedia, variantMedia } from "./schema/media";
-import { mediaCleanupClaims } from "./schema/media-cleanup";
 
 const databaseSchema = {
   ...authSchema,
@@ -20,19 +23,24 @@ const databaseSchema = {
   categories,
   customers,
   dbPocOperations,
+  devices,
   inventoryBalances,
   mediaAssets,
   mediaCleanupClaims,
-  productMedia,
+  offlineGrants,
   paymentProfileRules,
   paymentProfiles,
+  productMedia,
   saleAdjustments,
   saleItems,
   salePayments,
   sales,
   stockMovements,
-  variantMedia,
+  syncChanges,
+  syncCommands,
+  syncCursors,
   tenantAuditEvents,
+  variantMedia,
 };
 
 export interface DatabaseOptions {

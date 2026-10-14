@@ -11,29 +11,24 @@ import {
   acknowledgeProfileReview,
   addAdjustment,
   addItem,
-  editSaleDate,
-  parseLocalDateTime,
-  saleDateDetails,
-  validateSaleDate,
   attemptAfterFailure,
-  cancelDiscard,
-  discardLockedSale,
-  editSaleForm,
-  isFormLocked,
-  requestDiscard,
-  type SubmissionState,
   autoSelectOnlyVariants,
+  cancelDiscard,
   canStartSubmission,
   chooseItemVariant,
   confirmSubmission,
   createBlankSaleForm,
   describeFee,
+  discardLockedSale,
   type EvaluationContext,
+  editSaleDate,
+  editSaleForm,
   evaluateSaleForm,
   failSubmission,
   formatPercentage,
   formFieldKeys,
   idleSubmission,
+  isFormLocked,
   isSubmitting,
   itemFieldKey,
   type Loadable,
@@ -42,6 +37,7 @@ import {
   MAX_SALE_ITEMS,
   mapSaleSubmitError,
   NO_PROFILE_CHOICE,
+  parseLocalDateTime,
   parseMoneyText,
   parsePercentageText,
   prepareConfirmation,
@@ -50,8 +46,11 @@ import {
   reconcileProfileReload,
   removeAdjustment,
   removeItem,
+  requestDiscard,
   resolveSaleAttempt,
   type SaleFormState,
+  type SubmissionState,
+  saleDateDetails,
   selectItemProduct,
   selectItemVariant,
   selectPaymentMethod,
@@ -62,6 +61,7 @@ import {
   updateAdjustment,
   updateItem,
   updatePayment,
+  validateSaleDate,
   variantsView,
 } from "./sale-form-model";
 
@@ -668,6 +668,7 @@ describe("loading and empty states", () => {
         {
           id: variantId,
           isDefault: false,
+          listPrice: null,
           position: 0,
           sku: null,
           values: [
@@ -686,6 +687,7 @@ describe("loading and empty states", () => {
         {
           id: otherVariantId,
           isDefault: true,
+          listPrice: null,
           position: null,
           sku: null,
           values: [],
@@ -753,6 +755,7 @@ describe("variant choice", () => {
         {
           id: variantId,
           isDefault: true,
+          listPrice: null,
           position: null,
           sku: null,
           values: [],
@@ -780,10 +783,18 @@ describe("variant choice", () => {
     ).toBe(base);
     const two = {
       [productId]: configuration([
-        { id: variantId, isDefault: false, position: 0, sku: null, values: [] },
+        {
+          id: variantId,
+          isDefault: false,
+          listPrice: null,
+          position: 0,
+          sku: null,
+          values: [],
+        },
         {
           id: otherVariantId,
           isDefault: false,
+          listPrice: null,
           position: 1,
           sku: null,
           values: [],
@@ -804,6 +815,7 @@ describe("variant choice", () => {
         {
           id: variantId,
           isDefault: false,
+          listPrice: null,
           position: 0,
           sku: null,
           values: [
@@ -822,6 +834,7 @@ describe("variant choice", () => {
         {
           id: otherVariantId,
           isDefault: false,
+          listPrice: null,
           position: 1,
           sku: null,
           values: [],
@@ -1146,13 +1159,13 @@ describe("submission state", () => {
     },
     replayed: false,
     sale: {
-      recordedAt: null,
       commandId: "00000000-0000-4000-8000-000000000001",
       confirmedAt: "2026-05-01T12:00:01.000Z",
       currency: "BRL",
       id: "77777777-7777-4777-8777-777777777777",
       occurredAt: "2026-05-01T12:00:00.000Z",
       occurredOn: "2026-05-01",
+      recordedAt: null,
     },
     totals: {
       discountTotal: "10.98",

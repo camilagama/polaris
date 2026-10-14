@@ -50,5 +50,11 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0025](adr/0025-estrategia-de-testes-de-banco.md) | Testes de banco: Neon descartável e CI | aceito |
 | [0026](adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md) | UI de estoque, organização pela sessão e preço de tabela | aceito |
 | [0027](adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md) | Separação de roles auth e tenant, superfícies PoC | aceito |
+| [0028](adr/0028-dispositivos-e-grants-offline.md) | Dispositivos e grants de autorização offline | aceito |
+| [0029](adr/0029-lease-de-autorizacao-offline.md) | Lease de autorização offline e época de autorização | aceito |
+| [0030](adr/0030-change-log-de-sincronizacao.md) | Change log de sincronização com sequência por organização | aceito |
+| [0031](adr/0031-colecoes-locais-e-bootstrap.md) | Coleções locais por usuário e organização, e bootstrap | aceito |
+| [0032](adr/0032-outbox-duravel-de-comandos.md) | Outbox durável de comandos e a prova em Android antes da escrita offline | aceito |
+| [0033](adr/0033-protocolo-sync-push.md) | Protocolo do sync.push | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

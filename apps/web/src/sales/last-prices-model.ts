@@ -1,5 +1,5 @@
-import { formatCalendarDate } from "../lib/format";
 import type { PreferenceStorage } from "../lib/current-organization-model";
+import { formatCalendarDate } from "../lib/format";
 
 /**
  * The catalog has no list price yet, so the sale form remembers, per variant,
@@ -134,20 +134,31 @@ export interface PriceSuggestion {
   listedUnitPrice: string;
 }
 
-/** Starting values for a freshly chosen variant, or null when none are known. */
+/**
+ * Starting values for a freshly chosen variant, or null when none are known.
+ * The last confirmed sale of the variant wins; without one, the variant's list
+ * price (when it has one) suggests both the listed and the charged price.
+ */
 export function suggestPrices(
   prices: RememberedPrices,
-  variantId: string
+  variantId: string,
+  listPrice: string | null = null
 ): PriceSuggestion | null {
   const remembered = Object.hasOwn(prices, variantId)
     ? prices[variantId]
     : undefined;
-  return remembered
-    ? {
-        chargedUnitPrice: priceFieldText(remembered.charged),
-        listedUnitPrice: priceFieldText(remembered.listed),
-      }
-    : null;
+  if (remembered) {
+    return {
+      chargedUnitPrice: priceFieldText(remembered.charged),
+      listedUnitPrice: priceFieldText(remembered.listed),
+    };
+  }
+  return listPrice === null
+    ? null
+    : {
+        chargedUnitPrice: priceFieldText(listPrice),
+        listedUnitPrice: priceFieldText(listPrice),
+      };
 }
 
 /** Fills only prices the operator has not typed yet. */

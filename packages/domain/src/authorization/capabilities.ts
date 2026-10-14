@@ -12,6 +12,9 @@ export const CAPABILITIES = Object.freeze([
   "customer:update",
   "expense:create",
   "organization:manage",
+  "sync:push",
+  "sync:read",
+  "offline:manage",
   "category:create",
   "category:manage",
 ] as const);

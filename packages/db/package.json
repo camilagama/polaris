@@ -36,7 +36,16 @@
     "./media-schema": "./src/schema/media.ts",
     "./media-repository": "./src/media-repository.ts",
     "./media-cleanup": "./src/media-cleanup.ts",
-    "./inventory-repository": "./src/inventory-repository.ts"
+    "./inventory-repository": "./src/inventory-repository.ts",
+    "./device-schema": "./src/schema/device.ts",
+    "./device-repository": "./src/device-repository.ts",
+    "./offline-lease-repository": "./src/offline-lease-repository.ts",
+    "./authorization-epoch": "./src/authorization-epoch.ts",
+    "./user-transaction": "./src/user-transaction.ts",
+    "./bootstrap-repository": "./src/bootstrap-repository.ts",
+    "./sync-command-repository": "./src/sync-command-repository.ts",
+    "./sync-repository": "./src/sync-repository.ts",
+    "./sync-schema": "./src/schema/sync.ts"
   },
   "scripts": {
     "build": "bun run typecheck",
@@ -48,6 +57,7 @@
     "gates:gate3": "bun scripts/run-gates.ts gate3",
     "gates:gate4": "bun scripts/run-gates.ts gate4",
     "poc": "bun scripts/poc.ts",
+    "poc:bootstrap:verify": "bun scripts/verify-bootstrap-gate.ts",
     "poc:customers:verify": "bun scripts/verify-customers-gate.ts",
     "poc:gate2:verify": "bun scripts/verify-gate2-runtime.ts",
     "poc:gate4:verify": "bun scripts/verify-gate4-sales-core.ts",
@@ -55,6 +65,8 @@
     "poc:media:derivatives:verify": "bun scripts/verify-media-derivatives-gate.ts",
     "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
+    "poc:offline-devices:verify": "bun scripts/verify-offline-devices-gate.ts",
+    "poc:offline-lease:verify": "bun scripts/verify-offline-lease-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
@@ -65,6 +77,8 @@
     "poc:sales:return:verify": "bun scripts/verify-sale-return-gate.ts",
     "poc:sales:transaction:verify": "bun scripts/verify-sale-transaction-gate.ts",
     "poc:sales:verify": "bun scripts/verify-sales-aggregate-gate.ts",
+    "poc:sync-log:verify": "bun scripts/verify-sync-log-gate.ts",
+    "poc:sync-push:verify": "bun scripts/verify-sync-push-gate.ts",
     "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts",
     "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"

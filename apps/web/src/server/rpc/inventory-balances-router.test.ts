@@ -54,6 +54,7 @@ function createClient(overrides: Record<string, unknown>) {
 
 const entry = {
   isDefaultVariant: false,
+  listPrice: null,
   movingAverageCost: "12.340000",
   productId: "0199c2d0-0000-7000-8000-000000000001",
   productName: "Camiseta Polaris",

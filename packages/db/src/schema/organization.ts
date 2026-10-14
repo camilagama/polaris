@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
+  integer,
   pgPolicy,
   pgTable,
   primaryKey,
@@ -60,6 +61,12 @@ export const organizations = pgTable(
 export const memberships = pgTable(
   "memberships",
   {
+    /**
+     * Bumped on security events (password reset): offline leases issued under an
+     * older epoch are no longer valid. Written only by the SECURITY DEFINER
+     * function bump_user_authorization_epoch; the tenant runtime only reads it.
+     */
+    authorizationEpoch: integer("authorization_epoch").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -83,6 +90,10 @@ export const memberships = pgTable(
     }),
     check("memberships_role_check", sql`${table.role} = 'owner'`),
     check("memberships_status_check", sql`${table.status} = 'active'`),
+    check(
+      "memberships_authorization_epoch_non_negative",
+      sql`${table.authorizationEpoch} >= 0`
+    ),
     index("memberships_user_id_idx").on(table.userId),
     pgPolicy("memberships_current_user_select", {
       for: "select",

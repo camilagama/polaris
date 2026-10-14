@@ -6,6 +6,7 @@ import type {
 } from "@polaris/contracts";
 import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
+  InvalidVariantListPriceError,
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
   ProductStockNotEmptyError,
@@ -53,8 +54,8 @@ function createRpcClient(router = createRpcRouter()) {
   const app = createServerApp({ rpcRouter: router });
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
-    method: "POST",
     headers: { origin: "https://polaris.example.invalid" },
+    method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 
@@ -119,6 +120,7 @@ describe("product RPCs", () => {
         {
           id: "0199c2d0-0000-7000-8000-000000000002",
           isDefault: true,
+          listPrice: null,
           position: null,
           sku: null,
           values: [],
@@ -179,6 +181,7 @@ describe("product RPCs", () => {
         {
           id: "0199c2d0-0000-7000-8000-000000000005",
           isDefault: false,
+          listPrice: null,
           position: 0,
           sku: null,
           values: [
@@ -333,6 +336,7 @@ describe("product RPCs", () => {
         {
           id: "0199c2d0-0000-7000-8000-000000000002",
           isDefault: true,
+          listPrice: null,
           position: null,
           sku: "Sku-A1",
           values: [],
@@ -631,5 +635,109 @@ describe("product RPCs", () => {
         organizationId: identity.organizationId,
       })
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+describe("product variant list price RPC", () => {
+  const variantId = "0199c2d0-0000-7000-8000-000000000002";
+  const configuration: ProductVariantConfigurationReadModel = {
+    configured: false,
+    options: [],
+    productVersion: 2,
+    variants: [
+      {
+        id: variantId,
+        isDefault: true,
+        listPrice: "49.90",
+        position: null,
+        sku: null,
+        values: [],
+      },
+    ],
+  };
+
+  it("sets the list price with product:update and returns the new configuration", async () => {
+    const setProductVariantListPrice = vi.fn(
+      (
+        _transaction: unknown,
+        _authorizedIdentity: typeof identity,
+        input: { expectedVersion: number }
+      ) =>
+        Promise.resolve({
+          changed: true,
+          configuration,
+          product: { ...productRow, version: input.expectedVersion + 1 },
+        })
+    );
+    let observedCapability = "";
+    const router = createRpcRouter({
+      setProductVariantListPrice,
+      withTenantRequestContext: (input: {
+        capability: string;
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => {
+        observedCapability = input.capability;
+        return tenantContext(input);
+      },
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router) as unknown as {
+      product: {
+        setVariantListPrice: (input: unknown) => Promise<{
+          changed: boolean;
+          configuration: ProductVariantConfigurationReadModel;
+          product: ProductReadModel;
+        }>;
+      };
+    };
+
+    const result = await client.product.setVariantListPrice({
+      expectedVersion: 1,
+      listPrice: "49.9",
+      organizationId: identity.organizationId,
+      productId: productRow.id,
+      variantId,
+    });
+
+    expect(result).toMatchObject({
+      changed: true,
+      configuration,
+      product: { version: 2 },
+    });
+    expect(observedCapability).toBe("product:update");
+    expect(setProductVariantListPrice).toHaveBeenCalledWith({}, identity, {
+      expectedVersion: 1,
+      id: productRow.id,
+      listPrice: "49.9",
+      requestId: expect.stringMatching(requestIdPattern),
+      variantId,
+    });
+  });
+
+  it("maps an invalid price to a bad request", async () => {
+    const router = createRpcRouter({
+      setProductVariantListPrice: () =>
+        Promise.reject(new InvalidVariantListPriceError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router) as unknown as {
+      product: { setVariantListPrice: (input: unknown) => Promise<unknown> };
+    };
+    await expect(
+      client.product.setVariantListPrice({
+        expectedVersion: 1,
+        listPrice: "-5",
+        organizationId: identity.organizationId,
+        productId: productRow.id,
+        variantId,
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

@@ -10,8 +10,8 @@ import {
   stockEmptyMessage,
   stockListRequest,
   stockListView,
-  stockLoadFailed,
   stockLoaded,
+  stockLoadFailed,
   stockLoading,
   stockMoreFailed,
   stockMoreLoaded,
@@ -32,6 +32,7 @@ function entry(
 ): InventoryBalanceEntryReadModel {
   return {
     isDefaultVariant: false,
+    listPrice: null,
     movingAverageCost: "12.340000",
     productId: "11111111-1111-4111-8111-111111111111",
     productName: "Camiseta Polaris",
@@ -224,6 +225,7 @@ describe("stockRows", () => {
     const [row] = stockRows([
       entry(1, {
         isDefaultVariant: true,
+        listPrice: null,
         productStatus: "archived",
         sku: null,
         values: [],

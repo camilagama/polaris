@@ -719,6 +719,87 @@ Corredor único de gates (`packages/db/scripts/run-gates.ts`, suítes `gate3`, `
 ### Pendências que só o responsável pode executar
 
 Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDRIVE`); reservar os namespaces de rate limit; apagar Workers e Hyperdrive de PoC implantados (`ebe151e5081344479947edb6028279bb`); rotacionar a credencial owner usada no PR11; testar em Android físico; provar EXIF/orientação em Cloudflare Images real; verificar os cabeçalhos em staging; decidir o merge da cadeia de PRs.
+## Fase 5 — offline
+
+### PR48 — Device model (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr48-device-model` sobre `codex/review-5-tooling`. A cadeia de revisão ainda não está integrada ao `main`: o push direto foi bloqueado pelo classificador de permissões e a integração ficou com o responsável. |
+| Decisões de domínio | Tomadas pelo projeto | [ADR 0028](../docs/adr/0028-dispositivos-e-grants-offline.md): dispositivo do usuário (não da organização), sem fingerprint, rótulo opcional curto, limite de 20 vivos; grant por organização e dispositivo, no máximo 72 h; revogação terminal e idempotente; revogar o dispositivo revoga os grants em todas as organizações; capability `offline:manage`; sem RPC (chega com o lease assinado no PR49). |
+| Domínio | Concluído | `packages/domain/src/offline/offline-grant.ts`: rótulo, janela de 72 h, motivos de revogação e estado do grant, com testes de propriedade. |
+| Schema e migration 0042 | Concluídos | Tabelas `devices` e `offline_grants` com RLS forçada, FKs compostas (usuário/dispositivo e organização/usuário), CHECKs de janela e de revogação, GRANT por coluna, gatilhos de revogação terminal e de dispositivo vivo (`FOR SHARE`). O índice único de `devices` precisou ser criado antes das FKs; descoberto ao aplicar do zero. |
+| Repositório | Concluído | `device-repository.ts` (registrar, listar, tocar e revogar dispositivo; registrar, listar e revogar grant) e `user-transaction.ts` (transação só de usuário). |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-devices:verify` (`offline-devices` no corredor de gates, suíte `gate5`): privilégios e RLS, limite de 20 sob concorrência, isolamento entre usuários, revogação terminal por SQL cru, janela de 72 h no domínio e no banco, dispositivo de outro usuário ou revogado recusado, revogação em duas organizações com uma auditoria por grant e corrida entre grant e revogação sem grant vivo restante. |
+| Limites | Registrados | Sem RPC nem UI; época de autorização, lease assinado e validação no servidor são PR49; o registro de dispositivo não é idempotente por retry do cliente. |
+
+### PR49 — Offline authorization (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr49-offline-authorization` sobre `codex/pr48-device-model`. |
+| Decisões | Tomadas pelo projeto | [ADR 0029](../docs/adr/0029-lease-de-autorizacao-offline.md): token `v1.<keyId>.<payload>.<assinatura>` com HMAC-SHA256 (Web Crypto); só o servidor assina e verifica, o cliente só lê; rotação por `KEY_ID` e segredo anterior; falha fechada sem segredo; época de autorização por membership; reset de senha invalida todos os leases; suspensão invalida pelo estado da organização; assinatura dentro da transação. |
+| Domínio | Concluído | `offline-lease.ts`: claims, janela `min(agora + 72 h, fim do direito)`, validade, serialização determinística; testes de propriedade. |
+| Token | Concluído | `apps/web/src/lib/offline-lease-token.ts` (assinar, verificar com várias chaves, ler sem verificar para a UI): adulteração, assinatura trocada, chave desconhecida, formato inválido, expirado e relógio adiantado cobertos. |
+| Banco, migration 0043 | Concluída | `memberships.authorization_epoch`; função `SECURITY DEFINER` `bump_user_authorization_epoch` (lock consultivo por usuário, revoga grants com `security_event` e audita um evento por grant), executável só pela role de auth; o runtime de tenant lê e não escreve a época. |
+| Repositório e RPC | Concluídos | `offline-lease-repository.ts` (emitir e revalidar no servidor com motivos distintos), `authorization-epoch.ts`, procedimentos `device.register|list|revoke` e `offline.issueLease`; o gancho `onPasswordReset` do Better Auth chama a função. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-lease:verify` (`offline-lease`, suíte `gate5`): privilégios e função pinada, emissão com época, capabilities e 72 h, teto do trial e direito encerrado, revalidação (principal, organização, grant, expiração, capability, dispositivo, época, revogado), reset de senha por usuário em duas organizações sem tocar outro usuário e corrida entre emissão e reset sem época vencida. |
+| Limites | Registrados | Nenhum cliente consome o lease ainda (PR50 em diante); o fim do direito (trial) não é informado por nenhum chamador porque billing não existe; `OFFLINE_LEASE_SECRET` precisa ser criado em cada ambiente (checklist de go-live). |
+
+### PR50a — Preço de tabela por variante (D-6) (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr50a-variant-list-price` sobre `codex/pr49-offline-authorization`. Dividido do PR50 do plano para manter os PRs coesos; o PR50b traz as coleções locais e o bootstrap. |
+| Decisão | Registrada | Preço de tabela opcional na variante, só sugestão na venda (o último preço confirmado da variante tem precedência); `catalogVersion` será o cursor do PR51. Ver [ADR 0026](../docs/adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md) e `docs/business-rules/products.md`. |
+| Domínio, banco e RPC | Concluídos | `normalizeVariantListPrice`; migration 0044 (`list_price`, CHECK de escala e limite, GRANT de UPDATE só na coluna); `setProductVariantListPrice` (versionado, auditado, idempotente); `product.setVariantListPrice`; `listPrice` nas variantes e nas entradas de saldo. |
+| Interface | Concluída | Seção "Preço de tabela das variantes" no painel de variantes (vírgula ou ponto, vazio remove) e pré-preenchimento dos preços do item ao escolher a variante na venda. |
+| Gate Neon PostgreSQL 18 | Concluído | `gate2-runtime` cobre normalização, versão, repetição sem mudança, conflito de versão, valores inválidos e os CHECKs do banco; `read-models` continua verde. |
+
+### PR51 — Sync change log (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Ordem | Alterada pelo projeto | O PR51 vem **antes** do PR50b (coleções locais e bootstrap): o bootstrap consistente depende do cursor do log (cursor, snapshot por páginas, pull a partir do cursor). Branch `codex/pr51-sync-change-log` sobre `codex/pr50a-variant-list-price`. |
+| Decisões | Tomadas pelo projeto | [ADR 0030](../docs/adr/0030-change-log-de-sincronizacao.md): registro por gatilho nas tabelas de domínio; sequência por organização atribuída no COMMIT sob lock do contador (ordem de commit, sem buracos, sem consumo por rollback); escrita só por funções `SECURITY DEFINER`, runtime só lê; o log leva chaves (tipo, id, seq), não conteúdo; capability `sync:read`. |
+| Banco, migration 0045 | Concluída | `sync_changes` (RLS, append-only por gatilho) e `sync_cursors`; triggers em categorias, produtos, variantes, saldos, clientes, perfis de pagamento, regras, vendas, cancelamentos, devoluções e vínculos. |
+| Repositório e RPC | Concluídos | `getSyncCursor`, `pullSyncChanges` (dedupe por entidade, páginas, cursor validado), procedimentos `sync.getCursor` e `sync.pull`. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:sync-log:verify` (`sync-log`, suíte `gate5`): privilégios e funções, mudança por escrita de cada tipo, sequência por organização sem buracos, rollback sem consumo, dedupe e páginas, runtime sem escrita (inclusive dono sem editar), escrita por SQL manual registrada e escritores concorrentes com leitor em polling sem nenhum salto. |
+| Limites | Registrados | Sem retenção do log (sem piso de cursor); o pull devolve chaves e o conteúdo vem do cliente (PR50b); `payment_profile` e `sale` entram por já serem necessários ao offline de vendas. |
+
+### PR50b — Coleções locais e bootstrap (implementação, gates Neon e de navegador, verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr50b-local-collections` sobre `codex/pr51-sync-change-log`. É a segunda metade do PR50 do plano (a primeira é o preço de tabela, PR50a). |
+| Decisões | Tomadas pelo projeto | [ADR 0031](../docs/adr/0031-colecoes-locais-e-bootstrap.md): uma base OPFS por usuário e organização (nome por hash); seis coleções com modelos de leitura menores (sem custo, sem auditoria); bootstrap em três tempos com o cursor do PR51 registrado antes da leitura; estado `bootstrapping` retomável; falha fechada; apagar o namespace como gancho do logout. |
+| Servidor | Concluído | `sync.bootstrapPage` (páginas por chave de cinco coleções, ou entidades por id; variantes por produto) sobre `bootstrap-repository.ts`; as vendas recentes usam `sale.list`. |
+| Cliente | Concluído | `apps/web/src/offline/`: `namespace`, `bootstrap` (orquestração pura), `local-store` (TanStack DB sobre SQLite WASM em OPFS) e `orpc-source`. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:bootstrap:verify` (`bootstrap`, suíte `gate5`): páginas de dois e de 500 cobrem cada linha uma vez em ordem de id, linhas sem custo nem dados de organização, releitura por id (variantes por produto, saldos por variante), isolamento entre organizações e entradas inválidas recusadas. |
+| Gate de navegador | Concluído em Chromium | `e2e/offline-local-collections.e2e.ts` no laboratório `/offline-local-lab` (só no modo offline-poc): sincronização do zero, persistência após recarregar sem servidor, catch-up por cursor, bootstrap interrompido retomado, isolamento entre usuários e organizações e apagar só o namespace escolhido; seis cenários em Chromium desktop e em Pixel 5 emulado. Android físico, Edge real e Safari continuam sem prova desta etapa. |
+| Limites | Registrados | Ainda não está montado no aplicativo (o worker OPFS é carregado sob demanda e a montagem vem com a primeira tela offline, PR52+); sem mutações offline; a prova em Android real do ADR 0015 continua bloqueando o PR52. |
+
+### PR52 — Durable command outbox (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base e decisão | Concluídas | Branch `codex/pr52-command-outbox` sobre `codex/pr50b-local-collections`. O responsável pediu para seguir sem o teste em Android; a condição do [ADR 0015](../docs/adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md) passou de "antes de iniciar o PR52" para **"antes de ligar a escrita offline em produção"** ([ADR 0032](../docs/adr/0032-outbox-duravel-de-comandos.md)); o outbox não está montado em nenhuma tela. |
+| Regras | Concluídas | `apps/web/src/offline/outbox/`: envelope do comando (ID, tipo, organização, dispositivo, versão-base, lease, payload), posição local monotônica, idempotência por ID e conteúdo, fila que não pula nem reordena, `sending` recuperável, `rejected` bloqueante, descarte e confirmação explícitos, limites e lease que bloqueia comandos novos mas preserva a fila. 13 testes sobre armazenamento em memória. |
+| Armazenamento | Concluído | IndexedDB por usuário e organização (transação atômica, contador de posição na mesma transação); apagar recusa com comandos pendentes sem aceite explícito; `requestPersistentStorage()` com estado visível. |
+| Gate de navegador | Concluído em Chromium | `e2e/offline-outbox.e2e.ts` no laboratório `/offline-outbox-lab`: sobreviver a recarregar mantendo a ordem, comando repetido sem duplicar, resposta perdida recuperada com a mesma posição, rejeição bloqueante, lease vencido, isolamento entre usuários e organizações, apagar sem descarte silencioso, posição nunca reutilizada e pedido de armazenamento persistente; nove cenários em Chromium desktop e em Pixel 5 emulado. |
+| Limites | Registrados | Sem prova em Android físico (bloqueia ligar a escrita offline); `sync.push` é o PR53; nenhum comando de domínio usa o outbox ainda. |
+
+### PR53 — sync.push (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr53-sync-push` sobre `codex/pr52-command-outbox`. |
+| Decisões | Tomadas pelo projeto | [ADR 0033](../docs/adr/0033-protocolo-sync-push.md): uma transação de tenant por comando, em ordem, com `not_processed` depois de uma rejeição; idempotência por ID e organização com hash do conteúdo (`command_id_reused` não grava nada); revalidação por comando; lease vencido ainda cobre o que foi criado enquanto valia; trabalho de domínio em savepoint; registro de manipuladores vazio até o PR54. |
+| Banco, migration 0046 | Concluída | `sync_commands` (RLS forçada; o runtime só lê e insere; imutável até para o dono por gatilho); `runSyncCommand` com lock por comando, repetição do resultado, revalidação do lease (grant, dispositivo, época, capabilities), janela de criação e savepoint. |
+| Servidor | Concluído | Procedimento `sync.push` (até 50 comandos, capability `sync:push`, 503 sem o segredo do lease), verificação da assinatura sem janela, hash do JSON canônico, ordem e códigos estáveis; 9 testes da orquestração e 6 do roteador. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:sync-push:verify` (`sync-push`, suíte `gate5`): privilégios, aceito uma vez e repetido igual, mesmo ID com outro conteúdo, recusa sem rastro, falha inesperada reenviável, revogação, época, dispositivo, capabilities, janela de criação, lease vencido com comando feito a tempo, direito perdido, oito envios simultâneos executando uma vez e isolamento entre organizações. |
+| Limites | Registrados | Nenhum comando de domínio registrado ainda (PR54 em diante); direito (billing) é só um ponto de extensão; sem retenção de `sync_commands`; o cliente que envia o outbox pelo `sync.push` ainda não existe. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

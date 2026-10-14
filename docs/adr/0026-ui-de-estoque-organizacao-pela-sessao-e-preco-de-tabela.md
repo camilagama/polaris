@@ -16,7 +16,9 @@ Decidido na revisão do checkpoint Gate 4 (13/10/2026):
 - **A interface de login continua pré-go-live**, como definido no plano. Enquanto ela não existir, a organização é resolvida pela sessão existente (Better Auth) e não por um valor digitado.
 - **D-6: preço de tabela por variante não entra agora.** Ele entra no **PR50** (coleções locais e catálogo offline) como **coluna opcional na variante**, porque impacta o contrato do catálogo offline e a base do `listedUnitPrice` das vendas offline. Até lá, o formulário de venda lembra **localmente** o último preço usado por variante. Essa lembrança é conveniência de interface, escopada por usuário e organização e limpa no logout ([ADR 0015](0015-offline-persistence-tanstack-db-opfs-indexeddb.md)); nunca é fato econômico e não substitui o preço informado no comando da venda. O preço informado no comando continua sendo a única fonte do preço do item.
 
-Estado de implementação: as telas de estoque e a RPC `organization.listMine` são trabalho de outros agentes em paralelo; verifique no código antes de tratar como vigente.
+Estado de implementação do D-6: o preço de tabela foi implementado no PR50a (`product_variants.list_price`, migration 0044, comando `product.setVariantListPrice`, campo no painel de variantes e pré-preenchimento do item da venda; o último preço confirmado da variante tem precedência). O `catalogVersion` do catálogo offline será o cursor do change log (PR51), não uma coluna própria.
+
+Estado de implementação das telas: as telas de estoque e a RPC `organization.listMine` são trabalho de outros agentes em paralelo; verifique no código antes de tratar como vigente.
 
 ## Consequências
 
