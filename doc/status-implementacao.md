@@ -779,6 +779,16 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate de navegador | Concluído em Chromium | `e2e/offline-local-collections.e2e.ts` no laboratório `/offline-local-lab` (só no modo offline-poc): sincronização do zero, persistência após recarregar sem servidor, catch-up por cursor, bootstrap interrompido retomado, isolamento entre usuários e organizações e apagar só o namespace escolhido; seis cenários em Chromium desktop e em Pixel 5 emulado. Android físico, Edge real e Safari continuam sem prova desta etapa. |
 | Limites | Registrados | Ainda não está montado no aplicativo (o worker OPFS é carregado sob demanda e a montagem vem com a primeira tela offline, PR52+); sem mutações offline; a prova em Android real do ADR 0015 continua bloqueando o PR52. |
 
+### PR52 — Durable command outbox (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base e decisão | Concluídas | Branch `codex/pr52-command-outbox` sobre `codex/pr50b-local-collections`. O responsável pediu para seguir sem o teste em Android; a condição do [ADR 0015](../docs/adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md) passou de "antes de iniciar o PR52" para **"antes de ligar a escrita offline em produção"** ([ADR 0032](../docs/adr/0032-outbox-duravel-de-comandos.md)); o outbox não está montado em nenhuma tela. |
+| Regras | Concluídas | `apps/web/src/offline/outbox/`: envelope do comando (ID, tipo, organização, dispositivo, versão-base, lease, payload), posição local monotônica, idempotência por ID e conteúdo, fila que não pula nem reordena, `sending` recuperável, `rejected` bloqueante, descarte e confirmação explícitos, limites e lease que bloqueia comandos novos mas preserva a fila. 13 testes sobre armazenamento em memória. |
+| Armazenamento | Concluído | IndexedDB por usuário e organização (transação atômica, contador de posição na mesma transação); apagar recusa com comandos pendentes sem aceite explícito; `requestPersistentStorage()` com estado visível. |
+| Gate de navegador | Concluído em Chromium | `e2e/offline-outbox.e2e.ts` no laboratório `/offline-outbox-lab`: sobreviver a recarregar mantendo a ordem, comando repetido sem duplicar, resposta perdida recuperada com a mesma posição, rejeição bloqueante, lease vencido, isolamento entre usuários e organizações, apagar sem descarte silencioso, posição nunca reutilizada e pedido de armazenamento persistente; nove cenários em Chromium desktop e em Pixel 5 emulado. |
+| Limites | Registrados | Sem prova em Android físico (bloqueia ligar a escrita offline); `sync.push` é o PR53; nenhum comando de domínio usa o outbox ainda. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

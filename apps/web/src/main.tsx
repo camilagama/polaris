@@ -17,10 +17,27 @@ const isOfflinePocEnabled =
   import.meta.env.VITE_OFFLINE_POC_ENABLED === "true";
 const isOfflinePocRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-poc";
+const isOutboxLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-outbox-lab";
 const isLocalLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-local-lab";
 
-if (isLocalLabRoute) {
+if (isOutboxLabRoute) {
+  const loadOutboxLab = async () => {
+    try {
+      const { OutboxLab } = await import("./offline-poc/outbox-lab");
+      root.render(<OutboxLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir o laboratório do outbox</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadOutboxLab().catch(() => undefined);
+} else if (isLocalLabRoute) {
   const loadLocalLab = async () => {
     try {
       const { LocalCollectionsLab } = await import(
