@@ -56,5 +56,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0031](adr/0031-colecoes-locais-e-bootstrap.md) | Coleções locais por usuário e organização, e bootstrap | aceito |
 | [0032](adr/0032-outbox-duravel-de-comandos.md) | Outbox durável de comandos e a prova em Android antes da escrita offline | aceito |
 | [0033](adr/0033-protocolo-sync-push.md) | Protocolo do sync.push | aceito |
+| [0034](adr/0034-cliente-criado-offline.md) | Cliente criado offline | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

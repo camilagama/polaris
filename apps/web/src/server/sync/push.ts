@@ -24,8 +24,8 @@ import type { OfflineLeaseKeys } from "../offline-lease-service";
  * never overtakes one it may depend on.
  */
 export class InvalidSyncPayloadError extends Error {
-  constructor() {
-    super("invalid_sync_payload");
+  constructor(options?: ErrorOptions) {
+    super("invalid_sync_payload", options);
     this.name = "InvalidSyncPayloadError";
   }
 }

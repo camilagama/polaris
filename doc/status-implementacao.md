@@ -800,6 +800,17 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:sync-push:verify` (`sync-push`, suíte `gate5`): privilégios, aceito uma vez e repetido igual, mesmo ID com outro conteúdo, recusa sem rastro, falha inesperada reenviável, revogação, época, dispositivo, capabilities, janela de criação, lease vencido com comando feito a tempo, direito perdido, oito envios simultâneos executando uma vez e isolamento entre organizações. |
 | Limites | Registrados | Nenhum comando de domínio registrado ainda (PR54 em diante); direito (billing) é só um ponto de extensão; sem retenção de `sync_commands`; o cliente que envia o outbox pelo `sync.push` ainda não existe. |
 
+### PR54 — Cliente criado offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr54-offline-customer-create` sobre `codex/pr53-sync-push`. |
+| Decisões | Tomadas pelo projeto | [ADR 0034](../docs/adr/0034-cliente-criado-offline.md): o dispositivo gera o UUIDv7 do cliente; idempotência por `commandId` e por `customerId` (`customer_id_conflict`); validação repetida no servidor; sem capability nova (`customer:update`). |
+| Servidor | Concluído | `createCustomer` aceita `id` (validado, em savepoint, conflito limpo); manipulador `customer.create` registrado em `server/sync/registry.ts`, com 9 testes do manipulador e do roteador. |
+| Cliente | Concluído | `lib/uuidv7.ts`; `offline/customer-create.ts` (enfileira, grava a linha otimista, restaura após queda, estado pendente/rejeitado); `offline/sync-runner.ts` (lotes em ordem, `sending` antes da requisição, aplicação dos resultados, atualização das coleções pelo change log); servidor sintético com resposta perdida e rejeição. |
+| Gate Neon PostgreSQL 18 | Concluído | `customers` (ID do cliente mantido, duplicata na mesma organização e em outra, transação do chamador intacta após o conflito, ID inválido recusado) e `sync-push` verdes. |
+| Limites | Registrados | Nenhuma tela monta o fluxo (a prova em Android físico ainda bloqueia ligar a escrita offline); sem laboratório de navegador para este fluxo; o sincronizador ainda não tem agendamento (online, foco, tentativa com espera). |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
