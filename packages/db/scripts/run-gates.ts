@@ -63,6 +63,7 @@ const gates: Gate[] = [
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
+  ["sync-push", "verify-sync-push-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
@@ -130,6 +131,7 @@ const suites: Record<string, string[]> = {
     "offline-lease",
     "sync-log",
     "bootstrap",
+    "sync-push",
   ],
   gate3: ["gate2-runtime", "inventory", "media-upload", "review-hardening"],
   gate4: [
@@ -144,7 +146,13 @@ const suites: Record<string, string[]> = {
     "read-models",
   ],
   // Phase 5 (offline): grows with every offline gate.
-  gate5: ["offline-devices", "offline-lease", "sync-log", "bootstrap"],
+  gate5: [
+    "offline-devices",
+    "offline-lease",
+    "sync-log",
+    "bootstrap",
+    "sync-push",
+  ],
 };
 
 function withVerifyFull(url: string): string {

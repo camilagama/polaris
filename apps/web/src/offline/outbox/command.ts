@@ -1,3 +1,5 @@
+import { canonicalJson } from "../../lib/canonical-json";
+
 /**
  * The envelope of an offline command (plan PR52, ADR 0015/0003): what the
  * outbox stores durably and what `sync.push` will send. The domain does not
@@ -98,18 +100,7 @@ function isJson(value: unknown, depth = 0): value is OutboxJson {
 }
 
 /** Deterministic text of a JSON value (sorted keys), to compare payloads. */
-function stableJson(value: OutboxJson): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableJson).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key] ?? null)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
+const stableJson: (value: OutboxJson) => string = canonicalJson;
 
 function payloadByteSize(payload: OutboxJson): number {
   return new TextEncoder().encode(stableJson(payload)).length;

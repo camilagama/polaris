@@ -43,6 +43,7 @@
     "./authorization-epoch": "./src/authorization-epoch.ts",
     "./user-transaction": "./src/user-transaction.ts",
     "./bootstrap-repository": "./src/bootstrap-repository.ts",
+    "./sync-command-repository": "./src/sync-command-repository.ts",
     "./sync-repository": "./src/sync-repository.ts",
     "./sync-schema": "./src/schema/sync.ts"
   },
@@ -77,6 +78,7 @@
     "poc:sales:transaction:verify": "bun scripts/verify-sale-transaction-gate.ts",
     "poc:sales:verify": "bun scripts/verify-sales-aggregate-gate.ts",
     "poc:sync-log:verify": "bun scripts/verify-sync-log-gate.ts",
+    "poc:sync-push:verify": "bun scripts/verify-sync-push-gate.ts",
     "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts",
     "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"

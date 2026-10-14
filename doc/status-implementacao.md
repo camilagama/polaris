@@ -789,6 +789,17 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate de navegador | Concluído em Chromium | `e2e/offline-outbox.e2e.ts` no laboratório `/offline-outbox-lab`: sobreviver a recarregar mantendo a ordem, comando repetido sem duplicar, resposta perdida recuperada com a mesma posição, rejeição bloqueante, lease vencido, isolamento entre usuários e organizações, apagar sem descarte silencioso, posição nunca reutilizada e pedido de armazenamento persistente; nove cenários em Chromium desktop e em Pixel 5 emulado. |
 | Limites | Registrados | Sem prova em Android físico (bloqueia ligar a escrita offline); `sync.push` é o PR53; nenhum comando de domínio usa o outbox ainda. |
 
+### PR53 — sync.push (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr53-sync-push` sobre `codex/pr52-command-outbox`. |
+| Decisões | Tomadas pelo projeto | [ADR 0033](../docs/adr/0033-protocolo-sync-push.md): uma transação de tenant por comando, em ordem, com `not_processed` depois de uma rejeição; idempotência por ID e organização com hash do conteúdo (`command_id_reused` não grava nada); revalidação por comando; lease vencido ainda cobre o que foi criado enquanto valia; trabalho de domínio em savepoint; registro de manipuladores vazio até o PR54. |
+| Banco, migration 0046 | Concluída | `sync_commands` (RLS forçada; o runtime só lê e insere; imutável até para o dono por gatilho); `runSyncCommand` com lock por comando, repetição do resultado, revalidação do lease (grant, dispositivo, época, capabilities), janela de criação e savepoint. |
+| Servidor | Concluído | Procedimento `sync.push` (até 50 comandos, capability `sync:push`, 503 sem o segredo do lease), verificação da assinatura sem janela, hash do JSON canônico, ordem e códigos estáveis; 9 testes da orquestração e 6 do roteador. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:sync-push:verify` (`sync-push`, suíte `gate5`): privilégios, aceito uma vez e repetido igual, mesmo ID com outro conteúdo, recusa sem rastro, falha inesperada reenviável, revogação, época, dispositivo, capabilities, janela de criação, lease vencido com comando feito a tempo, direito perdido, oito envios simultâneos executando uma vez e isolamento entre organizações. |
+| Limites | Registrados | Nenhum comando de domínio registrado ainda (PR54 em diante); direito (billing) é só um ponto de extensão; sem retenção de `sync_commands`; o cliente que envia o outbox pelo `sync.push` ainda não existe. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

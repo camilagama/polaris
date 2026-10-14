@@ -648,6 +648,31 @@ const deviceReadModel = z.object({
 
 export type DeviceReadModel = z.infer<typeof deviceReadModel>;
 
+/** One queued offline command as the outbox sends it (plan PR52/PR53). */
+const pushCommand = z.object({
+  baseVersion: z.number().int().nonnegative().nullable(),
+  commandId: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  deviceId: z.string().uuid(),
+  lease: z.string().min(1).max(4096),
+  payload: z.json(),
+  type: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/)
+    .max(100),
+});
+
+const pushResult = z.object({
+  code: z.string().nullable(),
+  commandId: z.string().uuid(),
+  replayed: z.boolean(),
+  result: z.json().nullable(),
+  status: z.enum(["accepted", "rejected", "not_processed"]),
+});
+
+export type PushCommandReadModel = z.infer<typeof pushCommand>;
+export type PushResultReadModel = z.infer<typeof pushResult>;
+
 /** A change-log sequence, as decimal text so it survives JSON unchanged. */
 const syncCursorText = z.string().regex(/^\d{1,16}$/);
 
@@ -1350,6 +1375,19 @@ export const polarisContract = {
           nextCursor: syncCursorText,
         })
       ),
+    // Sends queued offline commands, in order. Each carries its own ID (the
+    // idempotency key), the lease it was made under and its payload. The server
+    // revalidates everything per command and answers each one: accepted,
+    // rejected with a stable code, or not processed because a command before it
+    // was rejected. The same command again returns the same outcome.
+    push: oc
+      .input(
+        z.object({
+          commands: z.array(pushCommand).min(1).max(50),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ results: z.array(pushResult) })),
   },
   system: {
     ping: oc.output(z.object({ message: z.literal("pong") })),

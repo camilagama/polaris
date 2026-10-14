@@ -138,7 +138,8 @@ function decodeClaims(payload: string): OfflineLeaseClaims {
 export async function verifyOfflineLease(
   token: string,
   keys: readonly OfflineLeaseKey[],
-  now: Date
+  now: Date,
+  options: { checkWindow?: boolean } = {}
 ): Promise<OfflineLeaseClaims> {
   const { head, keyId, payload, signature } = splitToken(token);
   const key = keys.find((candidate) => candidate.id === keyId);
@@ -155,7 +156,11 @@ export async function verifyOfflineLease(
   if (!verified) {
     throw new InvalidOfflineLeaseError("bad_signature");
   }
-  assertOfflineLeaseCurrent(claims, now);
+  // sync.push passes checkWindow: false: a command made while the lease was
+  // valid may arrive after it expired (the server checks the creation time).
+  if (options.checkWindow !== false) {
+    assertOfflineLeaseCurrent(claims, now);
+  }
   return claims;
 }
 

@@ -126,7 +126,8 @@ export async function validateOfflineLeaseClaims(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   claims: OfflineLeaseClaims,
-  now: Date = new Date()
+  now: Date = new Date(),
+  options: { allowExpired?: boolean } = {}
 ): Promise<OfflineGrantRecord> {
   if (
     claims.sub !== identity.userId ||
@@ -162,7 +163,9 @@ export async function validateOfflineLeaseClaims(
   if (grant.revokedAt !== null) {
     throw new OfflineLeaseRejectedError("grant_revoked");
   }
-  if (grant.expiresAt.getTime() <= now.getTime()) {
+  // A command made while the lease was valid may sync after it expired; the
+  // caller then checks the command's own creation time against the lease window.
+  if (!options.allowExpired && grant.expiresAt.getTime() <= now.getTime()) {
     throw new OfflineLeaseRejectedError("grant_expired");
   }
   const [device] = await transaction

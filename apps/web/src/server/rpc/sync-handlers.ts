@@ -1,11 +1,14 @@
 import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import type { readBootstrapPage } from "@polaris/db/bootstrap-repository";
+import type { runSyncCommand } from "@polaris/db/sync-command-repository";
 import type {
   getSyncCursor,
   pullSyncChanges,
 } from "@polaris/db/sync-repository";
 import type { WorkerBindings } from "../environment";
+import { offlineLeaseKeys } from "../offline-lease-service";
+import { pushCommands, type SyncCommandHandler } from "../sync/push";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
 interface SyncRpcContext {
@@ -15,12 +18,16 @@ interface SyncRpcContext {
 }
 
 interface SyncRpcDependencies {
+  commandHandlers: readonly SyncCommandHandler[];
   defaultGetSyncCursor: typeof getSyncCursor;
   defaultPullSyncChanges: typeof pullSyncChanges;
   defaultReadBootstrapPage: typeof readBootstrapPage;
+  defaultRunSyncCommand: typeof runSyncCommand;
   getSyncCursor: typeof getSyncCursor | undefined;
+  now: () => Date;
   pullSyncChanges: typeof pullSyncChanges | undefined;
   readBootstrapPage: typeof readBootstrapPage | undefined;
+  runSyncCommand: typeof runSyncCommand | undefined;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
@@ -96,5 +103,33 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
       .catch(dependencies.toRpcError)
   );
 
-  return { bootstrapPage, getCursor, pull };
+  const runCommand =
+    dependencies.runSyncCommand ?? dependencies.defaultRunSyncCommand;
+  const push = implementContract.sync.push.handler(
+    async ({ context, input }) => {
+      try {
+        // Fails closed (503) before touching anything when no lease secret exists.
+        const keys = offlineLeaseKeys(context.bindings);
+        const results = await pushCommands(input.commands, {
+          handlers: dependencies.commandHandlers,
+          keys,
+          now: dependencies.now,
+          runSyncCommand: runCommand,
+          withTenant: (operation) =>
+            dependencies.withTenantRequestContext({
+              bindings: context.bindings,
+              capability: "sync:push",
+              operation,
+              request: context.request,
+              requestedOrganizationId: input.organizationId,
+            }),
+        });
+        return { results };
+      } catch (error) {
+        return dependencies.toRpcError(error);
+      }
+    }
+  );
+
+  return { bootstrapPage, getCursor, pull, push };
 }

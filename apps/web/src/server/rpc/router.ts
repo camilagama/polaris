@@ -215,6 +215,9 @@ import { createOfflineRpcHandlers } from "./offline-handlers";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 import { createSyncRpcHandlers } from "./sync-handlers";
+import { runSyncCommand } from "@polaris/db/sync-command-repository";
+import type { SyncCommandHandler } from "../sync/push";
+import { syncCommandHandlers } from "../sync/registry";
 
 export interface PolarisRpcContext {
   bindings: WorkerBindings;
@@ -280,6 +283,8 @@ interface RpcRouterDependencies {
   restorePaymentProfile: typeof restorePaymentProfile;
   restoreProduct: typeof restoreProduct;
   revokeDevice: typeof revokeDevice;
+  runSyncCommand: typeof runSyncCommand;
+  syncCommandHandlers: readonly SyncCommandHandler[];
   setProductVariantListPrice: typeof setProductVariantListPrice;
   setProductVariantSku: typeof setProductVariantSku;
   updateCustomer: typeof updateCustomer;
@@ -1109,6 +1114,10 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const syncHandlers = createSyncRpcHandlers({
+    commandHandlers: overrides.syncCommandHandlers ?? syncCommandHandlers,
+    defaultRunSyncCommand: runSyncCommand,
+    now: () => new Date(),
+    runSyncCommand: overrides.runSyncCommand,
     defaultGetSyncCursor: getSyncCursor,
     defaultPullSyncChanges: pullSyncChanges,
     defaultReadBootstrapPage: readBootstrapPage,
