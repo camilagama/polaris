@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { documentTitle, NAV_ITEMS, resolveRoute } from "./navigation-model";
+import {
+  documentTitle,
+  NAV_ITEMS,
+  OFFLINE_NAV_ITEMS,
+  resolveRoute,
+} from "./navigation-model";
 
 describe("main menu", () => {
   it("lists the seven areas in workflow order, each once", () => {
@@ -77,5 +82,19 @@ describe("resolveRoute", () => {
 describe("documentTitle", () => {
   it("appends the product name", () => {
     expect(documentTitle("Estoque")).toBe("Estoque · Polaris");
+  });
+});
+
+describe("menu items of the offline runtime", () => {
+  it("offers the devices screen outside the main menu, and the route exists", () => {
+    expect(OFFLINE_NAV_ITEMS.map((item) => item.label)).toEqual(["Aparelhos"]);
+    for (const item of OFFLINE_NAV_ITEMS) {
+      expect(NAV_ITEMS.some((main) => main.id === item.id)).toBe(false);
+      const route = resolveRoute(item.href);
+      expect(route.kind).toBe("page");
+      if (route.kind === "page") {
+        expect(route.navId).toBe(item.id);
+      }
+    }
   });
 });

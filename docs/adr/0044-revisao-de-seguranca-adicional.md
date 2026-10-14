@@ -27,7 +27,7 @@ Sem achados críticos ou altos. O que foi encontrado e confirmado está corrigid
 - **Troca de senha (não redefinição) não troca a época dos leases nem revoga as outras sessões por conta própria** (baixo). A troca autenticada de senha só existe com e-mail e senha ligados, e isso está desligado e sem tela de entrada; fica para o PR que ligar a entrada por senha.
 - **Amplificação do `sync.push`** (baixo). Cada comando abre sua própria transação de tenant e o limite de requisições conta o lote como uma. O lote é limitado a 50 (20 no cliente) e a carga a 256 KB; ponderar o limite pelo tamanho do lote fica para quando houver telemetria de uso. Também sem retenção da tabela `sync_commands` (já no backlog).
 - **Pré-cadastro com e-mail de terceiro** (baixo) e **tabela de PoC `rls_poc_operations` com política para PUBLIC** (higiene): ambos só têm efeito com e-mail e senha ligados ou com SQL arbitrário; a tabela entra no checklist de go-live para ser removida junto das demais PoCs.
-- **Sem tela de revogação de aparelho** e uma janela teórica entre a validação da época e uma troca concorrente: registrados, sem correção agora.
+- **Sem tela de revogação de aparelho** (resolvido depois: ver o [ADR 0048](0048-tela-de-aparelhos.md)) e uma janela teórica entre a validação da época e uma troca concorrente: registrados, sem correção agora.
 
 ## Verificação feita
 

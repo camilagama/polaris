@@ -14,7 +14,8 @@ import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
 import { LogoutControl } from "../offline/runtime/logout-control";
 import { SyncStatus } from "../offline/runtime/sync-status";
-import { NAV_ITEMS, type NavId } from "./navigation-model";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
+import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
 
 interface OrganizationSwitcherProps {
   current: CurrentOrganization;
@@ -109,7 +110,10 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
       >
         <nav aria-label="Principal">
           <ul className="app-nav-list">
-            {NAV_ITEMS.map((item) => (
+            {[
+              ...NAV_ITEMS,
+              ...(OFFLINE_RUNTIME_ENABLED ? OFFLINE_NAV_ITEMS : []),
+            ].map((item) => (
               <li key={item.id}>
                 <a
                   aria-current={item.id === navId ? "page" : undefined}
