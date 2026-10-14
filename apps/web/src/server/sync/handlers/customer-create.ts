@@ -35,7 +35,7 @@ function optionalString(value: unknown): string | null {
   return value;
 }
 
-function parsePayload(payload: unknown): CustomerCreatePayload {
+export function parseCustomerPayload(payload: unknown): CustomerCreatePayload {
   if (
     typeof payload !== "object" ||
     payload === null ||
@@ -105,7 +105,7 @@ export function createCustomerCreateHandler(
       );
       return { customerId: customer.id, version: customer.version };
     },
-    parse: parsePayload,
+    parse: parseCustomerPayload,
     type: CUSTOMER_CREATE_TYPE,
   };
 }

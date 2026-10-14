@@ -11,6 +11,17 @@
     "type": "customer.create"
   },
   {
+    "baseVersion": 7,
+    "payload": {
+      "customerId": "0199c2d0-0000-7000-8000-0000000000ca",
+      "email": null,
+      "name": "Bia Lima",
+      "notes": null,
+      "phone": "+5511988880000"
+    },
+    "type": "customer.update"
+  },
+  {
     "baseVersion": null,
     "payload": {
       "categoryId": "0199c2d0-0000-7000-8000-0000000000fa",

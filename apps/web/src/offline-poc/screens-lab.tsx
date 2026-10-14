@@ -99,6 +99,7 @@ export function ScreensLab() {
               buildOfflineLeaseClaims({
                 capabilities: [
                   "customer:create",
+                  "customer:update",
                   "product:create",
                   "sale:create",
                   "inventory:adjust",
@@ -166,6 +167,25 @@ export function ScreensLab() {
     [network, runtime]
   );
 
+  // another device edits every customer on the simulated server (the device is not told)
+  const handleOtherDevice = useCallback(() => {
+    if (!(server instanceof FakeCustomerServer)) {
+      return;
+    }
+    for (const [id, row] of [...server.customers]) {
+      server.customers.set(id, {
+        ...row,
+        name: `${row.name} (outro aparelho)`,
+        version: row.version + 1,
+      });
+      server.changes.push({
+        entityId: id,
+        entityType: "customer",
+        seq: server.changes.length + 1,
+      });
+    }
+  }, [server]);
+
   const handleUser = useCallback(
     (event: ChangeEvent<HTMLInputElement>) =>
       setUserId(event.currentTarget.value),
@@ -200,6 +220,11 @@ export function ScreensLab() {
             <button onClick={handleSync} type="button">
               Sincronizar
             </button>
+            {screen === "customers" ? (
+              <button onClick={handleOtherDevice} type="button">
+                Outro aparelho altera os clientes
+              </button>
+            ) : null}
           </div>
           <p>
             Registros no servidor simulado:{" "}

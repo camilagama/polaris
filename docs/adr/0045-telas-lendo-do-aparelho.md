@@ -21,7 +21,7 @@ O runtime offline (ADR 0043) está montado no app, sincroniza e mostra o chip de
 
 - Com a chave ligada, duas telas passam a depender da cópia local; a decisão de ligar continua condicionada ao checklist em aparelho físico (Gate 5).
 - Estoque e venda seguem uma política diferente (servidor quando alcançável, aparelho só sem conexão) e têm seu próprio ADR, porque movem dinheiro e saldo e a confirmação imediata traz o que o aparelho não tem. O custo médio **não** vai ao aparelho (ADR 0031), então a tela de estoque offline trabalha sem ele.
-- Editar offline fica fora de propósito: não há comando de edição, e inventar um exigiria resolução de conflitos que ainda não foi decidida.
+- Editar offline ficou fora desta etapa de propósito, pelo conflito: a edição de cliente foi feita depois, com a resolução decidida no [ADR 0050](0050-edicao-de-cliente-sem-conexao.md); a de produtos continua online.
 
 ## Alternativas rejeitadas
 

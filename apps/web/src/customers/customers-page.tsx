@@ -18,6 +18,12 @@ import {
   type PendingCustomer,
   pendingCustomers,
 } from "../offline/customer-create";
+import {
+  overlayPendingCustomerEdits,
+  type PendingCustomerUpdate,
+  pendingCustomerUpdates,
+  updateOfflineCustomer,
+} from "../offline/customer-update";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   findLocalDuplicates,
@@ -60,6 +66,12 @@ function errorMessage(
   error: unknown,
   action?: CustomerAction | "duplicate-check" | "load" | "save"
 ): string {
+  if (
+    error instanceof Error &&
+    error.message === "customer_has_pending_command"
+  ) {
+    return "Este cliente já tem uma alteração ou um cadastro aguardando envio. Espere o envio ou resolva em Pendências.";
+  }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     return "Sua sessão não está ativa. Entre novamente para acessar os clientes.";
@@ -375,23 +387,36 @@ interface CustomerCardProps {
   isPending: boolean;
   /** Why editing, archiving and restoring are unavailable for this customer, or null. */
   lockedReason: string | null;
+  /** Why archiving and restoring (not editing) are unavailable right now, or null. */
+  lifecycleReason: string | null;
   onArchive: (customer: CustomerReadModel) => void;
   onEdit: (customer: CustomerReadModel) => void;
   onRestore: (customer: CustomerReadModel) => void;
   pendingAction: string | null;
   /** The customer was created on this device and the server has not confirmed it yet. */
   syncState: PendingCustomer | undefined;
+  /** An edit made on this device that the server has not confirmed yet. */
+  updateState: PendingCustomerUpdate | undefined;
 }
 
-function syncStateLabel(syncState: PendingCustomer): string {
+function syncStateLabel(
+  syncState: PendingCustomer | PendingCustomerUpdate,
+  isUpdate: boolean
+): string {
   if (syncState.state === "rejected") {
-    return "Recusado pelo servidor";
+    return isUpdate
+      ? "Alteração recusada pelo servidor"
+      : "Recusado pelo servidor";
   }
-  return syncState.state === "sending" ? "Enviando…" : "Aguardando envio";
+  if (syncState.state === "sending") {
+    return isUpdate ? "Enviando alteração…" : "Enviando…";
+  }
+  return isUpdate ? "Alteração aguardando envio" : "Aguardando envio";
 }
 
 function CustomerCard({
   customer,
+  lifecycleReason,
   lockedReason,
   isPending,
   onArchive,
@@ -399,7 +424,11 @@ function CustomerCard({
   onRestore,
   pendingAction,
   syncState,
+  updateState,
 }: CustomerCardProps) {
+  const shownState = syncState ?? updateState;
+  const reason = lockedReason ?? lifecycleReason;
+  const lifecycleLocked = reason !== null;
   const handleEdit = useCallback(() => onEdit(customer), [customer, onEdit]);
   const handleArchive = useCallback(
     () => onArchive(customer),
@@ -419,13 +448,13 @@ function CustomerCard({
           <span className={`category-status status-${customer.status}`}>
             {customer.status === "active" ? "Ativo" : "Arquivado"}
           </span>
-          {syncState ? (
+          {shownState ? (
             <span
               className="customer-sync-state"
-              data-state={syncState.state}
+              data-state={shownState.state}
               role="status"
             >
-              {syncStateLabel(syncState)}
+              {syncStateLabel(shownState, !syncState)}
             </span>
           ) : null}
         </div>
@@ -439,12 +468,12 @@ function CustomerCard({
         <p className="customer-meta">
           Atualizado em {formatDate(customer.updatedAt)}
         </p>
-        {syncState?.state === "rejected" ? (
+        {shownState?.state === "rejected" ? (
           <p className="customer-meta">
             <a href="/attention">Resolver em Pendências</a>
           </p>
         ) : null}
-        {lockedReason ? <p className="customer-meta">{lockedReason}</p> : null}
+        {reason ? <p className="customer-meta">{reason}</p> : null}
       </div>
       <div className="customer-card-actions">
         <button
@@ -460,7 +489,7 @@ function CustomerCard({
           <button
             aria-label={`Arquivar cliente ${customer.name}`}
             className="quiet-button"
-            disabled={isPending || lockedReason !== null}
+            disabled={isPending || lifecycleLocked}
             onClick={handleArchive}
             type="button"
           >
@@ -472,7 +501,7 @@ function CustomerCard({
           <button
             aria-label={`Restaurar cliente ${customer.name}`}
             className="quiet-button"
-            disabled={isPending || lockedReason !== null}
+            disabled={isPending || lifecycleLocked}
             onClick={handleRestore}
             type="button"
           >
@@ -486,15 +515,24 @@ function CustomerCard({
   );
 }
 
-/** Editing needs the server to know the customer and to be reachable. */
+/**
+ * Nothing can be done to a customer the server has not confirmed, nor on top of
+ * an edit it has not confirmed (the next one would be made from a version the
+ * server has not produced yet).
+ */
 function lockedReasonFor(
   syncState: PendingCustomer | undefined,
-  isOffline: boolean
+  updateState: PendingCustomerUpdate | undefined
 ): string | null {
   if (syncState) {
     return "Disponível depois que o servidor confirmar o cadastro.";
   }
-  return isOffline ? "Disponível quando houver conexão." : null;
+  if (updateState) {
+    return updateState.state === "rejected"
+      ? "A alteração foi recusada. Resolva em Pendências antes de alterar de novo."
+      : "Disponível depois que o servidor confirmar a alteração.";
+  }
+  return null;
 }
 
 interface CustomerWorkspaceProps {
@@ -520,6 +558,8 @@ interface CustomerWorkspaceProps {
   status: CustomerListStatus;
   /** Customers created on this device that the server has not confirmed yet. */
   syncStates: ReadonlyMap<string, PendingCustomer>;
+  /** Edits made on this device that the server has not confirmed yet. */
+  updateStates: ReadonlyMap<string, PendingCustomerUpdate>;
 }
 
 function CustomerWorkspace({
@@ -531,6 +571,7 @@ function CustomerWorkspace({
   isLoading,
   isOffline,
   syncStates,
+  updateStates,
   notice,
   onArchive,
   onCancelEdit,
@@ -559,8 +600,9 @@ function CustomerWorkspace({
 
       {isOffline ? (
         <p className="customer-notice" role="status">
-          Sem conexão. Você pode cadastrar clientes; eles são enviados quando a
-          conexão voltar. Editar, arquivar e restaurar precisam de conexão.
+          Sem conexão. Você pode cadastrar e editar clientes; as mudanças são
+          enviadas quando a conexão voltar. Arquivar e restaurar precisam de
+          conexão.
         </p>
       ) : null}
       {notice ? (
@@ -638,15 +680,21 @@ function CustomerWorkspace({
                 <CustomerCard
                   customer={customer}
                   isPending={pendingAction !== null}
+                  lifecycleReason={
+                    isOffline
+                      ? "Arquivar e restaurar precisam de conexão."
+                      : null
+                  }
                   lockedReason={lockedReasonFor(
                     syncStates.get(customer.id),
-                    isOffline
+                    updateStates.get(customer.id)
                   )}
                   onArchive={onArchive}
                   onEdit={onEdit}
                   onRestore={onRestore}
                   pendingAction={pendingAction}
                   syncState={syncStates.get(customer.id)}
+                  updateState={updateStates.get(customer.id)}
                 />
               </li>
             ))}
@@ -679,6 +727,9 @@ export function CustomersPage() {
   const workspace = useLocalWorkspace(organizationId);
   const [syncStates, setSyncStates] = useState<
     ReadonlyMap<string, PendingCustomer>
+  >(new Map());
+  const [updateStates, setUpdateStates] = useState<
+    ReadonlyMap<string, PendingCustomerUpdate>
   >(new Map());
   const [status, setStatus] = useState<CustomerListStatus>("active");
   const [customers, setCustomers] = useState<CustomerReadModel[]>([]);
@@ -742,13 +793,28 @@ export function CustomersPage() {
     }
     let cancelled = false;
     const { outbox, writer } = workspace.stores;
-    Promise.all([writer.rows("customers"), pendingCustomers(outbox)])
-      .then(([rows, pending]) => {
+    Promise.all([
+      writer.rows("customers"),
+      pendingCustomers(outbox),
+      pendingCustomerUpdates(outbox),
+      outbox.snapshot(),
+    ])
+      .then(([rows, pending, updates, snapshot]) => {
         if (cancelled) {
           return;
         }
-        setCustomers(listLocalCustomers(rows, organizationId, status));
+        // an edit still waiting is shown over the server's row (never written into it)
+        setCustomers(
+          listLocalCustomers(
+            overlayPendingCustomerEdits(rows, snapshot.commands),
+            organizationId,
+            status
+          )
+        );
         setSyncStates(new Map(pending.map((item) => [item.customerId, item])));
+        setUpdateStates(
+          new Map(updates.map((item) => [item.customerId, item]))
+        );
         setError(null);
         setIsLoading(false);
       })
@@ -865,6 +931,22 @@ export function CustomersPage() {
       organizationId,
       phone: draft.phone,
     };
+    if (editingCustomer && workspace && !workspace.online) {
+      // Queued on this device (from the version the person edited) and shown at once.
+      const stores = workspace.runtime.context();
+      if (!stores || stores.organizationId !== organizationId) {
+        throw new Error("offline_runtime_unavailable");
+      }
+      await updateOfflineCustomer({
+        current: editingCustomer,
+        deviceId: stores.deviceId,
+        input: profile,
+        lease: stores.lease,
+        organizationId,
+        outbox: stores.outbox,
+      });
+      return "Alteração salva neste aparelho. Ela será enviada quando a conexão voltar.";
+    }
     if (editingCustomer) {
       const updated = await orpcClient.customer.update({
         ...profile,
@@ -1023,6 +1105,7 @@ export function CustomersPage() {
         pendingAction={pendingAction}
         status={status}
         syncStates={syncStates}
+        updateStates={updateStates}
       />
     </div>
   );

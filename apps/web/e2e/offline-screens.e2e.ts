@@ -122,6 +122,105 @@ test("voltando a rede, envia o que ficou guardado e confirma os clientes", async
   ).toBeEnabled();
 });
 
+async function registerConfirmed(page: Page, name: string, phone: string) {
+  await register(page, { name, phone });
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+  await expect(card(page, name).locator(".customer-sync-state")).toHaveCount(
+    0,
+    { timeout: 20_000 }
+  );
+}
+
+async function editName(page: Page, from: string, to: string) {
+  await page.getByRole("button", { name: `Editar cliente ${from}` }).click();
+  await page.locator("#customer-name").fill(to);
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+}
+
+test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o servidor a aplica quando a rede volta", async ({
+  page,
+}) => {
+  await openLab(page, `user-${crypto.randomUUID()}`);
+  await start(page);
+  await registerConfirmed(page, "Eva Costa", "11900000005");
+
+  await page.getByLabel("Rede disponível").uncheck();
+  await editName(page, "Eva Costa", "Eva Costa Lima");
+  await expect(page.getByText("Alteração salva neste aparelho.")).toBeVisible();
+  const edited = card(page, "Eva Costa Lima");
+  await expect(edited).toContainText("Alteração aguardando envio");
+  await expect(
+    page.getByRole("button", { name: "Editar cliente Eva Costa Lima" })
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Arquivar cliente Eva Costa Lima" })
+  ).toBeDisabled();
+  await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
+
+  await page.getByLabel("Rede disponível").check();
+  await expect(chip(page)).toContainText("Tudo sincronizado", {
+    timeout: 20_000,
+  });
+  await expect(edited.locator(".customer-sync-state")).toHaveCount(0);
+  await expect(edited).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Editar cliente Eva Costa Lima" })
+  ).toBeEnabled();
+});
+
+test("sem rede, arquivar e restaurar seguem bloqueados, mas editar não", async ({
+  page,
+}) => {
+  await openLab(page, `user-${crypto.randomUUID()}`);
+  await start(page);
+  await registerConfirmed(page, "Gil Alves", "11900000006");
+
+  await page.getByLabel("Rede disponível").uncheck();
+  await expect(
+    page.getByRole("button", { name: "Editar cliente Gil Alves" })
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Arquivar cliente Gil Alves" })
+  ).toBeDisabled();
+  await expect(card(page, "Gil Alves")).toContainText(
+    "Arquivar e restaurar precisam de conexão."
+  );
+});
+
+test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, sem sobrescrever nada", async ({
+  page,
+}) => {
+  await openLab(page, `user-${crypto.randomUUID()}`);
+  await start(page);
+  await registerConfirmed(page, "Hugo Neri", "11900000007");
+
+  await page.getByLabel("Rede disponível").uncheck();
+  await editName(page, "Hugo Neri", "Hugo Neri Filho");
+  await expect(card(page, "Hugo Neri Filho")).toContainText(
+    "Alteração aguardando envio"
+  );
+  await page
+    .getByRole("button", { name: "Outro aparelho altera os clientes" })
+    .click();
+
+  await page.getByLabel("Rede disponível").check();
+  const refused = card(page, "Hugo Neri");
+  await expect(refused).toContainText("Alteração recusada pelo servidor", {
+    timeout: 20_000,
+  });
+  await expect(
+    refused.getByRole("link", { name: "Resolver em Pendências" })
+  ).toBeVisible();
+  // the server's row (the other device's edit) is what the card shows, not the refused one
+  await expect(refused).toContainText("(outro aparelho)");
+  await expect(refused).not.toContainText("Filho");
+  await expect(
+    refused.getByRole("button", { name: "Editar cliente" })
+  ).toBeDisabled();
+});
+
 const productCard = (page: Page, name: string) =>
   page.locator(".product-card", { hasText: name });
 

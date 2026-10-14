@@ -116,6 +116,53 @@ export class FakeCustomerServer implements BootstrapSource {
   lostResponses = 0;
   rejectCode: string | null = null;
 
+  /** `customer.update`: applied only on top of the version the command was made from. */
+  private update(command: PushCommandReadModel): PushResultReadModel {
+    const payload = command.payload as {
+      customerId: string;
+      email: string | null;
+      name: string;
+      notes: string | null;
+      phone: string | null;
+    };
+    const current = this.customers.get(payload.customerId);
+    const refuse = (code: string): PushResultReadModel => ({
+      code,
+      commandId: command.commandId,
+      replayed: false,
+      result: null,
+      status: "rejected",
+    });
+    if (!current) {
+      return refuse("customer_not_found");
+    }
+    if (current.version !== command.baseVersion) {
+      return refuse("customer_version_conflict");
+    }
+    const version = current.version + 1;
+    this.customers.set(payload.customerId, {
+      ...current,
+      email: payload.email,
+      name: payload.name,
+      notes: payload.notes,
+      phone: payload.phone,
+      updatedAt: "2026-10-14T13:00:00.000Z",
+      version,
+    });
+    this.changes.push({
+      entityId: payload.customerId,
+      entityType: "customer",
+      seq: this.changes.length + 1,
+    });
+    return {
+      code: null,
+      commandId: command.commandId,
+      replayed: false,
+      result: { changed: true, customerId: payload.customerId, version },
+      status: "accepted",
+    };
+  }
+
   push = (input: { commands: PushCommandReadModel[] }) => {
     this.requests += 1;
     const results: PushResultReadModel[] = [];
@@ -148,6 +195,8 @@ export class FakeCustomerServer implements BootstrapSource {
           result: null,
           status: "rejected",
         };
+      } else if (command.type === "customer.update") {
+        outcome = this.update(command);
       } else {
         const payload = command.payload as {
           customerId: string;

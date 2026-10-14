@@ -2,6 +2,7 @@ import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createOfflineCustomer } from "../../offline/customer-create";
+import { updateOfflineCustomer } from "../../offline/customer-update";
 import { MemoryOutboxStorage } from "../../offline/outbox/memory-storage";
 import { Outbox } from "../../offline/outbox/outbox";
 import { createOfflineProduct } from "../../offline/product-create";
@@ -81,6 +82,17 @@ async function currentPayloads() {
       phone: "+5511999990000",
     },
     newCustomerId: () => uuid(201),
+  });
+  // an edit of a customer the server already knows, from the version the person saw
+  await updateOfflineCustomer({
+    ...common(),
+    current: { id: uuid(202), version: 7 },
+    input: {
+      email: null,
+      name: "Bia Lima",
+      notes: null,
+      phone: "+5511988880000",
+    },
   });
   const product = await createOfflineProduct({
     ...common(),
