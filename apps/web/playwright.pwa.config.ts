@@ -26,9 +26,11 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "bunx vite build --config vite.pwa.config.ts && bunx vite preview --config vite.pwa.config.ts --host 127.0.0.1 --port 4174 --strictPort",
+      "bunx vite build --config vite.pwa.config.ts && node scripts/serve-static.mjs dist/pwa-e2e 4174",
     reuseExistingServer: !inCI,
     timeout: 120_000,
     url: "http://127.0.0.1:4174",
   },
+  // the update checks rebuild the shared build directory: one test at a time
+  workers: 1,
 });

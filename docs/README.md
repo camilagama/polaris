@@ -63,5 +63,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0038](adr/0038-painel-de-atencao-offline.md) | Painel de atenção das operações offline | aceito |
 | [0039](adr/0039-saida-com-operacoes-pendentes.md) | Sair com operações pendentes | aceito |
 | [0040](adr/0040-service-worker-do-app-shell.md) | Service worker do app shell | aceito |
+| [0041](adr/0041-ciclo-de-atualizacao-do-app.md) | Ciclo de atualização do app | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

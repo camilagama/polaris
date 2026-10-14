@@ -895,6 +895,18 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Prova em navegador | Concluída | `e2e-pwa/app-shell.e2e.ts` (`bun run test:pwa`, no job de navegador do CI): instala e controla a página; abre offline, inclusive em rota interna; a API não passa pelo cache; manifesto e ícones; os laboratórios não registram o worker. Chromium desktop e Pixel 5 emulado. |
 | Limites | Registrados | O ciclo de atualização para o usuário (aviso, esperar a fila vazia, recarregar sem perder trabalho) é o PR61; as telas ainda não leem os dados locais offline; Safari de iPhone e instalação na tela inicial dependem do checklist físico do Gate 5. |
 
+### PR61 — Ciclo de atualização do app (implementação, prova em navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr61-pwa-update-lifecycle` sobre `codex/pr60-pwa-service-worker`. |
+| Decisões | Tomadas pelo projeto | [ADR 0041](../docs/adr/0041-ciclo-de-atualizacao-do-app.md): quatro ofertas (nenhuma, pronta, enviar primeiro, adiada por recusa); nunca atualizar por cima de trabalho na fila; nunca automático (avisa, a pessoa clica, recarrega uma vez); build esperando só conta como atualização quando a página já é controlada; a fila entra por `PendingWorkSource`. |
+| Modelo | Concluído | `pwa/update-model.ts` (`offerFor`, `applyWhenSafe`); `pwa/update-controller.ts` (`watchForUpdate`, `takeOver` com recarga única); `pwa/update-store.ts` (store externa para `useSyncExternalStore`). |
+| Interface | Concluída | `pwa/update-banner.tsx` e CSS, montado no topo do app; sem botão de atualizar enquanto há recusa; procura por builds novas ao voltar para o app e a cada hora (`pwa/runtime.ts`). |
+| Testes | Concluído | 23 testes (decisão, envio seguro, controlador, store, aviso renderizado). |
+| Prova em navegador | Concluída | `e2e-pwa/update.e2e.ts` com duas builds reais do app (a segunda com marcador no `index.html`): a nova versão vira aviso sem recarregar; só troca ao clicar; ficam os caches das duas builds; a primeira instalação não é anunciada. Servidor estático próprio que lê o disco a cada pedido (`scripts/serve-static.mjs`), porque `vite preview` não sobrevive a uma recompilação. Chromium desktop e Pixel 5 emulado, um teste de cada vez. |
+| Limites | Registrados | A fila ainda é "ociosa" no app (o outbox não está montado), então hoje o aviso sempre oferece "Atualizar agora"; as provas com fila usam a interface de fonte; falta o PR62 (suíte de navegador do offline: duas abas, versão antiga, atualização pendente) e o checklist físico do Gate 5. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

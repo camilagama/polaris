@@ -1,11 +1,13 @@
 import {
   type ComponentType,
-  lazy,
   type LazyExoticComponent,
+  lazy,
   Suspense,
   useEffect,
 } from "react";
 import { OrganizationProvider } from "../lib/current-organization";
+import { getUpdateStore } from "../pwa/runtime";
+import { UpdateBanner } from "../pwa/update-banner";
 import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
 import {
@@ -93,6 +95,12 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
   );
 }
 
+/** The new-version notice, where there is a service worker to update. */
+function UpdateSlot() {
+  const store = getUpdateStore();
+  return store ? <UpdateBanner store={store} /> : null;
+}
+
 export function App() {
   const route = resolveRoute(window.location.pathname);
   const { title } = route;
@@ -103,6 +111,7 @@ export function App() {
   return (
     <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
       <OrganizationProvider>
+        <UpdateSlot />
         <RouteContent route={route} />
       </OrganizationProvider>
     </ErrorBoundary>

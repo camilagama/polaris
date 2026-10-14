@@ -7,6 +7,7 @@ import {
   browserRegisterEnvironment,
   registerServiceWorker,
 } from "./pwa/register";
+import { checkForUpdatesRegularly, getUpdateStore } from "./pwa/runtime";
 
 const rootElement = document.getElementById("root");
 
@@ -118,7 +119,14 @@ if (isLogoutLabRoute) {
   if (pwaEnvironment) {
     // After the first paint: the shell cache never competes with the app for the network.
     window.addEventListener("load", () => {
-      registerServiceWorker(pwaEnvironment).catch(() => undefined);
+      registerServiceWorker(pwaEnvironment)
+        .then((registration) => {
+          if (registration) {
+            getUpdateStore()?.attach(registration);
+            checkForUpdatesRegularly(registration);
+          }
+        })
+        .catch(() => undefined);
     });
   }
 }
