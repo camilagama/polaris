@@ -22,6 +22,7 @@ import type { Outbox } from "./outbox/outbox";
 const RECEIVE = "stock.receive";
 const WRITE_OFF = "stock.write_off";
 const COUNT = "stock.count";
+const SALE_CONFIRM = "sale.confirm";
 const STOCK_TYPES: readonly string[] = [RECEIVE, WRITE_OFF, COUNT];
 
 /** Reads the local copy of a balance (a missing row means no stock yet). */
@@ -94,6 +95,32 @@ function stockVariantOf(command: OutboxCommand): string | null {
   return typeof variantId === "string" ? variantId : null;
 }
 
+/** The lines of a queued `sale.confirm`; none for any other command. */
+function saleLinesOf(
+  command: OutboxCommand
+): { quantity: number; variantId: string }[] {
+  if (command.type !== SALE_CONFIRM) {
+    return [];
+  }
+  const { payload } = command;
+  if (typeof payload !== "object" || payload === null) {
+    return [];
+  }
+  const { items } = payload as { items?: unknown };
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.flatMap((item: unknown) => {
+    const { quantity, variantId } = (item ?? {}) as {
+      quantity?: unknown;
+      variantId?: unknown;
+    };
+    return typeof quantity === "number" && typeof variantId === "string"
+      ? [{ quantity, variantId }]
+      : [];
+  });
+}
+
 function applyCommand(
   snapshot: StockSnapshot,
   command: OutboxCommand
@@ -119,7 +146,8 @@ function applyCommand(
 
 /**
  * The balance as this device should show it: the local server row with the
- * movements still waiting (pending or being sent) applied in queue order.
+ * movements still waiting (pending or being sent), and the sales still waiting,
+ * applied in queue order.
  * Refused commands do not count: they were not applied.
  */
 export async function effectiveStock(
@@ -134,11 +162,20 @@ export async function effectiveStock(
   };
   const { commands } = await outbox.snapshot();
   for (const command of commands) {
-    if (
-      command.status !== "rejected" &&
-      stockVariantOf(command) === variantId
-    ) {
+    if (command.status === "rejected") {
+      continue;
+    }
+    if (stockVariantOf(command) === variantId) {
       snapshot = applyCommand(snapshot, command);
+    }
+    // A queued sale takes stock from each variant it sells, one movement per line.
+    for (const line of saleLinesOf(command)) {
+      if (line.variantId === variantId) {
+        snapshot = {
+          quantity: Math.max(0, snapshot.quantity - line.quantity),
+          version: snapshot.version + 1,
+        };
+      }
     }
   }
   return snapshot;

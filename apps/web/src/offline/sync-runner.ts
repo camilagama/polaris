@@ -49,8 +49,16 @@ export interface SyncOutboxRequest {
   recover?: boolean;
 }
 
+/** A command the server accepted in this run, with its domain result. */
+interface AcceptedCommand {
+  commandId: string;
+  result: unknown;
+  type: string;
+}
+
 export interface SyncOutboxSummary {
   accepted: number;
+  acceptedCommands: AcceptedCommand[];
   /** The command that now blocks the queue, if a rejection did. */
   blockedBy: OutboxCommand | null;
   notProcessed: number;
@@ -107,6 +115,11 @@ async function applyResults(
       // biome-ignore lint/performance/noAwaitInLoops: results are applied in order
       await outbox.acknowledge(command.commandId);
       summary.accepted += 1;
+      summary.acceptedCommands.push({
+        commandId: command.commandId,
+        result: result.result,
+        type: command.type,
+      });
       summary.replayed += result.replayed ? 1 : 0;
     } else if (result?.status === "rejected") {
       await outbox.reject(command.commandId, result.code ?? "rejected");
@@ -146,6 +159,7 @@ export async function syncOutbox(
   }
   const summary: SyncOutboxSummary = {
     accepted: 0,
+    acceptedCommands: [],
     blockedBy: null,
     notProcessed: 0,
     rejected: 0,

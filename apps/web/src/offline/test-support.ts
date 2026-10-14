@@ -35,6 +35,9 @@ export class FakeWriter implements LocalWriter {
   inventoryRow(variantId: string) {
     return Promise.resolve(this.stock(variantId));
   }
+  variantRow(variantId: string) {
+    return Promise.resolve(this.variant(variantId));
+  }
   keys(collection: BootstrapCollectionName) {
     return Promise.resolve([...this.data[collection].keys()]);
   }
@@ -416,6 +419,9 @@ export class FakeStockServer implements BootstrapSource {
   }
 
   private execute(command: PushCommandReadModel): PushResultReadModel {
+    if (command.type === "sale.confirm") {
+      return this.executeSale(command);
+    }
     const payload = command.payload as {
       physicalQuantity?: number;
       quantity?: number;
@@ -461,6 +467,53 @@ export class FakeStockServer implements BootstrapSource {
         variantId: payload.variantId,
         version: version + 1,
       },
+      status: "accepted",
+    };
+  }
+
+  /** Sales confirmed, by command ID. */
+  readonly sales = new Map<string, { saleId: string }>();
+
+  /** A sale takes stock from every line or is refused whole (no partial sale). */
+  private executeSale(command: PushCommandReadModel): PushResultReadModel {
+    const { items } = command.payload as {
+      items: { quantity: number; variantId: string }[];
+    };
+    const draft = new Map<string, { quantity: number; version: number }>();
+    for (const item of items) {
+      const held = draft.get(item.variantId) ?? {
+        quantity: this.balances.get(item.variantId)?.quantity ?? 0,
+        version: this.balances.get(item.variantId)?.version ?? 0,
+      };
+      if (held.quantity < item.quantity) {
+        return this.refuse(command.commandId, "insufficient_stock");
+      }
+      draft.set(item.variantId, {
+        quantity: held.quantity - item.quantity,
+        version: held.version + 1,
+      });
+    }
+    for (const [variantId, next] of draft) {
+      this.balances.set(variantId, {
+        productId: "0199c2d0-0000-7000-8000-0000000000f1",
+        quantity: next.quantity,
+        updatedAt: "2026-10-14T13:00:00.000Z",
+        variantId,
+        version: next.version,
+      });
+      this.changes.push({
+        entityId: variantId,
+        entityType: "inventory_balance",
+        seq: this.changes.length + 1,
+      });
+    }
+    const saleId = `0199c2d0-0000-7000-8000-${String(this.sales.size + 1).padStart(12, "0")}`;
+    this.sales.set(command.commandId, { saleId });
+    return {
+      code: null,
+      commandId: command.commandId,
+      replayed: false,
+      result: { saleId, totalDue: "0.00" },
       status: "accepted",
     };
   }

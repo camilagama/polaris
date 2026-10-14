@@ -1,5 +1,6 @@
 import { createCustomerCreateHandler } from "./handlers/customer-create";
 import { createProductCreateHandler } from "./handlers/product-create";
+import { createSaleConfirmHandler } from "./handlers/sale-confirm";
 import {
   createStockCountHandler,
   createStockReceiveHandler,
@@ -20,4 +21,5 @@ export const syncCommandHandlers: readonly SyncCommandHandler[] = [
   createStockReceiveHandler(),
   createStockWriteOffHandler(),
   createStockCountHandler(),
+  createSaleConfirmHandler(),
 ];

@@ -835,6 +835,19 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-stock:verify` (`offline-stock`, suítes `ci` e `gate5`): entrada uma vez e replay; fila com a versão-base prevista igual à do razão; baixa acima do saldo e contagem obsoleta recusadas sem rastro; variante inexistente; data futura; duas contagens concorrentes (uma conflita); duas baixas concorrentes (saldo nunca negativo); isolamento entre organizações. |
 | Limites | Registrados | Sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; contagem obsoleta após descarte de um movimento anterior só é percebida pelo servidor. |
 
+### PR57 — Venda offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr57-offline-sale` sobre `codex/pr56-offline-stock-commands`. |
+| Decisões | Tomadas pelo projeto | [ADR 0037](../docs/adr/0037-venda-offline.md): um comando `sale.confirm` (capability `sale:create`) pela mesma `confirmSale` da venda online; estoque autoritativo do servidor (venda recusada inteira, sem rastro); aviso local sem bloqueio; estados `pending`, `syncing`, `confirmed`, `rejected`, `needs_attention`; correção por reenvio como comando novo ou descarte, sem "forçar"; estoque exibido desconta a fila. |
+| Banco | Concluído | Sem migration e sem mudança de repositório. |
+| Contrato | Concluído | `offlineSalePayloadSchema` em `@polaris/contracts` (sem perfil de pagamento). |
+| Servidor | Concluído | `handlers/sale-confirm.ts` (esquema mais normalização do domínio sem checagem de relógio, códigos estáveis, snapshot inválido classificado); 6 testes. |
+| Cliente | Concluído | `offline/sale-confirm.ts`: `createOfflineSale` (preço de tabela local, total, avisos de estoque), `pendingSales` com os cinco estados, `confirmedSales`, `resubmitRejectedSale`, `discardPendingSale`; `syncOutbox` informa `acceptedCommands`; `effectiveStock` desconta vendas na fila; leitor `variantRow`; 13 testes. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-sale:verify` (`offline-sale`, suítes `ci` e `gate5`): confirmada uma vez com `recordedAt` e replay; versão por linha; recusa total sem rastro; recusa gravada e reenvio como comando novo; janela de datas; disputa pelas últimas unidades; isolamento entre organizações. |
+| Limites | Registrados | Sem perfil de pagamento offline; sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; aparelho offline além da janela retroativa tem as vendas recusadas por `sale_occurred_too_old`. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

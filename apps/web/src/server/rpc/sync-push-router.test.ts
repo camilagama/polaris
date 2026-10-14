@@ -201,7 +201,7 @@ describe("sync.push", () => {
       withTenantRequestContext: tenantContext(),
     });
     const { results } = await client.sync.push({
-      commands: [await pushCommand(1, { type: "sale.confirm" })],
+      commands: [await pushCommand(1, { type: "expense.create" })],
       organizationId,
     });
     expect(results[0]).toMatchObject({

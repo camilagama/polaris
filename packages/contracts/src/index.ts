@@ -422,6 +422,24 @@ const salePaymentInput = z.object({
   method: z.enum(SALE_PAYMENT_METHODS),
 });
 
+/**
+ * The payload of the offline `sale.confirm` command (plan PR57): what a device
+ * can state about a sale without the server. The command ID, the organization
+ * and the command version come from the sync frame, and there is no payment
+ * profile (profiles are not kept on the device): the sale is confirmed with the
+ * plain payment method.
+ */
+export const offlineSalePayloadSchema = z
+  .object({
+    adjustments: z.array(saleAdjustmentInput).max(20),
+    items: z.array(saleItemInput).min(1).max(200),
+    occurredAt: z.string().datetime({ offset: true }),
+    payment: salePaymentInput,
+    recordedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type OfflineSalePayload = z.infer<typeof offlineSalePayloadSchema>;
+
 const saleFeeSnapshot = z.object({
   amount: z.string().nullable(),
   fixedAmount: z.string().nullable(),

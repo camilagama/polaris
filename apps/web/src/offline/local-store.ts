@@ -13,6 +13,7 @@ import type {
   LocalWriter,
 } from "./bootstrap";
 import type { LocalNamespace } from "./namespace";
+import type { LocalVariantReader } from "./sale-confirm";
 import type { LocalInventoryReader } from "./stock-commands";
 
 /**
@@ -56,7 +57,7 @@ export interface LocalStore {
   close: () => Promise<void>;
   collections: LocalStoreCollections;
   namespace: LocalNamespace;
-  writer: LocalWriter & LocalInventoryReader;
+  writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
 }
 
 interface LocalStoreSupport {
@@ -164,7 +165,7 @@ async function removeFrom<T extends object>(
 
 function createWriter(
   collections: LocalStoreCollections
-): LocalWriter & LocalInventoryReader {
+): LocalWriter & LocalInventoryReader & LocalVariantReader {
   const keyed = {
     categories: (row: LocalRows["categories"]) => row.id,
     customers: (row: LocalRows["customers"]) => row.id,
@@ -214,6 +215,8 @@ function createWriter(
         .filter((row) => wanted.has(row.productId))
         .map((row) => row.id);
     },
+    variantRow: (variantId) =>
+      Promise.resolve(collections.variants.get(variantId)),
     async writeMeta(meta) {
       await upsertInto(collections.syncMeta, (row) => row.id, [
         { ...meta, id: META_KEY },
