@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ProductsPage } from "../catalog/products-page";
 import { CustomersPage } from "../customers/customers-page";
+import { ExpensesPage } from "../expenses/expenses-page";
 import { InventoryPage } from "../inventory/inventory-page";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
@@ -43,11 +44,18 @@ const ORGANIZATION = {
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
-type LabScreen = "customers" | "history" | "products" | "sale" | "stock";
+type LabScreen =
+  | "customers"
+  | "expenses"
+  | "history"
+  | "products"
+  | "sale"
+  | "stock";
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
   return screen === "products" ||
+    screen === "expenses" ||
     screen === "sale" ||
     screen === "stock" ||
     screen === "history"
@@ -235,6 +243,7 @@ export function ScreensLab() {
           {started && screen === "sale" ? <SalePage /> : null}
           {started && screen === "stock" ? <InventoryPage /> : null}
           {started && screen === "history" ? <SaleHistoryPage /> : null}
+          {started && screen === "expenses" ? <ExpensesPage /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

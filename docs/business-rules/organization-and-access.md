@@ -36,6 +36,6 @@ Cada operação exige uma capability própria, verificada no procedimento e repe
 | `sale:assign_customer` | Ler e alterar a atribuição de cliente de uma venda. |
 | `customer:update` | Listar, buscar duplicados, criar, editar, arquivar e restaurar clientes. Na V1 não há `customer:read`, então a leitura de clientes também exige esta capability. |
 | `organization:manage` | Gerenciar perfis de pagamento da organização. |
-| `expense:create` | Reservada para despesas; nenhuma operação a usa ainda. |
+| `expense:create` | Listar, criar, editar, anular e reativar despesas e gerir as categorias de despesa. Na V1 não há `expense:read`, então a leitura de despesas também exige esta capability. |
 
 Um papel novo exige um ADR e a revisão dos pontos em que uma capability de escrita ou de administração faz as vezes de leitura (por exemplo, clientes e perfis de pagamento), para que um papel somente de venda não perca acesso nem ganhe acesso demais.

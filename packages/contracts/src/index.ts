@@ -4,6 +4,12 @@ import {
   MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS,
   WRITE_OFF_REASON_CODES,
 } from "@polaris/domain/inventory/write-off-stock";
+import {
+  EXPENSE_GROUP_KEYS,
+  MAX_EXPENSE_CATEGORY_NAME_LENGTH,
+  MAX_EXPENSE_DESCRIPTION_LENGTH,
+  MAX_EXPENSE_PAYEE_LENGTH,
+} from "@polaris/domain/expenses/expense";
 import { PAYMENT_FEE_MODES } from "@polaris/domain/sales/payment-profile";
 import { SALE_PAYMENT_METHODS } from "@polaris/domain/sales/sale-payment";
 import { z } from "zod";
@@ -107,6 +113,69 @@ const customerDuplicateMatch = z.object({
 export type CustomerDuplicateMatchReadModel = z.infer<
   typeof customerDuplicateMatch
 >;
+
+const expenseGroupKey = z.enum(EXPENSE_GROUP_KEYS);
+const expenseCalendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const expenseCategory = z.object({
+  archivedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  groupKey: expenseGroupKey,
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  organizationId: z.string().min(1),
+  status: z.enum(["active", "archived"]),
+  systemKey: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+
+export type ExpenseCategoryReadModel = z.infer<typeof expenseCategory>;
+
+const expense = z.object({
+  /** Exact BRL decimal with two places, as text. */
+  amount: z.string(),
+  categoryGroup: expenseGroupKey,
+  categoryId: z.string().uuid(),
+  categoryName: z.string().min(1),
+  /** Calendar date (YYYY-MM-DD) of the organization: the period it belongs to. */
+  competenceOn: z.string(),
+  createdAt: z.string().datetime(),
+  description: z.string().min(1),
+  id: z.string().uuid(),
+  organizationId: z.string().min(1),
+  payee: z.string().nullable(),
+  saleId: z.string().uuid().nullable(),
+  status: z.enum(["active", "voided"]),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+  voidedAt: z.string().datetime().nullable(),
+});
+
+export type ExpenseReadModel = z.infer<typeof expense>;
+
+const expenseFields = z.object({
+  amount: z.string().trim().min(1).max(64),
+  categoryId: z.string().uuid(),
+  competenceOn: expenseCalendarDate,
+  description: z.string().trim().min(1).max(MAX_EXPENSE_DESCRIPTION_LENGTH),
+  payee: z.string().trim().max(MAX_EXPENSE_PAYEE_LENGTH).nullish(),
+  saleId: z.string().uuid().nullish(),
+});
+
+const expenseVersionTarget = z.object({
+  expectedVersion: z.number().int().positive(),
+  id: z.string().uuid(),
+  organizationId: z.string().trim().min(1),
+});
+
+const expenseCategoryName = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((name) => [...name].length <= MAX_EXPENSE_CATEGORY_NAME_LENGTH, {
+    message: "invalid_expense_category",
+  });
 
 const paymentFeeConfiguration = z
   .object({
@@ -913,6 +982,73 @@ export const polarisContract = {
           .superRefine(requireCustomerContact)
       )
       .output(z.object({ changed: z.boolean(), customer })),
+  },
+  expense: {
+    archiveCategory: oc
+      .input(expenseVersionTarget)
+      .output(z.object({ category: expenseCategory, changed: z.boolean() })),
+    create: oc
+      .input(expenseFields.extend({ organizationId: z.string().trim().min(1) }))
+      .output(expense),
+    createCategory: oc
+      .input(
+        z.object({
+          group: expenseGroupKey,
+          name: expenseCategoryName,
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(expenseCategory),
+    list: oc
+      .input(
+        z.object({
+          categoryId: z.string().uuid().nullish(),
+          cursor: z.string().max(64).nullish(),
+          from: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullish(),
+          limit: z.number().int().min(1).max(200).default(100),
+          organizationId: z.string().trim().min(1),
+          status: z.enum(["active", "voided", "all"]).default("active"),
+          to: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullish(),
+        })
+      )
+      .output(
+        z.object({
+          count: z.number().int().nonnegative(),
+          expenses: z.array(expense),
+          nextCursor: z.string().nullable(),
+          /** Sum of every expense that matches the filter, not only this page. */
+          total: z.string(),
+        })
+      ),
+    listCategories: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z.enum(["active", "archived", "all"]).default("active"),
+        })
+      )
+      .output(z.object({ categories: z.array(expenseCategory) })),
+    renameCategory: oc
+      .input(expenseVersionTarget.extend({ name: expenseCategoryName }))
+      .output(z.object({ category: expenseCategory, changed: z.boolean() })),
+    restore: oc
+      .input(expenseVersionTarget)
+      .output(z.object({ changed: z.boolean(), expense })),
+    restoreCategory: oc
+      .input(expenseVersionTarget)
+      .output(z.object({ category: expenseCategory, changed: z.boolean() })),
+    update: oc
+      .input(expenseFields.extend(expenseVersionTarget.shape))
+      .output(z.object({ changed: z.boolean(), expense })),
+    void: oc
+      .input(expenseVersionTarget)
+      .output(z.object({ changed: z.boolean(), expense })),
   },
   device: {
     // Devices belong to the signed-in user, never to an organization: no

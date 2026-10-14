@@ -8,6 +8,7 @@
     "./catalog/media": "./src/catalog/media.ts",
     "./catalog/product": "./src/catalog/product.ts",
     "./customers/customer": "./src/customers/customer.ts",
+    "./expenses/expense": "./src/expenses/expense.ts",
     "./inventory/inventory": "./src/inventory/inventory.ts",
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",
     "./inventory/inventory-count": "./src/inventory/inventory-count.ts",

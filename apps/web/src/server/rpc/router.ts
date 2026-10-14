@@ -112,6 +112,19 @@ import {
   InvalidCustomerProfileError,
 } from "@polaris/domain/customers/customer";
 import {
+  ExpenseCategoryNameConflictError,
+  ExpenseCategoryNotFoundError,
+  ExpenseCategoryUnavailableError,
+  ExpenseCategoryVersionConflictError,
+  ExpenseCompetenceOutOfRangeError,
+  ExpenseNotFoundError,
+  ExpenseSaleNotFoundError,
+  ExpenseVersionConflictError,
+  ExpenseVoidedError,
+  InvalidExpenseCategoryError,
+  InvalidExpenseError,
+} from "@polaris/domain/expenses/expense";
+import {
   InsufficientStockError,
   InvalidStockMovementError,
   InventoryOccurredInFutureError,
@@ -199,6 +212,7 @@ import {
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
+import type { ExpenseRepository } from "./expense-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
 import {
@@ -210,6 +224,7 @@ import {
   createInitialOrganization,
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
+import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
@@ -255,6 +270,7 @@ interface RpcRouterDependencies {
   createPaymentProfile: typeof createPaymentProfile;
   createProduct: typeof createProduct;
   createSaleReturn: typeof createSaleReturn;
+  expenseRepository: Partial<ExpenseRepository>;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
@@ -581,6 +597,11 @@ const badRequestRpcErrors = [
   ],
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
   [
+    InvalidExpenseError,
+    InvalidExpenseCategoryError,
+    ExpenseCompetenceOutOfRangeError,
+  ],
+  [
     InvalidDeviceLabelError,
     InvalidSyncCursorError,
     InvalidVariantListPriceError,
@@ -646,6 +667,13 @@ const conflictRpcErrors = [
     ProductCategoryUnavailableError,
   ],
   [
+    ExpenseCategoryNameConflictError,
+    ExpenseCategoryUnavailableError,
+    ExpenseCategoryVersionConflictError,
+    ExpenseVersionConflictError,
+    ExpenseVoidedError,
+  ],
+  [
     ProductDeletedError,
     ProductLifecycleError,
     ProductStockNotEmptyError,
@@ -684,6 +712,11 @@ const notFoundRpcErrors = [
     InventoryVariantNotFoundError,
   ],
   [SaleNotFoundError],
+  [
+    ExpenseCategoryNotFoundError,
+    ExpenseNotFoundError,
+    ExpenseSaleNotFoundError,
+  ],
   [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;
 
@@ -1135,6 +1168,12 @@ export function createRpcRouter(
   });
   const customerHandlers = createCustomerRpcHandlers({
     ...overrides,
+    withTenantRequestContext: tenantRequest,
+  });
+  const expenseHandlers = createExpenseRpcHandlers({
+    expenseRepository: overrides.expenseRepository,
+    requestAuditId,
+    toRpcError,
     withTenantRequestContext: tenantRequest,
   });
   const paymentProfileHandlers = createPaymentProfileRpcHandlers({
@@ -1687,6 +1726,7 @@ export function createRpcRouter(
     category: { archive, create, delete: remove, list, rename, restore },
     customer: customerHandlers,
     device: offlineHandlers.device,
+    expense: expenseHandlers,
     inventory: {
       getBalance: inventoryHandlers.getBalance,
       inventoryCount: inventoryHandlers.count,
