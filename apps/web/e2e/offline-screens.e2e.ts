@@ -377,3 +377,75 @@ test.describe("estoque", () => {
     await expect(chip(page)).not.toContainText("operação guardada");
   });
 });
+
+const SHIRT_ENTRY = {
+  isDefaultVariant: false,
+  listPrice: "50.00",
+  movingAverageCost: null,
+  productId: "0199c2d0-0000-7000-8000-0000000000f1",
+  productName: "Camiseta do laboratório",
+  productStatus: "active",
+  quantity: 5,
+  sku: "CAM-AZ-M",
+  updatedAt: "2026-10-14T12:00:00.000Z",
+  values: [{ optionName: "color", optionValueName: "Azul" }],
+  variantId: "0199c2d0-0000-7000-8000-0000000000b1",
+  version: 1,
+};
+
+/** The server answers the reads of the sale form, but the sale itself never gets an answer. */
+async function serveSaleReadsOnly(page: Page) {
+  await page.route("**/rpc/paymentProfile/list", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ json: { profiles: [] }, meta: [] }),
+      contentType: "application/json",
+    })
+  );
+  await page.route("**/rpc/inventory/listBalances", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        json: { entries: [SHIRT_ENTRY], nextCursor: null },
+        meta: [],
+      }),
+      contentType: "application/json",
+    })
+  );
+  await page.route("**/rpc/sale/confirm", (route) =>
+    route.abort("connectionreset")
+  );
+}
+
+test.describe("venda sem resposta do servidor", () => {
+  test("a venda travada pode ser guardada no aparelho como a mesma venda, e o servidor a recebe uma vez", async ({
+    page,
+  }) => {
+    await serveSaleReadsOnly(page);
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+
+    await fillShirtSale(page, 1);
+    await page.getByLabel("Perfil de pagamento").selectOption({
+      label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
+    });
+    await page.getByRole("button", { name: "Confirmar venda" }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Tentar novamente (seguro)" })
+    ).toBeVisible();
+    await expect(
+      page.getByText("Sem resposta do servidor, a venda pode ser guardada")
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Guardar esta venda neste aparelho" })
+      .click();
+
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+    // the runtime is online: the same command reaches the server, once
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+  });
+});

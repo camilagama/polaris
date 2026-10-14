@@ -26,7 +26,11 @@ import {
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import "./sale-page.css";
 import { confirmOnServer } from "./confirm-on-server";
-import { confirmOnDevice } from "./confirm-outcome";
+import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
+import type {
+  OfflineRuntime,
+  RuntimeContext,
+} from "../offline/runtime/offline-runtime";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -58,6 +62,7 @@ import {
   type ChoiceOption,
   type ConfirmedSaleView,
   cancelDiscard,
+  canKeepLockedSaleOnDevice,
   canStartSubmission,
   createBlankSaleForm,
   discardLockedSale,
@@ -137,6 +142,9 @@ const noProfileOption: ChoiceOption = {
 const newId = () => crypto.randomUUID();
 
 type PreparedOk = Extract<PreparedConfirmation, { ok: true }>;
+
+const itemLabels = (items: readonly ItemDraft[]) =>
+  new Map(items.map((item) => [item.variantId, item.label]));
 
 type LocalSearch = (query: string) => Promise<{
   entries: readonly InventoryBalanceEntryReadModel[];
@@ -813,6 +821,7 @@ interface SummaryPanelProps {
   onDiscardCancel: () => void;
   onDiscardConfirm: () => void;
   onDiscardRequest: () => void;
+  onKeepOnDevice: (() => void) | undefined;
   onRefresh: () => void;
   showRequired: boolean;
   submission: SubmissionState;
@@ -826,6 +835,7 @@ function SummaryPanel({
   onDiscardConfirm,
   onDiscardRequest,
   offline,
+  onKeepOnDevice,
   onRefresh,
   showRequired,
   submission,
@@ -897,6 +907,7 @@ function SummaryPanel({
         onDiscardCancel={onDiscardCancel}
         onDiscardConfirm={onDiscardConfirm}
         onDiscardRequest={onDiscardRequest}
+        onKeepOnDevice={onKeepOnDevice}
         onRefresh={onRefresh}
         submission={submission}
       />
@@ -915,6 +926,8 @@ interface FailureNoticeProps {
   onDiscardCancel: () => void;
   onDiscardConfirm: () => void;
   onDiscardRequest: () => void;
+  /** Keeps a locked sale on this device as the same sale (only when it can carry it). */
+  onKeepOnDevice: (() => void) | undefined;
   onRefresh: () => void;
   submission: SubmissionState;
 }
@@ -924,6 +937,7 @@ function FailureNotice({
   onDiscardCancel,
   onDiscardConfirm,
   onDiscardRequest,
+  onKeepOnDevice,
   onRefresh,
   submission,
 }: FailureNoticeProps) {
@@ -970,13 +984,31 @@ function FailureNotice({
           </div>
         </>
       ) : (
-        <button
-          className="quiet-button"
-          onClick={onDiscardRequest}
-          type="button"
-        >
-          Descartar esta venda e começar outra
-        </button>
+        <>
+          {onKeepOnDevice ? (
+            <>
+              <p className="sale-hint">
+                Sem resposta do servidor, a venda pode ser guardada neste
+                aparelho como a mesma venda: se o servidor já a registrou, ele a
+                reconhece quando o aparelho enviar e nada é duplicado.
+              </p>
+              <button
+                className="quiet-button"
+                onClick={onKeepOnDevice}
+                type="button"
+              >
+                Guardar esta venda neste aparelho
+              </button>
+            </>
+          ) : null}
+          <button
+            className="quiet-button"
+            onClick={onDiscardRequest}
+            type="button"
+          >
+            Descartar esta venda e começar outra
+          </button>
+        </>
       )}
     </div>
   );
@@ -1258,18 +1290,12 @@ export function SalePage() {
     [activeProfiles, editForm]
   );
 
-  /** Tries the confirmation (on the server, or on the device when offline) and applies its outcome. */
-  const settleConfirmation = useCallback(
-    async (prepared: PreparedOk) => {
-      // Read again at the click: the connection may have changed since the render.
-      const stores = offlineWorkspace?.runtime.context() ?? null;
-      const outcome = stores
-        ? await confirmOnDevice(
-            prepared,
-            stores,
-            new Map(form.items.map((item) => [item.variantId, item.label]))
-          )
-        : await confirmOnServer(prepared);
+  /** What the page does once a confirmation settled, on the server or on the device. */
+  const applyOutcome = useCallback(
+    (
+      outcome: ConfirmationOutcome,
+      device: { runtime: OfflineRuntime; stores: RuntimeContext } | null
+    ) => {
       rememberAttempt(outcome.attempt);
       if (outcome.prices) {
         const remembered = mergeLastPrices(
@@ -1285,24 +1311,34 @@ export function SalePage() {
         return;
       }
       const blank = createBlankSaleForm(newId);
-      setForm(stores ? formForOfflineSale(blank) : blank);
+      setForm(device ? formForOfflineSale(blank) : blank);
       setShowRequired(false);
       resetStock();
-      if (offlineWorkspace && stores) {
-        offlineWorkspace.runtime.localDataChanged();
-        offlineWorkspace.runtime.refreshCounts().catch(() => undefined);
+      if (device) {
+        device.runtime.localDataChanged();
+        device.runtime.refreshCounts().catch(() => undefined);
         // sends it now when the connection came back since the render
-        offlineWorkspace.runtime.syncNow().catch(() => undefined);
+        device.runtime.syncNow().catch(() => undefined);
       }
     },
-    [
-      form.items,
-      lastPrices,
-      offlineWorkspace,
-      organizationId,
-      rememberAttempt,
-      resetStock,
-    ]
+    [lastPrices, organizationId, rememberAttempt, resetStock]
+  );
+
+  /** Tries the confirmation (on the server, or on the device when offline) and applies its outcome. */
+  const settleConfirmation = useCallback(
+    async (prepared: PreparedOk) => {
+      // Read again at the click: the connection may have changed since the render.
+      const stores = offlineWorkspace?.runtime.context() ?? null;
+      if (offlineWorkspace && stores) {
+        applyOutcome(
+          await confirmOnDevice(prepared, stores, itemLabels(form.items)),
+          { runtime: offlineWorkspace.runtime, stores }
+        );
+        return;
+      }
+      applyOutcome(await confirmOnServer(prepared), null);
+    },
+    [applyOutcome, form.items, offlineWorkspace]
   );
 
   const handleSubmit = useCallback(
@@ -1355,6 +1391,75 @@ export function SalePage() {
       submission,
     ]
   );
+  const keepLockedAllowed = canKeepLockedSaleOnDevice(
+    submission,
+    attemptRef.current,
+    evaluation
+  );
+  /**
+   * An unknown outcome on the server, moved to the device as the SAME sale
+   * (same command ID and payload). If the device cannot keep it, the sale stays
+   * locked as it was: it is never unlocked for editing, which could record it twice.
+   */
+  const handleKeepLocked = useCallback(async () => {
+    const stores = workspace?.runtime.context() ?? null;
+    if (!(workspace && stores) || inFlightRef.current) {
+      return;
+    }
+    const clickedAt = new Date();
+    const fresh = evaluateSaleForm(
+      form,
+      { profiles: activeProfiles, stock: catalog.stock },
+      { now: clickedAt, showRequired: true }
+    );
+    const { body } = fresh;
+    if (
+      body === null ||
+      !canKeepLockedSaleOnDevice(submission, attemptRef.current, fresh)
+    ) {
+      return;
+    }
+    const prepared = prepareConfirmation({
+      body,
+      createId: newId,
+      now: clickedAt,
+      occurredAtOverride: null,
+      organizationId,
+      previousAttempt: attemptRef.current,
+    });
+    if (!prepared.ok || prepared.attempt !== attemptRef.current) {
+      return;
+    }
+    const before = submission;
+    inFlightRef.current = true;
+    setSubmission(startSubmission(before));
+    try {
+      const outcome = await confirmOnDevice(
+        prepared,
+        stores,
+        itemLabels(form.items)
+      );
+      if (outcome.completed) {
+        applyOutcome(outcome, { runtime: workspace.runtime, stores });
+      } else {
+        setSubmission(before);
+      }
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [
+    activeProfiles,
+    applyOutcome,
+    catalog.stock,
+    form,
+    organizationId,
+    submission,
+    workspace,
+  ]);
+  const handleKeepLockedEvent = useCallback(() => {
+    handleKeepLocked().catch(() => undefined);
+  }, [handleKeepLocked]);
+
   const handleDiscardRequest = useCallback(
     () => setSubmission((current) => requestDiscard(current)),
     []
@@ -1525,6 +1630,7 @@ export function SalePage() {
           onDiscardCancel={handleDiscardCancel}
           onDiscardConfirm={handleDiscardConfirm}
           onDiscardRequest={handleDiscardRequest}
+          onKeepOnDevice={keepLockedAllowed ? handleKeepLockedEvent : undefined}
           onRefresh={handleRefresh}
           showRequired={showRequired}
           submission={submission}

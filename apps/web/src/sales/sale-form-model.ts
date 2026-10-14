@@ -2123,6 +2123,28 @@ export interface QueuedSaleView {
   totalDue: string;
 }
 
+/**
+ * A sale whose outcome on the server is unknown can be kept on the device as the
+ * SAME sale (same command ID, same payload), which the server then recognizes
+ * instead of recording twice, only when the device command can carry exactly
+ * what was sent: no payment profile and no typed date (the offline command has
+ * neither).
+ */
+export function canKeepLockedSaleOnDevice(
+  state: SubmissionState,
+  attempt: SaleAttempt | null,
+  evaluation: SaleEvaluation
+): boolean {
+  return (
+    state.phase === "locked" &&
+    attempt !== null &&
+    evaluation.body !== null &&
+    evaluation.body.paymentProfile === null &&
+    evaluation.occurredAtOverride === null &&
+    attempt.occurredAt === attempt.recordedAt
+  );
+}
+
 export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
   return { phase: "queued", sale };
 }
