@@ -65,6 +65,7 @@ const gates: Gate[] = [
   ["bootstrap", "verify-bootstrap-gate.ts"],
   ["sync-push", "verify-sync-push-gate.ts"],
   ["offline-product", "verify-offline-product-gate.ts"],
+  ["offline-customer", "verify-offline-customer-gate.ts"],
   ["offline-stock", "verify-offline-stock-gate.ts"],
   ["offline-sale", "verify-offline-sale-gate.ts"],
   // lives in apps/web: it needs the real offline client and the real server handlers
@@ -138,6 +139,7 @@ const suites: Record<string, string[]> = {
     "bootstrap",
     "sync-push",
     "offline-product",
+    "offline-customer",
     "offline-stock",
     "offline-sale",
     "offline-e2e",
@@ -162,6 +164,7 @@ const suites: Record<string, string[]> = {
     "bootstrap",
     "sync-push",
     "offline-product",
+    "offline-customer",
     "offline-stock",
     "offline-sale",
     "offline-e2e",

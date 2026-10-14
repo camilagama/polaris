@@ -1,5 +1,6 @@
 import type { LocalWriter } from "./bootstrap";
 import { discardPendingCustomer } from "./customer-create";
+import { discardPendingCustomerUpdate } from "./customer-update";
 import type { OutboxCommand } from "./outbox/command";
 import type { Outbox, OutboxSnapshot } from "./outbox/outbox";
 import { discardPendingProduct } from "./product-create";
@@ -45,7 +46,7 @@ export interface AttentionItem {
   commandId: string;
   /** What the person can do about it, in plain words. */
   detail: string;
-  kind: "customer" | "product" | "sale" | "stock";
+  kind: "customer" | "customer_update" | "product" | "sale" | "stock";
   title: string;
 }
 
@@ -68,6 +69,8 @@ const ACCOUNT_CAUSES: Readonly<Record<string, AttentionCause>> = {
 const DATA_CAUSES: Readonly<Record<string, AttentionCause>> = {
   category_unavailable: "unavailable",
   customer_id_conflict: "id_conflict",
+  customer_not_found: "unavailable",
+  customer_version_conflict: "version_conflict",
   insufficient_stock: "insufficient_stock",
   inventory_version_conflict: "version_conflict",
   payment_profile_changed: "profile_changed",
@@ -93,6 +96,9 @@ function causeOf(code: string): AttentionCause {
 function kindOf(command: OutboxCommand): AttentionItem["kind"] | null {
   if (command.type === "customer.create") {
     return "customer";
+  }
+  if (command.type === "customer.update") {
+    return "customer_update";
   }
   if (command.type === "product.create") {
     return "product";
@@ -120,6 +126,9 @@ function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
   if (kind === "customer") {
     return `Cliente ${String(field(command, "name") ?? "")}`.trim();
   }
+  if (kind === "customer_update") {
+    return `Alteração do cliente ${String(field(command, "name") ?? "")}`.trim();
+  }
   if (kind === "product") {
     return `Produto ${String(field(command, "name") ?? "")}`.trim();
   }
@@ -141,12 +150,17 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
         ? "O estoque do servidor não cobre esta venda: outro aparelho vendeu ou baixou estoque enquanto este estava sem rede. Receba o estoque que falta e reenvie a venda, ou descarte-a se ela não aconteceu."
         : "O estoque do servidor é menor do que este aparelho mostrava. Descarte a baixa, confira o saldo atual e registre de novo se ainda fizer sentido.";
     case "version_conflict":
-      return "O saldo mudou depois da sua contagem: outro aparelho moveu o estoque. Descarte esta contagem e conte de novo com o saldo atualizado.";
+      return kind === "customer_update"
+        ? "Este cliente foi alterado em outro lugar depois que este aparelho o viu, então a sua alteração não foi aplicada e nada foi sobrescrito. Descarte-a, confira o cadastro atual e edite de novo se ainda fizer sentido."
+        : "O saldo mudou depois da sua contagem: outro aparelho moveu o estoque. Descarte esta contagem e conte de novo com o saldo atualizado.";
     case "sku_conflict":
       return "Outro produto já usa este SKU. Descarte este cadastro e crie o produto de novo com outro SKU.";
     case "id_conflict":
       return "Este registro colidiu com outro que já existe. Descarte-o e cadastre de novo.";
     case "unavailable":
+      if (kind === "customer_update") {
+        return "Este cliente não existe mais nesta organização. Descarte a alteração.";
+      }
       return kind === "sale"
         ? "Um dos produtos desta venda não está mais disponível (arquivado, removido ou inexistente). Restaure o produto e reenvie a venda, ou descarte-a."
         : "O produto ou a categoria deste registro não está mais disponível. Restaure-o e refaça o registro.";
@@ -231,6 +245,8 @@ export function discardWarning(item: AttentionItem): string {
       return "O produto e o estoque de abertura digitados serão apagados deste aparelho.";
     case "customer":
       return "O cliente será apagado deste aparelho.";
+    case "customer_update":
+      return "A alteração será apagada deste aparelho. O cadastro continua como está no servidor.";
     default:
       return "Este movimento de estoque será apagado deste aparelho e não será registrado.";
   }
@@ -252,6 +268,9 @@ export async function discardAttentionItem(
   switch (item.kind) {
     case "customer":
       await discardPendingCustomer(outbox, writer, item.commandId);
+      return;
+    case "customer_update":
+      await discardPendingCustomerUpdate(outbox, item.commandId);
       return;
     case "product":
       await discardPendingProduct(outbox, writer, item.commandId);

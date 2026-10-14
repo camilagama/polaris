@@ -9,6 +9,7 @@ import {
   resubmitAttentionItem,
 } from "./attention";
 import { createOfflineCustomer } from "./customer-create";
+import { updateOfflineCustomer } from "./customer-update";
 import { MemoryOutboxStorage } from "./outbox/memory-storage";
 import { Outbox } from "./outbox/outbox";
 import { createOfflineProduct } from "./product-create";
@@ -112,6 +113,16 @@ async function setup() {
         newCustomerId: () => uuid(500 + counter),
       })
     ).command;
+  const customerEdit = async (name: string) =>
+    await updateOfflineCustomer({
+      current: { id: uuid(700), version: 3 },
+      deviceId,
+      input: { name, phone: "1" },
+      lease,
+      newCommandId: id,
+      organizationId,
+      outbox,
+    });
   const stockBase = {
     ...common,
     occurredOn: "2026-10-14",
@@ -120,6 +131,7 @@ async function setup() {
   };
   return {
     customer,
+    customerEdit,
     id,
     lease,
     outbox,
@@ -302,11 +314,48 @@ describe("resolving an item", () => {
       detail: "",
       title: "",
     } as const;
-    for (const kind of ["sale", "product", "customer", "stock"] as const) {
+    for (const kind of [
+      "sale",
+      "product",
+      "customer",
+      "customer_update",
+      "stock",
+    ] as const) {
       expect(discardWarning({ ...base, actions: ["discard"], kind })).toContain(
         "apagad"
       );
     }
+  });
+});
+
+describe("a customer edit that the server refused", () => {
+  it("says the customer changed elsewhere and offers only to discard, changing no local row", async () => {
+    const { customerEdit, outbox, refuse, writer } = await setup();
+    const edit = await customerEdit("Ana Lima");
+    await refuse(edit.commandId, "customer_version_conflict");
+    const item = await itemOf(outbox);
+
+    expect(item).toMatchObject({
+      actions: ["discard"],
+      cause: "version_conflict",
+      code: "customer_version_conflict",
+      kind: "customer_update",
+      title: "Alteração do cliente Ana Lima",
+    });
+    expect(item.detail).toContain("nada foi sobrescrito");
+    expect(item.detail).not.toContain("saldo");
+    expect(discardWarning(item)).toContain("cadastro continua");
+
+    await discardAttentionItem(item, { outbox, writer });
+    expect((await outbox.snapshot()).commands).toEqual([]);
+  });
+
+  it("says the customer no longer exists", async () => {
+    const { customerEdit, outbox, refuse } = await setup();
+    await refuse((await customerEdit("Ana")).commandId, "customer_not_found");
+    const item = await itemOf(outbox);
+    expect(item.cause).toBe("unavailable");
+    expect(item.detail).toContain("não existe mais");
   });
 });
 
