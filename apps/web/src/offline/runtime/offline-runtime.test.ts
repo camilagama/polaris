@@ -7,6 +7,7 @@ import { Outbox } from "../outbox/outbox";
 import { createOfflineProduct } from "../product-create";
 import { FakeCatalogServer, FakeWriter } from "../test-support";
 import {
+  type DataChannel,
   type KeyValueStore,
   OfflineRuntime,
   type OpenedStores,
@@ -51,6 +52,32 @@ function world(options: { leaseHours?: number } = {}) {
   const stores = new Map<string, { outbox: Outbox; writer: FakeWriter }>();
   const closed: string[] = [];
   const purged: { discardPending: boolean }[] = [];
+  // two tabs: every channel of a name hears the posts of the others, never its own
+  const bus = new Map<string, Set<{ listener: () => void }>>();
+  const openDataChannel = (name: string): DataChannel => {
+    const mine: { listener: () => void } = { listener: () => undefined };
+    const members = bus.get(name) ?? new Set();
+    members.add(mine);
+    bus.set(name, members);
+    return {
+      close: () => {
+        members.delete(mine);
+      },
+      post: () => {
+        for (const member of members) {
+          if (member !== mine) {
+            member.listener();
+          }
+        }
+      },
+      subscribe: (listener) => {
+        mine.listener = listener;
+        return () => {
+          mine.listener = () => undefined;
+        };
+      },
+    };
+  };
 
   const issue = async (deviceId: string, org: string) => {
     const lease = await signOfflineLease(
@@ -114,6 +141,7 @@ function world(options: { leaseHours?: number } = {}) {
           userId: user,
         }),
       now: () => clock,
+      openDataChannel,
       openStores: (namespace, deviceId) => {
         const existing = stores.get(namespace.key);
         const value = existing ?? {
@@ -515,5 +543,36 @@ describe("the data version the screens read by", () => {
     await queueProduct(runtime, "Calça", 2);
     const rows = await runtime.context()?.writer.rows("products");
     expect(rows?.map((row) => row.name).sort()).toEqual(["Calça", "Camiseta"]);
+  });
+});
+
+describe("two tabs of the same namespace", () => {
+  it("a change in one makes the other read again, and the news does not echo back", async () => {
+    const w = world();
+    const first = w.make();
+    const second = w.make();
+    await first.start(organizationId);
+    await second.start(organizationId);
+    const before = second.getSnapshot().dataVersion;
+    const firstBefore = first.getSnapshot().dataVersion;
+
+    first.localDataChanged();
+
+    expect(first.getSnapshot().dataVersion).toBe(firstBefore + 1);
+    expect(second.getSnapshot().dataVersion).toBe(before + 1);
+    // the second tab heard it but did not announce it again
+    expect(first.getSnapshot().dataVersion).toBe(firstBefore + 1);
+  });
+
+  it("a tab that closed its stores no longer hears the others", async () => {
+    const w = world();
+    const first = w.make();
+    const second = w.make();
+    await first.start(organizationId);
+    await second.start(organizationId);
+    await second.stop();
+    const before = second.getSnapshot().dataVersion;
+    first.localDataChanged();
+    expect(second.getSnapshot().dataVersion).toBe(before);
   });
 });

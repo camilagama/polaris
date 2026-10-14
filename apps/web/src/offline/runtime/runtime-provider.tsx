@@ -4,6 +4,7 @@ import { orpcClient } from "../../lib/orpc";
 import { getUpdateStore } from "../../pwa/runtime";
 import { purgeNamespace } from "../logout-purge";
 import { localNamespace } from "../namespace";
+import { openBrowserDataChannel } from "./data-channel";
 import { OFFLINE_RUNTIME_ENABLED } from "./enabled";
 import { OfflineRuntime } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
@@ -46,6 +47,7 @@ function createBrowserRuntime(): OfflineRuntime {
       },
     },
     namespaceFor: localNamespace,
+    openDataChannel: openBrowserDataChannel,
     openStores: openRuntimeStores,
     purge: purgeNamespace,
   });

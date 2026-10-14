@@ -449,3 +449,24 @@ test.describe("venda sem resposta do servidor", () => {
     });
   });
 });
+
+test("duas abas do mesmo usuário: o cadastro feito numa aparece na outra sem recarregar", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const user = `user-${crypto.randomUUID()}`;
+  const first = await context.newPage();
+  const second = await context.newPage();
+  await openLab(first, user);
+  await start(first);
+  await openLab(second, user);
+  await start(second);
+  await first.getByLabel("Rede disponível").uncheck();
+  await second.getByLabel("Rede disponível").uncheck();
+
+  await register(first, { name: "Eva das Abas", phone: "11900000009" });
+  await expect(card(first, "Eva das Abas")).toBeVisible();
+  await expect(card(second, "Eva das Abas")).toBeVisible({ timeout: 15_000 });
+  await expect(card(second, "Eva das Abas")).toContainText("Aguardando envio");
+  await context.close();
+});

@@ -64,6 +64,13 @@ export interface OpenedStores {
   writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
 }
 
+/** Tells the other tabs of this namespace that the local rows changed, and hears them. */
+export interface DataChannel {
+  close: () => void;
+  post: () => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
 export interface RuntimeDependencies {
   api: RuntimeApi;
   deviceLabel?: string | null;
@@ -74,6 +81,8 @@ export interface RuntimeDependencies {
     organizationId: string
   ) => Promise<LocalNamespace>;
   now?: () => Date;
+  /** Cross-tab news (BroadcastChannel in the browser); without it tabs refresh on their own syncs. */
+  openDataChannel?: (name: string) => DataChannel;
   openStores: (
     namespace: LocalNamespace,
     deviceId: string
@@ -150,6 +159,8 @@ export class OfflineRuntime {
     syncing: false,
   };
   private stores: OpenedStores | null = null;
+  private channel: DataChannel | null = null;
+  private stopListening: (() => void) | null = null;
   private namespace: LocalNamespace | null = null;
   private organizationId: string | null = null;
   private deviceId: string | null = null;
@@ -343,6 +354,7 @@ export class OfflineRuntime {
   /** Tells the screens that read the local collections to read them again (call after writing to them). */
   localDataChanged(): void {
     this.set({ ...this.snapshot, dataVersion: this.snapshot.dataVersion + 1 });
+    this.channel?.post();
   }
 
   /** Re-reads the queue figures (call after queueing or resolving a command). */
@@ -383,8 +395,22 @@ export class OfflineRuntime {
     this.lease = null;
   }
 
+  /** Another tab changed the shared rows: read them (and the queue) again. */
+  private onRemoteChange() {
+    this.set({ ...this.snapshot, dataVersion: this.snapshot.dataVersion + 1 });
+    this.refreshCounts().catch(() => undefined);
+  }
+
+  private closeChannel() {
+    this.stopListening?.();
+    this.stopListening = null;
+    this.channel?.close();
+    this.channel = null;
+  }
+
   private async closeStores() {
     const { stores } = this;
+    this.closeChannel();
     this.stores = null;
     this.namespace = null;
     await stores?.close();
@@ -584,6 +610,13 @@ export class OfflineRuntime {
     }
     this.stores = stores;
     this.namespace = namespace;
+    this.closeChannel();
+    this.channel =
+      this.dependencies.openDataChannel?.(
+        `${namespace.coordinatorName}:changed`
+      ) ?? null;
+    this.stopListening =
+      this.channel?.subscribe(() => this.onRemoteChange()) ?? null;
     this.deviceId = deviceId;
     this.lease = lease;
     await stores.outbox.recoverInterrupted();
@@ -645,6 +678,7 @@ export class OfflineRuntime {
         reason: null,
         syncing: false,
       });
+      this.channel?.post();
     } catch {
       // a partial sync may still have changed rows (accepted commands, pulled pages)
       this.set({
@@ -653,6 +687,7 @@ export class OfflineRuntime {
         reason: "sync_failed",
         syncing: false,
       });
+      this.channel?.post();
     }
     await this.refreshCounts();
   }

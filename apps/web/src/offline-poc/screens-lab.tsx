@@ -13,6 +13,7 @@ import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { purgeNamespace } from "../offline/logout-purge";
 import { localNamespace } from "../offline/namespace";
+import { openBrowserDataChannel } from "../offline/runtime/data-channel";
 import { OfflineRuntime } from "../offline/runtime/offline-runtime";
 import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
@@ -121,6 +122,7 @@ export function ScreensLab() {
           write: (key, value) => window.localStorage.setItem(key, value),
         },
         namespaceFor: localNamespace,
+        openDataChannel: openBrowserDataChannel,
         openStores: openRuntimeStores,
         purge: purgeNamespace,
       }),
