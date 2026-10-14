@@ -7,7 +7,7 @@ import type {
 import type { LocalWriter } from "./bootstrap";
 import type { OutboxCommand } from "./outbox/command";
 import type { Outbox } from "./outbox/outbox";
-import { applyQueuedStock } from "./stock-commands";
+import { applyQueuedStock, queuedCommandsByVariant } from "./stock-commands";
 
 /**
  * Variants with their balances, built from this device's collections: the shape
@@ -34,6 +34,7 @@ export function localStockEntries(
       .map((product) => [product.id, product])
   );
   const balances = new Map(rows.inventory.map((row) => [row.variantId, row]));
+  const queued = queuedCommandsByVariant(rows.commands);
   const entries: InventoryBalanceEntryReadModel[] = [];
   for (const variant of rows.variants) {
     const product = products.get(variant.productId);
@@ -43,7 +44,7 @@ export function localStockEntries(
     const balance = balances.get(variant.id);
     const effective = applyQueuedStock(
       { quantity: balance?.quantity ?? 0, version: balance?.version ?? 0 },
-      rows.commands,
+      queued.get(variant.id) ?? [],
       variant.id
     );
     entries.push({

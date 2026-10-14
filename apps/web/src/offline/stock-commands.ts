@@ -160,6 +160,37 @@ function applyCommand(
 }
 
 /**
+ * The queued commands that can change each variant's balance, by variant, in
+ * queue order. A screen listing thousands of variants applies only the few
+ * commands that touch each one instead of the whole queue to every variant.
+ */
+export function queuedCommandsByVariant(
+  commands: readonly OutboxCommand[]
+): Map<string, OutboxCommand[]> {
+  const byVariant = new Map<string, OutboxCommand[]>();
+  const add = (variantId: string, command: OutboxCommand) => {
+    const list = byVariant.get(variantId);
+    if (list) {
+      if (list.at(-1) !== command) {
+        list.push(command);
+      }
+    } else {
+      byVariant.set(variantId, [command]);
+    }
+  };
+  for (const command of commands) {
+    const direct = stockVariantOf(command);
+    if (direct !== null) {
+      add(direct, command);
+    }
+    for (const line of saleLinesOf(command)) {
+      add(line.variantId, command);
+    }
+  }
+  return byVariant;
+}
+
+/**
  * A balance with the movements and sales still waiting in the queue applied, in
  * queue order. Refused commands do not count: they were not applied. Pure, so a
  * screen that lists many variants reads the queue once and applies it to each.

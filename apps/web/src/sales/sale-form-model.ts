@@ -114,6 +114,11 @@ interface ProfileSelectionDraft {
   reviewNotice: string | null;
   /** Version of the chosen profile the operator last reviewed. */
   seenVersion: number | null;
+  /**
+   * What the person had chosen before the offline form took the profile away;
+   * put back when the connection returns. Absent when nothing was taken.
+   */
+  restore?: ProfileSelectionDraft | undefined;
 }
 
 export interface SaleFormState {
@@ -2176,20 +2181,23 @@ export function formForOfflineSale(form: SaleFormState): SaleFormState {
     occurredAtLocal: "",
     profile: {
       choice: NO_PROFILE_CHOICE,
+      // keep the earliest choice: applying this twice must not remember "no profile" as the person's
+      restore: form.profile.restore ?? form.profile,
       reviewNotice: null,
       seenVersion: null,
     },
   };
 }
 
-/** Back online: the "no profile" choice the offline form made for the person is undone. */
+/**
+ * Back online: the choice the person had before the offline form took the profile
+ * away is put back (a real profile, a deliberate "no profile", or nothing yet).
+ */
 export function formForOnlineSale(form: SaleFormState): SaleFormState {
-  return form.profile.choice === NO_PROFILE_CHOICE
-    ? {
-        ...form,
-        profile: { choice: "", reviewNotice: null, seenVersion: null },
-      }
-    : form;
+  const { restore } = form.profile;
+  return restore === undefined
+    ? form
+    : { ...form, profile: { ...restore, restore: undefined } };
 }
 
 export const idleSubmission: SubmissionState = { phase: "idle" };

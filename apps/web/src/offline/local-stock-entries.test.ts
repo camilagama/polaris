@@ -182,3 +182,39 @@ describe("local stock entries", () => {
     expect(limited.more).toBe(true);
   });
 });
+
+describe("the queue applied to many variants", () => {
+  it("gives the same balances as applying the whole queue to each one, with a sale of several lines and a refused command", () => {
+    const base = rows();
+    const multi = {
+      ...sale(11, 1),
+      commandId: uuid(950),
+      payload: {
+        items: [
+          { quantity: 1, variantId: uuid(11) },
+          { quantity: 2, variantId: uuid(13) },
+          { quantity: 1, variantId: uuid(11) },
+        ],
+      },
+    } as unknown as OutboxCommand;
+    const refused = {
+      ...sale(12, 4),
+      commandId: uuid(951),
+      status: "rejected",
+    } as unknown as OutboxCommand;
+    const entries = localStockEntries({
+      ...base,
+      commands: [multi, refused, sale(13, 1)],
+    });
+    const quantity = (n: number) =>
+      entries.find((entry) => entry.variantId === uuid(n))?.quantity;
+    // 11: 5 - 1 - 1; 13: 3 - 2 - 1 (the sale lines apply in queue order, one step each)
+    expect(quantity(11)).toBe(3);
+    expect(quantity(13)).toBe(0);
+    // the refused command did not count
+    expect(quantity(12)).toBe(0);
+    expect(entries.find((entry) => entry.variantId === uuid(11))?.version).toBe(
+      3
+    );
+  });
+});
