@@ -63,6 +63,11 @@ export class FakeWriter implements LocalWriter {
     }
     return Promise.resolve();
   }
+  rows<K extends BootstrapCollectionName>(collection: K) {
+    return Promise.resolve([
+      ...this.data[collection].values(),
+    ] as LocalRows[K][]);
+  }
   variantKeysOfProducts(productIds: string[]) {
     return Promise.resolve(
       [...this.data.variants.values()]

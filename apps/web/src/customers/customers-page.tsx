@@ -13,6 +13,17 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import {
+  createOfflineCustomer,
+  type PendingCustomer,
+  pendingCustomers,
+} from "../offline/customer-create";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import {
+  findLocalDuplicates,
+  listLocalCustomers,
+  toLocalCustomerRow,
+} from "./local-customers";
 import "./customers-page.css";
 
 type CustomerListStatus = "active" | "archived";
@@ -362,19 +373,32 @@ function CustomerForm({
 interface CustomerCardProps {
   customer: CustomerReadModel;
   isPending: boolean;
+  /** Why editing, archiving and restoring are unavailable for this customer, or null. */
+  lockedReason: string | null;
   onArchive: (customer: CustomerReadModel) => void;
   onEdit: (customer: CustomerReadModel) => void;
   onRestore: (customer: CustomerReadModel) => void;
   pendingAction: string | null;
+  /** The customer was created on this device and the server has not confirmed it yet. */
+  syncState: PendingCustomer | undefined;
+}
+
+function syncStateLabel(syncState: PendingCustomer): string {
+  if (syncState.state === "rejected") {
+    return "Recusado pelo servidor";
+  }
+  return syncState.state === "sending" ? "Enviando…" : "Aguardando envio";
 }
 
 function CustomerCard({
   customer,
+  lockedReason,
   isPending,
   onArchive,
   onEdit,
   onRestore,
   pendingAction,
+  syncState,
 }: CustomerCardProps) {
   const handleEdit = useCallback(() => onEdit(customer), [customer, onEdit]);
   const handleArchive = useCallback(
@@ -395,6 +419,15 @@ function CustomerCard({
           <span className={`category-status status-${customer.status}`}>
             {customer.status === "active" ? "Ativo" : "Arquivado"}
           </span>
+          {syncState ? (
+            <span
+              className="customer-sync-state"
+              data-state={syncState.state}
+              role="status"
+            >
+              {syncStateLabel(syncState)}
+            </span>
+          ) : null}
         </div>
         <div className="customer-card-contacts">
           {customer.phone ? <span>{customer.phone}</span> : null}
@@ -406,12 +439,18 @@ function CustomerCard({
         <p className="customer-meta">
           Atualizado em {formatDate(customer.updatedAt)}
         </p>
+        {syncState?.state === "rejected" ? (
+          <p className="customer-meta">
+            <a href="/attention">Resolver em Pendências</a>
+          </p>
+        ) : null}
+        {lockedReason ? <p className="customer-meta">{lockedReason}</p> : null}
       </div>
       <div className="customer-card-actions">
         <button
           aria-label={`Editar cliente ${customer.name}`}
           className="quiet-button"
-          disabled={isPending}
+          disabled={isPending || lockedReason !== null}
           onClick={handleEdit}
           type="button"
         >
@@ -421,7 +460,7 @@ function CustomerCard({
           <button
             aria-label={`Arquivar cliente ${customer.name}`}
             className="quiet-button"
-            disabled={isPending}
+            disabled={isPending || lockedReason !== null}
             onClick={handleArchive}
             type="button"
           >
@@ -433,7 +472,7 @@ function CustomerCard({
           <button
             aria-label={`Restaurar cliente ${customer.name}`}
             className="quiet-button"
-            disabled={isPending}
+            disabled={isPending || lockedReason !== null}
             onClick={handleRestore}
             type="button"
           >
@@ -447,6 +486,17 @@ function CustomerCard({
   );
 }
 
+/** Editing needs the server to know the customer and to be reachable. */
+function lockedReasonFor(
+  syncState: PendingCustomer | undefined,
+  isOffline: boolean
+): string | null {
+  if (syncState) {
+    return "Disponível depois que o servidor confirmar o cadastro.";
+  }
+  return isOffline ? "Disponível quando houver conexão." : null;
+}
+
 interface CustomerWorkspaceProps {
   customers: CustomerReadModel[];
   draft: CustomerDraft;
@@ -454,6 +504,8 @@ interface CustomerWorkspaceProps {
   editingCustomer: CustomerReadModel | null;
   error: string | null;
   isLoading: boolean;
+  /** Working from this device's collections while the connection is down. */
+  isOffline: boolean;
   notice: string | null;
   onArchive: (customer: CustomerReadModel) => void;
   onCancelEdit: () => void;
@@ -466,6 +518,8 @@ interface CustomerWorkspaceProps {
   onUseExisting: (customer: CustomerReadModel) => void;
   pendingAction: string | null;
   status: CustomerListStatus;
+  /** Customers created on this device that the server has not confirmed yet. */
+  syncStates: ReadonlyMap<string, PendingCustomer>;
 }
 
 function CustomerWorkspace({
@@ -475,6 +529,8 @@ function CustomerWorkspace({
   editingCustomer,
   error,
   isLoading,
+  isOffline,
+  syncStates,
   notice,
   onArchive,
   onCancelEdit,
@@ -501,6 +557,12 @@ function CustomerWorkspace({
         </div>
       </section>
 
+      {isOffline ? (
+        <p className="customer-notice" role="status">
+          Sem conexão. Você pode cadastrar clientes; eles são enviados quando a
+          conexão voltar. Editar, arquivar e restaurar precisam de conexão.
+        </p>
+      ) : null}
       {notice ? (
         <p className="customer-notice" role="status">
           {notice}
@@ -576,10 +638,15 @@ function CustomerWorkspace({
                 <CustomerCard
                   customer={customer}
                   isPending={pendingAction !== null}
+                  lockedReason={lockedReasonFor(
+                    syncStates.get(customer.id),
+                    isOffline
+                  )}
                   onArchive={onArchive}
                   onEdit={onEdit}
                   onRestore={onRestore}
                   pendingAction={pendingAction}
+                  syncState={syncStates.get(customer.id)}
                 />
               </li>
             ))}
@@ -590,8 +657,29 @@ function CustomerWorkspace({
   );
 }
 
+/**
+ * After the server changed a customer, the same row goes into the local
+ * collection (when the runtime is on), so the list read from the device shows
+ * it at once instead of waiting for the next pull; the pull later writes the
+ * same version again.
+ */
+async function keepLocalRow(
+  workspace: ReturnType<typeof useLocalWorkspace>,
+  customer: CustomerReadModel
+): Promise<void> {
+  if (workspace) {
+    await workspace.stores.writer.upsert("customers", [
+      toLocalCustomerRow(customer),
+    ]);
+  }
+}
+
 export function CustomersPage() {
   const { organizationId } = useCurrentOrganization();
+  const workspace = useLocalWorkspace(organizationId);
+  const [syncStates, setSyncStates] = useState<
+    ReadonlyMap<string, PendingCustomer>
+  >(new Map());
   const [status, setStatus] = useState<CustomerListStatus>("active");
   const [customers, setCustomers] = useState<CustomerReadModel[]>([]);
   const [draft, setDraft] = useState<CustomerDraft>(emptyDraft);
@@ -635,12 +723,55 @@ export function CustomersPage() {
     []
   );
 
+  const usesLocalRows = workspace !== null;
   useEffect(() => {
+    if (usesLocalRows) {
+      return;
+    }
     loadCustomers(organizationId, status);
     return () => {
       customerLoadSequence.current += 1;
     };
-  }, [loadCustomers, organizationId, status]);
+  }, [loadCustomers, organizationId, status, usesLocalRows]);
+
+  // With the offline runtime ready the list comes from this device, and is read
+  // again whenever the runtime says the local rows may have changed.
+  useEffect(() => {
+    if (!workspace) {
+      return;
+    }
+    let cancelled = false;
+    const { outbox, writer } = workspace.stores;
+    Promise.all([writer.rows("customers"), pendingCustomers(outbox)])
+      .then(([rows, pending]) => {
+        if (cancelled) {
+          return;
+        }
+        setCustomers(listLocalCustomers(rows, organizationId, status));
+        setSyncStates(new Map(pending.map((item) => [item.customerId, item])));
+        setError(null);
+        setIsLoading(false);
+      })
+      .catch((caughtError) => {
+        if (!cancelled) {
+          setError(errorMessage(caughtError, "load"));
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace, organizationId, status]);
+
+  /** Shows the change: the local rows are read again, or the server's list is. */
+  const refreshList = useCallback(async () => {
+    if (workspace) {
+      await workspace.runtime.refreshCounts();
+      workspace.runtime.localDataChanged();
+      return;
+    }
+    await loadCustomers(organizationId, status);
+  }, [loadCustomers, organizationId, status, workspace]);
 
   const handleDraftChange = useCallback(
     (field: keyof CustomerDraft, value: string) => {
@@ -711,13 +842,20 @@ export function CustomersPage() {
   }, []);
 
   const findDraftDuplicates = useCallback(async () => {
+    if (workspace) {
+      return findLocalDuplicates(
+        await workspace.stores.writer.rows("customers"),
+        organizationId,
+        { email: draft.email, phone: draft.phone }
+      );
+    }
     const result = await orpcClient.customer.findPossibleDuplicates({
       email: draft.email,
       organizationId,
       phone: draft.phone,
     });
     return result.matches;
-  }, [draft.email, draft.phone, organizationId]);
+  }, [draft.email, draft.phone, organizationId, workspace]);
 
   const persistCustomer = useCallback(async () => {
     const profile = {
@@ -728,16 +866,37 @@ export function CustomersPage() {
       phone: draft.phone,
     };
     if (editingCustomer) {
-      await orpcClient.customer.update({
+      const updated = await orpcClient.customer.update({
         ...profile,
         expectedVersion: editingCustomer.version,
         id: editingCustomer.id,
       });
+      await keepLocalRow(workspace, updated.customer);
       return "Dados do cliente atualizados.";
+    }
+    if (workspace) {
+      // Queued on this device and shown at once; sent now when there is a connection.
+      const stores = workspace.runtime.context();
+      if (!stores) {
+        throw new Error("offline_runtime_unavailable");
+      }
+      await createOfflineCustomer({
+        deviceId: stores.deviceId,
+        input: profile,
+        lease: stores.lease,
+        organizationId,
+        outbox: stores.outbox,
+        writer: stores.writer,
+      });
+      if (workspace.online) {
+        workspace.runtime.syncNow().catch(() => undefined);
+        return "Cliente cadastrado.";
+      }
+      return "Cliente salvo neste aparelho. Ele será enviado quando a conexão voltar.";
     }
     await orpcClient.customer.create(profile);
     return "Cliente cadastrado.";
-  }, [draft, editingCustomer, organizationId]);
+  }, [draft, editingCustomer, organizationId, workspace]);
 
   const saveCustomer = useCallback(
     async (allowPossibleDuplicates = false) => {
@@ -774,22 +933,14 @@ export function CustomersPage() {
         setNotice(await persistCustomer());
         setEditingCustomer(null);
         setDraft(emptyDraft);
-        await loadCustomers(organizationId, status);
+        await refreshList();
       } catch (caughtError) {
         setError(errorMessage(caughtError, failureAction));
       } finally {
         setPendingAction(null);
       }
     },
-    [
-      draft,
-      editingCustomer,
-      findDraftDuplicates,
-      loadCustomers,
-      organizationId,
-      persistCustomer,
-      status,
-    ]
+    [draft, editingCustomer, findDraftDuplicates, persistCustomer, refreshList]
   );
 
   const handleSubmit = useCallback(
@@ -817,24 +968,26 @@ export function CustomersPage() {
           organizationId,
         };
         if (action === "archive") {
-          await orpcClient.customer.archive(input);
+          const archived = await orpcClient.customer.archive(input);
+          await keepLocalRow(workspace, archived.customer);
           setNotice("Cliente arquivado.");
         } else {
-          await orpcClient.customer.restore(input);
+          const restored = await orpcClient.customer.restore(input);
+          await keepLocalRow(workspace, restored.customer);
           setNotice("Cliente restaurado.");
         }
         if (editingCustomer?.id === customer.id) {
           setEditingCustomer(null);
           setDraft(emptyDraft);
         }
-        await loadCustomers(organizationId, status);
+        await refreshList();
       } catch (caughtError) {
         setError(errorMessage(caughtError, action));
       } finally {
         setPendingAction(null);
       }
     },
-    [editingCustomer, loadCustomers, organizationId, status]
+    [editingCustomer, organizationId, refreshList, workspace]
   );
 
   const handleArchive = useCallback(
@@ -855,6 +1008,7 @@ export function CustomersPage() {
         editingCustomer={editingCustomer}
         error={error}
         isLoading={isLoading}
+        isOffline={workspace !== null && !workspace.online}
         notice={notice}
         onArchive={handleArchive}
         onCancelEdit={handleCancelEdit}
@@ -867,6 +1021,7 @@ export function CustomersPage() {
         onUseExisting={handleUseExisting}
         pendingAction={pendingAction}
         status={status}
+        syncStates={syncStates}
       />
     </div>
   );

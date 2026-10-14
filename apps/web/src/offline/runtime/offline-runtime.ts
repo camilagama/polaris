@@ -90,6 +90,11 @@ export interface RuntimeSnapshot {
   /** Whether the local collections hold a complete snapshot of the organization. */
   bootstrapped: boolean;
   counts: PendingWork;
+  /**
+   * Goes up whenever the local collections may have changed (opened, synced,
+   * or written by a screen), so a screen that reads them knows to read again.
+   */
+  dataVersion: number;
   lastSyncAt: string | null;
   leaseExpiresAt: string | null;
   online: boolean;
@@ -136,6 +141,7 @@ export class OfflineRuntime {
   private snapshot: RuntimeSnapshot = {
     bootstrapped: false,
     counts: EMPTY_COUNTS,
+    dataVersion: 0,
     lastSyncAt: null,
     leaseExpiresAt: null,
     online: true,
@@ -332,6 +338,11 @@ export class OfflineRuntime {
     });
     this.inFlight = run;
     return run;
+  }
+
+  /** Tells the screens that read the local collections to read them again (call after writing to them). */
+  localDataChanged(): void {
+    this.set({ ...this.snapshot, dataVersion: this.snapshot.dataVersion + 1 });
   }
 
   /** Re-reads the queue figures (call after queueing or resolving a command). */
@@ -590,6 +601,7 @@ export class OfflineRuntime {
     this.set({
       ...this.snapshot,
       bootstrapped,
+      dataVersion: this.snapshot.dataVersion + 1,
       leaseExpiresAt: new Date(claims.exp * 1000).toISOString(),
       online: this.dependencies.isOnline(),
       phase: "ready",
@@ -628,12 +640,19 @@ export class OfflineRuntime {
       this.set({
         ...this.snapshot,
         bootstrapped: true,
+        dataVersion: this.snapshot.dataVersion + 1,
         lastSyncAt: this.now().toISOString(),
         reason: null,
         syncing: false,
       });
     } catch {
-      this.set({ ...this.snapshot, reason: "sync_failed", syncing: false });
+      // a partial sync may still have changed rows (accepted commands, pulled pages)
+      this.set({
+        ...this.snapshot,
+        dataVersion: this.snapshot.dataVersion + 1,
+        reason: "sync_failed",
+        syncing: false,
+      });
     }
     await this.refreshCounts();
   }

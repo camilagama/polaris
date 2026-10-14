@@ -482,3 +482,38 @@ describe("what the rest of the app plugs into", () => {
     expect(listener).toHaveBeenCalled();
   });
 });
+
+describe("the data version the screens read by", () => {
+  it("goes up when the stores open, when a screen wrote, and after every sync (even a failed one)", async () => {
+    const w = world();
+    const runtime = w.make();
+    expect(runtime.getSnapshot().dataVersion).toBe(0);
+    await runtime.start(organizationId);
+    const opened = runtime.getSnapshot().dataVersion;
+    expect(opened).toBeGreaterThan(0);
+
+    runtime.localDataChanged();
+    const written = runtime.getSnapshot().dataVersion;
+    expect(written).toBe(opened + 1);
+
+    await runtime.syncNow();
+    const synced = runtime.getSnapshot().dataVersion;
+    expect(synced).toBeGreaterThan(written);
+
+    w.failures.push = true;
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).toBe("sync_failed");
+    expect(runtime.getSnapshot().dataVersion).toBeGreaterThan(synced);
+  });
+
+  it("exposes every row of a collection to the screens", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+    const rows = await runtime.context()?.writer.rows("products");
+    expect(rows?.map((row) => row.name).sort()).toEqual(["Calça", "Camiseta"]);
+  });
+});

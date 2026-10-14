@@ -132,3 +132,29 @@ export function useCurrentOrganization(): CurrentOrganization {
     select,
   };
 }
+
+/**
+ * A fixed organization for the browser labs that mount a real screen without a
+ * server (they are only built in the offline-poc mode).
+ */
+export function StaticOrganizationProvider({
+  children,
+  organization,
+}: {
+  children: ReactNode;
+  organization: Organization;
+}) {
+  const value = useMemo<OrganizationContextValue>(
+    () => ({
+      load: {
+        current: organization,
+        organizations: [organization],
+        status: "ready",
+      },
+      reload: () => undefined,
+      select: () => undefined,
+    }),
+    [organization]
+  );
+  return createElement(OrganizationContext.Provider, { value }, children);
+}
