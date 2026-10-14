@@ -53,9 +53,20 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Venda:** transação comercial registrada pelo revendedor, com seus próprios itens e fatos econômicos.
 
-**Ajuste de venda:** desconto, acréscimo, frete cobrado ou outro ajuste comercial explícito.
+**Negociação por item:** preço cobrado registrado no próprio item em relação ao preço de tabela; não cria um segundo desconto para a mesma diferença.
+**Subtotal da venda:** soma dos valores dos itens pelo preço cobrado, antes dos ajustes da venda.
+**Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
+**Sobretaxa de pagamento:** valor cobrado do comprador por um meio de pagamento; é distinto das taxas de processamento e antecipação pagas pelo negócio.
+**Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na venda.
+**Modalidade do parcelamento:** classificação registrada no cartão de crédito como `merchant` (parcelamento do lojista) ou `issuer` (parcelamento do emissor); não é evidência de liquidação.
+**Perfil de pagamento:** configuração manual da organização que descreve regras de taxa por método e, para cartão, modalidade e quantidade de parcelas. O operador seleciona o perfil na venda; o snapshot registra a regra aplicada.
+**Prazo esperado de recebimento:** estimativa em número de dias da regra de pagamento; não cria data de liquidação nem contas a receber.
 
 **Devolução:** registro de itens devolvidos e da quantidade que volta ao estoque vendável.
+**Cancelamento da venda:** registro compensatório que desfaz a venda inteira devolvendo ao estoque as quantidades de todos os itens; a venda confirmada e seus movimentos originais permanecem. Uma venda é cancelada uma vez e não pode ser cancelada se já tiver devoluções.
+**Quantidade devolvida e quantidade reposta:** em cada linha de devolução, a quantidade que o comprador devolveu e a parte dela que volta ao estoque vendável; a reposta nunca excede a devolvida, e a devolvida nunca excede o que ainda estava disponível para devolução.
+**Momento comercial, data comercial e evidência local:** o momento comercial (`occurred_at`) é o instante em que a venda aconteceu, informado pelo operador; a data comercial (`occurred_on`) é a data desse instante no calendário da organização e é a data dos movimentos de estoque da venda; a evidência local (`recorded_at`) é o horário do dispositivo ao criar a venda e não decide nenhuma regra. A confirmação (`confirmed_at`) é sempre o relógio do servidor.
+**Janela retroativa:** quantos dias de calendário, no fuso da organização, um papel pode voltar ao registrar uma venda: 30 para o owner na V1.
 
 **Cliente:** pessoa ou organização que o revendedor escolhe cadastrar ou associar a uma venda. Uma venda não exige cliente.
 
@@ -67,6 +78,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Moeda:** unidade monetária usada para expressar valores econômicos; a V1 opera em BRL.<br>
 **Money:** valor econômico expresso na moeda usada pelo negócio.
+**Percentual:** taxa expressa em pontos percentuais; por exemplo, `2,5` representa `2,5%`.
 
 **Competência:** período ao qual uma despesa ou resultado pertence, independentemente da data em que o dinheiro foi pago.<br>
 **Fuso horário da organização:** zona IANA usada para interpretar datas de negócio daquela organização; instantes técnicos são UTC.

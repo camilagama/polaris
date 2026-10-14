@@ -1,6 +1,7 @@
 # Privacidade
 
 - Coletar dado pessoal somente para propósito declarado de produto, operação, segurança ou obrigação legal. Ao adicionar campo, registrar implicações para offline, exportação, logs, retenção e exclusão.
+- Em clientes cadastrados pelo revendedor, nome, telefone, email e observações são PII. O PR36 não copia esses valores para auditoria, logs ou snapshots de vendas; coleta e acesso ficam limitados ao relacionamento na organização. O fluxo `customer.anonymizeForPrivacy` da especificação de origem permanece fora deste PR.
 - Polaris atua como controlador para conta, autenticação, assinatura, segurança, antifraude e suporte. Em geral, atua como operador dos dados de clientes cadastrados pelo revendedor; confirmar o papel por atividade de tratamento antes do lançamento.
 - Pedido de privacidade de cliente do revendedor normalmente é tratado pelo revendedor como controlador. Não apagar dado tenant só porque terceiro sem autoridade enviou email ao Polaris.
 - Encerramento de organização bloqueia novas operações, revoga acesso e autorização offline e despublica o catálogo; dados elegíveis são apagados após a janela de recuperação documentada.

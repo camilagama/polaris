@@ -190,6 +190,90 @@
       "when": 1791656673456,
       "tag": "0026_stale_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791675642209,
+      "tag": "0027_fixed_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791723582729,
+      "tag": "0028_supreme_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791725220022,
+      "tag": "0029_same_juggernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791726043260,
+      "tag": "0030_careful_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791728012170,
+      "tag": "0031_tan_thor_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791729084642,
+      "tag": "0032_mean_ender_wiggin",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791751552119,
+      "tag": "0033_bent_quicksilver",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791908879382,
+      "tag": "0034_legal_rumiko_fujikawa",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791914332598,
+      "tag": "0035_salty_meltdown",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791917156868,
+      "tag": "0036_shiny_genesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791918922729,
+      "tag": "0037_square_living_lightning",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791920383876,
+      "tag": "0038_sale_dates",
+      "breakpoints": true
     }
   ]
 }

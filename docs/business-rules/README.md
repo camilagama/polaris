@@ -9,6 +9,7 @@ Este diretório é a fonte de verdade para invariantes de domínio. Mantenha cad
 - Valores monetários e precisão: [money.md](money.md).
 - Tempo, timezone e datas de negócio: [time-and-dates.md](time-and-dates.md).
 - Vendas confirmadas, correções, devoluções e atribuição de cliente: [sales.md](sales.md).
+- Cadastro, contato e lifecycle de clientes: [customers.md](customers.md).
 - Despesas, competência, resultado e metas: [expenses-and-results.md](expenses-and-results.md).
 - Planos, reconciliação de providers e entitlements: [billing-and-entitlements.md](billing-and-entitlements.md).
 - Minimização, encerramento, exportação e retenção: [privacy.md](privacy.md).

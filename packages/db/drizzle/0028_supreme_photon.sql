@@ -1,0 +1,2 @@
+CREATE INDEX "customers_organization_email_lower_idx" ON "customers" USING btree ("organization_id",lower("email")) WHERE "customers"."email" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "customers_organization_phone_idx" ON "customers" USING btree ("organization_id","phone") WHERE "customers"."phone" IS NOT NULL;

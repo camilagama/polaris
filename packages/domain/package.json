@@ -7,15 +7,30 @@
     "./catalog/category": "./src/catalog/category.ts",
     "./catalog/media": "./src/catalog/media.ts",
     "./catalog/product": "./src/catalog/product.ts",
+    "./customers/customer": "./src/customers/customer.ts",
     "./inventory/inventory": "./src/inventory/inventory.ts",
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",
     "./inventory/inventory-count": "./src/inventory/inventory-count.ts",
     "./inventory/receive-stock": "./src/inventory/receive-stock.ts",
-    "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts"
+    "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts",
+    "./money/money": "./src/money/money.ts",
+    "./sales/confirm-sale": "./src/sales/confirm-sale.ts",
+    "./sales/sale-cancellation": "./src/sales/sale-cancellation.ts",
+    "./sales/sale-dates": "./src/sales/sale-dates.ts",
+    "./sales/sale-errors": "./src/sales/sale-errors.ts",
+    "./sales/sale-adjustments": "./src/sales/sale-adjustments.ts",
+    "./sales/sale-customer-link": "./src/sales/sale-customer-link.ts",
+    "./sales/sale-payment": "./src/sales/sale-payment.ts",
+    "./sales/sale-return": "./src/sales/sale-return.ts",
+    "./sales/payment-profile": "./src/sales/payment-profile.ts",
+    "./sales/sale": "./src/sales/sale.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "fast-check": "^4.10.2"
   }
 }

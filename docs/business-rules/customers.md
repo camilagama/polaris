@@ -1,0 +1,12 @@
+# Clientes
+
+- Cliente é uma pessoa ou organização cadastrada pela organização revendedora. O registro pertence a uma única organização; uma venda pode existir sem cliente. A associação entre venda e cliente é uma atribuição separada, definida em [vendas](sales.md#atribuição-de-cliente-pr44).
+- Nome é obrigatório e aparado. O cadastro exige pelo menos um contato: telefone ou email. Cada contato pode ficar ausente, mas não ambos; observações não contam como identificador.
+- Telefone é armazenado como texto aparado, sem formato nacional obrigatório. Email é aparado e validado quando informado. Nome, telefone e email não têm unicidade rígida; registros repetidos são permitidos e não são mesclados automaticamente.
+- PR37 consulta possíveis duplicados somente dentro da organização: email exato sem distinção de caixa após aparar espaços externos, ou telefone exato após aparar espaços externos. Não normalizar pontuação do telefone, não buscar por nome e não exigir que email e telefone coincidam no mesmo cadastro. A consulta inclui clientes ativos e arquivados, retorna todos os candidatos e indica quais campos coincidiram.
+- A sugestão não é uma restrição de unicidade: o responsável pode escolher um cadastro existente ou criar mesmo assim. “Usar existente” abre esse cadastro para revisão/edição; não mescla registros, não o restaura automaticamente e não associa uma venda. Um cliente arquivado permanece arquivado até uma restauração explícita. A criação continua sujeita à possibilidade de concorrência entre a consulta e a gravação.
+- Observações são opcionais e podem conter dados pessoais. Não incluir nome, contatos ou observações em auditoria nem em logs estruturados.
+- Estado é `active` ou `archived`, derivado de `archived_at`. Arquivar é reversível por restauração; listas normais mostram ativos por padrão. PR36 não oferece hard-delete.
+- Atualizações e transições de estado exigem `expectedVersion`; versões antigas conflitam. Criação, alteração, archive e restore gravam auditoria na mesma transação, contendo apenas o tipo e o UUID do cliente.
+- Na V1, todas as operações de leitura e escrita de clientes exigem `customer:update`: o mapa atual tem somente `owner` e ainda não define `customer:read`. Criar uma função somente leitura para outros papéis exige uma capability dedicada antes de habilitar esses papéis.
+- Os campos nome, telefone, email e observações são PII fornecida pelo revendedor. Coletar apenas o necessário ao relacionamento comercial; o fluxo de anonimização por privacidade permanece fora de PR36.

@@ -1,0 +1,3498 @@
+{
+  "id": "8c457dd7-2b47-4939-8d48-5bdb24118c94",
+  "prevId": "a0247472-10a5-4696-bd71-b541bd3dad67",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.account": {
+      "name": "account",
+      "schema": "",
+      "columns": {
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_token_expires_at": {
+          "name": "access_token_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token_expires_at": {
+          "name": "refresh_token_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "account_user_id_idx": {
+          "name": "account_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "account_user_id_user_id_fk": {
+          "name": "account_user_id_user_id_fk",
+          "tableFrom": "account",
+          "tableTo": "user",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.session": {
+      "name": "session",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "session_user_id_idx": {
+          "name": "session_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "session_user_id_user_id_fk": {
+          "name": "session_user_id_user_id_fk",
+          "tableFrom": "session",
+          "tableTo": "user",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user": {
+      "name": "user",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "nullsNotDistinct": false,
+          "columns": ["email"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.verification": {
+      "name": "verification",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "verification_identifier_idx": {
+          "name": "verification_identifier_idx",
+          "columns": [
+            {
+              "expression": "identifier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.categories": {
+      "name": "categories",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "categories_organization_id_name_idx": {
+          "name": "categories_organization_id_name_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "categories_organization_name_unique": {
+          "name": "categories_organization_name_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(btrim(\"name\"))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "categories_organization_id_id_unique": {
+          "name": "categories_organization_id_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "categories_organization_id_organizations_id_fk": {
+          "name": "categories_organization_id_organizations_id_fk",
+          "tableFrom": "categories",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "categories_current_tenant_select": {
+          "name": "categories_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
+        },
+        "categories_current_tenant_insert": {
+          "name": "categories_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
+        },
+        "categories_current_tenant_update": {
+          "name": "categories_current_tenant_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      ",
+          "withCheck": "\n        \"categories\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"categories\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"categories\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "categories_name_length": {
+          "name": "categories_name_length",
+          "value": "char_length(btrim(\"categories\".\"name\")) BETWEEN 1 AND 100"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.customers": {
+      "name": "customers",
+      "schema": "",
+      "columns": {
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "customers_organization_archive_name_idx": {
+          "name": "customers_organization_archive_name_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "archived_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customers_organization_email_lower_idx": {
+          "name": "customers_organization_email_lower_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(\"email\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"customers\".\"email\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customers_organization_phone_idx": {
+          "name": "customers_organization_phone_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "phone",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"customers\".\"phone\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customers_organization_id_id_unique": {
+          "name": "customers_organization_id_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customers_organization_id_organizations_id_fk": {
+          "name": "customers_organization_id_organizations_id_fk",
+          "tableFrom": "customers",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "customers_current_tenant_select": {
+          "name": "customers_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  "
+        },
+        "customers_current_tenant_insert": {
+          "name": "customers_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  "
+        },
+        "customers_current_tenant_update": {
+          "name": "customers_current_tenant_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  ",
+          "withCheck": "\n    \"customers\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n    AND EXISTS (\n      SELECT 1\n      FROM public.memberships AS membership_scope\n      WHERE membership_scope.organization_id = \"customers\".\"organization_id\"\n        AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n        AND membership_scope.status = 'active'\n    )\n    AND EXISTS (\n      SELECT 1\n      FROM public.organizations AS organization_scope\n      WHERE organization_scope.id = \"customers\".\"organization_id\"\n        AND organization_scope.status = 'active'\n    )\n  "
+        }
+      },
+      "checkConstraints": {
+        "customers_name_not_blank": {
+          "name": "customers_name_not_blank",
+          "value": "char_length(btrim(\"customers\".\"name\")) >= 1"
+        },
+        "customers_contact_required": {
+          "name": "customers_contact_required",
+          "value": "\n          (\"customers\".\"phone\" IS NOT NULL OR \"customers\".\"email\" IS NOT NULL)\n          AND (\"customers\".\"phone\" IS NULL OR char_length(btrim(\"customers\".\"phone\")) >= 1)\n          AND (\"customers\".\"email\" IS NULL OR char_length(btrim(\"customers\".\"email\")) >= 1)\n        "
+        },
+        "customers_version_positive": {
+          "name": "customers_version_positive",
+          "value": "\"customers\".\"version\" >= 1"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.inventory_balances": {
+      "name": "inventory_balances",
+      "schema": "",
+      "columns": {
+        "moving_average_cost": {
+          "name": "moving_average_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "variant_id": {
+          "name": "variant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "inventory_balances_organization_product_idx": {
+          "name": "inventory_balances_organization_product_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "inventory_balances_variant_fk": {
+          "name": "inventory_balances_variant_fk",
+          "tableFrom": "inventory_balances",
+          "tableTo": "product_variants",
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "inventory_balances_pk": {
+          "name": "inventory_balances_pk",
+          "columns": ["organization_id", "variant_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "inventory_balances_current_tenant_select": {
+          "name": "inventory_balances_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n"
+        },
+        "inventory_balances_current_tenant_insert": {
+          "name": "inventory_balances_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n"
+        },
+        "inventory_balances_current_tenant_update": {
+          "name": "inventory_balances_current_tenant_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n",
+          "withCheck": "\n  \n  \"inventory_balances\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"inventory_balances\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"inventory_balances\".\"variant_id\"\n      AND variant_scope.organization_id = \"inventory_balances\".\"organization_id\"\n      AND variant_scope.product_id = \"inventory_balances\".\"product_id\"\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "inventory_balances_quantity_nonnegative": {
+          "name": "inventory_balances_quantity_nonnegative",
+          "value": "\"inventory_balances\".\"quantity\" >= 0"
+        },
+        "inventory_balances_version_positive": {
+          "name": "inventory_balances_version_positive",
+          "value": "\"inventory_balances\".\"version\" >= 1"
+        },
+        "inventory_balances_average_cost_allowed": {
+          "name": "inventory_balances_average_cost_allowed",
+          "value": "\n        \"inventory_balances\".\"moving_average_cost\" IS NULL OR (\n          \"inventory_balances\".\"moving_average_cost\" >= 0\n          AND scale(\"inventory_balances\".\"moving_average_cost\") <= 6\n          AND \"inventory_balances\".\"moving_average_cost\" < 1000000000000000000\n        )\n      "
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.stock_movements": {
+      "name": "stock_movements",
+      "schema": "",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "command_index": {
+          "name": "command_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "command_version": {
+          "name": "command_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "movement_type": {
+          "name": "movement_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_on": {
+          "name": "occurred_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected_version": {
+          "name": "expected_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "physical_quantity": {
+          "name": "physical_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity_delta": {
+          "name": "quantity_delta",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason_note": {
+          "name": "reason_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unit_cost": {
+          "name": "unit_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valuation_unit_cost": {
+          "name": "valuation_unit_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "variant_id": {
+          "name": "variant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "stock_movements_organization_variant_created_idx": {
+          "name": "stock_movements_organization_variant_created_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_movements_command_unique": {
+          "name": "stock_movements_command_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "command_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "command_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "stock_movements_variant_fk": {
+          "name": "stock_movements_variant_fk",
+          "tableFrom": "stock_movements",
+          "tableTo": "product_variants",
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "stock_movements_current_tenant_select": {
+          "name": "stock_movements_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \n  \"stock_movements\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"stock_movements\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"stock_movements\".\"variant_id\"\n      AND variant_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND variant_scope.product_id = \"stock_movements\".\"product_id\"\n  )\n"
+        },
+        "stock_movements_current_tenant_insert": {
+          "name": "stock_movements_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n  \n  \"stock_movements\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"stock_movements\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n  AND EXISTS (\n    SELECT 1\n    FROM public.product_variants AS variant_scope\n    INNER JOIN public.products AS product_scope\n      ON product_scope.id = variant_scope.product_id\n     AND product_scope.organization_id = variant_scope.organization_id\n    WHERE variant_scope.id = \"stock_movements\".\"variant_id\"\n      AND variant_scope.organization_id = \"stock_movements\".\"organization_id\"\n      AND variant_scope.product_id = \"stock_movements\".\"product_id\"\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "stock_movements_type_allowed": {
+          "name": "stock_movements_type_allowed",
+          "value": "\"stock_movements\".\"movement_type\" IN ('receipt', 'write_off', 'inventory_count', 'sale', 'sale_cancellation', 'sale_return')"
+        },
+        "stock_movements_quantity_delta_nonzero": {
+          "name": "stock_movements_quantity_delta_nonzero",
+          "value": "\"stock_movements\".\"quantity_delta\" <> 0 OR \"stock_movements\".\"movement_type\" = 'inventory_count'"
+        },
+        "stock_movements_type_direction": {
+          "name": "stock_movements_type_direction",
+          "value": "\n        (\"stock_movements\".\"movement_type\" = 'receipt' AND \"stock_movements\".\"quantity_delta\" > 0)\n        OR (\"stock_movements\".\"movement_type\" = 'write_off' AND \"stock_movements\".\"quantity_delta\" < 0)\n        OR (\"stock_movements\".\"movement_type\" = 'inventory_count')\n        OR (\"stock_movements\".\"movement_type\" = 'sale' AND \"stock_movements\".\"quantity_delta\" < 0)\n        OR (\"stock_movements\".\"movement_type\" = 'sale_cancellation' AND \"stock_movements\".\"quantity_delta\" > 0)\n        OR (\"stock_movements\".\"movement_type\" = 'sale_return' AND \"stock_movements\".\"quantity_delta\" > 0)\n      "
+        },
+        "stock_movements_command_index_nonnegative": {
+          "name": "stock_movements_command_index_nonnegative",
+          "value": "\"stock_movements\".\"command_index\" >= 0"
+        },
+        "stock_movements_command_metadata_complete": {
+          "name": "stock_movements_command_metadata_complete",
+          "value": "\n        (\n          \"stock_movements\".\"command_id\" IS NULL\n          AND \"stock_movements\".\"command_version\" IS NULL\n          AND \"stock_movements\".\"occurred_on\" IS NULL\n          AND \"stock_movements\".\"command_index\" = 0\n        )\n        OR (\n          \"stock_movements\".\"command_id\" IS NOT NULL\n          AND \"stock_movements\".\"command_version\" IS NOT NULL\n          AND \"stock_movements\".\"command_version\" >= 1\n          AND \"stock_movements\".\"occurred_on\" IS NOT NULL\n        )\n      "
+        },
+        "stock_movements_inventory_count_payload_valid": {
+          "name": "stock_movements_inventory_count_payload_valid",
+          "value": "\n        (\n          \"stock_movements\".\"movement_type\" = 'inventory_count'\n          AND \"stock_movements\".\"command_id\" IS NOT NULL\n          AND \"stock_movements\".\"command_version\" IS NOT NULL\n          AND \"stock_movements\".\"occurred_on\" IS NOT NULL\n          AND \"stock_movements\".\"expected_version\" IS NOT NULL\n          AND \"stock_movements\".\"expected_version\" >= 0\n          AND \"stock_movements\".\"physical_quantity\" IS NOT NULL\n          AND \"stock_movements\".\"physical_quantity\" >= 0\n          AND (\n            \"stock_movements\".\"valuation_unit_cost\" IS NULL\n            OR \"stock_movements\".\"physical_quantity\" > 0\n          )\n        )\n        OR (\n          \"stock_movements\".\"movement_type\" <> 'inventory_count'\n          AND \"stock_movements\".\"expected_version\" IS NULL\n          AND \"stock_movements\".\"physical_quantity\" IS NULL\n          AND \"stock_movements\".\"valuation_unit_cost\" IS NULL\n        )\n      "
+        },
+        "stock_movements_receipt_cost_and_command_required": {
+          "name": "stock_movements_receipt_cost_and_command_required",
+          "value": "\n        \"stock_movements\".\"movement_type\" <> 'receipt'\n        OR (\n          \"stock_movements\".\"unit_cost\" IS NOT NULL\n          AND \"stock_movements\".\"command_id\" IS NOT NULL\n        )\n      "
+        },
+        "stock_movements_unit_cost_allowed": {
+          "name": "stock_movements_unit_cost_allowed",
+          "value": "\n        \"stock_movements\".\"unit_cost\" IS NULL OR (\n          \"stock_movements\".\"unit_cost\" >= 0\n          AND scale(\"stock_movements\".\"unit_cost\") <= 6\n          AND \"stock_movements\".\"unit_cost\" < 1000000000000000000\n        )\n      "
+        },
+        "stock_movements_valuation_unit_cost_allowed": {
+          "name": "stock_movements_valuation_unit_cost_allowed",
+          "value": "\n        \"stock_movements\".\"valuation_unit_cost\" IS NULL OR (\n          \"stock_movements\".\"valuation_unit_cost\" >= 0\n          AND scale(\"stock_movements\".\"valuation_unit_cost\") <= 6\n          AND \"stock_movements\".\"valuation_unit_cost\" < 1000000000000000000\n        )\n      "
+        },
+        "stock_movements_write_off_reason_valid": {
+          "name": "stock_movements_write_off_reason_valid",
+          "value": "\n        (\n          \"stock_movements\".\"movement_type\" <> 'write_off'\n          AND \"stock_movements\".\"reason_code\" IS NULL\n          AND \"stock_movements\".\"reason_note\" IS NULL\n        )\n        OR (\n          \"stock_movements\".\"movement_type\" = 'write_off'\n          AND \"stock_movements\".\"reason_code\" IS NOT NULL\n          AND \"stock_movements\".\"reason_code\" IN (\n            'damaged', 'expired', 'lost', 'stolen', 'internal_use', 'other'\n          )\n          AND (\n            \"stock_movements\".\"reason_note\" IS NULL\n            OR (\n              \"stock_movements\".\"reason_note\" = btrim(\n                \"stock_movements\".\"reason_note\",\n                \n  ' ' || chr(9) || chr(10) || chr(11) || chr(12) || chr(13) ||\n  chr(160) || chr(5760) ||\n  chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) ||\n  chr(8197) || chr(8198) || chr(8199) || chr(8200) || chr(8201) ||\n  chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) ||\n  chr(12288) || chr(65279)\n\n              )\n              AND btrim(\n                \"stock_movements\".\"reason_note\",\n                \n  ' ' || chr(9) || chr(10) || chr(11) || chr(12) || chr(13) ||\n  chr(160) || chr(5760) ||\n  chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) ||\n  chr(8197) || chr(8198) || chr(8199) || chr(8200) || chr(8201) ||\n  chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) ||\n  chr(12288) || chr(65279)\n\n              ) <> ''\n              AND char_length(\"stock_movements\".\"reason_note\") <= 500\n            )\n          )\n          AND (\n            \"stock_movements\".\"reason_code\" <> 'other'\n            OR \"stock_movements\".\"reason_note\" IS NOT NULL\n          )\n        )\n      "
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.media_cleanup_claims": {
+      "name": "media_cleanup_claims",
+      "schema": "",
+      "columns": {
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "media_cleanup_claims_owner_all": {
+          "name": "media_cleanup_claims_owner_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["polaris_media_cleanup_owner"],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "media_cleanup_claims_storage_key_valid": {
+          "name": "media_cleanup_claims_storage_key_valid",
+          "value": "\"media_cleanup_claims\".\"storage_key\" ~ '^media/v2/[^/]+/[0-9a-f-]{36}/[0-9a-f-]{36}/[0-9a-f]{64}/[0-9a-f-]{36}\\.webp$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.media_assets": {
+      "name": "media_assets",
+      "schema": "",
+      "columns": {
+        "byte_size": {
+          "name": "byte_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "input_fingerprint": {
+          "name": "input_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_command_id": {
+          "name": "upload_command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "media_assets_organization_id_unique": {
+          "name": "media_assets_organization_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "media_assets_organization_upload_command_unique": {
+          "name": "media_assets_organization_upload_command_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "upload_command_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "media_assets_storage_key_unique": {
+          "name": "media_assets_storage_key_unique",
+          "columns": [
+            {
+              "expression": "storage_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "media_assets_organization_id_organizations_id_fk": {
+          "name": "media_assets_organization_id_organizations_id_fk",
+          "tableFrom": "media_assets",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "media_assets_current_tenant_insert": {
+          "name": "media_assets_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n  \"media_assets\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"media_assets\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"media_assets\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        },
+        "media_assets_current_tenant_select": {
+          "name": "media_assets_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \"media_assets\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"media_assets\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"media_assets\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "media_assets_byte_size_valid": {
+          "name": "media_assets_byte_size_valid",
+          "value": "\"media_assets\".\"byte_size\" BETWEEN 1 AND 20000000"
+        },
+        "media_assets_content_type_webp": {
+          "name": "media_assets_content_type_webp",
+          "value": "\"media_assets\".\"content_type\" = 'image/webp'"
+        },
+        "media_assets_dimensions_valid": {
+          "name": "media_assets_dimensions_valid",
+          "value": "\"media_assets\".\"width\" BETWEEN 1 AND 1200 AND \"media_assets\".\"height\" BETWEEN 1 AND 1200"
+        },
+        "media_assets_input_fingerprint_sha256": {
+          "name": "media_assets_input_fingerprint_sha256",
+          "value": "\"media_assets\".\"input_fingerprint\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.product_media": {
+      "name": "product_media",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "media_asset_id": {
+          "name": "media_asset_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "product_media_asset_one_product_unique": {
+          "name": "product_media_asset_one_product_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "media_asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_media_product_position_unique": {
+          "name": "product_media_product_position_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "product_media_product_fk": {
+          "name": "product_media_product_fk",
+          "tableFrom": "product_media",
+          "tableTo": "products",
+          "columnsFrom": ["organization_id", "product_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "product_media_asset_fk": {
+          "name": "product_media_asset_fk",
+          "tableFrom": "product_media",
+          "tableTo": "media_assets",
+          "columnsFrom": ["organization_id", "media_asset_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "product_media_pk": {
+          "name": "product_media_pk",
+          "columns": ["organization_id", "product_id", "media_asset_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "product_media_current_tenant_select": {
+          "name": "product_media_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"product_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_media\".\"product_id\"\n            AND product_scope.organization_id = \"product_media\".\"organization_id\"\n        )\n      "
+        },
+        "product_media_current_tenant_live_product_insert": {
+          "name": "product_media_current_tenant_live_product_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \n  \"product_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_media\".\"product_id\"\n            AND product_scope.organization_id = \"product_media\".\"organization_id\"\n            AND product_scope.deleted_at IS NULL\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "product_media_position_nonnegative": {
+          "name": "product_media_position_nonnegative",
+          "value": "\"product_media\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.variant_media": {
+      "name": "variant_media",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "media_asset_id": {
+          "name": "media_asset_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "variant_id": {
+          "name": "variant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "variant_media_organization_asset_idx": {
+          "name": "variant_media_organization_asset_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "media_asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "variant_media_variant_position_unique": {
+          "name": "variant_media_variant_position_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "variant_media_variant_fk": {
+          "name": "variant_media_variant_fk",
+          "tableFrom": "variant_media",
+          "tableTo": "product_variants",
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "variant_media_product_asset_fk": {
+          "name": "variant_media_product_asset_fk",
+          "tableFrom": "variant_media",
+          "tableTo": "product_media",
+          "columnsFrom": ["organization_id", "product_id", "media_asset_id"],
+          "columnsTo": ["organization_id", "product_id", "media_asset_id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "variant_media_pk": {
+          "name": "variant_media_pk",
+          "columns": [
+            "organization_id",
+            "product_id",
+            "variant_id",
+            "media_asset_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "variant_media_current_tenant_select": {
+          "name": "variant_media_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"variant_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          INNER JOIN public.product_variants AS variant_scope\n            ON variant_scope.organization_id = product_scope.organization_id\n           AND variant_scope.product_id = product_scope.id\n          WHERE product_scope.id = \"variant_media\".\"product_id\"\n            AND product_scope.organization_id = \"variant_media\".\"organization_id\"\n            AND variant_scope.id = \"variant_media\".\"variant_id\"\n        )\n      "
+        },
+        "variant_media_current_tenant_live_product_insert": {
+          "name": "variant_media_current_tenant_live_product_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \n  \"variant_media\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_media\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_media\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          INNER JOIN public.product_variants AS variant_scope\n            ON variant_scope.organization_id = product_scope.organization_id\n           AND variant_scope.product_id = product_scope.id\n          WHERE product_scope.id = \"variant_media\".\"product_id\"\n            AND product_scope.organization_id = \"variant_media\".\"organization_id\"\n            AND product_scope.deleted_at IS NULL\n            AND variant_scope.id = \"variant_media\".\"variant_id\"\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "variant_media_position_nonnegative": {
+          "name": "variant_media_position_nonnegative",
+          "value": "\"variant_media\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.memberships": {
+      "name": "memberships",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'owner'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "memberships_user_id_idx": {
+          "name": "memberships_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memberships_organization_id_organizations_id_fk": {
+          "name": "memberships_organization_id_organizations_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memberships_user_id_user_id_fk": {
+          "name": "memberships_user_id_user_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "user",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "memberships_pk": {
+          "name": "memberships_pk",
+          "columns": ["organization_id", "user_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "memberships_current_user_select": {
+          "name": "memberships_current_user_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \"memberships\".\"user_id\" = NULLIF(current_setting('app.user_id', true), '')\n        AND (\n          NULLIF(current_setting('app.organization_id', true), '') IS NULL\n          OR \"memberships\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "memberships_role_check": {
+          "name": "memberships_role_check",
+          "value": "\"memberships\".\"role\" = 'owner'"
+        },
+        "memberships_status_check": {
+          "name": "memberships_status_check",
+          "value": "\"memberships\".\"status\" = 'active'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.organizations": {
+      "name": "organizations",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'BRL'"
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "organizations_active_tenant_select": {
+          "name": "organizations_active_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \"organizations\".\"id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND \"organizations\".\"status\" = 'active'\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"organizations\".\"id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "organizations_status_check": {
+          "name": "organizations_status_check",
+          "value": "\"organizations\".\"status\" in ('active', 'suspended', 'closed')"
+        },
+        "organizations_currency_check": {
+          "name": "organizations_currency_check",
+          "value": "\"organizations\".\"currency\" = 'BRL'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.db_poc_operations": {
+      "name": "db_poc_operations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "db_poc_operations_token_unique": {
+          "name": "db_poc_operations_token_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.product_option_values": {
+      "name": "product_option_values",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "option_id": {
+          "name": "option_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "product_option_values_option_position_unique": {
+          "name": "product_option_values_option_position_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "option_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_option_values_option_id_unique": {
+          "name": "product_option_values_option_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "option_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_option_values_option_name_unique": {
+          "name": "product_option_values_option_name_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "option_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(btrim(\"name\"))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "product_option_values_option_fk": {
+          "name": "product_option_values_option_fk",
+          "tableFrom": "product_option_values",
+          "tableTo": "product_options",
+          "columnsFrom": ["organization_id", "product_id", "option_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "product_option_values_current_tenant_select": {
+          "name": "product_option_values_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"product_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.product_options AS option_scope\n          WHERE option_scope.id = \"product_option_values\".\"option_id\"\n            AND option_scope.organization_id = \"product_option_values\".\"organization_id\"\n            AND option_scope.product_id = \"product_option_values\".\"product_id\"\n        )\n      "
+        },
+        "product_option_values_current_tenant_insert": {
+          "name": "product_option_values_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \n  \"product_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.product_options AS option_scope\n          INNER JOIN public.products AS product_scope\n            ON product_scope.id = option_scope.product_id\n           AND product_scope.organization_id = option_scope.organization_id\n          WHERE option_scope.id = \"product_option_values\".\"option_id\"\n            AND option_scope.organization_id = \"product_option_values\".\"organization_id\"\n            AND option_scope.product_id = \"product_option_values\".\"product_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "product_option_values_name_not_blank": {
+          "name": "product_option_values_name_not_blank",
+          "value": "char_length(btrim(\"product_option_values\".\"name\")) >= 1"
+        },
+        "product_option_values_position_nonnegative": {
+          "name": "product_option_values_position_nonnegative",
+          "value": "\"product_option_values\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.product_options": {
+      "name": "product_options",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "product_options_product_name_unique": {
+          "name": "product_options_product_name_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_options_product_position_unique": {
+          "name": "product_options_product_position_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_options_organization_product_id_unique": {
+          "name": "product_options_organization_product_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "product_options_organization_product_fk": {
+          "name": "product_options_organization_product_fk",
+          "tableFrom": "product_options",
+          "tableTo": "products",
+          "columnsFrom": ["organization_id", "product_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "product_options_current_tenant_select": {
+          "name": "product_options_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"product_options\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_options\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_options\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_options\".\"product_id\"\n            AND product_scope.organization_id = \"product_options\".\"organization_id\"\n        )\n      "
+        },
+        "product_options_current_tenant_insert": {
+          "name": "product_options_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \n  \"product_options\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_options\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_options\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_options\".\"product_id\"\n            AND product_scope.organization_id = \"product_options\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "product_options_name_allowed": {
+          "name": "product_options_name_allowed",
+          "value": "\"product_options\".\"name\" IN ('model', 'color', 'size')"
+        },
+        "product_options_position_allowed": {
+          "name": "product_options_position_allowed",
+          "value": "\n        (\"product_options\".\"name\" = 'model' AND \"product_options\".\"position\" = 0)\n        OR (\"product_options\".\"name\" = 'color' AND \"product_options\".\"position\" = 1)\n        OR (\"product_options\".\"name\" = 'size' AND \"product_options\".\"position\" = 2)\n      "
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.variant_option_values": {
+      "name": "variant_option_values",
+      "schema": "",
+      "columns": {
+        "option_id": {
+          "name": "option_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "option_value_id": {
+          "name": "option_value_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "variant_id": {
+          "name": "variant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "variant_option_values_option_value_idx": {
+          "name": "variant_option_values_option_value_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "option_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "option_value_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "variant_option_values_variant_fk": {
+          "name": "variant_option_values_variant_fk",
+          "tableFrom": "variant_option_values",
+          "tableTo": "product_variants",
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "variant_option_values_option_fk": {
+          "name": "variant_option_values_option_fk",
+          "tableFrom": "variant_option_values",
+          "tableTo": "product_options",
+          "columnsFrom": ["organization_id", "product_id", "option_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "variant_option_values_value_fk": {
+          "name": "variant_option_values_value_fk",
+          "tableFrom": "variant_option_values",
+          "tableTo": "product_option_values",
+          "columnsFrom": [
+            "organization_id",
+            "product_id",
+            "option_id",
+            "option_value_id"
+          ],
+          "columnsTo": ["organization_id", "product_id", "option_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "variant_option_values_pk": {
+          "name": "variant_option_values_pk",
+          "columns": [
+            "organization_id",
+            "product_id",
+            "variant_id",
+            "option_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "variant_option_values_current_tenant_select": {
+          "name": "variant_option_values_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"variant_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"variant_option_values\".\"product_id\"\n            AND product_scope.organization_id = \"variant_option_values\".\"organization_id\"\n        )\n      "
+        },
+        "variant_option_values_current_tenant_insert": {
+          "name": "variant_option_values_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \n  \"variant_option_values\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"variant_option_values\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"variant_option_values\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1 FROM public.products AS product_scope\n          WHERE product_scope.id = \"variant_option_values\".\"product_id\"\n            AND product_scope.organization_id = \"variant_option_values\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.product_variants": {
+      "name": "product_variants",
+      "schema": "",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "product_variants_organization_product_idx": {
+          "name": "product_variants_organization_product_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_variants_organization_product_id_unique": {
+          "name": "product_variants_organization_product_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_variants_one_default_per_product_unique": {
+          "name": "product_variants_one_default_per_product_unique",
+          "columns": [
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"product_variants\".\"is_default\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_variants_product_position_unique": {
+          "name": "product_variants_product_position_unique",
+          "columns": [
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"product_variants\".\"position\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_variants_organization_sku_unique": {
+          "name": "product_variants_organization_sku_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(btrim(\"sku\"))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"product_variants\".\"sku\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "product_variants_organization_product_fk": {
+          "name": "product_variants_organization_product_fk",
+          "tableFrom": "product_variants",
+          "tableTo": "products",
+          "columnsFrom": ["organization_id", "product_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "product_variants_current_tenant_select": {
+          "name": "product_variants_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n        )\n      "
+        },
+        "product_variants_current_tenant_insert": {
+          "name": "product_variants_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
+        },
+        "product_variants_current_tenant_delete": {
+          "name": "product_variants_current_tenant_delete",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND \"product_variants\".\"is_default\"\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n            AND product_scope.variants_configured_at IS NULL\n            AND product_scope.deleted_at IS NULL\n        )\n      "
+        },
+        "product_variants_current_tenant_sku_update": {
+          "name": "product_variants_current_tenant_sku_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n          AND product_scope.deleted_at IS NULL\n        )\n      ",
+          "withCheck": "\n        \n  \"product_variants\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"product_variants\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"product_variants\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n\n        AND EXISTS (\n          SELECT 1\n          FROM public.products AS product_scope\n          WHERE product_scope.id = \"product_variants\".\"product_id\"\n            AND product_scope.organization_id = \"product_variants\".\"organization_id\"\n          AND product_scope.deleted_at IS NULL\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "product_variants_position_nonnegative": {
+          "name": "product_variants_position_nonnegative",
+          "value": "\"product_variants\".\"position\" IS NULL OR \"product_variants\".\"position\" >= 0"
+        },
+        "product_variants_sku_canonical": {
+          "name": "product_variants_sku_canonical",
+          "value": "\n        \"product_variants\".\"sku\" IS NULL OR (\n          \"product_variants\".\"sku\" <> ''\n          AND \"product_variants\".\"sku\" = btrim(\"product_variants\".\"sku\")\n          AND \"product_variants\".\"sku\" !~ '^[[:space:]]|[[:space:]]$'\n        )\n      "
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.products": {
+      "name": "products",
+      "schema": "",
+      "columns": {
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "variants_configured_at": {
+          "name": "variants_configured_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "products_organization_archive_name_idx": {
+          "name": "products_organization_archive_name_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "archived_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "products_organization_category_idx": {
+          "name": "products_organization_category_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "products_organization_id_id_unique": {
+          "name": "products_organization_id_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "products_organization_id_organizations_id_fk": {
+          "name": "products_organization_id_organizations_id_fk",
+          "tableFrom": "products",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "products_organization_category_fk": {
+          "name": "products_organization_category_fk",
+          "tableFrom": "products",
+          "tableTo": "categories",
+          "columnsFrom": ["organization_id", "category_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "products_current_tenant_select": {
+          "name": "products_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        },
+        "products_current_tenant_insert": {
+          "name": "products_current_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        },
+        "products_current_tenant_update": {
+          "name": "products_current_tenant_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n",
+          "withCheck": "\n  \"products\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"products\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"products\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "products_name_not_blank": {
+          "name": "products_name_not_blank",
+          "value": "char_length(btrim(\"products\".\"name\")) >= 1"
+        },
+        "products_version_positive": {
+          "name": "products_version_positive",
+          "value": "\"products\".\"version\" >= 1"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.rls_poc_operations": {
+      "name": "rls_poc_operations",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "rls_poc_operations_pk": {
+          "name": "rls_poc_operations_pk",
+          "columns": ["organization_id", "token"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sale_adjustments": {
+      "name": "sale_adjustments",
+      "schema": "",
+      "columns": {
+        "amount": {
+          "name": "amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "percentage": {
+          "name": "percentage",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_id": {
+          "name": "sale_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value_type": {
+          "name": "value_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "sale_adjustments_organization_sale_position_unique": {
+          "name": "sale_adjustments_organization_sale_position_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sale_adjustments_organization_sale_fk": {
+          "name": "sale_adjustments_organization_sale_fk",
+          "tableFrom": "sale_adjustments",
+          "tableTo": "sales",
+          "columnsFrom": ["organization_id", "sale_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "sale_adjustments_current_tenant_select": {
+          "name": "sale_adjustments_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \"sale_adjustments\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_adjustments\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_adjustments\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "sale_adjustments_kind_allowed": {
+          "name": "sale_adjustments_kind_allowed",
+          "value": "\"sale_adjustments\".\"kind\" IN ('discount', 'surcharge', 'freight', 'payment_surcharge')"
+        },
+        "sale_adjustments_value_type_allowed": {
+          "name": "sale_adjustments_value_type_allowed",
+          "value": "\"sale_adjustments\".\"value_type\" IN ('fixed', 'percentage')"
+        },
+        "sale_adjustments_position_nonnegative": {
+          "name": "sale_adjustments_position_nonnegative",
+          "value": "\"sale_adjustments\".\"position\" >= 0"
+        },
+        "sale_adjustments_amount_allowed": {
+          "name": "sale_adjustments_amount_allowed",
+          "value": "\n        \"sale_adjustments\".\"amount\" >= 0\n        AND scale(\"sale_adjustments\".\"amount\") <= 2\n        AND \"sale_adjustments\".\"amount\" < 1000000000000000000\n      "
+        },
+        "sale_adjustments_value_allowed": {
+          "name": "sale_adjustments_value_allowed",
+          "value": "\n        (\n          \"sale_adjustments\".\"value_type\" = 'fixed'\n          AND \"sale_adjustments\".\"percentage\" IS NULL\n        )\n        OR (\n          \"sale_adjustments\".\"value_type\" = 'percentage'\n          AND \"sale_adjustments\".\"kind\" IN ('discount', 'surcharge')\n          AND \"sale_adjustments\".\"percentage\" IS NOT NULL\n          AND \"sale_adjustments\".\"percentage\" >= 0\n          AND scale(\"sale_adjustments\".\"percentage\") <= 6\n          AND \"sale_adjustments\".\"percentage\" < 'Infinity'\n        )\n      "
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.sale_items": {
+      "name": "sale_items",
+      "schema": "",
+      "columns": {
+        "charged_unit_price": {
+          "name": "charged_unit_price",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "listed_unit_price": {
+          "name": "listed_unit_price",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_label": {
+          "name": "product_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_id": {
+          "name": "sale_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_cost": {
+          "name": "unit_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "variant_id": {
+          "name": "variant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "sale_items_organization_sale_position_unique": {
+          "name": "sale_items_organization_sale_position_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sale_items_organization_variant_idx": {
+          "name": "sale_items_organization_variant_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sale_items_organization_sale_fk": {
+          "name": "sale_items_organization_sale_fk",
+          "tableFrom": "sale_items",
+          "tableTo": "sales",
+          "columnsFrom": ["organization_id", "sale_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "sale_items_organization_product_fk": {
+          "name": "sale_items_organization_product_fk",
+          "tableFrom": "sale_items",
+          "tableTo": "products",
+          "columnsFrom": ["organization_id", "product_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "sale_items_variant_fk": {
+          "name": "sale_items_variant_fk",
+          "tableFrom": "sale_items",
+          "tableTo": "product_variants",
+          "columnsFrom": ["organization_id", "product_id", "variant_id"],
+          "columnsTo": ["organization_id", "product_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "sale_items_current_tenant_select": {
+          "name": "sale_items_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \"sale_items\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sale_items\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sale_items\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "sale_items_position_nonnegative": {
+          "name": "sale_items_position_nonnegative",
+          "value": "\"sale_items\".\"position\" >= 0"
+        },
+        "sale_items_product_label_not_blank": {
+          "name": "sale_items_product_label_not_blank",
+          "value": "char_length(btrim(\"sale_items\".\"product_label\")) >= 1"
+        },
+        "sale_items_quantity_positive": {
+          "name": "sale_items_quantity_positive",
+          "value": "\"sale_items\".\"quantity\" >= 1"
+        },
+        "sale_items_listed_unit_price_allowed": {
+          "name": "sale_items_listed_unit_price_allowed",
+          "value": "\n        \"sale_items\".\"listed_unit_price\" >= 0\n        AND scale(\"sale_items\".\"listed_unit_price\") <= 2\n        AND \"sale_items\".\"listed_unit_price\" < 1000000000000000000\n      "
+        },
+        "sale_items_charged_unit_price_allowed": {
+          "name": "sale_items_charged_unit_price_allowed",
+          "value": "\n        \"sale_items\".\"charged_unit_price\" >= 0\n        AND scale(\"sale_items\".\"charged_unit_price\") <= 2\n        AND \"sale_items\".\"charged_unit_price\" < 1000000000000000000\n      "
+        },
+        "sale_items_unit_cost_allowed": {
+          "name": "sale_items_unit_cost_allowed",
+          "value": "\n        \"sale_items\".\"unit_cost\" IS NULL OR (\n          \"sale_items\".\"unit_cost\" >= 0\n          AND scale(\"sale_items\".\"unit_cost\") <= 6\n          AND \"sale_items\".\"unit_cost\" < 1000000000000000000\n        )\n      "
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.sales": {
+      "name": "sales",
+      "schema": "",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'BRL'"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "sales_organization_id_id_unique": {
+          "name": "sales_organization_id_id_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sales_organization_command_unique": {
+          "name": "sales_organization_command_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "command_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sales_organization_confirmed_idx": {
+          "name": "sales_organization_confirmed_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "confirmed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sales_organization_id_organizations_id_fk": {
+          "name": "sales_organization_id_organizations_id_fk",
+          "tableFrom": "sales",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "sales_current_tenant_select": {
+          "name": "sales_current_tenant_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_pr11_runtime"],
+          "using": "\n  \"sales\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n  AND EXISTS (\n    SELECT 1\n    FROM public.memberships AS membership_scope\n    WHERE membership_scope.organization_id = \"sales\".\"organization_id\"\n      AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n      AND membership_scope.status = 'active'\n  )\n  AND EXISTS (\n    SELECT 1\n    FROM public.organizations AS organization_scope\n    WHERE organization_scope.id = \"sales\".\"organization_id\"\n      AND organization_scope.status = 'active'\n  )\n"
+        }
+      },
+      "checkConstraints": {
+        "sales_currency_brl": {
+          "name": "sales_currency_brl",
+          "value": "\"sales\".\"currency\" = 'BRL'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.auth_security_audit_event": {
+      "name": "auth_security_audit_event",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "auth_security_audit_event_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "auth_security_audit_outcome",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "auth_security_audit_event_actor_created_idx": {
+          "name": "auth_security_audit_event_actor_created_idx",
+          "columns": [
+            {
+              "expression": "actor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_security_audit_event_request_idx": {
+          "name": "auth_security_audit_event_request_idx",
+          "columns": [
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tenant_audit_event": {
+      "name": "tenant_audit_event",
+      "schema": "",
+      "columns": {
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "tenant_audit_event_org_created_idx": {
+          "name": "tenant_audit_event_org_created_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tenant_audit_event_request_idx": {
+          "name": "tenant_audit_event_request_idx",
+          "columns": [
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tenant_audit_event_organization_id_organizations_id_fk": {
+          "name": "tenant_audit_event_organization_id_organizations_id_fk",
+          "tableFrom": "tenant_audit_event",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "tenant_audit_event_current_actor_insert": {
+          "name": "tenant_audit_event_current_actor_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \"tenant_audit_event\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND \"tenant_audit_event\".\"actor_user_id\" = NULLIF(current_setting('app.user_id', true), '')\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"tenant_audit_event\".\"organization_id\"\n            AND membership_scope.user_id = \"tenant_audit_event\".\"actor_user_id\"\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"tenant_audit_event\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )\n      "
+        }
+      },
+      "checkConstraints": {
+        "tenant_audit_actor_id_length": {
+          "name": "tenant_audit_actor_id_length",
+          "value": "char_length(btrim(\"tenant_audit_event\".\"actor_user_id\")) BETWEEN 1 AND 255"
+        },
+        "tenant_audit_event_type_format": {
+          "name": "tenant_audit_event_type_format",
+          "value": "char_length(\"tenant_audit_event\".\"event_type\") BETWEEN 1 AND 128 AND \"tenant_audit_event\".\"event_type\" ~ '^[a-z][a-z0-9_.-]*$'"
+        },
+        "tenant_audit_entity_type_format": {
+          "name": "tenant_audit_entity_type_format",
+          "value": "char_length(\"tenant_audit_event\".\"entity_type\") BETWEEN 1 AND 64 AND \"tenant_audit_event\".\"entity_type\" ~ '^[a-z][a-z0-9_]*$'"
+        },
+        "tenant_audit_entity_id_uuid": {
+          "name": "tenant_audit_entity_id_uuid",
+          "value": "char_length(\"tenant_audit_event\".\"entity_id\") = 36 AND \"tenant_audit_event\".\"entity_id\" ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'"
+        }
+      },
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {
+    "public.auth_security_audit_event_type": {
+      "name": "auth_security_audit_event_type",
+      "schema": "public",
+      "values": [
+        "google_login_started",
+        "google_callback_succeeded",
+        "google_callback_failed",
+        "logout_succeeded",
+        "logout_failed"
+      ]
+    },
+    "public.auth_security_audit_outcome": {
+      "name": "auth_security_audit_outcome",
+      "schema": "public",
+      "values": ["started", "succeeded", "failed"]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

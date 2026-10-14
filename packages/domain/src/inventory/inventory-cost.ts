@@ -125,3 +125,36 @@ export function calculateMovingAverageCost(
 
   return formatScaledCost(rounded);
 }
+
+export interface RestockMovingAverageCostInput {
+  currentAverageCost: string | null;
+  currentQuantity: number;
+  /** Cost snapshot of the units that come back; null when it was unknown. */
+  restockedUnitCost: string | null;
+  restockedQuantity: number;
+}
+
+/**
+ * Moving average after units of a confirmed sale come back to stock
+ * (cancellation or return). It never blocks and never invents a cost:
+ * - an unknown snapshot cost leaves the average unchanged;
+ * - an empty balance takes the snapshot cost;
+ * - a positive balance with an unknown average stays unknown;
+ * - otherwise the weighted average is recomputed exactly like a receipt.
+ */
+export function restockMovingAverageCost(
+  input: RestockMovingAverageCostInput
+): string | null {
+  if (input.restockedUnitCost === null) {
+    return input.currentAverageCost;
+  }
+  if (input.currentQuantity > 0 && input.currentAverageCost === null) {
+    return null;
+  }
+  return calculateMovingAverageCost({
+    currentAverageCost: input.currentAverageCost,
+    currentQuantity: input.currentQuantity,
+    receivedQuantity: input.restockedQuantity,
+    unitCost: input.restockedUnitCost,
+  });
+}

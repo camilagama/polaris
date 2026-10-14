@@ -1941,6 +1941,16 @@ Não unique rígido em email/telefone.
 
 
 
+Critérios da implementação V1:
+
+- Nome obrigatório e aparado; pelo menos telefone ou email obrigatório. Observações não contam como identificador. Email/telefone são aparados e não têm unicidade rígida; telefone não recebe normalização nacional presumida.
+- Criar/listar/editar clientes, com lifecycle reversível `active`/`archived`; no banco, archive é representado por `archived_at`. Não há hard-delete nem associação de cliente a venda nesta etapa.
+- Mutação usa `expectedVersion` e auditoria transacional sem PII. RLS usa contexto tenant ativo; runtime pode ler, inserir e atualizar, mas não excluir.
+- A V1 usa `customer:update` para leitura e mutação, pois só existe o papel `owner` e o mapa ainda não tem `customer:read`. PR37 adiciona consulta de possíveis duplicados; nenhum merge automático.
+- Validar a migration em PostgreSQL 18 descartável: FORCE RLS/grants, isolamento entre organizações, contato obrigatório, contatos repetidos permitidos, optimistic concurrency, archive/restore, idempotência de lifecycle e auditoria sem PII.
+
+
+
 ---
 
 
@@ -2003,6 +2013,10 @@ sale_items
 
 Venda confirmada imutável.
 
+As tabelas de venda permanecem somente leitura para o runtime até PR43
+implementar o comando que confirma cabeçalho e itens na mesma transação
+(PR43: INSERT somente com a garantia de completude no commit; ver PR 43).
+
 
 
 Snapshot:
@@ -2048,6 +2062,12 @@ DecimalAmount
 
 
 Usar decimal exato.
+
+`Money` representa BRL com duas casas e até 18 dígitos inteiros. `Percentage`
+usa pontos percentuais e aceita até seis casas fracionárias. `DecimalAmount`
+preserva até dez casas em intermediários exatos; aplicar percentual não arredonda.
+Cada operação escolhe explicitamente quando converter o resultado para `Money`
+com arredondamento half-up.
 
 
 
@@ -2103,6 +2123,13 @@ Tipos:
 
 Permitir também negociação por item.
 
+Decisões de implementação V1:
+
+- a negociação por item fica no preço cobrado do item; `sale_adjustments` não repete essa diferença;
+- desconto/acréscimo pode ser valor fixo ou percentual; frete e sobretaxa de pagamento são valores fixos;
+- todos os percentuais usam o subtotal pelo preço cobrado, sem composição; cada ajuste percentual arredonda half-up uma vez para centavos;
+- descontos somados não podem superar o subtotal; frete e sobretaxa de pagamento aumentam o valor devido; taxa de processamento/antecipação fica separada para PR42.
+
 
 
 ---
@@ -2145,6 +2172,15 @@ Métodos:
 
 Um pagamento por venda na V1.
 
+Critérios V1 confirmados:
+
+- valor do pagamento igual ao total devido, sem parcial ou saldo pendente;
+- dinheiro registra o valor aplicado à venda; dinheiro entregue/troco não é capturado;
+- cartão de crédito exige parcelas inteiras positivas, sem teto adicional além do `integer` do PostgreSQL; outros métodos não têm parcelas;
+- o método é um registro comercial e não comprova liquidação bancária.
+
+Métodos V1: `pix`, `cash`, `credit_card`, `debit_card`, `bank_transfer` e `other`.
+
 
 
 ---
@@ -2174,6 +2210,36 @@ Permitir regras por:
 
 
 Snapshots na venda.
+
+
+
+Critérios V1 confirmados:
+
+
+
+- perfis são configurações manuais da organização, não integrações com provedores;
+
+- o operador escolhe explicitamente um perfil em cada venda; sem perfil ou sem regra exata, a venda segue e o custo fica desconhecido;
+
+- cada regra combina método e, para cartão de crédito, modalidade do parcelamento (`merchant` ou `issuer`) e quantidade; métodos sem cartão não têm parcelas;
+
+- cada taxa de processamento e antecipação aceita componente fixo em BRL e percentual efetivo, separadamente ou combinados; ausente/desconhecido é diferente de zero conhecido;
+
+- o componente percentual incide sobre o total devido da venda; somar componente fixo e percentual em decimal exato e arredondar half-up uma vez por custo;
+
+- antecipação só entra no snapshot quando o operador marcar essa intenção na venda; sem antecipação, seu custo estimado é zero não aplicável; se marcada sem regra conhecida, o custo permanece desconhecido;
+
+- prazo esperado é um número inteiro de dias salvo como estimativa na regra/snapshot; não cria data de liquidação nem contas a receber;
+
+- a venda preserva o perfil, a versão, a regra escolhida, os componentes e valores calculados; snapshots não mudam quando a configuração do perfil for editada;
+
+- parcelas de crédito continuam positivas até o limite do `integer` PostgreSQL, sem o teto histórico de 1–12 do documento de origem; registros antigos podem manter modalidade nula com marcador explícito de desconhecida quando ela não foi capturada, mas novos comandos exigem `merchant` ou `issuer`.
+
+Escopo entre etapas: PR42 entrega a configuração/versionamento de perfis e regras, o
+schema dos snapshots e o cálculo determinístico do snapshot. A seleção de perfil na
+venda e a gravação desse snapshot ficam conectadas ao comando e à interface de criação
+transacional da venda no PR43, que passa a criar o pagamento. Essa integração é requisito
+obrigatório do PR43: sem perfil ou sem regra exata, a venda segue com custo desconhecido.
 
 
 
@@ -2212,6 +2278,18 @@ Uma transaction deve:
 9. criar audit event;
 
 10. criar outbox intents quando necessário.
+
+O comando da venda aceita um perfil de pagamento opcional e a intenção de antecipação.
+Quando houver perfil/regra exata, grava os snapshots calculados pela regra de PR42; sem
+perfil ou regra exata, não bloqueia a venda e registra taxas desconhecidas. A interface
+da venda deve tornar explícita a seleção do perfil e da intenção de antecipação.
+
+Decisões de implementação do PR43 (detalhes em `docs/business-rules/sales.md`): o comando
+`sale.confirm` é idempotente por `commandId` e exige escolha explícita do perfil (`id` com
+`expectedVersion`, ou `null`); o runtime passa a ter INSERT, sem UPDATE/DELETE, nas tabelas
+de venda, e gatilhos de restrição deferidos no PostgreSQL recusam no commit qualquer venda
+incompleta; o passo 10 não gera intents porque o outbox transacional do servidor só existe
+no PR108 e nenhuma consumidora da venda foi definida. A atribuição de cliente continua no PR44.
 
 
 
@@ -2269,6 +2347,11 @@ Economia da venda não muda.
 
 Tudo auditado/versionado.
 
+Decisões de implementação do PR44 (detalhes em `docs/business-rules/sales.md`): histórico
+versionado e somente de acréscimo, comandos com `expectedVersion`, ações idempotentes quando já
+valem, apenas clientes ativos podem ser associados, capability dedicada `sale:assign_customer` e
+interface opcional após a confirmação e em `/sales/customer` (ainda não existe lista de vendas).
+
 
 
 ---
@@ -2288,6 +2371,8 @@ Nunca editar itens antigos.
 
 
 Gerar inverse inventory movements.
+
+Decisões de implementação do PR45 (detalhes em `docs/business-rules/sales.md`): cancelamento total em `sale_cancellations`, uma vez por venda, idempotente por `commandId`; motivo estruturado opcional (lista V1 definida pelo projeto); estoque devolvido ao custo do item; produto removido bloqueia o cancelamento; capabilities `sale:cancel` e `sale:read`; leitura `sale.list`/`sale.get` e telas de histórico e detalhe.
 
 
 
@@ -2329,6 +2414,8 @@ restocked <= returned
 
 Property tests obrigatórios.
 
+Decisões de implementação do PR46 (detalhes em `docs/business-rules/sales.md`): itens identificados pela posição, várias devoluções por venda até esgotar o disponível, estoque devolvido ao custo do item apenas para as unidades repostas, motivo estruturado opcional, exclusão mútua com o cancelamento total, capability `sale:return`, sem valor monetário nem reembolso nesta etapa. Os property tests estão em `packages/domain/src/sales/sale-return.test.ts` e o gate PostgreSQL inclui uma sequência aleatória verificada contra um modelo.
+
 
 
 ---
@@ -2357,6 +2444,7 @@ Timezone organization-aware.
 
 Validar limite retroativo.
 
+Decisões de implementação do PR47 (detalhes em `docs/business-rules/sales.md` e `time-and-dates.md`): `recorded_at` substitui `client_created_at` e é só evidência do dispositivo; `occurred_on` (data de `occurred_at` no calendário da organização, calculada no servidor) é obrigatória e é a data dos movimentos de venda, exigida também pelo banco no commit; janela retroativa de 30 dias de calendário no fuso da organização para o `owner` (papel desconhecido = 0), tolerância de futuro de 5 minutos e replay respondido antes da janela. O gate PostgreSQL `poc:sales:dates:verify` prova as bordas (30/31 dias, dois fusos, tolerância, data do razão, replay).
 
 
 ---
@@ -2382,6 +2470,8 @@ Provar:
 - returns corretos;
 
 - customer reconciliation não altera economia.
+
+Fechado com `poc:gate4:verify` (cenário ponta a ponta contra um oráculo independente) mais os gates por etapa, descritos em `docs/runbooks/gate-4-sales-core.md`. O dossiê para a revisão completa é `doc/checkpoint-gate4.md`.
 
 
 
@@ -3062,6 +3152,8 @@ operating result estimate
 
 
 Property tests obrigatórios.
+
+Decisões de implementação do PR46 (detalhes em `docs/business-rules/sales.md`): itens identificados pela posição, várias devoluções por venda até esgotar o disponível, estoque devolvido ao custo do item apenas para as unidades repostas, motivo estruturado opcional, exclusão mútua com o cancelamento total, capability `sale:return`, sem valor monetário nem reembolso nesta etapa. Os property tests estão em `packages/domain/src/sales/sale-return.test.ts` e o gate PostgreSQL inclui uma sequência aleatória verificada contra um modelo.
 
 
 

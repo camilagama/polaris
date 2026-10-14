@@ -2,8 +2,11 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
+import { customers } from "./schema/customer";
 import { organizationSchema } from "./schema/organization";
+import { paymentProfileRules, paymentProfiles } from "./schema/payment-profile";
 import { dbPocOperations } from "./schema/poc";
+import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { authSecurityAuditEvents } from "./schema/security-audit";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
@@ -15,11 +18,18 @@ const databaseSchema = {
   ...organizationSchema,
   authSecurityAuditEvents,
   categories,
+  customers,
   dbPocOperations,
   inventoryBalances,
   mediaAssets,
   mediaCleanupClaims,
   productMedia,
+  paymentProfileRules,
+  paymentProfiles,
+  saleAdjustments,
+  saleItems,
+  salePayments,
+  sales,
   stockMovements,
   variantMedia,
   tenantAuditEvents,

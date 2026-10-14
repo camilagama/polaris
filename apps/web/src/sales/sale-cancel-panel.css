@@ -1,0 +1,63 @@
+.sale-cancel {
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  margin: 1rem 0;
+  color: var(--category-ink);
+  background: var(--category-surface);
+  border: 1px solid var(--category-line);
+  border-radius: 0.85rem;
+}
+
+.sale-cancel h3 {
+  margin: 0 0 0.5rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+
+.sale-cancel-fields {
+  min-width: 0;
+  padding: 0.85rem;
+  margin: 0.8rem 0;
+  border: 1px solid var(--category-line);
+  border-radius: 0.65rem;
+}
+
+.sale-cancel-fields > legend {
+  padding: 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: var(--category-muted);
+}
+
+.sale-cancel select,
+.sale-cancel textarea {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  font: inherit;
+  color: var(--category-ink);
+  background: var(--category-surface);
+  border: 1px solid var(--category-line);
+  border-radius: 0.55rem;
+}
+
+.sale-cancel select {
+  min-height: 2.8rem;
+}
+
+.sale-cancel textarea {
+  resize: vertical;
+}
+
+.sale-cancel [aria-invalid="true"] {
+  border-color: var(--category-danger);
+}
+
+.sale-cancel-fields:disabled {
+  opacity: 0.75;
+}
+
+.sale-danger {
+  color: var(--category-danger-strong);
+  border-color: color-mix(in srgb, var(--category-danger) 45%, transparent);
+}

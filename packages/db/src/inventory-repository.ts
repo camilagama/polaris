@@ -17,6 +17,7 @@ import {
 import {
   calculateMovingAverageCost as calculateMovingAverageCostDomain,
   normalizeUnitCost,
+  restockMovingAverageCost,
 } from "@polaris/domain/inventory/inventory-cost";
 import {
   normalizeReceiveStockInput,
@@ -41,7 +42,7 @@ import { productVariants, products } from "./schema/product";
 export interface RecordStockMovementInput {
   movementType: Exclude<
     StockMovementType,
-    "receipt" | "write_off" | "inventory_count"
+    "receipt" | "write_off" | "inventory_count" | "sale"
   >;
   quantityDelta: number;
   requestId?: string | null;
@@ -76,7 +77,7 @@ interface StockMovementWriteInput
   calculateMovingAverageCost?: (balance: {
     currentAverageCost: string | null;
     currentQuantity: number;
-  }) => string;
+  }) => string | null;
   commandId?: string | null;
   commandIndex?: number;
   commandVersion?: number | null;
@@ -537,12 +538,23 @@ function movementUnitCost(
   return null;
 }
 
+function requireSaleCapability(identity: TenantRequestIdentity): void {
+  if (identity.capability !== "sale:create") {
+    throw new TenantAuthorizationError("capability_denied");
+  }
+}
+
+// Every movement is authorized here. Inventory commands keep the default
+// inventory:adjust check; only the sale transaction supplies the sale check.
 async function applyStockMovement(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
-  input: StockMovementWriteInput
+  input: StockMovementWriteInput,
+  authorize: (
+    identity: TenantRequestIdentity
+  ) => void = requireInventoryCapability
 ) {
-  requireInventoryCapability(identity);
+  authorize(identity);
   validateStockMovementWriteInput(input);
 
   const variant = await lockVariantProduct(
@@ -633,7 +645,8 @@ export async function recordStockMovement(
     !isStockMovementType(movementType) ||
     movementType === "receipt" ||
     movementType === "write_off" ||
-    movementType === "inventory_count"
+    movementType === "inventory_count" ||
+    movementType === "sale"
   ) {
     throw new InvalidStockMovementError();
   }
@@ -721,6 +734,104 @@ export async function inventoryCount(
       valuationUnitCost: input.valuationUnitCost,
       variantId: input.variantId,
     })
+  );
+}
+
+export interface SaleStockMovementInput {
+  commandId: string;
+  commandIndex: number;
+  occurredOn: string;
+  quantity: number;
+  requestId?: string | null;
+  variantId: string;
+}
+
+/**
+ * Ledger primitive used only by the sale transaction. It runs inside the
+ * caller's transaction (no savepoint), captures the moving-average cost under
+ * the balance lock and fails with InsufficientStockError instead of letting the
+ * balance go negative. The sale command ID and the item position identify the
+ * movement, so a replayed sale cannot write it twice.
+ */
+export async function recordSaleStockMovement(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: SaleStockMovementInput
+) {
+  return await applyStockMovement(
+    transaction,
+    identity,
+    {
+      captureMovingAverageCost: true,
+      commandId: input.commandId,
+      commandIndex: input.commandIndex,
+      commandVersion: 1,
+      movementType: "sale",
+      occurredOn: input.occurredOn,
+      quantityDelta: -input.quantity,
+      requestId: input.requestId ?? null,
+      variantId: input.variantId,
+    },
+    requireSaleCapability
+  );
+}
+
+export interface SaleRestockMovementInput {
+  commandId: string;
+  commandIndex: number;
+  movementType: "sale_cancellation" | "sale_return";
+  occurredOn: string;
+  quantity: number;
+  requestId?: string | null;
+  /** Cost snapshot of the original sale item; null when it was unknown. */
+  unitCost: string | null;
+  variantId: string;
+}
+
+const restockCapability = {
+  sale_cancellation: "sale:cancel",
+  sale_return: "sale:return",
+} as const;
+
+/**
+ * Ledger primitive for the compensatory movements of a confirmed sale
+ * (cancellation or return): units come back at the cost snapshot of the
+ * original item and the moving average follows the restock rule. It runs in
+ * the caller's transaction and never touches the original sale movements.
+ */
+export async function recordSaleRestockMovement(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: SaleRestockMovementInput
+) {
+  return await applyStockMovement(
+    transaction,
+    identity,
+    {
+      calculateMovingAverageCost: (balance) =>
+        restockMovingAverageCost({
+          currentAverageCost: balance.currentAverageCost,
+          currentQuantity: balance.currentQuantity,
+          restockedQuantity: input.quantity,
+          restockedUnitCost: input.unitCost,
+        }),
+      commandId: input.commandId,
+      commandIndex: input.commandIndex,
+      commandVersion: 1,
+      movementType: input.movementType,
+      occurredOn: input.occurredOn,
+      quantityDelta: input.quantity,
+      requestId: input.requestId ?? null,
+      unitCost: input.unitCost,
+      variantId: input.variantId,
+    },
+    (restockIdentity) => {
+      if (
+        restockIdentity.capability !== restockCapability[input.movementType]
+      ) {
+        throw new TenantAuthorizationError("capability_denied");
+      }
+    }
   );
 }
 

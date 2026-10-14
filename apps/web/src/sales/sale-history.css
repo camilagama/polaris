@@ -1,0 +1,144 @@
+.sale-history-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0 0 1rem;
+  list-style: none;
+}
+
+.sale-history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.75rem;
+  align-items: start;
+  padding: 0.9rem 1rem;
+  color: var(--category-ink);
+  background: var(--category-surface);
+  border: 1px solid var(--category-line);
+  border-radius: 0.75rem;
+}
+
+.sale-history-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+  font-weight: 700;
+}
+
+.sale-history-list a,
+.sale-detail a,
+.sale-empty a {
+  color: var(--category-accent-strong);
+}
+
+.sale-history-list strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.sale-history-meta {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--category-muted);
+}
+
+.sale-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.6rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 750;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.sale-badge.is-confirmed {
+  color: var(--category-accent-strong);
+  background: var(--category-accent-soft);
+}
+
+.sale-badge.is-cancelled {
+  color: var(--category-danger-strong);
+  background: var(--category-danger-soft);
+}
+
+.sale-detail {
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  margin: 0 0 1rem;
+  color: var(--category-ink);
+  background: var(--category-surface);
+  border: 1px solid var(--category-line);
+  border-radius: 0.85rem;
+}
+
+.sale-detail h2,
+.sale-detail h3 {
+  margin: 0 0 0.5rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+}
+
+.sale-detail h3 {
+  font-size: 1.05rem;
+}
+
+.sale-detail-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sale-cancellation {
+  padding: 0.85rem;
+  margin: 0.5rem 0 1rem;
+  background: var(--category-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--category-danger) 32%, transparent);
+  border-radius: 0.65rem;
+}
+
+.sale-message.is-success {
+  color: var(--category-accent-strong);
+  background: var(--category-accent-soft);
+  border-color: color-mix(in srgb, var(--category-accent) 32%, transparent);
+}
+
+.sale-badge.is-returns {
+  color: var(--category-warning);
+  background: var(--category-warning-soft);
+}
+
+.sale-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sale-returns-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sale-returns-list > li {
+  padding: 0.75rem;
+  background: var(--category-surface-muted);
+  border: 1px solid var(--category-line);
+  border-radius: 0.65rem;
+}
+
+.sale-returns-list p {
+  margin: 0 0 0.3rem;
+}
+
+.sale-returns-list ul {
+  padding-left: 1.1rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.86rem;
+}
