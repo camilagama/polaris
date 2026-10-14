@@ -9,18 +9,23 @@ import {
   useRef,
   useState,
 } from "react";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import {
   browserStorage,
   clearLegacyOrganizationId,
+  clearOrganizationsCache,
+  organizationLoadAfterFailure,
+  readOrganizationsCache,
+  writeOrganizationsCache,
   type Organization,
   type OrganizationLoad,
-  organizationLoadErrorMessage,
   organizationLoadFromList,
   readPreferredOrganizationId,
   selectOrganization,
   writePreferredOrganizationId,
 } from "./current-organization-model";
 import { orpcClient } from "./orpc";
+import { rpcErrorCode } from "./rpc-error";
 
 interface OrganizationContextValue {
   load: OrganizationLoad;
@@ -46,6 +51,7 @@ interface OrganizationProviderProps {
 export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const [load, setLoad] = useState<OrganizationLoad>({ status: "loading" });
   const latestRequest = useRef(0);
+  const fromCache = useRef<boolean>(false);
 
   const loadOrganizations = useCallback(() => {
     latestRequest.current += 1;
@@ -54,6 +60,10 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       .listMine()
       .then(({ organizations }) => {
         if (request === latestRequest.current) {
+          fromCache.current = false;
+          if (OFFLINE_RUNTIME_ENABLED) {
+            writeOrganizationsCache(browserStorage(), organizations);
+          }
           setLoad(
             organizationLoadFromList(
               organizations,
@@ -63,14 +73,34 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         }
       })
       .catch((error: unknown) => {
-        if (request === latestRequest.current) {
-          setLoad({
-            message: organizationLoadErrorMessage(error),
-            status: "error",
-          });
+        if (request !== latestRequest.current) {
+          return;
         }
+        if (rpcErrorCode(error) === "UNAUTHORIZED") {
+          // The session is over: its organizations must not be offered offline.
+          clearOrganizationsCache(browserStorage());
+        }
+        const outcome = organizationLoadAfterFailure({
+          cached: readOrganizationsCache(browserStorage()),
+          error,
+          offlineEnabled: OFFLINE_RUNTIME_ENABLED,
+          preferredId: readPreferredOrganizationId(browserStorage()),
+        });
+        fromCache.current = outcome.fromCache;
+        setLoad(outcome.load);
       });
   }, []);
+
+  useEffect(() => {
+    // Opened from the device's copy: read the real list as soon as the connection is back.
+    const onOnline = () => {
+      if (fromCache.current) {
+        loadOrganizations();
+      }
+    };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [loadOrganizations]);
 
   useEffect(() => {
     clearLegacyOrganizationId(browserStorage());

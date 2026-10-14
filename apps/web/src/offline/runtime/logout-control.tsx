@@ -1,4 +1,8 @@
 import { useCallback, useState } from "react";
+import {
+  browserStorage,
+  clearOrganizationsCache,
+} from "../../lib/current-organization-model";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
 import {
@@ -37,7 +41,11 @@ export function LogoutControl() {
       const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
       return workspaces.length > 0
         ? {
-            leave: () => window.location.assign("/"),
+            leave: () => {
+              // the next person to open this browser must not be offered these organizations
+              clearOrganizationsCache(browserStorage());
+              window.location.assign("/");
+            },
             signOut: signOutOnServer,
             workspaces,
           }

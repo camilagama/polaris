@@ -4,6 +4,7 @@ import { orpcClient } from "../../lib/orpc";
 import { getUpdateStore } from "../../pwa/runtime";
 import { purgeNamespace } from "../logout-purge";
 import { localNamespace } from "../namespace";
+import { OFFLINE_RUNTIME_ENABLED } from "./enabled";
 import { OfflineRuntime } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 import { RuntimeContext } from "./runtime-context";
@@ -17,9 +18,6 @@ import { openRuntimeStores } from "./runtime-stores";
  * device checklist of Gate 5 is done: with it off nothing here runs, registers a
  * device or touches the disk.
  */
-const OFFLINE_RUNTIME_ENABLED =
-  import.meta.env.VITE_OFFLINE_RUNTIME_ENABLED === "true";
-
 const SYNC_EVERY_MS = 60_000;
 
 function createBrowserRuntime(): OfflineRuntime {
