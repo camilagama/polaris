@@ -76,7 +76,10 @@ function createGoogleTestApp() {
 
   return { app: testApp, auditEvents, auth };
 }
-function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
+function createEmailPasswordTestApp(
+  emailDeliveryOverride?: AuthEmailDelivery,
+  options: { failEpochBump?: boolean } = {}
+) {
   const auditEvents: AuthSecurityAuditEvent[] = [];
   const verificationEmails: Array<{
     email: string;
@@ -112,7 +115,9 @@ function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
     },
     authorizationEpochBumper: (userId) => {
       epochBumps.push(userId);
-      return Promise.resolve();
+      return options.failEpochBump
+        ? Promise.reject(new Error("epoch bump failed"))
+        : Promise.resolve();
     },
     baseURL: testBaseURL,
     databaseAdapter,
@@ -701,6 +706,65 @@ describe("Email/password authentication", () => {
       testBindings
     );
     expect(newPasswordLogin.status).toBe(200);
+  });
+  it("still revokes every session when the offline epoch bump fails during a password reset", async () => {
+    const {
+      app: testApp,
+      epochBumps,
+      passwordResetEmails,
+      verificationEmails,
+    } = createEmailPasswordTestApp(undefined, { failEpochBump: true });
+    stubPwnedPasswordRange();
+    const email = "reset-bump-failure@example.invalid";
+    const oldPassword = "Old long password for Polaris 2026!";
+    const post = (path: string, body: unknown, cookie?: string) =>
+      testApp.request(
+        path,
+        {
+          body: JSON.stringify(body),
+          headers: {
+            "content-type": "application/json",
+            origin: testBaseURL,
+            ...(cookie ? { cookie } : {}),
+          },
+          method: "POST",
+        },
+        testBindings
+      );
+    await post("/api/auth/sign-up/email", {
+      email,
+      name: "Reset Bump Failure",
+      password: oldPassword,
+    });
+    const verificationURL = new URL(verificationEmails[0]?.url as string);
+    await testApp.request(
+      `${verificationURL.pathname}?token=${encodeURIComponent(verificationEmails[0]?.token as string)}`,
+      { headers: { origin: testBaseURL } },
+      testBindings
+    );
+    const login = await post("/api/auth/sign-in/email", {
+      email,
+      password: oldPassword,
+    });
+    const sessionCookie = cookieHeader(login.headers);
+    await post("/api/auth/request-password-reset", {
+      email,
+      redirectTo: "/reset-password",
+    });
+
+    const reset = await post("/api/auth/reset-password", {
+      newPassword: "A different long password for Polaris 2026!",
+      token: passwordResetEmails[0]?.token,
+    });
+
+    expect(reset.status).toBe(200);
+    expect(epochBumps).toHaveLength(1); // it was attempted, and failed
+    const priorSession = await testApp.request(
+      "/api/auth/get-session?disableCookieCache=true",
+      { headers: { cookie: sessionCookie } },
+      testBindings
+    );
+    expect(await priorSession.json()).toBeNull();
   });
   it("does not query HIBP for an invalid reset token or unauthenticated password change", async () => {
     const { app: testApp } = createEmailPasswordTestApp();

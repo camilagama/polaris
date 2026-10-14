@@ -9,6 +9,10 @@ import type { RuntimeApi } from "./offline-runtime";
  */
 export function createRpcRuntimeApi(client: PolarisRpcClient): RuntimeApi {
   return {
+    deviceIsMine: async (deviceId) =>
+      (await client.device.list()).devices.some(
+        (device) => device.id === deviceId && device.revokedAt === null
+      ),
     issueLease: async (deviceId, organizationId) => {
       const issued = await client.offline.issueLease({
         deviceId,

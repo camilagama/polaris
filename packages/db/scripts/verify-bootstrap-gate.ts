@@ -382,6 +382,21 @@ async function run() {
     }
     tests.push("an out-of-range page size or too many ids is refused");
 
+    // Variants by product id: more than 40 products could be cut off silently.
+    await assert.rejects(
+      () =>
+        read(tenantA, "variants", {
+          ids: Array.from({ length: 41 }, () => randomUUID()),
+        }),
+      RangeError
+    );
+    await read(tenantA, "variants", {
+      ids: Array.from({ length: 40 }, () => randomUUID()),
+    });
+    tests.push(
+      "reading variants for more than 40 products at once is refused, so an answer is never silently cut short"
+    );
+
     console.log(
       JSON.stringify(
         {

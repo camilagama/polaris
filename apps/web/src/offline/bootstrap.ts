@@ -42,6 +42,8 @@ const BOOTSTRAP_COLLECTION_ORDER: readonly BootstrapCollectionName[] = [
 
 const LOCAL_STORE_VERSION = 1;
 const ID_CHUNK = 200;
+/** Products per variants read: the server refuses more, so none is cut short (50 variants each). */
+const VARIANT_PRODUCT_CHUNK = 40;
 
 export interface BootstrapPageRequest {
   afterId?: string | null;
@@ -203,7 +205,7 @@ async function refreshVariantsOfProducts(
   writer: LocalWriter,
   productIds: string[]
 ): Promise<void> {
-  for (const idsChunk of chunk(productIds, ID_CHUNK)) {
+  for (const idsChunk of chunk(productIds, VARIANT_PRODUCT_CHUNK)) {
     // biome-ignore lint/performance/noAwaitInLoops: chunks are applied in order
     const page = await source.page("variants", { ids: idsChunk });
     await writer.upsert("variants", page.rows);

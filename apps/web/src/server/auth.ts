@@ -26,6 +26,7 @@ import {
   SESSION_IDLE_TTL_SECONDS,
   SESSION_REFRESH_INTERVAL_SECONDS,
 } from "./auth/session-policy";
+import { logServerError } from "./observability/server-log";
 
 type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
 
@@ -655,7 +656,21 @@ export function createBetterAuth({
           maxPasswordLength: 256,
           minPasswordLength: 1,
           onPasswordReset: async ({ user }) => {
-            await bumpAuthorizationEpoch?.(user.id);
+            // Better Auth revokes the sessions only after this hook returns, so a
+            // failure here must never escape: the password is already changed and
+            // the reset token consumed. Sessions are what authorize a sync, so
+            // revoking them still makes every offline lease useless; the failed
+            // bump is logged for the operator to see.
+            try {
+              await bumpAuthorizationEpoch?.(user.id);
+            } catch (error) {
+              logServerError({
+                error,
+                method: "POST",
+                requestId: "password-reset",
+                route: "/api/auth/reset-password",
+              });
+            }
           },
           password: {
             hash: hashPasswordNfc,

@@ -27,6 +27,8 @@ export interface LogoutWorkspace {
   outbox: Outbox;
   /** Removes this workspace's local data; refuses queued commands unless told to discard. */
   purge: (options: { discardPending: boolean }) => Promise<void>;
+  /** Frees what was opened only to inspect this workspace; safe to call twice. */
+  release?: () => Promise<void> | void;
   /** Sends what is queued (the caller wires `syncOutbox`); rejects when there is no network. */
   trySync: () => Promise<unknown>;
 }
@@ -90,8 +92,22 @@ async function settle(
   };
 }
 
+async function releaseAll(workspaces: readonly LogoutWorkspace[]) {
+  await Promise.all(workspaces.map((workspace) => workspace.release?.()));
+}
+
 /** Tries to log out without losing anything: sends first, purges only what is empty. */
 export async function attemptLogout(
+  workspaces: readonly LogoutWorkspace[]
+): Promise<LogoutOutcome> {
+  try {
+    return await attemptLogoutUnreleased(workspaces);
+  } finally {
+    await releaseAll(workspaces);
+  }
+}
+
+async function attemptLogoutUnreleased(
   workspaces: readonly LogoutWorkspace[]
 ): Promise<LogoutOutcome> {
   const blocked: BlockedWorkspace[] = [];
@@ -133,8 +149,19 @@ export async function discardAndLogout(
   options: { confirmed: boolean }
 ): Promise<{ discarded: number; status: "ready" }> {
   if (!options.confirmed) {
+    await releaseAll(workspaces);
     throw new LogoutDiscardNotConfirmedError();
   }
+  try {
+    return await discardUnreleased(workspaces);
+  } finally {
+    await releaseAll(workspaces);
+  }
+}
+
+async function discardUnreleased(
+  workspaces: readonly LogoutWorkspace[]
+): Promise<{ discarded: number; status: "ready" }> {
   let discarded = 0;
   for (const workspace of workspaces) {
     // biome-ignore lint/performance/noAwaitInLoops: purged one by one so a failure names where it stopped

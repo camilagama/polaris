@@ -41,6 +41,12 @@ export interface KeyValueStore {
 }
 
 export interface RuntimeApi {
+  /**
+   * Whether this device is registered to the signed-in user and not revoked.
+   * Asked at every start, so a browser whose previous user left without logging
+   * out never lends that user's device, lease or data to the next one.
+   */
+  deviceIsMine: (deviceId: string) => Promise<boolean>;
   /** Issues (or renews) the lease of the device for the organization. */
   issueLease: (
     deviceId: string,
@@ -103,6 +109,17 @@ export interface RuntimeContext {
 }
 
 const DEVICE_KEY = "polaris.offline.device";
+const NAMESPACES_KEY = "polaris.offline.namespaces";
+const MAX_LABEL_CODE_POINTS = 80;
+const controlCharacters = /\p{Cc}/gu;
+
+/** A device label the server accepts: trimmed, no control characters, at most 80 characters, or none. */
+function clampLabel(label: string | null | undefined): string | null {
+  const cleaned = (label ?? "").replace(controlCharacters, " ").trim();
+  return cleaned
+    ? [...cleaned].slice(0, MAX_LABEL_CODE_POINTS).join("").trim()
+    : null;
+}
 const leaseKey = (organizationId: string) =>
   `polaris.offline.lease.${organizationId}`;
 const RENEW_BEFORE_MS = 12 * 3_600_000;
@@ -197,6 +214,7 @@ export class OfflineRuntime {
       purge: async (options) => {
         await this.closeStores();
         await this.dependencies.purge(namespace, options);
+        this.forgetNamespace(namespace);
         this.forgetDevice();
         this.set({ ...this.snapshot, counts: EMPTY_COUNTS, phase: "off" });
       },
@@ -207,6 +225,61 @@ export class OfflineRuntime {
         await this.syncNow();
       },
     };
+  }
+
+  /**
+   * Every namespace this browser holds for the signed-in user, not only the open
+   * organization: logging out of a shared browser must not leave another
+   * organization's data behind. The ones that are not open are opened just to be
+   * inspected; they cannot be sent from here (that needs that organization's
+   * session context), so a queued command in one blocks the logout until the
+   * person switches to it. Each workspace releases what it opened.
+   */
+  async logoutWorkspaces(): Promise<LogoutWorkspace[]> {
+    const current = this.logoutWorkspace();
+    if (!current) {
+      return [];
+    }
+    const others: LogoutWorkspace[] = [];
+    const known = this.dependencies.keyValues.read(DEVICE_KEY) ?? this.deviceId;
+    for (const item of this.namespaces()) {
+      if (
+        this.namespace &&
+        item.userId === this.namespace.userId &&
+        item.organizationId === this.namespace.organizationId
+      ) {
+        continue;
+      }
+      // biome-ignore lint/performance/noAwaitInLoops: each namespace is opened and inspected in turn
+      const namespace = await this.dependencies.namespaceFor(
+        item.userId,
+        item.organizationId
+      );
+      const stores = await this.dependencies.openStores(
+        namespace,
+        known ?? "00000000-0000-7000-8000-000000000000"
+      );
+      let closed = false;
+      const release = async () => {
+        if (!closed) {
+          closed = true;
+          await stores.close();
+        }
+      };
+      others.push({
+        label: `${item.organizationId} (outra organização)`,
+        outbox: stores.outbox,
+        purge: async (options) => {
+          await release();
+          await this.dependencies.purge(namespace, options);
+          this.forgetNamespace(namespace);
+          this.dependencies.keyValues.remove(leaseKey(item.organizationId));
+        },
+        release,
+        trySync: () => Promise.reject(new Error("switch_organization")),
+      });
+    }
+    return [current, ...others];
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -339,17 +412,89 @@ export class OfflineRuntime {
   private async ensureDevice(): Promise<string> {
     const { keyValues } = this.dependencies;
     const known = keyValues.read(DEVICE_KEY);
-    if (known) {
+    if (known && (await this.stillMine(known))) {
       return known;
+    }
+    if (known) {
+      // Somebody else's device (or a revoked one): never reuse it or its lease.
+      keyValues.remove(DEVICE_KEY);
+      if (this.organizationId) {
+        keyValues.remove(leaseKey(this.organizationId));
+      }
     }
     if (!this.dependencies.isOnline()) {
       throw new Error("no_device_offline");
     }
     const id = await this.dependencies.api.registerDevice(
-      this.dependencies.deviceLabel ?? null
+      clampLabel(this.dependencies.deviceLabel)
     );
     keyValues.write(DEVICE_KEY, id);
     return id;
+  }
+
+  /** Online, asks the server whether the remembered device is this user's; offline, trusts it. */
+  private async stillMine(deviceId: string): Promise<boolean> {
+    if (!this.dependencies.isOnline()) {
+      return true;
+    }
+    try {
+      return await this.dependencies.api.deviceIsMine(deviceId);
+    } catch {
+      return true; // the server could not be asked: do not discard on a hiccup
+    }
+  }
+
+  private namespaces(): { organizationId: string; userId: string }[] {
+    try {
+      const parsed: unknown = JSON.parse(
+        this.dependencies.keyValues.read(NAMESPACES_KEY) ?? "[]"
+      );
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (item): item is { organizationId: string; userId: string } =>
+              typeof item?.organizationId === "string" &&
+              typeof item?.userId === "string"
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeNamespaces(list: { organizationId: string; userId: string }[]) {
+    if (list.length === 0) {
+      this.dependencies.keyValues.remove(NAMESPACES_KEY);
+      return;
+    }
+    this.dependencies.keyValues.write(NAMESPACES_KEY, JSON.stringify(list));
+  }
+
+  private rememberNamespace(namespace: LocalNamespace) {
+    const list = this.namespaces();
+    if (
+      !list.some(
+        (item) =>
+          item.userId === namespace.userId &&
+          item.organizationId === namespace.organizationId
+      )
+    ) {
+      this.writeNamespaces([
+        ...list,
+        { organizationId: namespace.organizationId, userId: namespace.userId },
+      ]);
+    }
+  }
+
+  private forgetNamespace(namespace: LocalNamespace) {
+    this.writeNamespaces(
+      this.namespaces().filter(
+        (item) =>
+          !(
+            item.userId === namespace.userId &&
+            item.organizationId === namespace.organizationId
+          )
+      )
+    );
   }
 
   /** The lease to work under: the cached one while it lasts, a fresh one when due. */
@@ -421,6 +566,7 @@ export class OfflineRuntime {
       organizationId
     );
     const stores = await this.dependencies.openStores(namespace, deviceId);
+    this.rememberNamespace(namespace);
     if (generation !== this.generation) {
       await stores.close();
       return;

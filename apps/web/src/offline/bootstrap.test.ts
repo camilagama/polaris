@@ -381,6 +381,25 @@ describe("pullLocalChanges", () => {
     expect(variantCall?.ids).toEqual([uuid(1002)]);
   });
 
+  it("reads variants in chunks of at most 40 products, so the server never has to cut an answer short", async () => {
+    const { server, writer } = await readyStore();
+    for (let n = 1; n <= 95; n += 1) {
+      server.change("product", uuid(6000 + n));
+    }
+
+    await pullLocalChanges(server, writer, "0");
+
+    const variantCalls = server.pageCalls.filter(
+      (call) => call.collection === "variants"
+    );
+    expect(variantCalls.map((call) => call.ids?.length)).toEqual([40, 40, 15]);
+    // the same changes still ask for products in the bigger chunks
+    const productCalls = server.pageCalls.filter(
+      (call) => call.collection === "products"
+    );
+    expect(productCalls.map((call) => call.ids?.length)).toEqual([95]);
+  });
+
   it("refreshes the recent sales window once however many sales changed", async () => {
     const { server, writer } = await readyStore();
     server.sales = [sale(3), sale(2), sale(1)];

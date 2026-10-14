@@ -38,7 +38,7 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 
 - [ ] **Rotacionar a credencial owner do PR11** (o status pede e não registra conclusão) e registrar a rotação.
 - [ ] **Remover os Workers e o Hyperdrive de PoC** criados nos PR11 e PR12 (inclusive subdomínio `workers.dev` temporário e role temporária de gate), e confirmar com um HTTP 404 nos endereços antigos.
-- [ ] **Dropar a tabela de PoC** `db_poc_operations` (e fixtures do gate de RLS) no ambiente de produção e remover as rotas e variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) do Worker de produção, que devem estar `false` ou ausentes.
+- [ ] **Dropar as tabelas de PoC** `db_poc_operations` e `rls_poc_operations` (esta tem uma política `FOR ALL TO PUBLIC` e o papel de tenant mantém DML sobre ela; ver [ADR 0044](../adr/0044-revisao-de-seguranca-adicional.md)) (e fixtures do gate de RLS) no ambiente de produção e remover as rotas e variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) do Worker de produção, que devem estar `false` ou ausentes.
 - [ ] Confirmar que o laboratório offline não está no bundle de produção.
 
 ### Borda e segurança de rede

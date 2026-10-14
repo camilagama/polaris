@@ -291,6 +291,27 @@ describe("pushCommands", () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it("refuses a payload over the size limit before parsing or hashing it, and stores the refusal", async () => {
+    const { execute, value } = handler();
+    const { calls, run } = frame((_n, recorded) =>
+      rejected(recorded.input.precheckFailure ?? "unexpected")
+    );
+    const huge = { name: "x".repeat(300 * 1024) };
+    const results = await pushCommands(
+      [await command(1, { payload: huge })],
+      dependencies(run, [value])
+    );
+    expect(results[0]?.code).toBe(PUSH_REJECTION.invalidPayload);
+    expect(execute).not.toHaveBeenCalled();
+    // identified by its length, not by canonicalizing 300 KB
+    expect(calls[0]?.input.payloadHash).toMatch(sha256Pattern);
+    const small = await pushCommands(
+      [await command(2, { payload: { name: "y".repeat(1000) } })],
+      dependencies(frame(() => accepted).run, [value])
+    );
+    expect(small[0]?.status).toBe("accepted");
+  });
+
   it("hashes the content so key order does not matter but any change does", async () => {
     const { value } = handler();
     const hashes: string[] = [];

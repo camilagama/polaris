@@ -32,22 +32,23 @@ export function LogoutControl() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const dependencies = useCallback((): LogoutFlowDependencies | null => {
-    const workspace = runtime?.logoutWorkspace();
-    return workspace
-      ? {
-          leave: () => window.location.assign("/"),
-          signOut: signOutOnServer,
-          workspaces: [workspace],
-        }
-      : null;
-  }, [runtime]);
+  const dependencies =
+    useCallback(async (): Promise<LogoutFlowDependencies | null> => {
+      const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
+      return workspaces.length > 0
+        ? {
+            leave: () => window.location.assign("/"),
+            signOut: signOutOnServer,
+            workspaces,
+          }
+        : null;
+    }, [runtime]);
 
   const run = useCallback(
     async (
       action: (deps: LogoutFlowDependencies) => Promise<LogoutFlowResult>
     ) => {
-      const deps = dependencies();
+      const deps = await dependencies();
       if (!deps) {
         return;
       }

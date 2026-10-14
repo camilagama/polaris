@@ -58,6 +58,21 @@ export interface SyncCommandHandler {
   type: string;
 }
 
+/**
+ * The largest payload a command may carry (the outbox on the device enforces the
+ * same limit). A bigger one is refused before it is parsed, hashed or stored, so a
+ * caller cannot make the server do unbounded work per command.
+ */
+const MAX_COMMAND_PAYLOAD_CHARS = 256 * 1024;
+
+function payloadLength(payload: unknown): number {
+  try {
+    return String(JSON.stringify(payload)).length;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
 export const PUSH_REJECTION = {
   capabilityNotInLease: "capability_not_in_lease",
   invalidPayload: "invalid_payload",
@@ -117,6 +132,10 @@ async function pushOne(
   ) {
     precheckFailure = PUSH_REJECTION.capabilityNotInLease;
   }
+  const oversized = payloadLength(command.payload) > MAX_COMMAND_PAYLOAD_CHARS;
+  if (precheckFailure === null && oversized) {
+    precheckFailure = PUSH_REJECTION.invalidPayload;
+  }
   if (precheckFailure === null && handler) {
     try {
       parsed = handler.parse(command.payload);
@@ -138,12 +157,16 @@ async function pushOne(
     precheckFailure = PUSH_REJECTION.capabilityNotInLease;
   }
 
+  // An oversized payload is not canonicalized (that is the unbounded work): its
+  // identity for the stored rejection is its length.
   const payloadHash = await sha256Hex(
-    canonicalJson({
-      baseVersion: command.baseVersion,
-      payload: command.payload,
-      type: command.type,
-    })
+    oversized
+      ? `oversized:${command.type}:${payloadLength(command.payload)}`
+      : canonicalJson({
+          baseVersion: command.baseVersion,
+          payload: command.payload,
+          type: command.type,
+        })
   );
   const outcome = await dependencies.withTenant((transaction, identity) =>
     dependencies.runSyncCommand(

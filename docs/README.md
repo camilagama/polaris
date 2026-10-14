@@ -66,5 +66,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0041](adr/0041-ciclo-de-atualizacao-do-app.md) | Ciclo de atualização do app | aceito |
 | [0042](adr/0042-suite-de-navegador-do-offline-e-versoes.md) | Suíte de navegador do offline e compatibilidade entre versões | aceito |
 | [0043](adr/0043-runtime-offline-no-app.md) | Runtime offline no app | aceito |
+| [0044](adr/0044-revisao-de-seguranca-adicional.md) | Revisão de segurança adicional antes do merge | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

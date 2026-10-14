@@ -39,6 +39,7 @@ export function RuntimeLab() {
     () =>
       new OfflineRuntime({
         api: {
+          deviceIsMine: () => Promise.resolve(true),
           issueLease: async (deviceId, organizationId) => {
             const issuedAt = new Date();
             const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);

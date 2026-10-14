@@ -67,7 +67,10 @@ describe("security headers", () => {
     expect(policy).toContain("base-uri 'self'");
     expect(policy).toContain("form-action 'self'");
     expect(policy).not.toContain("unsafe-inline");
-    expect(policy).not.toContain("unsafe-eval");
+    // JavaScript eval stays blocked; only WebAssembly compilation is allowed
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval';");
+    expect(policy).toContain("connect-src 'self' data:;");
     expect(SECURITY_HEADERS["X-Frame-Options"]).toBe("DENY");
   });
 });

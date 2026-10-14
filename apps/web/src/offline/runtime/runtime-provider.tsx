@@ -25,7 +25,8 @@ const SYNC_EVERY_MS = 60_000;
 function createBrowserRuntime(): OfflineRuntime {
   return new OfflineRuntime({
     api: createRpcRuntimeApi(orpcClient),
-    deviceLabel: navigator.userAgent.slice(0, 120),
+    // No label: a User-Agent string is long and personal, and the server accepts at most 80 characters.
+    deviceLabel: null,
     isOnline: () => navigator.onLine,
     keyValues: {
       read: (key) => {

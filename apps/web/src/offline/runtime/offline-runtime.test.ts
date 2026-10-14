@@ -40,6 +40,9 @@ function world(options: { leaseHours?: number } = {}) {
   const network = { online: true };
   let clock = new Date("2026-10-14T12:00:00.000Z");
   const calls = { issueLease: 0, push: 0, registerDevice: 0 };
+  const labels: (string | null)[] = [];
+  const owners = new Map<string, string>();
+  const session = { user: userId };
   const failures: { issueLease: Error[]; push: boolean } = {
     issueLease: [],
     push: false,
@@ -61,7 +64,7 @@ function world(options: { leaseHours?: number } = {}) {
         grantId: uuid(900),
         issuedAt: clock,
         organizationId: org,
-        userId,
+        userId: session.user,
       }),
       key
     );
@@ -73,6 +76,8 @@ function world(options: { leaseHours?: number } = {}) {
     };
   };
   const api: RuntimeApi = {
+    deviceIsMine: (deviceId) =>
+      Promise.resolve(owners.get(deviceId) === session.user),
     issueLease: (deviceId, org) => {
       calls.issueLease += 1;
       const failure = failures.issueLease.shift();
@@ -85,15 +90,19 @@ function world(options: { leaseHours?: number } = {}) {
       }
       return server.push(input);
     },
-    registerDevice: () => {
+    registerDevice: (label) => {
       calls.registerDevice += 1;
-      return Promise.resolve(uuid(700 + calls.registerDevice));
+      labels.push(label);
+      const id = uuid(700 + calls.registerDevice);
+      owners.set(id, session.user);
+      return Promise.resolve(id);
     },
     source: () => server,
   };
-  const make = () =>
+  const make = (deviceLabel: string | null = null) =>
     new OfflineRuntime({
       api,
+      deviceLabel,
       isOnline: () => network.online,
       keyValues,
       namespaceFor: (user, org) =>
@@ -139,10 +148,12 @@ function world(options: { leaseHours?: number } = {}) {
     closed,
     failures,
     keyValues,
+    labels,
     make,
     network,
     purged,
     server,
+    session,
     stores,
   };
 }
@@ -181,7 +192,7 @@ describe("starting", () => {
       deviceId: uuid(701),
       organizationId,
     });
-    expect(w.keyValues.data.size).toBe(2); // the device and the lease
+    expect(w.keyValues.data.size).toBe(3); // the device, the lease and the namespace registry
   });
 
   it("opens offline on a later visit from the remembered device and lease, with no network", async () => {
@@ -235,15 +246,49 @@ describe("starting", () => {
     expect(kept.getSnapshot().phase).toBe("ready");
   });
 
-  it("forgets a remembered device that belongs to someone else and registers again, once", async () => {
+  it("forgets a remembered device that belongs to someone else and registers again", async () => {
     const w = world();
-    w.keyValues.write("polaris.offline.device", uuid(999));
-    w.failures.issueLease.push(new Error("device_not_found"));
+    w.keyValues.write("polaris.offline.device", uuid(999)); // nobody's
     const runtime = w.make();
     await runtime.start(organizationId);
     expect(runtime.getSnapshot().phase).toBe("ready");
     expect(w.calls.registerDevice).toBe(1);
     expect(runtime.context()?.deviceId).toBe(uuid(701));
+  });
+
+  it("a second user of the same browser gets their own device, lease and namespace, and the first user's work is left alone", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Do primeiro usuário", 1);
+    await first.stop(); // the session ended without a logout: nothing was purged
+
+    w.session.user = "user-2";
+    const second = w.make();
+    await second.start(organizationId);
+
+    expect(second.getSnapshot().phase).toBe("ready");
+    expect(w.calls.registerDevice).toBe(2); // a new device, not the first user's
+    expect(second.context()?.deviceId).toBe(uuid(702));
+    // the second user opened their own namespace and sees none of the first one's queue
+    expect(second.getSnapshot().counts.pending).toBe(0);
+    const firstQueue = w.stores.get(`user-1-${organizationId}`);
+    expect((await firstQueue?.outbox.snapshot())?.commands).toHaveLength(1);
+    expect(w.stores.has(`user-2-${organizationId}`)).toBe(true);
+  });
+
+  it("sends the server a device label it accepts, or none", async () => {
+    const long =
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+    expect(long.length).toBeGreaterThan(80);
+    const w = world();
+    await w.make(long).start(organizationId);
+    const [label] = w.labels;
+    expect(typeof label).toBe("string");
+    expect([...(label ?? "")].length).toBeLessThanOrEqual(80);
+    const none = world();
+    await none.make(null).start(organizationId);
+    expect(none.labels[0]).toBeNull();
   });
 
   it("switching organization closes the first one's stores", async () => {
@@ -388,7 +433,44 @@ describe("what the rest of the app plugs into", () => {
       status: "blocked",
     });
     expect(w.purged).toEqual([]);
-    expect(w.keyValues.data.size).toBe(2);
+    expect(w.keyValues.data.size).toBe(3);
+  });
+
+  it("logging out also covers the other organizations this browser holds, and purges them all", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start("org-1");
+    await runtime.start("org-2"); // the person switched organization
+    const workspaces = await runtime.logoutWorkspaces();
+    expect(workspaces.map((workspace) => workspace.label)).toEqual([
+      "org-2",
+      "org-1 (outra organização)",
+    ]);
+    expect(await attemptLogout(workspaces)).toEqual({ status: "ready" });
+    expect(w.purged).toHaveLength(2);
+    expect(w.keyValues.data.size).toBe(0); // device, lease and registry are all gone
+  });
+
+  it("work queued in another organization blocks the logout, purges nothing and releases what was opened", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start("org-1");
+    await queueProduct(runtime, "Na outra organização", 1);
+    await runtime.start("org-2");
+    const workspaces = await runtime.logoutWorkspaces();
+
+    const outcome = await attemptLogout(workspaces);
+
+    expect(outcome).toMatchObject({ status: "blocked" });
+    if (outcome.status === "blocked") {
+      expect(outcome.blocked.map((item) => item.label)).toEqual([
+        "org-1 (outra organização)",
+      ]);
+    }
+    expect(w.purged).toEqual([]);
+    expect(
+      w.closed.filter((name) => name === `${userId}-org-1`).length
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it("notifies subscribers as the figures change", async () => {
