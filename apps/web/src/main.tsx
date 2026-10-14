@@ -115,6 +115,11 @@ if (isLogoutLabRoute) {
   loadOfflineLab().catch(() => undefined);
 } else {
   root.render(<App />);
+  if (import.meta.env.MODE === "pwa-e2e") {
+    // Only in the browser-check build: lets the test play the part of the outbox.
+    (window as unknown as { polarisUpdateStore: unknown }).polarisUpdateStore =
+      getUpdateStore();
+  }
   const pwaEnvironment = browserRegisterEnvironment();
   if (pwaEnvironment) {
     // After the first paint: the shell cache never competes with the app for the network.

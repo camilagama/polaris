@@ -18,6 +18,8 @@ O plano define o Gate 5 assim: o offline só é considerado pronto quando (1) um
 
 A suíte `gate5` roda, em sequência: `offline-devices`, `offline-lease`, `sync-log`, `bootstrap`, `sync-push`, `offline-product`, `offline-stock`, `offline-sale` e `offline-e2e`. Cada um termina com `"status": "passed"`.
 
+Localmente, `bun run test:offline-browser` (em `apps/web`) roda as duas configurações de navegador. Os cenários do PR62 (recarregar, matar e reabrir, reconectar, duas abas, conflito, atualização pendente) e sua cobertura estão no [ADR 0042](../adr/0042-suite-de-navegador-do-offline-e-versoes.md); a compatibilidade com versões antigas do app está no arquivo dourado de payloads.
+
 No CI, o job **Offline persistence browser gate** roda os cenários de navegador (Chromium desktop e Pixel 5 emulado) da persistência (PR12), das coleções locais (PR50b), do outbox (PR52), do painel de atenção (PR58) e da saída com pendências (PR59); o job de gates PostgreSQL 18 roda a suíte `ci`, que inclui as provas de banco acima.
 
 ## O que prova cada critério
@@ -44,6 +46,10 @@ Nada desta lista foi executado. Registre o resultado de cada item com a versão 
 - [ ] **Duas abas** do mesmo usuário e organização: a fila e as coleções são as mesmas; um comando não é enviado duas vezes.
 - [ ] **Sair com pendências** no aparelho: bloqueia, oferece tentar de novo e descartar em duas etapas; depois de sair, os dados locais da organização somem.
 - [ ] **Relógio do aparelho** adiantado e atrasado em horas: comandos com instante de criação fora do lease são recusados com `invalid_creation_time` e a venda não é perdida.
+
+## Ordem de publicação
+
+O servidor vai ao ar antes do app que usa um campo novo de comando: o payload da venda é estrito e um app mais novo que o servidor tem a venda recusada (`invalid_payload`). Nunca remova nem reinterprete um campo de comando; o arquivo dourado de payloads falha quando um construtor muda.
 
 ## Rollback ou forward-fix
 

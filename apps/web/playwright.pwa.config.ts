@@ -26,7 +26,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "bunx vite build --config vite.pwa.config.ts && node scripts/serve-static.mjs dist/pwa-e2e 4174",
+      "bunx vite build --config vite.pwa.config.ts --mode pwa-e2e && node scripts/serve-static.mjs dist/pwa-e2e 4174",
     reuseExistingServer: !inCI,
     timeout: 120_000,
     url: "http://127.0.0.1:4174",

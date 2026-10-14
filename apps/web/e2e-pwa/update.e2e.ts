@@ -1,38 +1,11 @@
 /// <reference lib="dom" />
-import { execFileSync } from "node:child_process";
-import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-
-/** Builds the app as "version N": the same code, a different marker in index.html. */
-function buildVersion(variant: string) {
-  execFileSync("bunx", ["vite", "build", "--config", "vite.pwa.config.ts"], {
-    env: { ...process.env, PWA_E2E_VARIANT: variant },
-    shell: process.platform === "win32",
-    stdio: "ignore",
-  });
-}
-
-const runningVersion = (page: Page) =>
-  page.locator('meta[name="build-variant"]').getAttribute("content");
-
-async function openControlled(page: Page) {
-  await page.goto("/");
-  await page.evaluate(async () => {
-    await navigator.serviceWorker.ready;
-  });
-  await page.reload();
-  await expect
-    .poll(() =>
-      page.evaluate(() => navigator.serviceWorker.controller !== null)
-    )
-    .toBe(true);
-}
-
-const checkForUpdate = (page: Page) =>
-  page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration();
-    await registration?.update();
-  });
+import {
+  buildVersion,
+  checkForUpdate,
+  openControlled,
+  runningVersion,
+} from "./support";
 
 test.afterAll(() => {
   buildVersion("1");

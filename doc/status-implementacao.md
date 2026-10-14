@@ -907,6 +907,18 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Prova em navegador | Concluída | `e2e-pwa/update.e2e.ts` com duas builds reais do app (a segunda com marcador no `index.html`): a nova versão vira aviso sem recarregar; só troca ao clicar; ficam os caches das duas builds; a primeira instalação não é anunciada. Servidor estático próprio que lê o disco a cada pedido (`scripts/serve-static.mjs`), porque `vite preview` não sobrevive a uma recompilação. Chromium desktop e Pixel 5 emulado, um teste de cada vez. |
 | Limites | Registrados | A fila ainda é "ociosa" no app (o outbox não está montado), então hoje o aviso sempre oferece "Atualizar agora"; as provas com fila usam a interface de fonte; falta o PR62 (suíte de navegador do offline: duas abas, versão antiga, atualização pendente) e o checklist físico do Gate 5. |
 
+### PR62 — Suíte de navegador do offline (implementação e verificações locais concluídas; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr62-offline-browser-suite` sobre `codex/pr61-pwa-update-lifecycle`. |
+| Decisões | Tomadas pelo projeto | [ADR 0042](../docs/adr/0042-suite-de-navegador-do-offline-e-versoes.md): cada cenário no nível mais barato que o prova de verdade, mapeado no runbook do Gate 5; arquivo dourado dos payloads para a compatibilidade entre versões; o contrato só cresce e o servidor vai ao ar antes do app que usa um campo novo. |
+| Duas abas | Concluído | `e2e/offline-outbox`: duas abas do mesmo usuário compartilham a fila; um comando em envio não é enviado de novo pela outra aba; o próximo vai depois da confirmação. |
+| Atualização pendente | Concluído | `e2e-pwa/update-with-queue.e2e.ts` (duas builds reais, gancho só na build `pwa-e2e`): com fila e sem rede a atualização espera e nada se perde; com rede envia e só então atualiza; com recusa não há botão. |
+| Versão antiga do app | Concluído | `server/sync/command-compatibility.test.ts` e `__golden__/command-payloads.json`: o que cada construtor emite hoje, aceito por todos os manipuladores registrados e coberto para todos os tipos; um campo desconhecido (app mais novo que o servidor) é `invalid_payload`. |
+| Execução | Concluída | `bun run test:offline-browser` (as duas configurações de navegador); o CI roda ambas. |
+| Limites | Registrados | Safari de iPhone e Chrome de Android reais seguem no checklist do Gate 5 e bloqueiam ligar a escrita offline; o outbox ainda não está montado no app, então a atualização com fila usa a interface de fonte. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
