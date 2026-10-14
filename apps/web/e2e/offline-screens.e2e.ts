@@ -8,7 +8,7 @@ const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
 async function openLab(
   page: Page,
   user: string,
-  screen: "customers" | "products" = "customers"
+  screen: "customers" | "products" | "sale" | "stock" = "customers"
 ) {
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await expect(
