@@ -8,6 +8,7 @@ import {
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
+  InvalidPaymentProfileError,
   PaymentProfileLifecycleError,
   PaymentProfileNotFoundError,
   PaymentProfileVersionConflictError,
@@ -83,6 +84,11 @@ describe("sale.confirm handler", () => {
       { ...sale, paymentProfile: { expectedVersion: 1, id: "nope" } },
       { ...sale, paymentProfile: { expectedVersion: 0, id: profileId } },
       { ...sale, paymentProfile: { id: profileId } },
+      // not a version the database column could hold
+      {
+        ...sale,
+        paymentProfile: { expectedVersion: 3_000_000_000, id: profileId },
+      },
     ];
     for (const payload of bad) {
       expect(() => handler.parse(payload)).toThrow(InvalidSyncPayloadError);
@@ -194,6 +200,8 @@ describe("sale.confirm handler", () => {
     expect(classify(new SaleCommandConflictError())).toBe(
       "sale_command_conflict"
     );
+    // corrupt stored fee data is a refusal of the command, not a failure to retry forever
+    expect(classify(new InvalidPaymentProfileError())).toBe("invalid_payload");
     expect(classify(new Error("db down"))).toBeNull();
   });
 });

@@ -21,6 +21,9 @@ O ADR 0046 fez a venda funcionar sem conexão, mas sem perfil de pagamento: o co
 
 - Vendas de cartão feitas sem rede passam a ter taxas e prazo registrados quando o perfil não mudou entre a última conexão e a sincronização; quando mudou, a recusa é visível e o custo é uma ação da pessoa em Pendências, nunca um dado errado gravado em silêncio.
 - A lista de perfis no navegador contém taxas do negócio (não dado pessoal); fica no mesmo armazenamento e com a mesma regra de limpeza das organizações guardadas.
+- A lista guardada não tem validade: a tela diz que é a da última vez com conexão, mas não a data. Uma lista antiga só produz, no pior caso, uma recusa visível por versão no servidor.
+- Só a leitura mais recente dos perfis vale (uma resposta atrasada de antes de a conexão cair não troca a lista do aparelho nem a reescreve), e nada é gravado no navegador depois de o "Sair" começar.
+- A versão do perfil no contrato tem o limite da coluna do banco (inteiro): um valor maior seria um erro de banco repetido para sempre, e passa a ser recusado como payload inválido, assim como dados de taxa corrompidos no banco.
 - Quem fica muito tempo sem conexão e vende com um perfil que mudou terá a venda recusada ao sincronizar; a tela avisa antes de guardar que o perfil é o da última conexão.
 
 ## Alternativas rejeitadas

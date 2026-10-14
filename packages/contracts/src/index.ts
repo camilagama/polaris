@@ -418,7 +418,8 @@ const saleItemInput = z.object({
 
 /** The payment profile a sale was priced with, by the version the person saw. */
 const salePaymentProfileSelection = z.object({
-  expectedVersion: z.number().int().positive(),
+  // the database column is an integer: a bigger number is not a version, and must not reach it
+  expectedVersion: z.number().int().positive().max(2_147_483_647),
   id: z.string().uuid(),
 });
 

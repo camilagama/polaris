@@ -16,6 +16,7 @@ import {
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
+  InvalidPaymentProfileError,
   PaymentProfileLifecycleError,
   PaymentProfileNotFoundError,
   PaymentProfileVersionConflictError,
@@ -59,6 +60,7 @@ const SALE_REFUSAL = {
 
 const payloadErrors = [
   InvalidConfirmSaleCommandError,
+  InvalidPaymentProfileError,
   InvalidSaleAdjustmentError,
   InvalidSalePaymentError,
   InvalidSaleSnapshotError,
