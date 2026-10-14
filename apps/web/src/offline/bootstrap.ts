@@ -84,6 +84,8 @@ export interface LocalWriter {
     collection: BootstrapCollectionName | "recentSales",
     keys: string[]
   ) => Promise<void>;
+  /** The recent sales window, in no particular order (the screens sort). */
+  recentSalesRows: () => Promise<SaleListEntryReadModel[]>;
   /** Replaces the recent sales window with exactly these rows. */
   replaceRecentSales: (rows: SaleListEntryReadModel[]) => Promise<void>;
   /** Every row of a collection, in no particular order (the screens sort). */

@@ -50,6 +50,11 @@ export class FakeWriter implements LocalWriter {
     }
     return Promise.resolve();
   }
+  recentSalesRows() {
+    return Promise.resolve([
+      ...this.data.recentSales.values(),
+    ] as SaleListEntryReadModel[]);
+  }
   replaceRecentSales(rows: SaleListEntryReadModel[]) {
     this.data.recentSales = new Map(rows.map((row) => [row.id, row]));
     return Promise.resolve();
@@ -586,7 +591,7 @@ export class FakeStockServer implements BootstrapSource {
       nextCursor: String(batch.at(-1)?.seq ?? after),
     });
   }
-  recentSales() {
+  recentSales(): Promise<SaleListEntryReadModel[]> {
     return Promise.resolve([]);
   }
 }

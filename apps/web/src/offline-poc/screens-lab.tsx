@@ -19,6 +19,7 @@ import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
+import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { SaleLabServer } from "./sale-lab-server";
 
@@ -42,11 +43,14 @@ const ORGANIZATION = {
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
-type LabScreen = "customers" | "products" | "sale" | "stock";
+type LabScreen = "customers" | "history" | "products" | "sale" | "stock";
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
-  return screen === "products" || screen === "sale" || screen === "stock"
+  return screen === "products" ||
+    screen === "sale" ||
+    screen === "stock" ||
+    screen === "history"
     ? screen
     : "customers";
 }
@@ -55,7 +59,7 @@ function newServer(screen: LabScreen) {
   if (screen === "products") {
     return new FakeCatalogServer();
   }
-  return screen === "sale" || screen === "stock"
+  return screen === "sale" || screen === "stock" || screen === "history"
     ? new SaleLabServer()
     : new FakeCustomerServer();
 }
@@ -205,6 +209,7 @@ export function ScreensLab() {
           {started && screen === "products" ? <ProductsPage /> : null}
           {started && screen === "sale" ? <SalePage /> : null}
           {started && screen === "stock" ? <InventoryPage /> : null}
+          {started && screen === "history" ? <SaleHistoryPage /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

@@ -8,7 +8,7 @@ const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
 async function openLab(
   page: Page,
   user: string,
-  screen: "customers" | "products" | "sale" | "stock" = "customers"
+  screen: "customers" | "history" | "products" | "sale" | "stock" = "customers"
 ) {
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await expect(
@@ -469,4 +469,34 @@ test("duas abas do mesmo usuário: o cadastro feito numa aparece na outra sem re
   await expect(card(second, "Eva das Abas")).toBeVisible({ timeout: 15_000 });
   await expect(card(second, "Eva das Abas")).toContainText("Aguardando envio");
   await context.close();
+});
+
+test.describe("histórico de vendas", () => {
+  test("sem rede, lista as vendas recentes do aparelho, filtra, e não oferece o detalhe nem a busca por item", async ({
+    page,
+  }) => {
+    await openLab(page, `user-${crypto.randomUUID()}`, "history");
+    await start(page, "Histórico de vendas");
+    await page.getByLabel("Rede disponível").uncheck();
+
+    await expect(
+      page.getByText("Sem conexão. Estas são as vendas mais recentes")
+    ).toBeVisible();
+    const list = page.getByRole("list", { name: "Vendas" });
+    await expect(list.getByRole("listitem")).toHaveCount(3);
+    // no detail without a connection
+    await expect(list.getByRole("link")).toHaveCount(0);
+    await expect(page.getByLabel("Busca")).toBeDisabled();
+
+    await page.getByLabel("Situação").selectOption({ label: "Canceladas" });
+    await expect(list.getByRole("listitem")).toHaveCount(1);
+    await page.getByLabel("Situação").selectOption({ label: "Todas" });
+    await page.getByLabel("Cliente").fill("angela");
+    await expect(list.getByRole("listitem")).toHaveCount(1);
+    await expect(list).toContainText("Ângela Souza");
+
+    // back online it is the server's history again, with the links
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByLabel("Busca")).toBeEnabled();
+  });
 });
