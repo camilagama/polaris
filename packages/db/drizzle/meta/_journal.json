@@ -302,6 +302,13 @@
       "when": 1791935351309,
       "tag": "0042_offline_devices_and_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791936241688,
+      "tag": "0043_offline_authorization_epoch",
+      "breakpoints": true
     }
   ]
 }

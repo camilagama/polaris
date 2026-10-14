@@ -733,6 +733,19 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-devices:verify` (`offline-devices` no corredor de gates, suíte `gate5`): privilégios e RLS, limite de 20 sob concorrência, isolamento entre usuários, revogação terminal por SQL cru, janela de 72 h no domínio e no banco, dispositivo de outro usuário ou revogado recusado, revogação em duas organizações com uma auditoria por grant e corrida entre grant e revogação sem grant vivo restante. |
 | Limites | Registrados | Sem RPC nem UI; época de autorização, lease assinado e validação no servidor são PR49; o registro de dispositivo não é idempotente por retry do cliente. |
 
+### PR49 — Offline authorization (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr49-offline-authorization` sobre `codex/pr48-device-model`. |
+| Decisões | Tomadas pelo projeto | [ADR 0029](../docs/adr/0029-lease-de-autorizacao-offline.md): token `v1.<keyId>.<payload>.<assinatura>` com HMAC-SHA256 (Web Crypto); só o servidor assina e verifica, o cliente só lê; rotação por `KEY_ID` e segredo anterior; falha fechada sem segredo; época de autorização por membership; reset de senha invalida todos os leases; suspensão invalida pelo estado da organização; assinatura dentro da transação. |
+| Domínio | Concluído | `offline-lease.ts`: claims, janela `min(agora + 72 h, fim do direito)`, validade, serialização determinística; testes de propriedade. |
+| Token | Concluído | `apps/web/src/lib/offline-lease-token.ts` (assinar, verificar com várias chaves, ler sem verificar para a UI): adulteração, assinatura trocada, chave desconhecida, formato inválido, expirado e relógio adiantado cobertos. |
+| Banco, migration 0043 | Concluída | `memberships.authorization_epoch`; função `SECURITY DEFINER` `bump_user_authorization_epoch` (lock consultivo por usuário, revoga grants com `security_event` e audita um evento por grant), executável só pela role de auth; o runtime de tenant lê e não escreve a época. |
+| Repositório e RPC | Concluídos | `offline-lease-repository.ts` (emitir e revalidar no servidor com motivos distintos), `authorization-epoch.ts`, procedimentos `device.register|list|revoke` e `offline.issueLease`; o gancho `onPasswordReset` do Better Auth chama a função. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-lease:verify` (`offline-lease`, suíte `gate5`): privilégios e função pinada, emissão com época, capabilities e 72 h, teto do trial e direito encerrado, revalidação (principal, organização, grant, expiração, capability, dispositivo, época, revogado), reset de senha por usuário em duas organizações sem tocar outro usuário e corrida entre emissão e reset sem época vencida. |
+| Limites | Registrados | Nenhum cliente consome o lease ainda (PR50 em diante); o fim do direito (trial) não é informado por nenhum chamador porque billing não existe; `OFFLINE_LEASE_SECRET` precisa ser criado em cada ambiente (checklist de go-live). |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

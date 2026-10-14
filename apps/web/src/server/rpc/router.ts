@@ -24,6 +24,15 @@ import {
   updateCustomer,
 } from "@polaris/db/customer-repository";
 import {
+  DeviceLimitError,
+  DeviceNotFoundError,
+  DeviceRevokedError,
+  listDevices,
+  OfflineGrantNotFoundError,
+  registerDevice,
+  revokeDevice,
+} from "@polaris/db/device-repository";
+import {
   getInventoryBalance,
   InvalidInventoryBalanceCursorError,
   inventoryCount,
@@ -31,6 +40,7 @@ import {
   receiveStock,
   writeOffStock,
 } from "@polaris/db/inventory-repository";
+import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
 import { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import {
   archivePaymentProfile,
@@ -129,6 +139,12 @@ import {
   MoneyLimitError,
 } from "@polaris/domain/money/money";
 import {
+  InvalidDeviceLabelError,
+  InvalidOfflineGrantRevokeReasonError,
+  InvalidOfflineGrantWindowError,
+} from "@polaris/domain/offline/offline-grant";
+import { OfflineLeaseNotAvailableError } from "@polaris/domain/offline/offline-lease";
+import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -175,6 +191,7 @@ import {
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
+import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -186,6 +203,7 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
+import { createOfflineRpcHandlers } from "./offline-handlers";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 
@@ -233,19 +251,23 @@ interface RpcRouterDependencies {
   getSale: typeof getSale;
   getSaleCustomerLink: typeof getSaleCustomerLink;
   inventoryCount: typeof inventoryCount;
+  issueOfflineLeaseGrant: typeof issueOfflineLeaseGrant;
   listCategories: typeof listCategories;
   listCustomers: typeof listCustomers;
+  listDevices: typeof listDevices;
   listInventoryBalances: typeof listInventoryBalances;
   listPaymentProfiles: typeof listPaymentProfiles;
   listProducts: typeof listProducts;
   listSales: typeof listSales;
   listUserOrganizations: typeof listUserOrganizations;
   receiveStock: typeof receiveStock;
+  registerDevice: typeof registerDevice;
   renameCategory: typeof renameCategory;
   restoreCategory: typeof restoreCategory;
   restoreCustomer: typeof restoreCustomer;
   restorePaymentProfile: typeof restorePaymentProfile;
   restoreProduct: typeof restoreProduct;
+  revokeDevice: typeof revokeDevice;
   setProductVariantSku: typeof setProductVariantSku;
   updateCustomer: typeof updateCustomer;
   updatePaymentProfile: typeof updatePaymentProfile;
@@ -480,6 +502,10 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("FORBIDDEN", { cause: error });
   }
 
+  if (error instanceof OfflineLeaseUnavailableError) {
+    throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+  }
+
   if (isRpcErrorInGroup(error, badRequestRpcErrors)) {
     throw clientRpcError("BAD_REQUEST", error);
   }
@@ -536,6 +562,11 @@ const badRequestRpcErrors = [
     InvalidPaymentProfileError,
   ],
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
+  [
+    InvalidDeviceLabelError,
+    InvalidOfflineGrantWindowError,
+    InvalidOfflineGrantRevokeReasonError,
+  ],
   [
     InvalidStockMovementError,
     InventoryOccurredInFutureError,
@@ -610,6 +641,7 @@ const conflictRpcErrors = [
     PaymentProfileLifecycleError,
   ],
   [SaleCommandConflictError, SaleProductUnavailableError],
+  [DeviceRevokedError, DeviceLimitError, OfflineLeaseNotAvailableError],
   [SaleAlreadyCancelledError, SaleCancellationCommandConflictError],
   [
     SaleHasReturnsError,
@@ -632,6 +664,7 @@ const notFoundRpcErrors = [
     InventoryVariantNotFoundError,
   ],
   [SaleNotFoundError],
+  [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;
 
 async function productLifecycleCommand(
@@ -1041,6 +1074,20 @@ export function createRpcRouter(
     listInventoryBalances: overrides.listInventoryBalances,
     requestAuditId,
     toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const offlineHandlers = createOfflineRpcHandlers({
+    defaultIssueOfflineLeaseGrant: issueOfflineLeaseGrant,
+    defaultListDevices: listDevices,
+    defaultRegisterDevice: registerDevice,
+    defaultRevokeDevice: revokeDevice,
+    issueOfflineLeaseGrant: overrides.issueOfflineLeaseGrant,
+    listDevices: overrides.listDevices,
+    registerDevice: overrides.registerDevice,
+    requestAuditId,
+    revokeDevice: overrides.revokeDevice,
+    toRpcError,
+    withAuthenticatedRequestContext: authenticatedRequest,
     withTenantRequestContext: tenantRequest,
   });
   const organizationHandlers = createOrganizationRpcHandlers({
@@ -1573,6 +1620,7 @@ export function createRpcRouter(
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     customer: customerHandlers,
+    device: offlineHandlers.device,
     inventory: {
       getBalance: inventoryHandlers.getBalance,
       inventoryCount: inventoryHandlers.count,
@@ -1580,6 +1628,7 @@ export function createRpcRouter(
       receiveStock: receiveStockRecord,
       writeOffStock: writeOffStockRecord,
     },
+    offline: offlineHandlers.offline,
     organization: { createInitial, listMine: organizationHandlers.listMine },
     paymentProfile: paymentProfileHandlers,
     product: {

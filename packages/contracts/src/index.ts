@@ -633,6 +633,16 @@ export type OrganizationMembershipReadModel = z.infer<
   typeof organizationMembership
 >;
 
+const deviceReadModel = z.object({
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+  label: z.string().nullable(),
+  lastSeenAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable(),
+});
+
+export type DeviceReadModel = z.infer<typeof deviceReadModel>;
+
 export const polarisContract = {
   category: {
     archive: oc
@@ -739,6 +749,20 @@ export const polarisContract = {
           .superRefine(requireCustomerContact)
       )
       .output(z.object({ changed: z.boolean(), customer })),
+  },
+  device: {
+    // Devices belong to the signed-in user, never to an organization: no
+    // organization or user field to trust, the server reads the session.
+    list: oc.output(z.object({ devices: z.array(deviceReadModel) })),
+    register: oc
+      .input(z.object({ label: z.string().max(200).nullish() }))
+      .output(z.object({ device: deviceReadModel })),
+    revoke: oc.input(z.object({ deviceId: z.string().uuid() })).output(
+      z.object({
+        device: deviceReadModel,
+        revokedGrantIds: z.array(z.string().uuid()),
+      })
+    ),
   },
   inventory: {
     getBalance: oc
@@ -852,6 +876,25 @@ export const polarisContract = {
           balance: inventoryBalance,
           movement: stockWriteOffMovement,
           replayed: z.boolean(),
+        })
+      ),
+  },
+  offline: {
+    // Issues (or renews) the signed authorization lease of a device for one
+    // organization: at most 72 hours, revalidated by the server at sync.
+    issueLease: oc
+      .input(
+        z.object({
+          deviceId: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          expiresAt: z.string().datetime(),
+          grantId: z.string().uuid(),
+          issuedAt: z.string().datetime(),
+          lease: z.string().min(1),
         })
       ),
   },

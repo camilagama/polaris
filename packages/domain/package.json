@@ -15,6 +15,7 @@
     "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts",
     "./money/money": "./src/money/money.ts",
     "./offline/offline-grant": "./src/offline/offline-grant.ts",
+    "./offline/offline-lease": "./src/offline/offline-lease.ts",
     "./sales/confirm-sale": "./src/sales/confirm-sale.ts",
     "./sales/sale-cancellation": "./src/sales/sale-cancellation.ts",
     "./sales/sale-dates": "./src/sales/sale-dates.ts",

@@ -43,11 +43,11 @@ export interface MediaBucketBinding {
 
 export interface WorkerBindings {
   AUTH_ABUSE_PROTECTION_ENABLED?: string;
-  AUTH_HYPERDRIVE?: HyperdriveBinding;
   AUTH_DATABASE_CONNECT_TIMEOUT_MS?: string;
   AUTH_EMAIL_FROM?: string;
   AUTH_EMAIL_RATE_LIMITER?: RateLimitBinding;
   AUTH_EMAIL_REPLY_TO?: string;
+  AUTH_HYPERDRIVE?: HyperdriveBinding;
   AUTH_RATE_LIMITER?: RateLimitBinding;
   BETTER_AUTH_BASE_URL?: string;
   BETTER_AUTH_SECRET?: string;
@@ -55,10 +55,14 @@ export interface WorkerBindings {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
-  MEDIA_CLEANUP_HYPERDRIVE?: HyperdriveBinding;
-  MEDIA_UPLOAD_RATE_LIMIT?: RateLimitBinding;
   IMAGES?: MediaImagesBinding;
   MEDIA_BUCKET?: MediaBucketBinding;
+  MEDIA_CLEANUP_HYPERDRIVE?: HyperdriveBinding;
+  MEDIA_UPLOAD_RATE_LIMIT?: RateLimitBinding;
+  OFFLINE_LEASE_KEY_ID?: string;
+  OFFLINE_LEASE_PREVIOUS_KEY_ID?: string;
+  OFFLINE_LEASE_PREVIOUS_SECRET?: string;
+  OFFLINE_LEASE_SECRET?: string;
   ONBOARDING_HYPERDRIVE?: HyperdriveBinding;
   RESEND_API_KEY?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;

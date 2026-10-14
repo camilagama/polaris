@@ -1,4 +1,5 @@
 import { authSchema } from "@polaris/db/auth-schema";
+import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
 import type { createDatabase } from "@polaris/db/client";
 import { authSecurityAuditEvents } from "@polaris/db/security-audit-schema";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
@@ -18,13 +19,13 @@ import {
   validateNewPassword,
 } from "./auth/password-policy";
 import {
-  SESSION_IDLE_TTL_SECONDS,
-  SESSION_REFRESH_INTERVAL_SECONDS,
-} from "./auth/session-policy";
-import {
   type BackgroundTaskHandler,
   betterAuthSecurityOptions,
 } from "./auth/security-options";
+import {
+  SESSION_IDLE_TTL_SECONDS,
+  SESSION_REFRESH_INTERVAL_SECONDS,
+} from "./auth/session-policy";
 
 type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
 
@@ -63,9 +64,12 @@ export interface AuthEmailDelivery {
 type AuthSecurityAuditEventWriter = (
   event: AuthSecurityAuditEvent
 ) => Promise<void>;
+/** Invalidates every offline lease of a user after a security event. */
+type AuthorizationEpochBumper = (userId: string) => Promise<void>;
 
 interface CreateBetterAuthOptions {
   auditEventWriter?: AuthSecurityAuditEventWriter;
+  authorizationEpochBumper?: AuthorizationEpochBumper;
   baseURL: string;
   database?: PolarisDatabase;
   databaseAdapter?: BetterAuthOptions["database"];
@@ -519,6 +523,7 @@ function buildAuthSecurityAuditEvent(
 
 export function createBetterAuth({
   auditEventWriter,
+  authorizationEpochBumper,
   baseURL,
   database,
   databaseAdapter,
@@ -535,6 +540,17 @@ export function createBetterAuth({
     (database
       ? async (event: AuthSecurityAuditEvent) => {
           await database.insert(authSecurityAuditEvents).values(event);
+        }
+      : undefined);
+
+  // A password reset revokes every offline lease of the user (plan section 56):
+  // the database function bumps the epoch of the memberships and revokes the
+  // live grants. Without a database (the test adapter) there is nothing to bump.
+  const bumpAuthorizationEpoch =
+    authorizationEpochBumper ??
+    (database
+      ? async (userId: string) => {
+          await bumpUserAuthorizationEpoch(database, userId);
         }
       : undefined);
 
@@ -638,6 +654,9 @@ export function createBetterAuth({
           enabled: true,
           maxPasswordLength: 256,
           minPasswordLength: 1,
+          onPasswordReset: async ({ user }) => {
+            await bumpAuthorizationEpoch?.(user.id);
+          },
           password: {
             hash: hashPasswordNfc,
             verify: verifyPasswordNfc,

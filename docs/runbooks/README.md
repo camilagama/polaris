@@ -60,5 +60,7 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 ### Integração e ambiente
 
 - [ ] Estratégia de integração da cadeia de PRs executada por fase, com autorização do responsável, CI verde e gates reexecutados ([ADR 0023](../adr/0023-integracao-da-cadeia-de-prs.md)).
+- [ ] **Segredo do lease offline** (`OFFLINE_LEASE_SECRET`, mínimo 32 bytes aleatórios, e `OFFLINE_LEASE_KEY_ID`) criado em cada ambiente antes de ligar o offline; rotação com `OFFLINE_LEASE_PREVIOUS_SECRET` e `OFFLINE_LEASE_PREVIOUS_KEY_ID` ([ADR 0029](../adr/0029-lease-de-autorizacao-offline.md)). Sem o segredo, `offline.issueLease` responde 503 e não grava nada.
+- [ ] A role de autenticação tem `EXECUTE` em `bump_user_authorization_epoch` e a role de tenant não (a migration 0043 concede e revoga); verificar no ambiente real.
 - [ ] CI com PostgreSQL 18, replay de migrations e checagem de drift ativos ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md)).
 - [ ] Prova em Android Chrome real da persistência offline antes de ligar escrita offline em produção ([ADR 0015](../adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md)).

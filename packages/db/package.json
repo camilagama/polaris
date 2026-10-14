@@ -36,7 +36,12 @@
     "./media-schema": "./src/schema/media.ts",
     "./media-repository": "./src/media-repository.ts",
     "./media-cleanup": "./src/media-cleanup.ts",
-    "./inventory-repository": "./src/inventory-repository.ts"
+    "./inventory-repository": "./src/inventory-repository.ts",
+    "./device-schema": "./src/schema/device.ts",
+    "./device-repository": "./src/device-repository.ts",
+    "./offline-lease-repository": "./src/offline-lease-repository.ts",
+    "./authorization-epoch": "./src/authorization-epoch.ts",
+    "./user-transaction": "./src/user-transaction.ts"
   },
   "scripts": {
     "build": "bun run typecheck",
@@ -56,6 +61,7 @@
     "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
     "poc:offline-devices:verify": "bun scripts/verify-offline-devices-gate.ts",
+    "poc:offline-lease:verify": "bun scripts/verify-offline-lease-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",

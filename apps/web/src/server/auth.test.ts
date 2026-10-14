@@ -88,6 +88,7 @@ function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
     token: string;
     url: string;
   }> = [];
+  const epochBumps: string[] = [];
   const databaseAdapter = memoryAdapter({
     account: [],
     session: [],
@@ -109,6 +110,10 @@ function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
       auditEvents.push(event);
       return Promise.resolve();
     },
+    authorizationEpochBumper: (userId) => {
+      epochBumps.push(userId);
+      return Promise.resolve();
+    },
     baseURL: testBaseURL,
     databaseAdapter,
     emailDelivery: emailDeliveryOverride ?? emailDelivery,
@@ -125,6 +130,7 @@ function createEmailPasswordTestApp(emailDeliveryOverride?: AuthEmailDelivery) {
     app: testApp,
     auditEvents,
     auth,
+    epochBumps,
     passwordResetEmails,
     verificationEmails,
   };
@@ -401,6 +407,7 @@ describe("Email/password authentication", () => {
   it("uses generic reset responses and revokes all sessions after password reset", async () => {
     const {
       app: testApp,
+      epochBumps,
       passwordResetEmails,
       verificationEmails,
     } = createEmailPasswordTestApp();
@@ -512,6 +519,9 @@ describe("Email/password authentication", () => {
     );
     expect(reset.status).toBe(200);
     expect(hibp.calls()).toBe(2);
+    // A password reset invalidates every offline lease of the user.
+    expect(epochBumps).toHaveLength(1);
+    expect(epochBumps[0]).toBeTruthy();
 
     const priorSession = await testApp.request(
       "/api/auth/get-session?disableCookieCache=true",
