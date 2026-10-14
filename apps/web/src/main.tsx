@@ -21,10 +21,27 @@ const isOutboxLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-outbox-lab";
 const isLocalLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-local-lab";
+const isLogoutLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-logout-lab";
 const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
 
-if (isAttentionLabRoute) {
+if (isLogoutLabRoute) {
+  const loadLogoutLab = async () => {
+    try {
+      const { LogoutLab } = await import("./offline-poc/logout-lab");
+      root.render(<LogoutLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir o laboratório da saída</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadLogoutLab().catch(() => undefined);
+} else if (isAttentionLabRoute) {
   const loadAttentionLab = async () => {
     try {
       const { AttentionLab } = await import("./offline-poc/attention-lab");

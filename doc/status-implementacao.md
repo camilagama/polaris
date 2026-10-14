@@ -859,6 +859,17 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate de navegador | Concluído | `e2e/offline-attention.e2e.ts` sobre o laboratório `/offline-attention-lab` (outbox real em IndexedDB): venda recusada aparece, bloqueia a fila e sobrevive a recarregar; reenvio como comando novo; descarte com confirmação; direito alterado só leva à revisão da conta. 4 cenários em Chromium desktop e Pixel 5 emulado. |
 | Limites | Registrados | O painel ainda não está montado no app (a interface offline não está montada); sem edição guiada de SKU; a prova em Android físico ainda bloqueia ligar a escrita offline. |
 
+### PR59 — Sair com operações pendentes (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr59-logout-pending` sobre `codex/pr58-conflict-attention`. |
+| Decisões | Tomadas pelo projeto | [ADR 0039](../docs/adr/0039-saida-com-operacoes-pendentes.md): enviar primeiro; bloquear a saída com razão e contagens; nada é apagado em nenhuma organização enquanto uma tiver trabalho; descarte só com confirmação explícita, em duas etapas; limpeza que se recusa a perder comandos; encerrar a sessão só depois de `ready`. |
+| Guarda | Concluído | `offline/logout-guard.ts` (`attemptLogout`, `discardAndLogout`), `offline/logout-purge.ts` (`purgeNamespace`: outbox e depois coleções locais); 9 testes. |
+| Diálogo | Concluído | `offline/logout-dialog.tsx` e CSS (sem "sair assim mesmo", descarte em duas etapas, aviso de comandos já enviados); 5 testes de marcação. |
+| Gate de navegador | Concluído | `e2e/offline-logout.e2e.ts` sobre `/offline-logout-lab` (outbox em IndexedDB e banco em OPFS reais, rede e servidor simulados): 6 cenários em Chromium desktop e Pixel 5 emulado. |
+| Limites | Registrados | O app ainda não tem tela de conta: o guarda não está ligado a um botão "Sair" nem ao `signOut`; sem registro das organizações do usuário no aparelho (quem chama informa as organizações); a prova em Android físico ainda bloqueia ligar a escrita offline. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |
