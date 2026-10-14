@@ -5,16 +5,16 @@ import "./sale-page.css";
 import "./sale-cancel-panel.css";
 import { OperationFailureNotice } from "./operation-failure-notice";
 import {
-  type CancelDraft,
-  type CancelDraftErrors,
   backToCancelEditing,
   CANCELLATION_EXPLANATION,
   CANCELLATION_REASONS,
+  type CancelDraft,
+  type CancelDraftErrors,
   cancelDiscardCancel,
   cancelFailed,
+  cancellationReasonLabel,
   cancelSubmitLabel,
   cancelSuccessMessage,
-  cancellationReasonLabel,
   closeCancel,
   discardLockedCancel,
   editCancelNote,
@@ -34,9 +34,9 @@ import {
 const newId = () => crypto.randomUUID();
 
 interface CancelPanelProps {
-  organizationId: string;
   /** Called when the sale changed on the server: reload it and show the notice. */
   onSaleChanged: (notice: SaleNotice) => void;
+  organizationId: string;
   saleId: string;
 }
 
@@ -268,7 +268,7 @@ export function SaleCancelPanel({
 
   if (state.step === "closed" && state.submission.phase === "idle") {
     return (
-      <section className="sale-cancel" aria-label="Cancelar venda">
+      <section aria-label="Cancelar venda" className="sale-cancel">
         <p className="sale-hint">{CANCELLATION_EXPLANATION}</p>
         <button
           className="quiet-button sale-danger"

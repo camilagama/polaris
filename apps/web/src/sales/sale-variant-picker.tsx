@@ -28,7 +28,13 @@ interface SearchResult {
  * One read per search, no matter how many products or variants exist: the
  * server returns variants with their balances, filtered by the typed text.
  */
-function useVariantSearch(organizationId: string, text: string) {
+type LocalSearch = (query: string) => Promise<SearchResult>;
+
+function useVariantSearch(
+  organizationId: string,
+  text: string,
+  localSearch: LocalSearch | undefined
+) {
   const query = useDebouncedValue(text, SEARCH_DELAY_MS);
   const [load, setLoad] = useState<Loadable<SearchResult>>({
     status: "loading",
@@ -41,14 +47,18 @@ function useVariantSearch(organizationId: string, text: string) {
     setLoad((previous) =>
       previous.status === "ready" ? previous : { status: "loading" }
     );
-    orpcClient.inventory
-      .listBalances(variantSearchRequest(organizationId, query))
-      .then((page) => {
+    const search: Promise<SearchResult> = localSearch
+      ? localSearch(query)
+      : orpcClient.inventory
+          .listBalances(variantSearchRequest(organizationId, query))
+          .then((page) => ({
+            entries: page.entries,
+            more: page.nextCursor !== null,
+          }));
+    search
+      .then((value) => {
         if (current) {
-          setLoad({
-            status: "ready",
-            value: { entries: page.entries, more: page.nextCursor !== null },
-          });
+          setLoad({ status: "ready", value });
         }
       })
       .catch((error: unknown) => {
@@ -59,7 +69,7 @@ function useVariantSearch(organizationId: string, text: string) {
     return () => {
       current = false;
     };
-  }, [attempt, organizationId, query]);
+  }, [attempt, localSearch, organizationId, query]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   return { load, query, retry };
@@ -69,6 +79,8 @@ interface VariantSearchProps {
   error: string | undefined;
   /** Prefix of the element ids of this line. */
   id: string;
+  /** Searches this device's collections instead of the server (no connection). */
+  localSearch?: LocalSearch | undefined;
   onPick: (entry: InventoryBalanceEntryReadModel) => void;
   organizationId: string;
 }
@@ -81,11 +93,12 @@ interface VariantSearchProps {
 export function VariantSearch({
   error,
   id,
+  localSearch,
   onPick,
   organizationId,
 }: VariantSearchProps) {
   const [text, setText] = useState("");
-  const { load, retry } = useVariantSearch(organizationId, text);
+  const { load, retry } = useVariantSearch(organizationId, text, localSearch);
   const view = pickerView(
     load,
     // The list follows the debounced text; the live message follows the list.

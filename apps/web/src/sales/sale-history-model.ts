@@ -3,20 +3,13 @@ import type {
   SaleDetailReadModel,
   SaleListEntryReadModel,
 } from "@polaris/contracts";
-import { cancellationReasonLabel } from "./sale-cancellation-model";
-import {
-  returnPanelKey,
-  type ReturnTableRow,
-  returnReasonLabel,
-  returnTableRows,
-  totalAvailable,
-} from "./sale-return-model";
 import {
   formatBrlAmount,
   formatCalendarDate,
   formatInstant,
 } from "../lib/format";
 import { rpcErrorReason } from "../lib/rpc-error";
+import { cancellationReasonLabel } from "./sale-cancellation-model";
 import {
   type ConfirmedSaleView,
   confirmedSaleView,
@@ -24,6 +17,13 @@ import {
   localDay,
   SALE_METHODS,
 } from "./sale-form-model";
+import {
+  type ReturnTableRow,
+  returnPanelKey,
+  returnReasonLabel,
+  returnTableRows,
+  totalAvailable,
+} from "./sale-return-model";
 
 export const SALES_PAGE_SIZE = 50;
 
@@ -229,7 +229,6 @@ export function historyListRequest(
 export interface HistoryRow {
   /** The sale was dated before the day it was confirmed on the server. */
   backdated: boolean;
-  returnsBadge: string | null;
   customerText: string;
   /** The commercial date (the organization's calendar day), dd/mm/aaaa. */
   dateText: string;
@@ -237,6 +236,7 @@ export interface HistoryRow {
   id: string;
   itemCountText: string;
   methodText: string;
+  returnsBadge: string | null;
   statusLabel: string;
   statusTone: "cancelled" | "confirmed";
   /** Local time of the sale on this device, or empty when unreadable. */
@@ -270,8 +270,8 @@ export function historyRows(state: HistoryState): HistoryRow[] {
       sale.paymentMethod === null
         ? "Pagamento não informado"
         : (methodLabels.get(sale.paymentMethod) ?? sale.paymentMethod),
-    statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
     returnsBadge: sale.hasReturns ? RETURNS_BADGE : null,
+    statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
     statusTone: sale.status,
     timeText: timeOf(sale.occurredAt),
     totalText: formatBrlAmount(sale.totalDue),
@@ -348,18 +348,18 @@ interface ReturnHistoryEntry {
 }
 
 export interface SaleDetailView {
-  /** A sale with returns is not cancelled as a whole; this says why. */
-  cancelBlockedReason: string | null;
   /** Set when every unit was already returned (nothing left to return). */
   allReturnedMessage: string | null;
+  canCancel: boolean;
+  /** A sale with returns is not cancelled as a whole; this says why. */
+  cancelBlockedReason: string | null;
+  cancellation: CancellationView | null;
   canReturn: boolean;
   hasReturns: boolean;
   returnPanelKey: string;
   returnRows: ReturnTableRow[];
   returnsBadge: string | null;
   returnsHistory: ReturnHistoryEntry[];
-  canCancel: boolean;
-  cancellation: CancellationView | null;
   sale: ConfirmedSaleView;
   saleId: string;
   statusLabel: string;
@@ -422,20 +422,20 @@ export function saleDetailView(detail: SaleDetailReadModel): SaleDetailView {
       !cancelled && hasReturns && available === 0
         ? "Todas as unidades já foram devolvidas."
         : null,
+    canCancel: !(cancelled || hasReturns),
     cancelBlockedReason:
       !cancelled && hasReturns
         ? "Esta venda já tem devoluções, por isso não pode ser cancelada por inteiro."
         : null,
-    canCancel: !(cancelled || hasReturns),
+    cancellation: detail.cancellation
+      ? cancellationView(detail.cancellation)
+      : null,
     canReturn: !cancelled && available > 0,
     hasReturns,
     returnPanelKey: returnPanelKey(returnRows),
     returnRows,
     returnsBadge: hasReturns ? RETURNS_BADGE : null,
     returnsHistory: returnsHistory(detail, labels),
-    cancellation: detail.cancellation
-      ? cancellationView(detail.cancellation)
-      : null,
     sale: confirmedSaleView({ ...detail.sale, replayed: false }),
     saleId: detail.sale.sale.id,
     statusLabel: cancelled ? "Cancelada" : "Confirmada",

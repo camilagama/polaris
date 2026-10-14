@@ -17,9 +17,16 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
 import { formatBrlAmount } from "../lib/format";
-import { orpcClient } from "../lib/orpc";
 import { useNow } from "../lib/use-now";
+import {
+  filterLocalStockEntries,
+  localStockEntries,
+  readLocalCatalog,
+} from "../offline/local-stock-entries";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import "./sale-page.css";
+import { confirmOnServer } from "./confirm-on-server";
+import { confirmOnDevice } from "./confirm-outcome";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -29,6 +36,11 @@ import {
   withSuggestedPrices,
   writeLastPrices,
 } from "./last-prices-model";
+import {
+  OfflineSaleNotice,
+  PendingSalesPanel,
+  QueuedSalePanel,
+} from "./offline-sale-panels";
 import {
   readSaleAttempt,
   sessionStorageOrNull,
@@ -42,13 +54,11 @@ import {
   addAdjustment,
   addItem,
   adjustmentFieldKey,
-  attemptAfterFailure,
   type CatalogView,
   type ChoiceOption,
   type ConfirmedSaleView,
   cancelDiscard,
   canStartSubmission,
-  confirmSubmission,
   createBlankSaleForm,
   discardLockedSale,
   type EvaluationContext,
@@ -57,8 +67,9 @@ import {
   evaluateSaleForm,
   type FeeLine,
   type FeePreview,
-  failSubmission,
   formFieldKeys,
+  formForOfflineSale,
+  formForOnlineSale,
   INSTALLMENT_PLANS,
   type ItemDraft,
   idleSubmission,
@@ -68,6 +79,7 @@ import {
   MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
   NO_PROFILE_CHOICE,
+  type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
   reconcileProfileReload,
@@ -98,6 +110,7 @@ import { VariantSearch } from "./sale-variant-picker";
 import {
   clearedItemChanges,
   itemChangesForEntry,
+  PICKER_RESULT_LIMIT,
 } from "./sale-variant-picker-model";
 import { useSaleCatalog } from "./use-sale-catalog";
 
@@ -122,6 +135,13 @@ const noProfileOption: ChoiceOption = {
 };
 
 const newId = () => crypto.randomUUID();
+
+type PreparedOk = Extract<PreparedConfirmation, { ok: true }>;
+
+type LocalSearch = (query: string) => Promise<{
+  entries: readonly InventoryBalanceEntryReadModel[];
+  more: boolean;
+}>;
 
 /* -------------------------------------------------------------------------- */
 /* Small controls                                                             */
@@ -300,6 +320,8 @@ interface ItemEditorProps {
   errors: Record<string, string>;
   index: number;
   item: ItemDraft;
+  /** Searches this device's collections instead of the server (no connection). */
+  localSearch: LocalSearch | undefined;
   onChange: (draftId: string, changes: Partial<ItemDraft>) => void;
   onClearVariant: (draftId: string) => void;
   onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
@@ -315,6 +337,7 @@ function ItemEditor({
   errors,
   index,
   item,
+  localSearch,
   onChange,
   onClearVariant,
   onPick,
@@ -372,6 +395,7 @@ function ItemEditor({
         <VariantSearch
           error={pickError}
           id={prefix}
+          localSearch={localSearch}
           onPick={handlePick}
           organizationId={organizationId}
         />
@@ -382,7 +406,7 @@ function ItemEditor({
           id={`${prefix}-stock`}
           role="status"
         >
-          {stockState.text} {stockState.costText}
+          {stockState.text} {localSearch ? "" : stockState.costText}
         </p>
       ) : null}
       {stockWarning ? (
@@ -590,6 +614,8 @@ interface PaymentSectionProps {
   errors: Record<string, string>;
   evaluation: SaleEvaluation;
   form: SaleFormState;
+  /** Without a connection there are no payment profiles to choose from. */
+  offline: boolean;
   onAcknowledgeReview: () => void;
   onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onInstallmentPlanChange: (value: string) => void;
@@ -611,6 +637,7 @@ function PaymentSection({
   onInstallmentPlanChange,
   onInstallmentsChange,
   onMethodChange,
+  offline,
   onProfileChange,
   onRetry,
   profileOptions,
@@ -680,17 +707,26 @@ function PaymentSection({
           ? "É uma intenção registrada na venda; não indica que a antecipação ocorreu."
           : "Disponível apenas para cartão de crédito. Sem antecipação, o custo estimado é R$ 0,00."}
       </p>
-      <SelectField
-        error={errors[formFieldKeys.profile]}
-        hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
-        id="sale-profile"
-        label="Perfil de pagamento"
-        onChange={onProfileChange}
-        options={options}
-        placeholder="Escolha uma opção"
-        value={form.profile.choice}
-      />
-      <CatalogNotice onRetry={onRetry} view={profilesState} />
+      {offline ? (
+        <p className="sale-hint" role="note">
+          Perfil de pagamento: sem conexão, a venda é guardada sem perfil (taxas
+          e prazo ficam desconhecidos).
+        </p>
+      ) : (
+        <SelectField
+          error={errors[formFieldKeys.profile]}
+          hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
+          id="sale-profile"
+          label="Perfil de pagamento"
+          onChange={onProfileChange}
+          options={options}
+          placeholder="Escolha uma opção"
+          value={form.profile.choice}
+        />
+      )}
+      {offline ? null : (
+        <CatalogNotice onRetry={onRetry} view={profilesState} />
+      )}
       {form.profile.reviewNotice ? (
         <div className="sale-message is-warning" role="alert">
           <p>{form.profile.reviewNotice}</p>
@@ -773,6 +809,7 @@ function FeePreviewPanel({ preview }: { preview: FeePreview | null }) {
 interface SummaryPanelProps {
   errors: Record<string, string>;
   evaluation: SaleEvaluation;
+  offline: boolean;
   onDiscardCancel: () => void;
   onDiscardConfirm: () => void;
   onDiscardRequest: () => void;
@@ -788,6 +825,7 @@ function SummaryPanel({
   onDiscardCancel,
   onDiscardConfirm,
   onDiscardRequest,
+  offline,
   onRefresh,
   showRequired,
   submission,
@@ -867,7 +905,7 @@ function SummaryPanel({
         disabled={isSubmitting(submission)}
         type="submit"
       >
-        {submitButtonLabel(submission)}
+        {submitButtonLabel(submission, offline)}
       </button>
     </aside>
   );
@@ -1000,6 +1038,12 @@ const CLOCK_TICK_MS = 60_000;
 
 export function SalePage() {
   const { organizationId } = useCurrentOrganization();
+  const workspace = useLocalWorkspace(organizationId);
+  // Money and stock go to the server whenever it is reachable; only without a
+  // connection is the sale kept on this device.
+  const offlineWorkspace =
+    workspace !== null && !workspace.online ? workspace : null;
+  const offline = offlineWorkspace !== null;
   const now = useNow(CLOCK_TICK_MS);
   const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
     readLastPrices(browserStorage(), organizationId)
@@ -1029,7 +1073,33 @@ export function SalePage() {
     },
     []
   );
-  const catalog = useSaleCatalog(organizationId, handleProfilesLoaded);
+  const catalog = useSaleCatalog(
+    organizationId,
+    handleProfilesLoaded,
+    offlineWorkspace
+  );
+  useEffect(() => {
+    // Going offline fills in what the offline sale uses (no profile, dated now);
+    // coming back online undoes the "no profile" choice made for the person.
+    setForm((current) =>
+      offline ? formForOfflineSale(current) : formForOnlineSale(current)
+    );
+  }, [offline]);
+  const localWriter = offlineWorkspace?.stores.writer;
+  const localOutbox = offlineWorkspace?.stores.outbox;
+  const localSearch = useMemo<LocalSearch | undefined>(() => {
+    if (!(localWriter && localOutbox)) {
+      return;
+    }
+    return async (query) => {
+      const rows = await readLocalCatalog(localWriter, localOutbox);
+      return filterLocalStockEntries(localStockEntries(rows), {
+        limit: PICKER_RESULT_LIMIT,
+        productStatus: "active",
+        query,
+      });
+    };
+  }, [localOutbox, localWriter]);
   const { refresh, resetStock, seedStock } = catalog;
 
   const activeProfiles = useMemo(
@@ -1048,7 +1118,7 @@ export function SalePage() {
   );
 
   useEffect(() => {
-    if (submission.phase === "confirmed") {
+    if (submission.phase === "confirmed" || submission.phase === "queued") {
       confirmedRef.current?.focus();
     }
   }, [submission.phase]);
@@ -1178,6 +1248,53 @@ export function SalePage() {
     [activeProfiles, editForm]
   );
 
+  /** Tries the confirmation (on the server, or on the device when offline) and applies its outcome. */
+  const settleConfirmation = useCallback(
+    async (prepared: PreparedOk) => {
+      // Read again at the click: the connection may have changed since the render.
+      const stores = offlineWorkspace?.runtime.context() ?? null;
+      const outcome = stores
+        ? await confirmOnDevice(
+            prepared,
+            stores,
+            new Map(form.items.map((item) => [item.variantId, item.label]))
+          )
+        : await confirmOnServer(prepared);
+      rememberAttempt(outcome.attempt);
+      if (outcome.prices) {
+        const remembered = mergeLastPrices(
+          lastPrices,
+          outcome.prices.lines,
+          outcome.prices.day
+        );
+        setLastPrices(remembered);
+        writeLastPrices(browserStorage(), organizationId, remembered);
+      }
+      setSubmission(outcome.submission);
+      if (!outcome.completed) {
+        return;
+      }
+      const blank = createBlankSaleForm(newId);
+      setForm(stores ? formForOfflineSale(blank) : blank);
+      setShowRequired(false);
+      resetStock();
+      if (offlineWorkspace && stores) {
+        offlineWorkspace.runtime.localDataChanged();
+        offlineWorkspace.runtime.refreshCounts().catch(() => undefined);
+        // sends it now when the connection came back since the render
+        offlineWorkspace.runtime.syncNow().catch(() => undefined);
+      }
+    },
+    [
+      form.items,
+      lastPrices,
+      offlineWorkspace,
+      organizationId,
+      rememberAttempt,
+      resetStock,
+    ]
+  );
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -1213,23 +1330,7 @@ export function SalePage() {
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {
-        const sale = await orpcClient.sale.confirm(prepared.request);
-        rememberAttempt(null);
-        const remembered = mergeLastPrices(
-          lastPrices,
-          sale.items,
-          sale.sale.occurredOn
-        );
-        setLastPrices(remembered);
-        writeLastPrices(browserStorage(), organizationId, remembered);
-        setSubmission(confirmSubmission(sale));
-        setForm(createBlankSaleForm(newId));
-        setShowRequired(false);
-        resetStock();
-      } catch (error) {
-        const failed = failSubmission(error);
-        rememberAttempt(attemptAfterFailure(failed, prepared.attempt));
-        setSubmission(failed);
+        await settleConfirmation(prepared);
       } finally {
         inFlightRef.current = false;
       }
@@ -1238,10 +1339,9 @@ export function SalePage() {
       activeProfiles,
       catalog.stock,
       form,
-      lastPrices,
       organizationId,
       rememberAttempt,
-      resetStock,
+      settleConfirmation,
       submission,
     ]
   );
@@ -1285,6 +1385,11 @@ export function SalePage() {
           </p>
         </div>
       </section>
+      {offline ? <OfflineSaleNotice /> : null}
+      {workspace ? <PendingSalesPanel workspace={workspace} /> : null}
+      {submission.phase === "queued" ? (
+        <QueuedSalePanel panelRef={confirmedRef} sale={submission.sale} />
+      ) : null}
       {submission.phase === "confirmed" ? (
         <ConfirmedSalePanel
           key={submission.sale.saleId}
@@ -1322,6 +1427,7 @@ export function SalePage() {
                 index={index}
                 item={item}
                 key={item.draftId}
+                localSearch={localSearch}
                 onChange={handleItemChange}
                 onClearVariant={handleClearVariant}
                 onPick={handlePickVariant}
@@ -1377,17 +1483,20 @@ export function SalePage() {
               Adicionar ajuste
             </button>
           </fieldset>
-          <DateSection
-            disabled={locked}
-            error={evaluation.errors[formFieldKeys.occurredAt]}
-            onChange={handleDateChange}
-            value={form.occurredAtLocal}
-          />
+          {offline ? null : (
+            <DateSection
+              disabled={locked}
+              error={evaluation.errors[formFieldKeys.occurredAt]}
+              onChange={handleDateChange}
+              value={form.occurredAtLocal}
+            />
+          )}
           <PaymentSection
             disabled={locked}
             errors={evaluation.errors}
             evaluation={evaluation}
             form={form}
+            offline={offline}
             onAcknowledgeReview={handleAcknowledgeReview}
             onAnticipationChange={handleAnticipationChange}
             onInstallmentPlanChange={handlePlanChange}
@@ -1402,6 +1511,7 @@ export function SalePage() {
         <SummaryPanel
           errors={evaluation.errors}
           evaluation={evaluation}
+          offline={offline}
           onDiscardCancel={handleDiscardCancel}
           onDiscardConfirm={handleDiscardConfirm}
           onDiscardRequest={handleDiscardRequest}

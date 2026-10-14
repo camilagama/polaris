@@ -7,8 +7,8 @@ import "./sale-history.css";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
 import {
-  nextRequestToken,
   isLatestRequest,
+  nextRequestToken,
   type RequestSequence,
 } from "./sale-customer-link-model";
 import { SaleCustomerPanel } from "./sale-customer-panel";
@@ -19,8 +19,8 @@ import {
   saleCustomerHref,
   saleDetailView,
 } from "./sale-history-model";
-import { SaleReturnPanel } from "./sale-return-panel";
 import { SaleIdForm } from "./sale-id-form";
+import { SaleReturnPanel } from "./sale-return-panel";
 import { SaleSnapshot } from "./sale-snapshot";
 import { useSaleIdParam } from "./use-sale-id-param";
 

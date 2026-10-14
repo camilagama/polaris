@@ -145,22 +145,16 @@ function applyCommand(
 }
 
 /**
- * The balance as this device should show it: the local server row with the
- * movements still waiting (pending or being sent), and the sales still waiting,
- * applied in queue order.
- * Refused commands do not count: they were not applied.
+ * A balance with the movements and sales still waiting in the queue applied, in
+ * queue order. Refused commands do not count: they were not applied. Pure, so a
+ * screen that lists many variants reads the queue once and applies it to each.
  */
-export async function effectiveStock(
-  outbox: Outbox,
-  reader: LocalInventoryReader,
+export function applyQueuedStock(
+  base: StockSnapshot,
+  commands: readonly OutboxCommand[],
   variantId: string
-): Promise<StockSnapshot> {
-  const row = await reader.inventoryRow(variantId);
-  let snapshot: StockSnapshot = {
-    quantity: row?.quantity ?? 0,
-    version: row?.version ?? 0,
-  };
-  const { commands } = await outbox.snapshot();
+): StockSnapshot {
+  let snapshot = base;
   for (const command of commands) {
     if (command.status === "rejected") {
       continue;
@@ -179,6 +173,25 @@ export async function effectiveStock(
     }
   }
   return snapshot;
+}
+
+/**
+ * The balance as this device should show it: the local server row with the
+ * movements still waiting (pending or being sent), and the sales still waiting,
+ * applied in queue order.
+ */
+export async function effectiveStock(
+  outbox: Outbox,
+  reader: LocalInventoryReader,
+  variantId: string
+): Promise<StockSnapshot> {
+  const row = await reader.inventoryRow(variantId);
+  const { commands } = await outbox.snapshot();
+  return applyQueuedStock(
+    { quantity: row?.quantity ?? 0, version: row?.version ?? 0 },
+    commands,
+    variantId
+  );
 }
 
 interface Enqueue {

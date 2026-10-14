@@ -97,10 +97,10 @@ export function isLatestRequest(
 export interface LinkFailure {
   message: string;
   reason: string | null;
-  /** The sale's attribution changed or is unknown: reload it before retrying. */
-  reloadLink: boolean;
   /** The customer choices are stale: reload them and choose again. */
   reloadCustomers: boolean;
+  /** The sale's attribution changed or is unknown: reload it before retrying. */
+  reloadLink: boolean;
 }
 
 type LinkSubmission =

@@ -17,6 +17,8 @@ import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
+import { SalePage } from "../sales/sale-page";
+import { SaleLabServer } from "./sale-lab-server";
 
 /**
  * Browser lab for the screens that work from this device (plan PR64): the real
@@ -38,13 +40,27 @@ const ORGANIZATION = {
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
-type LabScreen = "customers" | "products";
+type LabScreen = "customers" | "products" | "sale";
 
 function labScreen(): LabScreen {
-  return new URLSearchParams(window.location.search).get("screen") ===
-    "products"
-    ? "products"
-    : "customers";
+  const screen = new URLSearchParams(window.location.search).get("screen");
+  return screen === "products" || screen === "sale" ? screen : "customers";
+}
+
+function newServer(screen: LabScreen) {
+  if (screen === "products") {
+    return new FakeCatalogServer();
+  }
+  return screen === "sale" ? new SaleLabServer() : new FakeCustomerServer();
+}
+
+function recordsOn(server: ReturnType<typeof newServer>): number {
+  if (server instanceof FakeCatalogServer) {
+    return server.products.size;
+  }
+  return server instanceof SaleLabServer
+    ? server.sales.size
+    : server.customers.size;
 }
 
 export function ScreensLab() {
@@ -54,13 +70,7 @@ export function ScreensLab() {
   const [started, setStarted] = useState(false);
   const [message, setMessage] = useState("Laboratório fechado.");
   const network = useMemo<{ online: boolean }>(() => ({ online: true }), []);
-  const server = useMemo(
-    () =>
-      screen === "products"
-        ? new FakeCatalogServer()
-        : new FakeCustomerServer(),
-    [screen]
-  );
+  const server = useMemo(() => newServer(screen), [screen]);
 
   const runtime = useMemo(
     () =>
@@ -72,7 +82,11 @@ export function ScreensLab() {
             const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
             const lease = await signOfflineLease(
               buildOfflineLeaseClaims({
-                capabilities: ["customer:create", "product:create"],
+                capabilities: [
+                  "customer:create",
+                  "product:create",
+                  "sale:create",
+                ],
                 deviceId,
                 epoch: 0,
                 expiresAt,
@@ -104,10 +118,7 @@ export function ScreensLab() {
 
   // the screen syncs by itself: read the simulated server whenever the runtime says so
   useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
-  const serverRecords =
-    server instanceof FakeCatalogServer
-      ? server.products.size
-      : server.customers.size;
+  const serverRecords = recordsOn(server);
 
   const handleStart = useCallback(async () => {
     window.localStorage.setItem("screens-lab-user", userId);
@@ -179,6 +190,7 @@ export function ScreensLab() {
           </p>
           {started && screen === "customers" ? <CustomersPage /> : null}
           {started && screen === "products" ? <ProductsPage /> : null}
+          {started && screen === "sale" ? <SalePage /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

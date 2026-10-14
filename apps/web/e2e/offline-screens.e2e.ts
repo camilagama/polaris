@@ -2,6 +2,9 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
+const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
+const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
+
 async function openLab(
   page: Page,
   user: string,
@@ -201,5 +204,107 @@ test.describe("produtos", () => {
         name: "Editar",
       })
     ).toBeEnabled();
+  });
+});
+
+async function openSaleLab(page: Page, user: string) {
+  await openLab(page, user, "sale");
+  await start(page, "Nova venda");
+}
+
+async function fillShirtSale(page: Page, quantity: number) {
+  await page.getByLabel("Produto ou variante").fill("camiseta azul");
+  await page.getByRole("button", { name: SHIRT_OPTION }).click();
+  await page.getByLabel("Quantidade").fill(String(quantity));
+  await page.getByLabel("Método de pagamento").selectOption({ label: "Pix" });
+}
+
+const keepSale = (page: Page) =>
+  page.getByRole("button", { name: "Guardar venda neste aparelho" });
+
+test.describe("venda", () => {
+  test("sem rede, guarda a venda no aparelho, desconta do estoque local e o servidor confirma ao voltar a rede", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await expect(
+      page.getByText("Sem conexão. A venda será guardada")
+    ).toBeVisible();
+    // no profile and no date exist offline
+    await expect(page.getByLabel("Perfil de pagamento")).toHaveCount(0);
+    await expect(
+      page.getByLabel("Data e hora da venda (opcional)")
+    ).toHaveCount(0);
+
+    await fillShirtSale(page, 2);
+    await keepSale(page).click();
+
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+    await expect(
+      page.getByText("Vendas neste aparelho aguardando o servidor")
+    ).toBeVisible();
+    await expect(page.getByText("Aguardando envio")).toBeVisible();
+    await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+
+    // the next search already sees the stock the queued sale took (5 - 2)
+    await page.getByLabel("Produto ou variante").fill("camiseta azul");
+    await expect(
+      page.getByRole("button", {
+        name: SHIRT_WITH_THREE,
+      })
+    ).toBeVisible();
+
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+    await expect(
+      page.getByText("Vendas neste aparelho aguardando o servidor")
+    ).toHaveCount(0, { timeout: 20_000 });
+    // back online the form is the online one again
+    await expect(page.getByLabel("Perfil de pagamento")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Confirmar venda" })
+    ).toBeVisible();
+  });
+
+  test("sem rede, avisa quando o estoque do aparelho não cobre, guarda mesmo assim, e a recusa do servidor fica à vista", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 9);
+    await keepSale(page).click();
+
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+    await expect(
+      page.getByText("o aparelho mostra 5 em estoque e a venda tem 9")
+    ).toBeVisible();
+
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByText("Recusada pelo servidor")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+  });
+
+  test("com rede o botão é o de confirmar no servidor, e a venda não é guardada no aparelho", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await expect(
+      page.getByRole("button", { name: "Confirmar venda" })
+    ).toBeVisible();
+    await expect(keepSale(page)).toHaveCount(0);
   });
 });
