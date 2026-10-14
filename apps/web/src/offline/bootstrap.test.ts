@@ -131,6 +131,11 @@ class FakeWriter implements LocalWriter {
     }
     return Promise.resolve();
   }
+  recentSalesRows() {
+    return Promise.resolve([
+      ...this.data.recentSales.values(),
+    ] as SaleListEntryReadModel[]);
+  }
   replaceRecentSales(rows: SaleListEntryReadModel[]) {
     this.data.recentSales = new Map(rows.map((row) => [row.id, row]));
     return Promise.resolve();
