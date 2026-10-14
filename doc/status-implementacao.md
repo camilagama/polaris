@@ -811,6 +811,18 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `customers` (ID do cliente mantido, duplicata na mesma organização e em outra, transação do chamador intacta após o conflito, ID inválido recusado) e `sync-push` verdes. |
 | Limites | Registrados | Nenhuma tela monta o fluxo (a prova em Android físico ainda bloqueia ligar a escrita offline); sem laboratório de navegador para este fluxo; o sincronizador ainda não tem agendamento (online, foco, tentativa com espera). |
 
+### PR55 — Produto criado offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr55-offline-product-create` sobre `codex/pr54-offline-customer-create`. |
+| Decisões | Tomadas pelo projeto | [ADR 0035](../docs/adr/0035-produto-criado-offline.md): um comando atômico `product.create` (produto, variante padrão e estoque de abertura opcional); IDs do dispositivo; SKU em conflito recusa o comando inteiro (`sku_conflict`) e o descarte é explícito; `product:create` mais `inventory:adjust` quando há estoque, via `extraCapabilities`. |
+| Banco | Concluído | Sem migration. `createProduct` aceita `id`, `defaultVariantId`, `sku` e `listPrice`, em savepoint, com `ProductIdConflictError` e `InvalidProductIdError`. |
+| Servidor | Concluído | Manipulador `product.create` registrado; `extraCapabilities` no `sync.push` (lease precisa carregar todas); 8 testes do manipulador e 1 do `push`. |
+| Cliente | Concluído | `offline/product-create.ts` (valida, enfileira, linhas otimistas de produto/variante/saldo, restauração, estado pendente/recusado, descarte explícito com bloqueio por dependentes e por `sending`); servidor sintético atômico com SKU único e resposta perdida; 9 testes. |
+| Gate Neon PostgreSQL 18 | Concluído | `poc:offline-product:verify` (`offline-product`, suítes `ci` e `gate5`): IDs, SKU, preço e estoque preservados; change log; reenvio cria uma vez; SKU em uso (qualquer caixa) recusa tudo; ID de produto ou variante ocupado (mesma ou outra organização); atomicidade com estoque recusado e categoria indisponível; `receiveStock` negado sob `sync:push` puro. |
+| Limites | Registrados | Só a variante padrão é criada offline (opções e variantes continuam online); sem laboratório de navegador nem tela; a prova em Android físico ainda bloqueia ligar a escrita offline. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

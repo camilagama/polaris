@@ -47,6 +47,12 @@ export interface SyncCommandHandler {
     payload: unknown,
     context: SyncCommandContext
   ) => Promise<SyncJson>;
+  /**
+   * Capabilities beyond `capability` that this particular payload needs (a
+   * product created with opening stock also adjusts inventory). The lease must
+   * carry them all, so the role still has to grant each one.
+   */
+  extraCapabilities?: (payload: unknown) => string[];
   /** Throws `InvalidSyncPayloadError` for a payload the command cannot take. */
   parse: (payload: unknown) => unknown;
   type: string;
@@ -120,6 +126,16 @@ async function pushOne(
       }
       precheckFailure = PUSH_REJECTION.invalidPayload;
     }
+  }
+  if (
+    precheckFailure === null &&
+    handler?.extraCapabilities &&
+    leaseClaims &&
+    !handler
+      .extraCapabilities(parsed)
+      .every((capability) => leaseClaims.caps.includes(capability))
+  ) {
+    precheckFailure = PUSH_REJECTION.capabilityNotInLease;
   }
 
   const payloadHash = await sha256Hex(

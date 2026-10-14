@@ -1,5 +1,6 @@
 import {
   deriveProductLifecycle,
+  InvalidProductIdError,
   normalizeProductDescription,
   normalizeProductName,
   normalizeProductVariantConfiguration,
@@ -10,6 +11,7 @@ import {
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
+  ProductIdConflictError,
   type ProductLifecycleAction,
   ProductNotFoundError,
   ProductStockNotEmptyError,
@@ -49,9 +51,17 @@ export interface ProductMutationInput {
 
 export interface CreateProductInput {
   categoryId?: string | null;
+  /** The default variant's ID, chosen by an offline device; otherwise assigned. */
+  defaultVariantId?: string;
   description?: string | null;
+  /** A UUID the caller generated; without one the database assigns a UUIDv7. */
+  id?: string;
+  /** Optional BRL list price of the default variant. */
+  listPrice?: string | null;
   name: string;
   requestId?: string | null;
+  /** Optional SKU of the default variant. */
+  sku?: string | null;
 }
 
 export interface UpdateProductInput extends ProductMutationInput {
@@ -112,7 +122,7 @@ function isUnavailableCategoryConstraint(error: unknown): boolean {
   return false;
 }
 
-function isProductVariantSkuConflict(error: unknown): boolean {
+function isUniqueViolation(error: unknown, constraints: string[]): boolean {
   const visited = new Set<object>();
   let current: unknown = error;
   while (typeof current === "object" && current !== null) {
@@ -127,7 +137,8 @@ function isProductVariantSkuConflict(error: unknown): boolean {
     };
     if (
       candidate.code === "23505" &&
-      candidate.constraint === "product_variants_organization_sku_unique"
+      typeof candidate.constraint === "string" &&
+      constraints.includes(candidate.constraint)
     ) {
       return true;
     }
@@ -135,6 +146,18 @@ function isProductVariantSkuConflict(error: unknown): boolean {
   }
   return false;
 }
+
+function isProductVariantSkuConflict(error: unknown): boolean {
+  return isUniqueViolation(error, ["product_variants_organization_sku_unique"]);
+}
+
+const productIdConstraints = [
+  "products_pkey",
+  "product_variants_pkey",
+  "product_variants_organization_product_id_unique",
+];
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function requireActiveCategory(
   transaction: TenantRequestTransaction,
@@ -200,7 +223,14 @@ export async function createProduct(
 ) {
   const name = normalizeProductName(input.name);
   const description = normalizeProductDescription(input.description);
+  const sku = normalizeProductVariantSku(input.sku);
+  const listPrice = normalizeVariantListPrice(input.listPrice);
   const categoryId = input.categoryId ?? null;
+  for (const id of [input.id, input.defaultVariantId]) {
+    if (id !== undefined && !uuidPattern.test(id)) {
+      throw new InvalidProductIdError();
+    }
+  }
   if (categoryId) {
     await requireActiveCategory(
       transaction,
@@ -211,32 +241,48 @@ export async function createProduct(
 
   let product: typeof products.$inferSelect | undefined;
   try {
-    [product] = await transaction
-      .insert(products)
-      .values({
-        categoryId,
-        description,
-        name,
+    // The savepoint keeps a duplicate ID or SKU from aborting the caller's transaction.
+    product = await transaction.transaction(async (savepoint) => {
+      const [created] = await savepoint
+        .insert(products)
+        .values({
+          categoryId,
+          description,
+          ...(input.id === undefined ? {} : { id: input.id }),
+          name,
+          organizationId: identity.organizationId,
+        })
+        .returning(productColumns);
+      if (!created) {
+        throw new Error("product_insert_failed");
+      }
+      await savepoint.insert(productVariants).values({
+        ...(input.defaultVariantId === undefined
+          ? {}
+          : { id: input.defaultVariantId }),
+        isDefault: true,
+        listPrice,
         organizationId: identity.organizationId,
-      })
-      .returning(productColumns);
+        productId: created.id,
+        sku,
+      });
+      return created;
+    });
   } catch (error) {
     if (isUnavailableCategoryConstraint(error)) {
       // biome-ignore lint/style/useErrorCause: ProductCategoryUnavailableError forwards this cause to Error.
       throw new ProductCategoryUnavailableError({ cause: error });
     }
+    if (isProductVariantSkuConflict(error)) {
+      // biome-ignore lint/style/useErrorCause: ProductVariantSkuConflictError forwards this cause to Error.
+      throw new ProductVariantSkuConflictError({ cause: error });
+    }
+    if (isUniqueViolation(error, productIdConstraints)) {
+      // biome-ignore lint/style/useErrorCause: ProductIdConflictError forwards this cause to Error.
+      throw new ProductIdConflictError({ cause: error });
+    }
     throw error;
   }
-
-  if (!product) {
-    throw new Error("product_insert_failed");
-  }
-
-  await transaction.insert(productVariants).values({
-    isDefault: true,
-    organizationId: identity.organizationId,
-    productId: product.id,
-  });
 
   await recordTenantAuditEvent(transaction, identity, {
     entityId: product.id,

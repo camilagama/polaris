@@ -150,6 +150,26 @@ export class ProductCategoryUnavailableError extends Error {
   }
 }
 
+/** An ID the caller chose for a product or variant is not a UUID. */
+export class InvalidProductIdError extends Error {
+  readonly code = "invalid_product_id";
+
+  constructor() {
+    super("invalid_product_id");
+    this.name = "InvalidProductIdError";
+  }
+}
+
+/** A product or variant ID the caller chose (an offline device) is already taken. */
+export class ProductIdConflictError extends Error {
+  readonly code = "product_id_conflict";
+
+  constructor(options?: ErrorOptions) {
+    super("product_id_conflict", options);
+    this.name = "ProductIdConflictError";
+  }
+}
+
 export function normalizeProductVariantConfiguration(
   input: ProductVariantConfigurationInput
 ): ProductVariantConfigurationInput {

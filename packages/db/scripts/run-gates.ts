@@ -64,6 +64,7 @@ const gates: Gate[] = [
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
   ["sync-push", "verify-sync-push-gate.ts"],
+  ["offline-product", "verify-offline-product-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
@@ -132,6 +133,7 @@ const suites: Record<string, string[]> = {
     "sync-log",
     "bootstrap",
     "sync-push",
+    "offline-product",
   ],
   gate3: ["gate2-runtime", "inventory", "media-upload", "review-hardening"],
   gate4: [
@@ -152,6 +154,7 @@ const suites: Record<string, string[]> = {
     "sync-log",
     "bootstrap",
     "sync-push",
+    "offline-product",
   ],
 };
 

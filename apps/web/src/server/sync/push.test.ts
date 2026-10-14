@@ -256,6 +256,41 @@ describe("pushCommands", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("also needs the capabilities the payload itself asks for", async () => {
+    const { execute, value } = handler({
+      extraCapabilities: (payload) =>
+        (payload as { withStock?: boolean }).withStock
+          ? ["inventory:adjust"]
+          : [],
+    });
+    const { run } = frame((_n, recorded) =>
+      recorded.input.precheckFailure
+        ? rejected(recorded.input.precheckFailure)
+        : accepted
+    );
+    const plain = await pushCommands(
+      [await command(1, { payload: { name: "A" } })],
+      dependencies(run, [value])
+    );
+    expect(plain[0]?.status).toBe("accepted");
+    const missing = await pushCommands(
+      [await command(2, { payload: { name: "B", withStock: true } })],
+      dependencies(run, [value])
+    );
+    expect(missing[0]?.code).toBe(PUSH_REJECTION.capabilityNotInLease);
+    const granted = await pushCommands(
+      [
+        await command(3, {
+          lease: await lease(["customer:update", "inventory:adjust"]),
+          payload: { name: "C", withStock: true },
+        }),
+      ],
+      dependencies(run, [value])
+    );
+    expect(granted[0]?.status).toBe("accepted");
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it("hashes the content so key order does not matter but any change does", async () => {
     const { value } = handler();
     const hashes: string[] = [];
