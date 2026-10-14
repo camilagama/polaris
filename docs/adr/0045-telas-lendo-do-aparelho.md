@@ -6,7 +6,7 @@ status: accepted
 
 ## Contexto
 
-O runtime offline (ADR 0043) está montado no app, sincroniza e mostra o chip de estado, mas nenhuma tela lia as coleções locais nem enfileirava comandos. Este é o primeiro passo de converter as telas, na ordem do risco: clientes e produtos (cadastro simples, sem dinheiro nem estoque) agora; estoque e venda no passo seguinte.
+O runtime offline (ADR 0043) está montado no app, sincroniza e mostra o chip de estado, mas nenhuma tela lia as coleções locais nem enfileirava comandos. Este é o primeiro passo de converter as telas, na ordem do risco: clientes e produtos (cadastro simples, sem dinheiro nem estoque) aqui; venda e estoque no [ADR 0046](0046-venda-e-estoque-sem-conexao.md).
 
 ## Decisão
 
@@ -19,7 +19,7 @@ O runtime offline (ADR 0043) está montado no app, sincroniza e mostra o chip de
 ## Consequências
 
 - Com a chave ligada, duas telas passam a depender da cópia local; a decisão de ligar continua condicionada ao checklist em aparelho físico (Gate 5).
-- Estoque e venda ficam para o passo seguinte por um motivo concreto, não por cautela genérica: o saldo local não traz o custo médio, e a tela de estoque bloqueia recebimento e exige valoração justamente por causa do custo. Converter sem ele bloquearia indevidamente ou pediria um custo que o servidor já tem. O passo seguinte começa por levar o custo médio ao saldo local (contrato, leitura de bootstrap e change log, com o gate de banco).
+- Estoque e venda seguem uma política diferente (servidor quando alcançável, aparelho só sem conexão) e têm seu próprio ADR, porque movem dinheiro e saldo e a confirmação imediata traz o que o aparelho não tem. O custo médio **não** vai ao aparelho (ADR 0031), então a tela de estoque offline trabalha sem ele.
 - Editar offline fica fora de propósito: não há comando de edição, e inventar um exigiria resolução de conflitos que ainda não foi decidida.
 
 ## Alternativas rejeitadas

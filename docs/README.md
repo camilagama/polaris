@@ -68,5 +68,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0043](adr/0043-runtime-offline-no-app.md) | Runtime offline no app | aceito |
 | [0044](adr/0044-revisao-de-seguranca-adicional.md) | Revisão de segurança adicional antes do merge | aceito |
 | [0045](adr/0045-telas-lendo-do-aparelho.md) | Telas que leem do aparelho: clientes e produtos | aceito |
+| [0046](adr/0046-venda-e-estoque-sem-conexao.md) | Venda e estoque sem conexão: o servidor quando alcançável, o aparelho quando não | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.
