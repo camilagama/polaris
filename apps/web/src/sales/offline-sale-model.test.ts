@@ -153,3 +153,40 @@ describe("the mode of the sale screen", () => {
     expect(saleModeIsOffline(true, false, submitting)).toBe(true);
   });
 });
+
+describe("what the person had chosen before going offline", () => {
+  it("is put back when the connection returns: a real profile, a deliberate 'no profile', or nothing", () => {
+    const real = selectProfileChoice(
+      createBlankSaleForm(newId),
+      "profile-1",
+      []
+    );
+    expect(formForOnlineSale(formForOfflineSale(real)).profile).toMatchObject({
+      choice: "profile-1",
+    });
+
+    const none = selectProfileChoice(
+      createBlankSaleForm(newId),
+      NO_PROFILE_CHOICE,
+      []
+    );
+    expect(formForOnlineSale(formForOfflineSale(none)).profile.choice).toBe(
+      NO_PROFILE_CHOICE
+    );
+
+    expect(
+      formForOnlineSale(formForOfflineSale(createBlankSaleForm(newId))).profile
+        .choice
+    ).toBe("");
+  });
+
+  it("applying the offline form twice does not turn the assumed 'no profile' into the person's choice", () => {
+    const real = selectProfileChoice(
+      createBlankSaleForm(newId),
+      "profile-1",
+      []
+    );
+    const twice = formForOfflineSale(formForOfflineSale(real));
+    expect(formForOnlineSale(twice).profile.choice).toBe("profile-1");
+  });
+});
