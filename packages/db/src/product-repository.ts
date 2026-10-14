@@ -1,41 +1,41 @@
 import {
-  ProductDefaultVariantSkuConflictError,
-  ProductDefaultVariantStockHistoryConflictError,
-  ProductDeletedError,
-  ProductStockNotEmptyError,
   deriveProductLifecycle,
   normalizeProductDescription,
   normalizeProductName,
+  normalizeProductVariantConfiguration,
+  normalizeProductVariantSku,
+  normalizeVariantListPrice,
+  PRODUCT_VARIANT_OPTION_NAMES,
   ProductCategoryUnavailableError,
+  ProductDefaultVariantSkuConflictError,
+  ProductDefaultVariantStockHistoryConflictError,
+  ProductDeletedError,
+  type ProductLifecycleAction,
   ProductNotFoundError,
+  ProductStockNotEmptyError,
   ProductVariantConfigurationError,
+  type ProductVariantConfigurationInput,
   ProductVariantNotFoundError,
+  type ProductVariantOptionName,
   ProductVariantSkuConflictError,
   ProductVariantsAlreadyConfiguredError,
   ProductVersionConflictError,
-  PRODUCT_VARIANT_OPTION_NAMES,
-  normalizeProductVariantSku,
-  normalizeProductVariantConfiguration,
   transitionProductLifecycle,
-  type ProductLifecycleAction,
-  type ProductVariantConfigurationInput,
-  type ProductVariantOptionName,
 } from "@polaris/domain/catalog/product";
 import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import { categories } from "./schema/category";
+import { inventoryBalances, stockMovements } from "./schema/inventory";
+import { products, productVariants } from "./schema/product";
+import {
+  productOptions,
+  productOptionValues,
+  variantOptionValues,
+} from "./schema/product-variants";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import type {
   TenantRequestIdentity,
   TenantRequestTransaction,
 } from "./tenant-transaction";
-import { categories } from "./schema/category";
-import { productVariants, products } from "./schema/product";
-import { inventoryBalances } from "./schema/inventory";
-import {
-  productOptionValues,
-  productOptions,
-  variantOptionValues,
-} from "./schema/product-variants";
-import { stockMovements } from "./schema/inventory";
 
 export interface ProductListOptions {
   status?: "active" | "archived" | "deleted" | "all";
@@ -64,6 +64,11 @@ export interface ConfigureProductVariantsInput
   extends ProductMutationInput,
     ProductVariantConfigurationInput {}
 
+export interface SetProductVariantListPriceInput extends ProductMutationInput {
+  listPrice: string | null;
+  variantId: string;
+}
+
 export interface SetProductVariantSkuInput extends ProductMutationInput {
   sku: string | null;
   variantId: string;
@@ -71,9 +76,9 @@ export interface SetProductVariantSkuInput extends ProductMutationInput {
 
 const productColumns = {
   archivedAt: products.archivedAt,
-  deletedAt: products.deletedAt,
   categoryId: products.categoryId,
   createdAt: products.createdAt,
+  deletedAt: products.deletedAt,
   description: products.description,
   id: products.id,
   name: products.name,
@@ -517,6 +522,7 @@ export async function getProductVariants(
     .select({
       id: productVariants.id,
       isDefault: productVariants.isDefault,
+      listPrice: productVariants.listPrice,
       position: productVariants.position,
       sku: productVariants.sku,
     })
@@ -595,6 +601,7 @@ export async function getProductVariants(
     variants: variantRows.map((variant) => ({
       id: variant.id,
       isDefault: variant.isDefault,
+      listPrice: normalizeVariantListPrice(variant.listPrice),
       position: variant.position,
       sku: variant.sku,
       values: (assignmentsByVariantId.get(variant.id) ?? [])
@@ -702,6 +709,112 @@ export async function setProductVariantSku(
     entityId: variant.id,
     entityType: "product_variant",
     eventType: "product_variant.sku_changed",
+    requestId: input.requestId ?? null,
+  });
+
+  return {
+    changed: true,
+    configuration: await getProductVariants(transaction, identity, input.id),
+    product: updatedProduct,
+  };
+}
+
+/**
+ * Sets or clears the list price of one variant. Like every catalog write it is
+ * versioned (the product version moves) and audited.
+ */
+export async function setProductVariantListPrice(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: SetProductVariantListPriceInput
+) {
+  const listPrice = normalizeVariantListPrice(input.listPrice);
+  const [product] = await transaction
+    .select(productColumns)
+    .from(products)
+    .where(
+      and(
+        eq(products.id, input.id),
+        eq(products.organizationId, identity.organizationId)
+      )
+    )
+    .for("update");
+
+  if (!product) {
+    throw new ProductNotFoundError();
+  }
+  if (product.deletedAt) {
+    throw new ProductDeletedError();
+  }
+  if (product.version !== input.expectedVersion) {
+    throw new ProductVersionConflictError();
+  }
+
+  const [variant] = await transaction
+    .select({ id: productVariants.id, listPrice: productVariants.listPrice })
+    .from(productVariants)
+    .where(
+      and(
+        eq(productVariants.id, input.variantId),
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, input.id)
+      )
+    )
+    .limit(1);
+
+  if (!variant) {
+    throw new ProductVariantNotFoundError();
+  }
+  // numeric text keeps the scale it was written with, so compare as numbers.
+  const unchanged =
+    variant.listPrice === null || listPrice === null
+      ? variant.listPrice === listPrice
+      : Number(variant.listPrice) === Number(listPrice);
+  if (unchanged) {
+    return {
+      changed: false,
+      configuration: await getProductVariants(transaction, identity, input.id),
+      product,
+    };
+  }
+
+  const [updatedVariant] = await transaction
+    .update(productVariants)
+    .set({ listPrice })
+    .where(
+      and(
+        eq(productVariants.id, input.variantId),
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, input.id)
+      )
+    )
+    .returning({ id: productVariants.id });
+  if (!updatedVariant) {
+    throw new ProductVariantNotFoundError();
+  }
+
+  const [updatedProduct] = await transaction
+    .update(products)
+    .set({
+      updatedAt: new Date(),
+      version: sql`${products.version} + 1`,
+    })
+    .where(
+      and(
+        eq(products.id, input.id),
+        eq(products.organizationId, identity.organizationId),
+        eq(products.version, input.expectedVersion)
+      )
+    )
+    .returning(productColumns);
+  if (!updatedProduct) {
+    throw new ProductVersionConflictError();
+  }
+
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: variant.id,
+    entityType: "product_variant",
+    eventType: "product_variant.list_price_changed",
     requestId: input.requestId ?? null,
   });
 

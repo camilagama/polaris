@@ -4,14 +4,15 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import {
-  useCallback,
-  useEffect,
-  useState,
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
+  useCallback,
+  useEffect,
+  useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
+import { ProductVariantPriceSection } from "./product-variant-price-section";
 import "./product-variants-panel.css";
 
 const optionChoices: ReadonlyArray<
@@ -86,11 +87,11 @@ interface ProductVariantCombinationRowProps {
 
 interface ProductVariantsConfigurationFormProps {
   configuration: ProductVariantConfigurationReadModel;
-  onConflict: () => void;
   onConfigured: (
     configuration: ProductVariantConfigurationReadModel,
     product: ProductReadModel
   ) => void;
+  onConflict: () => void;
   organizationId: string;
   product: ProductReadModel;
 }
@@ -908,8 +909,8 @@ export function ProductVariantsPanel({
     content = (
       <ProductVariantConfigurationForm
         configuration={configuration}
-        onConflict={handleConflict}
         onConfigured={handleConfigured}
+        onConflict={handleConflict}
         organizationId={organizationId}
         product={product}
       />
@@ -939,6 +940,15 @@ export function ProductVariantsPanel({
       ) : null}
       {!(isLoading || loadError) && configuration ? (
         <ProductVariantSkuSection
+          configuration={configuration}
+          onConflict={handleConflict}
+          onUpdated={handleSkuUpdated}
+          organizationId={organizationId}
+          productId={product.id}
+        />
+      ) : null}
+      {!(isLoading || loadError) && configuration ? (
+        <ProductVariantPriceSection
           configuration={configuration}
           onConflict={handleConflict}
           onUpdated={handleSkuUpdated}

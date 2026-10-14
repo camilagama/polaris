@@ -58,6 +58,7 @@ import {
   getProductVariants,
   listProducts,
   restoreProduct,
+  setProductVariantListPrice,
   setProductVariantSku,
   updateProduct,
 } from "@polaris/db/product-repository";
@@ -81,6 +82,7 @@ import {
 } from "@polaris/domain/catalog/category";
 import {
   deriveProductLifecycle,
+  InvalidVariantListPriceError,
   ProductCategoryUnavailableError,
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
@@ -268,6 +270,7 @@ interface RpcRouterDependencies {
   restorePaymentProfile: typeof restorePaymentProfile;
   restoreProduct: typeof restoreProduct;
   revokeDevice: typeof revokeDevice;
+  setProductVariantListPrice: typeof setProductVariantListPrice;
   setProductVariantSku: typeof setProductVariantSku;
   updateCustomer: typeof updateCustomer;
   updatePaymentProfile: typeof updatePaymentProfile;
@@ -564,6 +567,7 @@ const badRequestRpcErrors = [
   [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
   [
     InvalidDeviceLabelError,
+    InvalidVariantListPriceError,
     InvalidOfflineGrantWindowError,
     InvalidOfflineGrantRevokeReasonError,
   ],
@@ -1031,6 +1035,7 @@ function createPaymentProfileRpcHandlers(
   return { archive, create, list, restore, update };
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one `overrides.x ?? x` per dependency; splitting the router is tracked in the review backlog.
 export function createRpcRouter(
   overrides: Partial<RpcRouterDependencies> = {}
 ) {
@@ -1057,6 +1062,8 @@ export function createRpcRouter(
     overrides.configureProductVariants ?? configureProductVariants;
   const setTenantProductVariantSku =
     overrides.setProductVariantSku ?? setProductVariantSku;
+  const setTenantProductVariantListPrice =
+    overrides.setProductVariantListPrice ?? setProductVariantListPrice;
   const updateTenantProduct = overrides.updateProduct ?? updateProduct;
   const archiveTenantProduct = overrides.archiveProduct ?? archiveProduct;
 
@@ -1514,6 +1521,35 @@ export function createRpcRouter(
       }
     );
 
+  const setProductVariantListPriceRecord =
+    implementContract.product.setVariantListPrice.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "product:update",
+            operation: (transaction, identity) =>
+              setTenantProductVariantListPrice(transaction, identity, {
+                expectedVersion: input.expectedVersion,
+                id: input.productId,
+                listPrice: input.listPrice,
+                requestId: requestAuditId(context.requestId),
+                variantId: input.variantId,
+              }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            changed: result.changed,
+            configuration: result.configuration,
+            product: productReadModel(result.product),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
   const receiveStockRecord = implementContract.inventory.receiveStock.handler(
     async ({ context, input }) => {
       try {
@@ -1639,6 +1675,7 @@ export function createRpcRouter(
       getVariants: getProductVariantsRecord,
       list: listProduct,
       restore: restoreProductRecord,
+      setVariantListPrice: setProductVariantListPriceRecord,
       setVariantSku: setProductVariantSkuRecord,
       update: updateProductRecord,
     },

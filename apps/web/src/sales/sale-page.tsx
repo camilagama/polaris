@@ -1083,7 +1083,11 @@ export function SalePage() {
   const handlePickVariant = useCallback(
     (draftId: string, entry: InventoryBalanceEntryReadModel) => {
       seedStock([entry]);
-      const suggestion = suggestPrices(lastPrices, entry.variantId);
+      const suggestion = suggestPrices(
+        lastPrices,
+        entry.variantId,
+        entry.listPrice
+      );
       editForm((current) => {
         const item = current.items.find(
           (candidate) => candidate.draftId === draftId

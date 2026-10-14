@@ -248,9 +248,13 @@ const productVariantOptionAssignment = z.object({
   optionValueName: z.string().min(1),
 });
 
+/** A BRL list price as the server writes it: whole reais and two decimals. */
+const listPriceText = z.string().regex(/^\d{1,18}\.\d{2}$/);
+
 const productVariant = z.object({
   id: z.string().uuid(),
   isDefault: z.boolean(),
+  listPrice: listPriceText.nullable(),
   position: z.number().int().nonnegative().nullable(),
   sku: z.string().nullable(),
   values: z.array(productVariantOptionAssignment),
@@ -347,6 +351,7 @@ export type InventoryCountMovementReadModel = z.infer<
 
 const inventoryBalanceEntry = z.object({
   isDefaultVariant: z.boolean(),
+  listPrice: listPriceText.nullable(),
   movingAverageCost: normalizedBrlCost.nullable(),
   productId: z.string().uuid(),
   productName: z.string().min(1),
@@ -1051,6 +1056,24 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
+    setVariantListPrice: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          // A BRL amount with at most two decimals, or null to clear it.
+          listPrice: z.string().max(64).nullable(),
+          organizationId: z.string().trim().min(1),
+          productId: z.string().uuid(),
+          variantId: z.string().uuid(),
+        })
+      )
+      .output(
+        z.object({
+          changed: z.boolean(),
+          configuration: productVariantConfiguration,
+          product,
+        })
+      ),
     setVariantSku: oc
       .input(
         z.object({

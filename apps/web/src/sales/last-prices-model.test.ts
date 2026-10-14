@@ -190,6 +190,19 @@ describe("price suggestions", () => {
     expect(suggestPrices(prices, "constructor")).toBeNull();
   });
 
+  it("falls back to the variant list price when no sale was remembered", () => {
+    expect(suggestPrices(prices, green, "39.90")).toEqual({
+      chargedUnitPrice: "39,90",
+      listedUnitPrice: "39,90",
+    });
+    // the last confirmed sale wins over the list price
+    expect(suggestPrices(prices, blue, "39.90")).toEqual({
+      chargedUnitPrice: "49,90",
+      listedUnitPrice: "59,90",
+    });
+    expect(suggestPrices(prices, green, null)).toBeNull();
+  });
+
   it("fills only the prices the operator has not typed", () => {
     const suggestion = suggestPrices(prices, blue);
     const empty = { chargedUnitPrice: "", listedUnitPrice: "", quantity: "1" };

@@ -1,3 +1,4 @@
+import { Money } from "../money/money";
 export type ProductLifecycle = "active" | "archived" | "deleted";
 
 export type ProductLifecycleAction = "archive" | "delete" | "restore";
@@ -275,6 +276,33 @@ export function normalizeProductDescription(
     throw new ProductDescriptionError();
   }
   return normalized || null;
+}
+
+export class InvalidVariantListPriceError extends Error {
+  constructor() {
+    super("invalid_variant_list_price");
+    this.name = "InvalidVariantListPriceError";
+  }
+}
+
+const variantListPricePattern = /^\d{1,15}(?:\.\d{1,2})?$/;
+
+/**
+ * The list price of a variant is optional and, when present, a non-negative BRL
+ * amount with at most two decimals. It only suggests the listed price of a sale
+ * item; the price in the sale command remains the only economic fact.
+ */
+export function normalizeVariantListPrice(
+  price: string | null | undefined
+): string | null {
+  if (price === null || price === undefined) {
+    return null;
+  }
+  const trimmed = price.trim();
+  if (!variantListPricePattern.test(trimmed)) {
+    throw new InvalidVariantListPriceError();
+  }
+  return Money.from(trimmed).toString();
 }
 
 export function normalizeProductVariantSku(

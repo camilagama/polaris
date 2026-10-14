@@ -746,6 +746,16 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-lease:verify` (`offline-lease`, suíte `gate5`): privilégios e função pinada, emissão com época, capabilities e 72 h, teto do trial e direito encerrado, revalidação (principal, organização, grant, expiração, capability, dispositivo, época, revogado), reset de senha por usuário em duas organizações sem tocar outro usuário e corrida entre emissão e reset sem época vencida. |
 | Limites | Registrados | Nenhum cliente consome o lease ainda (PR50 em diante); o fim do direito (trial) não é informado por nenhum chamador porque billing não existe; `OFFLINE_LEASE_SECRET` precisa ser criado em cada ambiente (checklist de go-live). |
 
+### PR50a — Preço de tabela por variante (D-6) (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/pr50a-variant-list-price` sobre `codex/pr49-offline-authorization`. Dividido do PR50 do plano para manter os PRs coesos; o PR50b traz as coleções locais e o bootstrap. |
+| Decisão | Registrada | Preço de tabela opcional na variante, só sugestão na venda (o último preço confirmado da variante tem precedência); `catalogVersion` será o cursor do PR51. Ver [ADR 0026](../docs/adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md) e `docs/business-rules/products.md`. |
+| Domínio, banco e RPC | Concluídos | `normalizeVariantListPrice`; migration 0044 (`list_price`, CHECK de escala e limite, GRANT de UPDATE só na coluna); `setProductVariantListPrice` (versionado, auditado, idempotente); `product.setVariantListPrice`; `listPrice` nas variantes e nas entradas de saldo. |
+| Interface | Concluída | Seção "Preço de tabela das variantes" no painel de variantes (vírgula ou ponto, vazio remove) e pré-preenchimento dos preços do item ao escolher a variante na venda. |
+| Gate Neon PostgreSQL 18 | Concluído | `gate2-runtime` cobre normalização, versão, repetição sem mudança, conflito de versão, valores inválidos e os CHECKs do banco; `read-models` continua verde. |
+
 ### Handoff para continuação por outro desenvolvedor
 
 | Subetapa | Status | Evidência / dependência |

@@ -309,6 +309,13 @@
       "when": 1791936241688,
       "tag": "0043_offline_authorization_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791937211458,
+      "tag": "0044_variant_list_price",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveProductLifecycle,
+  InvalidVariantListPriceError,
   normalizeProductDescription,
   normalizeProductName,
+  normalizeVariantListPrice,
   ProductDescriptionError,
   ProductLifecycleError,
   ProductNameError,
@@ -77,5 +79,35 @@ describe("product text limits", () => {
     expect(() => normalizeProductDescription("d".repeat(5001))).toThrow(
       ProductDescriptionError
     );
+  });
+});
+
+describe("variant list price", () => {
+  it("is optional and normalized to two decimals", () => {
+    expect(normalizeVariantListPrice(null)).toBeNull();
+    expect(normalizeVariantListPrice(undefined)).toBeNull();
+    expect(normalizeVariantListPrice(" 49.9 ")).toBe("49.90");
+    expect(normalizeVariantListPrice("0")).toBe("0.00");
+    expect(normalizeVariantListPrice("1200")).toBe("1200.00");
+    expect(normalizeVariantListPrice("007.50")).toBe("7.50");
+  });
+
+  it("rejects negatives, extra decimals, notation and huge amounts", () => {
+    for (const price of [
+      "-1",
+      "1.234",
+      "abc",
+      "",
+      " ",
+      "1e3",
+      "1,50",
+      "$5",
+      "1234567890123456",
+      ".5",
+    ]) {
+      expect(() => normalizeVariantListPrice(price)).toThrow(
+        InvalidVariantListPriceError
+      );
+    }
   });
 });

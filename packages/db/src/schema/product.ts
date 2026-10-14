@@ -1,15 +1,16 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   foreignKey,
   index,
   integer,
+  numeric,
   pgPolicy,
   pgTable,
   text,
   timestamp,
-  type AnyPgColumn,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -39,11 +40,11 @@ export const products = pgTable(
   "products",
   {
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     categoryId: uuid("category_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     description: text("description"),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     name: text("name").notNull(),
@@ -110,6 +111,8 @@ export const productVariants = pgTable(
       .notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     isDefault: boolean("is_default").default(true).notNull(),
+    /** Optional BRL list price suggested for sale items; never an economic fact. */
+    listPrice: numeric("list_price"),
     organizationId: text("organization_id").notNull(),
     position: integer("position"),
     productId: uuid("product_id").notNull(),
@@ -124,6 +127,16 @@ export const productVariants = pgTable(
     check(
       "product_variants_position_nonnegative",
       sql`${table.position} IS NULL OR ${table.position} >= 0`
+    ),
+    check(
+      "product_variants_list_price_allowed",
+      sql`
+        ${table.listPrice} IS NULL OR (
+          ${table.listPrice} >= 0
+          AND scale(${table.listPrice}) <= 2
+          AND ${table.listPrice} < 1000000000000000000
+        )
+      `
     ),
     check(
       "product_variants_sku_canonical",

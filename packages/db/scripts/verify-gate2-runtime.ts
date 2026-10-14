@@ -7,6 +7,7 @@ import {
   CategoryNameConflictError,
 } from "@polaris/domain/catalog/category";
 import {
+  InvalidVariantListPriceError,
   ProductCategoryUnavailableError,
   ProductDefaultVariantSkuConflictError,
   ProductVariantConfigurationError,
@@ -35,6 +36,7 @@ import {
   getProductVariants,
   listProducts,
   restoreProduct,
+  setProductVariantListPrice,
   setProductVariantSku,
   updateProduct,
 } from "../src/product-repository";
@@ -1947,6 +1949,88 @@ async function main() {
           })
       ),
       ProductVariantNotFoundError
+    );
+
+    // ---- the optional list price of a variant (D-6)
+    const withListPrice = (
+      expectedVersion: number,
+      listPrice: string | null,
+      variantId = skuVariantA.id
+    ) =>
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "product:update",
+          requestedOrganizationId: organizationA.organization.id,
+        },
+        (transaction, identity) =>
+          setProductVariantListPrice(transaction, identity, {
+            expectedVersion,
+            id: concurrentVariantProduct.id,
+            listPrice,
+            requestId: randomUUID(),
+            variantId,
+          })
+      );
+    const priced = await withListPrice(6, " 49.9 ");
+    assert.equal(priced.changed, true);
+    assert.equal(priced.product.version, 7);
+    assert.equal(
+      priced.configuration.variants.find(
+        (variant) => variant.id === skuVariantA.id
+      )?.listPrice,
+      "49.90"
+    );
+    const samePrice = await withListPrice(7, "49.90");
+    assert.equal(samePrice.changed, false, "the same price changes nothing");
+    assert.equal(samePrice.product.version, 7);
+    await assert.rejects(
+      withListPrice(3, "10.00"),
+      ProductVersionConflictError
+    );
+    for (const invalid of [
+      "-1",
+      "1.234",
+      "abc",
+      "",
+      "1e3",
+      "1234567890123456",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified before the next one starts
+      await assert.rejects(
+        withListPrice(7, invalid),
+        InvalidVariantListPriceError,
+        `list price ${JSON.stringify(invalid)} is refused`
+      );
+    }
+    const cleared = await withListPrice(7, null);
+    assert.equal(cleared.changed, true);
+    assert.equal(
+      cleared.configuration.variants.find(
+        (variant) => variant.id === skuVariantA.id
+      )?.listPrice,
+      null
+    );
+    const otherVariantUnpriced = cleared.configuration.variants.find(
+      (variant) => variant.id === skuVariantB.id
+    );
+    assert.equal(otherVariantUnpriced?.listPrice, null);
+    await expectSqlState(
+      adminPool.query(
+        "UPDATE public.product_variants SET list_price = -1 WHERE id = $1",
+        [skuVariantA.id]
+      ),
+      "23514",
+      "the database refuses an invalid list price"
+    );
+    await expectSqlState(
+      adminPool.query(
+        "UPDATE public.product_variants SET list_price = 1.234 WHERE id = $1",
+        [skuVariantA.id]
+      ),
+      "23514",
+      "the database refuses an invalid list price"
     );
 
     await runtimeClient.query("BEGIN");
