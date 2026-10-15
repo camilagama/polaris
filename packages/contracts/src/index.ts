@@ -240,6 +240,8 @@ const expenseCategoryName = z
   });
 
 const periodSummary = z.object({
+  /** The server clock when this retrieval of the confirmed records was made ("updated until"). */
+  generatedAt: z.string().datetime(),
   cards: z.object({
     /** Units sold, net of returns. */
     items: z.number().int().nonnegative(),

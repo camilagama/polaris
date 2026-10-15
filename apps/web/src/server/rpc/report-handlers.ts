@@ -59,6 +59,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
                 processingFees: result.processingFees,
                 returns: result.returns,
               },
+              generatedAt: new Date().toISOString(),
               period: { from: input.from, to: input.to },
               quality: resultQuality(result),
             };
