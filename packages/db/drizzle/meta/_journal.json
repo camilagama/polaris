@@ -344,6 +344,13 @@
       "when": 1792023237883,
       "tag": "0048_expense_recurrence",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792026812954,
+      "tag": "0049_goals",
+      "breakpoints": true
     }
   ]
 }

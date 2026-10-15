@@ -125,6 +125,14 @@ import {
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
 import {
+  GoalLimitReachedError,
+  GoalNotActiveError,
+  GoalPeriodEndedError,
+  GoalNotFoundError,
+  GoalVersionConflictError,
+  InvalidGoalError,
+} from "@polaris/domain/goals/goal";
+import {
   ExpenseRuleNotFoundError,
   ExpenseRuleVersionConflictError,
   InvalidExpenseRuleError,
@@ -222,6 +230,7 @@ import {
   type readPeriodResult,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
+import type { GoalRepository } from "./goal-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
 import {
@@ -234,6 +243,7 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createExpenseRpcHandlers } from "./expense-handlers";
+import { createGoalRpcHandlers } from "./goal-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
@@ -281,6 +291,7 @@ interface RpcRouterDependencies {
   createProduct: typeof createProduct;
   createSaleReturn: typeof createSaleReturn;
   expenseRepository: Partial<ExpenseRepository>;
+  goalRepository: Partial<GoalRepository>;
   readPeriodResult: typeof readPeriodResult;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
@@ -612,6 +623,7 @@ const badRequestRpcErrors = [
     InvalidExpenseCategoryError,
     ExpenseCompetenceOutOfRangeError,
     InvalidExpenseRuleError,
+    InvalidGoalError,
     InvalidEconomicsPeriodError,
   ],
   [
@@ -686,6 +698,10 @@ const conflictRpcErrors = [
     ExpenseVersionConflictError,
     ExpenseVoidedError,
     ExpenseRuleVersionConflictError,
+    GoalLimitReachedError,
+    GoalNotActiveError,
+    GoalPeriodEndedError,
+    GoalVersionConflictError,
   ],
   [
     ProductDeletedError,
@@ -731,6 +747,7 @@ const notFoundRpcErrors = [
     ExpenseNotFoundError,
     ExpenseSaleNotFoundError,
     ExpenseRuleNotFoundError,
+    GoalNotFoundError,
   ],
   [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;
@@ -1187,6 +1204,12 @@ export function createRpcRouter(
   });
   const expenseHandlers = createExpenseRpcHandlers({
     expenseRepository: overrides.expenseRepository,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const goalHandlers = createGoalRpcHandlers({
+    goalRepository: overrides.goalRepository,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1747,6 +1770,7 @@ export function createRpcRouter(
     customer: customerHandlers,
     device: offlineHandlers.device,
     expense: expenseHandlers,
+    goal: goalHandlers,
     inventory: {
       getBalance: inventoryHandlers.getBalance,
       inventoryCount: inventoryHandlers.count,
