@@ -53,6 +53,11 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 - [ ] Turnstile (site key, secret e hostname), Resend (secret, domínio de envio verificado, remetente) e demais segredos configurados conforme [auth-abuse-protection.md](./auth-abuse-protection.md) e [email-auth.md](./email-auth.md); só então ligar e-mail/senha.
 - [ ] Política de privacidade atualizada com Resend, Turnstile, IP e user-agent de sessão e vínculo Google, e revisão de DPA e região dos providers ([privacy.md](../business-rules/privacy.md)). Retenção legal e legal hold da auditoria definidas.
 
+### Billing
+
+- [ ] Papel de login do billing criado (membro só de `polaris_billing_runtime`, sem `SUPERUSER`, `CREATEROLE` nem `BYPASSRLS`, não membro de `neon_superuser`) e uma Hyperdrive própria para ele, com query caching desabilitado; conferir em `pg_roles` e nas pertenças. Nunca reutilizar a URL do tenant, a do dono nem a da limpeza de mídia ([ADR 0062](../adr/0062-ciclo-de-vida-do-billing-e-caixa-de-entrada.md)).
+- [ ] Varredura de acesso vencido e reprocessamento de eventos agendados no cron (PR B) e provados com um provedor sandbox (Gate 7).
+
 ### Mídia
 
 - [ ] Provar a limpeza de objetos de imagens removidas no R2 real (implementada e provada em banco, [ADR 0061](../adr/0061-limpeza-de-imagens-removidas.md)) e decidir o limite de envio de imagens por organização: a limpeza apaga o que foi removido, não impede o envio em massa.

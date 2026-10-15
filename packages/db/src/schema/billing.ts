@@ -4,6 +4,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   numeric,
   pgPolicy,
   pgTable,
@@ -132,14 +133,25 @@ export const organizationBilling = pgTable(
   {
     /** When Pro access ends unless renewed; null in the free states. */
     accessEndsAt: timestamp("access_ends_at", { withTimezone: true }),
+    /** The subscription was cancelled: access ends with the period already paid for. */
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    /** The cycle being paid, in months (1, 6 or 12), while Pro. */
+    cycleMonths: integer("cycle_months"),
+    /** The moment of the newest provider fact applied; an older fact is stale. */
+    lastFactAt: timestamp("last_fact_at", { withTimezone: true }),
     organizationId: text("organization_id")
       .primaryKey()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    /** A cycle change that takes effect at the next renewal. */
+    pendingCycleMonths: integer("pending_cycle_months"),
+    /** Which payment provider holds the subscription, and its reference there (no personal data). */
+    provider: text("provider"),
+    providerRef: text("provider_ref"),
     state: text("state").default("free").notNull(),
-    /** When the organization first started a trial: it is offered once. */
+    /** When the trial was used, or waived by subscribing without one: it is offered once. */
     trialStartedAt: timestamp("trial_started_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
@@ -164,6 +176,36 @@ export const organizationBilling = pgTable(
       sql`${table.state} <> 'trialing' OR ${table.trialStartedAt} IS NOT NULL`
     ),
     check("organization_billing_version_positive", sql`${table.version} >= 1`),
+    check(
+      "organization_billing_cycle_allowed",
+      sql`(${table.cycleMonths} IS NULL OR ${table.cycleMonths} IN (1, 6, 12)) AND (${table.pendingCycleMonths} IS NULL OR ${table.pendingCycleMonths} IN (1, 6, 12))`
+    ),
+    // a free record has no cycle, nothing pending and nothing cancelled
+    check(
+      "organization_billing_free_has_no_subscription_flags",
+      sql`
+        ${table.state} IN ('trialing', 'active', 'grace')
+        OR (NOT ${table.cancelAtPeriodEnd} AND ${table.cycleMonths} IS NULL AND ${table.pendingCycleMonths} IS NULL)
+      `
+    ),
+    check(
+      "organization_billing_provider_coherent",
+      sql`
+        (${table.provider} IS NULL AND ${table.providerRef} IS NULL)
+        OR (
+          ${table.provider} ~ '^[a-z][a-z0-9_]{1,31}$'
+          AND char_length(${table.providerRef}) BETWEEN 1 AND 128
+        )
+      `
+    ),
+    // one subscription at a provider belongs to one organization
+    uniqueIndex("organization_billing_provider_ref_unique")
+      .on(table.provider, table.providerRef)
+      .where(sql`${table.providerRef} IS NOT NULL`),
+    // the sweep of expired access reads this
+    index("organization_billing_due_idx")
+      .on(table.accessEndsAt)
+      .where(sql`${table.state} IN ('trialing', 'active', 'grace')`),
     pgPolicy("organization_billing_current_tenant_select", {
       for: "select",
       to: runtimeRole,
@@ -215,6 +257,88 @@ export const entitlementGrants = pgTable(
       for: "select",
       to: runtimeRole,
       using: activeTenantScope(table.organizationId),
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The inbox and the ledger of billing (plan PR79 and PR81): every fact a
+ * provider reported (already reduced to what the lifecycle needs, with no
+ * personal data and no raw payload) and every transition time caused, with the
+ * state before and after. A provider event is stored once (`provider` and
+ * `provider_event_id` are unique), so a delivered-twice webhook is one row; a
+ * row is only ever updated to record how it was processed and is never deleted.
+ */
+export const billingEvents = pgTable(
+  "billing_events",
+  {
+    attempts: integer("attempts").default(0).notNull(),
+    /** The normalized fact, as the lifecycle reads it. */
+    fact: jsonb("fact").notNull(),
+    factType: text("fact_type").notNull(),
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    /** The organization, when known; resolved from `provider_ref` otherwise. */
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    /** `not_applicable`, `stale` and `reference_mismatch` for ignored facts, `unknown_organization` and `error` for failed ones. */
+    outcomeCode: text("outcome_code"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    provider: text("provider").notNull(),
+    providerEventId: text("provider_event_id").notNull(),
+    /** The subscription reference the provider reported. */
+    providerRef: text("provider_ref"),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    stateAfter: text("state_after"),
+    stateBefore: text("state_before"),
+    status: text("status").default("received").notNull(),
+  },
+  (table) => [
+    check(
+      "billing_events_provider_format",
+      sql`${table.provider} ~ '^[a-z][a-z0-9_]{1,31}$' AND char_length(${table.providerEventId}) BETWEEN 1 AND 160`
+    ),
+    check(
+      "billing_events_provider_ref_length",
+      sql`${table.providerRef} IS NULL OR char_length(${table.providerRef}) BETWEEN 1 AND 128`
+    ),
+    check(
+      "billing_events_fact_type_allowed",
+      sql`${table.factType} IN ('trial_method_ready', 'charge_succeeded', 'charge_failed', 'subscription_cancelled', 'cycle_change_scheduled', 'time_elapsed', 'command')`
+    ),
+    check(
+      "billing_events_status_allowed",
+      sql`${table.status} IN ('received', 'applied', 'ignored', 'failed')`
+    ),
+    check(
+      "billing_events_outcome_allowed",
+      sql`${table.outcomeCode} IS NULL OR ${table.outcomeCode} IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error')`
+    ),
+    check(
+      "billing_events_fact_is_small_object",
+      sql`jsonb_typeof(${table.fact}) = 'object' AND pg_column_size(${table.fact}) < 2048`
+    ),
+    check("billing_events_attempts_nonnegative", sql`${table.attempts} >= 0`),
+    uniqueIndex("billing_events_provider_event_unique").on(
+      table.provider,
+      table.providerEventId
+    ),
+    index("billing_events_organization_idx").on(
+      table.organizationId,
+      table.receivedAt
+    ),
+    // what the retry pass reads
+    index("billing_events_pending_idx")
+      .on(table.receivedAt)
+      .where(sql`${table.status} IN ('received', 'failed')`),
+    // a person sees the billing history of their own organization, never writes it
+    pgPolicy("billing_events_current_tenant_select", {
+      for: "select",
+      to: runtimeRole,
+      using: sql`${table.organizationId} IS NOT NULL AND ${activeTenantScope(table.organizationId)}`,
     }),
   ]
 ).enableRLS();

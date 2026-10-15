@@ -334,7 +334,12 @@ describe("the transition table", () => {
       free: ["start_trial", "subscribe", "usage_changed"],
       free_over_limit: ["start_trial", "subscribe", "usage_changed"],
       grace: ["grace_expired", "payment_succeeded"],
-      trial_setup: ["abandon_trial_setup", "renewal_ready", "subscribe"],
+      trial_setup: [
+        "abandon_trial_setup",
+        "renewal_ready",
+        "start_trial",
+        "subscribe",
+      ],
       trialing: ["payment_succeeded", "trial_ended_without_payment"],
     };
     for (const state of states) {
@@ -456,13 +461,23 @@ describe("properties of any sequence of events", () => {
     );
   });
 
+  it("a trial that is still being set up can be started again (the person closed the checkout), and nothing else restarts it", () => {
+    expect(
+      applyBillingEvent(at("trial_setup"), { type: "start_trial" }, ctx())
+    ).toEqual({ accessEndsAt: null, state: "trial_setup" });
+    expect(
+      rejection(() =>
+        applyBillingEvent(
+          at("trial_setup"),
+          { type: "start_trial" },
+          ctx(false, now, true)
+        )
+      )
+    ).toBe("trial_already_consumed");
+  });
+
   it("a trial cannot be started while one is running or a subscription exists, nor again once consumed", () => {
-    for (const state of [
-      "trial_setup",
-      "trialing",
-      "active",
-      "grace",
-    ] as const) {
+    for (const state of ["trialing", "active", "grace"] as const) {
       expect(() =>
         applyBillingEvent(
           at(state, grantsPro(state) ? periodEnd : null),
@@ -476,7 +491,10 @@ describe("properties of any sequence of events", () => {
         run(steps, (before, after, event, context) => {
           if (event.type === "start_trial" && after.state === "trial_setup") {
             expect(context.trialConsumed).toBe(false);
-            expect(["free", "free_over_limit"]).toContain(before.state);
+            // from the free states, or again while the trial is still being set up
+            expect(["free", "free_over_limit", "trial_setup"]).toContain(
+              before.state
+            );
           }
         });
       })
