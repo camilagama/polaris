@@ -7,7 +7,7 @@ import {
 } from "./navigation-model";
 
 describe("main menu", () => {
-  it("lists the seven areas in workflow order, each once", () => {
+  it("lists the eight areas in workflow order, each once", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Vender",
       "Histórico",
@@ -15,10 +15,11 @@ describe("main menu", () => {
       "Produtos",
       "Categorias",
       "Clientes",
+      "Despesas",
       "Perfis de pagamento",
     ]);
-    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(7);
-    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(7);
+    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(8);
+    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(8);
   });
 
   it("does not offer the customer-of-a-sale page, which asks for an ID", () => {

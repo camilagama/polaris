@@ -43,6 +43,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.CustomersPage,
     }))
   ),
+  expenses: lazy(() =>
+    import("../expenses/expenses-page").then((module) => ({
+      default: module.ExpensesPage,
+    }))
+  ),
   inventory: lazy(() =>
     import("../inventory/inventory-page").then((module) => ({
       default: module.InventoryPage,

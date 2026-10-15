@@ -2,6 +2,7 @@ export type NavId =
   | "categories"
   | "customers"
   | "devices"
+  | "expenses"
   | "history"
   | "inventory"
   | "payment-profiles"
@@ -13,6 +14,7 @@ export type RouteId =
   | "categories"
   | "customers"
   | "devices"
+  | "expenses"
   | "inventory"
   | "payment-profiles"
   | "products"
@@ -35,6 +37,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/products", id: "products", label: "Produtos" },
   { href: "/categories", id: "categories", label: "Categorias" },
   { href: "/customers", id: "customers", label: "Clientes" },
+  { href: "/expenses", id: "expenses", label: "Despesas" },
   {
     href: "/payment-profiles",
     id: "payment-profiles",
@@ -71,6 +74,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/categories": { id: "categories", navId: "categories", title: "Categorias" },
   "/customers": { id: "customers", navId: "customers", title: "Clientes" },
   "/devices": { id: "devices", navId: "devices", title: "Aparelhos" },
+  "/expenses": { id: "expenses", navId: "expenses", title: "Despesas" },
   "/inventory": { id: "inventory", navId: "inventory", title: "Estoque" },
   "/payment-profiles": {
     id: "payment-profiles",

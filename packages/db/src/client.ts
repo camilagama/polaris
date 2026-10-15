@@ -4,6 +4,7 @@ import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
 import { devices, offlineGrants } from "./schema/device";
+import { expenseCategories, expenses } from "./schema/expense";
 import { syncChanges, syncCursors } from "./schema/sync";
 import { syncCommands } from "./schema/sync-command";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
@@ -24,6 +25,8 @@ const databaseSchema = {
   customers,
   dbPocOperations,
   devices,
+  expenseCategories,
+  expenses,
   inventoryBalances,
   mediaAssets,
   mediaCleanupClaims,
