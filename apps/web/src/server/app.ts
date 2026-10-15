@@ -22,6 +22,7 @@ import {
   logServerError,
   logServerErrorFromContext,
 } from "./observability/server-log";
+import { createBillingWebhookRoutes } from "./routes/billing-webhooks";
 import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
 import { rpcRouter as defaultRpcRouter } from "./rpc/router";
@@ -140,6 +141,9 @@ export function createServerApp({
 
   app.route("/", systemRoutes);
   app.route("/", createMediaRoutes());
+  // Provider webhooks sit outside /api and /rpc (browser origin checks): they
+  // prove themselves by the provider signature their adapter verifies.
+  app.route("/", createBillingWebhookRoutes());
 
   app.notFound((context) =>
     context.json(

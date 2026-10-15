@@ -55,13 +55,13 @@ interface ProcessedBillingEvent {
   status: BillingEventStatus;
 }
 
-interface BillingSweepReport {
+export interface BillingSweepReport {
   failed: number;
   scanned: number;
   transitioned: number;
 }
 
-interface BillingRetryReport {
+export interface BillingRetryReport {
   failed: number;
   processed: number;
   scanned: number;
