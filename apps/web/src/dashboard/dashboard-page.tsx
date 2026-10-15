@@ -2,9 +2,12 @@ import { useMemo, useState } from "react";
 import { formatMonthLabel, monthOfDay } from "../expenses/expense-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
-import { formatUpdatedAt } from "./dashboard-model";
+import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
+import { waitingOperations } from "../offline/runtime/sync-status";
+import { formatUpdatedUntil } from "./dashboard-model";
 import { GoalsPanel } from "./goals-panel";
 import { MonthSelector } from "./month-selector";
+import { OfflineCopyNotice } from "./offline-copy-notice";
 import { QualityBanner } from "./quality-banner";
 import { ResultCards } from "./result-cards";
 import { ResultChain } from "./result-chain";
@@ -36,17 +39,26 @@ interface ToolbarProps {
   onMonthChange: (month: string) => void;
   onRefresh: () => void;
   state: PeriodSummaryState;
+  timezone: string;
 }
 
-function Toolbar({ month, onMonthChange, onRefresh, state }: ToolbarProps) {
-  const { isLoading, loadedAt } = state;
+function Toolbar({
+  month,
+  onMonthChange,
+  onRefresh,
+  state,
+  timezone,
+}: ToolbarProps) {
+  const { isLoading, source, summary } = state;
   return (
     <div className="dashboard-toolbar">
       <MonthSelector month={month} onChange={onMonthChange} />
       <div className="dashboard-refresh">
         <p aria-live="polite" className="dashboard-updated">
           {isLoading ? "Atualizando…" : null}
-          {!isLoading && loadedAt ? formatUpdatedAt(loadedAt) : null}
+          {!isLoading && summary && source === "server"
+            ? formatUpdatedUntil(summary.generatedAt, timezone)
+            : null}
         </p>
         <button
           className="quiet-button"
@@ -95,7 +107,11 @@ function Content({ month, state }: ContentProps) {
   );
 }
 
-/** The result of a month: online only, every figure comes from the server. */
+/**
+ * The result of a month. Every figure comes from the server; when it cannot
+ * answer, the last confirmed result this device kept is shown as such. Work
+ * still waiting on the device is never part of the figures.
+ */
 export function DashboardPage() {
   const { organization, organizationId } = useCurrentOrganization();
   const today = useMemo(
@@ -104,6 +120,7 @@ export function DashboardPage() {
   );
   const [month, setMonth] = useState(() => monthOfDay(today));
   const { refresh, state } = usePeriodSummary(organizationId, month);
+  const snapshot = useRuntimeSnapshot();
 
   return (
     <div className="dashboard-page">
@@ -113,7 +130,15 @@ export function DashboardPage() {
         onMonthChange={setMonth}
         onRefresh={refresh}
         state={state}
+        timezone={organization.timezone}
       />
+      {state.summary && state.source === "cache" ? (
+        <OfflineCopyNotice
+          generatedAt={state.summary.generatedAt}
+          timezone={organization.timezone}
+          waitingOperations={snapshot ? waitingOperations(snapshot) : 0}
+        />
+      ) : null}
       {state.error ? (
         <p className="categories-message is-error" role="alert">
           {state.error}{" "}

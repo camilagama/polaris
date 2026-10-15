@@ -316,3 +316,19 @@
     padding-left: 0.6rem;
   }
 }
+
+/* The device's copy of the last confirmed result, shown without a connection */
+
+.categories-message.is-warning {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border-color: color-mix(in srgb, var(--ui-warning) 32%, transparent);
+}
+
+.dashboard-copy-notice {
+  margin: 0;
+}
+
+.dashboard-copy-notice + .dashboard-copy-notice {
+  margin-top: 0.35rem;
+}

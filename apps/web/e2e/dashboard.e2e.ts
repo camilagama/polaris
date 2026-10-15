@@ -10,6 +10,11 @@ import { expect, test } from "@playwright/test";
  * real server computes is proved on PostgreSQL by the `economics` gate.
  */
 const NOW = "2026-10-14T12:00:00.000Z";
+/** The server read the figures at NOW: 09:00 in the lab organization (America/Sao_Paulo). */
+const UPDATED_UNTIL = "Atualizado até 14/10/2026 09:00";
+const COPY_NOTICE =
+  "Sem conexão. Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
+const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 const rpcPrefix = /^\/rpc\//;
 
 /** Money in cents, so the fixture arithmetic is exact. */
@@ -186,6 +191,8 @@ function summaryOf(month: string, from: string, to: string) {
     level = "no_data";
   }
   return {
+    // the server clock at the read: what the screen says it is updated until
+    generatedAt: NOW,
     cards: {
       items: sum(sales.map((sale) => sale.items)),
       marginPercent:
@@ -234,6 +241,8 @@ class FakeReportServer {
   readonly answered: string[] = [];
   /** When set, every answer is this ORPC error instead of a summary. */
   failure: { code: string; status: number } | null = null;
+  /** When true the network is down: the request never gets an answer. */
+  networkDown = false as boolean;
   private readonly holds = new Map<string, Promise<void>>();
 
   /** Holds the answer for a month until the returned function is called. */
@@ -284,6 +293,10 @@ class FakeReportServer {
 
 async function installServer(page: Page, server: FakeReportServer) {
   await page.route("**/rpc/**", async (route: Route) => {
+    if (server.networkDown) {
+      await route.abort("internetdisconnected");
+      return;
+    }
     const url = new URL(route.request().url());
     const procedure = url.pathname.replace(rpcPrefix, "");
     const body = route.request().postDataJSON() as {
@@ -298,16 +311,23 @@ async function installServer(page: Page, server: FakeReportServer) {
   });
 }
 
-async function openDashboard(page: Page, server: FakeReportServer) {
-  // the screen reads today's date from the browser: October 2026
-  await page.clock.setFixedTime(new Date(NOW));
-  await installServer(page, server);
+async function signIn(page: Page, user: string) {
   await page.goto("/offline-screens-lab?screen=dashboard");
-  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
+  await page.getByLabel("Usuário").fill(user);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(
     page.getByRole("heading", { exact: true, name: "Resultado" })
   ).toBeVisible({ timeout: 20_000 });
+}
+
+/** Opens the screen as a new user and returns the user, to open it again later. */
+async function openDashboard(page: Page, server: FakeReportServer) {
+  // the screen reads today's date from the browser: October 2026
+  await page.clock.setFixedTime(new Date(NOW));
+  await installServer(page, server);
+  const user = `user-${crypto.randomUUID()}`;
+  await signIn(page, user);
+  return user;
 }
 
 /** The six cards, in the order the screen shows them. */
@@ -401,9 +421,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
   );
 
   // the time of the last successful load is visible
-  await expect(page.locator(".dashboard-updated")).toContainText(
-    "Atualizado às"
-  );
+  await expect(page.locator(".dashboard-updated")).toContainText(UPDATED_UNTIL);
 });
 
 test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa incompleta", async ({
@@ -525,7 +543,144 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
-  await expect(page.locator(".dashboard-updated")).toContainText(
-    "Atualizado às"
+  await expect(page.locator(".dashboard-updated")).toContainText(UPDATED_UNTIL);
+});
+
+const copyNotice = (page: Page) =>
+  page.getByRole("status").filter({ hasText: "Sem conexão." });
+
+/** The months of the device copy of the results kept in this browser. */
+const cachedMonths = (page: Page) =>
+  page.evaluate(
+    (prefix) =>
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith(prefix))
+        .map((key) => key.slice(-7))
+        .sort(),
+    CACHE_KEY_PREFIX
   );
+
+test("com o servidor, a tela diz até quando está atualizada e guarda o mês para depois", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+
+  await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(copyNotice(page)).toHaveCount(0);
+  expect(await cachedMonths(page)).toEqual(["2026-10"]);
+
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
+  expect(await cachedMonths(page)).toEqual(["2026-09", "2026-10"]);
+});
+
+test("sem conexão, atualizar mostra o último resultado confirmado, dito como tal", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+  await expect(card(page, CARD.result)).toContainText("R$ 38,50");
+
+  server.networkDown = true;
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+
+  const notice = copyNotice(page);
+  await expect(notice).toContainText(COPY_NOTICE);
+  // nothing is waiting on the device, so no line about operations kept
+  await expect(notice).not.toContainText("operações guardadas");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // the same figures the server confirmed, not recomputed
+  await expect(page.locator(".dashboard-card")).toHaveCount(6);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  await expect(card(page, CARD.result)).toContainText("R$ 38,50");
+  await expect(quality(page)).toContainText(
+    "Dados completos para este período"
+  );
+  // the quiet "updated until" line is for figures the server just gave
+  await expect(page.locator(".dashboard-updated")).not.toContainText(
+    "Atualizado até"
+  );
+
+  // the connection is back: the figures of the server replace the copy
+  server.networkDown = false;
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect(copyNotice(page)).toHaveCount(0);
+  await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
+});
+
+test("sem conexão, a cópia vale só para o mês já lido, com a estimativa como estava", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await expect(quality(page)).toContainText("Estimativa incompleta");
+
+  server.networkDown = true;
+  // a month never read with a connection has no copy: the usual error
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await expect(page.locator("#dashboard-month")).toHaveValue("2026-08");
+  await expect(page.getByRole("alert")).toContainText(
+    "Não foi possível carregar o resultado. Tente novamente."
+  );
+  await expect(page.locator(".dashboard-card")).toHaveCount(0);
+  await expect(copyNotice(page)).toHaveCount(0);
+
+  // a month that was read shows its own copy, never the one of another month
+  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await expect(page.locator("#dashboard-month")).toHaveValue("2026-09");
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
+  await expect(quality(page)).toContainText("Estimativa incompleta");
+  await expect(card(page, CARD.result)).toContainText("estimativa incompleta");
+  await expect(card(page, CARD.result)).toContainText("R$ 92,00");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mostra o servidor", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  const user = await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+  server.networkDown = true;
+  await signIn(page, user);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  // the goals are never copied: their panel shows its own load error
+  await page.locator(".goal-panel > summary").click();
+  await expect(page.locator(".goal-panel")).toContainText(
+    "Não foi possível carregar as metas."
+  );
+
+  server.networkDown = false;
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(copyNotice(page)).toHaveCount(0);
+});
+
+test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  const user = await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  expect(await cachedMonths(page)).toEqual(["2026-10"]);
+
+  // the copy exists, but the server said the session is over
+  server.failure = { code: "UNAUTHORIZED", status: 401 };
+  await signIn(page, user);
+  await expect(page.getByRole("alert")).toContainText(
+    "Sua sessão não está ativa"
+  );
+  await expect(page.locator(".dashboard-card")).toHaveCount(0);
+  await expect(copyNotice(page)).toHaveCount(0);
+
+  // an outage of the server is not a refusal
+  server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
+  await page.getByRole("button", { name: "Tentar de novo" }).click();
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });

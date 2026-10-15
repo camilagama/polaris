@@ -1,4 +1,5 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
+import { type ClockParts, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
 /**
@@ -35,18 +36,41 @@ export function formatPercentOrDash(value: string | null): string {
   return `${sign}${whole},${fraction}%`;
 }
 
-/** "Atualizado às 14:32": the time of the last successful load, in the given or the device's zone. */
-export function formatUpdatedAt(instant: Date, timeZone?: string): string {
-  const time = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone,
-  }).format(instant);
-  return `Atualizado às ${time}`;
-}
-
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
+}
+
+/** The server's read time (`generatedAt`) as dd/mm/aaaa and HH:mm in the organization's zone. */
+function readClock(generatedAt: string, timezone: string | null): ClockParts {
+  const instant = new Date(generatedAt);
+  return Number.isNaN(instant.getTime())
+    ? { date: EMPTY_VALUE, time: EMPTY_VALUE }
+    : clockPartsInTimezone(instant, timezone);
+}
+
+/** "Atualizado até 14/10/2026 12:30": when the server read the figures on screen. */
+export function formatUpdatedUntil(
+  generatedAt: string,
+  timezone: string | null
+): string {
+  const { date, time } = readClock(generatedAt, timezone);
+  return `Atualizado até ${date} ${time}`;
+}
+
+/** What the screen says when the figures come from the device's copy of the last confirmed result. */
+export function offlineCopyNotice(
+  generatedAt: string,
+  timezone: string | null,
+  waitingOperations: number
+): { pending: string | null; summary: string } {
+  const { date, time } = readClock(generatedAt, timezone);
+  return {
+    pending:
+      waitingOperations > 0
+        ? `Há ${waitingOperations} ${plural(waitingOperations, "operação guardada", "operações guardadas")} neste aparelho que ainda não ${plural(waitingOperations, "entra", "entram")} no resultado.`
+        : null,
+    summary: `Sem conexão. Mostrando o último resultado confirmado, de ${date} às ${time}. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.`,
+  };
 }
 
 function missingMessage(

@@ -17,9 +17,14 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/** The operations still on the device that the server has not accepted (waiting or being sent). */
+export function waitingOperations(snapshot: RuntimeSnapshot): number {
+  return snapshot.counts.pending + snapshot.counts.sending;
+}
+
 export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   const { counts } = snapshot;
-  const waiting = counts.pending + counts.sending;
+  const waiting = waitingOperations(snapshot);
   if (snapshot.phase === "unavailable") {
     return {
       attention: false,

@@ -4,6 +4,7 @@ import {
   clearOrganizationsCache,
 } from "../../lib/current-organization-model";
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
+import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { markSigningOut } from "../../lib/sign-out";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
@@ -48,6 +49,7 @@ export function LogoutControl() {
               markSigningOut();
               clearOrganizationsCache(browserStorage());
               clearPaymentProfileCaches(browserStorage());
+              clearPeriodSummaryCaches(browserStorage());
               window.location.assign("/");
             },
             signOut: signOutOnServer,
