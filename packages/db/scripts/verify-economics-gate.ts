@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import {
+  dashboardCards,
+  resultQuality,
+} from "@polaris/domain/economics/period-summary";
 import { createDatabase } from "../src/client";
 import {
   EconomicsSnapshotRequiredError,
@@ -318,8 +322,11 @@ async function run() {
       estimatedOperatingResult: "136.62",
       grossProfit: "383.70",
       grossSales: "519.70",
+      itemLines: 4,
+      linkedExpenseCount: 1,
       linkedExpenses: "15.00",
       netSales: "443.70",
+      operatingExpenseCount: 2,
       operatingExpenses: "240.00",
       processingFees: "4.08",
       returns: "54.00",
@@ -329,6 +336,30 @@ async function run() {
     });
     tests.push(
       "the period result matches the figures worked out by hand: gross 519.70, discounts 22.00, returns 54.00 (the discount share is given back), COGS 60.00 (the restocked unit is not consumed), a 4.08 processing fee from the snapshot, a linked delivery of 15.00, operating expenses 240.00 (200.00 with no sale plus the 40.00 delivery of the cancelled sale: the cost was real), estimated result 136.62; the cancelled sale itself, the voided expenses and the expenses outside the period count for nothing"
+    );
+
+    // the dashboard cards and the account of what is incomplete, on the same data
+    assert.deepEqual(dashboardCards(result), {
+      items: 7,
+      marginPercent: "84.88",
+      netSales: "443.70",
+      operatingResult: "136.62",
+      salesCount: 3,
+      ticket: "147.90",
+    });
+    assert.deepEqual(resultQuality(result), {
+      anticipationFeesUnknown: 0,
+      itemLines: 4,
+      itemLinesWithUnknownCost: 1,
+      level: "partial",
+      linkedExpenses: 1,
+      missing: ["unknown_cost", "unknown_processing_fee"],
+      operatingExpenses: 2,
+      processingFeesUnknown: 2,
+      salesCount: 3,
+    });
+    tests.push(
+      "the dashboard cards (net sales 443.70, margin 84.88%, 3 sales, ticket 147.90, 7 items) and the quality account (one item without cost, two sales without a processing fee, expenses present, level partial) match the real data"
     );
 
     // -------------------- 2. independent SQL aggregates agree with the engine
@@ -405,6 +436,12 @@ async function run() {
     assert.equal(other.salesCount, 0);
     assert.equal(other.operatingExpenses, "0.00");
     assert.equal(other.grossSales, "0.00");
+    assert.equal(resultQuality(other).level, "no_data");
+    assert.equal(
+      resultQuality(earlier).level,
+      "complete",
+      "a period with only expenses is not missing anything"
+    );
     tests.push(
       "a period without sales still carries its operating expenses (a negative result), and another organization sees none of it"
     );

@@ -7,7 +7,7 @@ import {
 } from "./navigation-model";
 
 describe("main menu", () => {
-  it("lists the eight areas in workflow order, each once", () => {
+  it("lists the nine areas in workflow order, each once", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Vender",
       "Histórico",
@@ -16,10 +16,11 @@ describe("main menu", () => {
       "Categorias",
       "Clientes",
       "Despesas",
+      "Resultado",
       "Perfis de pagamento",
     ]);
-    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(8);
-    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(8);
+    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(9);
+    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(9);
   });
 
   it("does not offer the customer-of-a-sale page, which asks for an ID", () => {
@@ -56,6 +57,15 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/sales/customer")).toMatchObject({
       id: "sale-customer",
       navId: "history",
+    });
+  });
+
+  it("opens the period result at /dashboard, titled Resultado", () => {
+    expect(resolveRoute("/dashboard")).toEqual({
+      id: "dashboard",
+      kind: "page",
+      navId: "dashboard",
+      title: "Resultado",
     });
   });
 

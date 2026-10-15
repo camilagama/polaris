@@ -365,6 +365,12 @@ export function saleEconomics(sale: SaleFact): SaleEconomics {
 }
 
 export interface PeriodResult {
+  /** Item lines of the counted (not cancelled) sales. */
+  itemLines: number;
+  /** Active expenses of the counted sales that are linked to them. */
+  linkedExpenseCount: number;
+  /** Expenses of the period that are not linked to a counted sale. */
+  operatingExpenseCount: number;
   anticipationFees: string;
   cogs: string;
   commercialSurcharges: string;
@@ -422,6 +428,7 @@ export function periodResult(
     unknown.costItems += entry.unknown.costItems;
     unknown.processingFees += entry.unknown.processingFees;
   }
+  const counted = sales.filter((entry) => !entry.cancelled);
   return {
     anticipationFees: total("anticipationFee").toString(),
     cogs: total("cogs").toString(),
@@ -431,8 +438,14 @@ export function periodResult(
     estimatedOperatingResult: contributionMargin.subtract(operating).toString(),
     grossProfit: total("grossProfit").toString(),
     grossSales: total("grossSales").toString(),
+    itemLines: counted.reduce((lines, sale) => lines + sale.items.length, 0),
+    linkedExpenseCount: counted.reduce(
+      (count, sale) => count + sale.linkedExpenses.length,
+      0
+    ),
     linkedExpenses: total("linkedExpenses").toString(),
     netSales: total("netSales").toString(),
+    operatingExpenseCount: operatingExpenses.length,
     operatingExpenses: operating.toString(),
     processingFees: total("processingFee").toString(),
     returns: total("returns").toString(),

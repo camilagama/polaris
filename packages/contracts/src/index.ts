@@ -239,6 +239,59 @@ const expenseCategoryName = z
     message: "invalid_expense_category",
   });
 
+const periodSummary = z.object({
+  cards: z.object({
+    /** Units sold, net of returns. */
+    items: z.number().int().nonnegative(),
+    /** Percent with two places, or null when net sales are not positive. */
+    marginPercent: z.string().nullable(),
+    netSales: z.string(),
+    /** Estimated operating result: an estimate, never net profit or settled cash. */
+    operatingResult: z.string(),
+    salesCount: z.number().int().nonnegative(),
+    ticket: z.string().nullable(),
+  }),
+  /** The chain from gross sales to the estimated result, as exact BRL text. */
+  chain: z.object({
+    anticipationFees: z.string(),
+    cogs: z.string(),
+    commercialSurcharges: z.string(),
+    contributionMargin: z.string(),
+    discounts: z.string(),
+    estimatedOperatingResult: z.string(),
+    grossProfit: z.string(),
+    grossSales: z.string(),
+    linkedExpenses: z.string(),
+    netSales: z.string(),
+    operatingExpenses: z.string(),
+    processingFees: z.string(),
+    returns: z.string(),
+  }),
+  period: z.object({ from: z.string(), to: z.string() }),
+  /** How complete the estimate is: what was left out is never counted as zero. */
+  quality: z.object({
+    anticipationFeesUnknown: z.number().int().nonnegative(),
+    itemLines: z.number().int().nonnegative(),
+    itemLinesWithUnknownCost: z.number().int().nonnegative(),
+    level: z.enum(["complete", "no_data", "partial"]),
+    linkedExpenses: z.number().int().nonnegative(),
+    missing: z.array(
+      z.enum([
+        "no_expenses",
+        "no_sales",
+        "unknown_anticipation_fee",
+        "unknown_cost",
+        "unknown_processing_fee",
+      ])
+    ),
+    operatingExpenses: z.number().int().nonnegative(),
+    processingFeesUnknown: z.number().int().nonnegative(),
+    salesCount: z.number().int().nonnegative(),
+  }),
+});
+
+export type PeriodSummaryReadModel = z.infer<typeof periodSummary>;
+
 const paymentFeeConfiguration = z
   .object({
     fixedAmount: z.string().trim().min(1).max(64).nullable(),
@@ -1137,6 +1190,19 @@ export const polarisContract = {
     void: oc
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), expense })),
+  },
+  report: {
+    // Server-computed and online only: the figures come from the confirmed
+    // records of the organization, never from the device's pending work.
+    periodSummary: oc
+      .input(
+        z.object({
+          from: expenseCalendarDate,
+          organizationId: z.string().trim().min(1),
+          to: expenseCalendarDate,
+        })
+      )
+      .output(periodSummary),
   },
   device: {
     // Devices belong to the signed-in user, never to an organization: no

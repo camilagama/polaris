@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ProductsPage } from "../catalog/products-page";
 import { CustomersPage } from "../customers/customers-page";
+import { DashboardPage } from "../dashboard/dashboard-page";
 import { ExpensesPage } from "../expenses/expenses-page";
 import { InventoryPage } from "../inventory/inventory-page";
 import { StaticOrganizationProvider } from "../lib/current-organization";
@@ -46,6 +47,7 @@ const uuid = (n: number) =>
 
 type LabScreen =
   | "customers"
+  | "dashboard"
   | "expenses"
   | "history"
   | "products"
@@ -55,6 +57,7 @@ type LabScreen =
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
   return screen === "products" ||
+    screen === "dashboard" ||
     screen === "expenses" ||
     screen === "sale" ||
     screen === "stock" ||
@@ -244,6 +247,7 @@ export function ScreensLab() {
           {started && screen === "stock" ? <InventoryPage /> : null}
           {started && screen === "history" ? <SaleHistoryPage /> : null}
           {started && screen === "expenses" ? <ExpensesPage /> : null}
+          {started && screen === "dashboard" ? <DashboardPage /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

@@ -217,6 +217,10 @@ import {
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
+import {
+  InvalidEconomicsPeriodError,
+  type readPeriodResult,
+} from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
@@ -231,6 +235,7 @@ import {
 import { pingSystem } from "../use-cases/system-ping";
 import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
+import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
 import { createOrganizationRpcHandlers } from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
@@ -276,6 +281,7 @@ interface RpcRouterDependencies {
   createProduct: typeof createProduct;
   createSaleReturn: typeof createSaleReturn;
   expenseRepository: Partial<ExpenseRepository>;
+  readPeriodResult: typeof readPeriodResult;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
@@ -606,6 +612,7 @@ const badRequestRpcErrors = [
     InvalidExpenseCategoryError,
     ExpenseCompetenceOutOfRangeError,
     InvalidExpenseRuleError,
+    InvalidEconomicsPeriodError,
   ],
   [
     InvalidDeviceLabelError,
@@ -1184,6 +1191,11 @@ export function createRpcRouter(
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });
+  const reportHandlers = createReportRpcHandlers({
+    readPeriodResult: overrides.readPeriodResult,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
   const paymentProfileHandlers = createPaymentProfileRpcHandlers({
     ...overrides,
     withTenantRequestContext: tenantRequest,
@@ -1744,6 +1756,7 @@ export function createRpcRouter(
     },
     offline: offlineHandlers.offline,
     organization: { createInitial, listMine: organizationHandlers.listMine },
+    report: reportHandlers,
     paymentProfile: paymentProfileHandlers,
     product: {
       archive: archiveProductRecord,

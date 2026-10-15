@@ -33,6 +33,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.CategoriesPage,
     }))
   ),
+  dashboard: lazy(() =>
+    import("../dashboard/dashboard-page").then((module) => ({
+      default: module.DashboardPage,
+    }))
+  ),
   devices: lazy(() =>
     import("../offline/runtime/devices-page").then((module) => ({
       default: module.DevicesPage,
