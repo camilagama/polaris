@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createDatabase } from "../src/client";
 import {
+  EconomicsSnapshotRequiredError,
   InvalidEconomicsPeriodError,
   readPeriodFacts,
   readPeriodResult,
@@ -15,7 +16,10 @@ import { createPaymentProfile } from "../src/payment-profile-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
-import { TenantAuthorizationError } from "../src/tenant-transaction";
+import {
+  TenantAuthorizationError,
+  withAuthorizedTenantTransaction,
+} from "../src/tenant-transaction";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -285,10 +289,21 @@ async function run() {
       })
     );
 
+    // one consistent snapshot, as the repository requires
     const asReport = <T>(
       tenant: TenantFixture,
       operation: Parameters<typeof withTenantAs<T>>[3]
-    ) => as(tenant, "report:read", operation);
+    ) =>
+      withAuthorizedTenantTransaction(
+        db,
+        {
+          authenticatedUserId: tenant.userId,
+          capability: "report:read",
+          isolationLevel: "repeatable read",
+          requestedOrganizationId: tenant.organizationId,
+        },
+        operation
+      );
 
     // ------------------------------- 1. the result, worked out by hand
     const result = await asReport(tenantA, (tx, identity) =>
@@ -300,12 +315,12 @@ async function run() {
       commercialSurcharges: "12.00",
       contributionMargin: "376.62",
       discounts: "22.00",
-      estimatedOperatingResult: "176.62",
+      estimatedOperatingResult: "136.62",
       grossProfit: "383.70",
       grossSales: "519.70",
       linkedExpenses: "15.00",
       netSales: "443.70",
-      operatingExpenses: "200.00",
+      operatingExpenses: "240.00",
       processingFees: "4.08",
       returns: "54.00",
       salesCount: 3,
@@ -313,7 +328,7 @@ async function run() {
       unknown: { anticipationFees: 0, costItems: 1, processingFees: 2 },
     });
     tests.push(
-      "the period result matches the figures worked out by hand: gross 519.70, discounts 22.00, returns 54.00 (the discount share is given back), COGS 60.00 (the restocked unit is not consumed), a 4.08 processing fee from the snapshot, a linked delivery of 15.00, operating expenses 200.00, estimated result 176.62; the cancelled sale, the voided expenses and the expenses outside the period count for nothing"
+      "the period result matches the figures worked out by hand: gross 519.70, discounts 22.00, returns 54.00 (the discount share is given back), COGS 60.00 (the restocked unit is not consumed), a 4.08 processing fee from the snapshot, a linked delivery of 15.00, operating expenses 240.00 (200.00 with no sale plus the 40.00 delivery of the cancelled sale: the cost was real), estimated result 136.62; the cancelled sale itself, the voided expenses and the expenses outside the period count for nothing"
     );
 
     // -------------------- 2. independent SQL aggregates agree with the engine
@@ -325,7 +340,7 @@ async function run() {
     }>(
       `SELECT
          COALESCE(sum(i.charged_unit_price * i.quantity), 0)::text AS gross,
-         COALESCE(sum(i.unit_cost * i.quantity), 0)::text AS cogs,
+         round(COALESCE(sum(i.unit_cost * i.quantity), 0), 2)::text AS cogs,
          COALESCE((SELECT sum(a.amount) FROM public.sale_adjustments a WHERE a.sale_id = ANY($2) AND a.kind = 'discount'), 0)::text AS discounts,
          COALESCE((SELECT sum(a.amount) FROM public.sale_adjustments a WHERE a.sale_id = ANY($2) AND a.kind <> 'discount'), 0)::text AS surcharges
        FROM public.sale_items i WHERE i.sale_id = ANY($2) AND i.organization_id = $1`,
@@ -333,11 +348,15 @@ async function run() {
     );
     const [row] = oracle.rows;
     assert.ok(row);
-    assert.equal(Number(row.gross), Number(result.grossSales));
-    assert.equal(Number(row.discounts), Number(result.discounts));
-    assert.equal(Number(row.surcharges), Number(result.commercialSurcharges));
-    // all of S3's cost counts in the oracle; the engine gives back the restocked unit
-    assert.equal(Number(row.cogs) - 10, Number(result.cogs));
+    // exact decimal text, no floating point
+    assert.equal(row.gross, result.grossSales);
+    assert.equal(row.discounts, result.discounts);
+    assert.equal(row.surcharges, result.commercialSurcharges);
+    // all of S3's cost counts in the oracle; the engine gives back the restocked unit (10.00)
+    assert.equal(
+      (BigInt(row.cogs.replace(".", "")) - 1000n).toString(),
+      result.cogs.replace(".", "")
+    );
     tests.push(
       "independent SQL aggregates over the same rows agree with the engine (gross sales, discounts, surcharges and the cost before the restocked unit)"
     );
@@ -393,6 +412,14 @@ async function run() {
     // ------------------------------------------- 5. guards on the input
     await assert.rejects(
       () =>
+        as(tenantA, "report:read", (tx, identity) =>
+          readPeriodResult(tx, identity, period)
+        ),
+      EconomicsSnapshotRequiredError,
+      "read committed is refused: the period needs one snapshot"
+    );
+    await assert.rejects(
+      () =>
         as(tenantA, "sale:read", (tx, identity) =>
           readPeriodResult(tx, identity, period)
         ),
@@ -415,7 +442,7 @@ async function run() {
       );
     }
     tests.push(
-      "reading a period needs report:read, and an inverted, impossible or longer-than-366-days period is refused as invalid input"
+      "reading a period needs report:read and a repeatable-read snapshot, and an inverted, impossible or longer-than-366-days period is refused as invalid input"
     );
 
     console.log(

@@ -1,4 +1,5 @@
 import {
+  InvalidSaleFactError,
   periodResult,
   type PeriodResult,
   type SaleAdjustmentFact,
@@ -29,6 +30,28 @@ export class InvalidEconomicsPeriodError extends Error {
     super("invalid_economics_period");
     this.name = "InvalidEconomicsPeriodError";
   }
+}
+
+/** Reading a period needs one consistent snapshot of several tables. */
+export class EconomicsSnapshotRequiredError extends Error {
+  readonly code = "economics_snapshot_required";
+
+  constructor() {
+    super("economics_snapshot_required");
+    this.name = "EconomicsSnapshotRequiredError";
+  }
+}
+
+/** Sale IDs are bound in blocks of this size (PostgreSQL allows 65,535 parameters per statement). */
+const SALE_ID_BLOCK = 5000;
+
+/** Splits a list into consecutive blocks of at most `size`. */
+export function inBlocks<T>(values: readonly T[], size: number): T[][] {
+  const blocks: T[][] = [];
+  for (let start = 0; start < values.length; start += size) {
+    blocks.push(values.slice(start, start + size));
+  }
+  return blocks;
 }
 
 export interface EconomicsPeriod {
@@ -71,6 +94,122 @@ const ADJUSTMENT_KINDS: ReadonlySet<string> = new Set([
   "surcharge",
 ]);
 
+type Reader = TenantRequestTransaction;
+
+function readItems(transaction: Reader, organization: string, ids: string[]) {
+  return transaction
+    .select({
+      chargedUnitPrice: saleItems.chargedUnitPrice,
+      position: saleItems.position,
+      quantity: saleItems.quantity,
+      saleId: saleItems.saleId,
+      unitCost: saleItems.unitCost,
+    })
+    .from(saleItems)
+    .where(
+      and(
+        eq(saleItems.organizationId, organization),
+        inArray(saleItems.saleId, ids)
+      )
+    )
+    .orderBy(asc(saleItems.position));
+}
+
+function readAdjustments(
+  transaction: Reader,
+  organization: string,
+  ids: string[]
+) {
+  return transaction
+    .select({
+      amount: saleAdjustments.amount,
+      kind: saleAdjustments.kind,
+      saleId: saleAdjustments.saleId,
+    })
+    .from(saleAdjustments)
+    .where(
+      and(
+        eq(saleAdjustments.organizationId, organization),
+        inArray(saleAdjustments.saleId, ids)
+      )
+    );
+}
+
+function readPayments(
+  transaction: Reader,
+  organization: string,
+  ids: string[]
+) {
+  return transaction
+    .select({
+      anticipationFee: salePayments.anticipationFeeAmountSnapshot,
+      processingFee: salePayments.processingFeeAmountSnapshot,
+      saleId: salePayments.saleId,
+    })
+    .from(salePayments)
+    .where(
+      and(
+        eq(salePayments.organizationId, organization),
+        inArray(salePayments.saleId, ids)
+      )
+    );
+}
+
+function readReturnLines(
+  transaction: Reader,
+  organization: string,
+  ids: string[]
+) {
+  return transaction
+    .select({
+      itemPosition: saleReturnItems.itemPosition,
+      restockedQuantity: saleReturnItems.restockedQuantity,
+      returnedQuantity: saleReturnItems.returnedQuantity,
+      saleId: saleReturnItems.saleId,
+    })
+    .from(saleReturnItems)
+    .where(
+      and(
+        eq(saleReturnItems.organizationId, organization),
+        inArray(saleReturnItems.saleId, ids)
+      )
+    );
+}
+
+function readCancellations(
+  transaction: Reader,
+  organization: string,
+  ids: string[]
+) {
+  return transaction
+    .select({ saleId: saleCancellations.saleId })
+    .from(saleCancellations)
+    .where(
+      and(
+        eq(saleCancellations.organizationId, organization),
+        inArray(saleCancellations.saleId, ids)
+      )
+    );
+}
+
+function readLinkedExpenses(
+  transaction: Reader,
+  organization: string,
+  ids: string[]
+) {
+  return transaction
+    .select({ amount: expenses.amount, saleId: expenses.saleId })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.organizationId, organization),
+        isNull(expenses.voidedAt),
+        isNotNull(expenses.saleId),
+        inArray(expenses.saleId, ids)
+      )
+    );
+}
+
 /**
  * The facts the economics engine needs for a period of the organization's
  * calendar: the sales whose commercial date is in it (with their items,
@@ -89,6 +228,16 @@ export async function readPeriodFacts(
   }
   assertPeriod(period);
   const organization = identity.organizationId;
+  const isolation = await transaction.execute(
+    sql`SELECT current_setting('transaction_isolation') AS level`
+  );
+  if (
+    (isolation.rows[0] as { level?: string } | undefined)?.level !==
+    "repeatable read"
+  ) {
+    // eight queries over several tables must see one moment, not eight
+    throw new EconomicsSnapshotRequiredError();
+  }
 
   const saleRows = await transaction
     .select({ id: sales.id })
@@ -108,7 +257,13 @@ export async function readPeriodFacts(
       and(
         eq(expenses.organizationId, organization),
         isNull(expenses.voidedAt),
-        isNull(expenses.saleId),
+        // an expense with no sale, or tied to a sale that was cancelled: the
+        // cost was real and the sale's margin no longer exists to carry it
+        sql`(${expenses.saleId} IS NULL OR EXISTS (
+          SELECT 1 FROM ${saleCancellations} AS cancelled_sale
+          WHERE cancelled_sale.organization_id = ${expenses.organizationId}
+            AND cancelled_sale.sale_id = ${expenses.saleId}
+        ))`,
         sql`${expenses.competenceOn} >= ${period.from}::date`,
         sql`${expenses.competenceOn} <= ${period.to}::date`
       )
@@ -119,85 +274,29 @@ export async function readPeriodFacts(
   }
   const ids = saleRows.map((row) => row.id);
 
-  const [items, adjustments, payments, returnLines, cancelled, linked] =
-    await Promise.all([
-      transaction
-        .select({
-          chargedUnitPrice: saleItems.chargedUnitPrice,
-          position: saleItems.position,
-          quantity: saleItems.quantity,
-          saleId: saleItems.saleId,
-          unitCost: saleItems.unitCost,
-        })
-        .from(saleItems)
-        .where(
-          and(
-            eq(saleItems.organizationId, organization),
-            inArray(saleItems.saleId, ids)
-          )
-        )
-        .orderBy(asc(saleItems.position)),
-      transaction
-        .select({
-          amount: saleAdjustments.amount,
-          kind: saleAdjustments.kind,
-          saleId: saleAdjustments.saleId,
-        })
-        .from(saleAdjustments)
-        .where(
-          and(
-            eq(saleAdjustments.organizationId, organization),
-            inArray(saleAdjustments.saleId, ids)
-          )
-        ),
-      transaction
-        .select({
-          anticipationFee: salePayments.anticipationFeeAmountSnapshot,
-          processingFee: salePayments.processingFeeAmountSnapshot,
-          saleId: salePayments.saleId,
-        })
-        .from(salePayments)
-        .where(
-          and(
-            eq(salePayments.organizationId, organization),
-            inArray(salePayments.saleId, ids)
-          )
-        ),
-      transaction
-        .select({
-          itemPosition: saleReturnItems.itemPosition,
-          restockedQuantity: saleReturnItems.restockedQuantity,
-          returnedQuantity: saleReturnItems.returnedQuantity,
-          saleId: saleReturnItems.saleId,
-        })
-        .from(saleReturnItems)
-        .where(
-          and(
-            eq(saleReturnItems.organizationId, organization),
-            inArray(saleReturnItems.saleId, ids)
-          )
-        ),
-      transaction
-        .select({ saleId: saleCancellations.saleId })
-        .from(saleCancellations)
-        .where(
-          and(
-            eq(saleCancellations.organizationId, organization),
-            inArray(saleCancellations.saleId, ids)
-          )
-        ),
-      transaction
-        .select({ amount: expenses.amount, saleId: expenses.saleId })
-        .from(expenses)
-        .where(
-          and(
-            eq(expenses.organizationId, organization),
-            isNull(expenses.voidedAt),
-            isNotNull(expenses.saleId),
-            inArray(expenses.saleId, ids)
-          )
-        ),
+  const items: Awaited<ReturnType<typeof readItems>> = [];
+  const adjustments: Awaited<ReturnType<typeof readAdjustments>> = [];
+  const payments: Awaited<ReturnType<typeof readPayments>> = [];
+  const returnLines: Awaited<ReturnType<typeof readReturnLines>> = [];
+  const cancelled: Awaited<ReturnType<typeof readCancellations>> = [];
+  const linked: Awaited<ReturnType<typeof readLinkedExpenses>> = [];
+  for (const block of inBlocks(ids, SALE_ID_BLOCK)) {
+    // biome-ignore lint/performance/noAwaitInLoops: one block of IDs at a time keeps each statement under the parameter limit
+    const [i, a, p, r, c, l] = await Promise.all([
+      readItems(transaction, organization, block),
+      readAdjustments(transaction, organization, block),
+      readPayments(transaction, organization, block),
+      readReturnLines(transaction, organization, block),
+      readCancellations(transaction, organization, block),
+      readLinkedExpenses(transaction, organization, block),
     ]);
+    items.push(...i);
+    adjustments.push(...a);
+    payments.push(...p);
+    returnLines.push(...r);
+    cancelled.push(...c);
+    linked.push(...l);
+  }
 
   const itemsBySale = group(items, (row) => row.saleId);
   const adjustmentsBySale = group(adjustments, (row) => row.saleId);
@@ -209,14 +308,18 @@ export async function readPeriodFacts(
   const facts: SaleFact[] = saleRows.map(({ id }) => {
     const payment = paymentBySale.get(id);
     return {
-      adjustments: (adjustmentsBySale.get(id) ?? [])
-        .filter((row) => ADJUSTMENT_KINDS.has(row.kind))
-        .map(
-          (row): SaleAdjustmentFact => ({
+      adjustments: (adjustmentsBySale.get(id) ?? []).map(
+        (row): SaleAdjustmentFact => {
+          if (!ADJUSTMENT_KINDS.has(row.kind)) {
+            // a new kind must be given a place in the chain, not vanish from it
+            throw new InvalidSaleFactError();
+          }
+          return {
             amount: row.amount,
             kind: row.kind as SaleAdjustmentFact["kind"],
-          })
-        ),
+          };
+        }
+      ),
       anticipationFee: payment?.anticipationFee ?? null,
       cancelled: cancelledSales.has(id),
       items: (itemsBySale.get(id) ?? []).map((row) => ({
