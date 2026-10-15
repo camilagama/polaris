@@ -249,6 +249,10 @@ class FakeReportServer {
   }
 
   async handle(procedure: string, input: Record<string, unknown>) {
+    if (procedure === "goal/list") {
+      // the goals panel below the chain reads on mount; goals.e2e.ts covers it
+      return { body: { json: { goals: [] }, meta: [] }, status: 200 };
+    }
     if (procedure !== "report/periodSummary") {
       return this.fail("NOT_FOUND", 404);
     }

@@ -16,6 +16,7 @@ Registro retroativo (PR21 em diante), confirmado na revisão do checkpoint Gate 
 - **Somente `owner` na V1.** O papel `owner` recebe todas as capabilities. Nenhum outro papel é criado, e o banco limita os valores atuais de papel e de status até uma migration adicionar novos.
 - **Falha fechada.** Papel ou capability desconhecidos não concedem acesso. O mesmo vale para a janela retroativa de vendas por papel ([ADR 0021](0021-datas-da-venda-e-janela-retroativa.md)): papel desconhecido recebe zero dias.
 - **Verificação em camadas.** A capability é verificada no procedimento e repetida no repositório, usando organização e ator da identidade autorizada, nunca valores do payload.
+- **Metas.** `goal:manage` governa as metas ([ADR 0055](0055-metas.md)).
 - **Resultado econômico.** `report:read` governa a leitura do resultado de um período, que expõe custo e margem ([ADR 0053](0053-motor-de-resultado-economico.md)).
 - **Despesas.** `expense:create` governa todas as operações de despesas e de categorias de despesa, inclusive a leitura ([ADR 0051](0051-despesas-categorias-e-lancamentos.md)); como em clientes, não há capability de leitura separada.
 - **Como acrescentar um papel.** Um novo papel exige, no mesmo pull request: um ADR que o descreva, a lista de capabilities dele, ajuste dos pontos que hoje usam uma capability como substituto de leitura (por exemplo, a leitura de clientes e de perfis de pagamento exige capabilities de escrita ou de administração, o que quebraria um papel de vendedor) e testes de cada operação para o novo papel.

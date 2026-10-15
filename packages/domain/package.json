@@ -12,6 +12,7 @@
     "./economics/sale-economics": "./src/economics/sale-economics.ts",
     "./expenses/expense": "./src/expenses/expense.ts",
     "./expenses/recurrence": "./src/expenses/recurrence.ts",
+    "./goals/goal": "./src/goals/goal.ts",
     "./inventory/calendar-date": "./src/inventory/calendar-date.ts",
     "./inventory/inventory": "./src/inventory/inventory.ts",
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",

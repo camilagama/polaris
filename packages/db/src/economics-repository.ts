@@ -18,8 +18,12 @@ import {
   type TenantRequestTransaction,
 } from "./tenant-transaction";
 
-/** Reading the economics of a period needs this capability (owner-only in the V1). */
-const REPORT_CAPABILITY = "report:read";
+/**
+ * Reading the economics of a period needs `report:read`; goals measure their
+ * progress from the same result, so `goal:manage` may read it too (owner-only
+ * in the V1).
+ */
+const REPORT_CAPABILITIES: readonly string[] = ["report:read", "goal:manage"];
 /** A period of at most this many days (the sales of it are read into memory). */
 export const MAX_ECONOMICS_PERIOD_DAYS = 366;
 
@@ -223,7 +227,7 @@ export async function readPeriodFacts(
   identity: TenantRequestIdentity,
   period: EconomicsPeriod
 ): Promise<{ operatingExpenses: string[]; sales: SaleFact[] }> {
-  if (identity.capability !== REPORT_CAPABILITY) {
+  if (!REPORT_CAPABILITIES.includes(identity.capability)) {
     throw new TenantAuthorizationError("capability_denied");
   }
   assertPeriod(period);

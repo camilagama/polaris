@@ -398,7 +398,7 @@ const MAX_EXPENSE_PAGE = 200;
 const cursorPattern =
   /^(\d{4}-\d{2}-\d{2})\|([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
-async function organizationToday(
+export async function organizationToday(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity
 ): Promise<string> {
