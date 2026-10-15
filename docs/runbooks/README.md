@@ -56,7 +56,10 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 ### Billing
 
 - [ ] Papel de login do billing criado (membro só de `polaris_billing_runtime`, sem `SUPERUSER`, `CREATEROLE` nem `BYPASSRLS`, não membro de `neon_superuser`) e uma Hyperdrive própria para ele, com query caching desabilitado; conferir em `pg_roles` e nas pertenças. Nunca reutilizar a URL do tenant, a do dono nem a da limpeza de mídia ([ADR 0062](../adr/0062-ciclo-de-vida-do-billing-e-caixa-de-entrada.md)).
-- [ ] Varredura de acesso vencido e reprocessamento de eventos agendados no cron (PR B) e provados com um provedor sandbox (Gate 7).
+- [ ] A binding `BILLING_HYPERDRIVE` do Worker aponta para esse login (conferir que não é a URL do tenant, do dono nem da limpeza de mídia); sem ela a rota de webhook responde 503 (depois que um adaptador existir; até o PR77 e o PR78 o registro de adaptadores está vazio e a rota responde 404 a tudo) e o cron registra `billing_maintenance_not_configured`.
+- [ ] Webhook de cada provedor registrado no painel do provedor em `https://<domínio>/webhooks/billing/<provedor>` (`asaas`, `woovi`), com o segredo de assinatura ou o token guardado como segredo do Worker (nome e rotação definidos junto de cada adaptador, [ADR 0063](../adr/0063-rota-de-webhooks-de-billing.md)). Provar com um evento de teste do sandbox: 200 com a contagem, uma linha em `billing_events` e o mesmo evento reenviado como duplicado.
+- [ ] A manutenção horária de billing (reprocessa eventos não aplicados e varre o acesso vencido) aparece nos logs do cron como `billing_maintenance_complete`; `billing_event_retry_failed` e `billing_sweep_failed` trazem o ID do evento ou da organização; `billing_maintenance_incomplete` traz só os contadores de cada parte. Os registros `billing_webhook_malformed` e `billing_webhook_too_many_events` são entregas autênticas que a rota reconheceu com 200 sem poder usar: investigar cada um. A URL registrada no provedor não leva barra final (`/webhooks/billing/asaas/` responde 404).
+- [ ] Gate 7: cobrança de cartão (Asaas) e Pix Automático (Woovi) provados em sandbox, com webhook duplicado, fora de ordem, tempo esgotado e reconciliação, como exige o plano.
 
 ### Mídia
 
