@@ -1065,4 +1065,24 @@ Os dois PRs do plano vão juntos: o indicador de qualidade é a metade do painel
 
 ## Fase 6 — encerramento
 
-PR63 a PR71 mesclados ou em publicação; o plano segue para a Fase 7 (billing e entitlements) depois do Gate 5 em aparelho físico, que depende do responsável.
+PR63 a PR71 mesclados (PR #81 a #86). O Gate 5 em aparelho físico (iPhone e Android) segue com o responsável e não bloqueia a Fase 7 no servidor.
+
+## Fase 7 — billing e entitlements
+
+Ordem do plano ([doc/plano-inicial.md](plano-inicial.md), PR72 a PR82 e Gate 7). Os adaptadores de provedor (Asaas cartão e Woovi Pix Automático, PR77 e PR78), o inbox de webhooks (PR79) e o Gate 7 exigem contas sandbox reais dos provedores e ficam fora do alcance enquanto elas não existirem; a base do domínio e do servidor, que não depende de provedor, segue em PRs agrupados.
+
+### PR72, PR73 e PR76 — catálogo de planos, entitlements e máquina de estados (implementação, gate PostgreSQL 18 e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+
+Agrupados em um só PR: são a mesma base (o que um plano dá, o que a organização pode fazer agora e como a assinatura muda de estado), sem provedor.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/billing-core` sobre a `main` (PR #86, leitura offline do painel, já mesclado). |
+| Decisões | Tomadas pelo projeto | [ADR 0057](../docs/adr/0057-catalogo-de-planos-e-entitlements.md): catálogo em dados (planos, preços e quotas por migration, não por deploy), runtime só lê; sem linha de billing a organização é Free; o plano em vigor depende do relógio do banco (acesso vencido conta como Free sem varredura); concessões temporárias só elevam; máquina de estados pura e independente de provedor. |
+| Domínio | Concluído | `billing/entitlements.ts` (catálogo inicial Free/Pro, `planInForce`, `resolveEntitlements` com concessões, `assertFlag` e `assertWithinLimit`) e `billing/subscription-state.ts` (tabela de transições, trial e carência de 7 dias, `free_over_limit`). |
+| Banco | Concluído | Migration 0050: `billing_plans`, `billing_prices`, `plan_entitlements` (globais, semente do plano e de PRODUCT.md), `organization_billing` e `entitlement_grants` (por organização); `FORCE RLS`, só SELECT para o runtime e constraints de coerência (Pro sempre com fim, chave e tipo de valor, preço com duas casas). Repositório `billing-repository.ts` (`getEffectiveEntitlements`). |
+| Testes | Concluídos | Matriz de entitlements, tabela de transições e propriedades sobre sequências aleatórias (o registro permanece coerente; Pro só começa por método de renovação ou pagamento; `free_over_limit` só segue o uso; trial não começa duas vezes). |
+| Gate PostgreSQL 18 | Concluído | `billing-catalog` (suíte `gate7`, também em `ci` e `all`), em branch Neon descartável criada só com o esquema, migrações do zero: a semente é igual ao catálogo inicial do domínio e aos preços de PRODUCT.md, o runtime não escreve nenhuma das cinco tabelas (nem a própria concessão), o banco recusa registros incoerentes, entitlements por organização sem vazar entre elas, acesso vencido conta como Free pelo relógio do banco, concessão eleva e expira. Branch apagada depois. |
+| Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura (domínio, SQL/RLS e repositório). Corrigidos: um catálogo com linha faltando liberava o limite (agora o catálogo só vale completo e o limite que não é número recusa a adição); `periodEndsAt` passou a ser validado (data real, no futuro, até cerca de um ano) e um pagamento velho ou repetido não recua o acesso; uma falha de pagamento não encurta o período pago; `grace_expired`, `period_ended` e `trial_ended_without_payment` só valem depois do fim do acesso; trial oferecido uma vez (`trial_started_at` e `trialConsumed`); índice único de preço ativo por intervalo; datas devolvidas como cópia; relógio do banco sem fallback; `PRO_STATES` e `grantsPro` unificados; ADR corrigido (preços por migration, leitura escopada pela organização). Aceito: `overLimit` reflete o registro, não o uso, até o ciclo de vida (PR81) atualizá-lo; o `CHECK` das chaves no SQL repete a lista do TypeScript e o gate compara a semente com o catálogo do domínio. |
+| Verificação local | Concluída | `vitest run` (1.547 testes), lint, `format:check`, `bun run typecheck`, knip, boundaries. |
+| Limites | Registrados | Nenhum limite é aplicado ainda nos comandos: cotas de variantes, imagens e metas (PR74 e PR75), `offline.write` no recheck do envio e do lease e `public_catalog` seguem em PR próprio; nenhum comando muda o estado de billing (ciclo de vida, PR81); nada de provedor, pagamento, webhook nem tela. |
