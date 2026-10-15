@@ -74,5 +74,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0049](adr/0049-perfil-de-pagamento-na-venda-sem-conexao.md) | Perfil de pagamento na venda sem conexão | aceito |
 | [0050](adr/0050-edicao-de-cliente-sem-conexao.md) | Edição de cliente sem conexão: versão editada e conflito visível | aceito |
 | [0051](adr/0051-despesas-categorias-e-lancamentos.md) | Despesas: categorias e lançamentos | aceito |
+| [0052](adr/0052-despesas-recorrentes.md) | Despesas recorrentes: regra, ocorrências geradas ao vencer | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

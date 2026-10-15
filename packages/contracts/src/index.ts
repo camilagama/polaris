@@ -10,6 +10,7 @@ import {
   MAX_EXPENSE_DESCRIPTION_LENGTH,
   MAX_EXPENSE_PAYEE_LENGTH,
 } from "@polaris/domain/expenses/expense";
+import { RECURRENCE_FREQUENCIES } from "@polaris/domain/expenses/recurrence";
 import { PAYMENT_FEE_MODES } from "@polaris/domain/sales/payment-profile";
 import { SALE_PAYMENT_METHODS } from "@polaris/domain/sales/sale-payment";
 import { z } from "zod";
@@ -145,6 +146,8 @@ const expense = z.object({
   id: z.string().uuid(),
   organizationId: z.string().min(1),
   payee: z.string().nullable(),
+  /** The recurring rule that generated this expense, if any. */
+  recurringRuleId: z.string().uuid().nullable(),
   saleId: z.string().uuid().nullable(),
   status: z.enum(["active", "voided"]),
   updatedAt: z.string().datetime(),
@@ -153,6 +156,52 @@ const expense = z.object({
 });
 
 export type ExpenseReadModel = z.infer<typeof expense>;
+
+const expenseRule = z.object({
+  amount: z.string(),
+  archivedAt: z.string().datetime().nullable(),
+  categoryGroup: expenseGroupKey,
+  categoryId: z.string().uuid(),
+  categoryName: z.string().min(1),
+  createdAt: z.string().datetime(),
+  description: z.string().min(1),
+  endsOn: z.string().nullable(),
+  frequency: z.enum(RECURRENCE_FREQUENCIES),
+  /** How many occurrences were generated so far. */
+  generatedCount: z.number().int().nonnegative(),
+  id: z.string().uuid(),
+  /** Date of the next occurrence to generate, or null when the rule is over. */
+  nextOccurrenceOn: z.string().nullable(),
+  organizationId: z.string().min(1),
+  payee: z.string().nullable(),
+  startsOn: z.string(),
+  /** Archived is paused: it generates nothing until restored. */
+  status: z.enum(["active", "archived"]),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+
+export type ExpenseRuleReadModel = z.infer<typeof expenseRule>;
+
+const expenseRuleFields = z.object({
+  amount: z.string().trim().min(1).max(64),
+  categoryId: z.string().uuid(),
+  description: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((text) => [...text].length <= MAX_EXPENSE_DESCRIPTION_LENGTH, {
+      message: "invalid_expense_rule",
+    }),
+  endsOn: expenseCalendarDate.nullish(),
+  payee: z
+    .string()
+    .trim()
+    .refine((text) => [...text].length <= MAX_EXPENSE_PAYEE_LENGTH, {
+      message: "invalid_expense_rule",
+    })
+    .nullish(),
+});
 
 const expenseFields = z.object({
   amount: z.string().trim().min(1).max(64),
@@ -1012,6 +1061,18 @@ export const polarisContract = {
         })
       )
       .output(expenseCategory),
+    archiveRule: oc
+      .input(expenseVersionTarget)
+      .output(z.object({ changed: z.boolean(), rule: expenseRule })),
+    createRule: oc
+      .input(
+        expenseRuleFields.extend({
+          frequency: z.enum(RECURRENCE_FREQUENCIES),
+          organizationId: z.string().trim().min(1),
+          startsOn: expenseCalendarDate,
+        })
+      )
+      .output(expenseRule),
     list: oc
       .input(
         z.object({
@@ -1047,18 +1108,32 @@ export const polarisContract = {
         })
       )
       .output(z.object({ categories: z.array(expenseCategory) })),
+    listRules: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z.enum(["active", "archived", "all"]).default("active"),
+        })
+      )
+      .output(z.object({ rules: z.array(expenseRule) })),
     renameCategory: oc
       .input(expenseVersionTarget.extend({ name: expenseCategoryName }))
       .output(z.object({ category: expenseCategory, changed: z.boolean() })),
     restore: oc
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), expense })),
+    restoreRule: oc
+      .input(expenseVersionTarget)
+      .output(z.object({ changed: z.boolean(), rule: expenseRule })),
     restoreCategory: oc
       .input(expenseVersionTarget)
       .output(z.object({ category: expenseCategory, changed: z.boolean() })),
     update: oc
       .input(expenseFields.extend(expenseVersionTarget.shape))
       .output(z.object({ changed: z.boolean(), expense })),
+    updateRule: oc
+      .input(expenseRuleFields.extend(expenseVersionTarget.shape))
+      .output(z.object({ changed: z.boolean(), rule: expenseRule })),
     void: oc
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), expense })),

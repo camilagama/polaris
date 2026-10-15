@@ -337,6 +337,13 @@
       "when": 1792021224057,
       "tag": "0047_expenses",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792023237883,
+      "tag": "0048_expense_recurrence",
+      "breakpoints": true
     }
   ]
 }
