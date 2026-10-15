@@ -21,9 +21,25 @@ import {
   transitionExpenseLifecycle,
 } from "@polaris/domain/expenses/expense";
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
+import {
+  dayBefore,
+  dueOccurrences,
+  ExpenseRuleNotFoundError,
+  ExpenseRuleVersionConflictError,
+  isRecurrenceFrequency,
+  MAX_OCCURRENCES_PER_PASS,
+  normalizeExpenseRule,
+  normalizeExpenseRuleTemplate,
+  occurrenceDate,
+  occurrencesThrough,
+} from "@polaris/domain/expenses/recurrence";
 import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { expenseCategories, expenses } from "./schema/expense";
+import {
+  expenseCategories,
+  expenseRecurringRules,
+  expenses,
+} from "./schema/expense";
 import { organizations } from "./schema/organization";
 import { sales } from "./schema/sale";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -370,6 +386,7 @@ const expenseColumns = {
   id: expenses.id,
   organizationId: expenses.organizationId,
   payee: expenses.payee,
+  recurringRuleId: expenses.recurringRuleId,
   saleId: expenses.saleId,
   updatedAt: expenses.updatedAt,
   version: expenses.version,
@@ -687,6 +704,7 @@ export async function listExpenses(
   options: ExpenseListOptions = {}
 ) {
   requireExpenseCapability(identity);
+  await generateDueExpenses(transaction, identity);
   const limit = Math.min(
     Math.max(Math.trunc(options.limit ?? DEFAULT_EXPENSE_PAGE), 1),
     MAX_EXPENSE_PAGE
@@ -756,4 +774,511 @@ export async function listExpenses(
       rows.length > limit && last ? `${last.competenceOn}|${last.id}` : null,
     total: totals?.total ?? "0.00",
   };
+}
+
+// ----------------------------------------------------------- recurring rules
+
+export interface ExpenseRuleListOptions {
+  status?: "active" | "archived" | "all";
+}
+
+export interface ExpenseRuleWriteInput {
+  amount: string;
+  categoryId: string;
+  description: string;
+  endsOn?: string | null;
+  payee?: string | null;
+  requestId?: string | null;
+}
+
+export interface CreateExpenseRuleInput extends ExpenseRuleWriteInput {
+  frequency: string;
+  startsOn: string;
+}
+
+export interface UpdateExpenseRuleInput extends ExpenseRuleWriteInput {
+  expectedVersion: number;
+  id: string;
+}
+
+export interface ExpenseRuleMutationInput {
+  expectedVersion: number;
+  id: string;
+  requestId?: string | null;
+}
+
+const ruleColumns = {
+  amount: expenseRecurringRules.amount,
+  archivedAt: expenseRecurringRules.archivedAt,
+  categoryGroup: expenseCategories.groupKey,
+  categoryId: expenseRecurringRules.categoryId,
+  categoryName: expenseCategories.name,
+  createdAt: expenseRecurringRules.createdAt,
+  description: expenseRecurringRules.description,
+  endsOn: expenseRecurringRules.endsOn,
+  frequency: expenseRecurringRules.frequency,
+  generatedCount: expenseRecurringRules.generatedCount,
+  id: expenseRecurringRules.id,
+  organizationId: expenseRecurringRules.organizationId,
+  payee: expenseRecurringRules.payee,
+  startsOn: expenseRecurringRules.startsOn,
+  updatedAt: expenseRecurringRules.updatedAt,
+  version: expenseRecurringRules.version,
+};
+
+type RuleRow = Awaited<ReturnType<typeof readRule>>;
+
+/** The date of the next occurrence to generate, or null when the rule is over. */
+function nextOccurrenceOn(rule: {
+  endsOn: string | null;
+  frequency: string;
+  generatedCount: number;
+  startsOn: string;
+}): string | null {
+  if (!isRecurrenceFrequency(rule.frequency)) {
+    return null;
+  }
+  const next = occurrenceDate(
+    rule.startsOn,
+    rule.frequency,
+    rule.generatedCount
+  );
+  return rule.endsOn !== null && next > rule.endsOn ? null : next;
+}
+
+function ruleReadModel(rule: RuleRow) {
+  return { ...rule, nextOccurrenceOn: nextOccurrenceOn(rule) };
+}
+
+async function readRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  id: string
+) {
+  const [rule] = await transaction
+    .select(ruleColumns)
+    .from(expenseRecurringRules)
+    .innerJoin(
+      expenseCategories,
+      and(
+        eq(
+          expenseCategories.organizationId,
+          expenseRecurringRules.organizationId
+        ),
+        eq(expenseCategories.id, expenseRecurringRules.categoryId)
+      )
+    )
+    .where(
+      and(
+        eq(expenseRecurringRules.id, id),
+        eq(expenseRecurringRules.organizationId, identity.organizationId)
+      )
+    )
+    .limit(1);
+  if (!rule) {
+    throw new ExpenseRuleNotFoundError();
+  }
+  return rule;
+}
+
+const MAX_GENERATION_PASSES = 10;
+
+/**
+ * Produces the occurrences that fell due since the last time (today or earlier,
+ * in the organization's calendar), as ordinary expenses that snapshot the rule
+ * as it is now. Idempotent and safe to call on every read: each rule is locked,
+ * its `generated_count` says what exists, the unique (rule, occurrence) index
+ * is a second guard, and a voided or edited occurrence is never regenerated.
+ * An archived (paused) rule produces nothing. After a long pause the missed
+ * occurrences are all generated, up to 500 per rule per pass.
+ */
+export async function generateDueExpenses(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity
+): Promise<number> {
+  requireExpenseCapability(identity);
+  // Without a lock: only the rules that really have something due are locked
+  // below (and re-checked under the lock), always in the same order (by ID), so
+  // two readers never wait on rules they do not need nor lock them crosswise.
+  const candidates = await transaction
+    .select({
+      endsOn: expenseRecurringRules.endsOn,
+      frequency: expenseRecurringRules.frequency,
+      generatedCount: expenseRecurringRules.generatedCount,
+      id: expenseRecurringRules.id,
+      startsOn: expenseRecurringRules.startsOn,
+    })
+    .from(expenseRecurringRules)
+    .where(
+      and(
+        eq(expenseRecurringRules.organizationId, identity.organizationId),
+        isNull(expenseRecurringRules.archivedAt)
+      )
+    )
+    .orderBy(asc(expenseRecurringRules.id));
+  if (candidates.length === 0) {
+    return 0;
+  }
+  const today = await organizationToday(transaction, identity);
+  const due = candidates.filter(
+    (rule) =>
+      isRecurrenceFrequency(rule.frequency) &&
+      dueOccurrences({
+        endsOn: rule.endsOn,
+        frequency: rule.frequency,
+        generatedCount: rule.generatedCount,
+        limit: 1,
+        startsOn: rule.startsOn,
+        today,
+      }).length > 0
+  );
+  let generated = 0;
+  for (const candidate of due) {
+    for (let pass = 0; pass < MAX_GENERATION_PASSES; pass += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: one rule at a time under its own row lock
+      const made = await generateForRule(
+        transaction,
+        identity,
+        candidate.id,
+        today
+      );
+      generated += made;
+      if (made < MAX_OCCURRENCES_PER_PASS) {
+        break;
+      }
+    }
+  }
+  return generated;
+}
+
+async function generateForRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  ruleId: string,
+  today: string
+): Promise<number> {
+  const [rule] = await transaction
+    .select()
+    .from(expenseRecurringRules)
+    .where(
+      and(
+        eq(expenseRecurringRules.id, ruleId),
+        eq(expenseRecurringRules.organizationId, identity.organizationId),
+        isNull(expenseRecurringRules.archivedAt)
+      )
+    )
+    .limit(1)
+    .for("update");
+  if (!(rule && isRecurrenceFrequency(rule.frequency))) {
+    return 0;
+  }
+  const due = dueOccurrences({
+    endsOn: rule.endsOn,
+    frequency: rule.frequency,
+    generatedCount: rule.generatedCount,
+    startsOn: rule.startsOn,
+    today,
+  });
+  if (due.length === 0) {
+    return 0;
+  }
+  await transaction
+    .insert(expenses)
+    .values(
+      due.map((occurrence) => ({
+        amount: rule.amount,
+        categoryId: rule.categoryId,
+        competenceOn: occurrence.date,
+        description: rule.description,
+        organizationId: identity.organizationId,
+        payee: rule.payee,
+        recurringOccurrence: occurrence.index,
+        recurringRuleId: rule.id,
+      }))
+    )
+    .onConflictDoNothing();
+  await transaction
+    .update(expenseRecurringRules)
+    .set({
+      generatedCount: rule.generatedCount + due.length,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(expenseRecurringRules.id, rule.id),
+        eq(expenseRecurringRules.organizationId, identity.organizationId)
+      )
+    );
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: rule.id,
+    entityType: "expense_rule",
+    eventType: "expense_rule.generated",
+    requestId: null,
+  });
+  return due.length;
+}
+
+export async function listExpenseRules(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  options: ExpenseRuleListOptions = {}
+) {
+  requireExpenseCapability(identity);
+  await generateDueExpenses(transaction, identity);
+  const filters = [
+    eq(expenseRecurringRules.organizationId, identity.organizationId),
+  ];
+  const status = options.status ?? "active";
+  if (status === "active") {
+    filters.push(isNull(expenseRecurringRules.archivedAt));
+  } else if (status === "archived") {
+    filters.push(isNotNull(expenseRecurringRules.archivedAt));
+  }
+  const rows = await transaction
+    .select(ruleColumns)
+    .from(expenseRecurringRules)
+    .innerJoin(
+      expenseCategories,
+      and(
+        eq(
+          expenseCategories.organizationId,
+          expenseRecurringRules.organizationId
+        ),
+        eq(expenseCategories.id, expenseRecurringRules.categoryId)
+      )
+    )
+    .where(and(...filters))
+    .orderBy(
+      asc(expenseRecurringRules.description),
+      asc(expenseRecurringRules.id)
+    );
+  return rows.map(ruleReadModel);
+}
+
+export async function createExpenseRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: CreateExpenseRuleInput
+) {
+  requireExpenseCapability(identity);
+  const today = await organizationToday(transaction, identity);
+  const normalized = normalizeExpenseRule(
+    {
+      amount: input.amount,
+      description: input.description,
+      endsOn: input.endsOn,
+      frequency: input.frequency,
+      payee: input.payee,
+      startsOn: input.startsOn,
+    },
+    today
+  );
+  await ensureDefaultExpenseCategories(transaction, identity);
+  await requireActiveCategory(transaction, identity, input.categoryId);
+  const [created] = await transaction
+    .insert(expenseRecurringRules)
+    .values({
+      amount: normalized.amount,
+      categoryId: input.categoryId,
+      description: normalized.description,
+      endsOn: normalized.endsOn,
+      frequency: normalized.frequency,
+      organizationId: identity.organizationId,
+      payee: normalized.payee,
+      startsOn: normalized.startsOn,
+    })
+    .returning({ id: expenseRecurringRules.id });
+  if (!created) {
+    throw new Error("expense_rule_insert_failed");
+  }
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: created.id,
+    entityType: "expense_rule",
+    eventType: "expense_rule.created",
+    requestId: input.requestId ?? null,
+  });
+  // a rule that starts in the past is caught up at once
+  await generateDueExpenses(transaction, identity);
+  return ruleReadModel(await readRule(transaction, identity, created.id));
+}
+
+async function lockRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: ExpenseRuleMutationInput
+) {
+  const [existing] = await transaction
+    .select()
+    .from(expenseRecurringRules)
+    .where(
+      and(
+        eq(expenseRecurringRules.id, input.id),
+        eq(expenseRecurringRules.organizationId, identity.organizationId)
+      )
+    )
+    .limit(1)
+    .for("update");
+  if (!existing) {
+    throw new ExpenseRuleNotFoundError();
+  }
+  if (existing.version !== input.expectedVersion) {
+    throw new ExpenseRuleVersionConflictError();
+  }
+  return existing;
+}
+
+/**
+ * Edits what future occurrences will look like. Frequency and start date are
+ * fixed (a different calendar is a different rule), and nothing already
+ * generated changes.
+ */
+export async function updateExpenseRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: UpdateExpenseRuleInput
+) {
+  requireExpenseCapability(identity);
+  const existing = await lockRule(transaction, identity, input);
+  const normalized = normalizeExpenseRuleTemplate({
+    amount: input.amount,
+    description: input.description,
+    endsOn: input.endsOn,
+    frequency: existing.frequency,
+    payee: input.payee,
+    startsOn: existing.startsOn,
+  });
+  const changed =
+    normalized.amount !== existing.amount ||
+    input.categoryId !== existing.categoryId ||
+    normalized.description !== existing.description ||
+    normalized.payee !== existing.payee ||
+    normalized.endsOn !== existing.endsOn;
+  if (!changed) {
+    return {
+      changed: false,
+      rule: ruleReadModel(await readRule(transaction, identity, input.id)),
+    };
+  }
+  if (input.categoryId !== existing.categoryId) {
+    await requireActiveCategory(transaction, identity, input.categoryId);
+  }
+  const [updated] = await transaction
+    .update(expenseRecurringRules)
+    .set({
+      amount: normalized.amount,
+      categoryId: input.categoryId,
+      description: normalized.description,
+      endsOn: normalized.endsOn,
+      payee: normalized.payee,
+      updatedAt: new Date(),
+      version: existing.version + 1,
+    })
+    .where(
+      and(
+        eq(expenseRecurringRules.id, input.id),
+        eq(expenseRecurringRules.organizationId, identity.organizationId),
+        eq(expenseRecurringRules.version, input.expectedVersion)
+      )
+    )
+    .returning({ id: expenseRecurringRules.id });
+  if (!updated) {
+    throw new ExpenseRuleVersionConflictError();
+  }
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: updated.id,
+    entityType: "expense_rule",
+    eventType: "expense_rule.updated",
+    requestId: input.requestId ?? null,
+  });
+  return {
+    changed: true,
+    rule: ruleReadModel(await readRule(transaction, identity, input.id)),
+  };
+}
+
+async function changeRuleLifecycle(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: ExpenseRuleMutationInput,
+  action: "archive" | "restore"
+) {
+  requireExpenseCapability(identity);
+  const existing = await lockRule(transaction, identity, input);
+  const archived = existing.archivedAt !== null;
+  if (archived === (action === "archive")) {
+    return {
+      changed: false,
+      rule: ruleReadModel(await readRule(transaction, identity, input.id)),
+    };
+  }
+  let { generatedCount } = existing;
+  if (action === "archive") {
+    // what already fell due is generated before pausing: a paused rule would
+    // never generate it
+    await generateForRule(
+      transaction,
+      identity,
+      input.id,
+      await organizationToday(transaction, identity)
+    );
+  } else if (isRecurrenceFrequency(existing.frequency)) {
+    // the periods that passed while the rule was paused did not happen: they
+    // are skipped, not generated afterwards. An occurrence on the day it is
+    // resumed has not passed: the next read generates it.
+    generatedCount = Math.max(
+      generatedCount,
+      occurrencesThrough(
+        existing.startsOn,
+        existing.frequency,
+        dayBefore(await organizationToday(transaction, identity))
+      )
+    );
+  }
+  const [updated] = await transaction
+    .update(expenseRecurringRules)
+    .set({
+      archivedAt: action === "archive" ? new Date() : null,
+      // pausing keeps the count the generation above just advanced
+      ...(action === "restore" ? { generatedCount } : {}),
+      updatedAt: new Date(),
+      version: existing.version + 1,
+    })
+    .where(
+      and(
+        eq(expenseRecurringRules.id, input.id),
+        eq(expenseRecurringRules.organizationId, identity.organizationId),
+        eq(expenseRecurringRules.version, input.expectedVersion)
+      )
+    )
+    .returning({ id: expenseRecurringRules.id });
+  if (!updated) {
+    throw new ExpenseRuleVersionConflictError();
+  }
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: updated.id,
+    entityType: "expense_rule",
+    eventType:
+      action === "archive" ? "expense_rule.archived" : "expense_rule.restored",
+    requestId: input.requestId ?? null,
+  });
+  return {
+    changed: true,
+    rule: ruleReadModel(await readRule(transaction, identity, input.id)),
+  };
+}
+
+export function archiveExpenseRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: ExpenseRuleMutationInput
+) {
+  return changeRuleLifecycle(transaction, identity, input, "archive");
+}
+
+export function restoreExpenseRule(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: ExpenseRuleMutationInput
+) {
+  return changeRuleLifecycle(transaction, identity, input, "restore");
 }

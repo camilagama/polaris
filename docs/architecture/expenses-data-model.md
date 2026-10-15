@@ -29,11 +29,25 @@ Autoridade: este documento descreve as tabelas, os vínculos e os fluxos de desp
 | `voided_at` | Anulada quando preenchida; sai das listas e dos totais por padrão. |
 | `version`, `created_at`, `updated_at` | Como acima. |
 
-Índices: `(organization_id, competence_on, id)` para a lista, `(organization_id, category_id)` e `(organization_id, sale_id)` parcial.
+Índices: `(organization_id, competence_on, id)` para a lista, `(organization_id, category_id)` e `(organization_id, sale_id)` parcial. Duas colunas ligam a despesa à regra que a gerou: `recurring_rule_id` e `recurring_occurrence` (juntas ou nenhuma, em CHECK; chave composta com a organização; índice único por regra e ocorrência).
+
+`expense_recurring_rules`: o molde de uma série de despesas ([ADR 0052](../adr/0052-despesas-recorrentes.md)).
+
+| Coluna | Observação |
+| --- | --- |
+| `id`, `organization_id` | Como acima. |
+| `category_id` | Obrigatória; chave composta com a organização. |
+| `amount`, `description`, `payee` | Mesmos limites e CHECKs da despesa. |
+| `frequency` | `weekly`, `monthly` ou `yearly` (CHECK). Não muda. |
+| `starts_on` | Data da ocorrência 0, a partir de 2000-01-01 (CHECK). Não muda. |
+| `ends_on` | Opcional; não anterior a `starts_on` (CHECK). |
+| `generated_count` | Quantas ocorrências já foram geradas; a próxima tem esse índice. Não incrementa a versão. |
+| `archived_at` | Regra pausada: não gera nada. |
+| `version`, `created_at`, `updated_at` | Concorrência otimista e carimbos. |
 
 ## Segurança
 
-Ambas têm RLS e `FORCE RLS` com a política padrão de tenant ativo (organização e vínculo `active` com organização `active`) para `SELECT`, `INSERT` e `UPDATE`; não há política nem permissão de `DELETE`. O papel de runtime recebe `UPDATE` só nas colunas que os repositórios alteram (`name`, `archived_at`, `updated_at`, `version` nas categorias; `amount`, `category_id`, `competence_on`, `description`, `payee`, `sale_id`, `voided_at`, `updated_at`, `version` nas despesas).
+Ambas têm RLS e `FORCE RLS` com a política padrão de tenant ativo (organização e vínculo `active` com organização `active`) para `SELECT`, `INSERT` e `UPDATE`; não há política nem permissão de `DELETE`. O papel de runtime recebe `UPDATE` só nas colunas que os repositórios alteram (`name`, `archived_at`, `updated_at`, `version` nas categorias; `amount`, `category_id`, `competence_on`, `description`, `payee`, `sale_id`, `voided_at`, `updated_at`, `version` nas despesas; `amount`, `category_id`, `description`, `payee`, `ends_on`, `archived_at`, `generated_count`, `updated_at`, `version` nas regras). As colunas de origem da despesa só são escritas no `INSERT`.
 
 ## Fluxos
 
@@ -41,8 +55,10 @@ Ambas têm RLS e `FORCE RLS` com a política padrão de tenant ativo (organizaç
 - **Lançar.** Normaliza o valor e o texto no domínio, confere a competência contra o "hoje" da organização, exige categoria ativa e, se houver, venda da organização; insere e grava `expense.created`.
 - **Editar.** Bloqueia a linha (`FOR UPDATE`), confere a versão e recusa despesa anulada; se nada mudou, devolve sem mexer; revalida só categoria, competência e venda que mudaram; incrementa a versão e grava `expense.updated`.
 - **Anular e reativar.** Mesma trava e versão; repetir não muda nada; gravam `expense.voided` e `expense.restored`.
+- **Gerar as recorrências vencidas.** No início da listagem de despesas e de regras, e depois de criar uma regra: para cada regra ativa lida sem bloqueio, só as que têm algo vencido são bloqueadas (em ordem de ID) e reconferidas; calcula as ocorrências vencidas (da próxima em diante, até hoje ou a data de fim, até 500 por passo) e insere as despesas com `ON CONFLICT DO NOTHING`, avança `generated_count` e grava `expense_rule.generated`. Repetir não gera nada; chamadas simultâneas geram uma vez.
+- **Pausar e retomar.** Pausar (`archived_at`) gera antes o que já venceu e para a geração; retomar avança `generated_count` até a última ocorrência vencida até ontem, pulando o que passou (a de hoje ainda é gerada).
 - **Listar.** Filtra por período, categoria e estado, ordena por competência decrescente e ID decrescente, pagina por cursor `(competence_on, id)` e soma no banco o filtro inteiro (`total` como texto decimal exato).
 
 ## Contrato
 
-Procedimentos `expense.*` em `packages/contracts`: `listCategories`, `createCategory`, `renameCategory`, `archiveCategory`, `restoreCategory`, `list`, `create`, `update`, `void`, `restore`. Valores monetários trafegam como texto decimal; datas de competência como `YYYY-MM-DD`; erros de negócio viram `BAD_REQUEST`, `CONFLICT` ou `NOT_FOUND` com o código estável do domínio.
+Procedimentos `expense.*` em `packages/contracts`: `listCategories`, `createCategory`, `renameCategory`, `archiveCategory`, `restoreCategory`, `list`, `create`, `update`, `void`, `restore`, e as de recorrência `listRules`, `createRule`, `updateRule`, `archiveRule`, `restoreRule`. Valores monetários trafegam como texto decimal; datas de competência como `YYYY-MM-DD`; erros de negócio viram `BAD_REQUEST`, `CONFLICT` ou `NOT_FOUND` com o código estável do domínio.

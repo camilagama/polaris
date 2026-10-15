@@ -2,6 +2,11 @@ import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import {
   archiveExpenseCategory,
+  archiveExpenseRule,
+  createExpenseRule,
+  listExpenseRules,
+  restoreExpenseRule,
+  updateExpenseRule,
   createExpense,
   createExpenseCategory,
   listExpenseCategories,
@@ -25,6 +30,11 @@ interface ExpenseRpcContext {
 /** The repository functions the handlers call; tests replace any of them. */
 const defaultExpenseRepository = {
   archiveExpenseCategory,
+  archiveExpenseRule,
+  createExpenseRule,
+  listExpenseRules,
+  restoreExpenseRule,
+  updateExpenseRule,
   createExpense,
   createExpenseCategory,
   listExpenseCategories,
@@ -89,11 +99,40 @@ function expenseReadModel(expense: ExpenseRow) {
     id: expense.id,
     organizationId: expense.organizationId,
     payee: expense.payee,
+    recurringRuleId: expense.recurringRuleId,
     saleId: expense.saleId,
     status: deriveExpenseLifecycle(expense.voidedAt),
     updatedAt: expense.updatedAt.toISOString(),
     version: expense.version,
     voidedAt: expense.voidedAt?.toISOString() ?? null,
+  };
+}
+
+type RuleRow = Awaited<ReturnType<ExpenseRepository["createExpenseRule"]>>;
+
+function ruleReadModel(rule: RuleRow) {
+  return {
+    amount: rule.amount,
+    archivedAt: rule.archivedAt?.toISOString() ?? null,
+    categoryGroup: rule.categoryGroup as ReturnType<
+      typeof categoryReadModel
+    >["groupKey"],
+    categoryId: rule.categoryId,
+    categoryName: rule.categoryName,
+    createdAt: rule.createdAt.toISOString(),
+    description: rule.description,
+    endsOn: rule.endsOn,
+    frequency: rule.frequency as "monthly" | "weekly" | "yearly",
+    generatedCount: rule.generatedCount,
+    id: rule.id,
+    nextOccurrenceOn: rule.nextOccurrenceOn,
+    organizationId: rule.organizationId,
+    payee: rule.payee,
+    startsOn: rule.startsOn,
+    status:
+      rule.archivedAt === null ? ("active" as const) : ("archived" as const),
+    updatedAt: rule.updatedAt.toISOString(),
+    version: rule.version,
   };
 }
 
@@ -318,9 +357,99 @@ export function createExpenseRpcHandlers(dependencies: ExpenseRpcDependencies) {
     }
   );
 
+  const listRules = implementContract.expense.listRules.handler(
+    async ({ context, input }) => {
+      const rules = await run(
+        context,
+        input.organizationId,
+        (transaction, identity) =>
+          repository.listExpenseRules(transaction, identity, {
+            status: input.status,
+          })
+      );
+      return { rules: rules.map(ruleReadModel) };
+    }
+  );
+
+  const createRule = implementContract.expense.createRule.handler(
+    async ({ context, input }) =>
+      ruleReadModel(
+        await run(context, input.organizationId, (transaction, identity) =>
+          repository.createExpenseRule(transaction, identity, {
+            amount: input.amount,
+            categoryId: input.categoryId,
+            description: input.description,
+            endsOn: input.endsOn ?? null,
+            frequency: input.frequency,
+            payee: input.payee ?? null,
+            requestId: audit(context),
+            startsOn: input.startsOn,
+          })
+        )
+      )
+  );
+
+  const updateRule = implementContract.expense.updateRule.handler(
+    async ({ context, input }) => {
+      const result = await run(
+        context,
+        input.organizationId,
+        (transaction, identity) =>
+          repository.updateExpenseRule(transaction, identity, {
+            amount: input.amount,
+            categoryId: input.categoryId,
+            description: input.description,
+            endsOn: input.endsOn ?? null,
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            payee: input.payee ?? null,
+            requestId: audit(context),
+          })
+      );
+      return { changed: result.changed, rule: ruleReadModel(result.rule) };
+    }
+  );
+
+  const archiveRule = implementContract.expense.archiveRule.handler(
+    async ({ context, input }) => {
+      const result = await run(
+        context,
+        input.organizationId,
+        (transaction, identity) =>
+          repository.archiveExpenseRule(transaction, identity, {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            requestId: audit(context),
+          })
+      );
+      return { changed: result.changed, rule: ruleReadModel(result.rule) };
+    }
+  );
+
+  const restoreRule = implementContract.expense.restoreRule.handler(
+    async ({ context, input }) => {
+      const result = await run(
+        context,
+        input.organizationId,
+        (transaction, identity) =>
+          repository.restoreExpenseRule(transaction, identity, {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            requestId: audit(context),
+          })
+      );
+      return { changed: result.changed, rule: ruleReadModel(result.rule) };
+    }
+  );
+
   return {
     archiveCategory,
+    archiveRule,
     create,
+    createRule,
+    listRules,
+    restoreRule,
+    updateRule,
     createCategory,
     list,
     listCategories,

@@ -125,6 +125,11 @@ import {
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
 import {
+  ExpenseRuleNotFoundError,
+  ExpenseRuleVersionConflictError,
+  InvalidExpenseRuleError,
+} from "@polaris/domain/expenses/recurrence";
+import {
   InsufficientStockError,
   InvalidStockMovementError,
   InventoryOccurredInFutureError,
@@ -600,6 +605,7 @@ const badRequestRpcErrors = [
     InvalidExpenseError,
     InvalidExpenseCategoryError,
     ExpenseCompetenceOutOfRangeError,
+    InvalidExpenseRuleError,
   ],
   [
     InvalidDeviceLabelError,
@@ -672,6 +678,7 @@ const conflictRpcErrors = [
     ExpenseCategoryVersionConflictError,
     ExpenseVersionConflictError,
     ExpenseVoidedError,
+    ExpenseRuleVersionConflictError,
   ],
   [
     ProductDeletedError,
@@ -716,6 +723,7 @@ const notFoundRpcErrors = [
     ExpenseCategoryNotFoundError,
     ExpenseNotFoundError,
     ExpenseSaleNotFoundError,
+    ExpenseRuleNotFoundError,
   ],
   [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;

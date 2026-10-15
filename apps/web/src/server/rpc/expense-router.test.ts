@@ -3,6 +3,7 @@ import { RPCLink } from "@orpc/client/fetch";
 import type {
   ExpenseCategoryReadModel,
   ExpenseReadModel,
+  ExpenseRuleReadModel,
 } from "@polaris/contracts";
 import type {
   TenantRequestIdentity,
@@ -18,6 +19,11 @@ import {
   ExpenseVoidedError,
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
+import {
+  ExpenseRuleNotFoundError,
+  ExpenseRuleVersionConflictError,
+  InvalidExpenseRuleError,
+} from "@polaris/domain/expenses/recurrence";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -58,6 +64,7 @@ const expenseRow = {
   id: expenseId,
   organizationId,
   payee: null,
+  recurringRuleId: null,
   saleId: null,
   updatedAt: at,
   version: 1,
@@ -94,6 +101,16 @@ interface ExpenseClient {
     update: (input: unknown) => Result<{
       changed: boolean;
       expense: ExpenseReadModel;
+    }>;
+    archiveRule: (input: unknown) => Result<{
+      changed: boolean;
+      rule: ExpenseRuleReadModel;
+    }>;
+    createRule: (input: unknown) => Result<ExpenseRuleReadModel>;
+    listRules: (input: unknown) => Result<{ rules: ExpenseRuleReadModel[] }>;
+    updateRule: (input: unknown) => Result<{
+      changed: boolean;
+      rule: ExpenseRuleReadModel;
     }>;
     void: (input: unknown) => Result<{
       changed: boolean;
@@ -315,5 +332,120 @@ describe("expense RPCs", () => {
         organizationId,
       })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  const ruleRow = {
+    amount: "1500.00",
+    archivedAt: null,
+    categoryGroup: "operational",
+    categoryId,
+    categoryName: "Aluguel",
+    createdAt: at,
+    description: "Aluguel",
+    endsOn: null,
+    frequency: "monthly",
+    generatedCount: 10,
+    id: "0199c2d0-0000-7000-8000-0000000000f1",
+    nextOccurrenceOn: "2026-11-05",
+    organizationId,
+    payee: null,
+    startsOn: "2026-01-05",
+    updatedAt: at,
+    version: 1,
+  };
+
+  it("creates a recurring rule and lists it with its next occurrence", async () => {
+    const createExpenseRule = vi.fn(async () => ruleRow);
+    const listExpenseRules = vi.fn(async () => [ruleRow]);
+    const client = createRpcClient(
+      createRpcRouter({
+        expenseRepository: { createExpenseRule, listExpenseRules },
+        withTenantRequestContext: tenantStub(),
+      })
+    );
+
+    await expect(
+      client.expense.createRule({
+        amount: "1500.00",
+        categoryId,
+        description: "Aluguel",
+        frequency: "monthly",
+        organizationId,
+        startsOn: "2026-01-05",
+      })
+    ).resolves.toMatchObject({
+      frequency: "monthly",
+      nextOccurrenceOn: "2026-11-05",
+      status: "active",
+    });
+    expect(createExpenseRule).toHaveBeenCalledWith({}, identity, {
+      amount: "1500.00",
+      categoryId,
+      description: "Aluguel",
+      endsOn: null,
+      frequency: "monthly",
+      payee: null,
+      requestId: expect.stringMatching(requestIdPattern),
+      startsOn: "2026-01-05",
+    });
+    await expect(
+      client.expense.listRules({ organizationId })
+    ).resolves.toMatchObject({ rules: [{ generatedCount: 10 }] });
+  });
+
+  it("refuses an unknown frequency or a malformed date before opening a tenant context", async () => {
+    const withTenantRequestContext = vi.fn(tenantStub());
+    const client = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext:
+          withTenantRequestContext as unknown as NonNullable<
+            NonNullable<
+              Parameters<typeof createRpcRouter>[0]
+            >["withTenantRequestContext"]
+          >,
+      })
+    );
+    const valid = {
+      amount: "1.00",
+      categoryId,
+      description: "x",
+      frequency: "monthly",
+      organizationId,
+      startsOn: "2026-01-05",
+    };
+    for (const bad of [
+      { ...valid, frequency: "daily" },
+      { ...valid, startsOn: "05/01/2026" },
+      { ...valid, endsOn: "2026-1-1" },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
+      await expect(client.expense.createRule(bad)).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    }
+    expect(withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an invalid rule", new InvalidExpenseRuleError(), "BAD_REQUEST"],
+    ["a stale rule", new ExpenseRuleVersionConflictError(), "CONFLICT"],
+    ["a missing rule", new ExpenseRuleNotFoundError(), "NOT_FOUND"],
+  ])("maps %s to a safe RPC error", async (_label, error, code) => {
+    const client = createRpcClient(
+      createRpcRouter({
+        expenseRepository: { updateExpenseRule: () => Promise.reject(error) },
+        withTenantRequestContext: tenantStub(),
+      })
+    );
+    await expect(
+      client.expense.updateRule({
+        amount: "2.00",
+        categoryId,
+        description: "x",
+        expectedVersion: 1,
+        id: ruleRow.id,
+        organizationId,
+      })
+    ).rejects.toMatchObject({ code });
   });
 });
