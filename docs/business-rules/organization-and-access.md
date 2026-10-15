@@ -36,6 +36,7 @@ Cada operação exige uma capability própria, verificada no procedimento e repe
 | `sale:assign_customer` | Ler e alterar a atribuição de cliente de uma venda. |
 | `customer:update` | Listar, buscar duplicados, criar, editar, arquivar e restaurar clientes. Na V1 não há `customer:read`, então a leitura de clientes também exige esta capability. |
 | `report:read` | Ler o resultado econômico de um período (vendas líquidas, CMV, margem e resultado estimado), que expõe custo e margem. |
+| `goal:manage` | Criar, editar, cancelar e ler metas (o progresso delas usa o resultado do período). |
 | `organization:manage` | Gerenciar perfis de pagamento da organização. |
 | `expense:create` | Listar, criar, editar, anular e reativar despesas e gerir as categorias de despesa. Na V1 não há `expense:read`, então a leitura de despesas também exige esta capability. |
 

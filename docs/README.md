@@ -77,5 +77,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0052](adr/0052-despesas-recorrentes.md) | Despesas recorrentes: regra, ocorrências geradas ao vencer | aceito |
 | [0053](adr/0053-motor-de-resultado-economico.md) | Motor de resultado econômico: margem da venda e resultado do período | aceito |
 | [0054](adr/0054-painel-de-resultado-e-indicador-de-qualidade.md) | Painel de resultado e indicador de qualidade | aceito |
+| [0055](adr/0055-metas.md) | Metas: alvo por período, progresso derivado, conclusão que não reabre | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

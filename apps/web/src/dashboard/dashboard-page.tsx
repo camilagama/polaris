@@ -3,6 +3,7 @@ import { formatMonthLabel, monthOfDay } from "../expenses/expense-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { formatUpdatedAt } from "./dashboard-model";
+import { GoalsPanel } from "./goals-panel";
 import { MonthSelector } from "./month-selector";
 import { QualityBanner } from "./quality-banner";
 import { ResultCards } from "./result-cards";
@@ -129,6 +130,12 @@ export function DashboardPage() {
       <div aria-busy={state.isLoading}>
         <Content month={month} state={state} />
       </div>
+      <GoalsPanel
+        month={month}
+        organizationId={organizationId}
+        timezone={organization.timezone}
+        today={today}
+      />
     </div>
   );
 }
