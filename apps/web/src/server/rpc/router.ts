@@ -125,7 +125,9 @@ import {
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
 import {
+  GoalLimitReachedError,
   GoalNotActiveError,
+  GoalPeriodEndedError,
   GoalNotFoundError,
   GoalVersionConflictError,
   InvalidGoalError,
@@ -696,7 +698,9 @@ const conflictRpcErrors = [
     ExpenseVersionConflictError,
     ExpenseVoidedError,
     ExpenseRuleVersionConflictError,
+    GoalLimitReachedError,
     GoalNotActiveError,
+    GoalPeriodEndedError,
     GoalVersionConflictError,
   ],
   [

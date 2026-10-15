@@ -448,7 +448,7 @@ test("uma meta que chegou ao alvo vira Concluída e continua concluída", async 
   await expect(page.getByText("Meta criada.")).toBeVisible();
   const done = card(page, "Número de vendas");
   await expect(done).toContainText("Concluída");
-  await expect(done).toContainText("atingido com 3 em 14/10/2026");
+  await expect(done).toContainText("atingido com 3 (conferido em 14/10/2026)");
   await expect(done).toContainText(
     "Uma meta concluída continua concluída, mesmo que devoluções posteriores reduzam os números."
   );
@@ -565,7 +565,7 @@ test("as metas finais não têm editar nem cancelar", async ({ page }) => {
 
   await expect(card(page, "Alcançada")).toContainText("Concluída");
   await expect(card(page, "Alcançada")).toContainText(
-    "atingido com R$ 450,00 em 14/10/2026"
+    "atingido com R$ 450,00 (conferido em 14/10/2026)"
   );
   await expect(card(page, "Setembro")).toContainText("Não atingida");
   await expect(card(page, "Setembro")).toContainText(

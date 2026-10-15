@@ -105,41 +105,55 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
   const audit = (context: GoalRpcContext) =>
     dependencies.requestAuditId(context.requestId);
 
+  /**
+   * Evaluates the active goals in one snapshot and settles what it says in a
+   * second short transaction. Run before editing or cancelling too, so a goal
+   * that already reached its target (or whose period ended) is settled instead
+   * of being changed under the person's feet.
+   */
+  const evaluateAndSettle = async (
+    context: GoalRpcContext,
+    organizationId: string
+  ) => {
+    const progress = await run(
+      context,
+      organizationId,
+      (transaction, identity) =>
+        repository.evaluateActiveGoals(transaction, identity),
+      "repeatable read"
+    );
+    await run(context, organizationId, (transaction, identity) =>
+      repository.settleGoals(
+        transaction,
+        identity,
+        progress.flatMap((entry) =>
+          entry.settlement
+            ? [
+                {
+                  achievedValue: entry.evaluation.progress,
+                  expectedVersion: entry.version,
+                  goalId: entry.goalId,
+                  settlement: entry.settlement,
+                },
+              ]
+            : []
+        )
+      )
+    );
+    return progress;
+  };
+
   const list = implementContract.goal.list.handler(
     async ({ context, input }) => {
-      // 1. progress of the active goals, in one snapshot
-      const progress = await run(
-        context,
-        input.organizationId,
-        (transaction, identity) =>
-          repository.evaluateActiveGoals(transaction, identity),
-        "repeatable read"
-      );
-      // 2. settle what it says, and read the goals as they are now
+      const progress = await evaluateAndSettle(context, input.organizationId);
+      // the goals as they are now (progress belongs to the version it was measured at)
       const goals = await run(
         context,
         input.organizationId,
-        async (transaction, identity) => {
-          await repository.settleGoals(
-            transaction,
-            identity,
-            progress.flatMap((entry) =>
-              entry.settlement
-                ? [
-                    {
-                      achievedValue: entry.evaluation.progress,
-                      expectedVersion: entry.version,
-                      goalId: entry.goalId,
-                      settlement: entry.settlement,
-                    },
-                  ]
-                : []
-            )
-          );
-          return await repository.listGoals(transaction, identity, {
+        (transaction, identity) =>
+          repository.listGoals(transaction, identity, {
             status: input.status,
-          });
-        }
+          })
       );
       const byGoal = new Map(progress.map((entry) => [entry.goalId, entry]));
       return {
@@ -147,7 +161,7 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
           const entry = byGoal.get(row.id);
           return goalReadModel(
             row,
-            entry
+            entry && entry.version === row.version
               ? {
                   periodEnded: entry.evaluation.periodEnded,
                   percent: entry.evaluation.percent,
@@ -180,6 +194,7 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
 
   const update = implementContract.goal.update.handler(
     async ({ context, input }) => {
+      await evaluateAndSettle(context, input.organizationId);
       const result = await run(
         context,
         input.organizationId,
@@ -201,6 +216,7 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
 
   const cancel = implementContract.goal.cancel.handler(
     async ({ context, input }) => {
+      await evaluateAndSettle(context, input.organizationId);
       const result = await run(
         context,
         input.organizationId,

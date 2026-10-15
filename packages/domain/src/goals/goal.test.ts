@@ -89,6 +89,8 @@ describe("normalizeGoal", () => {
     ["end before start", { endsOn: "2026-09-30" }],
     ["longer than 366 days", { endsOn: "2027-10-02" }],
     ["long name", { name: "n".repeat(101) }],
+    ["a name with NUL", { name: "a\u0000b" }],
+    ["a name with a lone surrogate", { name: "a\uD800b" }],
   ])("refuses %s", (_label, override) => {
     expect(() => normalizeGoal({ ...base, ...override }, today)).toThrow(
       InvalidGoalError
@@ -146,6 +148,33 @@ describe("evaluateGoal and settleGoal", () => {
     const evaluation = evaluateGoal(goal, result(1000), today);
     expect(evaluation.periodEnded).toBe(false);
     expect(settleGoal("active", evaluation)).toBe("completed");
+  });
+
+  it("an operating-result goal settles only once its period has ended", () => {
+    const op = {
+      endsOn: "2026-10-31",
+      kind: "operating_result" as const,
+      target: "100.00",
+    };
+    const good = result(1000, 1, ["10.00"]);
+    // reached mid-period: not settled (costs dated later in the month are not in yet)
+    expect(
+      settleGoal("active", evaluateGoal(op, good, today), "operating_result")
+    ).toBeNull();
+    expect(
+      settleGoal(
+        "active",
+        evaluateGoal(op, good, "2026-11-01"),
+        "operating_result"
+      )
+    ).toBe("completed");
+    expect(
+      settleGoal(
+        "active",
+        evaluateGoal(op, result(10), "2026-11-01"),
+        "operating_result"
+      )
+    ).toBe("missed");
   });
 
   it("is missed only after the period ends without the target, and nothing else changes by itself", () => {

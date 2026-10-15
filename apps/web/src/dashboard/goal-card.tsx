@@ -116,7 +116,8 @@ function SettledResult({
       <>
         <p className="goal-card-meta">
           Alvo de {targetText}
-          {achieved ? ` atingido com ${achieved}` : " atingido"} em {date}.
+          {achieved ? ` atingido com ${achieved}` : " atingido"} (conferido em{" "}
+          {date}).
         </p>
         <p className="goal-card-hint">
           Uma meta concluída continua concluída, mesmo que devoluções

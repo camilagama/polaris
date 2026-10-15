@@ -35,6 +35,8 @@ export const GOAL_STATUSES = [
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
 export const MAX_GOAL_NAME_LENGTH = 100;
+/** Active goals per organization: each one is measured by reading its whole period. */
+export const MAX_ACTIVE_GOALS = 20;
 export const MAX_GOAL_PERIOD_DAYS = 366;
 export const MAX_SALE_COUNT_TARGET = 1_000_000;
 
@@ -44,6 +46,26 @@ export class InvalidGoalError extends Error {
   constructor(options?: ErrorOptions) {
     super("invalid_goal", options);
     this.name = "InvalidGoalError";
+  }
+}
+
+/** The organization already has the most active goals it can measure. */
+export class GoalLimitReachedError extends Error {
+  readonly code = "goal_limit_reached";
+
+  constructor() {
+    super("goal_limit_reached");
+    this.name = "GoalLimitReachedError";
+  }
+}
+
+/** The goal's period has ended: it is settled by the next read, not edited. */
+export class GoalPeriodEndedError extends Error {
+  readonly code = "goal_period_ended";
+
+  constructor() {
+    super("goal_period_ended");
+    this.name = "GoalPeriodEndedError";
   }
 }
 
@@ -113,6 +135,26 @@ function daysBetween(from: string, to: string): number {
   );
 }
 
+/** Text PostgreSQL cannot store (NUL) or that is not valid Unicode (a lone surrogate). */
+export function hasUnstorableCharacter(text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === 0) {
+      return true;
+    }
+    if (code >= 0xd8_00 && code <= 0xdb_ff) {
+      const next = text.charCodeAt(index + 1);
+      if (!(next >= 0xdc_00 && next <= 0xdf_ff)) {
+        return true;
+      }
+      index += 1;
+    } else if (code >= 0xdc_00 && code <= 0xdf_ff) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Normalizes a target for a kind: positive, exact, within limits. */
 export function normalizeGoalTarget(kind: GoalKind, target: string): string {
   const text = target.trim();
@@ -157,7 +199,8 @@ export function normalizeGoal(input: GoalInput, today: string): NormalizedGoal {
     input.startsOn > addDays(today, MAX_EXPENSE_COMPETENCE_DAYS_AHEAD) ||
     input.endsOn < input.startsOn ||
     daysBetween(input.startsOn, input.endsOn) + 1 > MAX_GOAL_PERIOD_DAYS ||
-    (name !== null && [...name].length > MAX_GOAL_NAME_LENGTH)
+    (name !== null &&
+      ([...name].length > MAX_GOAL_NAME_LENGTH || hasUnstorableCharacter(name)))
   ) {
     throw new InvalidGoalError();
   }
@@ -228,12 +271,21 @@ export type GoalSettlement = "completed" | "missed";
  * What an active goal turns into, if anything: completed as soon as the target
  * is reached (even before the period ends), missed once the period ended
  * without it. Anything that is not active never changes by itself.
+ *
+ * An operating-result goal is the exception: completion is irreversible, and
+ * the result is not trustworthy before the period closes (costs dated later in
+ * the month are not in it yet), so it settles only once the period has ended,
+ * as completed or missed.
  */
 export function settleGoal(
   status: GoalStatus,
-  evaluation: GoalEvaluation
+  evaluation: GoalEvaluation,
+  kind: GoalKind = "net_sales"
 ): GoalSettlement | null {
   if (status !== "active") {
+    return null;
+  }
+  if (kind === "operating_result" && !evaluation.periodEnded) {
     return null;
   }
   if (evaluation.reached) {

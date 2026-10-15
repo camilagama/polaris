@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  GoalLimitReachedError,
   GoalNotActiveError,
   GoalNotFoundError,
+  GoalPeriodEndedError,
   GoalVersionConflictError,
   InvalidGoalError,
 } from "@polaris/domain/goals/goal";
@@ -226,6 +228,32 @@ async function run() {
       dateFrom(today, -40),
       dateFrom(today, -30)
     );
+    // an operating-result goal is settled only when its period has ended
+    const opGoal = await create(
+      "operating_result",
+      "100",
+      dateFrom(today, -7),
+      dateFrom(today, 10)
+    );
+    // a period that ended yesterday and was not read yet
+    const ended = await create(
+      "sale_count",
+      "50",
+      dateFrom(today, -5),
+      dateFrom(today, -1)
+    );
+    await expectRejects(
+      () =>
+        asGoals(tenantA, (tx, identity) =>
+          updateGoal(tx, identity, {
+            expectedVersion: ended.version,
+            id: ended.id,
+            target: "60",
+          })
+        ),
+      GoalPeriodEndedError,
+      "a goal whose period ended is settled by the next read, not edited"
+    );
     const future = await create(
       "net_sales",
       "100",
@@ -271,7 +299,17 @@ async function run() {
       "a goal that has not started measures nothing"
     );
     assert.equal(byId.get(future.id)?.settlement, null);
-    assert.deepEqual([...first.applied].sort(), [reachable.id, past.id].sort());
+    assert.equal(byId.get(opGoal.id)?.evaluation.reached, true);
+    assert.equal(
+      byId.get(opGoal.id)?.settlement,
+      null,
+      "reached mid-period, but an operating result settles only when the period closes"
+    );
+    assert.equal(byId.get(ended.id)?.settlement, "missed");
+    assert.deepEqual(
+      [...first.applied].sort(),
+      [reachable.id, past.id, ended.id].sort()
+    );
     const settled = await asGoals(tenantA, (tx, identity) =>
       listGoals(tx, identity)
     );
@@ -503,6 +541,36 @@ async function run() {
       "an active goal can be cancelled (repeating changes nothing) and a cancelled one is final and read-only"
     );
 
+    // the number of active goals is bounded
+    let guard = 0;
+    for (;;) {
+      try {
+        // biome-ignore lint/performance/noAwaitInLoops: created in order
+        await create(
+          "sale_count",
+          "99",
+          dateFrom(today, 1),
+          dateFrom(today, 5)
+        );
+      } catch (error) {
+        assert.ok(error instanceof GoalLimitReachedError, String(error));
+        break;
+      }
+      guard += 1;
+      assert.ok(guard < 25, "the limit must stop the creation");
+    }
+    assert.equal(
+      (
+        await asGoals(tenantA, (tx, identity) =>
+          listGoals(tx, identity, { status: "active" })
+        )
+      ).length,
+      20
+    );
+    tests.push(
+      "an operating-result goal reached mid-period is not settled until the period closes, a goal whose period ended cannot be edited and is missed by the next read, and an organization is limited to 20 active goals"
+    );
+
     // ------------------------------ 8. isolation, capabilities and the database
     await expectRejects(
       () =>
@@ -638,7 +706,7 @@ async function run() {
       2,
       "the two target changes (slow and racing), no more"
     );
-    assert.equal(counts.get("goal.missed"), 1);
+    assert.equal(counts.get("goal.missed"), 2);
     tests.push(
       "every creation, target change, rename, completion, miss and cancellation leaves an audit event, and repeated or refused ones leave none"
     );

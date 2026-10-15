@@ -2,8 +2,11 @@ import { periodResult } from "@polaris/domain/economics/sale-economics";
 import {
   evaluateGoal,
   type GoalEvaluation,
+  GoalLimitReachedError,
   GoalNotActiveError,
   GoalNotFoundError,
+  GoalPeriodEndedError,
+  MAX_ACTIVE_GOALS,
   type GoalInput,
   type GoalKind,
   type GoalSettlement,
@@ -100,6 +103,18 @@ export async function createGoal(
     input,
     await organizationToday(transaction, identity)
   );
+  const [{ active } = { active: 0 }] = await transaction
+    .select({ active: sql<number>`count(*)::int` })
+    .from(goals)
+    .where(
+      and(
+        eq(goals.organizationId, identity.organizationId),
+        eq(goals.status, "active")
+      )
+    );
+  if (active >= MAX_ACTIVE_GOALS) {
+    throw new GoalLimitReachedError();
+  }
   const [created] = await transaction
     .insert(goals)
     .values({
@@ -163,6 +178,10 @@ export async function updateGoal(
   if (existing.status !== "active") {
     throw new GoalNotActiveError();
   }
+  if (existing.endsOn < (await organizationToday(transaction, identity))) {
+    // the period is over: the next read settles it; it is not edited
+    throw new GoalPeriodEndedError();
+  }
   const kind = existing.kind as GoalKind;
   const target =
     input.target === undefined
@@ -175,7 +194,8 @@ export async function updateGoal(
       throw new InvalidGoalError();
     }
   }
-  const targetChanged = Number(target) !== Number(existing.target);
+  // both are normalized decimal text (two places, or a whole number): compare as text
+  const targetChanged = target !== existing.target;
   if (!targetChanged && name === existing.name) {
     return { changed: false, goal: existing };
   }
@@ -338,7 +358,7 @@ export async function evaluateActiveGoals(
     progress.push({
       evaluation,
       goalId: goal.id,
-      settlement: settleGoal("active", evaluation),
+      settlement: settleGoal("active", evaluation, kind),
       version: goal.version,
     });
   }

@@ -148,6 +148,7 @@ describe("goal RPCs", () => {
     expect(calls).toEqual([
       { capability: "goal:manage", isolationLevel: "repeatable read" },
       { capability: "goal:manage" },
+      { capability: "goal:manage" },
     ]);
     expect(settleGoals).toHaveBeenCalledWith({}, identity, [
       {
@@ -247,7 +248,11 @@ describe("goal RPCs", () => {
     await expect(
       client(
         createRpcRouter({
-          goalRepository: { updateGoal: () => Promise.reject(error) },
+          goalRepository: {
+            evaluateActiveGoals: () => Promise.resolve([]),
+            settleGoals: () => Promise.resolve([]),
+            updateGoal: () => Promise.reject(error),
+          },
           withTenantRequestContext: tenantStub(),
         })
       ).goal.update({
@@ -275,5 +280,36 @@ describe("goal RPCs", () => {
         { changedAt: at.toISOString(), newTarget: "5", previousTarget: "10" },
       ],
     });
+  });
+});
+
+describe("goal RPCs: edits settle first", () => {
+  it("updating evaluates and settles the active goals before it changes anything", async () => {
+    const order: string[] = [];
+    await client(
+      createRpcRouter({
+        goalRepository: {
+          evaluateActiveGoals: () => {
+            order.push("evaluate");
+            return Promise.resolve([]);
+          },
+          settleGoals: () => {
+            order.push("settle");
+            return Promise.resolve([] as string[]);
+          },
+          updateGoal: () => {
+            order.push("update");
+            return Promise.resolve({ changed: true, goal: row });
+          },
+        },
+        withTenantRequestContext: tenantStub(),
+      })
+    ).goal.update({
+      expectedVersion: 1,
+      id: goalId,
+      organizationId,
+      target: "5",
+    });
+    expect(order).toEqual(["evaluate", "settle", "update"]);
   });
 });
