@@ -8,6 +8,7 @@
     "./catalog/media": "./src/catalog/media.ts",
     "./catalog/product": "./src/catalog/product.ts",
     "./customers/customer": "./src/customers/customer.ts",
+    "./economics/period-summary": "./src/economics/period-summary.ts",
     "./economics/sale-economics": "./src/economics/sale-economics.ts",
     "./expenses/expense": "./src/expenses/expense.ts",
     "./expenses/recurrence": "./src/expenses/recurrence.ts",
