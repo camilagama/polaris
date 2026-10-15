@@ -22,6 +22,7 @@ import {
 } from "@polaris/domain/expenses/expense";
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
 import {
+  dayBefore,
   dueOccurrences,
   ExpenseRuleNotFoundError,
   ExpenseRuleVersionConflictError,
@@ -896,21 +897,43 @@ export async function generateDueExpenses(
   identity: TenantRequestIdentity
 ): Promise<number> {
   requireExpenseCapability(identity);
+  // Without a lock: only the rules that really have something due are locked
+  // below (and re-checked under the lock), always in the same order (by ID), so
+  // two readers never wait on rules they do not need nor lock them crosswise.
   const candidates = await transaction
-    .select({ id: expenseRecurringRules.id })
+    .select({
+      endsOn: expenseRecurringRules.endsOn,
+      frequency: expenseRecurringRules.frequency,
+      generatedCount: expenseRecurringRules.generatedCount,
+      id: expenseRecurringRules.id,
+      startsOn: expenseRecurringRules.startsOn,
+    })
     .from(expenseRecurringRules)
     .where(
       and(
         eq(expenseRecurringRules.organizationId, identity.organizationId),
         isNull(expenseRecurringRules.archivedAt)
       )
-    );
+    )
+    .orderBy(asc(expenseRecurringRules.id));
   if (candidates.length === 0) {
     return 0;
   }
   const today = await organizationToday(transaction, identity);
+  const due = candidates.filter(
+    (rule) =>
+      isRecurrenceFrequency(rule.frequency) &&
+      dueOccurrences({
+        endsOn: rule.endsOn,
+        frequency: rule.frequency,
+        generatedCount: rule.generatedCount,
+        limit: 1,
+        startsOn: rule.startsOn,
+        today,
+      }).length > 0
+  );
   let generated = 0;
-  for (const candidate of candidates) {
+  for (const candidate of due) {
     for (let pass = 0; pass < MAX_GENERATION_PASSES; pass += 1) {
       // biome-ignore lint/performance/noAwaitInLoops: one rule at a time under its own row lock
       const made = await generateForRule(
@@ -1189,15 +1212,25 @@ async function changeRuleLifecycle(
     };
   }
   let { generatedCount } = existing;
-  if (action === "restore" && isRecurrenceFrequency(existing.frequency)) {
+  if (action === "archive") {
+    // what already fell due is generated before pausing: a paused rule would
+    // never generate it
+    await generateForRule(
+      transaction,
+      identity,
+      input.id,
+      await organizationToday(transaction, identity)
+    );
+  } else if (isRecurrenceFrequency(existing.frequency)) {
     // the periods that passed while the rule was paused did not happen: they
-    // are skipped, not generated afterwards
+    // are skipped, not generated afterwards. An occurrence on the day it is
+    // resumed has not passed: the next read generates it.
     generatedCount = Math.max(
       generatedCount,
       occurrencesThrough(
         existing.startsOn,
         existing.frequency,
-        await organizationToday(transaction, identity)
+        dayBefore(await organizationToday(transaction, identity))
       )
     );
   }
@@ -1205,7 +1238,8 @@ async function changeRuleLifecycle(
     .update(expenseRecurringRules)
     .set({
       archivedAt: action === "archive" ? new Date() : null,
-      generatedCount,
+      // pausing keeps the count the generation above just advanced
+      ...(action === "restore" ? { generatedCount } : {}),
       updatedAt: new Date(),
       version: existing.version + 1,
     })

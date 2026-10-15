@@ -55,8 +55,8 @@ Ambas têm RLS e `FORCE RLS` com a política padrão de tenant ativo (organizaç
 - **Lançar.** Normaliza o valor e o texto no domínio, confere a competência contra o "hoje" da organização, exige categoria ativa e, se houver, venda da organização; insere e grava `expense.created`.
 - **Editar.** Bloqueia a linha (`FOR UPDATE`), confere a versão e recusa despesa anulada; se nada mudou, devolve sem mexer; revalida só categoria, competência e venda que mudaram; incrementa a versão e grava `expense.updated`.
 - **Anular e reativar.** Mesma trava e versão; repetir não muda nada; gravam `expense.voided` e `expense.restored`.
-- **Gerar as recorrências vencidas.** No início da listagem de despesas e de regras, e depois de criar uma regra: para cada regra ativa, bloqueia a linha, calcula as ocorrências vencidas (da próxima em diante, até hoje ou a data de fim, até 500 por passo) e insere as despesas com `ON CONFLICT DO NOTHING`, avança `generated_count` e grava `expense_rule.generated`. Repetir não gera nada; chamadas simultâneas geram uma vez.
-- **Pausar e retomar.** Pausar (`archived_at`) para a geração; retomar avança `generated_count` até a última ocorrência vencida, pulando o que passou.
+- **Gerar as recorrências vencidas.** No início da listagem de despesas e de regras, e depois de criar uma regra: para cada regra ativa lida sem bloqueio, só as que têm algo vencido são bloqueadas (em ordem de ID) e reconferidas; calcula as ocorrências vencidas (da próxima em diante, até hoje ou a data de fim, até 500 por passo) e insere as despesas com `ON CONFLICT DO NOTHING`, avança `generated_count` e grava `expense_rule.generated`. Repetir não gera nada; chamadas simultâneas geram uma vez.
+- **Pausar e retomar.** Pausar (`archived_at`) gera antes o que já venceu e para a geração; retomar avança `generated_count` até a última ocorrência vencida até ontem, pulando o que passou (a de hoje ainda é gerada).
 - **Listar.** Filtra por período, categoria e estado, ordena por competência decrescente e ID decrescente, pagina por cursor `(competence_on, id)` e soma no banco o filtro inteiro (`total` como texto decimal exato).
 
 ## Contrato

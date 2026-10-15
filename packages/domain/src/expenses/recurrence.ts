@@ -219,6 +219,11 @@ export function normalizeExpenseRuleTemplate(
   };
 }
 
+/** The calendar date before `date`. */
+export function dayBefore(date: string): string {
+  return addDays(date, -1);
+}
+
 function daysBetween(earlier: string, later: string): number {
   const [y1, m1, d1] = parts(earlier);
   const [y2, m2, d2] = parts(later);
