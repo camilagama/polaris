@@ -37,6 +37,14 @@ Após obter a credencial login por um mecanismo seguro e não registrá-la, conf
 4. Para o gate Cloudflare, use somente o perfil autorizado e um Worker/Preview temporário. O gate confirmou Cloudflare Images, R2 privado e a função reconciliadora; após o teste, confirme Worker/Preview/Hyperdrive removidos e prefixos `media/staging/v1/`, `media/derivatives/v1/` e `media/v2/` vazios.
 5. Não execute limpeza manual sobre uma chave que possa estar sendo usada por upload. A exclusão operacional deve passar pelo claim transacional da chave e pelo reconciliador.
 
+## Imagens removidas de produtos (ADR 0061)
+
+- O mesmo cron horário também apaga os objetos de imagens removidas de um produto: lista os assets sem nenhum vínculo (mais antigos que uma hora), apaga o master e os derivados 320 e 640 no R2 e só então finaliza no banco (a linha do asset sai e a chave vai para o tombstone). Até 150 imagens por execução (três lotes de cinquenta); a seguinte continua. Confirmar na implantação que o teto de chamadas de uma invocação do Worker comporta isso junto com o reconciliador de markers.
+- A role login da limpeza ganhou duas funções (`list_unlinked_media_for_cleanup` e `finalize_unlinked_media_cleanup`, com `EXECUTE` só para o grupo de limpeza) e continua sem poder ler `media_assets`, `product_media` ou `media_cleanup_claims` diretamente; a role tenant não executa nenhuma delas. Se isso deixar de valer, trate como falha de privilégio, como acima.
+- Nos logs da execução agendada, `media_removed_reconciliation_complete` informa quantas imagens foram lidas e apagadas. Cada falha é registrada como `media_removed_asset_failed` (com o ID do asset e o motivo) ou `media_removed_asset_not_finalized` (o asset ganhou vínculo depois de os objetos serem apagados, o que o gatilho `product_media_new_asset_only` deve impedir: tratar como incidente e verificar se a imagem ainda existe). Uma execução que falha em algum asset termina com `media_removed_reconciliation_incomplete` (o reconciliador de markers roda do mesmo jeito) e tenta de novo na hora seguinte; o asset só sai do banco depois que os objetos saíram do bucket, então uma falha nunca deixa objeto sem dono.
+- Uma chave de asset que não parece uma chave de mídia v2 não é tocada e conta como falha para investigação; não apague prefixos em massa.
+- Não há prova no R2 real desta etapa (a implantação está adiada pelo responsável): ao implantar, confirmar com um produto de teste que remover uma imagem esvazia `media/v2/` e `media/derivatives/v1/` dela em até uma hora.
+
 ## Falhas e escalonamento
 
 - Se a role cleanup conseguir ler diretamente as tabelas ou se a role tenant conseguir executar a função, desabilite a binding de cleanup e trate como falha de privilégio antes de habilitar o cron.

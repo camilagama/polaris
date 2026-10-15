@@ -1,6 +1,6 @@
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
 import type { MediaBucketBinding } from "./environment";
-import { isMediaObjectKey } from "./media-upload-command";
+import { isMediaObjectKey, mediaDerivativeKey } from "./media-upload-command";
 
 const MEDIA_STAGING_PREFIX = "media/staging/v1/";
 export const MEDIA_STAGING_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -162,6 +162,109 @@ export async function reconcileStagedMedia(input: {
 
   if (report.failed > 0) {
     throw new Error("media_staging_reconciliation_incomplete");
+  }
+  return report;
+}
+
+/** An image removed from a product waits this long (counted from the creation of its asset). */
+export const MEDIA_REMOVED_RETENTION_MS = 60 * 60 * 1000;
+// Each asset costs three bucket calls, and a Worker invocation has a ceiling on
+// the calls it may make: keep a run small, the next hourly run continues.
+const REMOVED_BATCH_SIZE = 50;
+const MAX_REMOVED_BATCHES = 3;
+
+export interface RemovedMediaReport {
+  deleted: number;
+  failed: number;
+  scanned: number;
+}
+
+type RemovedAssetResult = "deleted" | "failed";
+
+/**
+ * Deletes the master and the derivatives of one removed image, and only then
+ * finishes its cleanup in the database. The order matters: if the bucket call
+ * fails nothing was recorded and the next run finds the asset again; if the
+ * database call fails the next run deletes the (already absent) objects again,
+ * which is harmless. An object can therefore never be left without an owner.
+ * Every failure is logged with the asset ID, so an operator can find it.
+ */
+async function reclaimRemovedAsset(input: {
+  asset: { assetId: string; storageKey: string };
+  cleanupClient: MediaCleanupClient;
+  mediaBucket: MediaBucketBinding;
+}): Promise<RemovedAssetResult> {
+  const { assetId, storageKey } = input.asset;
+  try {
+    if (!isMediaObjectKey(storageKey)) {
+      throw new Error("media_removed_storage_key_invalid");
+    }
+    await input.mediaBucket.delete(storageKey);
+    await input.mediaBucket.delete(mediaDerivativeKey(assetId, 320));
+    await input.mediaBucket.delete(mediaDerivativeKey(assetId, 640));
+    if (await input.cleanupClient.finalizeUnlinked(assetId)) {
+      return "deleted";
+    }
+    // The asset gained a link (or vanished) after its objects were deleted: the
+    // database guard says a link is only added to a new asset, so this should
+    // never happen. If it does, an image may have lost its files: never silent.
+    console.error("media_removed_asset_not_finalized", { assetId });
+    return "failed";
+  } catch (error: unknown) {
+    console.error("media_removed_asset_failed", {
+      assetId,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+    return "failed";
+  }
+}
+
+/**
+ * Reclaims the stored objects of images that were removed from their product
+ * (nothing links to their asset anymore). Safe to run again at any time. An
+ * asset that fails is left out of the rest of the run, so it cannot starve the
+ * others.
+ */
+export async function reconcileRemovedMedia(input: {
+  cleanupClient: MediaCleanupClient;
+  mediaBucket: MediaBucketBinding;
+}): Promise<RemovedMediaReport> {
+  const report: RemovedMediaReport = { deleted: 0, failed: 0, scanned: 0 };
+  const seen = new Set<string>();
+  const failedAssetIds: string[] = [];
+
+  for (let batch = 0; batch < MAX_REMOVED_BATCHES; batch += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: Each batch is read after the previous one was finished, so finished assets are not listed again.
+    const assets = await input.cleanupClient.listUnlinked(
+      REMOVED_BATCH_SIZE,
+      MEDIA_REMOVED_RETENTION_MS,
+      failedAssetIds
+    );
+    const fresh = assets.filter((asset) => !seen.has(asset.assetId));
+    if (fresh.length === 0) {
+      break;
+    }
+    for (const asset of fresh) {
+      seen.add(asset.assetId);
+      // biome-ignore lint/performance/noAwaitInLoops: Sequential processing bounds the calls to the cleanup DB role and R2.
+      const result = await reclaimRemovedAsset({
+        asset,
+        cleanupClient: input.cleanupClient,
+        mediaBucket: input.mediaBucket,
+      });
+      report.scanned += 1;
+      if (result === "deleted") {
+        report.deleted += 1;
+      } else {
+        report.failed += 1;
+        failedAssetIds.push(asset.assetId);
+      }
+    }
+  }
+
+  if (report.failed > 0) {
+    console.error("media_removed_reconciliation_incomplete", report);
+    throw new Error("media_removed_reconciliation_incomplete");
   }
   return report;
 }

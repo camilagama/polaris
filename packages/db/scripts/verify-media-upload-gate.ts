@@ -387,10 +387,14 @@ async function main(): Promise<void> {
         false,
         `${grant.table_name} UPDATE denied`
       );
+      // Links can be removed since migration 0051 (an image is removed from a product);
+      // the asset itself never can. Only the position of a product link can change
+      // (a column grant: table-level UPDATE stays false).
+      const linkTable = grant.table_name !== "media_assets";
       assert.equal(
         grant.can_delete,
-        false,
-        `${grant.table_name} DELETE denied`
+        linkTable,
+        `${grant.table_name} DELETE ${linkTable ? "granted" : "denied"}`
       );
     }
 

@@ -9,6 +9,7 @@ import {
   ProductDeletedError,
   ProductNotFoundError,
 } from "@polaris/domain/catalog/product";
+import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import {
   type CreateProductMediaAssetInput,
@@ -101,6 +102,7 @@ async function run() {
   const admin = createDatabase(adminUrl, { maxConnections: 2 });
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let loginRole: string | undefined;
+  let cleanupLoginRole: string | undefined;
   const tests: string[] = [];
 
   try {
@@ -571,6 +573,216 @@ async function run() {
       "of six concurrent removals exactly one removes, and two concurrent reorders leave tidy positions in one of the two orders"
     );
 
+    // ------------------- 8. reclaiming the objects of removed images
+    cleanupLoginRole = `polaris_media_cleanup_gate_${randomUUID().replaceAll("-", "")}`;
+    const cleanupPassword = randomBytes(24).toString("hex");
+    await admin.pool.query(
+      `CREATE ROLE "${cleanupLoginRole}" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${cleanupPassword}'`
+    );
+    await admin.pool.query(
+      `GRANT polaris_media_cleanup_runtime TO "${cleanupLoginRole}"`
+    );
+    const cleanupUrl = temporaryRuntimeUrl(
+      adminUrl,
+      cleanupLoginRole,
+      cleanupPassword
+    );
+    const asCleanup = async <T>(
+      operation: (client: Client) => Promise<T>
+    ): Promise<T> => {
+      const client = new Client({
+        connectionString: cleanupUrl,
+        connectionTimeoutMillis: 5000,
+      });
+      await client.connect();
+      try {
+        return await operation(client);
+      } finally {
+        await client.end();
+      }
+    };
+    const unlinked = (minAge: string) =>
+      asCleanup(async (client) => {
+        const result = await client.query<{
+          asset_id: string;
+          storage_key: string;
+        }>(
+          "SELECT asset_id, storage_key FROM public.list_unlinked_media_for_cleanup(500, $1::interval, ARRAY[]::uuid[])",
+          [minAge]
+        );
+        return result.rows;
+      });
+    const finalize = (assetId: string) =>
+      asCleanup(async (client) => {
+        const result = await client.query<{ finalized: boolean }>(
+          "SELECT public.finalize_unlinked_media_cleanup($1::uuid) AS finalized",
+          [assetId]
+        );
+        return result.rows[0]?.finalized;
+      });
+
+    const removedId = second.asset.assetId;
+    const removedKeyRow = await admin.pool.query<{ storage_key: string }>(
+      "SELECT storage_key FROM public.media_assets WHERE id = $1",
+      [removedId]
+    );
+    const removedStorageKey = removedKeyRow.rows[0]?.storage_key as string;
+    const listed = await unlinked("0 seconds");
+    assert.ok(
+      listed.some((row) => row.asset_id === removedId),
+      "a removed image is listed for cleanup"
+    );
+    const linkedNow = new Set(
+      (
+        await admin.pool.query<{ media_asset_id: string }>(
+          "SELECT media_asset_id FROM public.product_media"
+        )
+      ).rows.map((row) => row.media_asset_id)
+    );
+    assert.ok(
+      listed.every((row) => !linkedNow.has(row.asset_id)),
+      "an image that is still linked is never listed (a deleted product keeps its images)"
+    );
+    assert.equal(
+      (await unlinked("1 hour")).some((row) => row.asset_id === removedId),
+      false,
+      "a young asset waits out the retention"
+    );
+
+    assert.equal(
+      await finalize(first.asset.assetId),
+      false,
+      "an image that is still linked is not finalized"
+    );
+    assert.equal(
+      await finalize(removedId),
+      true,
+      "a removed image is finalized"
+    );
+    const afterFinalize = await admin.pool.query<{
+      assets: string;
+      claims: string;
+    }>(
+      `SELECT (SELECT count(*) FROM public.media_assets WHERE id = $1)::text AS assets,
+              (SELECT count(*) FROM public.media_cleanup_claims WHERE storage_key = $2)::text AS claims`,
+      [removedId, removedStorageKey]
+    );
+    assert.deepEqual(
+      [afterFinalize.rows[0]?.assets, afterFinalize.rows[0]?.claims],
+      ["0", "1"],
+      "the asset row is gone and its key is tombstoned"
+    );
+    assert.equal(
+      await finalize(removedId),
+      false,
+      "finalizing twice changes nothing"
+    );
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          `INSERT INTO public.media_assets (byte_size, content_type, height, input_fingerprint, organization_id, storage_key, upload_command_id, width)
+           VALUES (1, 'image/webp', 1, $1, $2, $3, $4, 1)`,
+          [
+            "a".repeat(64),
+            tenantA.organizationId,
+            removedStorageKey,
+            randomUUID(),
+          ]
+        ),
+      "23514",
+      "a reclaimed key can never be reused by a new asset",
+      "media_assets_storage_key_cleanup_claimed"
+    );
+    // an asset listed as failed in this run is left out of the next listing
+    const stillUnlinked = await unlinked("0 seconds");
+    const [firstUnlinked] = stillUnlinked;
+    if (firstUnlinked) {
+      const without = await asCleanup(async (client) => {
+        const result = await client.query<{ asset_id: string }>(
+          "SELECT asset_id FROM public.list_unlinked_media_for_cleanup(500, interval '0 seconds', $1::uuid[])",
+          [[firstUnlinked.asset_id]]
+        );
+        return result.rows.map((row) => row.asset_id);
+      });
+      assert.equal(without.includes(firstUnlinked.asset_id), false);
+      assert.equal(without.length, stillUnlinked.length - 1);
+    }
+    // the invariant the cleanup relies on: a link only for an asset created in the same
+    // transaction. A removed (unlinked) asset cannot be linked again, by any role.
+    const [removedUnlinked] = (await unlinked("0 seconds")).filter(
+      (row) => row.asset_id === ids[0]
+    );
+    assert.ok(removedUnlinked, "the race gate left an unlinked asset to try");
+    const relinkSql =
+      "INSERT INTO public.product_media (organization_id, product_id, media_asset_id, position) VALUES ($1, $2, $3, 99)";
+    const relinkParams = [tenantA.organizationId, racingProduct.id, ids[0]];
+    await expectSqlState(
+      () =>
+        withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
+          client.query(relinkSql, relinkParams)
+        ),
+      "23514",
+      "an existing asset cannot be linked again (tenant role)",
+      "product_media_new_asset_only"
+    );
+    await expectSqlState(
+      () => admin.pool.query(relinkSql, relinkParams),
+      "23514",
+      "an existing asset cannot be linked again (even bypassing row security)",
+      "product_media_new_asset_only"
+    );
+
+    // what the cleanup role and the tenant role may not do
+    await Promise.all([
+      ...[
+        "SELECT 1 FROM public.media_assets",
+        "SELECT 1 FROM public.product_media",
+        "DELETE FROM public.media_assets",
+        "SELECT 1 FROM public.media_cleanup_claims",
+      ].map((statement) =>
+        expectSqlState(
+          () => asCleanup((client) => client.query(statement)),
+          "42501",
+          `the cleanup login cannot reach the tables directly: ${statement}`
+        )
+      ),
+      ...[
+        "SELECT * FROM public.list_unlinked_media_for_cleanup(10, interval '0 seconds', ARRAY[]::uuid[])",
+        `SELECT public.finalize_unlinked_media_cleanup('${randomUUID()}'::uuid)`,
+      ].map((statement) =>
+        expectSqlState(
+          () =>
+            withRuntimeSqlContext(runtimeUrl, tenantA, (client) =>
+              client.query(statement)
+            ),
+          "42501",
+          `the tenant role cannot run the cleanup functions: ${statement.slice(0, 50)}`
+        )
+      ),
+      ...(
+        [
+          [0, "0 seconds"],
+          [501, "0 seconds"],
+          [10, "-1 hour"],
+        ] as const
+      ).map(([limit, age]) =>
+        expectSqlState(
+          () =>
+            asCleanup((client) =>
+              client.query(
+                "SELECT * FROM public.list_unlinked_media_for_cleanup($1, $2::interval, ARRAY[]::uuid[])",
+                [limit, age]
+              )
+            ),
+          "22023",
+          `invalid cleanup arguments: ${limit} ${age}`
+        )
+      ),
+    ]);
+    tests.push(
+      "the cleanup role lists the images nothing links to (never a linked one, never before the retention) and finalizes only those: the asset row goes, its key is tombstoned and can never be reused, finalizing twice changes nothing, and neither the cleanup login nor the tenant role can reach the tables or the other's functions"
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -585,6 +797,12 @@ async function run() {
       )
     );
   } finally {
+    if (cleanupLoginRole) {
+      await admin.pool.query(
+        `REVOKE polaris_media_cleanup_runtime FROM "${cleanupLoginRole}"`
+      );
+      await admin.pool.query(`DROP ROLE IF EXISTS "${cleanupLoginRole}"`);
+    }
     if (runtime) {
       await runtime.pool.end();
     }
