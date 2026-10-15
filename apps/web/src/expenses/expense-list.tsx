@@ -226,6 +226,14 @@ function ExpenseCard({
           {voided ? (
             <span className="category-status status-deleted">Anulada</span>
           ) : null}
+          {expense.recurringRuleId ? (
+            <span
+              className="category-status status-active"
+              title="Lançada automaticamente por uma despesa recorrente"
+            >
+              Recorrente
+            </span>
+          ) : null}
         </div>
         <p className="expense-card-meta">
           {expense.categoryName}

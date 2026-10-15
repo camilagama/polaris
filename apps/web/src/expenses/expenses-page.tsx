@@ -12,6 +12,7 @@ import {
   formatMonthLabel,
   monthOfDay,
 } from "./expense-model";
+import { ExpenseRulesPanel } from "./expense-rules-panel";
 import { FeedbackMessage } from "./feedback-message";
 import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
@@ -162,6 +163,12 @@ export function ExpensesPage() {
     [clearFeedback]
   );
 
+  // The server generates the occurrences that fell due when the list is read,
+  // so a changed rule means the list (and the month total) must be read again.
+  const handleRulesChanged = useCallback(async () => {
+    await Promise.all([refresh(), reloadCategories()]);
+  }, [refresh, reloadCategories]);
+
   const handleRetry = useCallback(() => {
     refresh();
   }, [refresh]);
@@ -226,6 +233,13 @@ export function ExpensesPage() {
           />
         </div>
       </section>
+
+      <ExpenseRulesPanel
+        categories={categories.state.categories}
+        onChanged={handleRulesChanged}
+        organizationId={organizationId}
+        today={today}
+      />
 
       <ExpenseCategoriesPanel
         onReload={reloadCategories}

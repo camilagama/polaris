@@ -60,6 +60,7 @@ const gates: Gate[] = [
   ["review-hardening", "verify-review-hardening-gate.ts"],
   ["read-models", "verify-read-models-gate.ts"],
   ["expenses", "verify-expenses-gate.ts"],
+  ["expense-recurrence", "verify-expense-recurrence-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
@@ -135,6 +136,7 @@ const suites: Record<string, string[]> = {
     "review-hardening",
     "read-models",
     "expenses",
+    "expense-recurrence",
     "offline-devices",
     "offline-lease",
     "sync-log",
@@ -159,7 +161,7 @@ const suites: Record<string, string[]> = {
     "read-models",
   ],
   // Phase 6 (expenses and analytics): grows with every gate of the phase.
-  gate6: ["expenses"],
+  gate6: ["expenses", "expense-recurrence"],
   // Phase 5 (offline): grows with every offline gate.
   gate5: [
     "offline-devices",

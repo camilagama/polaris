@@ -9,6 +9,7 @@
     "./catalog/product": "./src/catalog/product.ts",
     "./customers/customer": "./src/customers/customer.ts",
     "./expenses/expense": "./src/expenses/expense.ts",
+    "./expenses/recurrence": "./src/expenses/recurrence.ts",
     "./inventory/calendar-date": "./src/inventory/calendar-date.ts",
     "./inventory/inventory": "./src/inventory/inventory.ts",
     "./inventory/inventory-cost": "./src/inventory/inventory-cost.ts",

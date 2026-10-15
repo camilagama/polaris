@@ -72,6 +72,7 @@
     "poc:offline-e2e:verify": "bun ../../apps/web/scripts/verify-offline-e2e-gate.ts",
     "poc:offline-lease:verify": "bun scripts/verify-offline-lease-gate.ts",
     "poc:expenses:verify": "bun scripts/verify-expenses-gate.ts",
+    "poc:expense-recurrence:verify": "bun scripts/verify-expense-recurrence-gate.ts",
     "poc:offline-customer:verify": "bun scripts/verify-offline-customer-gate.ts",
     "poc:offline-product:verify": "bun scripts/verify-offline-product-gate.ts",
     "poc:offline-sale:verify": "bun scripts/verify-offline-sale-gate.ts",

@@ -11,6 +11,7 @@ const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 const NOW = "2026-10-14T12:00:00.000Z";
+const TODAY = "2026-10-14";
 const rpcPrefix = /^\/rpc\//;
 
 interface FakeCategory {
@@ -37,11 +38,55 @@ interface FakeExpense {
   id: string;
   organizationId: string;
   payee: string | null;
+  recurringRuleId: string | null;
   saleId: string | null;
   status: "active" | "voided";
   updatedAt: string;
   version: number;
   voidedAt: string | null;
+}
+
+interface FakeRule {
+  amount: string;
+  archivedAt: string | null;
+  categoryGroup: string;
+  categoryId: string;
+  categoryName: string;
+  createdAt: string;
+  description: string;
+  endsOn: string | null;
+  frequency: "monthly" | "weekly" | "yearly";
+  generatedCount: number;
+  id: string;
+  organizationId: string;
+  payee: string | null;
+  startsOn: string;
+  updatedAt: string;
+  version: number;
+}
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+/** Date of occurrence `index`, counted from the start date (day clamped to the month). */
+function occurrenceDate(rule: FakeRule, index: number): string {
+  const [year = 0, month = 1, day = 1] = rule.startsOn.split("-").map(Number);
+  if (rule.frequency === "weekly") {
+    return new Date(Date.UTC(year, month - 1, day + 7 * index))
+      .toISOString()
+      .slice(0, 10);
+  }
+  const monthsAhead = rule.frequency === "monthly" ? index : 12 * index;
+  const monthIndex = month - 1 + monthsAhead;
+  const targetYear = year + Math.floor(monthIndex / 12);
+  const targetMonth = (monthIndex % 12) + 1;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  return `${targetYear}-${pad(targetMonth)}-${pad(Math.min(day, lastDay))}`;
+}
+
+/** The date of the next occurrence to generate, or null when the rule is over. */
+function nextOccurrenceOn(rule: FakeRule): string | null {
+  const date = occurrenceDate(rule, rule.generatedCount);
+  return rule.endsOn !== null && date > rule.endsOn ? null : date;
 }
 
 function category(n: number, groupKey: string, name: string): FakeCategory {
@@ -66,8 +111,126 @@ class FakeExpenseServer {
     category(3, "taxes", "Impostos"),
   ];
   readonly expenses: FakeExpense[] = [];
+  readonly rules: FakeRule[] = [];
   calls: string[] = [];
   private next = 100;
+
+  /** Like the real server: reading generates the occurrences that fell due, each an ordinary expense. */
+  private generateDue() {
+    for (const rule of this.rules) {
+      if (rule.archivedAt !== null) {
+        continue;
+      }
+      for (
+        let date = nextOccurrenceOn(rule);
+        date !== null && date <= TODAY;
+        date = nextOccurrenceOn(rule)
+      ) {
+        this.next += 1;
+        this.expenses.push({
+          amount: rule.amount,
+          categoryGroup: rule.categoryGroup,
+          categoryId: rule.categoryId,
+          categoryName: rule.categoryName,
+          competenceOn: date,
+          createdAt: NOW,
+          description: rule.description,
+          id: uuid(this.next),
+          organizationId: ORGANIZATION,
+          payee: rule.payee,
+          recurringRuleId: rule.id,
+          saleId: null,
+          status: "active",
+          updatedAt: NOW,
+          version: 1,
+          voidedAt: null,
+        });
+        rule.generatedCount += 1;
+      }
+    }
+  }
+
+  private ruleView(rule: FakeRule) {
+    return {
+      ...rule,
+      nextOccurrenceOn: nextOccurrenceOn(rule),
+      status: rule.archivedAt === null ? "active" : "archived",
+    };
+  }
+
+  /** The five `expense/*Rule` procedures. */
+  private handleRule(procedure: string, input: Record<string, unknown>) {
+    if (procedure === "expense/listRules") {
+      this.generateDue();
+      return this.ok({
+        rules: this.rules
+          .map((rule) => this.ruleView(rule))
+          .filter(
+            (r) =>
+              input.status === "all" || r.status === (input.status ?? "active")
+          ),
+      });
+    }
+    if (procedure === "expense/createRule") {
+      const cat = this.categories.find((c) => c.id === input.categoryId);
+      if (!cat) {
+        return this.fail("NOT_FOUND", 404);
+      }
+      this.next += 1;
+      const created: FakeRule = {
+        amount: Number(input.amount).toFixed(2),
+        archivedAt: null,
+        categoryGroup: cat.groupKey,
+        categoryId: cat.id,
+        categoryName: cat.name,
+        createdAt: NOW,
+        description: String(input.description),
+        endsOn: (input.endsOn as string | null | undefined) ?? null,
+        frequency: input.frequency as FakeRule["frequency"],
+        generatedCount: 0,
+        id: uuid(this.next),
+        organizationId: ORGANIZATION,
+        payee: (input.payee as string | null | undefined) ?? null,
+        startsOn: String(input.startsOn),
+        updatedAt: NOW,
+        version: 1,
+      };
+      this.rules.push(created);
+      return this.ok(this.ruleView(created));
+    }
+    const found = this.rules.find((r) => r.id === input.id);
+    if (!found) {
+      return this.fail("NOT_FOUND", 404);
+    }
+    if (found.version !== input.expectedVersion) {
+      return this.fail("CONFLICT", 409);
+    }
+    if (procedure === "expense/updateRule") {
+      const cat = this.categories.find((c) => c.id === input.categoryId);
+      if (!cat) {
+        return this.fail("NOT_FOUND", 404);
+      }
+      found.amount = Number(input.amount).toFixed(2);
+      found.categoryGroup = cat.groupKey;
+      found.categoryId = cat.id;
+      found.categoryName = cat.name;
+      found.description = String(input.description);
+      found.endsOn = (input.endsOn as string | null | undefined) ?? null;
+      found.payee = (input.payee as string | null | undefined) ?? null;
+    } else if (procedure === "expense/archiveRule") {
+      found.archivedAt = NOW;
+    } else {
+      // resuming skips the periods that passed while the rule was paused
+      found.archivedAt = null;
+      let count = found.generatedCount;
+      while (occurrenceDate(found, count) <= TODAY) {
+        count += 1;
+      }
+      found.generatedCount = count;
+    }
+    found.version += 1;
+    return this.ok({ changed: true, rule: this.ruleView(found) });
+  }
 
   private fail(code: string, status: number) {
     return {
@@ -129,6 +292,7 @@ class FakeExpenseServer {
         return this.ok({ category: found, changed: true });
       }
       case "expense/list": {
+        this.generateDue();
         const rows = this.expenses
           .filter(
             (e) =>
@@ -168,6 +332,7 @@ class FakeExpenseServer {
           id: uuid(this.next),
           organizationId: ORGANIZATION,
           payee: (input.payee as string | null | undefined) ?? null,
+          recurringRuleId: null,
           saleId: null,
           status: "active",
           updatedAt: NOW,
@@ -198,6 +363,12 @@ class FakeExpenseServer {
         found.version += 1;
         return this.ok({ changed: true, expense: found });
       }
+      case "expense/listRules":
+      case "expense/createRule":
+      case "expense/updateRule":
+      case "expense/archiveRule":
+      case "expense/restoreRule":
+        return this.handleRule(procedure, input);
       default:
         return this.fail("NOT_FOUND", 404);
     }
@@ -360,4 +531,98 @@ test("uma categoria com nome já usado é recusada com a mensagem da tela", asyn
   await expect(
     page.getByText("Já existe uma categoria com esse nome")
   ).toBeVisible();
+});
+
+const rulesPanel = (page: Page) => page.locator("details.expense-rules");
+const listedExpense = (page: Page, text: string) =>
+  page.locator(".expense-list-body article").filter({ hasText: text });
+
+async function openRulesPanel(page: Page) {
+  await rulesPanel(page).locator("summary").click();
+}
+
+/** Creates a monthly rule that started three months before today. */
+async function createMonthlyRule(page: Page, description: string) {
+  const panel = rulesPanel(page);
+  await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
+  await panel.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+  await panel.locator("#expense-rule-categoryId").selectOption({
+    label: "Aluguel",
+  });
+  await panel.getByLabel("Frequência").selectOption({ label: "Todo mês" });
+  await panel.getByLabel("Começa em").fill("2026-07-14");
+  await panel.getByLabel("Descrição").fill(description);
+  await panel.getByRole("button", { name: "Criar despesa recorrente" }).click();
+  await expect(panel.getByText("Despesa recorrente criada.")).toBeVisible();
+}
+
+test("uma despesa recorrente criada no passado lança a ocorrência do mês e mostra a próxima", async ({
+  page,
+}) => {
+  // the screen reads today's date from the browser: keep it equal to the fake server's
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await openRulesPanel(page);
+
+  await createMonthlyRule(page, "Assinatura do sistema");
+
+  // everything missed was generated at once: July to October
+  expect(server.expenses).toHaveLength(4);
+  expect(server.expenses.every((e) => e.recurringRuleId !== null)).toBe(true);
+  const occurrence = listedExpense(page, "Assinatura do sistema");
+  await expect(occurrence).toHaveCount(1);
+  await expect(occurrence).toContainText("R$ 1.200,00");
+  await expect(occurrence).toContainText("Competência 14/10/2026");
+  await expect(
+    occurrence.getByText("Recorrente", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("Total do período").locator("..")).toContainText(
+    "1.200,00"
+  );
+
+  const rule = rulesPanel(page).locator("article").filter({
+    hasText: "Assinatura do sistema",
+  });
+  await expect(rule).toContainText("Todo mês");
+  await expect(rule).toContainText("Começa em 14/07/2026");
+  await expect(rule).toContainText("Próxima: 14/11/2026");
+});
+
+test("pausar uma despesa recorrente a esconde, e retomar não lança os períodos da pausa", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await openRulesPanel(page);
+  await createMonthlyRule(page, "Assinatura do sistema");
+  const panel = rulesPanel(page);
+  const rule = panel.locator("article").filter({
+    hasText: "Assinatura do sistema",
+  });
+
+  await panel
+    .getByRole("button", {
+      name: "Pausar despesa recorrente Assinatura do sistema",
+    })
+    .click();
+  await expect(panel.getByText("Despesa recorrente pausada.")).toBeVisible();
+  await expect(rule).toHaveCount(0);
+
+  await panel.getByLabel("Mostrar pausadas").check();
+  await expect(rule.getByText("Pausada", { exact: true })).toBeVisible();
+  await expect(rule).toContainText("Geração suspensa até retomar");
+
+  await panel
+    .getByRole("button", {
+      name: "Retomar despesa recorrente Assinatura do sistema",
+    })
+    .click();
+  await expect(panel.getByText("Despesa recorrente retomada.")).toBeVisible();
+  await expect(rule.getByText("Pausada", { exact: true })).toHaveCount(0);
+  await expect(rule).toContainText("Próxima: 14/11/2026");
+  // nothing new was generated by pausing and resuming
+  expect(server.expenses).toHaveLength(4);
+  await expect(listedExpense(page, "Assinatura do sistema")).toHaveCount(1);
 });
