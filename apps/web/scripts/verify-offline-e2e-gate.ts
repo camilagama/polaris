@@ -65,7 +65,10 @@ const expectedDatabase =
 const DAY = 86_400_000;
 const droppedPattern = /dropped the response/;
 const dateDaysAgo = (days: number) =>
-  new Date(Date.now() - days * DAY).toISOString().slice(0, 10);
+  // the organization's calendar (America/Sao_Paulo), not UTC's
+  new Date(Date.now() - days * DAY).toLocaleDateString("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  });
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];

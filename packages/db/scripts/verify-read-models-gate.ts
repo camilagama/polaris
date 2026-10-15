@@ -364,7 +364,10 @@ async function run() {
     const ids = (result: Awaited<ReturnType<typeof history>>) =>
       result.sales.map((sale) => sale.id);
     const day = (offset: number) =>
-      new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+      // the organization's calendar (America/Sao_Paulo), not UTC's
+      new Date(Date.now() + offset * 86_400_000).toLocaleDateString("en-CA", {
+        timeZone: "America/Sao_Paulo",
+      });
     const all = await history();
     for (const sale of [old, recent, toCancel, toReturn]) {
       assert.ok(ids(all).includes(sale.sale.id));

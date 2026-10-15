@@ -45,7 +45,10 @@ const expectedDatabase =
 const DAY = 86_400_000;
 const hash = (n: number) => n.toString(16).padStart(64, "0");
 const calendarDate = (offsetDays: number) =>
-  new Date(Date.now() + offsetDays * DAY).toISOString().slice(0, 10);
+  // the organization's calendar (America/Sao_Paulo), not UTC's
+  new Date(Date.now() + offsetDays * DAY).toLocaleDateString("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  });
 
 const classify = (error: unknown): string | null => {
   if (error instanceof ProductIdConflictError) {
