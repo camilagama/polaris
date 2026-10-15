@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+  # A full run on demand, browser gate and dependency audit included.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,11 +15,34 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Minutes matter (private repository): GitHub bills every job rounded up to the
+# whole minute, so the cheap checks share one job and one install, the browser
+# gate and the audit run only when a change can affect them, and the browser
+# gate does not repeat on main what the pull request already proved. Nothing is
+# relaxed: every check that ran before still runs on every pull request that
+# can change its result.
 jobs:
-  lint:
-    name: Lint and boundaries
+  # Decides, in about a minute, which of the expensive jobs below are needed.
+  changes:
+    name: Changed areas
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      browser: ${{ steps.changed.outputs.browser }}
+      dependencies: ${{ steps.changed.outputs.dependencies }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The commit under test and its first parent (the base of a pull request merge).
+          fetch-depth: 2
+          persist-credentials: false
+      - id: changed
+        run: node scripts/ci-changed.mjs
+
+  checks:
+    name: Checks (lint, types, knip, build, tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,104 +56,44 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run format:check
-      - run: bun run boundaries
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - id: install
+        run: bun install --frozen-lockfile
+      # Every check runs even when an earlier one failed, so one run shows all
+      # the problems; the job still fails if any of them failed.
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run lint
+      - name: Format
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run format:check
+      - name: Import boundaries
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run boundaries
       # Schema drift: regenerating migrations from the Drizzle schema must change nothing.
-      - run: bun run --filter @polaris/db db:generate
-      - name: Fail on migration drift
+      - name: Schema drift
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
+          bun run --filter @polaris/db db:generate
           if [ -n "$(git status --porcelain -- packages/db/drizzle)" ]; then
             git status --porcelain -- packages/db/drizzle
             echo "::error::drizzle-kit generate produced changes; commit the generated migration.";
             exit 1
           fi
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run typecheck
+      - name: Knip
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run knip
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run build
+      - name: Unit tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run test
 
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-
-  unit:
-    name: Unit tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile
-      - run: bun run test
-
-  knip:
-    name: Knip
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile
-      - run: bun run knip
-
-  build:
-    name: Build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
-      - run: bun install --frozen-lockfile
-      - run: bun run build
   database:
     name: PostgreSQL 18 gates
     runs-on: ubuntu-24.04
@@ -169,7 +134,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: Create the runtime role that lives outside the migrations
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
@@ -178,11 +144,15 @@ jobs:
       - name: Run the sales and hardening gates in sequence
         run: bun run --filter @polaris/db gates:ci
 
+  # Only when a dependency can have changed; a new advisory should be visible,
+  # not block unrelated PRs.
   audit:
     name: Dependency audit
+    needs: changes
+    # a failed detection runs it anyway: never skipped by accident
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.dependencies == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # Advisory: a new advisory should be visible, not block unrelated PRs.
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,12 +167,19 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - run: bun audit --audit-level=high
 
+  # The most expensive job (about nine minutes). It runs on pull requests that
+  # change something it exercises (not on prose or database-only changes) and on
+  # demand; it does not repeat on main what the pull request already proved.
   offline-poc-browser:
     name: Offline persistence browser gate
+    needs: changes
+    # a failed detection runs it anyway: never skipped by accident
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -218,7 +195,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ github.job }}-${{ hashFiles('bun.lock') }}
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
