@@ -30,6 +30,24 @@ describe("which CI jobs a change affects", () => {
     ).toEqual({ browser: false, dependencies: false });
   });
 
+  it("skips the browser gate for the web app's server, Worker and gate scripts, which it never runs", () => {
+    expect(
+      classifyChanges([
+        "apps/web/src/server/routes/media.ts",
+        "apps/web/src/server/media-reconciler.test.ts",
+        "apps/web/worker/index.ts",
+        "apps/web/scripts/verify-offline-e2e-gate.ts",
+      ])
+    ).toEqual({ browser: false, dependencies: false });
+    // the client next to them is still covered
+    expect(
+      classifyChanges([
+        "apps/web/src/server/routes/media.ts",
+        "apps/web/src/lib/media-upload.ts",
+      ]).browser
+    ).toBe(true);
+  });
+
   it("runs the browser gate when the web app, a shared package or the workflow changes", () => {
     for (const file of [
       "apps/web/src/catalog/product-media-panel.tsx",
