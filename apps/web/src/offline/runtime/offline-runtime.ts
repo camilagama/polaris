@@ -157,6 +157,24 @@ interface CachedLease {
   lease: string;
 }
 
+/**
+ * The server refuses a lease when the plan does not include offline writes: the
+ * device is fine, so it is neither forgotten nor registered again; the app just
+ * stays online.
+ */
+function isPlanRefusal(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("data" in error)) {
+    return false;
+  }
+  const { data } = error;
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "reason" in data &&
+    data.reason === "entitlement_denied"
+  );
+}
+
 export class OfflineRuntime {
   private readonly dependencies: RuntimeDependencies;
   private readonly listeners = new Set<() => void>();
@@ -602,7 +620,8 @@ export class OfflineRuntime {
     } catch (error) {
       if (
         !this.dependencies.isOnline() ||
-        (error instanceof Error && error.message === "no_lease_offline")
+        (error instanceof Error && error.message === "no_lease_offline") ||
+        isPlanRefusal(error)
       ) {
         throw error;
       }

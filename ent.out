@@ -1,0 +1,37 @@
+﻿bun.exe : (node:20068) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as 
+aliases for 'verify-full'.
+No C:\Users\Junior\AppData\Roaming\npm\bun.ps1:14 caractere:3
++   & "$basedir/node_modules/bun/bin/bun.exe"   $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:20068) Wa... 'verify-full'.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq 
+semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `bun.exe --trace-warnings ...` to show where the warning was created)
+=== entitlements
+    failed in 126s
+    | Entitlements PostgreSQL gate failed (TenantAuthorizationError: capability_denied
+    | Error
+    |     at <anonymous> (D:\2 - Dev\2 - Worktree\quotas\polaris\packages\db\src\tenant-transaction.ts:140:19)
+    |     at async transaction (D:\2 - Dev\2 - Worktree\quotas\polaris\node_modules\.bun\drizzle-orm@0.45.3+c98c08f2587c2949\node_modules\drizzle-orm\node-postgres\session.js:186:28)
+    |     at async withTenantAs (D:\2 - Dev\2 - Worktree\quotas\polaris\packages\db\scripts\sales-gate-support.ts:169:16)
+    |     at async run (D:\2 - Dev\2 - Worktree\quotas\polaris\packages\db\scripts\verify-entitlements-gate.ts:290:11)
+    |     at processTicksAndRejections (unknown:7:39))
+{
+  "branch": "pr88-quotas-gate",
+  "database": "polaris_pr88_gate",
+  "results": [
+    {
+      "gate": "entitlements",
+      "seconds": 126,
+      "status": "failed"
+    }
+  ]
+}

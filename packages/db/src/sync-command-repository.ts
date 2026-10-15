@@ -1,6 +1,11 @@
+import {
+  EntitlementDeniedError,
+  EntitlementLimitReachedError,
+} from "@polaris/domain/billing/entitlements";
 import type { OfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { OFFLINE_LEASE_CLOCK_SKEW_MS } from "@polaris/domain/offline/offline-lease";
 import { and, eq, sql } from "drizzle-orm";
+import { isFlagEnabled } from "./entitlement-enforcement";
 import {
   OfflineLeaseRejectedError,
   validateOfflineLeaseClaims,
@@ -42,9 +47,9 @@ export interface RunSyncCommandInput {
   createdAt: Date;
   deviceId: string;
   /**
-   * Rechecks the organization's entitlement (billing). It runs after the lease
-   * checks; `false` refuses the command with `entitlement_changed`. Omitted until
-   * billing exists.
+   * An additional recheck of the organization's entitlement. The plan's
+   * `offline.write` flag is always checked after the lease checks; this runs
+   * after it, and `false` refuses the command with `entitlement_changed`.
    */
   isEntitled?: () => Promise<boolean>;
   /** The verified lease claims, or null with `precheckFailure` set. */
@@ -63,6 +68,29 @@ export const SYNC_REJECTION = {
   invalidCreationTime: "invalid_creation_time",
   wrongDevice: "wrong_device",
 } as const;
+
+/** The plan must include offline writes, and the caller's own recheck, when it has one, must agree. */
+async function isEntitledToWrite(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: RunSyncCommandInput
+): Promise<boolean> {
+  if (!(await isFlagEnabled(transaction, identity, "offline.write"))) {
+    return false;
+  }
+  return input.isEntitled ? await input.isEntitled() : true;
+}
+
+/**
+ * A plan limit reached while the command ran is the same outcome for the
+ * person: the plan does not allow it now, and what is queued is kept.
+ */
+function planRejection(error: unknown): string | null {
+  return error instanceof EntitlementLimitReachedError ||
+    error instanceof EntitlementDeniedError
+    ? SYNC_REJECTION.entitlementChanged
+    : null;
+}
 
 async function lockCommand(
   transaction: TenantRequestTransaction,
@@ -100,6 +128,16 @@ const rejected = (code: string): Omit<SyncCommandOutcome, "replayed"> => ({
   code,
   result: null,
   status: "rejected",
+});
+
+/**
+ * A refusal that depends on the plan, not on the command: it is not stored, so
+ * the same command (same ID) can be sent again and succeed once the plan allows
+ * it. Storing it would make the refusal permanent for that command ID.
+ */
+const notStored = (code: string): SyncCommandOutcome => ({
+  ...rejected(code),
+  replayed: false,
 });
 
 /** The creation time must sit inside the lease window (device clock, with skew). */
@@ -217,19 +255,18 @@ export async function runSyncCommand(
     );
   }
 
-  if (input.isEntitled && !(await input.isEntitled())) {
-    return await record(
-      transaction,
-      identity,
-      input,
-      rejected(SYNC_REJECTION.entitlementChanged)
-    );
+  if (!(await isEntitledToWrite(transaction, identity, input))) {
+    return notStored(SYNC_REJECTION.entitlementChanged);
   }
 
   let result: SyncJson;
   try {
     result = await transaction.transaction((savepoint) => execute(savepoint));
   } catch (error) {
+    const planCode = planRejection(error);
+    if (planCode !== null) {
+      return notStored(planCode);
+    }
     const code = classify(error);
     if (code === null) {
       throw error;

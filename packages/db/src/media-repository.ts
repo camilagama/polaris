@@ -9,7 +9,8 @@ import {
   ProductNotFoundError,
   ProductVariantNotFoundError,
 } from "@polaris/domain/catalog/product";
-import { and, asc, count, eq, inArray, max } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, max } from "drizzle-orm";
+import { assertRoomFor } from "./entitlement-enforcement";
 import { mediaAssets, productMedia, variantMedia } from "./schema/media";
 import { products, productVariants } from "./schema/product";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -166,25 +167,57 @@ async function productPosition(
   return next;
 }
 
-// Technical ceiling per product, enforced under the product row lock so
-// concurrent uploads cannot overshoot it.
+// Technical ceiling per product, then the plan's limits (per product and for the
+// whole organization), enforced under the product row lock and the organization
+// limit locks so concurrent uploads cannot overshoot them.
 async function assertProductMediaCapacity(
   transaction: TenantRequestTransaction,
   organizationId: string,
   productId: string
 ): Promise<void> {
-  const [row] = await transaction
-    .select({ total: count() })
-    .from(productMedia)
-    .where(
-      and(
-        eq(productMedia.organizationId, organizationId),
-        eq(productMedia.productId, productId)
-      )
-    );
-  if ((row?.total ?? 0) >= MAX_PRODUCT_MEDIA) {
+  const productImages = async () => {
+    const [row] = await transaction
+      .select({ total: count() })
+      .from(productMedia)
+      .where(
+        and(
+          eq(productMedia.organizationId, organizationId),
+          eq(productMedia.productId, productId)
+        )
+      );
+    return row?.total ?? 0;
+  };
+  if ((await productImages()) >= MAX_PRODUCT_MEDIA) {
     throw new ProductMediaLimitError();
   }
+  const scope = { organizationId };
+  await assertRoomFor(
+    transaction,
+    scope,
+    "images.per_product.max",
+    1,
+    productImages
+  );
+  // images of deleted products no longer count; archived ones still do
+  await assertRoomFor(transaction, scope, "images.active.max", 1, async () => {
+    const [row] = await transaction
+      .select({ total: count() })
+      .from(productMedia)
+      .innerJoin(
+        products,
+        and(
+          eq(products.organizationId, productMedia.organizationId),
+          eq(products.id, productMedia.productId)
+        )
+      )
+      .where(
+        and(
+          eq(productMedia.organizationId, organizationId),
+          isNull(products.deletedAt)
+        )
+      );
+    return row?.total ?? 0;
+  });
 }
 
 export async function findMediaUploadCommand(

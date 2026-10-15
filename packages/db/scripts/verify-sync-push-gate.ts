@@ -446,18 +446,31 @@ async function run() {
     );
     assert.equal(prechecked.code, "lease_invalid");
     assert.equal(ran, false);
+    const unentitledId = randomUUID();
     const unentitled = await push({
-      commandId: randomUUID(),
+      commandId: unentitledId,
       isEntitled: () => Promise.resolve(false),
     });
     assert.equal(unentitled.code, "entitlement_changed");
+    assert.equal(
+      Number(
+        (
+          await admin.pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.sync_commands WHERE command_id = $1",
+            [unentitledId]
+          )
+        ).rows[0]?.count
+      ),
+      0,
+      "a plan refusal is not stored: the same command can be sent again"
+    );
     const entitled = await push({
       commandId: randomUUID(),
       isEntitled: () => Promise.resolve(true),
     });
     assert.equal(entitled.status, "accepted");
     tests.push(
-      "a precheck failure (bad lease, bad payload) and a lost entitlement are refused with stored codes before the domain command runs"
+      "a precheck failure (bad lease, bad payload) is refused with a stored code, and a lost entitlement with an unstored one (retryable), before the domain command runs"
     );
 
     // ------------------------------------------------------- 8. concurrency

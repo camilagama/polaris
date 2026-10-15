@@ -183,7 +183,11 @@ describe("the attention summary", () => {
     const cases: [string, string, string[]][] = [
       ["inventory_version_conflict", "version_conflict", ["discard"]],
       ["sku_conflict", "sku_conflict", ["discard"]],
-      ["entitlement_changed", "entitlement_changed", ["review_account"]],
+      [
+        "entitlement_changed",
+        "entitlement_changed",
+        ["review_account", "retry"],
+      ],
       [
         "authorization_revoked",
         "authorization_revoked",
@@ -302,6 +306,22 @@ describe("resolving an item", () => {
     await expect(
       resubmitAttentionItem(account, { lease, outbox })
     ).rejects.toThrow("action_not_available");
+  });
+
+  it("sends the very same command again after a refusal that was only about the plan", async () => {
+    const { lease, outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "entitlement_changed");
+    const item = await itemOf(outbox);
+    expect(item.actions).toContain("retry");
+
+    await resubmitAttentionItem(item, { lease, outbox });
+
+    const after = await outbox.snapshot();
+    expect(after.commands).toHaveLength(1);
+    expect(after.commands[0]?.commandId).toBe(refused.commandId);
+    expect(after.commands[0]?.status).toBe("pending");
+    expect(after.commands[0]?.rejection).toBeNull();
   });
 
   it("says what a discard loses, per kind", () => {

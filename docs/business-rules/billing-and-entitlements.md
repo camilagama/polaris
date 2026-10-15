@@ -10,3 +10,6 @@
 - Organização sem registro de billing está no Free. O plano em vigor depende do fim do acesso: trial, período ou carência vencidos contam como Free mesmo antes de o registro ser atualizado, e acesso Pro sempre tem data de fim.
 - Concessão temporária (suporte, promoção) tem prazo e motivo, e só eleva: nunca reduz um limite nem desliga uma flag. Uma organização não concede acesso a si mesma.
 - Um evento de billing que não se aplica ao estado atual é recusado, não ignorado. Sair do Pro resulta em Free, ou em Free acima do limite quando a organização tem mais do que o Free permite; os dados ficam e só novas operações são restringidas.
+- Os limites do plano valem no servidor, onde o dado é escrito, e não só na interface: variantes e imagens da organização (e imagens por produto), metas ativas e escrita offline. Uma adição que passaria do limite é recusada com o limite atingido; duas adições simultâneas nunca passam juntas.
+- Produto excluído deixa de contar; arquivado continua contando. Quem está acima do limite (após um downgrade) mantém tudo e só não adiciona.
+- Escrita offline é um recurso do plano: sem ela não há lease, e um comando que chega depois de um downgrade é rejeitado com código guardado, sem apagar o que está na fila do aparelho.

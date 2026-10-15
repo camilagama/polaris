@@ -35,6 +35,7 @@ export type AttentionAction =
   | "discard"
   | "resubmit"
   | "resubmit_without_profile"
+  | "retry"
   | "review_account";
 
 export interface AttentionItem {
@@ -171,7 +172,7 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
     case "sale_too_old":
       return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
     case "entitlement_changed":
-      return "O plano desta organização não permite mais estes registros. Regularize o plano; o que está na fila será enviado depois. Nada foi perdido.";
+      return "O plano desta organização não permite mais estes registros. Regularize o plano e use Tentar de novo: o registro é enviado como está. Nada foi perdido.";
     case "authorization_revoked":
       return "O acesso deste aparelho ou desta conta mudou: foi removido, revogado ou expirou. Entre de novo com uma conta autorizada; se o acesso não voltar, este registro não poderá ser enviado.";
     default:
@@ -184,7 +185,8 @@ function actionsFor(
   kind: AttentionItem["kind"]
 ): AttentionAction[] {
   if (cause === "entitlement_changed") {
-    return ["review_account"];
+    // the refusal is not stored: once the plan allows it, the same command goes through
+    return ["review_account", "retry"];
   }
   if (cause === "authorization_revoked") {
     return ["review_account", "discard"];
@@ -283,11 +285,19 @@ export async function discardAttentionItem(
   }
 }
 
-/** The "send it again" action: only a sale whose cause can have been fixed. */
+/**
+ * The "send it again" action: a sale whose cause can have been fixed, or any
+ * command the server refused only because of the plan (it sends the very same
+ * command again).
+ */
 export async function resubmitAttentionItem(
   item: AttentionItem,
   { lease, outbox }: { lease: string; outbox: Outbox }
 ): Promise<void> {
+  if (item.actions.includes("retry")) {
+    await outbox.retry(item.commandId);
+    return;
+  }
   const withoutProfile = item.actions.includes("resubmit_without_profile");
   if (
     !(

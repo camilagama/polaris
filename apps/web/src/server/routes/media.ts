@@ -1,4 +1,5 @@
 import type { ProductMediaReadModel } from "@polaris/db/media-repository";
+import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
 import {
   assertProductCanReceiveMedia,
   createProductMediaAsset,
@@ -275,6 +276,15 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
       409
     );
   }
+  if (error instanceof EntitlementLimitReachedError) {
+    return context.json(
+      {
+        error: { code: error.code, limit: error.key },
+        requestId: context.get("requestId"),
+      },
+      409
+    );
+  }
   if (
     error instanceof ProductNotFoundError ||
     error instanceof ProductDeletedError ||
@@ -450,7 +460,8 @@ function canCompensateRejectedMediaWrite(error: unknown): boolean {
     error instanceof ProductDeletedError ||
     error instanceof ProductVariantNotFoundError ||
     error instanceof MediaUploadCommandConflictError ||
-    error instanceof ProductMediaLimitError
+    error instanceof ProductMediaLimitError ||
+    error instanceof EntitlementLimitReachedError
   );
 }
 

@@ -499,6 +499,12 @@ async function main() {
       userId,
     });
     fixtureOrganizations.push(result.organization.id);
+    // this gate exercises the catalog itself (a 50-variant product), which the plan
+    // limits: a new organization is on Free, so the fixture is made a paid one
+    await adminPool.query(
+      "INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ($1, 'active', now() + interval '365 days')",
+      [result.organization.id]
+    );
     return result;
   }
 

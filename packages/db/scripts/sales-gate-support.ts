@@ -129,7 +129,8 @@ export function recentInstant(hoursAgo = 3): string {
 export async function createTenantFixture(
   adminPool: AdminPool,
   label: string,
-  timezone = "America/Sao_Paulo"
+  timezone = "America/Sao_Paulo",
+  plan: "free" | "pro" = "pro"
 ): Promise<TenantFixture> {
   const userId = randomUUID();
   const organizationId = randomUUID();
@@ -145,6 +146,14 @@ export async function createTenantFixture(
     "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
     [organizationId, userId]
   );
+  // The gates test the domain behaviours, not the plan limits, so a fixture is a paid
+  // organization unless a gate asks for the Free plan (no billing record).
+  if (plan === "pro") {
+    await adminPool.query(
+      "INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ($1, 'active', now() + interval '365 days')",
+      [organizationId]
+    );
+  }
   return { organizationId, userId };
 }
 

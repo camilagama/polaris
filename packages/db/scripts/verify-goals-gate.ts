@@ -117,6 +117,13 @@ async function run() {
       admin.pool,
       "goals B"
     );
+    // this gate tests the goals themselves and the technical ceiling of 20: the plan limit
+    // (1 on Free, 3 on Pro) is raised for its tenants and has its own gate
+    await admin.pool.query(
+      `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, expires_at)
+       SELECT id, 'goals.active.max', 25, 'goals gate', now() + interval '1 day' FROM public.organizations WHERE id = ANY($1)`,
+      [[tenantA.organizationId, tenantB.organizationId]]
+    );
     loginRole = `polaris_goals_gate_${randomUUID().replaceAll("-", "")}`;
     const loginPassword = randomBytes(24).toString("hex");
     await admin.pool.query(

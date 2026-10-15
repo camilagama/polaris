@@ -178,10 +178,15 @@ describe("goal RPCs", () => {
 
   it("creates a goal with the identity from the session and an audit request ID", async () => {
     const createGoal = vi.fn(async () => row);
+    const settleGoals = vi.fn(async () => []);
     await expect(
       client(
         createRpcRouter({
-          goalRepository: { createGoal },
+          goalRepository: {
+            createGoal,
+            evaluateActiveGoals: () => Promise.resolve([]),
+            settleGoals,
+          },
           withTenantRequestContext: tenantStub(),
         })
       ).goal.create({
@@ -197,6 +202,8 @@ describe("goal RPCs", () => {
       status: "active",
       target: "1000.00",
     });
+    // the goals that already reached their target are settled before the new one counts
+    expect(settleGoals).toHaveBeenCalledTimes(1);
     expect(createGoal).toHaveBeenCalledWith({}, identity, {
       endsOn: "2026-10-31",
       kind: "net_sales",

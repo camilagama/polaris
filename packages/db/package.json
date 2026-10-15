@@ -65,6 +65,7 @@
     "gates:gate7": "bun scripts/run-gates.ts gate7",
     "poc": "bun scripts/poc.ts",
     "poc:billing-catalog:verify": "bun scripts/verify-billing-catalog-gate.ts",
+    "poc:entitlements:verify": "bun scripts/verify-entitlements-gate.ts",
     "poc:bootstrap:verify": "bun scripts/verify-bootstrap-gate.ts",
     "poc:customers:verify": "bun scripts/verify-customers-gate.ts",
     "poc:gate2:verify": "bun scripts/verify-gate2-runtime.ts",

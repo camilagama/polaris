@@ -97,6 +97,10 @@ async function run() {
       "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
       [secondOrganizationId, tenantA.userId]
     );
+    await admin.pool.query(
+      "INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ($1, 'active', now() + interval '365 days')",
+      [secondOrganizationId]
+    );
     const tenantA2 = {
       organizationId: secondOrganizationId,
       userId: tenantA.userId,
