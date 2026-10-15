@@ -11,6 +11,7 @@ import {
   MAX_EXPENSE_PAYEE_LENGTH,
 } from "@polaris/domain/expenses/expense";
 import { RECURRENCE_FREQUENCIES } from "@polaris/domain/expenses/recurrence";
+import { GOAL_KINDS } from "@polaris/domain/goals/goal";
 import { PAYMENT_FEE_MODES } from "@polaris/domain/sales/payment-profile";
 import { SALE_PAYMENT_METHODS } from "@polaris/domain/sales/sale-payment";
 import { z } from "zod";
@@ -238,6 +239,40 @@ const expenseCategoryName = z
   .refine((name) => [...name].length <= MAX_EXPENSE_CATEGORY_NAME_LENGTH, {
     message: "invalid_expense_category",
   });
+
+const goalKind = z.enum(GOAL_KINDS);
+
+const goal = z.object({
+  /** The measure when the goal settled (completed or missed). */
+  achievedValue: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  endsOn: z.string(),
+  id: z.string().uuid(),
+  kind: goalKind,
+  name: z.string().nullable(),
+  organizationId: z.string().min(1),
+  /** Progress so far, for an active goal only (derived from the period result). */
+  progress: z
+    .object({
+      /** True when the last day of the period is before today. */
+      periodEnded: z.boolean(),
+      /** Percent of the target with one place, or null when the progress is not positive. */
+      percent: z.string().nullable(),
+      reached: z.boolean(),
+      /** BRL decimal text, or a whole number for a sale-count goal. */
+      value: z.string(),
+    })
+    .nullable(),
+  settledAt: z.string().datetime().nullable(),
+  startsOn: z.string(),
+  status: z.enum(["active", "cancelled", "completed", "missed"]),
+  /** BRL decimal text for money goals, a whole number for a sale-count goal. */
+  target: z.string(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+});
+
+export type GoalReadModel = z.infer<typeof goal>;
 
 const paymentFeeConfiguration = z
   .object({
@@ -1137,6 +1172,70 @@ export const polarisContract = {
     void: oc
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), expense })),
+  },
+  goal: {
+    cancel: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), goal })),
+    create: oc
+      .input(
+        z.object({
+          endsOn: expenseCalendarDate,
+          kind: goalKind,
+          name: z.string().trim().max(100).nullish(),
+          organizationId: z.string().trim().min(1),
+          startsOn: expenseCalendarDate,
+          target: z.string().trim().min(1).max(64),
+        })
+      )
+      .output(goal),
+    // Reading goals also settles them: a goal whose target was reached becomes
+    // completed (and stays so), one whose period ended without it is missed.
+    list: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          status: z
+            .enum(["active", "all", "cancelled", "completed", "missed"])
+            .default("all"),
+        })
+      )
+      .output(z.object({ goals: z.array(goal) })),
+    targetChanges: oc
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          changes: z.array(
+            z.object({
+              changedAt: z.string().datetime(),
+              newTarget: z.string(),
+              previousTarget: z.string(),
+            })
+          ),
+        })
+      ),
+    update: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          name: z.string().trim().max(100).nullish(),
+          organizationId: z.string().trim().min(1),
+          target: z.string().trim().min(1).max(64).optional(),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), goal })),
   },
   device: {
     // Devices belong to the signed-in user, never to an organization: no

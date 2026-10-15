@@ -21,6 +21,7 @@ describe("tenant capability map", () => {
       "customer:update",
       "expense:create",
       "report:read",
+      "goal:manage",
       "organization:manage",
       "sync:push",
       "sync:read",
