@@ -45,7 +45,7 @@ export function ResultCards({ summary }: { summary: PeriodSummaryReadModel }) {
     ? "dashboard-card-result is-negative"
     : "dashboard-card-result";
   return (
-    <dl aria-live="polite" className="dashboard-cards">
+    <dl className="dashboard-cards">
       <ResultCard
         label="Vendas líquidas"
         value={formatMoneyOrDash(cards.netSales)}
@@ -66,7 +66,13 @@ export function ResultCards({ summary }: { summary: PeriodSummaryReadModel }) {
         hint="Margem de contribuição sobre as vendas líquidas."
         label="Margem"
         value={formatPercentOrDash(cards.marginPercent)}
-      />
+      >
+        {incomplete ? (
+          <span className="category-status status-archived dashboard-incomplete-tag">
+            estimativa incompleta
+          </span>
+        ) : null}
+      </ResultCard>
       <ResultCard label="Vendas" value={formatQuantity(cards.salesCount)} />
       <ResultCard
         label="Ticket médio"

@@ -231,6 +231,12 @@ describe("resultQuality", () => {
     expect(quality.salesCount).toBe(1);
   });
 
+  it("an expense linked to a sale is an expense: only linked ones are not 'no expenses'", () => {
+    expect(
+      resultQuality(result([sale({ linkedExpenses: ["5.00"] })], [])).missing
+    ).toEqual([]);
+  });
+
   it("counts the expenses linked to the counted sales", () => {
     const quality = resultQuality(
       result([sale({ linkedExpenses: ["5.00", "6.00"] })], ["1.00"])

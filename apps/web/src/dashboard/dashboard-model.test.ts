@@ -114,7 +114,7 @@ describe("qualityMessages", () => {
         processingFeesUnknown: 2,
       })
     ).toEqual([
-      "3 itens vendidos sem custo conhecido: o custo deles não entrou no CMV.",
+      "3 linhas de itens vendidos sem custo conhecido: o custo delas não entrou no CMV.",
       "2 vendas sem taxa de processamento conhecida: elas não entraram no resultado.",
       "1 venda com antecipação sem taxa conhecida: ela não entrou no resultado.",
       "Nenhuma despesa registrada neste período: o resultado pode estar acima do real.",
@@ -130,7 +130,7 @@ describe("qualityMessages", () => {
         missing: ["unknown_cost"],
       })
     ).toEqual([
-      "1 item vendido sem custo conhecido: o custo dele não entrou no CMV.",
+      "1 linha de item vendido sem custo conhecido: o custo dela não entrou no CMV.",
     ]);
   });
 

@@ -86,8 +86,8 @@ export interface ResultQuality {
  * How complete the result is, to avoid false precision. An unknown cost or fee
  * is left out of the amounts (never counted as zero), so the result is
  * "partial" whenever any was left out; a period with sales and no expense
- * recorded at all is "partial" too, because the result would otherwise read as
- * if the business had no costs besides the goods. A period with nothing at all
+ * recorded at all is "partial" too (no expense of any kind, linked or not), because the
+ * result would otherwise read as if the business had no costs besides the goods. A period with nothing at all
  * is "no_data".
  */
 export function resultQuality(result: PeriodResult): ResultQuality {
@@ -104,7 +104,11 @@ export function resultQuality(result: PeriodResult): ResultQuality {
   if (result.unknown.anticipationFees > 0) {
     missing.push("unknown_anticipation_fee");
   }
-  if (result.salesCount > 0 && result.operatingExpenseCount === 0) {
+  if (
+    result.salesCount > 0 &&
+    result.operatingExpenseCount === 0 &&
+    result.linkedExpenseCount === 0
+  ) {
     missing.push("no_expenses");
   }
   let level: ResultQualityLevel = "partial";

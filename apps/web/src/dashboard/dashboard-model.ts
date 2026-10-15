@@ -58,7 +58,7 @@ function missingMessage(
       return "Sem vendas neste período.";
     case "unknown_cost": {
       const count = quality.itemLinesWithUnknownCost;
-      return `${count} ${plural(count, "item vendido sem custo conhecido", "itens vendidos sem custo conhecido")}: o custo ${plural(count, "dele", "deles")} não entrou no CMV.`;
+      return `${count} ${plural(count, "linha de item vendido sem custo conhecido", "linhas de itens vendidos sem custo conhecido")}: o custo ${plural(count, "dela", "delas")} não entrou no CMV.`;
     }
     case "unknown_processing_fee": {
       const count = quality.processingFeesUnknown;

@@ -414,7 +414,7 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
   const banner = quality(page);
   await expect(banner).toContainText("Estimativa incompleta");
   await expect(banner).toContainText(
-    "2 itens vendidos sem custo conhecido: o custo deles não entrou no CMV."
+    "2 linhas de itens vendidos sem custo conhecido: o custo delas não entrou no CMV."
   );
   await expect(banner).toContainText(
     "1 venda sem taxa de processamento conhecida: ela não entrou no resultado."
