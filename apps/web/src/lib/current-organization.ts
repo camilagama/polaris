@@ -26,6 +26,7 @@ import {
 } from "./current-organization-model";
 import { orpcClient } from "./orpc";
 import { clearPaymentProfileCaches } from "./payment-profile-cache";
+import { clearPeriodSummaryCaches } from "./period-summary-cache";
 import { rpcErrorCode } from "./rpc-error";
 import { isSigningOut } from "./sign-out";
 
@@ -82,6 +83,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           // The session is over: its organizations must not be offered offline.
           clearOrganizationsCache(browserStorage());
           clearPaymentProfileCaches(browserStorage());
+          clearPeriodSummaryCaches(browserStorage());
         }
         const outcome = organizationLoadAfterFailure({
           cached: readOrganizationsCache(browserStorage()),

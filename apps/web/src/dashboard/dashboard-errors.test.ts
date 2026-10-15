@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { periodSummaryErrorMessage } from "./dashboard-errors";
+import {
+  periodSummaryErrorMessage,
+  periodSummaryMayUseCopy,
+} from "./dashboard-errors";
 
 describe("periodSummaryErrorMessage", () => {
   it("explains each code the server answers with", () => {
@@ -23,5 +26,32 @@ describe("periodSummaryErrorMessage", () => {
       fallback
     );
     expect(periodSummaryErrorMessage(new Error("boom"))).toBe(fallback);
+  });
+});
+
+describe("periodSummaryMayUseCopy", () => {
+  it("allows the copy when the server could not answer", () => {
+    expect(periodSummaryMayUseCopy(new TypeError("Failed to fetch"))).toBe(
+      true
+    );
+    expect(periodSummaryMayUseCopy({ code: "SERVICE_UNAVAILABLE" })).toBe(true);
+    expect(periodSummaryMayUseCopy({ code: "INTERNAL_SERVER_ERROR" })).toBe(
+      true
+    );
+    expect(periodSummaryMayUseCopy({ code: "BAD_GATEWAY" })).toBe(true);
+    expect(periodSummaryMayUseCopy({ code: "GATEWAY_TIMEOUT" })).toBe(true);
+  });
+
+  it("never lets the copy contradict an answer of the server", () => {
+    for (const code of [
+      "UNAUTHORIZED",
+      "FORBIDDEN",
+      "BAD_REQUEST",
+      "NOT_FOUND",
+      "CONFLICT",
+      "TOO_MANY_REQUESTS",
+    ]) {
+      expect(periodSummaryMayUseCopy({ code })).toBe(false);
+    }
   });
 });

@@ -38,6 +38,8 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
           capability: "report:read",
           isolationLevel: "repeatable read",
           operation: async (transaction, identity) => {
+            // taken before the read: nothing committed after it can be claimed as covered
+            const generatedAt = new Date().toISOString();
             const result = await read(transaction, identity, {
               from: input.from,
               to: input.to,
@@ -59,6 +61,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
                 processingFees: result.processingFees,
                 returns: result.returns,
               },
+              generatedAt,
               period: { from: input.from, to: input.to },
               quality: resultQuality(result),
             };

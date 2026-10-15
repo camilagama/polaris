@@ -119,6 +119,10 @@ describe("report.periodSummary", () => {
       operatingExpenses: "20.00",
     });
     expect(summary.period).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    // the server clock says how recent the confirmed records read are
+    expect(Math.abs(Date.parse(summary.generatedAt) - Date.now())).toBeLessThan(
+      60_000
+    );
     expect(summary.quality).toMatchObject({
       level: "partial",
       missing: ["unknown_processing_fee"],

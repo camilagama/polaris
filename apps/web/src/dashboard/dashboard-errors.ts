@@ -17,3 +17,22 @@ export function periodSummaryErrorMessage(error: unknown): string {
   }
   return "Não foi possível carregar o resultado. Tente novamente.";
 }
+
+/** Codes of a server that is down or not answering in time (not one that answered "no"). */
+const OUTAGE_CODES = new Set([
+  "BAD_GATEWAY",
+  "GATEWAY_TIMEOUT",
+  "INTERNAL_SERVER_ERROR",
+  "SERVICE_UNAVAILABLE",
+]);
+
+/**
+ * True when the server could not answer (no network, or an outage), so the
+ * device's copy of the month may stand in for it. A server that answered
+ * (unauthorized, forbidden, invalid request, not found...) said something the
+ * copy must never contradict.
+ */
+export function periodSummaryMayUseCopy(error: unknown): boolean {
+  const code = rpcErrorCode(error);
+  return code === undefined || OUTAGE_CODES.has(code);
+}

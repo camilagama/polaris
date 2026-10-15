@@ -5,8 +5,9 @@ import {
   EMPTY_VALUE,
   formatMoneyOrDash,
   formatPercentOrDash,
-  formatUpdatedAt,
+  formatUpdatedUntil,
   isIncompleteEstimate,
+  offlineCopyNotice,
   type PeriodChain,
   type PeriodQuality,
   qualityMessages,
@@ -86,14 +87,46 @@ describe("formatPercentOrDash", () => {
   });
 });
 
-describe("formatUpdatedAt", () => {
-  it("says the time of the last load", () => {
-    expect(formatUpdatedAt(new Date("2026-10-14T15:30:00.000Z"), "UTC")).toBe(
-      "Atualizado às 15:30"
+describe("formatUpdatedUntil", () => {
+  it("says the date and time the server read the figures, in the organization's zone", () => {
+    const readAt = "2026-10-14T15:30:00.000Z";
+    expect(formatUpdatedUntil(readAt, "UTC")).toBe(
+      "Atualizado até 14/10/2026 15:30"
     );
+    expect(formatUpdatedUntil(readAt, "America/Sao_Paulo")).toBe(
+      "Atualizado até 14/10/2026 12:30"
+    );
+    // the organization's calendar day, not the UTC one
     expect(
-      formatUpdatedAt(new Date("2026-10-14T15:30:00.000Z"), "America/Sao_Paulo")
-    ).toBe("Atualizado às 12:30");
+      formatUpdatedUntil("2026-10-14T02:05:00.000Z", "America/Sao_Paulo")
+    ).toBe("Atualizado até 13/10/2026 23:05");
+  });
+
+  it("does not fail on a time it cannot read", () => {
+    expect(formatUpdatedUntil("not a time", "UTC")).toBe(
+      `Atualizado até ${EMPTY_VALUE} ${EMPTY_VALUE}`
+    );
+  });
+});
+
+describe("offlineCopyNotice", () => {
+  const readAt = "2026-10-14T15:30:00.000Z";
+
+  it("names the confirmed result it shows and what is not in it", () => {
+    expect(offlineCopyNotice(readAt, "America/Sao_Paulo", 0)).toEqual({
+      pending: null,
+      summary:
+        "Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de 14/10/2026 às 12:30. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.",
+    });
+  });
+
+  it("counts the operations kept on the device, which never enter the result", () => {
+    expect(offlineCopyNotice(readAt, "UTC", 3).pending).toBe(
+      "Há 3 operações guardadas neste aparelho que ainda não entram no resultado."
+    );
+    expect(offlineCopyNotice(readAt, "UTC", 1).pending).toBe(
+      "Há 1 operação guardada neste aparelho que ainda não entra no resultado."
+    );
   });
 });
 
