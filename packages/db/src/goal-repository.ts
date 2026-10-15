@@ -19,6 +19,7 @@ import {
 } from "@polaris/domain/goals/goal";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { readPeriodFacts } from "./economics-repository";
+import { assertRoomFor } from "./entitlement-enforcement";
 import { organizationToday } from "./expense-repository";
 import { goalTargetChanges, goals } from "./schema/goal";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -103,16 +104,27 @@ export async function createGoal(
     input,
     await organizationToday(transaction, identity)
   );
-  const [{ active } = { active: 0 }] = await transaction
-    .select({ active: sql<number>`count(*)::int` })
-    .from(goals)
-    .where(
-      and(
-        eq(goals.organizationId, identity.organizationId),
-        eq(goals.status, "active")
-      )
-    );
-  if (active >= MAX_ACTIVE_GOALS) {
+  const countActive = async () => {
+    const [{ active } = { active: 0 }] = await transaction
+      .select({ active: sql<number>`count(*)::int` })
+      .from(goals)
+      .where(
+        and(
+          eq(goals.organizationId, identity.organizationId),
+          eq(goals.status, "active")
+        )
+      );
+    return active;
+  };
+  // the plan's limit (1 on Free, 3 on Pro), then the technical ceiling
+  await assertRoomFor(
+    transaction,
+    identity,
+    "goals.active.max",
+    1,
+    countActive
+  );
+  if ((await countActive()) >= MAX_ACTIVE_GOALS) {
     throw new GoalLimitReachedError();
   }
   const [created] = await transaction

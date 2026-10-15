@@ -299,6 +299,21 @@ describe("starting", () => {
     expect(runtime.context()?.deviceId).toBe(uuid(701));
   });
 
+  it("a plan without offline writes is not a broken device: it is kept, not registered again, and the app stays online", async () => {
+    const w = world();
+    w.failures.issueLease.push(
+      Object.assign(new Error("conflict"), {
+        data: { reason: "entitlement_denied" },
+      })
+    );
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).not.toBe("ready");
+    expect(w.calls.issueLease).toBe(1);
+    expect(w.calls.registerDevice).toBe(1);
+    expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
+  });
+
   it("a second user of the same browser gets their own device, lease and namespace, and the first user's work is left alone", async () => {
     const w = world();
     const first = w.make();

@@ -176,8 +176,11 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
   );
 
   const create = implementContract.goal.create.handler(
-    async ({ context, input }) =>
-      goalReadModel(
+    async ({ context, input }) => {
+      // a goal that already reached its target or whose period ended no longer
+      // counts against the plan's limit, but only once it is settled
+      await evaluateAndSettle(context, input.organizationId);
+      return goalReadModel(
         await run(context, input.organizationId, (transaction, identity) =>
           repository.createGoal(transaction, identity, {
             endsOn: input.endsOn,
@@ -189,7 +192,8 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
           })
         ),
         null
-      )
+      );
+    }
   );
 
   const update = implementContract.goal.update.handler(

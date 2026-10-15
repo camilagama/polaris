@@ -104,6 +104,11 @@ async function createTenantFixture(
       "VALUES ($1, $2, 'owner', 'active')",
     [organizationId, userId]
   );
+  // these gates exercise the media pipeline, which the plan limits: a paid organization
+  await adminPool.query(
+    "INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ($1, 'active', now() + interval '365 days')",
+    [organizationId]
+  );
   return { organizationId, userId };
 }
 

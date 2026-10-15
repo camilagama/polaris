@@ -84,11 +84,15 @@ async function run() {
 
     const tenantA: TenantFixture = await createTenantFixture(
       admin.pool,
-      "billing A"
+      "billing A",
+      "America/Sao_Paulo",
+      "free"
     );
     const tenantB: TenantFixture = await createTenantFixture(
       admin.pool,
-      "billing B"
+      "billing B",
+      "America/Sao_Paulo",
+      "free"
     );
     loginRole = `polaris_billing_gate_${randomUUID().replaceAll("-", "")}`;
     const loginPassword = randomBytes(24).toString("hex");

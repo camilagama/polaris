@@ -25,6 +25,7 @@ import {
   transitionProductLifecycle,
 } from "@polaris/domain/catalog/product";
 import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import { assertRoomFor } from "./entitlement-enforcement";
 import { categories } from "./schema/category";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { products, productVariants } from "./schema/product";
@@ -216,6 +217,33 @@ export async function listProducts(
     .orderBy(asc(products.name), asc(products.id));
 }
 
+/**
+ * Variants the organization holds against its plan: every variant of a product
+ * that has not been deleted (an archived product still counts; deleting frees).
+ */
+async function countOrganizationVariants(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+): Promise<number> {
+  const [row] = await transaction
+    .select({ total: sql<number>`count(*)::int` })
+    .from(productVariants)
+    .innerJoin(
+      products,
+      and(
+        eq(products.organizationId, productVariants.organizationId),
+        eq(products.id, productVariants.productId)
+      )
+    )
+    .where(
+      and(
+        eq(productVariants.organizationId, organizationId),
+        isNull(products.deletedAt)
+      )
+    );
+  return row?.total ?? 0;
+}
+
 export async function createProduct(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -238,6 +266,11 @@ export async function createProduct(
       categoryId
     );
   }
+
+  // the default variant is a variant: the plan's limit applies to it too
+  await assertRoomFor(transaction, identity, "variants.active.max", 1, () =>
+    countOrganizationVariants(transaction, identity.organizationId)
+  );
 
   let product: typeof products.$inferSelect | undefined;
   try {
@@ -934,6 +967,18 @@ export async function configureProductVariants(
     .limit(1);
   if (defaultVariantStockMovement) {
     throw new ProductDefaultVariantStockHistoryConflictError();
+  }
+
+  // the default variant is replaced by the configured ones: the net addition counts
+  const added = configuration.variants.length - 1;
+  if (added > 0) {
+    await assertRoomFor(
+      transaction,
+      identity,
+      "variants.active.max",
+      added,
+      () => countOrganizationVariants(transaction, identity.organizationId)
+    );
   }
 
   const optionRows = await transaction

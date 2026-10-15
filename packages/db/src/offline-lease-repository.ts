@@ -1,10 +1,12 @@
 import { capabilitiesForRole } from "@polaris/domain/authorization/capabilities";
+import { assertFlag } from "@polaris/domain/billing/entitlements";
 import {
   buildOfflineLeaseClaims,
   type OfflineLeaseClaims,
   planOfflineLeaseWindow,
 } from "@polaris/domain/offline/offline-lease";
 import { and, eq, sql } from "drizzle-orm";
+import { getEffectiveEntitlements } from "./billing-repository";
 import {
   type OfflineGrantRecord,
   recordOfflineGrant,
@@ -69,7 +71,7 @@ async function currentEpoch(
 
 export interface IssueOfflineLeaseInput {
   deviceId: string;
-  /** The end of the entitlement (a trial), when there is one. */
+  /** The end of the entitlement; defaults to the end of the organization's Pro access. */
   entitlementEndsAt?: Date | null;
   now?: Date;
   requestId?: string | null;
@@ -88,8 +90,12 @@ export async function issueOfflineLeaseGrant(
   identity: TenantRequestIdentity,
   input: IssueOfflineLeaseInput
 ): Promise<{ claims: OfflineLeaseClaims; grant: OfflineGrantRecord }> {
+  // offline writes are a Pro capability: Free gets no lease, and the lease never
+  // outlives the access that pays for it
+  const entitlements = await getEffectiveEntitlements(transaction, identity);
+  assertFlag(entitlements, "offline.write");
   const window = planOfflineLeaseWindow({
-    entitlementEndsAt: input.entitlementEndsAt ?? null,
+    entitlementEndsAt: input.entitlementEndsAt ?? entitlements.accessEndsAt,
     now: input.now ?? new Date(),
   });
   await lockAuthorizationEpoch(transaction, identity.userId);

@@ -209,6 +209,10 @@ describe("assertions", () => {
     expect(() =>
       assertWithinLimit(free, "variants.active.max", 45, 5)
     ).not.toThrow();
+    // adding nothing is allowed even when already over the limit
+    expect(() =>
+      assertWithinLimit(free, "variants.active.max", 80, 0)
+    ).not.toThrow();
     expect(() => assertWithinLimit(free, "variants.active.max", 45, 6)).toThrow(
       EntitlementLimitReachedError
     );

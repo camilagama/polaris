@@ -1,3 +1,7 @@
+import {
+  EntitlementDeniedError,
+  EntitlementLimitReachedError,
+} from "@polaris/domain/billing/entitlements";
 import { implement, ORPCError } from "@orpc/server";
 import {
   type CategoryReadModel,
@@ -699,6 +703,8 @@ const conflictRpcErrors = [
     ExpenseVoidedError,
     ExpenseRuleVersionConflictError,
     GoalLimitReachedError,
+    EntitlementDeniedError,
+    EntitlementLimitReachedError,
     GoalNotActiveError,
     GoalPeriodEndedError,
     GoalVersionConflictError,

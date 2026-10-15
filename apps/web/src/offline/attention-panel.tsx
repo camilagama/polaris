@@ -32,6 +32,7 @@ const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
+  retry: "Tentar de novo",
   review_account: "Revisar acesso e plano",
 };
 
@@ -46,7 +47,9 @@ function ActionButton({ action, busy, onAct }: ActionButtonProps) {
   return (
     <button
       className={
-        action === "resubmit" || action === "resubmit_without_profile"
+        action === "resubmit" ||
+        action === "resubmit_without_profile" ||
+        action === "retry"
           ? "primary-button"
           : "secondary-button"
       }
@@ -81,7 +84,8 @@ function ItemCard({
         setConfirming(true);
       } else if (
         action === "resubmit" ||
-        action === "resubmit_without_profile"
+        action === "resubmit_without_profile" ||
+        action === "retry"
       ) {
         onResubmit(item);
       } else {

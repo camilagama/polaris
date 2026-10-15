@@ -286,6 +286,10 @@ export function assertWithinLimit(
   current: number,
   adding = 1
 ): void {
+  // taking nothing away or adding nothing is not an addition, even over the limit
+  if (adding <= 0) {
+    return;
+  }
   const limit = entitlements.values[key];
   // a limit that is not a number is a broken catalog: refuse, never allow
   if (!Number.isFinite(limit) || current + adding > limit) {

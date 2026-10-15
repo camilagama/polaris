@@ -12,6 +12,12 @@ import type {
   TenantRequestTransaction,
 } from "./tenant-transaction";
 
+// The plan limits have their own gate against a real database; here the scripted
+// transaction only answers the technical ceiling.
+vi.mock("./entitlement-enforcement", () => ({
+  assertRoomFor: () => Promise.resolve(),
+}));
+
 const identity: TenantRequestIdentity = {
   capability: "product:update",
   organizationId: "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0",

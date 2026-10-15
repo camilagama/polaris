@@ -17,10 +17,12 @@ import {
   organizationBilling,
   planEntitlements,
 } from "./schema/billing";
-import type {
-  TenantRequestIdentity,
-  TenantRequestTransaction,
-} from "./tenant-transaction";
+import type { TenantRequestTransaction } from "./tenant-transaction";
+
+/** What billing reads need to know: which organization (row security scopes the rest). */
+export interface OrganizationScope {
+  organizationId: string;
+}
 
 /**
  * Billing reads (plan PR72 and PR73). Entitlements are derived here, on the
@@ -68,7 +70,7 @@ export async function listPlans(transaction: TenantRequestTransaction) {
 /** The organization's billing facts; no record means Free. */
 async function readBillingFacts(
   transaction: TenantRequestTransaction,
-  identity: TenantRequestIdentity
+  scope: OrganizationScope
 ): Promise<BillingFacts & { version: number }> {
   const [row] = await transaction
     .select({
@@ -77,7 +79,7 @@ async function readBillingFacts(
       version: organizationBilling.version,
     })
     .from(organizationBilling)
-    .where(eq(organizationBilling.organizationId, identity.organizationId));
+    .where(eq(organizationBilling.organizationId, scope.organizationId));
   if (!row) {
     return { accessEndsAt: null, state: "free", version: 0 };
   }
@@ -90,7 +92,7 @@ async function readBillingFacts(
 
 async function readGrants(
   transaction: TenantRequestTransaction,
-  identity: TenantRequestIdentity
+  scope: OrganizationScope
 ): Promise<EntitlementGrant[]> {
   const rows = await transaction
     .select({
@@ -100,7 +102,7 @@ async function readGrants(
       limitValue: entitlementGrants.limitValue,
     })
     .from(entitlementGrants)
-    .where(eq(entitlementGrants.organizationId, identity.organizationId));
+    .where(eq(entitlementGrants.organizationId, scope.organizationId));
   const grants: EntitlementGrant[] = [];
   for (const row of rows) {
     if (!isEntitlementKey(row.key)) {
@@ -121,11 +123,11 @@ async function readGrants(
  */
 export async function getEffectiveEntitlements(
   transaction: TenantRequestTransaction,
-  identity: TenantRequestIdentity
+  scope: OrganizationScope
 ): Promise<EffectiveEntitlements> {
   const catalog = await readPlanCatalog(transaction);
-  const facts = await readBillingFacts(transaction, identity);
-  const grants = await readGrants(transaction, identity);
+  const facts = await readBillingFacts(transaction, scope);
+  const grants = await readGrants(transaction, scope);
   const clock = await transaction.execute<{ now: Date }>(
     sql`SELECT now() AS now`
   );
