@@ -6,13 +6,17 @@ import {
   findMediaUploadCommand,
   getMediaAssetForDelivery,
   listProductMedia,
+  removeProductMedia,
+  reorderProductMedia,
 } from "@polaris/db/media-repository";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import {
   InvalidMediaCropError,
   MAX_MEDIA_INPUT_BYTES,
+  MAX_PRODUCT_MEDIA,
   MediaImageProcessingError,
   MediaImageTooLargeError,
+  InvalidMediaOrderError,
   MediaUploadCommandConflictError,
   ProductMediaLimitError,
   type NormalizedMediaCropRect,
@@ -56,6 +60,8 @@ export interface MediaRouteDependencies {
   listProductMedia: typeof listProductMedia;
   processMediaImage: ImageProcessor;
   processMediaDerivative: DerivativeProcessor;
+  removeProductMedia: typeof removeProductMedia;
+  reorderProductMedia: typeof reorderProductMedia;
   withTenantRequestContext: TenantRunner;
 }
 
@@ -271,6 +277,15 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
     return context.json(
       {
         error: { code: "product_media_limit" },
+        requestId: context.get("requestId"),
+      },
+      409
+    );
+  }
+  if (error instanceof InvalidMediaOrderError) {
+    return context.json(
+      {
+        error: { code: error.code },
         requestId: context.get("requestId"),
       },
       409
@@ -848,6 +863,43 @@ async function cleanupSuccessfulMediaAttempt(input: {
   }
 }
 
+/** A reorder body is a short list of IDs: anything larger is refused before it is read. */
+const MAX_ORDER_BODY_BYTES = 4096;
+
+async function readSmallJson(request: Request): Promise<unknown> {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (!Number.isFinite(declared) || declared > MAX_ORDER_BODY_BYTES) {
+    throw new InvalidMediaUploadRequestError();
+  }
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_ORDER_BODY_BYTES) {
+    throw new InvalidMediaUploadRequestError();
+  }
+  try {
+    return JSON.parse(text);
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: Preserve parser details internally while returning a stable request error.
+    throw new InvalidMediaUploadRequestError({ cause });
+  }
+}
+
+function parseMediaOrderBody(body: unknown): string[] {
+  const assetIds =
+    typeof body === "object" && body !== null && "assetIds" in body
+      ? body.assetIds
+      : null;
+  if (
+    !Array.isArray(assetIds) ||
+    assetIds.length > MAX_PRODUCT_MEDIA ||
+    assetIds.some(
+      (assetId) => typeof assetId !== "string" || !uuidPattern.test(assetId)
+    )
+  ) {
+    throw new InvalidMediaUploadRequestError();
+  }
+  return assetIds as string[];
+}
+
 export function createMediaRoutes(
   overrides: Partial<MediaRouteDependencies> = {}
 ): Hono<ServerEnv> {
@@ -862,6 +914,8 @@ export function createMediaRoutes(
   const imageProcessor = overrides.processMediaImage ?? processMediaImage;
   const derivativeProcessor =
     overrides.processMediaDerivative ?? processMediaDerivative;
+  const removeMedia = overrides.removeProductMedia ?? removeProductMedia;
+  const reorderMedia = overrides.reorderProductMedia ?? reorderProductMedia;
   const tenantRequest =
     overrides.withTenantRequestContext ?? withTenantRequestContext;
 
@@ -901,6 +955,72 @@ export function createMediaRoutes(
         capability: "catalog:read",
         operation: (transaction, identity) =>
           listMedia(transaction, identity.organizationId, productId),
+        request: context.req.raw,
+        requestedOrganizationId: organizationId,
+      });
+      return context.json({ media, requestId: context.get("requestId") });
+    } catch (error) {
+      return errorResponse(context, error);
+    }
+  });
+
+  app.delete("/api/products/:productId/media/:assetId", async (context) => {
+    const organizationId = context.req.header("x-organization-id") ?? "";
+    const productId = context.req.param("productId");
+    const assetId = context.req.param("assetId");
+    if (!(uuidPattern.test(productId) && uuidPattern.test(assetId))) {
+      return mediaNotFoundResponse(context);
+    }
+    if (!organizationId.trim() || organizationId !== organizationId.trim()) {
+      return errorResponse(context, new InvalidMediaUploadRequestError());
+    }
+    try {
+      const result = await tenantRequest({
+        bindings: context.env,
+        capability: "product:update",
+        operation: (transaction, identity) =>
+          removeMedia(transaction, identity, {
+            assetId,
+            productId,
+            requestId: context.get("requestId"),
+          }),
+        request: context.req.raw,
+        requestedOrganizationId: organizationId,
+      });
+      return context.json({
+        removed: result.removed,
+        requestId: context.get("requestId"),
+      });
+    } catch (error) {
+      return errorResponse(context, error);
+    }
+  });
+
+  app.put("/api/products/:productId/media/order", async (context) => {
+    const organizationId = context.req.header("x-organization-id") ?? "";
+    const productId = context.req.param("productId");
+    if (!uuidPattern.test(productId)) {
+      return mediaNotFoundResponse(context);
+    }
+    if (!organizationId.trim() || organizationId !== organizationId.trim()) {
+      return errorResponse(context, new InvalidMediaUploadRequestError());
+    }
+    let assetIds: string[];
+    try {
+      assetIds = parseMediaOrderBody(await readSmallJson(context.req.raw));
+    } catch (error) {
+      return errorResponse(context, error);
+    }
+    try {
+      const media = await tenantRequest({
+        bindings: context.env,
+        capability: "product:update",
+        operation: (transaction, identity) =>
+          reorderMedia(transaction, identity, {
+            assetIds,
+            productId,
+            requestId: context.get("requestId"),
+          }),
         request: context.req.raw,
         requestedOrganizationId: organizationId,
       });

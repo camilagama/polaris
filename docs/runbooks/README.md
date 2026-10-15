@@ -55,6 +55,8 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 
 ### Mídia
 
+- [ ] Decidir e implementar a limpeza de objetos de imagens removidas (sem nenhum vínculo): hoje nada os reclama, porque o reconciliador só limpa objetos sem referência de asset e uma imagem removida mantém seu asset; é custo (sem limite de envio por organização, um ciclo de remover e enviar acumula objetos) e retenção (o arquivo continua no bucket privado depois de a pessoa o remover) ([ADR 0059](../adr/0059-remover-e-reordenar-imagens-de-produto.md)).
+
 - [ ] Bucket R2 de mídia privado, sem domínio público nem acesso anônimo, e cron horário de reconciliação ativo com a binding de cleanup ([media-storage-reconciliation.md](./media-storage-reconciliation.md)).
 - [ ] Prova da orientação EXIF e da remoção de metadados com o Cloudflare Images real, e tetos de tamanho de upload e de transformação configurados.
 

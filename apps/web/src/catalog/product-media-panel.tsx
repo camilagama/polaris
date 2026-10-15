@@ -21,12 +21,30 @@ import {
 } from "react";
 import {
   listProductMedia,
-  MediaUploadHttpError,
   prepareMediaUploadFile,
   productMediaAssetUrl,
+  removeProductMedia,
+  reorderProductMedia,
   uploadProductMedia,
 } from "../lib/media-upload";
 import { orpcClient } from "../lib/orpc";
+import {
+  describeMediaFailure,
+  type ImageActionAvailability,
+  imageActionAvailability,
+  imageActionLabel,
+  type MediaFailure,
+  type MediaFailureContext,
+  type MoveDirection,
+  movedAssetOrder,
+  movedNotice,
+  removeConfirmationText,
+  removedNotice,
+  replaceConfirmationText,
+  replacementAbandonedText,
+  replacementDoneText,
+  replacementPendingText,
+} from "./media-commands-model";
 import {
   adjustCropWithKey,
   cropArrowKeys,
@@ -87,36 +105,30 @@ function cropFromDrag(
   };
 }
 
-function mediaErrorMessage(error: unknown): string {
+function mediaFailure(
+  context: MediaFailureContext,
+  error: unknown
+): MediaFailure {
   if (error instanceof MediaImageTooLargeError) {
-    return "A imagem original ultrapassa 20 MB. Escolha um arquivo menor.";
+    return {
+      message: "A imagem original ultrapassa 20 MB. Escolha um arquivo menor.",
+      reloadList: false,
+    };
   }
   if (error instanceof UnsupportedMediaImageError) {
-    return "Não foi possível ler este arquivo. Use JPEG, PNG, WebP ou HEIC.";
+    return {
+      message:
+        "Não foi possível ler este arquivo. Use JPEG, PNG, WebP ou HEIC.",
+      reloadList: false,
+    };
   }
   if (error instanceof InvalidMediaCropError) {
-    return "A área de recorte não é válida. Selecione uma área maior.";
+    return {
+      message: "A área de recorte não é válida. Selecione uma área maior.",
+      reloadList: false,
+    };
   }
-  if (error instanceof MediaUploadHttpError) {
-    switch (error.code) {
-      case "forbidden":
-      case "tenant_access_denied":
-        return "Sua conta não tem permissão para alterar este produto.";
-      case "media_image_too_large":
-        return "A imagem original ultrapassa 20 MB. Escolha um arquivo menor.";
-      case "unsupported_media_image":
-        return "O arquivo não é uma imagem JPEG, PNG ou WebP válida.";
-      case "invalid_media_crop":
-        return "A área de recorte não é válida. Ajuste a seleção e tente novamente.";
-      case "media_upload_command_conflict":
-        return "A tentativa de envio mudou. Selecione a imagem novamente para tentar de novo.";
-      case "media_processing_unavailable":
-        return "O processamento de imagens está indisponível. Tente novamente.";
-      default:
-        return "Não foi possível carregar a imagem. Tente novamente.";
-    }
-  }
-  return "Não foi possível preparar a imagem. Escolha outro arquivo e tente novamente.";
+  return describeMediaFailure(context, error);
 }
 
 function variantLabel(variant: {
@@ -131,14 +143,224 @@ function formatBytes(value: number): string {
   return `${(value / 1_000_000).toFixed(1)} MB`;
 }
 
-function ProductMediaList({
-  assets,
-  organizationId,
-  productName,
-}: {
-  assets: ProductMediaAssetReadModel[];
+type ConfirmKind = "remove" | "replace";
+
+type CommandKind = "move" | ConfirmKind;
+
+interface RunningCommand {
+  assetId: string;
+  kind: CommandKind;
+}
+
+interface ConfirmRequest {
+  assetId: string;
+  kind: ConfirmKind;
+}
+
+type FocusRequest =
+  | { assetId: string; fallbacks: readonly string[]; type: "item" }
+  | { assetId: string; type: "keep" }
+  | { type: "file" }
+  | { type: "heading" };
+
+function confirmButtonLabel(kind: ConfirmKind, running: boolean): string {
+  if (kind === "remove") {
+    return running ? "Removendo…" : "Remover imagem";
+  }
+  return running ? "Substituindo…" : "Remover e escolher outra";
+}
+
+interface ProductMediaItemProps {
+  asset: ProductMediaAssetReadModel;
+  availability: ImageActionAvailability;
+  confirming: ConfirmKind | null;
+  count: number;
+  index: number;
+  onAsk: (assetId: string, kind: ConfirmKind) => void;
+  onConfirm: (assetId: string, kind: ConfirmKind) => void;
+  onKeep: (assetId: string, kind: ConfirmKind) => void;
+  onMove: (assetId: string, direction: MoveDirection) => void;
   organizationId: string;
   productName: string;
+  running: CommandKind | null;
+}
+
+function ProductMediaItem({
+  asset,
+  availability,
+  confirming,
+  count,
+  index,
+  onAsk,
+  onConfirm,
+  onKeep,
+  onMove,
+  organizationId,
+  productName,
+  running,
+}: ProductMediaItemProps) {
+  const { assetId } = asset;
+  const position = index + 1;
+  const handleMoveEarlier = useCallback(
+    () => onMove(assetId, "earlier"),
+    [assetId, onMove]
+  );
+  const handleMoveLater = useCallback(
+    () => onMove(assetId, "later"),
+    [assetId, onMove]
+  );
+  const handleAskRemove = useCallback(
+    () => onAsk(assetId, "remove"),
+    [assetId, onAsk]
+  );
+  const handleAskReplace = useCallback(
+    () => onAsk(assetId, "replace"),
+    [assetId, onAsk]
+  );
+  const handleConfirm = useCallback(() => {
+    if (confirming) {
+      onConfirm(assetId, confirming);
+    }
+  }, [assetId, confirming, onConfirm]);
+  const handleKeep = useCallback(() => {
+    if (confirming) {
+      onKeep(assetId, confirming);
+    }
+  }, [assetId, confirming, onKeep]);
+  const variantCount = asset.variantIds.length;
+  const confirmRunning = confirming !== null && running === confirming;
+
+  return (
+    <li
+      aria-busy={running !== null}
+      className="product-media-item"
+      data-asset-id={assetId}
+    >
+      <img
+        alt={`${productName}, imagem ${position}`}
+        height={asset.height}
+        loading="lazy"
+        src={productMediaAssetUrl(asset, organizationId, undefined, 320)}
+        width={asset.width}
+      />
+      <div className="product-media-item-copy">
+        <p>
+          Imagem {position} de {count}
+        </p>
+        <span>
+          {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}
+        </span>
+        {variantCount > 0 ? (
+          <span>
+            Associada a {variantCount}{" "}
+            {variantCount === 1 ? "variante" : "variantes"}
+          </span>
+        ) : null}
+      </div>
+      {confirming ? (
+        <div
+          aria-label={`Confirmar ${confirming === "remove" ? "remoção" : "substituição"} da imagem ${position}`}
+          className="product-media-confirm"
+          role="alertdialog"
+        >
+          <p>
+            {confirming === "remove"
+              ? removeConfirmationText({ position, variantCount })
+              : replaceConfirmationText({ position, variantCount })}
+          </p>
+          <div className="product-media-item-actions">
+            <button
+              className="danger-button"
+              disabled={running !== null}
+              onClick={handleConfirm}
+              type="button"
+            >
+              {confirmButtonLabel(confirming, confirmRunning)}
+            </button>
+            <button
+              className="quiet-button"
+              data-media-action="keep"
+              disabled={running !== null}
+              onClick={handleKeep}
+              type="button"
+            >
+              Manter imagem
+            </button>
+          </div>
+        </div>
+      ) : (
+        <fieldset className="product-media-item-actions is-group">
+          <legend className="visually-hidden">
+            Ações da imagem {position}
+          </legend>
+          <button
+            aria-label={imageActionLabel("moveEarlier", index)}
+            className="quiet-button"
+            data-media-action="moveEarlier"
+            disabled={!availability.moveEarlier}
+            onClick={handleMoveEarlier}
+            type="button"
+          >
+            Para antes
+          </button>
+          <button
+            aria-label={imageActionLabel("moveLater", index)}
+            className="quiet-button"
+            data-media-action="moveLater"
+            disabled={!availability.moveLater}
+            onClick={handleMoveLater}
+            type="button"
+          >
+            Para depois
+          </button>
+          <button
+            aria-label={imageActionLabel("replace", index)}
+            className="quiet-button"
+            data-media-action="replace"
+            disabled={!availability.replace}
+            onClick={handleAskReplace}
+            type="button"
+          >
+            Substituir
+          </button>
+          <button
+            aria-label={imageActionLabel("remove", index)}
+            className="danger-text-button"
+            data-media-action="remove"
+            disabled={!availability.remove}
+            onClick={handleAskRemove}
+            type="button"
+          >
+            Remover
+          </button>
+        </fieldset>
+      )}
+    </li>
+  );
+}
+
+function ProductMediaList({
+  assets,
+  busy,
+  confirm,
+  onAsk,
+  onConfirm,
+  onKeep,
+  onMove,
+  organizationId,
+  productName,
+  running,
+}: {
+  assets: ProductMediaAssetReadModel[];
+  busy: boolean;
+  confirm: ConfirmRequest | null;
+  onAsk: (assetId: string, kind: ConfirmKind) => void;
+  onConfirm: (assetId: string, kind: ConfirmKind) => void;
+  onKeep: (assetId: string, kind: ConfirmKind) => void;
+  onMove: (assetId: string, direction: MoveDirection) => void;
+  organizationId: string;
+  productName: string;
+  running: RunningCommand | null;
 }) {
   if (assets.length === 0) {
     return (
@@ -147,29 +369,27 @@ function ProductMediaList({
   }
 
   return (
-    <ul className="product-media-list">
+    <ul aria-busy={busy} className="product-media-list">
       {assets.map((asset, index) => (
-        <li className="product-media-item" key={asset.assetId}>
-          <img
-            alt={`${productName}, imagem ${index + 1}`}
-            height={asset.height}
-            loading="lazy"
-            src={productMediaAssetUrl(asset, organizationId, undefined, 320)}
-            width={asset.width}
-          />
-          <div className="product-media-item-copy">
-            <p>Imagem {index + 1}</p>
-            <span>
-              {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}
-            </span>
-            {asset.variantIds.length > 0 ? (
-              <span>
-                Associada a {asset.variantIds.length}{" "}
-                {asset.variantIds.length === 1 ? "variante" : "variantes"}
-              </span>
-            ) : null}
-          </div>
-        </li>
+        <ProductMediaItem
+          asset={asset}
+          availability={imageActionAvailability({
+            busy,
+            count: assets.length,
+            index,
+          })}
+          confirming={confirm?.assetId === asset.assetId ? confirm.kind : null}
+          count={assets.length}
+          index={index}
+          key={asset.assetId}
+          onAsk={onAsk}
+          onConfirm={onConfirm}
+          onKeep={onKeep}
+          onMove={onMove}
+          organizationId={organizationId}
+          productName={productName}
+          running={running?.assetId === asset.assetId ? running.kind : null}
+        />
       ))}
     </ul>
   );
@@ -199,30 +419,99 @@ export function ProductMediaPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
+  const [running, setRunning] = useState<RunningCommand | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [replacementPending, setReplacementPending] = useState(false);
   const fileSelectionGeneration = useRef(0);
+  const assetsVersion = useRef(0);
+  const commandLock = useRef<boolean>(false);
+  const focusRequest = useRef<FocusRequest | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const listHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const imagesBusy = running !== null || isUploading;
 
   const availableVariants =
     variants?.variants.filter((variant) => !variant.isDefault) ?? [];
 
-  const loadAssets = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const result = await listProductMedia({
-        organizationId,
-        productId: product.id,
-      });
-      setAssets(result.media);
-      setError(null);
-    } catch (cause: unknown) {
-      setError(mediaErrorMessage(cause));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [organizationId, product.id]);
+  const loadAssets = useCallback(
+    async (quiet = false) => {
+      assetsVersion.current += 1;
+      const version = assetsVersion.current;
+      if (!quiet) {
+        setIsLoading(true);
+      }
+      try {
+        const result = await listProductMedia({
+          organizationId,
+          productId: product.id,
+        });
+        // A newer list, or the answer of a command, already replaced this one.
+        if (version === assetsVersion.current) {
+          setAssets(result.media);
+          if (!quiet) {
+            setError(null);
+          }
+        }
+      } catch (cause: unknown) {
+        if (version === assetsVersion.current) {
+          setError(mediaFailure("list", cause).message);
+        }
+      } finally {
+        if (!quiet) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [organizationId, product.id]
+  );
 
   useEffect(() => {
     loadAssets();
   }, [loadAssets, reloadVersion]);
+
+  // Moves focus after a command or a confirmation step, once the buttons it
+  // targets are enabled again (a disabled button cannot take focus).
+  useEffect(() => {
+    const request = focusRequest.current;
+    if (!request || running !== null) {
+      return;
+    }
+    focusRequest.current = null;
+    if (request.type === "file") {
+      fileInputRef.current?.focus();
+      fileInputRef.current?.scrollIntoView?.({ block: "center" });
+    } else if (request.type === "heading") {
+      listHeadingRef.current?.focus();
+    } else if (request.type === "keep") {
+      panelRef.current
+        ?.querySelector<HTMLElement>(
+          `[data-asset-id="${request.assetId}"] [data-media-action="keep"]`
+        )
+        ?.focus();
+    } else {
+      for (const action of request.fallbacks) {
+        const target = panelRef.current?.querySelector<HTMLButtonElement>(
+          `[data-asset-id="${request.assetId}"] [data-media-action="${action}"]`
+        );
+        if (target && !target.disabled) {
+          target.focus();
+          return;
+        }
+      }
+    }
+  });
+
+  const failCommand = useCallback(
+    (context: MediaFailureContext, cause: unknown) => {
+      const failure = mediaFailure(context, cause);
+      setError(failure.message);
+      if (failure.reloadList) {
+        loadAssets(true);
+      }
+    },
+    [loadAssets]
+  );
 
   useEffect(
     () => () => {
@@ -307,7 +596,7 @@ export function ProductMediaPanel({
         setPreviewUrl(null);
         setPreviewDimensions(null);
         setUploadCommandId(null);
-        setError(mediaErrorMessage(cause));
+        setError(mediaFailure("prepare", cause).message);
       } finally {
         if (generation === fileSelectionGeneration.current) {
           setIsPreparing(false);
@@ -434,7 +723,7 @@ export function ProductMediaPanel({
   const handleUpload = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!preparedFile || isUploading) {
+      if (!preparedFile || imagesBusy) {
         return;
       }
 
@@ -452,7 +741,12 @@ export function ProductMediaPanel({
           uploadCommandId: commandId,
           variantIds: selectedVariantIds,
         });
-        setNotice("Imagem adicionada ao produto.");
+        setNotice(
+          replacementPending
+            ? replacementDoneText
+            : "Imagem adicionada ao produto."
+        );
+        setReplacementPending(false);
         setPreparedFile(null);
         setPreviewUrl(null);
         setPreviewDimensions(null);
@@ -460,21 +754,144 @@ export function ProductMediaPanel({
         setUploadCommandId(null);
         setReloadVersion((version) => version + 1);
       } catch (cause: unknown) {
-        setError(mediaErrorMessage(cause));
+        failCommand("upload", cause);
       } finally {
         setIsUploading(false);
       }
     },
     [
       crop,
-      isUploading,
+      failCommand,
+      imagesBusy,
       organizationId,
       preparedFile,
       product.id,
+      replacementPending,
       selectedVariantIds,
       uploadCommandId,
     ]
   );
+
+  const handleMove = useCallback(
+    async (assetId: string, direction: MoveDirection) => {
+      if (commandLock.current || isUploading) {
+        return;
+      }
+      const index = assets.findIndex((asset) => asset.assetId === assetId);
+      const order = movedAssetOrder(
+        assets.map((asset) => asset.assetId),
+        index,
+        direction
+      );
+      if (!order) {
+        return;
+      }
+      commandLock.current = true;
+      setRunning({ assetId, kind: "move" });
+      setConfirm(null);
+      setError(null);
+      setNotice(null);
+      focusRequest.current = {
+        assetId,
+        fallbacks:
+          direction === "earlier"
+            ? ["moveEarlier", "moveLater"]
+            : ["moveLater", "moveEarlier"],
+        type: "item",
+      };
+      try {
+        const result = await reorderProductMedia({
+          assetIds: order,
+          organizationId,
+          productId: product.id,
+        });
+        assetsVersion.current += 1;
+        setAssets(result.media);
+        const to = result.media.findIndex((asset) => asset.assetId === assetId);
+        setNotice(movedNotice({ from: index + 1, to: to + 1 }));
+      } catch (cause: unknown) {
+        failCommand("reorder", cause);
+      } finally {
+        commandLock.current = false;
+        setRunning(null);
+      }
+    },
+    [assets, failCommand, isUploading, organizationId, product.id]
+  );
+
+  const handleAsk = useCallback(
+    (assetId: string, kind: ConfirmKind) => {
+      if (commandLock.current || isUploading) {
+        return;
+      }
+      setError(null);
+      setNotice(null);
+      setConfirm({ assetId, kind });
+      focusRequest.current = { assetId, type: "keep" };
+    },
+    [isUploading]
+  );
+
+  const handleKeep = useCallback((assetId: string, kind: ConfirmKind) => {
+    if (commandLock.current) {
+      return;
+    }
+    setConfirm(null);
+    focusRequest.current = { assetId, fallbacks: [kind], type: "item" };
+  }, []);
+
+  const handleConfirm = useCallback(
+    async (assetId: string, kind: ConfirmKind) => {
+      if (commandLock.current || isUploading) {
+        return;
+      }
+      const position = assets.findIndex((asset) => asset.assetId === assetId);
+      commandLock.current = true;
+      setRunning({ assetId, kind });
+      setError(null);
+      setNotice(null);
+      try {
+        const result = await removeProductMedia({
+          assetId,
+          organizationId,
+          productId: product.id,
+        });
+        // Removing is idempotent: "already gone" leaves the same list.
+        assetsVersion.current += 1;
+        setAssets((current) =>
+          current.filter((asset) => asset.assetId !== assetId)
+        );
+        if (kind === "replace") {
+          setReplacementPending(true);
+          focusRequest.current = { type: "file" };
+        } else {
+          setNotice(removedNotice(result.removed, position + 1));
+          focusRequest.current = { type: "heading" };
+        }
+        loadAssets(true);
+      } catch (cause: unknown) {
+        failCommand("remove", cause);
+        focusRequest.current = { assetId, fallbacks: [kind], type: "item" };
+      } finally {
+        commandLock.current = false;
+        setConfirm(null);
+        setRunning(null);
+      }
+    },
+    [assets, failCommand, isUploading, loadAssets, organizationId, product.id]
+  );
+
+  const handleAbandonReplacement = useCallback(() => {
+    fileSelectionGeneration.current += 1;
+    setReplacementPending(false);
+    setPreparedFile(null);
+    setPreviewUrl(null);
+    setPreviewDimensions(null);
+    setUploadCommandId(null);
+    setIsPreparing(false);
+    setError(null);
+    setNotice(replacementAbandonedText);
+  }, []);
 
   const cropStyle = {
     height: `${crop.height * 100}%`,
@@ -494,6 +911,7 @@ export function ProductMediaPanel({
     <section
       aria-labelledby="product-media-heading"
       className="product-form-panel product-media-panel"
+      ref={panelRef}
     >
       <div className="product-form-heading">
         <div>
@@ -517,6 +935,20 @@ export function ProductMediaPanel({
           </p>
         ) : null}
 
+        {replacementPending ? (
+          <div className="product-media-replacement" role="status">
+            <p>{replacementPendingText}</p>
+            <button
+              className="quiet-button"
+              disabled={isUploading}
+              onClick={handleAbandonReplacement}
+              type="button"
+            >
+              Desistir da substituição
+            </button>
+          </div>
+        ) : null}
+
         <form className="product-media-upload" onSubmit={handleUpload}>
           <div className="product-form-field">
             <label className="field-label" htmlFor="product-media-file">
@@ -524,9 +956,10 @@ export function ProductMediaPanel({
             </label>
             <input
               accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-              disabled={isPreparing || isUploading}
+              disabled={isPreparing || imagesBusy}
               id="product-media-file"
               onChange={handleFileChange}
+              ref={fileInputRef}
               type="file"
             />
             <p className="field-help">
@@ -658,7 +1091,7 @@ export function ProductMediaPanel({
           <div className="product-form-actions">
             <button
               className="primary-button"
-              disabled={!preparedFile || isPreparing || isUploading}
+              disabled={!preparedFile || isPreparing || imagesBusy}
               type="submit"
             >
               {uploadButtonLabel}
@@ -670,6 +1103,8 @@ export function ProductMediaPanel({
           <h3
             className="product-media-list-heading"
             id="product-media-list-heading"
+            ref={listHeadingRef}
+            tabIndex={-1}
           >
             Imagens associadas
           </h3>
@@ -680,8 +1115,15 @@ export function ProductMediaPanel({
           ) : (
             <ProductMediaList
               assets={assets}
+              busy={imagesBusy}
+              confirm={confirm}
+              onAsk={handleAsk}
+              onConfirm={handleConfirm}
+              onKeep={handleKeep}
+              onMove={handleMove}
               organizationId={organizationId}
               productName={product.name}
+              running={running}
             />
           )}
         </section>

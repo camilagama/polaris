@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   cropRectToPixels,
   InvalidMediaCropError,
+  InvalidMediaOrderError,
   MediaImageTooLargeError,
   MediaUploadCommandConflictError,
+  planMediaOrder,
   UnsupportedMediaImageError,
   validateMediaImageSource,
   validateNormalizedMediaCropRect,
@@ -80,5 +82,32 @@ describe("media upload input", () => {
         contentType: "image/jpeg",
       })
     ).toThrow(MediaImageTooLargeError);
+  });
+});
+
+describe("media order", () => {
+  const ids = ["a", "b", "c"];
+
+  it("gives each requested image its position, in the requested order", () => {
+    expect([...planMediaOrder(ids, ["c", "a", "b"])]).toEqual([
+      ["c", 0],
+      ["a", 1],
+      ["b", 2],
+    ]);
+    expect([...planMediaOrder([], [])]).toEqual([]);
+  });
+
+  it("refuses an order that is not exactly the current images", () => {
+    for (const requested of [
+      ["a", "b"],
+      ["a", "b", "c", "d"],
+      ["a", "b", "b"],
+      ["a", "b", "x"],
+      [],
+    ]) {
+      expect(() => planMediaOrder(ids, requested)).toThrow(
+        InvalidMediaOrderError
+      );
+    }
   });
 });

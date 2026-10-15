@@ -1,4 +1,7 @@
-import { ProductMediaLimitError } from "@polaris/domain/catalog/media";
+import {
+  InvalidMediaOrderError,
+  ProductMediaLimitError,
+} from "@polaris/domain/catalog/media";
 import {
   ProductDeletedError,
   ProductVariantNotFoundError,
@@ -90,6 +93,8 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
         width: 600,
       })
     ),
+    removeProductMedia: vi.fn(() => Promise.resolve({ removed: true })),
+    reorderProductMedia: vi.fn(() => Promise.resolve([mediaAsset])),
     processMediaDerivative: vi.fn(({ maxEdge }: { maxEdge: 320 | 640 }) =>
       Promise.resolve({
         byteLength: 4,
@@ -466,5 +471,147 @@ describe("media upload route", () => {
     expect(serialized).not.toContain(productId);
     expect(serialized).not.toContain("stack");
     logger.mockRestore();
+  });
+});
+
+const { assetId: imageId } = mediaAsset;
+const mediaUrl = `https://polaris.example.invalid/api/products/${productId}/media`;
+
+describe("media removal and order routes", () => {
+  it("removes an image under the product update capability and the organization header", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+
+    const response = await app.fetch(
+      new Request(`${mediaUrl}/${imageId}`, {
+        headers: { "x-organization-id": organizationId },
+        method: "DELETE",
+      }),
+      bindings
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ removed: true });
+    expect(dependencies.withTenantRequestContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: "product:update",
+        requestedOrganizationId: organizationId,
+      })
+    );
+    expect(dependencies.removeProductMedia).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ organizationId }),
+      expect.objectContaining({ assetId: imageId, productId })
+    );
+  });
+
+  it("answers 404 for malformed ids and 400 for a missing organization before opening a transaction", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+    const send = async (url: string, headers: Record<string, string>) =>
+      (
+        await app.fetch(
+          new Request(url, { headers, method: "DELETE" }),
+          bindings
+        )
+      ).status;
+
+    expect(
+      await send(`${mediaUrl}/not-a-uuid`, {
+        "x-organization-id": organizationId,
+      })
+    ).toBe(404);
+    expect(
+      await send(
+        "https://polaris.example.invalid/api/products/not-a-uuid/media/" +
+          imageId,
+        { "x-organization-id": organizationId }
+      )
+    ).toBe(404);
+    expect(await send(`${mediaUrl}/${imageId}`, {})).toBe(400);
+    expect(dependencies.withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it("reorders the images and returns the new list", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+
+    const response = await app.fetch(
+      new Request(`${mediaUrl}/order`, {
+        body: JSON.stringify({ assetIds: [imageId] }),
+        headers: { "x-organization-id": organizationId },
+        method: "PUT",
+      }),
+      bindings
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      media: [expect.objectContaining({ assetId: imageId })],
+    });
+    expect(dependencies.reorderProductMedia).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ organizationId }),
+      expect.objectContaining({ assetIds: [imageId], productId })
+    );
+  });
+
+  it("refuses a malformed order body before opening a transaction", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+    const send = async (body: string) =>
+      (
+        await app.fetch(
+          new Request(`${mediaUrl}/order`, {
+            body,
+            headers: { "x-organization-id": organizationId },
+            method: "PUT",
+          }),
+          bindings
+        )
+      ).status;
+
+    const statuses = await Promise.all(
+      [
+        "not json",
+        "{}",
+        JSON.stringify({ assetIds: "x" }),
+        JSON.stringify({ assetIds: ["not-a-uuid"] }),
+        JSON.stringify({ assetIds: Array.from({ length: 21 }, () => imageId) }),
+        "x".repeat(5000),
+      ].map((body) => send(body))
+    );
+    expect(statuses).toEqual(statuses.map(() => 400));
+    expect(dependencies.withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it("maps a stale order to a stable 409 and a deleted product to 404", async () => {
+    const stale = createTestApp({
+      reorderProductMedia: vi.fn(() =>
+        Promise.reject(new InvalidMediaOrderError())
+      ),
+    });
+    const staleResponse = await stale.app.fetch(
+      new Request(`${mediaUrl}/order`, {
+        body: JSON.stringify({ assetIds: [imageId] }),
+        headers: { "x-organization-id": organizationId },
+        method: "PUT",
+      }),
+      stale.bindings
+    );
+    expect(staleResponse.status).toBe(409);
+    await expect(staleResponse.json()).resolves.toMatchObject({
+      error: { code: "invalid_media_order" },
+    });
+
+    const deleted = createTestApp({
+      removeProductMedia: vi.fn(() =>
+        Promise.reject(new ProductDeletedError())
+      ),
+    });
+    const deletedResponse = await deleted.app.fetch(
+      new Request(`${mediaUrl}/${imageId}`, {
+        headers: { "x-organization-id": organizationId },
+        method: "DELETE",
+      }),
+      deleted.bindings
+    );
+    expect(deletedResponse.status).toBe(404);
   });
 });

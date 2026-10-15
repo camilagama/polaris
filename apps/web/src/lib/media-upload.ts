@@ -1,8 +1,10 @@
 import {
   type ProductMediaAssetReadModel,
   type ProductMediaListResponse,
+  type ProductMediaRemoveResponse,
   type ProductMediaUploadResponse,
   productMediaListResponseSchema,
+  productMediaRemoveResponseSchema,
   productMediaUploadResponseSchema,
 } from "@polaris/contracts";
 import type { NormalizedMediaCropRect } from "@polaris/domain/catalog/media";
@@ -144,6 +146,101 @@ export async function listProductMedia(
     // biome-ignore lint/style/useErrorCause: This wrapper preserves the validation failure as Error.cause while exposing a stable client code.
     throw new MediaUploadHttpError("invalid_media_list_response", 502, cause);
   }
+}
+
+async function sendMediaCommand<T>(
+  input: { organizationId: string; origin?: string; path: string },
+  init: { body?: string; method: "DELETE" | "PUT" },
+  parse: (payload: unknown) => T,
+  failureCode: string,
+  fetcher: typeof fetch
+): Promise<T> {
+  const url = new URL(
+    input.path,
+    input.origin || globalThis.location?.origin || "http://localhost"
+  );
+  const headers = new Headers({ "X-Organization-Id": input.organizationId });
+  if (init.body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
+  const response = await fetcher(url, {
+    ...(init.body === undefined ? {} : { body: init.body }),
+    credentials: "same-origin",
+    headers,
+    method: init.method,
+  });
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: This wrapper preserves the parse failure as Error.cause while exposing a stable client code.
+    throw new MediaUploadHttpError(failureCode, response.status, cause);
+  }
+  if (!response.ok) {
+    const code =
+      typeof payload === "object" &&
+      payload !== null &&
+      "error" in payload &&
+      typeof payload.error === "object" &&
+      payload.error !== null &&
+      "code" in payload.error &&
+      typeof payload.error.code === "string"
+        ? payload.error.code
+        : failureCode;
+    throw new MediaUploadHttpError(code, response.status);
+  }
+  try {
+    return parse(payload);
+  } catch (cause: unknown) {
+    // biome-ignore lint/style/useErrorCause: This wrapper preserves the validation failure as Error.cause while exposing a stable client code.
+    throw new MediaUploadHttpError("invalid_media_response", 502, cause);
+  }
+}
+
+/** Removes an image from a product; removing one that is already gone answers `removed: false`. */
+export function removeProductMedia(
+  input: {
+    assetId: string;
+    organizationId: string;
+    origin?: string;
+    productId: string;
+  },
+  fetcher: typeof fetch = fetch
+): Promise<ProductMediaRemoveResponse> {
+  return sendMediaCommand(
+    {
+      organizationId: input.organizationId,
+      path: `/api/products/${encodeURIComponent(input.productId)}/media/${encodeURIComponent(input.assetId)}`,
+      ...(input.origin === undefined ? {} : { origin: input.origin }),
+    },
+    { method: "DELETE" },
+    (payload) => productMediaRemoveResponseSchema.parse(payload),
+    "media_remove_failed",
+    fetcher
+  );
+}
+
+/** Sets the order of the images of a product; the list must be exactly its current images. */
+export function reorderProductMedia(
+  input: {
+    assetIds: readonly string[];
+    organizationId: string;
+    origin?: string;
+    productId: string;
+  },
+  fetcher: typeof fetch = fetch
+): Promise<ProductMediaListResponse> {
+  return sendMediaCommand(
+    {
+      organizationId: input.organizationId,
+      path: `/api/products/${encodeURIComponent(input.productId)}/media/order`,
+      ...(input.origin === undefined ? {} : { origin: input.origin }),
+    },
+    { body: JSON.stringify({ assetIds: [...input.assetIds] }), method: "PUT" },
+    (payload) => productMediaListResponseSchema.parse(payload),
+    "media_reorder_failed",
+    fetcher
+  );
 }
 
 export function productMediaAssetUrl(

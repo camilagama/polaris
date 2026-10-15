@@ -155,3 +155,35 @@ export class ProductMediaLimitError extends Error {
     this.name = "ProductMediaLimitError";
   }
 }
+
+/** The requested order is not exactly the product's current images (one was added or removed meanwhile, or an ID repeats). */
+export class InvalidMediaOrderError extends Error {
+  readonly code = "invalid_media_order";
+
+  constructor() {
+    super("invalid_media_order");
+    this.name = "InvalidMediaOrderError";
+  }
+}
+
+/**
+ * The new order of a product's images: the requested asset IDs, which must be
+ * exactly the current ones in any order (no repeats, none missing, none extra).
+ * A stale screen that does not know about a change is refused, never applied
+ * over it. Returns the positions each asset takes (0, 1, 2...).
+ */
+export function planMediaOrder(
+  currentAssetIds: readonly string[],
+  requestedAssetIds: readonly string[]
+): Map<string, number> {
+  const current = new Set(currentAssetIds);
+  const requested = new Set(requestedAssetIds);
+  if (
+    requested.size !== requestedAssetIds.length ||
+    requested.size !== current.size ||
+    requestedAssetIds.some((id) => !current.has(id))
+  ) {
+    throw new InvalidMediaOrderError();
+  }
+  return new Map(requestedAssetIds.map((id, position) => [id, position]));
+}

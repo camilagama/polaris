@@ -448,6 +448,15 @@ export type ProductMediaListResponse = z.infer<
   typeof productMediaListResponseSchema
 >;
 
+export const productMediaRemoveResponseSchema = z.object({
+  removed: z.boolean(),
+  requestId: z.string().uuid(),
+});
+
+export type ProductMediaRemoveResponse = z.infer<
+  typeof productMediaRemoveResponseSchema
+>;
+
 const productVariantOptionName = z.enum(["model", "color", "size"]);
 
 const productVariantOptionValue = z.object({

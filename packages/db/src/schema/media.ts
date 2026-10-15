@@ -123,6 +123,46 @@ export const productMedia = pgTable(
         )
       `,
     }),
+    // Only the position of a link changes (reordering) and a link can be removed
+    // (the asset itself stays); both only on a product that is not deleted.
+    pgPolicy("product_media_current_tenant_live_product_update", {
+      for: "update",
+      to: runtimeRole,
+      using: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.deleted_at IS NULL
+        )
+      `,
+      withCheck: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.deleted_at IS NULL
+        )
+      `,
+    }),
+    pgPolicy("product_media_current_tenant_live_product_delete", {
+      for: "delete",
+      to: runtimeRole,
+      using: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.deleted_at IS NULL
+        )
+      `,
+    }),
     pgPolicy("product_media_current_tenant_live_product_insert", {
       for: "insert",
       to: runtimeRole,
@@ -205,6 +245,20 @@ export const variantMedia = pgTable(
           WHERE product_scope.id = ${table.productId}
             AND product_scope.organization_id = ${table.organizationId}
             AND variant_scope.id = ${table.variantId}
+        )
+      `,
+    }),
+    pgPolicy("variant_media_current_tenant_live_product_delete", {
+      for: "delete",
+      to: runtimeRole,
+      using: sql`
+        ${activeTenantScope(table.organizationId)}
+        AND EXISTS (
+          SELECT 1
+          FROM public.products AS product_scope
+          WHERE product_scope.id = ${table.productId}
+            AND product_scope.organization_id = ${table.organizationId}
+            AND product_scope.deleted_at IS NULL
         )
       `,
     }),

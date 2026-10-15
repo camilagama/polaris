@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type MediaUploadHttpError,
   prepareMediaUploadFile,
+  removeProductMedia,
+  reorderProductMedia,
   uploadProductMedia,
 } from "./media-upload";
 
@@ -156,6 +158,202 @@ describe("prepareMediaUploadFile", () => {
     ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
       code: "unsupported_media_image",
       status: 415,
+    });
+  });
+});
+
+const productId = "0199c2d0-0000-7000-8000-000000000001";
+const assetId = "0199c2d0-0000-7000-8000-000000000002";
+const secondAssetId = "0199c2d0-0000-7000-8000-000000000004";
+const requestId = "0199c2d0-0000-7000-8000-000000000003";
+const origin = "https://polaris.example.invalid";
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json" },
+    status,
+  });
+}
+
+function asset(id: string, position: number) {
+  return {
+    assetId: id,
+    byteSize: 4,
+    contentType: "image/webp",
+    createdAt: "2026-10-10T12:00:00.000Z",
+    height: 200,
+    position,
+    variantIds: [],
+    width: 600,
+  };
+}
+
+describe("removeProductMedia", () => {
+  it("sends a tenant-scoped DELETE for the image and returns the answer", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_input, _init) =>
+      jsonResponse({ removed: true, requestId })
+    );
+
+    const response = await removeProductMedia(
+      { assetId, organizationId: "org-1", origin, productId },
+      fetcher
+    );
+
+    expect(response).toEqual({ removed: true, requestId });
+    const [url, init] = fetcher.mock.calls[0] ?? [];
+    expect(String(url)).toBe(
+      `${origin}/api/products/${productId}/media/${assetId}`
+    );
+    expect(init?.method).toBe("DELETE");
+    expect(init?.body).toBeUndefined();
+    expect(init?.credentials).toBe("same-origin");
+    const headers = new Headers(init?.headers);
+    expect(headers.get("x-organization-id")).toBe("org-1");
+    expect(headers.has("content-type")).toBe(false);
+  });
+
+  it("accepts an image that was already removed", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ removed: false, requestId })
+    );
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        fetcher
+      )
+    ).resolves.toMatchObject({ removed: false });
+  });
+
+  it("preserves the server error code and status", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ error: { code: "forbidden" }, requestId }, 403)
+    );
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        fetcher
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "forbidden",
+      status: 403,
+    });
+  });
+
+  it("falls back to a stable code when the error body has none", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ oops: true }, 500));
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        fetcher
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "media_remove_failed",
+      status: 500,
+    });
+  });
+
+  it("rejects a body that is not JSON or does not match the contract", async () => {
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        vi.fn(async () => new Response("<html>", { status: 502 }))
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "media_remove_failed",
+      status: 502,
+    });
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        vi.fn(async () => jsonResponse({ removed: "yes" }))
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "invalid_media_response",
+      status: 502,
+    });
+  });
+
+  it("lets a network failure reach the caller", async () => {
+    const fetcher = vi.fn(() =>
+      Promise.reject(new TypeError("Failed to fetch"))
+    );
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        fetcher
+      )
+    ).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
+describe("reorderProductMedia", () => {
+  it("sends the whole new order as a JSON PUT and returns the list", async () => {
+    const body = {
+      media: [asset(secondAssetId, 0), asset(assetId, 1)],
+      requestId,
+    };
+    const fetcher = vi.fn<typeof fetch>(async (_input, _init) =>
+      jsonResponse(body)
+    );
+
+    const response = await reorderProductMedia(
+      {
+        assetIds: [secondAssetId, assetId],
+        organizationId: "org-1",
+        origin,
+        productId,
+      },
+      fetcher
+    );
+
+    expect(response).toEqual(body);
+    const [url, init] = fetcher.mock.calls[0] ?? [];
+    expect(String(url)).toBe(`${origin}/api/products/${productId}/media/order`);
+    expect(init?.method).toBe("PUT");
+    expect(init?.body).toBe(
+      JSON.stringify({ assetIds: [secondAssetId, assetId] })
+    );
+    const headers = new Headers(init?.headers);
+    expect(headers.get("content-type")).toBe("application/json");
+    expect(headers.get("x-organization-id")).toBe("org-1");
+  });
+
+  it("preserves invalid_media_order so the screen can reload", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ error: { code: "invalid_media_order" }, requestId }, 409)
+    );
+    await expect(
+      reorderProductMedia(
+        { assetIds: [assetId], organizationId: "org-1", origin, productId },
+        fetcher
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "invalid_media_order",
+      status: 409,
+    });
+  });
+
+  it("rejects a response that is not a media list", async () => {
+    await expect(
+      reorderProductMedia(
+        { assetIds: [assetId], organizationId: "org-1", origin, productId },
+        vi.fn(async () => jsonResponse({ media: "none", requestId }))
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "invalid_media_response",
+      status: 502,
+    });
+  });
+
+  it("falls back to a stable code when the error body has none", async () => {
+    await expect(
+      reorderProductMedia(
+        { assetIds: [assetId], organizationId: "org-1", origin, productId },
+        vi.fn(async () => jsonResponse({}, 500))
+      )
+    ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+      code: "media_reorder_failed",
+      status: 500,
     });
   });
 });
