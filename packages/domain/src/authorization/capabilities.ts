@@ -11,6 +11,7 @@ export const CAPABILITIES = Object.freeze([
   "sale:assign_customer",
   "customer:update",
   "expense:create",
+  "report:read",
   "organization:manage",
   "sync:push",
   "sync:read",
