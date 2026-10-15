@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
 import type { MediaBucketBinding } from "./environment";
 import {
+  MEDIA_REMOVED_RETENTION_MS,
   MEDIA_STAGING_RETENTION_MS,
+  reconcileRemovedMedia,
   reconcileStagedMedia,
 } from "./media-reconciler";
 
@@ -66,6 +68,8 @@ function makeFixture(
   const cleanupClient: MediaCleanupClient = {
     claimOrphan: vi.fn(() => Promise.resolve(input.referenced !== true)),
     close: vi.fn(() => Promise.resolve()),
+    finalizeUnlinked: vi.fn(() => Promise.resolve(true)),
+    listUnlinked: vi.fn(() => Promise.resolve([])),
   };
   return { cleanupClient, mediaBucket, objects };
 }
@@ -139,5 +143,215 @@ describe("reconcileStagedMedia", () => {
     expect(fixture.cleanupClient.claimOrphan).not.toHaveBeenCalled();
     expect(fixture.objects.has(storageKey)).toBe(true);
     expect(fixture.objects.has(markerKey)).toBe(true);
+  });
+});
+
+describe("reconcileRemovedMedia", () => {
+  const assetId = "0199c2d0-0000-7000-8000-0000000000aa";
+  const removedKey = `media/v2/org/0199c2d0-0000-7000-8000-000000000001/de305d54-75b4-431b-adb2-eb6b9e546014/${"b".repeat(64)}/${attemptId}.webp`;
+  const derivative = (size: number) =>
+    `media/derivatives/v1/${assetId}/${size}.webp`;
+
+  function makeRemovedFixture(
+    input: {
+      batches?: { assetId: string; storageKey: string }[][];
+      failDelete?: boolean;
+      finalized?: boolean;
+      failFinalize?: boolean;
+    } = {}
+  ) {
+    const fixture = makeFixture();
+    fixture.objects.clear();
+    for (const key of [removedKey, derivative(320), derivative(640)]) {
+      fixture.objects.set(key, new Uint8Array([1]));
+    }
+    if (input.failDelete) {
+      fixture.mediaBucket.delete = vi.fn(() =>
+        Promise.reject(new Error("r2 unavailable"))
+      );
+    }
+    const queue = [
+      ...(input.batches ?? [[{ assetId, storageKey: removedKey }]]),
+    ];
+    fixture.cleanupClient.listUnlinked = vi.fn(() =>
+      Promise.resolve(queue.shift() ?? [])
+    );
+    fixture.cleanupClient.finalizeUnlinked = vi.fn(() =>
+      input.failFinalize
+        ? Promise.reject(new Error("db unavailable"))
+        : Promise.resolve(input.finalized !== false)
+    );
+    return fixture;
+  }
+
+  it("deletes the master and both derivatives of a removed image, then finishes its cleanup", async () => {
+    const fixture = makeRemovedFixture();
+
+    const report = await reconcileRemovedMedia(fixture);
+
+    expect(report).toEqual({ deleted: 1, failed: 0, scanned: 1 });
+    expect(fixture.objects.size).toBe(0);
+    expect(fixture.cleanupClient.listUnlinked).toHaveBeenCalledWith(
+      50,
+      MEDIA_REMOVED_RETENTION_MS,
+      []
+    );
+    expect(fixture.cleanupClient.finalizeUnlinked).toHaveBeenCalledWith(
+      assetId
+    );
+  });
+
+  it("finishes the database only after every object is gone", async () => {
+    const fixture = makeRemovedFixture();
+    const order: string[] = [];
+    const realDelete = fixture.mediaBucket.delete;
+    fixture.mediaBucket.delete = vi.fn((key) => {
+      order.push(`delete:${key}`);
+      return realDelete(key);
+    });
+    fixture.cleanupClient.finalizeUnlinked = vi.fn(() => {
+      order.push("finalize");
+      return Promise.resolve(true);
+    });
+
+    await reconcileRemovedMedia(fixture);
+
+    expect(order).toEqual([
+      `delete:${removedKey}`,
+      `delete:${derivative(320)}`,
+      `delete:${derivative(640)}`,
+      "finalize",
+    ]);
+  });
+
+  it("records nothing and reports an incomplete run when the bucket fails, so the next run tries again", async () => {
+    const fixture = makeRemovedFixture({ failDelete: true });
+
+    await expect(reconcileRemovedMedia(fixture)).rejects.toThrow(
+      "media_removed_reconciliation_incomplete"
+    );
+    expect(fixture.cleanupClient.finalizeUnlinked).not.toHaveBeenCalled();
+  });
+
+  it("reports an incomplete run when the database fails after the objects were deleted", async () => {
+    const fixture = makeRemovedFixture({ failFinalize: true });
+
+    await expect(reconcileRemovedMedia(fixture)).rejects.toThrow(
+      "media_removed_reconciliation_incomplete"
+    );
+    // deleting what is already gone is harmless on the next run
+    expect(fixture.objects.size).toBe(0);
+  });
+
+  it("deletes nothing for a storage key outside the versioned media namespace", async () => {
+    const fixture = makeRemovedFixture({
+      batches: [[{ assetId, storageKey: "other-tenant/data.webp" }]],
+    });
+
+    await expect(reconcileRemovedMedia(fixture)).rejects.toThrow(
+      "media_removed_reconciliation_incomplete"
+    );
+    expect(fixture.mediaBucket.delete).not.toHaveBeenCalled();
+    expect(fixture.cleanupClient.finalizeUnlinked).not.toHaveBeenCalled();
+  });
+
+  it("reports an asset that gained a link after its objects were deleted as a failure, with its id, never silently", async () => {
+    const fixture = makeRemovedFixture({ finalized: false });
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    await expect(reconcileRemovedMedia(fixture)).rejects.toThrow(
+      "media_removed_reconciliation_incomplete"
+    );
+
+    expect(logged).toHaveBeenCalledWith("media_removed_asset_not_finalized", {
+      assetId,
+    });
+    logged.mockRestore();
+  });
+
+  it("logs every failure with the asset id and the reason", async () => {
+    const fixture = makeRemovedFixture({ failFinalize: true });
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    await expect(reconcileRemovedMedia(fixture)).rejects.toThrow();
+
+    expect(logged).toHaveBeenCalledWith("media_removed_asset_failed", {
+      assetId,
+      reason: "db unavailable",
+    });
+    logged.mockRestore();
+  });
+
+  it("leaves an asset that failed out of the rest of the run, so it cannot hide the others", async () => {
+    const stuck = "0199c2d0-0000-7000-8000-0000000000cc";
+    const fine = "0199c2d0-0000-7000-8000-0000000000dd";
+    const fixture = makeRemovedFixture({
+      batches: [
+        [{ assetId: stuck, storageKey: "other-tenant/data.webp" }],
+        [{ assetId: fine, storageKey: removedKey }],
+      ],
+    });
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    await expect(reconcileRemovedMedia(fixture)).rejects.toThrow(
+      "media_removed_reconciliation_incomplete"
+    );
+
+    // the second listing was told to leave the stuck asset out and found the other one
+    expect(fixture.cleanupClient.listUnlinked).toHaveBeenNthCalledWith(
+      2,
+      50,
+      MEDIA_REMOVED_RETENTION_MS,
+      [stuck]
+    );
+    expect(fixture.cleanupClient.finalizeUnlinked).toHaveBeenCalledWith(fine);
+    logged.mockRestore();
+  });
+
+  it("does at most three batches of fifty in one run", async () => {
+    const batch = (prefix: number) =>
+      Array.from({ length: 50 }, (_, index) => ({
+        assetId: `0199c2d0-0000-7000-8000-${String(prefix * 100 + index).padStart(12, "0")}`,
+        storageKey: removedKey,
+      }));
+    const fixture = makeRemovedFixture({
+      batches: [batch(1), batch(2), batch(3), batch(4)],
+    });
+
+    const report = await reconcileRemovedMedia(fixture);
+
+    expect(report).toEqual({ deleted: 150, failed: 0, scanned: 150 });
+    expect(fixture.cleanupClient.listUnlinked).toHaveBeenCalledTimes(3);
+  });
+
+  it("works through several batches and stops when a batch brings nothing new", async () => {
+    const second = "0199c2d0-0000-7000-8000-0000000000bb";
+    const fixture = makeRemovedFixture({
+      batches: [
+        [{ assetId, storageKey: removedKey }],
+        [{ assetId: second, storageKey: removedKey }],
+        [{ assetId: second, storageKey: removedKey }],
+      ],
+    });
+
+    const report = await reconcileRemovedMedia(fixture);
+
+    expect(report).toEqual({ deleted: 2, failed: 0, scanned: 2 });
+    expect(fixture.cleanupClient.listUnlinked).toHaveBeenCalledTimes(3);
+  });
+
+  it("does nothing when no image was removed", async () => {
+    const fixture = makeRemovedFixture({ batches: [[]] });
+
+    const report = await reconcileRemovedMedia(fixture);
+
+    expect(report).toEqual({ deleted: 0, failed: 0, scanned: 0 });
+    expect(fixture.mediaBucket.delete).not.toHaveBeenCalled();
   });
 });
