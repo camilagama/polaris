@@ -116,7 +116,7 @@ describe("offlineCopyNotice", () => {
     expect(offlineCopyNotice(readAt, "America/Sao_Paulo", 0)).toEqual({
       pending: null,
       summary:
-        "Sem conexão. Mostrando o último resultado confirmado, de 14/10/2026 às 12:30. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.",
+        "Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de 14/10/2026 às 12:30. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.",
     });
   });
 

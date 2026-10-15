@@ -4,9 +4,12 @@ import { monthBounds } from "../expenses/expense-model";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import {
+  clearPeriodSummaryCaches,
+  isPeriodSummary,
   readPeriodSummaryCache,
   writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
+import { rpcErrorCode } from "../lib/rpc-error";
 import { isSigningOut } from "../lib/sign-out";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
@@ -84,6 +87,10 @@ export function usePeriodSummary(organizationId: string, month: string) {
           organizationId,
           to: bounds.to,
         });
+        if (!isPeriodSummary(summary)) {
+          // not what the server sends (a captive portal page, a proxy): as if it had not answered
+          throw new Error("period_summary_malformed");
+        }
         if (requestSequence === sequence.current) {
           writePeriodSummaryCache(
             browserStorage(),
@@ -104,6 +111,10 @@ export function usePeriodSummary(organizationId: string, month: string) {
         }
       } catch (caughtError) {
         if (requestSequence === sequence.current) {
+          if (rpcErrorCode(caughtError) === "UNAUTHORIZED") {
+            // the session is over: no copy of this browser's results outlives it
+            clearPeriodSummaryCaches(browserStorage());
+          }
           const copy =
             OFFLINE_RUNTIME_ENABLED &&
             !sessionRefused.current &&

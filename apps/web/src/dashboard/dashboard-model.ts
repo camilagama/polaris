@@ -69,7 +69,7 @@ export function offlineCopyNotice(
       waitingOperations > 0
         ? `Há ${waitingOperations} ${plural(waitingOperations, "operação guardada", "operações guardadas")} neste aparelho que ainda não ${plural(waitingOperations, "entra", "entram")} no resultado.`
         : null,
-    summary: `Sem conexão. Mostrando o último resultado confirmado, de ${date} às ${time}. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.`,
+    summary: `Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de ${date} às ${time}. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.`,
   };
 }
 

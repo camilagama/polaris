@@ -13,7 +13,7 @@ const NOW = "2026-10-14T12:00:00.000Z";
 /** The server read the figures at NOW: 09:00 in the lab organization (America/Sao_Paulo). */
 const UPDATED_UNTIL = "Atualizado até 14/10/2026 09:00";
 const COPY_NOTICE =
-  "Sem conexão. Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
+  "Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
 const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 const rpcPrefix = /^\/rpc\//;
 
@@ -547,7 +547,9 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
 });
 
 const copyNotice = (page: Page) =>
-  page.getByRole("status").filter({ hasText: "Sem conexão." });
+  page
+    .getByRole("status")
+    .filter({ hasText: "Não foi possível falar com o servidor." });
 
 /** The months of the device copy of the results kept in this browser. */
 const cachedMonths = (page: Page) =>
@@ -678,9 +680,18 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await expect(page.locator(".dashboard-card")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
+  // and the session being over cleared every copy this browser held
+  expect(await cachedMonths(page)).toEqual([]);
+
+  // signed in again, the month is read and kept anew
+  server.failure = null;
+  await page.getByRole("button", { name: "Tentar de novo" }).click();
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  expect(await cachedMonths(page)).toEqual(["2026-10"]);
+
   // an outage of the server is not a refusal
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
-  await page.getByRole("button", { name: "Tentar de novo" }).click();
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });

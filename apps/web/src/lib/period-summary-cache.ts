@@ -102,7 +102,9 @@ function isInstant(value: unknown): boolean {
 }
 
 /** True when the value has every field the dashboard reads, with the right kind of value. */
-function isPeriodSummary(value: unknown): value is PeriodSummaryReadModel {
+export function isPeriodSummary(
+  value: unknown
+): value is PeriodSummaryReadModel {
   return (
     isDictionary(value) &&
     isInstant(value.generatedAt) &&
