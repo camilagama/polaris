@@ -292,6 +292,7 @@
 
   .app-nav-list {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.2rem;
     padding: 0.22rem;
     background: var(--ui-surface-muted);
