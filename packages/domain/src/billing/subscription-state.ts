@@ -172,8 +172,10 @@ const TRANSITIONS: Record<
   { from: readonly BillingState[]; to: Transition }
 > = {
   // the trial is the person's choice, offered once, and needs a renewal method first
+  // (starting again while the trial is still being set up is allowed: a person who
+  // closed the checkout can come back, and nothing else would ever end that state)
   start_trial: {
-    from: FREE_STATES,
+    from: [...FREE_STATES, "trial_setup"],
     to: (facts, event, context) => {
       if (context.trialConsumed) {
         throw new RejectedBillingEventError(

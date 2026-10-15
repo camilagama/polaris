@@ -650,6 +650,8 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' " +
+        // the tenant policies; the billing owner's read policy is checked on its own below
+        "AND roles <> '{polaris_billing_owner}' " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -690,6 +692,7 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_variants' " +
+        "AND roles <> '{polaris_billing_owner}' " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -728,6 +731,33 @@ async function main() {
         variantSkuPolicy.usingExpression.includes("product_scope") &&
         variantSkuPolicy.withCheck?.includes("app.user_id") &&
         variantSkuPolicy.withCheck.includes("product_scope")
+    );
+
+    // The one system policy these tables carry (migration 0053): the billing owner may
+    // read the columns its over-limit check counts, through a SECURITY DEFINER function
+    // that no tenant role can run. Nothing else is granted to a non-tenant role.
+    const billingOwnerPolicies = await adminPool.query<{
+      command: string;
+      relation: string;
+      roles: string;
+      usingExpression: string | null;
+    }>(
+      'SELECT tablename AS relation, cmd AS command, roles, qual AS "usingExpression" ' +
+        "FROM pg_policies WHERE schemaname = 'public' " +
+        "AND tablename = ANY($1::text[]) AND roles = '{polaris_billing_owner}' " +
+        "ORDER BY tablename",
+      [["products", "product_variants"]]
+    );
+    assert.deepEqual(
+      billingOwnerPolicies.rows.map((policy) => [
+        policy.relation,
+        policy.command,
+        policy.usingExpression,
+      ]),
+      [
+        ["product_variants", "SELECT", "true"],
+        ["products", "SELECT", "true"],
+      ]
     );
 
     const optionPolicies = await adminPool.query<{
