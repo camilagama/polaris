@@ -8,8 +8,19 @@ import { pathToFileURL } from "node:url";
  * dependency audit only when dependencies changed. Everything unknown runs.
  */
 
-/** Paths that cannot change what the browser gate proves: prose, and the database package (the web client bundle never imports it). */
-const BROWSER_IRRELEVANT = [/^docs\//, /^doc\//, /\.md$/, /^packages\/db\//];
+/**
+ * Paths that cannot change what the browser gate proves: prose; the database
+ * package; and the web app's server, Worker and gate scripts. The gate serves
+ * the static client bundle and answers the `/rpc` calls itself (page.route), so
+ * none of that code runs in it, and the client never imports it.
+ */
+const BROWSER_IRRELEVANT = [
+  /^docs\//,
+  /^doc\//,
+  /\.md$/,
+  /^packages\/db\//,
+  /^apps\/web\/(src\/server|worker|scripts)\//,
+];
 
 /** Files that can change which dependencies are installed. */
 const DEPENDENCY_FILES = [
