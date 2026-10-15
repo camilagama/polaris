@@ -14,6 +14,7 @@ import {
   reconcileFact,
   serializeBillingFact,
 } from "@polaris/domain/billing/facts";
+import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
 import { type PoolClient, Pool } from "pg";
 
@@ -174,10 +175,17 @@ async function exceedsFreeLimits(
 async function saveRecord(
   client: PoolClient,
   organizationId: string,
+  before: BillingRecord,
   next: BillingRecord,
   now: Date,
   provider: { provider: string; providerRef: string } | null
 ): Promise<void> {
+  // when the organization left Pro (the start of the Free Over Limit adaptation window, ADR 0064)
+  const episode = episodeStartAfter({
+    before,
+    nextState: next.state,
+    now,
+  });
   await client.query(
     `UPDATE public.organization_billing SET
        state = $2,
@@ -189,6 +197,7 @@ async function saveRecord(
        trial_started_at = CASE WHEN $8::boolean THEN COALESCE(trial_started_at, $9::timestamptz) ELSE trial_started_at END,
        provider = COALESCE(provider, $10),
        provider_ref = COALESCE(provider_ref, $11),
+       over_limit_since = CASE WHEN $12::boolean THEN over_limit_since ELSE $13::timestamptz END,
        updated_at = $9::timestamptz,
        version = version + 1
      WHERE organization_id = $1`,
@@ -204,6 +213,9 @@ async function saveRecord(
       now,
       provider?.provider ?? null,
       provider?.providerRef ?? null,
+      episode === "keep",
+      // a kept episode keeps whatever the record says, including nothing (never a fresh window)
+      episode === "keep" ? null : episode,
     ]
   );
 }
@@ -367,9 +379,9 @@ async function processInTransaction(
   }
   const result = reconcileFact(before, fact, {
     now,
-    overFreeLimits: grantsPro(before.state)
-      ? await exceedsFreeLimits(client, organizationId)
-      : false,
+    // every state asks: an abandoned trial checkout returns to Free Over Limit, not to Free,
+    // when the organization still holds more than Free allows
+    overFreeLimits: await exceedsFreeLimits(client, organizationId),
   });
   if (result.outcome === "ignored") {
     await finishEvent(
@@ -395,6 +407,7 @@ async function processInTransaction(
   await saveRecord(
     client,
     organizationId,
+    before,
     result.record,
     now,
     event.provider_ref
@@ -465,7 +478,7 @@ async function sweepOne(
     if (!due) {
       return false;
     }
-    await saveRecord(client, organizationId, due.record, now, null);
+    await saveRecord(client, organizationId, before, due.record, now, null);
     await writeLedger(
       client,
       {
@@ -628,7 +641,7 @@ export function createBillingStore(connectionString: string): BillingStore {
           }
         );
         const record: BillingRecord = { ...before, ...next };
-        await saveRecord(client, organizationId, record, now, null);
+        await saveRecord(client, organizationId, before, record, now, null);
         await writeLedger(
           client,
           {

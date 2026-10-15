@@ -379,6 +379,13 @@
       "when": 1792077396312,
       "tag": "0053_billing_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792080375472,
+      "tag": "0054_operational_variant_selection",
+      "breakpoints": true
     }
   ]
 }

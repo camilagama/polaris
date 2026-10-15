@@ -4,6 +4,11 @@ import {
 } from "@polaris/domain/billing/entitlements";
 import { implement, ORPCError } from "@orpc/server";
 import {
+  EntitlementVariantLockedError,
+  OperationalSelectionError,
+} from "@polaris/domain/billing/operational-selection";
+import { InvalidOperationalSelectionError } from "@polaris/db/operational-selection-repository";
+import {
   type CategoryReadModel,
   type CustomerReadModel,
   type PaymentProfileReadModel,
@@ -235,6 +240,7 @@ import {
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
 import type { GoalRepository } from "./goal-handlers";
+import type { PlanRepository } from "./plan-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
 import {
@@ -248,6 +254,7 @@ import {
 import { pingSystem } from "../use-cases/system-ping";
 import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
+import { createPlanRpcHandlers } from "./plan-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
@@ -296,6 +303,7 @@ interface RpcRouterDependencies {
   createSaleReturn: typeof createSaleReturn;
   expenseRepository: Partial<ExpenseRepository>;
   goalRepository: Partial<GoalRepository>;
+  planRepository: Partial<PlanRepository>;
   readPeriodResult: typeof readPeriodResult;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
@@ -621,7 +629,11 @@ const badRequestRpcErrors = [
     ProductDescriptionError,
     InvalidPaymentProfileError,
   ],
-  [InvalidCustomerProfileError, InvalidCustomerDuplicateSearchError],
+  [
+    InvalidCustomerProfileError,
+    InvalidCustomerDuplicateSearchError,
+    InvalidOperationalSelectionError,
+  ],
   [
     InvalidExpenseError,
     InvalidExpenseCategoryError,
@@ -705,6 +717,8 @@ const conflictRpcErrors = [
     GoalLimitReachedError,
     EntitlementDeniedError,
     EntitlementLimitReachedError,
+    EntitlementVariantLockedError,
+    OperationalSelectionError,
     GoalNotActiveError,
     GoalPeriodEndedError,
     GoalVersionConflictError,
@@ -1216,6 +1230,12 @@ export function createRpcRouter(
   });
   const goalHandlers = createGoalRpcHandlers({
     goalRepository: overrides.goalRepository,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const planHandlers = createPlanRpcHandlers({
+    planRepository: overrides.planRepository,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1786,6 +1806,7 @@ export function createRpcRouter(
     },
     offline: offlineHandlers.offline,
     organization: { createInitial, listMine: organizationHandlers.listMine },
+    plan: planHandlers,
     report: reportHandlers,
     paymentProfile: paymentProfileHandlers,
     product: {

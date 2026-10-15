@@ -25,6 +25,7 @@ import {
 } from "@polaris/domain/sales/sale-dates";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { recordSaleStockMovement } from "./inventory-repository";
+import { assertVariantsOperational } from "./operational-selection-repository";
 import { organizations } from "./schema/organization";
 import { paymentProfileRules, paymentProfiles } from "./schema/payment-profile";
 import {
@@ -559,6 +560,12 @@ export async function confirmSale(
     : null;
 
   const catalog = await lockSaleCatalog(
+    transaction,
+    identity,
+    command.items.map((item) => item.variantId)
+  );
+  // an organization over the Free limit sells only the variants it kept operational (ADR 0064)
+  await assertVariantsOperational(
     transaction,
     identity,
     command.items.map((item) => item.variantId)

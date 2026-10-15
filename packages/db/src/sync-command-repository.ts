@@ -2,6 +2,7 @@ import {
   EntitlementDeniedError,
   EntitlementLimitReachedError,
 } from "@polaris/domain/billing/entitlements";
+import { EntitlementVariantLockedError } from "@polaris/domain/billing/operational-selection";
 import type { OfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { OFFLINE_LEASE_CLOCK_SKEW_MS } from "@polaris/domain/offline/offline-lease";
 import { and, eq, sql } from "drizzle-orm";
@@ -87,7 +88,8 @@ async function isEntitledToWrite(
  */
 function planRejection(error: unknown): string | null {
   return error instanceof EntitlementLimitReachedError ||
-    error instanceof EntitlementDeniedError
+    error instanceof EntitlementDeniedError ||
+    error instanceof EntitlementVariantLockedError
     ? SYNC_REJECTION.entitlementChanged
     : null;
 }

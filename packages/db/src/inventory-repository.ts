@@ -37,6 +37,7 @@ import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import { and, asc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { organizations } from "./schema/organization";
+import { assertVariantsOperational } from "./operational-selection-repository";
 import { products, productVariants } from "./schema/product";
 import {
   productOptions,
@@ -620,6 +621,11 @@ async function applyStockMovement(
     throw new ProductDeletedError();
   }
   await assertOperatorDateNotInFuture(transaction, identity, input);
+  // new stock arrives only for what the plan keeps operational; counts, write-offs and the
+  // reversal of a sale never go through here, so integrity corrections stay possible (ADR 0064)
+  if (input.movementType === "receipt") {
+    await assertVariantsOperational(transaction, identity, [variant.variantId]);
+  }
 
   const [balance] = await transaction
     .select({

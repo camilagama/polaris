@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -15,7 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./organization";
-import { activeTenantScope } from "./product";
+import { activeTenantScope, productVariants } from "./product";
 
 const runtimeRole = "polaris_pr11_runtime";
 
@@ -145,6 +146,13 @@ export const organizationBilling = pgTable(
     organizationId: text("organization_id")
       .primaryKey()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    /**
+     * When the organization left Pro access (the end of the access that lapsed,
+     * or the moment it was removed): the start of the adaptation window of Free
+     * Over Limit (ADR 0064). Set when the record enters `free_over_limit`, cleared
+     * when it leaves.
+     */
+    overLimitSince: timestamp("over_limit_since", { withTimezone: true }),
     /** A cycle change that takes effect at the next renewal. */
     pendingCycleMonths: integer("pending_cycle_months"),
     /** Which payment provider holds the subscription, and its reference there (no personal data). */
@@ -176,6 +184,11 @@ export const organizationBilling = pgTable(
       sql`${table.state} <> 'trialing' OR ${table.trialStartedAt} IS NOT NULL`
     ),
     check("organization_billing_version_positive", sql`${table.version} >= 1`),
+    // only a record that is free (over the limits, or setting up a trial) has an episode start
+    check(
+      "organization_billing_over_limit_since_coherent",
+      sql`${table.overLimitSince} IS NULL OR ${table.state} IN ('free_over_limit', 'trial_setup')`
+    ),
     check(
       "organization_billing_cycle_allowed",
       sql`(${table.cycleMonths} IS NULL OR ${table.cycleMonths} IN (1, 6, 12)) AND (${table.pendingCycleMonths} IS NULL OR ${table.pendingCycleMonths} IN (1, 6, 12))`
@@ -339,6 +352,68 @@ export const billingEvents = pgTable(
       for: "select",
       to: runtimeRole,
       using: sql`${table.organizationId} IS NOT NULL AND ${activeTenantScope(table.organizationId)}`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The variants that stay operational while an organization is over the Free
+ * limit (plan PR82, ADR 0064): the choice is a record of its own, never a
+ * property of the variant. Each row belongs to one "left Pro" episode
+ * (`episode_started_at`); rows of an earlier episode are ignored and replaced.
+ * While the adaptation window is open the choice is replaced freely; after it
+ * the rows can only be added (the command enforces it), so a variant cannot be
+ * unlocked and locked again to work around the plan.
+ */
+export const operationalVariantSelections = pgTable(
+  "operational_variant_selections",
+  {
+    episodeStartedAt: timestamp("episode_started_at", {
+      withTimezone: true,
+    }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").notNull(),
+    selectedAt: timestamp("selected_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    /** `user` when the organization chose it, `default` when the window ended without a choice. */
+    source: text("source").default("user").notNull(),
+    variantId: uuid("variant_id").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.organizationId, table.variantId],
+      name: "operational_variant_selections_pk",
+    }),
+    check(
+      "operational_variant_selections_source_allowed",
+      sql`${table.source} IN ('user', 'default')`
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.productId, table.variantId],
+      foreignColumns: [
+        productVariants.organizationId,
+        productVariants.productId,
+        productVariants.id,
+      ],
+      name: "operational_variant_selections_organization_variant_fk",
+    }).onDelete("cascade"),
+    pgPolicy("operational_variant_selections_current_tenant_select", {
+      for: "select",
+      to: runtimeRole,
+      using: activeTenantScope(table.organizationId),
+    }),
+    pgPolicy("operational_variant_selections_current_tenant_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: activeTenantScope(table.organizationId),
+    }),
+    pgPolicy("operational_variant_selections_current_tenant_delete", {
+      for: "delete",
+      to: runtimeRole,
+      using: activeTenantScope(table.organizationId),
     }),
   ]
 ).enableRLS();

@@ -4,6 +4,7 @@ import {
   EntitlementDeniedError,
   EntitlementLimitReachedError,
 } from "@polaris/domain/billing/entitlements";
+import { EntitlementVariantLockedError } from "@polaris/domain/billing/operational-selection";
 import { GoalLimitReachedError } from "@polaris/domain/goals/goal";
 import { createDatabase } from "../src/client";
 import { registerDevice } from "../src/device-repository";
@@ -623,8 +624,28 @@ async function run() {
       0,
       "a plan limit reached while the command ran is not stored either"
     );
+    // a variant the plan no longer keeps operational (Free Over Limit) is the same refusal
+    const lockedId = randomUUID();
+    const lockedHit = await push(
+      lockedId,
+      () => new EntitlementVariantLockedError(randomUUID()) as Error
+    );
+    assert.equal(lockedHit.status, "rejected");
+    assert.equal(lockedHit.code, "entitlement_changed");
+    assert.equal(
+      Number(
+        (
+          await admin.pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.sync_commands WHERE command_id = $1",
+            [lockedId]
+          )
+        ).rows[0]?.count
+      ),
+      0,
+      "a variant locked by the plan is not stored either"
+    );
     tests.push(
-      "a command pushed after a downgrade is rejected without running and without being stored, the same command succeeds once the plan allows it again, and a plan limit reached while it runs is the same retryable refusal"
+      "a command pushed after a downgrade is rejected without running and without being stored, the same command succeeds once the plan allows it again, and a plan limit or a variant locked by the plan reached while it runs is the same retryable refusal"
     );
 
     console.log(

@@ -221,7 +221,7 @@ export async function listProducts(
  * Variants the organization holds against its plan: every variant of a product
  * that has not been deleted (an archived product still counts; deleting frees).
  */
-async function countOrganizationVariants(
+export async function countOrganizationVariants(
   transaction: TenantRequestTransaction,
   organizationId: string
 ): Promise<number> {
