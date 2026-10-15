@@ -1,6 +1,7 @@
 import {
   MAX_PRODUCT_MEDIA,
   MediaUploadCommandConflictError,
+  planMediaOrder,
   ProductMediaLimitError,
 } from "@polaris/domain/catalog/media";
 import {
@@ -9,7 +10,7 @@ import {
   ProductNotFoundError,
   ProductVariantNotFoundError,
 } from "@polaris/domain/catalog/product";
-import { and, asc, count, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { assertRoomFor } from "./entitlement-enforcement";
 import { mediaAssets, productMedia, variantMedia } from "./schema/media";
 import { products, productVariants } from "./schema/product";
@@ -545,6 +546,154 @@ export async function listProductMedia(
   return rows.map((row) =>
     mediaReadModel(row, variantIdsByAsset.get(row.assetId) ?? [])
   );
+}
+
+async function lockLiveProduct(
+  transaction: TenantRequestTransaction,
+  organizationId: string,
+  productId: string
+): Promise<void> {
+  const [product] = await transaction
+    .select({ deletedAt: products.deletedAt })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, organizationId),
+        eq(products.id, productId)
+      )
+    )
+    .for("update");
+  if (!product) {
+    throw new ProductNotFoundError();
+  }
+  if (product.deletedAt) {
+    throw new ProductDeletedError();
+  }
+}
+
+/**
+ * Removes an image from a product: its variant links and its product link go,
+ * the asset and its stored object stay (the reconciler deals with objects that
+ * nothing links to anymore). Removing an image that is already gone changes
+ * nothing, so a retry after a lost answer is safe. The freed place counts for
+ * the plan again at once.
+ */
+export async function removeProductMedia(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: { assetId: string; productId: string; requestId?: string | null }
+): Promise<{ removed: boolean }> {
+  const { organizationId } = identity;
+  await lockLiveProduct(transaction, organizationId, input.productId);
+  await transaction
+    .delete(variantMedia)
+    .where(
+      and(
+        eq(variantMedia.organizationId, organizationId),
+        eq(variantMedia.productId, input.productId),
+        eq(variantMedia.mediaAssetId, input.assetId)
+      )
+    );
+  const removed = await transaction
+    .delete(productMedia)
+    .where(
+      and(
+        eq(productMedia.organizationId, organizationId),
+        eq(productMedia.productId, input.productId),
+        eq(productMedia.mediaAssetId, input.assetId)
+      )
+    )
+    .returning({ assetId: productMedia.mediaAssetId });
+  if (removed.length === 0) {
+    return { removed: false };
+  }
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: input.productId,
+    entityType: "product",
+    eventType: "product.media_removed",
+    requestId: input.requestId ?? null,
+  });
+  return { removed: true };
+}
+
+/** A position far above any real one, used to move links aside while they swap places. */
+const REORDER_OFFSET = 1_000_000;
+
+/**
+ * Sets the order of the images of a product. The requested IDs must be exactly
+ * the current ones (a screen that missed a change is refused). The positions
+ * are unique per product, so the links first move out of the way and then take
+ * their final places, in one transaction under the product lock.
+ */
+export async function reorderProductMedia(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: {
+    assetIds: readonly string[];
+    productId: string;
+    requestId?: string | null;
+  }
+): Promise<ProductMediaReadModel[]> {
+  const { organizationId } = identity;
+  await lockLiveProduct(transaction, organizationId, input.productId);
+  const current = await transaction
+    .select({
+      assetId: productMedia.mediaAssetId,
+      position: productMedia.position,
+    })
+    .from(productMedia)
+    .where(
+      and(
+        eq(productMedia.organizationId, organizationId),
+        eq(productMedia.productId, input.productId)
+      )
+    )
+    .orderBy(asc(productMedia.position));
+  const order = planMediaOrder(
+    current.map((row) => row.assetId),
+    input.assetIds
+  );
+  // the same order with gaps in the positions still gets tidied
+  const unchanged = current.every(
+    (row, index) => order.get(row.assetId) === index && row.position === index
+  );
+  if (!unchanged) {
+    await transaction
+      .update(productMedia)
+      .set({ position: sql`${productMedia.position} + ${REORDER_OFFSET}` })
+      .where(
+        and(
+          eq(productMedia.organizationId, organizationId),
+          eq(productMedia.productId, input.productId)
+        )
+      );
+    // every link takes its final place in one statement
+    const finalPosition = sql.join(
+      [...order].map(
+        ([assetId, position]) =>
+          sql`WHEN ${assetId}::uuid THEN ${position}::int`
+      ),
+      sql` `
+    );
+    await transaction
+      .update(productMedia)
+      .set({
+        position: sql`CASE ${productMedia.mediaAssetId} ${finalPosition} END`,
+      })
+      .where(
+        and(
+          eq(productMedia.organizationId, organizationId),
+          eq(productMedia.productId, input.productId)
+        )
+      );
+    await recordTenantAuditEvent(transaction, identity, {
+      entityId: input.productId,
+      entityType: "product",
+      eventType: "product.media_reordered",
+      requestId: input.requestId ?? null,
+    });
+  }
+  return await listProductMedia(transaction, organizationId, input.productId);
 }
 
 export async function getMediaAssetForDelivery(

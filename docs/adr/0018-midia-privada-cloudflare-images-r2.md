@@ -26,7 +26,7 @@ Registro retroativo das decisões do PR33 ao PR35, confirmadas na revisão do ch
 - Cada derivado ausente custa uma transformação na primeira leitura; sem teto de uploads e de transformações por organização, o custo pode ser abusado. Rate limit e quotas de mídia entram antes do go-live (ver [ADR 0027](0027-separacao-de-roles-auth-tenant-e-superficies-poc.md) e o checklist de go-live).
 - A orientação EXIF e a remoção de metadados ainda não foram provadas no provedor real; a prova é pendência antes da Fase 5.
 - O pico de memória do Worker por upload cresce com o tamanho do arquivo; o teto de upload é um limite explícito de segurança.
-- Free permite uma imagem por produto, mas ainda não há comando para remover, substituir ou reordenar; ele é necessário antes da Fase 7.
+- Free permite uma imagem por produto; remover e reordenar existem desde o [ADR 0059](0059-remover-e-reordenar-imagens-de-produto.md), e substituir é remover e depois enviar.
 
 ## Alternativas consideradas
 

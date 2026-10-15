@@ -71,6 +71,7 @@
     "poc:gate2:verify": "bun scripts/verify-gate2-runtime.ts",
     "poc:gate4:verify": "bun scripts/verify-gate4-sales-core.ts",
     "poc:inventory:verify": "bun scripts/verify-inventory-gate.ts",
+    "poc:media-commands:verify": "bun scripts/verify-media-commands-gate.ts",
     "poc:media:derivatives:verify": "bun scripts/verify-media-derivatives-gate.ts",
     "poc:media:upload:verify": "bun scripts/verify-media-upload-gate.ts",
     "poc:media:verify": "bun scripts/verify-media-gate.ts",
