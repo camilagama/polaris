@@ -789,6 +789,47 @@ async function run() {
       InvalidExpenseError,
       "a malformed cursor"
     );
+    for (const options of [
+      { cursor: `2026-02-31|${randomUUID()}` },
+      { cursor: `2026-02-20|${"-".repeat(36)}` },
+      { from: "2026-02-30" },
+      { to: "0000-13-01" },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
+      await expectRejects(
+        () =>
+          as(tenantA, (tx, identity) => listExpenses(tx, identity, options)),
+        InvalidExpenseError,
+        "an impossible date or cursor is refused, not a database error"
+      );
+    }
+    // two of the largest valid amounts: the total must not overflow
+    const limitCategory = await as(tenantA, (tx, identity) =>
+      createExpenseCategory(tx, identity, { group: "other", name: "Limite" })
+    );
+    for (const n of [1, 2]) {
+      // biome-ignore lint/performance/noAwaitInLoops: created in order
+      await as(tenantA, (tx, identity) =>
+        createExpense(tx, identity, {
+          amount: "999999999999999999.99",
+          categoryId: limitCategory.id,
+          competenceOn: today,
+          description: `limite ${n}`,
+        })
+      );
+    }
+    const overflow = await as(tenantA, (tx, identity) =>
+      listExpenses(tx, identity, { categoryId: limitCategory.id })
+    );
+    assert.equal(overflow.count, 2);
+    assert.equal(overflow.total, "1999999999999999999.98");
+    const empty = await as(tenantA, (tx, identity) =>
+      listExpenses(tx, identity, { from: "2001-01-01", to: "2001-01-02" })
+    );
+    assert.equal(empty.total, "0.00");
+    tests.push(
+      "an impossible date or cursor is refused as invalid input (not a database error), the total of two maximum amounts does not overflow, and an empty period totals 0.00"
+    );
     tests.push(
       "totals are exact decimals over the whole filter (not the page), pages follow one stable order with ties by ID without repeating or skipping, period and category filters work, voided expenses leave the default list and totals"
     );

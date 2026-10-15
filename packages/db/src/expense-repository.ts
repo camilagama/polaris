@@ -20,6 +20,7 @@ import {
   normalizeExpenseCategoryName,
   transitionExpenseLifecycle,
 } from "@polaris/domain/expenses/expense";
+import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
 import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { expenseCategories, expenses } from "./schema/expense";
@@ -377,8 +378,8 @@ const expenseColumns = {
 
 const DEFAULT_EXPENSE_PAGE = 100;
 const MAX_EXPENSE_PAGE = 200;
-const cursorPattern = /^(\d{4}-\d{2}-\d{2})\|([0-9a-f-]{36})$/;
-const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const cursorPattern =
+  /^(\d{4}-\d{2}-\d{2})\|([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 async function organizationToday(
   transaction: TenantRequestTransaction,
@@ -691,7 +692,7 @@ export async function listExpenses(
     MAX_EXPENSE_PAGE
   );
   for (const bound of [options.from, options.to]) {
-    if (bound && !datePattern.test(bound)) {
+    if (bound && !isValidCalendarDate(bound)) {
       throw new InvalidExpenseError();
     }
   }
@@ -715,7 +716,8 @@ export async function listExpenses(
   const [totals] = await transaction
     .select({
       count: sql<number>`count(*)::int`,
-      total: sql<string>`coalesce(sum(${expenses.amount}), 0)::numeric(20,2)::text`,
+      // no numeric(20,2) cast: a sum of many valid amounts may need 19+ digits
+      total: sql<string>`coalesce(sum(${expenses.amount}), 0.00)::text`,
     })
     .from(expenses)
     .where(and(...filters));
@@ -723,7 +725,7 @@ export async function listExpenses(
   const pageFilters = [...filters];
   if (options.cursor) {
     const match = cursorPattern.exec(options.cursor);
-    if (!match) {
+    if (!(match && isValidCalendarDate(match[1] as string))) {
       throw new InvalidExpenseError();
     }
     const [, competenceOn, id] = match;

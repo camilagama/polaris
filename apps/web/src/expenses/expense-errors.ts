@@ -28,13 +28,13 @@ function badRequestMessage(action: ExpenseAction): string | null {
 
 function conflictMessage(action: ExpenseAction): string {
   if (action === "category-create" || action === "category-rename") {
-    return "Já existe uma categoria com esse nome";
+    return "Já existe uma categoria com esse nome, ou ela mudou em outra solicitação. A lista foi atualizada.";
   }
   if (action === "save") {
     return "Esta despesa mudou em outra solicitação, foi anulada ou a categoria escolhida não está mais disponível. Os dados foram recarregados; abra a despesa de novo para editar.";
   }
   if (action === "restore") {
-    return "A despesa mudou em outra solicitação ou a categoria dela não está mais disponível. A lista foi atualizada.";
+    return "A despesa mudou em outra solicitação. A lista foi atualizada.";
   }
   if (subjectOf(action) === "category") {
     return "A categoria mudou em outra solicitação. A lista foi atualizada.";

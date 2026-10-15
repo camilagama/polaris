@@ -158,8 +158,21 @@ const expenseFields = z.object({
   amount: z.string().trim().min(1).max(64),
   categoryId: z.string().uuid(),
   competenceOn: expenseCalendarDate,
-  description: z.string().trim().min(1).max(MAX_EXPENSE_DESCRIPTION_LENGTH),
-  payee: z.string().trim().max(MAX_EXPENSE_PAYEE_LENGTH).nullish(),
+  // limits in code points, like the domain and the database
+  description: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((text) => [...text].length <= MAX_EXPENSE_DESCRIPTION_LENGTH, {
+      message: "invalid_expense",
+    }),
+  payee: z
+    .string()
+    .trim()
+    .refine((text) => [...text].length <= MAX_EXPENSE_PAYEE_LENGTH, {
+      message: "invalid_expense",
+    })
+    .nullish(),
   saleId: z.string().uuid().nullish(),
 });
 

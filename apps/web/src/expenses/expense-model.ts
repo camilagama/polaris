@@ -263,11 +263,11 @@ export function validateExpenseDraft(draft: ExpenseDraft): {
   const description = draft.description.trim();
   if (description === "") {
     errors.description = "Descreva a despesa.";
-  } else if (description.length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
+  } else if ([...description].length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
     errors.description = `Use no máximo ${MAX_EXPENSE_DESCRIPTION_LENGTH} caracteres.`;
   }
   const payee = draft.payee.trim();
-  if (payee.length > MAX_EXPENSE_PAYEE_LENGTH) {
+  if ([...payee].length > MAX_EXPENSE_PAYEE_LENGTH) {
     errors.payee = `Use no máximo ${MAX_EXPENSE_PAYEE_LENGTH} caracteres.`;
   }
   if (!amount.ok || Object.keys(errors).length > 0) {
