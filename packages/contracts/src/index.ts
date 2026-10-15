@@ -273,6 +273,22 @@ const goal = z.object({
 });
 
 export type GoalReadModel = z.infer<typeof goal>;
+
+const operationalSelection = z.object({
+  /** The variants limit in force. */
+  limit: z.number().int().nonnegative(),
+  /** Variants of products that were not deleted (archived ones count). */
+  liveVariants: z.number().int().nonnegative(),
+  /** `unrestricted`, `adapting` (the window is open) or `frozen`. */
+  phase: z.enum(["adapting", "frozen", "unrestricted"]),
+  /** The variants chosen; while adapting, none means the default applies when the window ends. */
+  selectedVariantIds: z.array(z.string().uuid()),
+  /** The end of the adaptation window; null when nothing is restricted. */
+  windowEndsAt: z.string().datetime().nullable(),
+});
+export type OperationalSelectionReadModel = z.infer<
+  typeof operationalSelection
+>;
 const periodSummary = z.object({
   /** The server clock when this retrieval of the confirmed records was made ("updated until"). */
   generatedAt: z.string().datetime(),
@@ -1299,6 +1315,23 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), goal })),
+  },
+  plan: {
+    // Where the organization stands against the Free variant limit and which
+    // variants it keeps operational (Free Over Limit, ADR 0064).
+    operationalSelection: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(operationalSelection),
+    // The complete choice. While the adaptation window is open it replaces the
+    // previous one; after it, it must keep what is held and may only grow.
+    selectOperationalVariants: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          variantIds: z.array(z.string().uuid()).max(5000),
+        })
+      )
+      .output(operationalSelection),
   },
   report: {
     // Server-computed and online only: the figures come from the confirmed

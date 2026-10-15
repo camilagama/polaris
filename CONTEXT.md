@@ -95,4 +95,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Entitlement:** capacidade ou limite que uma organização pode usar, derivado do estado comercial e de eventuais grants válidos.
 
+**Free acima do limite:** estado de uma organização no Free que mantém mais variantes do que o plano permite. Nada é apagado; só as **variantes operacionais** (as que ela escolheu, ou as vendidas mais recentemente quando não escolheu) recebem nova atividade comercial.
+
+**Janela de adequação:** os sete dias depois do fim do acesso Pro em que a organização ainda pode trocar quais variantes ficam operacionais; depois dela a escolha só cresce.
+
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.
