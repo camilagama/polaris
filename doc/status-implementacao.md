@@ -1046,3 +1046,22 @@ Os dois PRs do plano vão juntos: o indicador de qualidade é a metade do painel
 | Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura. Corrigidos, com prova no gate e nos testes: editar ou cancelar agora liquida antes as metas ativas (uma meta que já alcançou o alvo não é alterada por um cartão antigo), editar uma meta de período encerrado é recusado, a meta de resultado operacional só é liquidada ao fim do período (a conclusão é irreversível e o resultado antes do fechamento é otimista), o progresso só aparece quando é da versão atual da meta, no máximo 20 metas ativas por organização, o alvo é comparado como texto exato (um número de ponto flutuante perdia precisão acima de 9×10¹⁵), nomes com NUL ou substitutos soltos são recusados, e o texto do cartão diz "conferido em". Aceito e documentado: a conclusão é constatada quando as metas são lidas (não há gatilho na venda). |
 | Verificação local | Concluída | `vitest run` (1.491 testes), lint, `format:check`, `bun run typecheck`, knip, boundaries, navegador (metas e painel), gate `goals` no Neon descartável. |
 | Limites | Registrados | Só com conexão e só o confirmado; sem reabrir nem editar metas finais; a leitura offline do painel (e das metas) é o PR71. |
+
+### PR71 — leitura offline do painel (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
+
+Último item da Fase 6 do plano.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/offline-dashboard` sobre a `main` (PR #85, metas, já mesclado). |
+| Decisões | Tomadas pelo projeto | [ADR 0056](../docs/adr/0056-leitura-offline-do-painel.md): o aparelho guarda o último resumo confirmado de cada mês (no máximo seis por organização, validados na leitura, apagados com a sessão e nunca gravados depois de a saída começar) e só mostra a cópia quando o servidor não pôde responder (falha de rede ou indisponibilidade; uma recusa do servidor nunca cai na cópia); o "atualizado até" é o horário do servidor (`generatedAt`, contrato que só cresce); trabalho pendente nunca é somado ao resultado, só avisado; metas continuam só com conexão; atrás da chave `VITE_OFFLINE_RUNTIME_ENABLED`. |
+| Servidor | Concluído | O resumo do período devolve `generatedAt` (relógio do servidor); teste de roteador. O servidor sobe antes do app. |
+| Aparelho | Concluído | `lib/period-summary-cache.ts` (validação campo a campo, seis meses, limpeza só do prefixo, guarda de chave desligada e de saída em andamento), `use-period-summary.ts` (grava depois de ler, cai na cópia só nos erros certos, sem misturar mês nem organização), `offline-copy-notice.tsx`, limpeza junto da dos perfis de pagamento na saída e no "não autenticado". |
+| Interface | Concluída | Linha "Atualizado até" e aviso de cópia com a contagem de operações guardadas; [DESIGN.md](../DESIGN.md) atualizado. |
+| Prova em navegador | Concluída | 5 cenários novos em `e2e/dashboard.e2e.ts`: carregar com rede e cair na cópia quando a rede falha, mês nunca aberto com erro normal, "não autenticado" que não cai na cópia, entre outros; painel e metas continuam verdes (44 execuções). A limpeza na saída e a linha de operações guardadas têm teste de unidade. |
+| Verificação local | Concluída | Ver a linha da publicação. |
+| Limites | Registrados | Só o resumo do painel é guardado (não as metas); a cópia envelhece e o horário mostrado é a defesa; checklist em aparelho físico (iPhone e Android) do Gate 5 segue com o responsável. |
+
+## Fase 6 — encerramento
+
+PR63 a PR71 mesclados ou em publicação; o plano segue para a Fase 7 (billing e entitlements) depois do Gate 5 em aparelho físico, que depende do responsável.
