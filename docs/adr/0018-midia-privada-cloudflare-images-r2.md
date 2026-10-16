@@ -35,7 +35,7 @@ Registro retroativo das decisões do PR33 ao PR35, confirmadas na revisão do ch
 - **Gerar derivados no upload.** Evita o custo na primeira leitura, mas gera variantes nunca usadas e dificulta mudar os tamanhos.
 - **Apagar o master assim que a referência falha.** Simples, porém vulnerável à corrida entre a checagem de referência e a exclusão, motivo do claim com tombstone.
 
-## Emenda (15/10/2026)
+## Emenda (16/10/2026)
 
 Registro datado; a decisão original acima permanece como está.
 
