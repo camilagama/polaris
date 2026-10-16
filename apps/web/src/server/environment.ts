@@ -52,6 +52,8 @@ export interface WorkerBindings {
   BETTER_AUTH_BASE_URL?: string;
   /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
   BILLING_HYPERDRIVE?: HyperdriveBinding;
+  /** The origin the public catalog is served from (used only to show the organization its link). */
+  CATALOG_ORIGIN?: string;
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;
