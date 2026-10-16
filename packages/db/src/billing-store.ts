@@ -823,13 +823,13 @@ export function createBillingStore(connectionString: string): BillingStore {
       }
       const actor = input.actor.trim();
       return await inTransaction(pool, async (client) => {
-        // a grant ends now; one that has not started ends as soon as the table allows (a second after it starts)
+        // a grant ends now; one that has not started ends as soon as the table allows (a millisecond after its start, and it never counts: it was revoked before it began)
         const ended = await client.query<{
           key: string;
           organization_id: string;
         }>(
           `UPDATE public.entitlement_grants
-              SET expires_at = LEAST(expires_at, GREATEST($3::timestamptz, starts_at + interval '1 second')), revoked_at = $3, revoked_by = $2
+              SET expires_at = LEAST(expires_at, GREATEST($3::timestamptz, starts_at + interval '1 millisecond')), revoked_at = $3, revoked_by = $2
             WHERE id = $1 AND revoked_at IS NULL AND expires_at > $3::timestamptz
             RETURNING organization_id, key`,
           [input.id, actor, now]
