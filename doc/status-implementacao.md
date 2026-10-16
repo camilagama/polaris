@@ -1332,3 +1332,17 @@ Terceira etapa da Fase 8: as imagens do catálogo público, sem abrir o bucket.
 ### Derivados de imagem gerados no envio (fecha o limite da 8C)
 
 A revisão da 8C notou que nada gerava os derivados de 320 e 640 px, então o catálogo público serviria o original de até 1200 px nos cartões e no `og:image`. O ERP agora gera os dois derivados quando a imagem é enviada (`storeUploadDerivatives`, em `apps/web/src/server/routes/media.ts`): depois de o envio ser confirmado e só se não for um reenvio idempotente, um tamanho de cada vez, com a mesma chave e a mesma função do pedido sob demanda. Uma falha é registrada (`media_derivative_deferred`) e **não** falha o envio: o derivado nasce no primeiro pedido do ERP, como antes. A limpeza horária já apagava os derivados junto da imagem. Testes: o envio escreve a marca, o original e os dois derivados (chaves conferidas), um derivado que falha não derruba o envio, o reenvio não gera nada. Imagens enviadas antes (só ambientes de teste) seguem servidas em tamanho original. Regras em [media.md](../docs/business-rules/media.md), decisão no [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md).
+
+### Fase 8D — o catálogo público no ERP: perfil, interruptor e produtos (PR87 e PR88, lado da organização; implementação e verificações locais concluídas; publicação: ver PR)
+
+Última etapa da Fase 8: a organização passa a gerir o catálogo pela interface, sem comandos manuais.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/catalog-erp` sobre a `main` com 8A a 8C e os derivados no envio. |
+| Contrato e servidor | Concluídos | `publicCatalog.*` (`setup`, `saveProfile`, `setPublished`, `publishProducts`, `unpublishProducts`) com a capability `catalog:publish`, identidade e organização da sessão (nunca do corpo), ID de auditoria do servidor e a origem pública (`CATALOG_ORIGIN`) só para montar o link. Recusas do domínio viram `BAD_REQUEST` ou `CONFLICT` com o motivo estável. 11 testes de roteador. |
+| Tela | Concluída | `/public-catalog` ("Catálogo público" no menu): perfil, interruptor e produtos, com o endereço sugerido pelo nome, contador da descrição, estados "No ar", "Fora do ar" e "Ligado, mas fora do ar" (plano), lotes de até 200 produtos, mensagens em português ([DESIGN.md](../DESIGN.md)). Modelo, mensagens de erro e os três painéis têm testes (`public-catalog-model`, `-errors`, `-panels`). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (156 arquivos, 1782 testes), `build`. |
+| Limites | Registrados | A tela não foi aberta no navegador (o login do ERP exige conta; foi coberta por testes de renderização dos painéis e de roteador); sem teste de navegador automatizado; sem pré-visualização do catálogo dentro do ERP (há o link). |
+
+Com isso a Fase 8 está completa no código. Pendências da fase: o Gate 7 (billing com sandboxes reais) segue como gate de saída do billing, e o go-live exige o login do papel público, o Hyperdrive sem query cache e as variáveis por ambiente (runbook).

@@ -68,6 +68,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.ProductsPage,
     }))
   ),
+  "public-catalog": lazy(() =>
+    import("../catalog/public-catalog-page").then((module) => ({
+      default: module.PublicCatalogPage,
+    }))
+  ),
   sale: lazy(() =>
     import("../sales/sale-page").then((module) => ({
       default: module.SalePage,

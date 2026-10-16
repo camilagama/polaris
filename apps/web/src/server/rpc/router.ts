@@ -134,6 +134,13 @@ import {
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
 import {
+  InvalidPublicCatalogProfileError,
+  PublicCatalogProductUnavailableError,
+  PublicCatalogProfileMissingError,
+  PublicCatalogSlugTakenError,
+  PublicCatalogVersionConflictError,
+} from "@polaris/domain/catalog/public-catalog";
+import {
   GoalLimitReachedError,
   GoalNotActiveError,
   GoalPausedByPlanError,
@@ -242,6 +249,7 @@ import {
 import type { ExpenseRepository } from "./expense-handlers";
 import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
+import type { PublicCatalogRepository } from "./public-catalog-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { TenantRequestContextError } from "../request-context-error";
 import {
@@ -256,6 +264,7 @@ import { pingSystem } from "../use-cases/system-ping";
 import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
 import { createPlanRpcHandlers } from "./plan-handlers";
+import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
@@ -305,6 +314,7 @@ interface RpcRouterDependencies {
   expenseRepository: Partial<ExpenseRepository>;
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
+  publicCatalogRepository: Partial<PublicCatalogRepository>;
   readPeriodResult: typeof readPeriodResult;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
@@ -634,6 +644,7 @@ const badRequestRpcErrors = [
     InvalidCustomerProfileError,
     InvalidCustomerDuplicateSearchError,
     InvalidOperationalSelectionError,
+    InvalidPublicCatalogProfileError,
   ],
   [
     InvalidExpenseError,
@@ -724,6 +735,10 @@ const conflictRpcErrors = [
     GoalNotActiveError,
     GoalPeriodEndedError,
     GoalVersionConflictError,
+    PublicCatalogSlugTakenError,
+    PublicCatalogVersionConflictError,
+    PublicCatalogProfileMissingError,
+    PublicCatalogProductUnavailableError,
   ],
   [
     ProductDeletedError,
@@ -1238,6 +1253,12 @@ export function createRpcRouter(
   });
   const planHandlers = createPlanRpcHandlers({
     planRepository: overrides.planRepository,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const publicCatalogHandlers = createPublicCatalogRpcHandlers({
+    publicCatalogRepository: overrides.publicCatalogRepository,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1809,6 +1830,7 @@ export function createRpcRouter(
     offline: offlineHandlers.offline,
     organization: { createInitial, listMine: organizationHandlers.listMine },
     plan: planHandlers,
+    publicCatalog: publicCatalogHandlers,
     report: reportHandlers,
     paymentProfile: paymentProfileHandlers,
     product: {
