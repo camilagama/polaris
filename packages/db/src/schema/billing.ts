@@ -206,7 +206,7 @@ export const organizationBilling = pgTable(
         OR (
           ${table.revokedThrough} IS NOT NULL
           AND ${table.revokedReason} IN ('refund', 'chargeback', 'won')
-          AND ${table.state} NOT IN ('active', 'grace')
+          AND (${table.state} NOT IN ('active', 'grace') OR ${table.revokedReason} = 'won')
           AND (${table.revokedCycleMonths} IS NULL OR ${table.revokedCycleMonths} IN (1, 6, 12))
         )
       `

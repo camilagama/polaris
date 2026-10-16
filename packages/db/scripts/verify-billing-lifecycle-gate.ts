@@ -1159,7 +1159,8 @@ async function run() {
     );
     const wonRecord = await billing.readRecord(won.organizationId);
     assert.equal(wonRecord?.state, "active");
-    assert.equal(wonRecord?.revoked, null);
+    // a win is kept: it only ever blocks a chargeback for that exact period
+    assert.equal(wonRecord?.revoked?.reason, "won");
 
     // a refund after a chargeback: the reversal then restores nothing
     const both = await subscribed(
@@ -1233,6 +1234,107 @@ async function run() {
       "applied",
       "the monthly payment grants access"
     );
+    // a reversal that overtakes its chargeback on an ACTIVE subscription
+    const activeWon = await subscribed(
+      "lifecycle won on active",
+      "sub_W1",
+      succeeded(at(0), at(30), 6)
+    );
+    const wonFirst = await apply(
+      "fake",
+      "evt-W1-won",
+      taken("dispute_reversed", at(1), at(30)),
+      { providerRef: "sub_W1" },
+      at(1)
+    );
+    assert.equal(wonFirst.status, "applied");
+    const wonActive = await billing.readRecord(activeWon.organizationId);
+    assert.equal(wonActive?.state, "active", "the access is untouched");
+    assert.equal(wonActive?.revoked?.reason, "won");
+    const disputeAfterWin = await apply(
+      "fake",
+      "evt-W1-dispute",
+      taken("charge_disputed", at(0), at(30)),
+      { providerRef: "sub_W1" },
+      at(2)
+    );
+    assert.equal(disputeAfterWin.status, "ignored");
+    assert.equal(
+      (await billing.readRecord(activeWon.organizationId))?.state,
+      "active",
+      "the chargeback that arrives after its own reversal changes nothing"
+    );
+
+    // a chargeback before its charge was known: the cycle is learned from the refused confirmation
+    const unknownCycle = await attachedFree(
+      "lifecycle cycle learned",
+      "sub_W2"
+    );
+    await apply(
+      "fake",
+      "evt-W2-dispute",
+      taken("charge_disputed", at(1), at(30)),
+      { providerRef: "sub_W2" },
+      at(1)
+    );
+    assert.equal(
+      (await billing.readRecord(unknownCycle.organizationId))?.revoked
+        ?.cycleMonths,
+      null
+    );
+    await apply(
+      "fake",
+      "evt-W2-charge",
+      succeeded(at(0), at(30), 6),
+      { providerRef: "sub_W2" },
+      at(2)
+    );
+    const learned = await billing.readRecord(unknownCycle.organizationId);
+    assert.equal(learned?.state, "free", "the confirmation does not grant it");
+    assert.equal(learned?.revoked?.cycleMonths, 6, "but it tells the cycle");
+    await apply(
+      "fake",
+      "evt-W2-won",
+      taken("dispute_reversed", at(3), at(30)),
+      { providerRef: "sub_W2" },
+      at(3)
+    );
+    const restoredCycle = await billing.readRecord(unknownCycle.organizationId);
+    assert.equal(restoredCycle?.state, "active");
+    assert.equal(
+      restoredCycle?.cycleMonths,
+      6,
+      "restored with the cycle it was paid for"
+    );
+    assert.equal(restoredCycle?.accessEndsAt?.getTime(), at(30).getTime());
+
+    // the database refuses what the domain never produces: a refund or chargeback remembered on a paid period
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          "UPDATE public.organization_billing SET revoked_through = now() + interval '5 days', revoked_reason = 'refund' WHERE organization_id = $1",
+          [activeWon.organizationId]
+        ),
+      "23514",
+      "a refund cannot be remembered on an active subscription",
+      "organization_billing_revoked_coherent"
+    );
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          "UPDATE public.organization_billing SET revoked_reason = 'chargeback' WHERE organization_id = $1",
+          [activeWon.organizationId]
+        ),
+      "23514",
+      "a won chargeback cannot be turned into a chargeback while the subscription is active",
+      "organization_billing_revoked_coherent"
+    );
+    // but a won chargeback may live there (the state it was remembered in above)
+    assert.equal(
+      (await billing.readRecord(activeWon.organizationId))?.revoked?.reason,
+      "won"
+    );
+
     tests.push(
       "a refund that arrives before its charge is confirmed is remembered (on a free record and on a running trial), so the confirmation cannot grant it while a payment for a later period does; a reversal that overtakes its chargeback makes the chargeback change nothing; a refund after a chargeback means the reversal restores nothing; and a new checkout does not inherit a payment taken back on the old subscription"
     );
