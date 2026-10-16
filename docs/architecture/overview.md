@@ -15,7 +15,7 @@ O Polaris começa como um monólito modular TypeScript, priorizando Cloudflare W
 - packages/billing contém adapters de providers de assinatura.
 - packages/ui contém componentes de apresentação compartilhados.
 
-Os workspaces billing e ui são, por enquanto, apenas estrutura prevista; o admin tem só a verificação de acesso e `/api/whoami`; o catalog já tem a aplicação pública de leitura (páginas da loja e do produto, SEO, `robots.txt` e a rota pública de imagens, que lê o bucket privado só depois de a base autorizar o pedido); ter um pacote na arquitetura não significa que sua funcionalidade esteja pronta.
+Os workspaces billing e ui são, por enquanto, apenas estrutura prevista; o admin tem a verificação de acesso, `/api/whoami` e o diagnóstico de organizações (contagens, datas e estados, por funções que o papel do Admin executa sem ler nenhuma tabela, [ADR 0071](../adr/0071-admin-diagnostico-sem-acesso-ao-tenant.md)); o catalog já tem a aplicação pública de leitura (páginas da loja e do produto, SEO, `robots.txt` e a rota pública de imagens, que lê o bucket privado só depois de a base autorizar o pedido); ter um pacote na arquitetura não significa que sua funcionalidade esteja pronta.
 
 O Worker de Web responde por autenticação, procedures, mídia, health, sincronização, acesso ao banco e bindings assíncronos. A V1 não tem um deployment apps/api separado. A casca da SPA é servida pelos Static Assets sem passar pelo Worker, então seus headers de segurança são configurados à parte ([ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)).
 

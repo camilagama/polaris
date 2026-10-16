@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./admin/organization-diagnostics": "./src/admin/organization-diagnostics.ts",
     "./admin/platform-capabilities": "./src/admin/platform-capabilities.ts",
     "./authorization/capabilities": "./src/authorization/capabilities.ts",
     "./catalog/category": "./src/catalog/category.ts",

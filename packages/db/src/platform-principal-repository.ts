@@ -23,7 +23,7 @@ export interface PlatformIdentity {
   subject: string;
 }
 
-interface Queryable {
+export interface AdminQueryable {
   query: (
     text: string,
     values: unknown[]
@@ -40,7 +40,7 @@ function snapshotOf(email: string | null): string | null {
 }
 
 export async function resolvePlatformPrincipal(
-  client: Queryable,
+  client: AdminQueryable,
   identity: PlatformIdentity
 ): Promise<PlatformPrincipal | null> {
   const found = await client.query(
@@ -82,7 +82,7 @@ export async function resolvePlatformPrincipal(
 /** Runs the operation over one connection with the Admin role's login and closes it (a Worker makes one per request). */
 export async function withAdminDatabase<T>(
   connectionString: string,
-  operation: (client: Queryable) => Promise<T>
+  operation: (client: AdminQueryable) => Promise<T>
 ): Promise<T> {
   const client = new Client({
     connectionString,

@@ -30,6 +30,10 @@ function setup(overrides: Partial<AdminDependencies> = {}) {
   const dependencies: AdminDependencies = {
     authenticate: vi.fn(() => Promise.resolve(claims)),
     report: vi.fn(),
+    organizations: {
+      diagnostics: vi.fn(() => Promise.resolve(null)),
+      list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
+    },
     resolvePrincipal: vi.fn(() => Promise.resolve(principal)),
     ...overrides,
   };
@@ -189,5 +193,190 @@ describe("the Admin API", () => {
     const { call } = setup();
     expect((await call("/nothing")).status).toBe(404);
     expect((await call("/api/nothing", withToken)).status).toBe(404);
+  });
+});
+
+describe("the organization directory", () => {
+  const raw = {
+    billing: null,
+    billingEvents: {
+      byStatus: {},
+      lastReceivedAt: null,
+      maxAttempts: 0,
+      oldestUnprocessedAt: null,
+    },
+    grants: [],
+    now: "2026-10-16T12:00:00.000Z",
+    offline: { activeGrants: 0, devices: 0, lastSeenAt: null },
+    organization: {
+      authorizationEpoch: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      currency: "BRL",
+      id: "org-1",
+      members: 1,
+      name: "Loja",
+      status: "active",
+      timezone: "America/Sao_Paulo",
+    },
+    planCatalog: [
+      ...["free", "pro"].flatMap((planId) => [
+        { flagValue: null, key: "goals.active.max", limitValue: 1, planId },
+        { flagValue: null, key: "images.active.max", limitValue: 50, planId },
+        {
+          flagValue: null,
+          key: "images.per_product.max",
+          limitValue: 1,
+          planId,
+        },
+        { flagValue: false, key: "offline.write", limitValue: null, planId },
+        { flagValue: false, key: "public_catalog", limitValue: null, planId },
+        { flagValue: null, key: "variants.active.max", limitValue: 50, planId },
+      ]),
+    ],
+    sync: { last7Days: {}, lastReceivedAt: null, rejectedByCode: {} },
+    usage: {
+      activeGoals: 0,
+      archivedProducts: 0,
+      maxImagesPerProduct: 0,
+      images: 0,
+      products: 0,
+      variants: 0,
+    },
+  };
+
+  it("lists organizations for a principal who may diagnose, passing a bounded page request", async () => {
+    const list = vi.fn(() =>
+      Promise.resolve({
+        next: "org-2",
+        organizations: [
+          {
+            accessEndsAt: null,
+            billingState: "free",
+            createdAt: "x",
+            id: "org-1",
+            name: "Loja",
+            planInForce: "free",
+            status: "active",
+          },
+        ],
+      })
+    );
+    const { call } = setup({
+      organizations: { diagnostics: () => Promise.resolve(null), list },
+    });
+    const response = await call(
+      "/api/organizations?query=lo&limit=10&after=org-0",
+      withToken
+    );
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith(
+      { after: "org-0", limit: 10, query: "lo" },
+      bindings
+    );
+    expect(((await response.json()) as { next: string }).next).toBe("org-2");
+    await call("/api/organizations", withToken);
+    expect(list).toHaveBeenLastCalledWith(
+      { after: null, limit: 25, query: null },
+      bindings
+    );
+  });
+
+  it("refuses a page request that is out of bounds before asking the database", async () => {
+    const list = vi.fn();
+    const { call } = setup({
+      organizations: { diagnostics: () => Promise.resolve(null), list },
+    });
+    for (const path of [
+      "/api/organizations?limit=0",
+      "/api/organizations?limit=51",
+      "/api/organizations?limit=abc",
+      "/api/organizations?limit=1.5",
+      `/api/organizations?query=${"x".repeat(101)}`,
+      `/api/organizations?after=${"x".repeat(129)}`,
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case is checked on its own
+      expect((await call(path, withToken)).status).toBe(400);
+    }
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("builds the report for one organization, and says not found for one that does not exist", async () => {
+    const found = setup({
+      organizations: { diagnostics: () => Promise.resolve(raw), list: vi.fn() },
+    });
+    const response = await found.call(
+      "/api/organizations/org-1/diagnostics",
+      withToken
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      entitlements: { plan: string };
+      organization: { id: string };
+    };
+    expect(body.organization.id).toBe("org-1");
+    expect(body.entitlements.plan).toBe("free");
+    const missing = setup();
+    expect(
+      (await missing.call("/api/organizations/nope/diagnostics", withToken))
+        .status
+    ).toBe(404);
+    expect(
+      (
+        await missing.call(
+          `/api/organizations/${"x".repeat(129)}/diagnostics`,
+          withToken
+        )
+      ).status
+    ).toBe(404);
+  });
+
+  it("refuses control characters before asking the database, and tells a damaged plan catalog from a blank error", async () => {
+    const list = vi.fn();
+    const { call } = setup({
+      organizations: { diagnostics: () => Promise.resolve(null), list },
+    });
+    expect(
+      (await call("/api/organizations?query=a%00b", withToken)).status
+    ).toBe(400);
+    expect(
+      (await call("/api/organizations?after=%0Ax", withToken)).status
+    ).toBe(400);
+    expect(
+      (await call("/api/organizations/a%00b/diagnostics", withToken)).status
+    ).toBe(404);
+    expect(list).not.toHaveBeenCalled();
+    const damaged = setup({
+      organizations: {
+        diagnostics: () =>
+          Promise.resolve({ ...raw, planCatalog: raw.planCatalog.slice(0, 5) }),
+        list: vi.fn(),
+      },
+    });
+    const response = await damaged.call(
+      "/api/organizations/org-1/diagnostics",
+      withToken
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "plan_catalog_incomplete" });
+    expect(damaged.dependencies.report).toHaveBeenCalledWith(
+      "plan_catalog_incomplete"
+    );
+  });
+
+  it("needs the diagnose capability and a verified principal", async () => {
+    const without = setup({
+      resolvePrincipal: () =>
+        Promise.resolve({ ...principal, role: "somebody_else" }),
+    });
+    expect((await without.call("/api/organizations", withToken)).status).toBe(
+      403
+    );
+    expect(
+      (await without.call("/api/organizations/org-1/diagnostics", withToken))
+        .status
+    ).toBe(403);
+    const anonymous = setup();
+    expect((await anonymous.call("/api/organizations")).status).toBe(401);
+    expect(anonymous.dependencies.organizations.list).not.toHaveBeenCalled();
   });
 });

@@ -240,6 +240,7 @@ async function run() {
        SELECT p.proname, 'function'
          FROM pg_proc p
         WHERE p.pronamespace = 'public'::regnamespace
+          AND p.proname NOT IN ('admin_organizations_overview', 'admin_organization_diagnostics')
           AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE')`
     );
     assert.deepEqual(
