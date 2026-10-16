@@ -9,5 +9,7 @@ declare namespace Cloudflare {
     CATALOG_HYPERDRIVE: Hyperdrive;
     /** The origin public pages are addressed by (canonical links), e.g. https://catalogo.example. */
     CATALOG_ORIGIN: string;
+    /** The private media bucket, only ever read (ADR 0069). */
+    MEDIA_BUCKET: R2Bucket;
   }
 }

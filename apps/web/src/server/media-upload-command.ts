@@ -5,9 +5,6 @@ const uuidV4Pattern =
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fingerprintPattern = /^[0-9a-f]{64}$/;
-const derivativeSizes = new Set([320, 640]);
-
-export type MediaDerivativeSize = 320 | 640;
 
 export interface MediaUploadFingerprintInput {
   crop: NormalizedMediaCropRect;
@@ -96,16 +93,6 @@ export function mediaStagingMarkerKey(
     throw new Error("invalid_media_staging_marker");
   }
   return `media/staging/v1/${year}/${month}/${day}/${hour.slice(0, 2)}/${attemptId.toLowerCase()}.json`;
-}
-
-export function mediaDerivativeKey(
-  assetId: string,
-  size: MediaDerivativeSize
-): string {
-  if (!(uuidPattern.test(assetId) && derivativeSizes.has(size))) {
-    throw new Error("invalid_media_derivative");
-  }
-  return `media/derivatives/v1/${assetId.toLowerCase()}/${size}.webp`;
 }
 
 export function isMediaObjectKey(value: string): boolean {

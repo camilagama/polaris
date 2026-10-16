@@ -8,6 +8,7 @@ import {
 import { isNotFound, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
+import { parseSlug, parseUuid } from "../input";
 
 /**
  * The server side of the public catalog. Everything a page shows comes from the
@@ -31,31 +32,23 @@ export interface ProductPage {
 }
 
 const PAGE_SIZE = 24;
-const MIN_SLUG_LENGTH = 3;
-const MAX_SLUG_LENGTH = 40;
-const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LOCAL_ORIGIN = "http://127.0.0.1:5174";
 
 /** These functions are reachable by a direct request, so the input is checked, not just typed. */
 function slugOf(value: unknown): string {
-  const slug = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (
-    slug.length < MIN_SLUG_LENGTH ||
-    slug.length > MAX_SLUG_LENGTH ||
-    !SLUG_PATTERN.test(slug)
-  ) {
+  const slug = parseSlug(value);
+  if (slug === null) {
     throw notFound();
   }
   return slug;
 }
 
 function uuidOf(value: unknown): string {
-  if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
+  const id = parseUuid(value);
+  if (id === null) {
     throw notFound();
   }
-  return value;
+  return id;
 }
 
 function cursorOf(value: unknown): string | undefined {

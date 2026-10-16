@@ -17,6 +17,7 @@ import {
   MediaImageProcessingError,
   MediaImageTooLargeError,
   InvalidMediaOrderError,
+  mediaDerivativeKey,
   MediaUploadCommandConflictError,
   ProductMediaLimitError,
   type NormalizedMediaCropRect,
@@ -38,7 +39,6 @@ import {
 } from "../media-image-pipeline";
 import {
   InvalidMediaUploadCommandIdError,
-  mediaDerivativeKey,
   mediaObjectKey,
   mediaStagingMarkerKey,
   mediaUploadFingerprint,

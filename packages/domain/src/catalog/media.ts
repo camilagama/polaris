@@ -187,3 +187,30 @@ export function planMediaOrder(
   }
   return new Map(requestedAssetIds.map((id, position) => [id, position]));
 }
+
+const MEDIA_ASSET_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** The sizes (longest edge, in pixels) of the regenerable derivatives kept next to the master. */
+export const MEDIA_DERIVATIVE_SIZES = [320, 640] as const;
+export type MediaDerivativeSize = (typeof MEDIA_DERIVATIVE_SIZES)[number];
+
+/**
+ * Where a derivative of an image is kept in the private bucket. The key carries
+ * only the asset ID, so whoever serves it must have authorized that asset first;
+ * it is removed together with the image (media cleanup).
+ */
+export function mediaDerivativeKey(
+  assetId: string,
+  size: MediaDerivativeSize
+): string {
+  if (
+    !(
+      MEDIA_ASSET_ID_PATTERN.test(assetId) &&
+      (MEDIA_DERIVATIVE_SIZES as readonly number[]).includes(size)
+    )
+  ) {
+    throw new Error("invalid_media_derivative");
+  }
+  return `media/derivatives/v1/${assetId.toLowerCase()}/${size}.webp`;
+}
