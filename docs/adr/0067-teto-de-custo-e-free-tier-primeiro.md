@@ -14,7 +14,7 @@ O Polaris roda em serviços com franquia gratuita — Cloudflare Workers Free, R
 - **Tudo no free tier:** Cloudflare Workers Free, R2, Cloudflare Images (Transformations Free), Hyperdrive, Neon Free, Resend Free, Sentry Developer e GitHub.
 - **Workers Paid não contratado.** Decisão do usuário: manter Free por enquanto.
 - **Asaas e Woovi ficam fora do teto:** são custo por transação do cliente (repasse), não infraestrutura de desenvolvimento da plataforma.
-- **Assinatura GitHub Pro da conta:** assinatura da conta, fora deste teto (a confirmar pelo responsável).
+- **Assinatura GitHub Pro da conta:** assinatura da conta, fora deste teto (decisão do responsável, 16/10/2026).
 - **Upgrade pago só com decisão explícita do responsável.** Nenhum serviço sobe de plano sozinho ao bater cota.
 - **Cada serviço degrada com segurança ao bater cota:** servir o que existe, avisar e/ou enfileirar, sem cobrar e sem quebrar a tela. Para mídia, o fallback acima da franquia do Images está na emenda ao [ADR 0018](0018-midia-privada-cloudflare-images-r2.md); as cotas de plano já vivem no servidor ([ADR 0058](0058-cotas-do-plano-no-servidor.md)).
 - **Gatilhos de revisão (propostos, para o time validar):** Neon — 60% do armazenamento (600 MB de 1 GB por projeto) ou 70% da computação (70 de 100 CU-h/mês por projeto), conforme os [planos do Neon](https://neon.com/docs/introduction/plans); Images — 50% das 5.000 transformações únicas no mês, conforme os [preços do Cloudflare Images](https://developers.cloudflare.com/images/pricing); Resend — 50% da cota mensal (1.500 de 3.000) ou 80% da diária (80 de 100), conforme as [cotas do Resend](https://resend.com/docs/knowledge-base/account-quotas-and-limits).
