@@ -299,6 +299,7 @@ describe("defence against stale, early and malformed facts", () => {
 });
 
 const eventTypes = [
+  "access_revoked",
   "start_trial",
   "abandon_trial_setup",
   "renewal_ready",
@@ -327,13 +328,39 @@ const eventOf = (type: BillingEvent["type"], clock: Date): BillingEvent => {
   return { type } as BillingEvent;
 };
 
+describe("taking paid access back (a refund or a chargeback)", () => {
+  it("ends paid access at once, with time still left and with no grace, from active and from grace", () => {
+    for (const state of ["active", "grace"] as const) {
+      const facts = at(state, days(10));
+      expect(
+        applyBillingEvent(facts, { type: "access_revoked" }, ctx(false))
+      ).toEqual({ accessEndsAt: null, state: "free" });
+    }
+  });
+
+  it("lands on free_over_limit when the organization holds more than free allows", () => {
+    expect(
+      applyBillingEvent(
+        at("active", days(10)),
+        { type: "access_revoked" },
+        ctx(true)
+      )
+    ).toEqual({ accessEndsAt: null, state: "free_over_limit" });
+  });
+});
+
 describe("the transition table", () => {
   it("accepts exactly the events that apply to each state, and refuses the rest with the state and the event", () => {
     const accepted: Record<BillingState, BillingEvent["type"][]> = {
-      active: ["payment_failed", "payment_succeeded", "period_ended"],
+      active: [
+        "access_revoked",
+        "payment_failed",
+        "payment_succeeded",
+        "period_ended",
+      ],
       free: ["start_trial", "subscribe", "usage_changed"],
       free_over_limit: ["start_trial", "subscribe", "usage_changed"],
-      grace: ["grace_expired", "payment_succeeded"],
+      grace: ["access_revoked", "grace_expired", "payment_succeeded"],
       trial_setup: [
         "abandon_trial_setup",
         "renewal_ready",
@@ -361,8 +388,10 @@ describe("the transition table", () => {
 });
 
 describe("properties of any sequence of events", () => {
+  // taking paid access back early (a refund, a chargeback) is the one event that
+  // may end access before its date: it has its own tests
   const step = fc.tuple(
-    fc.constantFrom(...eventTypes),
+    fc.constantFrom(...eventTypes.filter((type) => type !== "access_revoked")),
     fc.boolean(),
     fc.integer({ max: 20, min: 0 }),
     fc.boolean()

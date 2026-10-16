@@ -101,4 +101,6 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Meta pausada:** meta em andamento que o plano em vigor não comporta (a organização tem mais metas do que o limite). Não é medida nem editada, pode ser cancelada e volta quando o plano permitir; a pausa é derivada, nunca guardada.
 
+**Pagamento tirado:** pagamento de um período que foi reembolsado integralmente ou sofreu chargeback. O Polaris o lembra (e o período que cobria) para que sua confirmação tardia não devolva o acesso e para que um chargeback revertido o restaure.
+
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.
