@@ -182,8 +182,40 @@ async function run() {
         `the billing role cannot: ${statement}`
       );
     }
+    // what the tenant may read of its billing record and its grants: what the product shows, no more
+    for (const statement of [
+      "SELECT revoked_through FROM public.organization_billing",
+      "SELECT revoked_reason FROM public.organization_billing",
+      "SELECT revoked_cycle_months, revoked_cancel_at_period_end FROM public.organization_billing",
+      "SELECT provider_ref FROM public.organization_billing",
+      "SELECT last_fact_at FROM public.organization_billing",
+      "SELECT * FROM public.organization_billing",
+      "SELECT reason FROM public.entitlement_grants",
+      "SELECT granted_by FROM public.entitlement_grants",
+      "SELECT revoked_by FROM public.entitlement_grants",
+      "SELECT * FROM public.entitlement_grants",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Ten statements, in order.
+      await expectSqlState(
+        () =>
+          withRuntimeSqlContext(runtimeUrl, plain, (client) =>
+            client.query(statement)
+          ),
+        "42501",
+        `the tenant cannot read: ${statement}`
+      );
+    }
+    await withRuntimeSqlContext(runtimeUrl, plain, async (client) => {
+      // what it needs to know where it stands is still readable
+      await client.query(
+        "SELECT organization_id, state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, trial_started_at, over_limit_since, provider, version FROM public.organization_billing"
+      );
+      await client.query(
+        "SELECT id, key, limit_value, flag_value, starts_at, expires_at, revoked_at FROM public.entitlement_grants"
+      );
+    });
     tests.push(
-      "an organization cannot write, change or delete a grant, and even the billing role can only give one and end it early: nothing else about a grant is editable and none is deleted"
+      "an organization cannot write, change or delete a grant, cannot read what the billing lifecycle keeps for itself (the provider reference, the clock of facts, the payments taken back, a grant's reason and who gave it) while it still reads what the product shows, and even the billing role can only give a grant and end it early: nothing else about a grant is editable and none is deleted"
     );
 
     // ------------------------------------------------ 2. what a grant must say

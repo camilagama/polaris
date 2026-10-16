@@ -1267,3 +1267,14 @@ A revisão pós-merge do PR #99 (aprovada com ajustes; nada bloqueava) pediu cin
 | "PostgreSQL 18 gates" com `continue-on-error: true` (ADR 0025) | Decisão do responsável | Recomendação registrada na descrição do PR: o job passou em todos os PRs desta cadeia e cada falha que ele mostrou era um defeito real (a auditoria de funções do `review-hardening`, uma corrida de milissegundos na revogação de concessões). Tirar o `continue-on-error` é uma linha no workflow, mas é uma decisão sobre bloquear ou não o merge. |
 | Nenhum DTO devolve `revoked_*`? (não verificado pelo bot) | Verificado | Nenhum contrato nem rota lê essas colunas (`billing-repository` e `operational-selection-repository` selecionam só estado, fim do acesso e início do episódio; `billing-store` só roda no papel de billing). O SELECT por coluna do PR seguinte torna isso uma garantia do banco. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, testes, `build` e `db:generate` sem drift; gates `billing-lifecycle`, `review-hardening` e `gate2-runtime` em branch Neon criada do zero com a migration 0058 (apagada depois). |
+
+### SELECT por coluna do registro de billing e das concessões (ponto em aberto da revisão do #99)
+
+Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e transforma a verificação de que nenhum DTO devolve essas colunas numa garantia do banco.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Decisão | Tomada pelo projeto | Emenda ao [ADR 0057](../docs/adr/0057-catalogo-de-planos-e-entitlements.md): o tenant lê só colunas nomeadas; colunas novas nascem invisíveis. Foi além do pedido no mesmo espírito: também ficam fora do tenant a referência da assinatura no provedor, o relógio dos fatos e, nas concessões, o motivo, quem deu e quem encerrou. |
+| Banco | Concluído | Migration 0059: `REVOKE SELECT` da tabela e `GRANT SELECT` por coluna ao papel do tenant em `organization_billing` e `entitlement_grants`. |
+| Código | Sem mudança | Os repositórios já selecionavam colunas nomeadas. |
+| Gate PostgreSQL 18 | Concluído | `entitlement-grants`: o tenant é recusado (`42501`) ao ler cada coluna interna e com `SELECT *`, e ainda lê as colunas que o produto usa; os gates de entitlements, metas, variantes operacionais, catálogo, lifecycle, runtime, auditoria e sync passaram na mesma branch descartável. |
