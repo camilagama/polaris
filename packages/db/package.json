@@ -68,6 +68,7 @@
     "poc": "bun scripts/poc.ts",
     "poc:billing-lifecycle:verify": "bun scripts/verify-billing-lifecycle-gate.ts",
     "poc:operational-selection:verify": "bun scripts/verify-operational-selection-gate.ts",
+    "poc:entitlement-grants:verify": "bun scripts/verify-entitlement-grants-gate.ts",
     "poc:billing-catalog:verify": "bun scripts/verify-billing-catalog-gate.ts",
     "poc:entitlements:verify": "bun scripts/verify-entitlements-gate.ts",
     "poc:bootstrap:verify": "bun scripts/verify-bootstrap-gate.ts",

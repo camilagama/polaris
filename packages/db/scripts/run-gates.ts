@@ -67,6 +67,7 @@ const gates: Gate[] = [
   ["entitlements", "verify-entitlements-gate.ts"],
   ["billing-lifecycle", "verify-billing-lifecycle-gate.ts"],
   ["operational-selection", "verify-operational-selection-gate.ts"],
+  ["entitlement-grants", "verify-entitlement-grants-gate.ts"],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -150,6 +151,7 @@ const suites: Record<string, string[]> = {
     "entitlements",
     "billing-lifecycle",
     "operational-selection",
+    "entitlement-grants",
     "media-commands",
     "offline-devices",
     "offline-lease",
@@ -188,6 +190,7 @@ const suites: Record<string, string[]> = {
     "entitlements",
     "billing-lifecycle",
     "operational-selection",
+    "entitlement-grants",
   ],
   // Phase 5 (offline): grows with every offline gate.
   gate5: [
