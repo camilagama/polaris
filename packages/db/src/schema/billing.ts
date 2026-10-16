@@ -159,12 +159,14 @@ export const organizationBilling = pgTable(
     provider: text("provider"),
     providerRef: text("provider_ref"),
     /**
-     * The newest payment taken back by a refund or a chargeback (PR84), while
-     * the record is not on a paid period: the end of the period that was paid
-     * for, why it was taken back (`won`: a chargeback reversed before it was
-     * applied) and what the subscription was. It keeps that payment's late
-     * confirmation from reviving the access and lets a reversed chargeback
-     * restore it. Cleared when the record is paid again.
+     * What is remembered of a payment taken back (PR84): the end of the period
+     * that was paid for, why (`refund`, `chargeback`, or `won`: a chargeback
+     * reversed before it was applied) and what the subscription was. A refund or
+     * a chargeback is never held on a paid period (active, grace): it keeps that
+     * payment's late confirmation from reviving the access and lets a reversed
+     * chargeback restore it, and is cleared when the record is paid again. A
+     * `won` may be held on a paid period (it changes nothing there), carries no
+     * cycle and no cancellation, and stays until another memory replaces it.
      */
     revokedCancelAtPeriodEnd: boolean("revoked_cancel_at_period_end")
       .default(false)
@@ -208,6 +210,7 @@ export const organizationBilling = pgTable(
           AND ${table.revokedReason} IN ('refund', 'chargeback', 'won')
           AND (${table.state} NOT IN ('active', 'grace') OR ${table.revokedReason} = 'won')
           AND (${table.revokedCycleMonths} IS NULL OR ${table.revokedCycleMonths} IN (1, 6, 12))
+          AND (${table.revokedReason} <> 'won' OR (${table.revokedCycleMonths} IS NULL AND NOT ${table.revokedCancelAtPeriodEnd}))
         )
       `
     ),
