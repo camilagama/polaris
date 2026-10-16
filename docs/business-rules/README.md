@@ -25,4 +25,5 @@ Quando uma decisão ainda não está implementada, a regra a marca como "decidid
 - Cadastro, contato e lifecycle de clientes: [customers.md](customers.md).
 - Despesas, competência, resultado e metas: [expenses-and-results.md](expenses-and-results.md).
 - Planos, reconciliação de providers e entitlements: [billing-and-entitlements.md](billing-and-entitlements.md).
+- Perfil público, publicação de produtos e o que o catálogo público mostra: [public-catalog.md](public-catalog.md).
 - Minimização, encerramento, exportação e retenção: [privacy.md](privacy.md).

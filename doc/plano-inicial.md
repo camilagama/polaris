@@ -35,6 +35,7 @@ Resultado da revisão completa PR01–PR47 ([`revisao-checkpoint-gate4.md`](revi
 - **Antes da Fase 7.** Comandos para remover, substituir e reordenar mídia de produto.
 - **Retroativos.** A janela retroativa de venda é de 30 dias de calendário no fuso da organização (PR47); custo de venda retroativa usa a média vigente (D-4).
 - **Integração.** A cadeia de PRs é integrada por fase, antes da Fase 5; nenhum merge foi feito nesta rodada.
+- **Fase 8 antes do Gate 7 (16/10/2026, [ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md)).** O Gate 7 depende das contas sandbox do provedor (PR77, PR78, PR80) e continua sendo o gate de saída do billing, executado quando elas existirem e antes de qualquer cobrança real. A Fase 8 não depende do provedor e é implementada antes, em quatro pull requests: 8A (PR87 e PR88: perfil, publicação e leitura pública por funções, [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)), 8B (PR86 e PR90: aplicação e SEO), 8C (PR89 e PR91: rota pública de mídia e despublicação) e 8D (interface do ERP). A despublicação do PR91 é a leitura do plano a cada pedido, sem purge externo.
 
 ---
 

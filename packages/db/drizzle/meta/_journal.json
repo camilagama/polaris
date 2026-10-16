@@ -421,6 +421,13 @@
       "when": 1792170289961,
       "tag": "0059_tenant_billing_column_privileges",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792183007532,
+      "tag": "0060_public_catalog",
+      "breakpoints": true
     }
   ]
 }

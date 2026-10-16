@@ -37,6 +37,7 @@ Cada operação exige uma capability própria, verificada no procedimento e repe
 | `customer:update` | Listar, buscar duplicados, criar, editar, arquivar e restaurar clientes. Na V1 não há `customer:read`, então a leitura de clientes também exige esta capability. |
 | `report:read` | Ler o resultado econômico de um período (vendas líquidas, CMV, margem e resultado estimado), que expõe custo e margem. |
 | `goal:manage` | Criar, editar, cancelar e ler metas (o progresso delas usa o resultado do período). |
+| `catalog:publish` | Gerir o perfil público, ligar e desligar o catálogo público e escolher os produtos publicados ([public-catalog.md](public-catalog.md)). |
 | `organization:manage` | Gerenciar perfis de pagamento da organização. |
 | `expense:create` | Listar, criar, editar, anular e reativar despesas e gerir as categorias de despesa. Na V1 não há `expense:read`, então a leitura de despesas também exige esta capability. |
 
