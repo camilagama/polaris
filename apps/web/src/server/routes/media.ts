@@ -17,6 +17,7 @@ import {
   MediaImageProcessingError,
   MediaImageTooLargeError,
   InvalidMediaOrderError,
+  MEDIA_DERIVATIVE_SIZES,
   mediaDerivativeKey,
   MediaUploadCommandConflictError,
   ProductMediaLimitError,
@@ -44,7 +45,10 @@ import {
   mediaUploadFingerprint,
   parseUploadCommandId,
 } from "../media-upload-command";
-import { logServerErrorFromContext } from "../observability/server-log";
+import {
+  logServerErrorFromContext,
+  logServerEvent,
+} from "../observability/server-log";
 import { TenantRequestContextError } from "../request-context-error";
 import { withTenantRequestContext } from "../tenant-request-context";
 
@@ -485,6 +489,7 @@ async function handleMediaUpload(
   dependencies: {
     authorizeProduct: typeof assertProductCanReceiveMedia;
     createAsset: typeof createProductMediaAsset;
+    derivativeProcessor: DerivativeProcessor;
     findUpload: typeof findMediaUploadCommand;
     imageProcessor: ImageProcessor;
     tenantRequest: TenantRunner;
@@ -587,12 +592,57 @@ async function handleMediaUpload(
     storageKey,
   });
 
+  if (!result.replayed) {
+    await storeUploadDerivatives(context, {
+      assetId: result.asset.assetId,
+      derivativeProcessor: dependencies.derivativeProcessor,
+      images,
+      mediaBucket,
+      sourceBytes: processed.bytes,
+    });
+  }
+
   return jsonAssetResponse(
     context,
     result.asset,
     result.replayed,
     result.replayed ? 200 : 201
   );
+}
+
+/**
+ * Makes the regenerable derivatives when an image arrives, so the first visitor
+ * of the public catalog does not wait for them (the catalog only reads them). The
+ * upload already succeeded: a derivative that fails here is reported and made
+ * later by the first request for that size in the ERP, never an error.
+ */
+async function storeUploadDerivatives(
+  context: Context<ServerEnv>,
+  input: {
+    assetId: string;
+    derivativeProcessor: DerivativeProcessor;
+    images: NonNullable<ServerEnv["Bindings"]["IMAGES"]>;
+    mediaBucket: MediaBucketBinding;
+    sourceBytes: Uint8Array;
+  }
+): Promise<void> {
+  for (const size of MEDIA_DERIVATIVE_SIZES) {
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: two sizes, one after the other, to keep the Worker's memory low
+      const derivative = await input.derivativeProcessor({
+        images: input.images,
+        maxEdge: size,
+        sourceBytes: input.sourceBytes,
+      });
+      await putMediaDerivative(
+        input.mediaBucket,
+        mediaDerivativeKey(input.assetId, size),
+        derivative.bytes
+      );
+    } catch {
+      logServerEvent("media_derivative_deferred", context, { size });
+    }
+  }
 }
 
 type MediaDerivativeRequestSize = 320 | 640 | null;
@@ -926,6 +976,7 @@ export function createMediaRoutes(
       return await handleMediaUpload(context, {
         authorizeProduct,
         createAsset,
+        derivativeProcessor,
         findUpload,
         imageProcessor,
         tenantRequest,

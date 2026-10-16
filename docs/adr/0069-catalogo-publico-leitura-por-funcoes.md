@@ -30,7 +30,7 @@ O catálogo público (Fase 8) é a primeira superfície do Polaris aberta a quem
 ## Limites aceitos
 
 - O Worker do catálogo recebe o binding do bucket de mídia com permissão de escrita (o R2 não oferece binding somente leitura); só `get` é usado. Separar o bucket público de derivados é uma alternativa futura.
-- Uma imagem ainda sem derivado do tamanho pedido é servida em tamanho original (até 1200 px). **Hoje nada gera os derivados** (o ERP só os cria na primeira chamada de `?size=`, que a interface não faz), então cartões e `og:image` carregam o original; gerar derivados é pré-requisito do go-live (por exemplo, gerar na primeira leitura autorizada, o que daria ao Worker público o binding de imagens e escrita no bucket, ou gerar no envio).
+- Os derivados de 320 e 640 px são gerados **no envio da imagem** pelo ERP (que já tem o binding de imagens e a escrita no bucket); o Worker público só os lê. Se a geração falhar, o envio segue e o derivado nasce no primeiro `?size=` do ERP. Uma imagem sem derivado do tamanho pedido (enviada antes desta mudança, ou cuja geração falhou) é servida em tamanho original, até 1200 px.
 
 - Escolha de produto de uma organização fora do plano continua gravada (e volta a valer se ela voltar); a leitura do ERP mostra `enabled=false`.
 - O número de páginas e o tamanho do JSON por produto não têm limite além do da lista (60 por página).

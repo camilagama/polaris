@@ -167,7 +167,8 @@ describe("media upload route", () => {
       asset: mediaAsset,
       replayed: false,
     });
-    expect(mediaBucket.put).toHaveBeenCalledTimes(2);
+    // the staging marker, the master, and the two derivatives the public catalog reads
+    expect(mediaBucket.put).toHaveBeenCalledTimes(4);
     const [stagingKey, , stagingOptions] =
       vi.mocked(mediaBucket.put).mock.calls[0] ?? [];
     const [key, , options] = vi.mocked(mediaBucket.put).mock.calls[1] ?? [];
@@ -182,8 +183,33 @@ describe("media upload route", () => {
       contentType: "image/webp",
     });
     expect(options?.onlyIf?.get("if-none-match")).toBe("*");
-    expect(stored.size).toBe(1);
+    expect(
+      vi
+        .mocked(mediaBucket.put)
+        .mock.calls.slice(2)
+        .map(([derivativeKey]) => derivativeKey)
+    ).toEqual([
+      `media/derivatives/v1/${mediaAsset.assetId}/320.webp`,
+      `media/derivatives/v1/${mediaAsset.assetId}/640.webp`,
+    ]);
+    expect(stored.size).toBe(3);
     expect(dependencies.createProductMediaAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it("still succeeds when a derivative cannot be made, leaving it for the first request", async () => {
+    const { app, bindings, mediaBucket, stored } = createTestApp({
+      processMediaDerivative: vi.fn(() =>
+        Promise.reject(new Error("images down"))
+      ),
+    });
+    const response = await app.fetch(
+      uploadRequest({ body: new Uint8Array([1, 2, 3]) }),
+      bindings
+    );
+
+    expect(response.status).toBe(201);
+    expect(mediaBucket.put).toHaveBeenCalledTimes(2);
+    expect(stored.size).toBe(1);
   });
 
   it("rejects an excessive declared size before authentication or body processing", async () => {
