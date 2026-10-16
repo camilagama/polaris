@@ -19,6 +19,8 @@ const dbMessage =
   "packages/db must not depend on the web app, the UI or the HTTP layer.";
 const catalogMessage =
   "The public catalog must not import tenant data, billing, auth or a database driver: it reads only through the public catalog reader.";
+const adminMessage =
+  "The Admin app must not import tenant data, billing, auth or a database driver: it reaches the database only through its own repositories.";
 const browserMessage =
   "Browser code must not import the database, the server layer or server-only libraries.";
 
@@ -52,6 +54,16 @@ const cases = [
   ["@polaris/billing", ["apps", "catalog", "src"], catalogMessage],
   ["better-auth", ["apps", "catalog", "src"], catalogMessage],
   ["pg", ["apps", "catalog", "src"], catalogMessage],
+  ["@polaris/db/client", ["apps", "admin", "src"], adminMessage],
+  ["@polaris/db/tenant-transaction", ["apps", "admin", "src"], adminMessage],
+  [
+    "@polaris/db/public-catalog-repository",
+    ["apps", "admin", "src"],
+    adminMessage,
+  ],
+  ["@polaris/billing", ["apps", "admin", "src"], adminMessage],
+  ["better-auth", ["apps", "admin", "src"], adminMessage],
+  ["pg", ["apps", "admin", "src"], adminMessage],
 ].map(([specifier, workspace, expected]) => ({
   expected,
   source: forbiddenImport(specifier),

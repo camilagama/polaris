@@ -7,7 +7,7 @@ O Polaris começa como um monólito modular TypeScript, priorizando Cloudflare W
 ## Aplicações e packages
 
 - apps/web é o ERP autenticado: React/Vite servido com seu Worker; Hono e oRPC expõem as procedures do servidor.
-- apps/admin é um deployment separado para operações da plataforma, protegido por Cloudflare Access e capabilities internas. Não compartilha a sessão Better Auth do ERP.
+- apps/admin é um deployment separado para operações da plataforma, protegido por Cloudflare Access e capabilities internas. Não compartilha a sessão Better Auth do ERP. O Worker verifica o token do Access em todo pedido, acha o operador por emissor e subject e pede uma capacidade nomeada por rota; seu papel de banco só lê os principais ([ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md)).
 - apps/catalog é uma aplicação pública separada para conteúdo de catálogo explicitamente publicado. Ela não lê tabela alguma: um papel de banco dedicado executa quatro funções que devolvem só o que está publicado e olham o plano a cada pedido ([ADR 0069](../adr/0069-catalogo-publico-leitura-por-funcoes.md)).
 - packages/domain contém lógica de negócio pura.
 - packages/contracts contém contratos de transporte.
@@ -15,7 +15,7 @@ O Polaris começa como um monólito modular TypeScript, priorizando Cloudflare W
 - packages/billing contém adapters de providers de assinatura.
 - packages/ui contém componentes de apresentação compartilhados.
 
-Os workspaces admin, billing e ui são, por enquanto, apenas estrutura prevista; o catalog já tem a aplicação pública de leitura (páginas da loja e do produto, SEO, `robots.txt` e a rota pública de imagens, que lê o bucket privado só depois de a base autorizar o pedido); ter um pacote na arquitetura não significa que sua funcionalidade esteja pronta.
+Os workspaces billing e ui são, por enquanto, apenas estrutura prevista; o admin tem só a verificação de acesso e `/api/whoami`; o catalog já tem a aplicação pública de leitura (páginas da loja e do produto, SEO, `robots.txt` e a rota pública de imagens, que lê o bucket privado só depois de a base autorizar o pedido); ter um pacote na arquitetura não significa que sua funcionalidade esteja pronta.
 
 O Worker de Web responde por autenticação, procedures, mídia, health, sincronização, acesso ao banco e bindings assíncronos. A V1 não tem um deployment apps/api separado. A casca da SPA é servida pelos Static Assets sem passar pelo Worker, então seus headers de segurança são configurados à parte ([ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)).
 

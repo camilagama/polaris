@@ -109,4 +109,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Endereço público:** o slug do catálogo, único entre todas as organizações (`/loja-da-ana`).
 
+**Principal de plataforma:** a pessoa que opera o Polaris, identificada pelo emissor e subject do Cloudflare Access (nunca pelo e-mail). Só entra no Admin se o dono do banco a cadastrou e ela está ativa.
+
+**Capacidade de plataforma:** permissão nomeada do Admin (por exemplo `pii:reveal`), separada das capacidades de tenant; cada rota do Admin pede uma, nenhum caso de uso compara o papel pelo nome.
+
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.

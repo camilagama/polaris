@@ -1,0 +1,8 @@
+# Operadores da plataforma (Admin)
+
+- O Admin é de quem opera o Polaris, não de um cliente. Um operador é um **principal de plataforma**: a identidade verificada pelo Cloudflare Access (emissor e subject), nunca o e-mail. O e-mail é só um rótulo para mostrar quem é.
+- Entrar no Access não torna ninguém operador: o principal precisa ter sido cadastrado pelo dono do banco, estar ativo e ter um papel conhecido. Quem não é principal, ou está desativado, não acessa nada e não é informado do motivo.
+- Todo pedido à API do Admin traz o token assinado do Access e ele é verificado a cada pedido (assinatura, emissor, audiência, validade e sujeito; só token de pessoa, não de serviço). Sem a configuração do Access o Admin recusa tudo.
+- Cada operação do Admin exige uma **capacidade de plataforma** nomeada (leitura da plataforma, diagnóstico de organização, casos de suporte, acesso temporário a dados de um tenant, revelação de dado pessoal, operação de cobrança, suspensão, casos de privacidade). Hoje o papel `platform_owner` as tem todas; um papel desconhecido não tem nenhuma. Capacidades de plataforma e de tenant são separadas.
+- O Admin não tem acesso a dados de tenant por padrão. Ler registros de uma organização exige um caso de suporte e um acesso temporário (etapas seguintes da fase).
+- Desativar um operador vale no pedido seguinte. Trocar o e-mail dele no provedor de identidade não muda quem ele é para o Polaris.
