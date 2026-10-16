@@ -100,12 +100,16 @@ interface BillingRow {
   pending_cycle_months: number | null;
   provider: string | null;
   provider_ref: string | null;
+  revoked_cancel_at_period_end: boolean;
+  revoked_cycle_months: number | null;
+  revoked_reason: string | null;
+  revoked_through: Date | null;
   state: string;
   trial_started_at: Date | null;
 }
 
 const BILLING_COLUMNS =
-  "organization_id, state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, last_fact_at, provider, provider_ref, trial_started_at";
+  "organization_id, state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, last_fact_at, provider, provider_ref, trial_started_at, revoked_through, revoked_reason, revoked_cycle_months, revoked_cancel_at_period_end";
 
 function cycle(value: number | null): BillingCycleMonths | null {
   return value !== null && isBillingCycleMonths(value) ? value : null;
@@ -119,6 +123,18 @@ function toRecord(row: BillingRow): BillingRecord {
     lastFactAt: row.last_fact_at,
     pendingCycleMonths: cycle(row.pending_cycle_months),
     state: row.state as BillingState,
+    revoked:
+      row.revoked_through !== null &&
+      (row.revoked_reason === "refund" ||
+        row.revoked_reason === "chargeback" ||
+        row.revoked_reason === "won")
+        ? {
+            cancelAtPeriodEnd: row.revoked_cancel_at_period_end,
+            cycleMonths: cycle(row.revoked_cycle_months),
+            periodEndsAt: row.revoked_through,
+            reason: row.revoked_reason,
+          }
+        : null,
     trialConsumed: row.trial_started_at !== null,
   };
 }
@@ -198,6 +214,10 @@ async function saveRecord(
        provider = COALESCE(provider, $10),
        provider_ref = COALESCE(provider_ref, $11),
        over_limit_since = CASE WHEN $12::boolean THEN over_limit_since ELSE $13::timestamptz END,
+       revoked_through = $14::timestamptz,
+       revoked_reason = $15,
+       revoked_cycle_months = $16,
+       revoked_cancel_at_period_end = $17,
        updated_at = $9::timestamptz,
        version = version + 1
      WHERE organization_id = $1`,
@@ -216,6 +236,10 @@ async function saveRecord(
       episode === "keep",
       // a kept episode keeps whatever the record says, including nothing (never a fresh window)
       episode === "keep" ? null : episode,
+      next.revoked?.periodEndsAt ?? null,
+      next.revoked?.reason ?? null,
+      next.revoked?.cycleMonths ?? null,
+      next.revoked?.cancelAtPeriodEnd ?? false,
     ]
   );
 }
@@ -520,7 +544,10 @@ export function createBillingStore(connectionString: string): BillingStore {
           throw new Error("billing_provider_already_attached");
         }
         await client.query(
-          "UPDATE public.organization_billing SET provider = $2, provider_ref = $3, updated_at = now(), version = version + 1 WHERE organization_id = $1",
+          // a new subscription reference is a new checkout: a payment taken back on the old one does not follow it
+          `UPDATE public.organization_billing SET provider = $2, provider_ref = $3,
+             revoked_through = NULL, revoked_reason = NULL, revoked_cycle_months = NULL, revoked_cancel_at_period_end = false,
+             updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [organizationId, provider, providerRef]
         );
       });

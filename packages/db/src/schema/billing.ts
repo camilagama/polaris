@@ -158,6 +158,20 @@ export const organizationBilling = pgTable(
     /** Which payment provider holds the subscription, and its reference there (no personal data). */
     provider: text("provider"),
     providerRef: text("provider_ref"),
+    /**
+     * The newest payment taken back by a refund or a chargeback (PR84), while
+     * the record is not on a paid period: the end of the period that was paid
+     * for, why it was taken back (`won`: a chargeback reversed before it was
+     * applied) and what the subscription was. It keeps that payment's late
+     * confirmation from reviving the access and lets a reversed chargeback
+     * restore it. Cleared when the record is paid again.
+     */
+    revokedCancelAtPeriodEnd: boolean("revoked_cancel_at_period_end")
+      .default(false)
+      .notNull(),
+    revokedCycleMonths: integer("revoked_cycle_months"),
+    revokedReason: text("revoked_reason"),
+    revokedThrough: timestamp("revoked_through", { withTimezone: true }),
     state: text("state").default("free").notNull(),
     /** When the trial was used, or waived by subscribing without one: it is offered once. */
     trialStartedAt: timestamp("trial_started_at", { withTimezone: true }),
@@ -184,6 +198,19 @@ export const organizationBilling = pgTable(
       sql`${table.state} <> 'trialing' OR ${table.trialStartedAt} IS NOT NULL`
     ),
     check("organization_billing_version_positive", sql`${table.version} >= 1`),
+    // a payment taken back is remembered whole or not at all, and never on a paid period
+    check(
+      "organization_billing_revoked_coherent",
+      sql`
+        (${table.revokedThrough} IS NULL AND ${table.revokedReason} IS NULL AND ${table.revokedCycleMonths} IS NULL AND NOT ${table.revokedCancelAtPeriodEnd})
+        OR (
+          ${table.revokedThrough} IS NOT NULL
+          AND ${table.revokedReason} IN ('refund', 'chargeback', 'won')
+          AND ${table.state} NOT IN ('active', 'grace')
+          AND (${table.revokedCycleMonths} IS NULL OR ${table.revokedCycleMonths} IN (1, 6, 12))
+        )
+      `
+    ),
     // only a record that is free (over the limits, or setting up a trial) has an episode start
     check(
       "organization_billing_over_limit_since_coherent",
@@ -320,7 +347,7 @@ export const billingEvents = pgTable(
     ),
     check(
       "billing_events_fact_type_allowed",
-      sql`${table.factType} IN ('trial_method_ready', 'charge_succeeded', 'charge_failed', 'subscription_cancelled', 'cycle_change_scheduled', 'time_elapsed', 'command')`
+      sql`${table.factType} IN ('trial_method_ready', 'charge_succeeded', 'charge_failed', 'subscription_cancelled', 'cycle_change_scheduled', 'charge_refunded', 'charge_disputed', 'dispute_reversed', 'time_elapsed', 'command')`
     ),
     check(
       "billing_events_status_allowed",

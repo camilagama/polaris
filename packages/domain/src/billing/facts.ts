@@ -6,7 +6,9 @@ import {
 import {
   applyBillingEvent,
   type BillingEvent,
+  GRACE_DAYS,
   InvalidBillingTransitionError,
+  MAX_PERIOD_DAYS,
   RejectedBillingEventError,
 } from "./subscription-state";
 
@@ -57,6 +59,27 @@ export type BillingFact =
       cycleMonths: BillingCycleMonths;
       occurredAt: Date;
       type: "cycle_change_scheduled";
+    }
+  | {
+      /**
+       * The charge that paid the period ending at `periodEndsAt` was refunded in
+       * full. A partial refund is a commercial gesture and is not a fact.
+       */
+      occurredAt: Date;
+      periodEndsAt: Date;
+      type: "charge_refunded";
+    }
+  | {
+      /** The charge that paid the period ending at `periodEndsAt` was charged back. */
+      occurredAt: Date;
+      periodEndsAt: Date;
+      type: "charge_disputed";
+    }
+  | {
+      /** The chargeback on the period ending at `periodEndsAt` was decided in Polaris's favour. */
+      occurredAt: Date;
+      periodEndsAt: Date;
+      type: "dispute_reversed";
     };
 
 export type BillingFactType = BillingFact["type"];
@@ -67,7 +90,37 @@ export const BILLING_FACT_TYPES = [
   "charge_failed",
   "subscription_cancelled",
   "cycle_change_scheduled",
+  "charge_refunded",
+  "charge_disputed",
+  "dispute_reversed",
 ] as const satisfies readonly BillingFactType[];
+
+/**
+ * What is remembered of a payment taken back (PR84): the period it paid for, why
+ * it was taken back, and what the subscription was (to restore it). It keeps a
+ * late confirmation of that same payment from reviving the access and lets a
+ * chargeback decided in Polaris's favour restore it. `won` remembers a
+ * chargeback that was reversed before it was ever applied (delivered out of
+ * order), so that the chargeback, when it arrives, changes nothing.
+ */
+export interface RevokedPayment {
+  /** The subscription was cancelled when the payment was taken back (kept through a restore). */
+  cancelAtPeriodEnd: boolean;
+  /** The cycle the subscription had, to restore a reversed chargeback. */
+  cycleMonths: BillingCycleMonths | null;
+  /** The end of the period that was paid for. */
+  periodEndsAt: Date;
+  reason: "chargeback" | "refund" | "won";
+}
+
+/**
+ * Providers round the end of a period differently from one event to the next
+ * (to midnight, to the day): two ends within a day of each other are the same
+ * period.
+ */
+const PERIOD_MATCH_TOLERANCE_MS = 86_400_000;
+const samePeriod = (left: Date, right: Date): boolean =>
+  Math.abs(left.getTime() - right.getTime()) <= PERIOD_MATCH_TOLERANCE_MS;
 
 /** The organization's whole billing record: the facts of the state machine and what the lifecycle adds. */
 export interface BillingRecord extends BillingFacts {
@@ -79,6 +132,8 @@ export interface BillingRecord extends BillingFacts {
   lastFactAt: Date | null;
   /** A cycle change that takes effect at the next renewal. */
   pendingCycleMonths: BillingCycleMonths | null;
+  /** The newest payment taken back by a refund or a chargeback, while the record is not Pro. */
+  revoked: RevokedPayment | null;
   /** The trial was used, or waived by subscribing without one: it is offered once. */
   trialConsumed: boolean;
 }
@@ -145,6 +200,21 @@ function moved(
   }
 }
 
+/**
+ * What is remembered of a payment taken back: nothing once the record is paid
+ * again (a new payment is a new period), otherwise what the change says, or what
+ * was. A trial is not a payment: it keeps what is remembered.
+ */
+function revokedAfter(
+  before: BillingRecord,
+  next: Partial<BillingRecord> & BillingFacts
+): RevokedPayment | null {
+  if (next.state === "active" || next.state === "grace") {
+    return null;
+  }
+  return next.revoked === undefined ? before.revoked : next.revoked;
+}
+
 function applied(
   before: BillingRecord,
   next: Partial<BillingRecord> & BillingFacts,
@@ -155,6 +225,8 @@ function applied(
   const record = normalized({
     ...before,
     ...next,
+    // new Pro access is a new payment: what was taken back before no longer matters
+    revoked: revokedAfter(before, next),
     // an older fact never rewinds the clock of facts, and a fact dated in the
     // future (a skewed provider clock) never pushes it past the present, which
     // would make every later, legitimate fact look stale
@@ -180,6 +252,16 @@ function chargeSucceeded(
   fact: Extract<BillingFact, { type: "charge_succeeded" }>,
   context: ReconcileContext
 ): ReconcileResult {
+  // the payment that was refunded or charged back is not the one that revives
+  // access, however late its confirmation arrives; a later payment is a new one
+  if (
+    record.revoked &&
+    record.revoked.reason !== "won" &&
+    fact.periodEndsAt.getTime() <=
+      record.revoked.periodEndsAt.getTime() + PERIOD_MATCH_TOLERANCE_MS
+  ) {
+    return ignored("not_applicable");
+  }
   // a late confirmation after the record went back to free revives it: the
   // customer paid, so the payment is what matters
   const fromFree =
@@ -304,6 +386,213 @@ function cycleChangeScheduled(
   );
 }
 
+const DAY = 86_400_000;
+
+/**
+ * The end of the paid period the record is standing on: the access end while
+ * active, and the end of the period that ran out while in grace (grace is
+ * counted from it). Null where no paid period is in force.
+ */
+function paidPeriodEnd(record: BillingRecord): Date | null {
+  if (record.accessEndsAt === null) {
+    return null;
+  }
+  if (record.state === "active") {
+    return record.accessEndsAt;
+  }
+  if (record.state === "grace") {
+    return new Date(record.accessEndsAt.getTime() - GRACE_DAYS * DAY);
+  }
+  return null;
+}
+
+/** A period end a provider could really report: still ahead, and no further than a paid period can run. */
+function reasonableFutureEnd(end: Date, now: Date): boolean {
+  const time = end.getTime();
+  return (
+    Number.isFinite(time) &&
+    time > now.getTime() &&
+    time <= now.getTime() + MAX_PERIOD_DAYS * DAY
+  );
+}
+
+/** Records a payment taken back without changing the state (the access is not there to take). */
+function remember(
+  record: BillingRecord,
+  fact: Extract<BillingFact, { type: "charge_disputed" | "charge_refunded" }>,
+  context: ReconcileContext
+): ReconcileResult {
+  const reason = fact.type === "charge_disputed" ? "chargeback" : "refund";
+  return applied(
+    record,
+    {
+      ...record,
+      revoked: {
+        cancelAtPeriodEnd: record.cancelAtPeriodEnd,
+        cycleMonths: record.cycleMonths,
+        periodEndsAt: fact.periodEndsAt,
+        reason,
+      },
+    },
+    null,
+    fact.occurredAt,
+    context.now
+  );
+}
+
+/**
+ * A refund in full, or a chargeback, of the payment behind the current paid
+ * period takes the access back at once (a chargeback is just as immediate: there
+ * is no grace). The period the fact names must be the one in force (within the
+ * provider's rounding): a payment of an earlier period changes nothing, and
+ * neither does a refund of a period that is not paid yet, which only has its
+ * payment remembered so that when the charge's confirmation arrives later it
+ * cannot grant what was already given back. The period is remembered when the
+ * access is taken, for the same reason.
+ */
+function revokePayment(
+  record: BillingRecord,
+  fact: Extract<BillingFact, { type: "charge_disputed" | "charge_refunded" }>,
+  context: ReconcileContext
+): ReconcileResult {
+  const existing = record.revoked;
+  if (existing && samePeriod(existing.periodEndsAt, fact.periodEndsAt)) {
+    // the same payment again: a refund overrides what a chargeback could restore
+    // (the customer has the money), and nothing else adds anything
+    if (fact.type === "charge_refunded" && existing.reason !== "refund") {
+      return applied(
+        record,
+        { ...record, revoked: { ...existing, reason: "refund" } },
+        null,
+        fact.occurredAt,
+        context.now
+      );
+    }
+    return ignored("not_applicable");
+  }
+  if (
+    existing &&
+    existing.periodEndsAt.getTime() > fact.periodEndsAt.getTime()
+  ) {
+    return ignored("not_applicable");
+  }
+  const paidEnd = paidPeriodEnd(record);
+  if (paidEnd !== null && samePeriod(paidEnd, fact.periodEndsAt)) {
+    const result = moved(record, { type: "access_revoked" }, context);
+    if (!result) {
+      return ignored("not_applicable");
+    }
+    return applied(
+      record,
+      {
+        ...result.facts,
+        revoked: {
+          cancelAtPeriodEnd: record.cancelAtPeriodEnd,
+          cycleMonths: record.cycleMonths,
+          periodEndsAt: fact.periodEndsAt,
+          reason: fact.type === "charge_disputed" ? "chargeback" : "refund",
+        },
+      },
+      result.transition,
+      fact.occurredAt,
+      context.now
+    );
+  }
+  const earlier =
+    paidEnd !== null &&
+    fact.periodEndsAt.getTime() < paidEnd.getTime() - PERIOD_MATCH_TOLERANCE_MS;
+  if (
+    earlier ||
+    grantsPaid(record) ||
+    !reasonableFutureEnd(fact.periodEndsAt, context.now)
+  ) {
+    return ignored("not_applicable");
+  }
+  // a payment that is not on the record yet: its confirmation is on its way
+  return remember(record, fact, context);
+}
+
+/** A record standing on a paid period cannot hold a remembered payment: it is the period that counts. */
+function grantsPaid(record: BillingRecord): boolean {
+  return record.state === "active" || record.state === "grace";
+}
+
+/**
+ * A chargeback decided in Polaris's favour restores the access for what is left
+ * of the period that was charged back, with its cycle and whether it was
+ * cancelled, as a payment (the ledger shows the transition). If the period is
+ * over by then there is nothing to restore and the record only forgets the
+ * chargeback. A reversal that has no chargeback on record is remembered when the
+ * period is still ahead (it may have overtaken its chargeback), so that the
+ * chargeback, arriving later, changes nothing; otherwise, or for a refund or
+ * another period, it is ignored.
+ */
+function disputeReversed(
+  record: BillingRecord,
+  fact: Extract<BillingFact, { type: "dispute_reversed" }>,
+  context: ReconcileContext
+): ReconcileResult {
+  const { revoked } = record;
+  if (
+    revoked?.reason === "chargeback" &&
+    samePeriod(revoked.periodEndsAt, fact.periodEndsAt)
+  ) {
+    const forget = (): ReconcileResult =>
+      applied(
+        record,
+        { ...record, revoked: null },
+        null,
+        fact.occurredAt,
+        context.now
+      );
+    if (revoked.periodEndsAt.getTime() <= context.now.getTime()) {
+      return forget();
+    }
+    const event: BillingEvent = {
+      periodEndsAt: revoked.periodEndsAt,
+      type: record.state === "trialing" ? "payment_succeeded" : "subscribe",
+    };
+    const result = moved(record, event, context);
+    if (!result) {
+      return forget();
+    }
+    return applied(
+      record,
+      {
+        ...result.facts,
+        cancelAtPeriodEnd: revoked.cancelAtPeriodEnd,
+        cycleMonths: revoked.cycleMonths ?? 1,
+        pendingCycleMonths: null,
+      },
+      result.transition,
+      fact.occurredAt,
+      context.now
+    );
+  }
+  if (
+    revoked === null &&
+    !grantsPaid(record) &&
+    reasonableFutureEnd(fact.periodEndsAt, context.now)
+  ) {
+    return applied(
+      record,
+      {
+        ...record,
+        revoked: {
+          cancelAtPeriodEnd: false,
+          cycleMonths: null,
+          periodEndsAt: fact.periodEndsAt,
+          reason: "won",
+        },
+      },
+      null,
+      fact.occurredAt,
+      context.now
+    );
+  }
+  return ignored("not_applicable");
+}
+
 function trialMethodReady(
   record: BillingRecord,
   fact: Extract<BillingFact, { type: "trial_method_ready" }>,
@@ -332,6 +621,14 @@ function trialMethodReady(
   );
 }
 
+/** The facts about money that already moved: never dropped as stale. */
+const MONEY_FACTS: readonly BillingFactType[] = [
+  "charge_succeeded",
+  "charge_refunded",
+  "charge_disputed",
+  "dispute_reversed",
+];
+
 /**
  * Applies a provider fact to the record. A fact older than the newest one
  * already applied is stale and changes nothing (a delayed or reordered
@@ -344,7 +641,9 @@ function trialMethodReady(
  * delayed confirmation behind a later cancellation or cycle change must still
  * extend the access. It is protected differently, by the state machine: a
  * payment never moves the end of access backwards and its period must end in
- * the future.
+ * the future. A refund, a chargeback and the reversal of one are exceptions for
+ * the same reason (money moved): each names the period it concerns, which is
+ * what protects it (a refund of an earlier period changes nothing).
  */
 export function reconcileFact(
   record: BillingRecord,
@@ -352,7 +651,7 @@ export function reconcileFact(
   context: ReconcileContext
 ): ReconcileResult {
   if (
-    fact.type !== "charge_succeeded" &&
+    !MONEY_FACTS.includes(fact.type) &&
     record.lastFactAt !== null &&
     fact.occurredAt.getTime() < record.lastFactAt.getTime()
   ) {
@@ -369,6 +668,11 @@ export function reconcileFact(
       return subscriptionCancelled(record, fact, context);
     case "cycle_change_scheduled":
       return cycleChangeScheduled(record, fact, context);
+    case "charge_refunded":
+    case "charge_disputed":
+      return revokePayment(record, fact, context);
+    case "dispute_reversed":
+      return disputeReversed(record, fact, context);
     default:
       return ignored("not_applicable");
   }
@@ -440,7 +744,9 @@ export function isCoherentBillingRecord(record: BillingRecord): boolean {
       record.pendingCycleMonths === null;
   // a record that was Pro has used or waived the trial
   const trialOk = !pro || record.trialConsumed;
-  return accessOk && flagsOk && trialOk;
+  // a payment taken back is remembered only while there is no Pro access
+  const revokedOk = !(grantsPaid(record) && record.revoked);
+  return accessOk && flagsOk && trialOk && revokedOk;
 }
 
 /** A fact as the inbox stores it: plain JSON, dates as ISO text, no personal data. */
@@ -458,6 +764,10 @@ export function serializeBillingFact(
         cycleMonths: fact.cycleMonths,
         periodEndsAt: fact.periodEndsAt.toISOString(),
       };
+    case "charge_refunded":
+    case "charge_disputed":
+    case "dispute_reversed":
+      return { ...base, periodEndsAt: fact.periodEndsAt.toISOString() };
     default:
       return base;
   }
@@ -501,6 +811,14 @@ export function parseBillingFact(value: unknown): BillingFact | null {
       const periodEndsAt = dateField(record.periodEndsAt);
       return cycleMonths && periodEndsAt
         ? { cycleMonths, occurredAt, periodEndsAt, type: "charge_succeeded" }
+        : null;
+    }
+    case "charge_refunded":
+    case "charge_disputed":
+    case "dispute_reversed": {
+      const periodEndsAt = dateField(record.periodEndsAt);
+      return periodEndsAt
+        ? { occurredAt, periodEndsAt, type: record.type }
         : null;
     }
     case "charge_failed":
