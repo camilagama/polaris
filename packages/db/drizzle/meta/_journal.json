@@ -414,6 +414,13 @@
       "when": 1792169480601,
       "tag": "0058_won_chargeback_carries_no_cycle",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792170289961,
+      "tag": "0059_tenant_billing_column_privileges",
+      "breakpoints": true
     }
   ]
 }
