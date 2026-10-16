@@ -167,7 +167,7 @@ async function run() {
       ["organization_billing", "DELETE FROM public.organization_billing"],
       [
         "entitlement_grants",
-        `INSERT INTO public.entitlement_grants (organization_id, key, flag_value, reason, expires_at) VALUES ('${tenantA.organizationId}', 'public_catalog', true, 'self-grant', now() + interval '30 days')`,
+        `INSERT INTO public.entitlement_grants (organization_id, key, flag_value, reason, granted_by, expires_at) VALUES ('${tenantA.organizationId}', 'public_catalog', true, 'self-grant', 'tenant', now() + interval '30 days')`,
       ],
       ["entitlement_grants", "DELETE FROM public.entitlement_grants"],
     ];
@@ -296,8 +296,8 @@ async function run() {
     await expectSqlState(
       () =>
         admin.pool.query(
-          `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, expires_at)
-           VALUES ($1, 'variants.active.max', 10, '  ', now() + interval '1 day')`,
+          `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, expires_at)
+           VALUES ($1, 'variants.active.max', 10, '  ', 'gate', now() + interval '1 day')`,
           [tenantA.organizationId]
         ),
       "23514",
@@ -366,15 +366,15 @@ async function run() {
 
     // temporary grants raise, expire and stay inside their organization
     await admin.pool.query(
-      `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, expires_at)
-       VALUES ($1, 'variants.active.max', 120, 'support', now() + interval '1 day'),
-              ($1, 'images.active.max', 9999, 'expired promotion', now() - interval '1 minute'),
-              ($1, 'goals.active.max', 0, 'lowering', now() + interval '1 day')`,
+      `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
+       VALUES ($1, 'variants.active.max', 120, 'support', 'gate', now(), now() + interval '1 day'),
+              ($1, 'images.active.max', 9999, 'expired promotion', 'gate', now() - interval '2 days', now() - interval '1 minute'),
+              ($1, 'goals.active.max', 0, 'lowering', 'gate', now(), now() + interval '1 day')`,
       [tenantA.organizationId]
     );
     await admin.pool.query(
-      `INSERT INTO public.entitlement_grants (organization_id, key, flag_value, reason, expires_at)
-       VALUES ($1, 'public_catalog', true, 'support', now() + interval '1 day')`,
+      `INSERT INTO public.entitlement_grants (organization_id, key, flag_value, reason, granted_by, expires_at)
+       VALUES ($1, 'public_catalog', true, 'support', 'gate', now() + interval '1 day')`,
       [tenantA.organizationId]
     );
     const granted = await entitlementsOf(tenantA);

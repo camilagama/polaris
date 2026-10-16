@@ -9,7 +9,7 @@ import {
   planCatalogFromRows,
   resolveEntitlements,
 } from "@polaris/domain/billing/entitlements";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import {
   billingPlans,
   billingPrices,
@@ -100,9 +100,19 @@ async function readGrants(
       flagValue: entitlementGrants.flagValue,
       key: entitlementGrants.key,
       limitValue: entitlementGrants.limitValue,
+      startsAt: entitlementGrants.startsAt,
     })
     .from(entitlementGrants)
-    .where(eq(entitlementGrants.organizationId, scope.organizationId));
+    .where(
+      and(
+        eq(entitlementGrants.organizationId, scope.organizationId),
+        // one revoked before it started was never in force
+        or(
+          isNull(entitlementGrants.revokedAt),
+          gt(entitlementGrants.revokedAt, entitlementGrants.startsAt)
+        )
+      )
+    );
   const grants: EntitlementGrant[] = [];
   for (const row of rows) {
     if (!isEntitlementKey(row.key)) {
@@ -110,7 +120,12 @@ async function readGrants(
     }
     const value = isLimitKey(row.key) ? row.limitValue : row.flagValue;
     if (value !== null) {
-      grants.push({ expiresAt: row.expiresAt, key: row.key, value });
+      grants.push({
+        expiresAt: row.expiresAt,
+        key: row.key,
+        startsAt: row.startsAt,
+        value,
+      });
     }
   }
   return grants;

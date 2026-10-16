@@ -174,7 +174,6 @@ async function run() {
         "DELETE FROM public.organization_billing",
         "UPDATE public.organization_billing SET created_at = now()",
         "UPDATE public.billing_events SET fact = '{}'::jsonb",
-        "SELECT 1 FROM public.entitlement_grants",
         "SELECT 1 FROM public.plan_entitlements",
         "SELECT 1 FROM public.product_variants",
         "SELECT 1 FROM public.product_media",

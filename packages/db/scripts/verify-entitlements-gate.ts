@@ -184,8 +184,8 @@ async function run() {
       value: number | boolean
     ) =>
       admin.pool.query(
-        `INSERT INTO public.entitlement_grants (organization_id, key, ${typeof value === "number" ? "limit_value" : "flag_value"}, reason, expires_at)
-         VALUES ($1, $2, $3, 'gate', now() + interval '1 day')`,
+        `INSERT INTO public.entitlement_grants (organization_id, key, ${typeof value === "number" ? "limit_value" : "flag_value"}, reason, granted_by, expires_at)
+         VALUES ($1, $2, $3, 'gate', 'gate', now() + interval '1 day')`,
         [tenant.organizationId, key, value]
       );
     const newProduct = (tenant: TenantFixture) =>

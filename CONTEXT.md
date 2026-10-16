@@ -103,4 +103,6 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Pagamento tirado:** pagamento de um período que foi reembolsado integralmente ou sofreu chargeback. O Polaris o lembra (e o período que cobria) para que sua confirmação tardia não devolva o acesso e para que um chargeback revertido o restaure.
 
+**Concessão temporária:** entitlement dado por Polaris (compensação, parceria, apoio) além do plano, com autor, motivo, início e fim; só eleva, sempre expira e nunca é uma assinatura. Ao terminar, a organização que mantém mais do que o Free permite entra na janela de adequação.
+
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.
