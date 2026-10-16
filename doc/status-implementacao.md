@@ -1278,3 +1278,7 @@ Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e tr
 | Banco | Concluído | Migration 0059: `REVOKE SELECT` da tabela e `GRANT SELECT` por coluna ao papel do tenant em `organization_billing` e `entitlement_grants`. |
 | Código | Sem mudança | Os repositórios já selecionavam colunas nomeadas. |
 | Gate PostgreSQL 18 | Concluído | `entitlement-grants`: o tenant é recusado (`42501`) ao ler cada coluna interna e com `SELECT *`, e ainda lê as colunas que o produto usa; os gates de entitlements, metas, variantes operacionais, catálogo, lifecycle, runtime, auditoria e sync passaram na mesma branch descartável. |
+
+### CI: o job de banco deixa de ser consultivo
+
+Cumpre o item "promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde" (linha de pendências do Gate 4), só para o `database`: o job "PostgreSQL 18 gates" perdeu o `continue-on-error` (emenda ao [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md)). A auditoria de dependências segue consultiva. A proteção de branch que torna o check obrigatório para o merge é do responsável.

@@ -98,9 +98,10 @@ jobs:
     name: PostgreSQL 18 gates
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # Advisory until the job has been proven green on GitHub (ADR 0025); the
-    # same gates remain mandatory on a disposable Neon branch before a release.
-    continue-on-error: true
+    # A red job here is a red pull request: it has been green on every pull
+    # request since the billing chain began and every failure it showed was a
+    # real defect (ADR 0025, amended). The same gates also run on a disposable
+    # Neon branch before a release.
     services:
       postgres:
         image: postgres:18
