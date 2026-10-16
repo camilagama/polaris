@@ -26,4 +26,5 @@ Quando uma decisão ainda não está implementada, a regra a marca como "decidid
 - Despesas, competência, resultado e metas: [expenses-and-results.md](expenses-and-results.md).
 - Planos, reconciliação de providers e entitlements: [billing-and-entitlements.md](billing-and-entitlements.md).
 - Perfil público, publicação de produtos e o que o catálogo público mostra: [public-catalog.md](public-catalog.md).
+- Operadores da plataforma, identidade do Admin e capacidades de plataforma: [platform-admin.md](platform-admin.md).
 - Minimização, encerramento, exportação e retenção: [privacy.md](privacy.md).

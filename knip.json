@@ -35,6 +35,9 @@
       "entry": ["src/routes/**/*.{ts,tsx}", "src/server/**/*.ts"],
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreDependencies": ["cloudflare"]
+    },
+    "apps/admin": {
+      "project": ["src/**/*.ts"]
     }
   }
 }

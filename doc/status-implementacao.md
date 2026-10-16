@@ -1346,3 +1346,19 @@ A revisão da 8C notou que nada gerava os derivados de 320 e 640 px, então o ca
 | Limites | Registrados | A tela não foi aberta no navegador (o login do ERP exige conta; foi coberta por testes de renderização dos painéis e de roteador); sem teste de navegador automatizado; sem pré-visualização do catálogo dentro do ERP (há o link). |
 
 Com isso a Fase 8 está completa no código. Pendências da fase: o Gate 7 (billing com sandboxes reais) segue como gate de saída do billing, e o go-live exige o login do papel público, o Hyperdrive sem query cache e as variáveis por ambiente (runbook).
+
+### Fase 9A — Admin: acesso pelo Cloudflare Access, principal de plataforma e capacidades (PR92, PR93 e PR94; implementação, gate, revisão e verificações locais concluídos; publicação: ver PR)
+
+Primeira etapa da Fase 9 ([ADR 0070](../docs/adr/0070-admin-acesso-identidade-e-capacidades.md)): a pergunta "quem opera o Polaris e o que pode" passa a ter uma resposta verificada.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/admin-access` sobre a `main` com a Fase 8 (migration 0061). |
+| Verificação do Access (PR92) | Concluída | `apps/admin/src/access-jwt.ts`: RS256 contra as chaves do time (cache e renovação), emissor, audiência, validade com tolerância, `sub`, tipo `app`; recusa `none`, HS256, outro emissor ou audiência, expirado, adulterado, chave desconhecida, token de serviço. 17 testes com chaves RSA reais (mais 12 da API). |
+| API do Admin | Concluída | `apps/admin/src/app.ts` e `worker.ts` (Hono, `wrangler.jsonc`): `/health` sem login, `/api/whoami` com a capacidade `platform:read`; sem configuração, 503; sem token, 401; login que não é principal, 403; `no-store` e demais cabeçalhos; chaves ou banco fora do ar são 503. `wrangler deploy --dry-run` no build. |
+| Principal de plataforma (PR93) | Concluído | Tabela `platform_principals` (emissor e subject únicos, papel e estado validados, e-mail só como rótulo), papel de banco `polaris_admin_runtime` que lê e atualiza só o rótulo e a última vez visto; migration 0061; `platform-principal-repository.ts`. |
+| Capacidades (PR94) | Concluídas | `@polaris/domain/admin/platform-capabilities`: capacidades nomeadas por papel, separadas das de tenant, falha fechada (5 testes). |
+| Gate PostgreSQL 18 | Concluído | `platform-principals` (suítes `gate9`, `ci` e `all`): unicidade e checks, FORCE RLS, o papel do Admin não cria, apaga, trunca nem muda papel, estado, emissor ou subject, não lê nenhuma tabela de tenant, auth ou cobrança nem roda função de tenant; nenhum papel de tenant lê os principais; o operador é achado só por emissor e subject (desconhecido, outro emissor e desativado são ninguém); o rótulo acompanha o login sem nunca achar ninguém; a última vez visto é regravada no máximo a cada cinco minutos. Também passaram na mesma branch Neon `review-hardening` e `gate2-runtime`. |
+| Fronteiras | Concluídas | Biome e 6 fixtures novas: o Admin só importa o repositório de principais (nada de tenant, cobrança, auth, `pg` nem Drizzle); Knip configurado. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
+| Limites | Registrados | MFA e duração da sessão são política do Access (runbook), não do Worker; sem tela do Admin (só `/api/whoami`); o fluxo contra um Access real não foi exercitado (precisa da conta do responsável): coberto por testes com chaves e tokens gerados; casos de suporte, acesso temporário, revelação de dados pessoais, cobrança e suspensão são as próximas etapas. |

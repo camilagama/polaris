@@ -428,6 +428,13 @@
       "when": 1792183007532,
       "tag": "0060_public_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792189914206,
+      "tag": "0061_platform_principals",
+      "breakpoints": true
     }
   ]
 }

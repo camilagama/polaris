@@ -190,6 +190,40 @@
       }
     },
     {
+      // The Admin app reaches the database only through its own modules (ADR 0070):
+      // never tenant data, billing, auth or a driver. Each Admin PR that adds a module lists it here.
+      "includes": ["apps/admin/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/db",
+                      "@polaris/db/*",
+                      "!@polaris/db/platform-principal-repository",
+                      "@polaris/billing",
+                      "@polaris/billing/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "better-auth",
+                      "better-auth/**"
+                    ],
+                    "message": "The Admin app must not import tenant data, billing, auth or a database driver: it reaches the database only through its own repositories."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       // TanStack Start derives the URL from the file name ($param, [.] escapes)
       "includes": ["apps/catalog/src/routes/**"],
       "linter": {
