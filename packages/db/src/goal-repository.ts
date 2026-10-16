@@ -1,3 +1,4 @@
+import { getEffectiveEntitlements } from "./billing-repository";
 import { periodResult } from "@polaris/domain/economics/sale-economics";
 import {
   evaluateGoal,
@@ -5,8 +6,10 @@ import {
   GoalLimitReachedError,
   GoalNotActiveError,
   GoalNotFoundError,
+  GoalPausedByPlanError,
   GoalPeriodEndedError,
   MAX_ACTIVE_GOALS,
+  pausedGoalIds,
   type GoalInput,
   type GoalKind,
   type GoalSettlement,
@@ -92,6 +95,40 @@ export async function listGoals(
     .from(goals)
     .where(and(...filters))
     .orderBy(sql`${goals.startsOn} DESC`, asc(goals.id));
+}
+
+/**
+ * The active goals the plan pauses (more active goals than the limit in force,
+ * after a downgrade): the newest ones. Nothing is stored; it is derived here.
+ */
+export async function listPausedGoalIds(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity
+): Promise<string[]> {
+  requireGoalCapability(identity);
+  const active = await transaction
+    .select({
+      createdAt: goals.createdAt,
+      endsOn: goals.endsOn,
+      id: goals.id,
+      startsOn: goals.startsOn,
+    })
+    .from(goals)
+    .where(
+      and(
+        eq(goals.organizationId, identity.organizationId),
+        eq(goals.status, "active")
+      )
+    );
+  if (active.length === 0) {
+    return [];
+  }
+  const entitlements = await getEffectiveEntitlements(transaction, identity);
+  return pausedGoalIds(
+    active,
+    entitlements.values["goals.active.max"],
+    await organizationToday(transaction, identity)
+  );
 }
 
 export async function createGoal(
@@ -189,6 +226,10 @@ export async function updateGoal(
   const existing = await lockGoal(transaction, identity, input);
   if (existing.status !== "active") {
     throw new GoalNotActiveError();
+  }
+  // a goal the plan pauses can only be cancelled until the plan allows it again
+  if ((await listPausedGoalIds(transaction, identity)).includes(existing.id)) {
+    throw new GoalPausedByPlanError();
   }
   if (existing.endsOn < (await organizationToday(transaction, identity))) {
     // the period is over: the next read settles it; it is not edited
@@ -351,8 +392,14 @@ export async function evaluateActiveGoals(
   requireGoalCapability(identity);
   const today = await organizationToday(transaction, identity);
   const active = await listGoals(transaction, identity, { status: "active" });
+  const paused = new Set(await listPausedGoalIds(transaction, identity));
   const progress: GoalProgress[] = [];
   for (const goal of active) {
+    // a paused goal is not measured (a goal whose period has ended is never paused:
+    // it is settled right here, so history stays correct and it takes no place)
+    if (paused.has(goal.id)) {
+      continue;
+    }
     const kind = goal.kind as GoalKind;
     const through = goal.endsOn < today ? goal.endsOn : today;
     // biome-ignore lint/performance/noAwaitInLoops: one goal at a time, a handful per organization

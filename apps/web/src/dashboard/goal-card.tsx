@@ -37,8 +37,10 @@ function GoalHeader({ goal, today }: { goal: GoalReadModel; today: string }) {
     <div className="goal-card-header">
       <div className="goal-card-title-row">
         <h4>{goalTitle(goal)}</h4>
-        <span className={`category-status ${goalStatusClass(goal.status)}`}>
-          {goalStatusLabel(goal.status)}
+        <span
+          className={`category-status ${goal.paused ? "status-archived" : goalStatusClass(goal.status)}`}
+        >
+          {goal.paused ? "Pausada pelo plano" : goalStatusLabel(goal.status)}
         </span>
       </div>
       <p className="goal-card-meta">
@@ -66,6 +68,16 @@ function progressTargetText(goal: GoalReadModel): string {
 function GoalProgress({ goal }: { goal: GoalReadModel }) {
   const { progress } = goal;
   const targetText = progressTargetText(goal);
+  if (goal.paused) {
+    return (
+      <p className="goal-card-meta">
+        Alvo: {targetText}. Seu plano permite menos metas em andamento do que
+        você tem, então esta meta está pausada: ela não é medida nem pode ser
+        editada, mas continua aqui. Você pode cancelá-la, ou ela volta quando o
+        plano permitir.
+      </p>
+    );
+  }
   if (progress === null) {
     return (
       <p className="goal-card-meta">
@@ -228,15 +240,17 @@ function ActiveActions(props: ActiveActionsProps) {
   const title = goalTitle(goal);
   return (
     <div className="goal-actions">
-      <button
-        aria-label={`Editar meta ${title}`}
-        className="quiet-button"
-        disabled={busyKey !== null}
-        onClick={handleEdit}
-        type="button"
-      >
-        Editar meta
-      </button>
+      {goal.paused ? null : (
+        <button
+          aria-label={`Editar meta ${title}`}
+          className="quiet-button"
+          disabled={busyKey !== null}
+          onClick={handleEdit}
+          type="button"
+        >
+          Editar meta
+        </button>
+      )}
       <button
         aria-label={`Cancelar meta ${title}`}
         className="quiet-button"

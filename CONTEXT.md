@@ -99,4 +99,6 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Janela de adequação:** os sete dias depois do fim do acesso Pro em que a organização ainda pode trocar quais variantes ficam operacionais; depois dela a escolha só cresce.
 
+**Meta pausada:** meta em andamento que o plano em vigor não comporta (a organização tem mais metas do que o limite). Não é medida nem editada, pode ser cancelada e volta quando o plano permitir; a pausa é derivada, nunca guardada.
+
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.

@@ -29,6 +29,15 @@ describe("goalErrorMessage", () => {
     );
   });
 
+  it("says a goal the plan pauses is paused, not that it changed elsewhere", () => {
+    const message = goalErrorMessage(
+      { code: "CONFLICT", data: { reason: "goal_paused_by_plan" } },
+      "update"
+    );
+    expect(message).toContain("pausada");
+    expect(message).not.toContain("mudou em outra solicitação");
+  });
+
   it("explains a stale version or a goal that is no longer active", () => {
     expect(goalErrorMessage({ code: "CONFLICT" }, "update")).toContain(
       "já não está em andamento"

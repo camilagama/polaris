@@ -251,6 +251,12 @@ const goal = z.object({
   kind: goalKind,
   name: z.string().nullable(),
   organizationId: z.string().min(1),
+  /**
+   * The plan pauses the goal (the organization has more active goals than its
+   * plan allows): it is not measured and can only be cancelled until the plan
+   * allows it again. Derived, never stored.
+   */
+  paused: z.boolean(),
   /** Progress so far, for an active goal only (derived from the period result). */
   progress: z
     .object({
