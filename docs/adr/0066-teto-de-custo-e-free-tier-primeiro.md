@@ -17,8 +17,8 @@ O Polaris roda em serviços com franquia gratuita — Cloudflare Workers Free, R
 - **Assinatura GitHub Pro da conta:** assinatura da conta, fora deste teto (a confirmar pelo responsável).
 - **Upgrade pago só com decisão explícita do responsável.** Nenhum serviço sobe de plano sozinho ao bater cota.
 - **Cada serviço degrada com segurança ao bater cota:** servir o que existe, avisar e/ou enfileirar, sem cobrar e sem quebrar a tela. Para mídia, o fallback acima da franquia do Images está na emenda ao [ADR 0018](0018-midia-privada-cloudflare-images-r2.md); as cotas de plano já vivem no servidor ([ADR 0058](0058-cotas-do-plano-no-servidor.md)).
-- **Gatilhos de revisão (propostos, para o time validar):** Neon — 60% do armazenamento (600 MB de 1 GB por projeto) ou 70% da computação (70 de 100 CU-h/mês por projeto); Images — 50% das 5.000 transformações únicas no mês; Resend — 50% da cota mensal (1.500 de 3.000) ou 80% da diária (80 de 100).
-- **GitHub Actions (conta camilagama, plano Pro):** a franquia de minutos acabou e os jobs foram bloqueados sem cobrança; o repositório ficou público em 15/10/2026 e permanece público até o lançamento. O [ADR 0060](0060-ci-economico-em-minutos.md) está desatualizado neste ponto: descreve repositório privado e cobrança por minuto.
+- **Gatilhos de revisão (propostos, para o time validar):** Neon — 60% do armazenamento (600 MB de 1 GB por projeto) ou 70% da computação (70 de 100 CU-h/mês por projeto), conforme os [planos do Neon](https://neon.com/docs/introduction/plans); Images — 50% das 5.000 transformações únicas no mês, conforme os [preços do Cloudflare Images](https://developers.cloudflare.com/images/pricing); Resend — 50% da cota mensal (1.500 de 3.000) ou 80% da diária (80 de 100), conforme as [cotas do Resend](https://resend.com/docs/knowledge-base/account-quotas-and-limits).
+- **GitHub Actions (conta camilagama, plano Pro):** o bloqueio tem duas causas compatíveis — a franquia de 3.000 minutos/mês do Pro esgotou em outubro, e o orçamento de Actions está em US$ 0 com status "Usage blocked" (lido no painel Budgets em 16/10) —, então o excedente é bloqueado em vez de cobrado; o repositório ficou público em 15/10/2026 e permanece público até o lançamento. Fonte dos limites: [GitHub Actions billing](https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-actions/about-billing-for-github-actions); o desenho do CI em minutos segue no [ADR 0060](0060-ci-economico-em-minutos.md).
 
 ## Consequências
 
@@ -30,6 +30,6 @@ O Polaris roda em serviços com franquia gratuita — Cloudflare Workers Free, R
 ## Alternativas rejeitadas
 
 - **Manter tudo no free tier sem teto declarado:** menos regra, mas transforma o primeiro gasto inesperado em decisão de emergência.
-- **Contratar Workers Paid desde já:** remove o limite diário de requisições do Workers Free, mas cria custo fixo mensal sem demanda provada; adiada por decisão do usuário.
+- **Contratar Workers Paid desde já:** remove o limite diário de requisições do Workers Free ([limites do Workers](https://developers.cloudflare.com/workers/platform/limits/)), mas cria custo fixo mensal sem demanda provada; adiada por decisão do usuário.
 - **Teto por serviço em vez de global:** mais preciso, porém mais burocrático; o teto global de US$ 10 já dá a trava mínima.
 - **Incluir Asaas e Woovi no teto:** misturaria custo por transação do cliente com infraestrutura de desenvolvimento e travaria venda.
