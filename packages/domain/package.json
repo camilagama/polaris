@@ -7,6 +7,7 @@
     "./catalog/category": "./src/catalog/category.ts",
     "./catalog/media": "./src/catalog/media.ts",
     "./catalog/product": "./src/catalog/product.ts",
+    "./catalog/public-catalog": "./src/catalog/public-catalog.ts",
     "./customers/customer": "./src/customers/customer.ts",
     "./billing/entitlements": "./src/billing/entitlements.ts",
     "./billing/facts": "./src/billing/facts.ts",

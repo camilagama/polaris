@@ -105,4 +105,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Concessão temporária:** entitlement dado por Polaris (compensação, parceria, apoio) além do plano, com autor, motivo, início e fim; só eleva, sempre expira e nunca é uma assinatura. Ao terminar, a organização que mantém mais do que o Free permite entra na janela de adequação.
 
+**Catálogo público:** o que a organização escolheu mostrar a quem não tem conta: um perfil público (nome, endereço e contatos que ela digitou) e produtos publicados. É lido a cada pedido pelo plano em vigor; sair do plano o tira do ar sem apagar a escolha.
+
+**Endereço público:** o slug do catálogo, único entre todas as organizações (`/loja-da-ana`).
+
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.

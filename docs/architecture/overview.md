@@ -8,7 +8,7 @@ O Polaris começa como um monólito modular TypeScript, priorizando Cloudflare W
 
 - apps/web é o ERP autenticado: React/Vite servido com seu Worker; Hono e oRPC expõem as procedures do servidor.
 - apps/admin é um deployment separado para operações da plataforma, protegido por Cloudflare Access e capabilities internas. Não compartilha a sessão Better Auth do ERP.
-- apps/catalog é uma aplicação pública separada para conteúdo de catálogo explicitamente publicado.
+- apps/catalog é uma aplicação pública separada para conteúdo de catálogo explicitamente publicado. Ela não lê tabela alguma: um papel de banco dedicado executa quatro funções que devolvem só o que está publicado e olham o plano a cada pedido ([ADR 0069](../adr/0069-catalogo-publico-leitura-por-funcoes.md)).
 - packages/domain contém lógica de negócio pura.
 - packages/contracts contém contratos de transporte.
 - packages/db contém adapters de persistência e migrations.
