@@ -24,6 +24,7 @@ CREATE POLICY entitlement_grants_billing_runtime_update ON public.entitlement_gr
 CREATE FUNCTION public.entitlement_grants_shorten_only()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = pg_catalog, public
 AS $function$
 BEGIN
   IF NEW.expires_at > OLD.expires_at THEN
@@ -38,6 +39,8 @@ BEGIN
   RETURN NEW;
 END;
 $function$;--> statement-breakpoint
+-- a trigger function is checked for EXECUTE when the trigger is created, not when it fires
+REVOKE ALL ON FUNCTION public.entitlement_grants_shorten_only() FROM PUBLIC;--> statement-breakpoint
 CREATE TRIGGER entitlement_grants_shorten_only
   BEFORE UPDATE ON public.entitlement_grants
   FOR EACH ROW EXECUTE FUNCTION public.entitlement_grants_shorten_only();--> statement-breakpoint
