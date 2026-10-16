@@ -32,3 +32,7 @@ Decidido na revisão do checkpoint Gate 4 (13/10/2026):
 - **Só gates manuais em Neon.** Mantém a fidelidade ao provedor, mas depende de memória e de tempo humano a cada mudança.
 - **Mocks de banco em testes unitários.** Rápidos, mas não provam RLS, triggers nem grants, que são a razão dos gates.
 - **Esperar o PR122.** Deixa dezenas de PRs de banco sem prova repetível.
+
+## Emenda: o job de banco deixa de ser consultivo
+
+O job "PostgreSQL 18 gates" nasceu consultivo (`continue-on-error`) até provar que ficava verde no GitHub. Ele ficou verde em cada pull request da cadeia de billing, e todas as falhas que mostrou eram defeitos de verdade (a auditoria de funções do `review-hardening`, uma corrida de milissegundos na revogação de concessões, uma expectativa de privilégio desatualizada), pegos só por ele e só porque alguém olhou o resultado. Agora uma falha dele é uma falha do pull request. A auditoria de dependências segue consultiva (as duas advertências altas conhecidas são de ferramentas de desenvolvimento). Tornar o check *obrigatório para o merge* é uma configuração de proteção de branch do GitHub, do responsável, e não está neste repositório; os mesmos gates continuam obrigatórios numa branch Neon descartável antes de uma liberação.
