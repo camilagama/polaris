@@ -1,7 +1,13 @@
+import type { AdminOrganizationPage } from "@polaris/db/admin-diagnostics-repository";
 import type {
   PlatformIdentity,
   PlatformPrincipal,
 } from "@polaris/db/platform-principal-repository";
+import { IncompletePlanCatalogError } from "@polaris/domain/billing/entitlements";
+import {
+  buildOrganizationDiagnostics,
+  type RawDiagnostics,
+} from "@polaris/domain/admin/organization-diagnostics";
 import {
   hasPlatformCapability,
   type PlatformCapability,
@@ -35,6 +41,17 @@ export interface AdminDependencies {
     identity: PlatformIdentity,
     bindings: AdminBindings
   ) => Promise<PlatformPrincipal | null>;
+  /** Organizations a page at a time, and one organization's raw figures (counts, dates and states only). */
+  organizations: {
+    diagnostics: (
+      organizationId: string,
+      bindings: AdminBindings
+    ) => Promise<RawDiagnostics | null>;
+    list: (
+      input: { after: string | null; limit: number; query: string | null },
+      bindings: AdminBindings
+    ) => Promise<AdminOrganizationPage>;
+  };
   /** Diagnostics for the operator's logs: a stable code, never the token or the e-mail. */
   report: (event: string, fields?: Record<string, string>) => void;
 }
@@ -45,6 +62,10 @@ interface AdminEnv {
 }
 
 const ACCESS_HEADER = "cf-access-jwt-assertion";
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 50;
+const MAX_QUERY_LENGTH = 100;
+const MAX_ID_LENGTH = 128;
 
 const securityHeaders: MiddlewareHandler = async (context, next) => {
   await next();
@@ -105,6 +126,17 @@ async function knownPrincipal(
 
 function isRefusal(value: object): value is Refusal {
   return "status" in value && "body" in value;
+}
+
+/** True when the text has a control character (a NUL would be a database error, not a refusal). */
+function hasControlCharacter(text: string): boolean {
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 32 || code === 127) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function configured(bindings: AdminBindings): boolean {
@@ -174,6 +206,62 @@ export function createAdminApp(dependencies: AdminDependencies) {
       },
     });
   });
+  api.get(
+    "/organizations",
+    requireCapability("organization:diagnose"),
+    async (context) => {
+      const query = context.req.query("query") ?? null;
+      const after = context.req.query("after") ?? null;
+      const limit = Number(context.req.query("limit") ?? DEFAULT_PAGE_SIZE);
+      if (
+        hasControlCharacter(query ?? "") ||
+        hasControlCharacter(after ?? "") ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > MAX_PAGE_SIZE ||
+        (query?.length ?? 0) > MAX_QUERY_LENGTH ||
+        (after?.length ?? 0) > MAX_ID_LENGTH
+      ) {
+        return context.json({ error: "invalid_request" }, 400);
+      }
+      return context.json(
+        await dependencies.organizations.list(
+          { after, limit, query },
+          context.env
+        )
+      );
+    }
+  );
+  api.get(
+    "/organizations/:organizationId/diagnostics",
+    requireCapability("organization:diagnose"),
+    async (context) => {
+      const organizationId = context.req.param("organizationId");
+      if (
+        organizationId.length > MAX_ID_LENGTH ||
+        hasControlCharacter(organizationId)
+      ) {
+        return context.json({ error: "not_found" }, 404);
+      }
+      const raw = await dependencies.organizations.diagnostics(
+        organizationId,
+        context.env
+      );
+      if (!raw) {
+        return context.json({ error: "not_found" }, 404);
+      }
+      try {
+        return context.json(buildOrganizationDiagnostics(raw));
+      } catch (error: unknown) {
+        if (!(error instanceof IncompletePlanCatalogError)) {
+          throw error;
+        }
+        // the product fails closed on a damaged plan catalog; the operator is told why, not left with a blank 500
+        dependencies.report("plan_catalog_incomplete");
+        return context.json({ error: "plan_catalog_incomplete" }, 503);
+      }
+    }
+  );
   app.route("/api", api);
 
   app.notFound((context) => context.json({ error: "not_found" }, 404));

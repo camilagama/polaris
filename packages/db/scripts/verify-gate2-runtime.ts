@@ -651,7 +651,7 @@ async function main() {
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' " +
         // the tenant policies; the billing owner's read policy is checked on its own below
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}') " +
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -692,7 +692,7 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_variants' " +
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}') " +
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -771,7 +771,7 @@ async function main() {
       "SELECT tablename AS relation, policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' " +
-        "AND tablename = ANY($1::text[]) AND roles <> '{polaris_catalog_owner}' ORDER BY tablename, policyname",
+        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}') ORDER BY tablename, policyname",
       [["product_option_values", "product_options", "variant_option_values"]]
     );
     assert.deepEqual(

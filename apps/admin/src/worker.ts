@@ -1,4 +1,8 @@
 import {
+  listOrganizations,
+  readOrganizationDiagnostics,
+} from "@polaris/db/admin-diagnostics-repository";
+import {
   resolvePlatformPrincipal,
   withAdminDatabase,
 } from "@polaris/db/platform-principal-repository";
@@ -39,6 +43,14 @@ function keyStoreFor(teamDomain: string): AccessKeyStore {
   return store;
 }
 
+function connectionOf(bindings: AdminBindings): string {
+  const connectionString = bindings.ADMIN_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new Error("admin_not_configured");
+  }
+  return connectionString;
+}
+
 const dependencies: AdminDependencies = {
   authenticate: async (token, bindings) => {
     const teamDomain = bindings.ACCESS_TEAM_DOMAIN ?? "";
@@ -54,17 +66,22 @@ const dependencies: AdminDependencies = {
       new Date()
     );
   },
+  organizations: {
+    diagnostics: (organizationId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readOrganizationDiagnostics(client, organizationId)
+      ),
+    list: (input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listOrganizations(client, input)
+      ),
+  },
   report: (event, fields) =>
     console.warn({ event: `admin.${event}`, ...fields }),
-  resolvePrincipal: (identity, bindings) => {
-    const connectionString = bindings.ADMIN_HYPERDRIVE?.connectionString;
-    if (!connectionString) {
-      return Promise.reject(new Error("admin_not_configured"));
-    }
-    return withAdminDatabase(connectionString, (client) =>
+  resolvePrincipal: (identity, bindings) =>
+    withAdminDatabase(connectionOf(bindings), (client) =>
       resolvePlatformPrincipal(client, identity)
-    );
-  },
+    ),
 };
 
 const app = createAdminApp(dependencies);

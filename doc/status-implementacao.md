@@ -1362,3 +1362,17 @@ Primeira etapa da Fase 9 ([ADR 0070](../docs/adr/0070-admin-acesso-identidade-e-
 | Fronteiras | Concluídas | Biome e 6 fixtures novas: o Admin só importa o repositório de principais (nada de tenant, cobrança, auth, `pg` nem Drizzle); Knip configurado. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
 | Limites | Registrados | MFA e duração da sessão são política do Access (runbook), não do Worker; sem tela do Admin (só `/api/whoami`); o fluxo contra um Access real não foi exercitado (precisa da conta do responsável): coberto por testes com chaves e tokens gerados; casos de suporte, acesso temporário, revelação de dados pessoais, cobrança e suspensão são as próximas etapas. |
+
+### Fase 9B — Admin: diagnóstico de organização sem acesso ao tenant (PR95; implementação, gate e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+
+Segunda etapa da Fase 9 ([ADR 0071](../docs/adr/0071-admin-diagnostico-sem-acesso-ao-tenant.md)): o operador enxerga o estado de uma organização sem ler nenhum dado do tenant.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/admin-diagnostics` sobre a `main` com 9A (migration 0062). |
+| Banco | Concluído | Duas funções `SECURITY DEFINER` (`admin_organizations_overview`, `admin_organization_diagnostics`) de um papel sem login (`polaris_admin_owner`) que só lê colunas necessárias com políticas próprias; só o papel do Admin as executa. |
+| Relatório | Concluído | `@polaris/domain/admin/organization-diagnostics`: plano e concessões pelo motor do produto, uso contra cada limite e pontos de atenção (7 testes). |
+| API do Admin | Concluída | `GET /api/organizations` (busca por ID ou começo do nome, páginas de 1 a 50) e `GET /api/organizations/:id/diagnostics`, com a capacidade `organization:diagnose`, entrada validada antes de consultar (4 testes novos de rota). |
+| Gate PostgreSQL 18 | Concluído | `admin-diagnostics` (suítes `gate9`, `ci` e `all`): só o papel do Admin executa as funções (tenant, cobrança, catálogo e PUBLIC não), o Admin segue sem alcançar nenhuma tabela além dos principais, as contagens batem numa organização com produtos, imagens, metas, concessão, aparelho, comandos e eventos de cobrança, nenhum texto digitado (produto, e-mail, rótulo, motivo de concessão, caminho de arquivo) aparece, o plano é o do motor (concessão em vigor, período vencido é Free, sem cobrança é Free), busca, páginas e entradas inválidas. Também passaram `platform-principals`, `review-hardening` e `gate2-runtime` (os gates que fixam a lista de políticas passaram a ignorar as do dono das funções do Admin). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
+| Limites | Registrados | Sem tela do Admin (só API); o nome da organização aparece ao operador; a leitura não é auditada (não é dado sensível); os pontos de atenção são heurísticas fixas. |
