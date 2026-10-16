@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { formatPrice, instagramLink, whatsappLink } from "../format";
-import { storeHead } from "../seo";
+import { mediaPath, storeHead } from "../seo";
 import { getStore } from "../server/catalog";
 
 // the order matters for inference: search, then deps, then loader, then head
@@ -12,10 +12,24 @@ export const Route = createFileRoute("/$slug/")({
     getStore({ data: { after: deps.after, slug: params.slug } }),
   head: ({ loaderData }) =>
     loaderData
-      ? storeHead({ origin: loaderData.origin, profile: loaderData.profile })
+      ? storeHead({
+          cover: firstCover(loaderData.page),
+          origin: loaderData.origin,
+          profile: loaderData.profile,
+        })
       : {},
   component: Store,
 });
+
+/** The first product shown that has a picture: the store's preview image. */
+function firstCover(page: {
+  products: { coverAssetId: string | null; id: string }[];
+}) {
+  const product = page.products.find((candidate) => candidate.coverAssetId);
+  return product?.coverAssetId
+    ? { assetId: product.coverAssetId, productId: product.id }
+    : null;
+}
 
 function Store() {
   const { page, profile } = Route.useLoaderData();
@@ -49,6 +63,16 @@ function Store() {
                 params={{ productId: product.id, slug }}
                 to="/$slug/p/$productId"
               >
+                {product.coverAssetId ? (
+                  <img
+                    alt=""
+                    className="card-image"
+                    height={320}
+                    loading="lazy"
+                    src={mediaPath(slug, product.id, product.coverAssetId, 320)}
+                    width={320}
+                  />
+                ) : null}
                 <span className="card-name">{product.name}</span>
                 {product.priceFrom ? (
                   <span className="card-price">

@@ -9,6 +9,7 @@ import {
   UnsupportedMediaImageError,
   validateMediaImageSource,
   validateNormalizedMediaCropRect,
+  mediaDerivativeKey,
 } from "./media";
 
 describe("media upload input", () => {
@@ -109,5 +110,27 @@ describe("media order", () => {
         InvalidMediaOrderError
       );
     }
+  });
+});
+
+describe("mediaDerivativeKey", () => {
+  const assetId = "0199a0a0-0000-7000-8000-000000000001";
+
+  it("keys a derivative by asset and size", () => {
+    expect(mediaDerivativeKey(assetId.toUpperCase(), 320)).toBe(
+      `media/derivatives/v1/${assetId}/320.webp`
+    );
+    expect(mediaDerivativeKey(assetId, 640)).toBe(
+      `media/derivatives/v1/${assetId}/640.webp`
+    );
+  });
+
+  it("refuses an ID that is not a UUID and a size that is not kept", () => {
+    expect(() => mediaDerivativeKey("../x", 320)).toThrow(
+      "invalid_media_derivative"
+    );
+    expect(() => mediaDerivativeKey(assetId, 1200 as never)).toThrow(
+      "invalid_media_derivative"
+    );
   });
 });

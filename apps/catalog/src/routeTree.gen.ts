@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SlugIndexRouteImport } from './routes/$slug.index'
 import { Route as SlugPProductIdRouteImport } from './routes/$slug.p.$productId'
+import { Route as SlugMProductIdAssetIdRouteImport } from './routes/$slug.m.$productId.$assetId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const SlugPProductIdRoute = SlugPProductIdRouteImport.update({
   path: '/$slug/p/$productId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SlugMProductIdAssetIdRoute = SlugMProductIdAssetIdRouteImport.update({
+  id: '/$slug/m/$productId/$assetId',
+  path: '/$slug/m/$productId/$assetId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/$slug/': typeof SlugIndexRoute
   '/$slug/p/$productId': typeof SlugPProductIdRoute
+  '/$slug/m/$productId/$assetId': typeof SlugMProductIdAssetIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/$slug': typeof SlugIndexRoute
   '/$slug/p/$productId': typeof SlugPProductIdRoute
+  '/$slug/m/$productId/$assetId': typeof SlugMProductIdAssetIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,30 @@ export interface FileRoutesById {
   '/robots.txt': typeof RobotsDottxtRoute
   '/$slug/': typeof SlugIndexRoute
   '/$slug/p/$productId': typeof SlugPProductIdRoute
+  '/$slug/m/$productId/$assetId': typeof SlugMProductIdAssetIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/robots.txt' | '/$slug/' | '/$slug/p/$productId'
+  fullPaths:
+    | '/'
+    | '/robots.txt'
+    | '/$slug/'
+    | '/$slug/p/$productId'
+    | '/$slug/m/$productId/$assetId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/robots.txt' | '/$slug' | '/$slug/p/$productId'
-  id: '__root__' | '/' | '/robots.txt' | '/$slug/' | '/$slug/p/$productId'
+  to:
+    | '/'
+    | '/robots.txt'
+    | '/$slug'
+    | '/$slug/p/$productId'
+    | '/$slug/m/$productId/$assetId'
+  id:
+    | '__root__'
+    | '/'
+    | '/robots.txt'
+    | '/$slug/'
+    | '/$slug/p/$productId'
+    | '/$slug/m/$productId/$assetId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +92,7 @@ export interface RootRouteChildren {
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SlugIndexRoute: typeof SlugIndexRoute
   SlugPProductIdRoute: typeof SlugPProductIdRoute
+  SlugMProductIdAssetIdRoute: typeof SlugMProductIdAssetIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +125,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SlugPProductIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$slug/m/$productId/$assetId': {
+      id: '/$slug/m/$productId/$assetId'
+      path: '/$slug/m/$productId/$assetId'
+      fullPath: '/$slug/m/$productId/$assetId'
+      preLoaderRoute: typeof SlugMProductIdAssetIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +140,7 @@ const rootRouteChildren: RootRouteChildren = {
   RobotsDottxtRoute: RobotsDottxtRoute,
   SlugIndexRoute: SlugIndexRoute,
   SlugPProductIdRoute: SlugPProductIdRoute,
+  SlugMProductIdAssetIdRoute: SlugMProductIdAssetIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

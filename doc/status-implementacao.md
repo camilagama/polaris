@@ -1,4 +1,4 @@
-# Polaris — acompanhamento da implementação
+﻿# Polaris — acompanhamento da implementação
 
 Atualizado em 14 de outubro de 2026.
 
@@ -1313,3 +1313,18 @@ Segunda etapa da Fase 8 ([ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md) 
 | Verificação no navegador | Concluída | Servidor local contra uma branch Neon descartável, com o login do papel público: loja, produto com variantes e preços, endereço em maiúsculas, 404 de loja inexistente, de ID e de cursor inválidos, `robots.txt`, título e metas no HTML, tela de 375 px. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build` (inclui `vite build` do app) e o gate `public-catalog` de novo em Neon. |
 | Limites | Registrados | Sem imagens (8C), sem cache de borda (8C decide o TTL), sem `sitemap.xml` (não há função que liste lojas; um sitemap por loja pode vir depois), páginas com `?after=` repetem o canonical da primeira (e um cursor que já não existe mostra "sem produtos"); o script de ciclos ignora o arquivo gerado `routeTree.gen.ts`; `CATALOG_ORIGIN` precisa ser definida por ambiente (sem ela o Worker falha em vez de publicar um endereço de desenvolvimento); Hyperdrive real e login do papel público são do go-live (runbook). Sem teste automatizado de navegador do app (a verificação foi manual). |
+
+### Fase 8C — rota pública de imagens e despublicação (PR89 e PR91; implementação, verificação no navegador e verificações locais concluídos; publicação: ver PR)
+
+Terceira etapa da Fase 8: as imagens do catálogo público, sem abrir o bucket.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/catalog-media` sobre a `main` com a 8B (#107). |
+| Rota | Concluída | `/<endereço>/m/<produto>/<imagem>` (`?s=320` ou `640`): valida a entrada (sem conexão se não for endereço ou UUID), pergunta à base se a imagem pode ser exibida **agora**, lê o derivado (ou o original, até o ERP gerá-lo) do bucket privado e responde com `Cache-Control` de 60 s, `ETag` e 304. Falha de autorização ou do bucket é uma resposta genérica sem detalhe; a chave de armazenamento nunca sai. 10 testes (`media.test.ts`). |
+| Despublicação (PR91) | Concluída | Não há purge: a base é consultada a cada pedido (produto, loja, plano, conta), então despublicar, sair do plano ou encerrar a conta para de servir no pedido seguinte; só caches do navegador e da borda duram até um minuto ([ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)). |
+| Páginas e SEO | Concluídos | Capa nos cartões, galeria na página do produto (largura e altura declaradas), `og:image` e `twitter:image` absolutos, cartão grande quando há imagem. |
+| Domínio | Concluído | `mediaDerivativeKey` e os tamanhos dos derivados passaram para `@polaris/domain/catalog/media`, compartilhados pelo ERP (rota e reconciliador, sem mudança de comportamento) e pelo catálogo. |
+| Verificação no navegador | Concluída | Servidor local contra Neon descartável e R2 local: original e derivado ausente, `304`, tamanho inválido, imagem de outro produto (`404`), metas `og:image` no HTML. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build` e `bun install --frozen-lockfile`. |
+| Limites | Registrados | O binding R2 do Worker público não pode ser somente leitura (só `get` é usado); o Worker não gera derivados e **nada os gera hoje**, então o catálogo serve o original (até 1200 px) nos cartões e no `og:image`: gerar derivados é pré-requisito do go-live; um teste de navegador automatizado do app continua pendente. |

@@ -93,6 +93,41 @@ describe("the head of a product page", () => {
   });
 });
 
+describe("the preview image", () => {
+  it("is the first product picture at 640, as an absolute address", () => {
+    const head = productHead({
+      origin: "https://catalogo.example",
+      product: {
+        ...product,
+        media: [{ assetId: "asset-1", height: 400, width: 300 }],
+      },
+      profile,
+    });
+    const image =
+      "https://catalogo.example/loja-da-ana/m/0199a0a0-0000-7000-8000-000000000001/asset-1?s=640";
+    expect(metaValue(head, "og:image")).toBe(image);
+    expect(metaValue(head, "twitter:image")).toBe(image);
+    expect(metaValue(head, "twitter:card")).toBe("summary_large_image");
+  });
+
+  it("is the cover of the first product that has one, on the store page", () => {
+    const head = storeHead({
+      cover: { assetId: "a", productId: "p" },
+      origin: "https://catalogo.example",
+      profile,
+    });
+    expect(metaValue(head, "og:image")).toBe(
+      "https://catalogo.example/loja-da-ana/m/p/a?s=640"
+    );
+  });
+
+  it("is absent, and the card stays small, when there is no picture", () => {
+    const head = storeHead({ origin: "https://catalogo.example", profile });
+    expect(metaValue(head, "og:image")).toBeUndefined();
+    expect(metaValue(head, "twitter:card")).toBe("summary");
+  });
+});
+
 describe("the helpers", () => {
   it("cuts a long description at a word and marks the cut", () => {
     const long = `${"palavra ".repeat(40)}fim`;

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@polaris/db": "workspace:*",
+    "@polaris/domain": "workspace:*",
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-start": "^1.169.3",
     "react": "^19.3.0",

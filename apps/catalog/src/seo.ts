@@ -46,6 +46,17 @@ export function productPath(slug: string, productId: string): string {
   return `${storePath(slug)}/p/${encodeURIComponent(productId)}`;
 }
 
+/** The public address of an image of a product (size 320 or 640; none for the original). */
+export function mediaPath(
+  slug: string,
+  productId: string,
+  assetId: string,
+  size?: 320 | 640
+): string {
+  const path = `${storePath(slug)}/m/${encodeURIComponent(productId)}/${encodeURIComponent(assetId)}`;
+  return size ? `${path}?s=${size}` : path;
+}
+
 /** A description short enough for a search result, cut at a word where it can be. */
 export function summarize(text: string | null | undefined): string | null {
   const flat = (text ?? "").replace(WHITESPACE, " ").trim();
@@ -65,10 +76,14 @@ function page(input: {
   description: string | null;
   origin: string;
   path: string;
+  /** Path of the preview image, when the page has one. */
+  image?: string | null;
   title: string;
   type: "website" | "product";
 }): PageHead {
-  const url = `${normalizeOrigin(input.origin)}${input.path}`;
+  const base = normalizeOrigin(input.origin);
+  const url = `${base}${input.path}`;
+  const image = input.image ? `${base}${input.image}` : null;
   const meta: HeadMeta[] = [
     { title: input.title },
     ...(input.description
@@ -85,16 +100,23 @@ function page(input: {
     { content: url, property: "og:url" },
     { content: SITE_NAME, property: "og:site_name" },
     { content: LOCALE, property: "og:locale" },
-    { content: "summary", name: "twitter:card" },
+    ...(image ? [{ content: image, property: "og:image" }] : []),
+    {
+      content: image ? "summary_large_image" : "summary",
+      name: "twitter:card",
+    },
     { content: input.title, name: "twitter:title" },
     ...(input.description
       ? [{ content: input.description, name: "twitter:description" }]
       : []),
+    ...(image ? [{ content: image, name: "twitter:image" }] : []),
   ];
   return { links: [{ href: url, rel: "canonical" }], meta };
 }
 
 export function storeHead(input: {
+  /** The cover of the first product shown, used as the preview image. */
+  cover?: { assetId: string; productId: string } | null;
   origin: string;
   profile: PublicCatalogProfile;
 }): PageHead {
@@ -102,6 +124,14 @@ export function storeHead(input: {
     description:
       summarize(input.profile.description) ??
       `Catálogo de ${input.profile.name}.`,
+    image: input.cover
+      ? mediaPath(
+          input.profile.slug,
+          input.cover.productId,
+          input.cover.assetId,
+          640
+        )
+      : null,
     origin: input.origin,
     path: storePath(input.profile.slug),
     title: input.profile.name,
@@ -124,6 +154,14 @@ export function productHead(input: {
       (cheapest
         ? `${input.product.name} a partir de ${formatPrice(cheapest)} em ${input.profile.name}.`
         : `${input.product.name} em ${input.profile.name}.`),
+    image: input.product.media[0]
+      ? mediaPath(
+          input.profile.slug,
+          input.product.id,
+          input.product.media[0].assetId,
+          640
+        )
+      : null,
     origin: input.origin,
     path: productPath(input.profile.slug, input.product.id),
     title: `${input.product.name} · ${input.profile.name}`,

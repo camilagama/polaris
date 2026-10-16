@@ -1,6 +1,7 @@
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
 import type { MediaBucketBinding } from "./environment";
-import { isMediaObjectKey, mediaDerivativeKey } from "./media-upload-command";
+import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
+import { isMediaObjectKey } from "./media-upload-command";
 
 const MEDIA_STAGING_PREFIX = "media/staging/v1/";
 export const MEDIA_STAGING_RETENTION_MS = 24 * 60 * 60 * 1000;
