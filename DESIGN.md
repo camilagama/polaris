@@ -119,6 +119,10 @@ Associar, trocar ou remover o cliente de uma venda confirmada, com a versão vis
 ### Laboratório offline (`/offline-poc`)
 Rota de desenvolvimento e de build de prova, com CSS próprio; não faz parte do produto e sai do bundle de produção ([ADR 0027](docs/adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)).
 
+## Catálogo público (`apps/catalog`)
+
+Aplicação separada do ERP, sem login, com as mesmas cores e tipografia (tokens repetidos no próprio app, claro por padrão e escuro pelo sistema). Três páginas: `/<endereço>` (nome, descrição e contatos da loja, e a grade de produtos com o menor preço de tabela como "a partir de R$ …"; "Ver mais produtos" avança por cursor), `/<endereço>/p/<produto>` (nome, descrição e cada variante com rótulo e preço) e `/` (aviso para abrir o endereço de uma loja, fora dos resultados de busca). Uma loja que não está sendo exibida, por qualquer motivo, mostra a mesma página "não encontrada" (404) de uma que nunca existiu. Cada página tem título, descrição, endereço canônico e pré-visualização social (Open Graph e Twitter); o preço aparece como texto, sem imagens até a rota pública de mídia. Contatos viram links (WhatsApp, Instagram).
+
 ## Estoque (diretriz)
 
 Decidido na revisão do checkpoint Gate 4 (13/10/2026) e ainda não implementado ([ADR 0026](docs/adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md)). As telas consomem os commands existentes, sem alterar o domínio, e seguem os tokens e os estados deste documento:

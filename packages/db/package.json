@@ -15,6 +15,7 @@
     "./rls-poc-gate": "./src/rls-poc-gate.ts",
     "./tenant-transaction": "./src/tenant-transaction.ts",
     "./tenant-audit": "./src/tenant-audit.ts",
+    "./public-catalog-reader": "./src/public-catalog-reader.ts",
     "./category-schema": "./src/schema/category.ts",
     "./category-repository": "./src/category-repository.ts",
     "./goal-schema": "./src/schema/goal.ts",

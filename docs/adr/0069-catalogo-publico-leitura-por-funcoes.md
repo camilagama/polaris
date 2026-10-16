@@ -19,12 +19,12 @@ O catálogo público (Fase 8) é a primeira superfície do Polaris aberta a quem
 - **Texto que se publica mostra o que diz.** Nome e descrição recusam caracteres de controle (a descrição aceita quebra de linha), caracteres de largura zero e sobreposições de direção do texto.
 - **Auditoria por produto.** Publicar e despublicar gravam um evento por produto que realmente mudou (`product.published_to_catalog` e `product.unpublished_from_catalog`, com o ID do produto); repetir o que já está feito não grava nada. Perfil e interruptor gravam `public_catalog.*`.
 - **Mídia** continua privada no R2. A rota pública (8C) autoriza cada pedido por `public_catalog_media` e serve com TTL curto; como a autorização é refeita a cada pedido, não há purge externo a manter.
-- **Aplicação.** `apps/catalog` (TanStack Start no Cloudflare Workers) é separada do ERP e liga ao banco por um binding Hyperdrive próprio com o login do papel público, **sem query cache**.
+- **Aplicação.** `apps/catalog` (TanStack Start no Cloudflare Workers) é separada do ERP e liga ao banco por um binding Hyperdrive próprio (`CATALOG_HYPERDRIVE`) com o login do papel público, **sem query cache**. Só importa o leitor (`@polaris/db/public-catalog-reader`): o Biome e as fixtures de fronteira recusam qualquer outro acesso a banco, billing ou auth nesse app. O leitor abre uma conexão por pedido, procura o endereço em minúsculas, devolve `null` para ID ou cursor que não são UUID (nunca um erro de banco), aplica limites de tempo a conexão e consulta e limita a página a 60. As funções do servidor recusam (404, sem abrir conexão) o que não pode ser endereço (3 a 40, minúsculas, dígitos e hífens) nem UUID; uma falha nossa chega ao visitante como uma página genérica em português, nunca a mensagem do driver. O endereço canônico vem de uma variável por ambiente (`CATALOG_ORIGIN`), nunca do cabeçalho do pedido, e um deploy sem ela falha em vez de publicar um endereço de desenvolvimento.
 
 ## Consequências
 
 - Uma falha de aplicação ou um SQL injection na aplicação pública só alcança o que as quatro funções devolvem.
-- O custo é uma verificação de plano por pedido (poucas linhas indexadas por organização); o cache de borda de curta duração absorve o tráfego repetido.
+- O custo é uma verificação de plano por pedido (poucas linhas indexadas por organização); um cache de borda de curta duração, quando existir (8C), absorverá o tráfego repetido.
 - Os pedidos públicos aceitam um atraso de segundos entre uma despublicação e o fim do cache de borda; não há como o conteúdo reaparecer depois do TTL.
 
 ## Limites aceitos

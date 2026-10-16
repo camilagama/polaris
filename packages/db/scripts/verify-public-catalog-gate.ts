@@ -25,6 +25,7 @@ import {
   createProduct,
   deleteProduct,
 } from "../src/product-repository";
+import { publicCatalogReaderOver } from "../src/public-catalog-reader";
 import {
   publishProducts,
   readPublicCatalogSetup,
@@ -733,6 +734,46 @@ async function run() {
       () => productsOf(slugA, 20, "not-an-id"),
       "22P02",
       "a malformed cursor"
+    );
+    // the reader the public app uses: the same answers, and no database error for bad input
+    const viaReader = <T>(
+      operation: (
+        reader: ReturnType<typeof publicCatalogReaderOver>
+      ) => Promise<T>
+    ) => asCatalog((client) => operation(publicCatalogReaderOver(client)));
+    assert.equal(
+      (await viaReader((reader) => reader.profile(` ${slugA.toUpperCase()} `)))
+        ?.slug,
+      slugA,
+      "the reader looks the address up in lowercase"
+    );
+    assert.equal(
+      await viaReader((reader) => reader.product(slugA, "not-an-id")),
+      null
+    );
+    assert.equal(
+      await viaReader((reader) =>
+        reader.products(slugA, { after: "not-an-id" })
+      ),
+      null
+    );
+    assert.equal(
+      await viaReader((reader) => reader.media(slugA, p1.id, "not-an-id")),
+      null
+    );
+    assert.equal(
+      (
+        (await viaReader((reader) =>
+          reader.products(slugA, { limit: 500 })
+        )) as typeof list
+      ).products.length,
+      3,
+      "a page size beyond the limit is clamped, not refused"
+    );
+    assert.equal(
+      (await viaReader((reader) => reader.product(slugA, p1.id.toUpperCase())))
+        ?.id,
+      p1.id
     );
     tests.push(
       "the public list is newest first in pages (size 1 to 60), shows the lowest list price, the cover and nothing about cost, stock or SKU; archived, deleted, never-published and unknown products are not shown; one product shows variant labels with prices and its pictures in order; a picture is found only for a product that is shown"

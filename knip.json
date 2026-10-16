@@ -30,6 +30,11 @@
         "poc/**/*.ts",
         "e2e/**/*.ts"
       ]
+    },
+    "apps/catalog": {
+      "entry": ["src/routes/**/*.{ts,tsx}", "src/server/**/*.ts"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["cloudflare"]
     }
   }
 }
