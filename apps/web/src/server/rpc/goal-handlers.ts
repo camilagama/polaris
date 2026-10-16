@@ -5,6 +5,7 @@ import {
   evaluateActiveGoals,
   listGoals,
   listGoalTargetChanges,
+  listPausedGoalIds,
   settleGoals,
   updateGoal,
   createGoal,
@@ -24,6 +25,7 @@ const defaultGoalRepository = {
   evaluateActiveGoals,
   listGoalTargetChanges,
   listGoals,
+  listPausedGoalIds,
   settleGoals,
   updateGoal,
 };
@@ -49,7 +51,11 @@ interface Progress {
   value: string;
 }
 
-function goalReadModel(goal: GoalRow, progress: Progress | null) {
+function goalReadModel(
+  goal: GoalRow,
+  progress: Progress | null,
+  paused = false
+) {
   return {
     achievedValue: goal.achievedValue,
     createdAt: goal.createdAt.toISOString(),
@@ -58,6 +64,7 @@ function goalReadModel(goal: GoalRow, progress: Progress | null) {
     kind: goal.kind as "net_sales" | "operating_result" | "sale_count",
     name: goal.name,
     organizationId: goal.organizationId,
+    paused: paused && goal.status === "active",
     progress: goal.status === "active" ? progress : null,
     settledAt: goal.settledAt?.toISOString() ?? null,
     startsOn: goal.startsOn,
@@ -156,6 +163,11 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
           })
       );
       const byGoal = new Map(progress.map((entry) => [entry.goalId, entry]));
+      const paused = new Set(
+        await run(context, input.organizationId, (transaction, identity) =>
+          repository.listPausedGoalIds(transaction, identity)
+        )
+      );
       return {
         goals: goals.map((row) => {
           const entry = byGoal.get(row.id);
@@ -168,7 +180,8 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
                   reached: entry.evaluation.reached,
                   value: entry.evaluation.progress,
                 }
-              : null
+              : null,
+            paused.has(row.id)
           );
         }),
       };

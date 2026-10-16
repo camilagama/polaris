@@ -136,6 +136,7 @@ import {
 import {
   GoalLimitReachedError,
   GoalNotActiveError,
+  GoalPausedByPlanError,
   GoalPeriodEndedError,
   GoalNotFoundError,
   GoalVersionConflictError,
@@ -715,6 +716,7 @@ const conflictRpcErrors = [
     ExpenseVoidedError,
     ExpenseRuleVersionConflictError,
     GoalLimitReachedError,
+    GoalPausedByPlanError,
     EntitlementDeniedError,
     EntitlementLimitReachedError,
     EntitlementVariantLockedError,

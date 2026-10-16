@@ -97,6 +97,57 @@ export class GoalNotActiveError extends Error {
   }
 }
 
+/**
+ * The goal is paused by the plan: the organization has more active goals than
+ * its plan allows (after a downgrade), so the ones beyond the limit can only be
+ * cancelled. Nothing is deleted and the goal returns when the plan allows it.
+ */
+export class GoalPausedByPlanError extends Error {
+  readonly code = "goal_paused_by_plan";
+
+  constructor() {
+    super("goal_paused_by_plan");
+    this.name = "GoalPausedByPlanError";
+  }
+}
+
+/**
+ * The active goals the plan pauses: of the goals that are still running (their
+ * period has not ended: an ended one is settled by the read itself and takes no
+ * place), the ones that have started come first, oldest first, and the first
+ * `limit` of them keep running; the rest are paused. Derived on every read from
+ * the limit in force, never stored, so an upgrade or a cancellation un-pauses on
+ * its own. A limit that is not a finite number pauses everything (fails closed).
+ */
+export function pausedGoalIds(
+  active: readonly {
+    createdAt: Date;
+    endsOn: string;
+    id: string;
+    startsOn: string;
+  }[],
+  limit: number,
+  today: string
+): string[] {
+  const keep = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  return active
+    .filter((goal) => goal.endsOn >= today)
+    .sort((left, right) => {
+      const leftWaiting = left.startsOn > today ? 1 : 0;
+      const rightWaiting = right.startsOn > today ? 1 : 0;
+      if (leftWaiting !== rightWaiting) {
+        return leftWaiting - rightWaiting;
+      }
+      const byAge = left.createdAt.getTime() - right.createdAt.getTime();
+      if (byAge !== 0) {
+        return byAge;
+      }
+      return left.id < right.id ? -1 : 1;
+    })
+    .slice(keep)
+    .map((goal) => goal.id);
+}
+
 export function isGoalKind(value: string): value is GoalKind {
   return (GOAL_KINDS as readonly string[]).includes(value);
 }

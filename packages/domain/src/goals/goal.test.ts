@@ -6,6 +6,7 @@ import {
   InvalidGoalError,
   normalizeGoal,
   normalizeGoalTarget,
+  pausedGoalIds,
   settleGoal,
 } from "./goal";
 
@@ -224,5 +225,68 @@ describe("evaluateGoal and settleGoal", () => {
         }
       )
     );
+  });
+});
+
+describe("the goals a plan pauses", () => {
+  const todayText = "2026-10-14";
+  const goal = (
+    id: string,
+    day: number,
+    options: { endsOn?: string; startsOn?: string } = {}
+  ) => ({
+    createdAt: new Date(Date.UTC(2026, 9, day)),
+    endsOn: options.endsOn ?? "2026-10-31",
+    id,
+    startsOn: options.startsOn ?? "2026-10-01",
+  });
+
+  it("keeps the oldest goals running up to the limit and pauses the newer ones", () => {
+    const active = [goal("c", 3), goal("a", 1), goal("b", 2)];
+    expect(pausedGoalIds(active, 1, todayText)).toEqual(["b", "c"]);
+    expect(pausedGoalIds(active, 2, todayText)).toEqual(["c"]);
+    expect(pausedGoalIds(active, 3, todayText)).toEqual([]);
+    expect(pausedGoalIds(active, 20, todayText)).toEqual([]);
+  });
+
+  it("breaks a tie by id, so the same goals are paused on every read", () => {
+    const tied = [goal("b", 1), goal("a", 1)];
+    expect(pausedGoalIds(tied, 1, todayText)).toEqual(["b"]);
+    expect(pausedGoalIds([...tied].reverse(), 1, todayText)).toEqual(["b"]);
+  });
+
+  it("pauses everything when the limit is zero or not a number, and nothing when there are no goals", () => {
+    expect(pausedGoalIds([goal("a", 1)], 0, todayText)).toEqual(["a"]);
+    expect(pausedGoalIds([goal("a", 1)], Number.NaN, todayText)).toEqual(["a"]);
+    expect(pausedGoalIds([], 1, todayText)).toEqual([]);
+  });
+
+  it("cancelling a goal that runs moves the next one in (it is derived, never stored)", () => {
+    const active = [goal("a", 1), goal("b", 2)];
+    expect(pausedGoalIds(active, 1, todayText)).toEqual(["b"]);
+    expect(pausedGoalIds(active.slice(1), 1, todayText)).toEqual([]);
+  });
+
+  it("gives no place to a goal whose period has ended: the read settles it", () => {
+    const ended = goal("old", 1, { endsOn: "2026-10-13" });
+    const running = goal("new", 2);
+    expect(pausedGoalIds([ended, running], 1, todayText)).toEqual([]);
+    // an ended goal is never paused either, so it is always settled
+    expect(
+      pausedGoalIds([running, ended, goal("newer", 3)], 1, todayText)
+    ).toEqual(["newer"]);
+  });
+
+  it("does not let a goal that has not started take the place of the one in progress", () => {
+    const december = goal("december", 1, {
+      endsOn: "2026-12-31",
+      startsOn: "2026-12-01",
+    });
+    const current = goal("current", 2);
+    expect(pausedGoalIds([december, current], 1, todayText)).toEqual([
+      "december",
+    ]);
+    // once it starts it ranks by age like any other
+    expect(pausedGoalIds([december, current], 1, "2026-12-02")).toEqual([]);
   });
 });
