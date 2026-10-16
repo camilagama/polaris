@@ -79,6 +79,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0054](adr/0054-painel-de-resultado-e-indicador-de-qualidade.md) | Painel de resultado e indicador de qualidade | aceito |
 | [0055](adr/0055-metas.md) | Metas: alvo por período, progresso derivado, conclusão que não reabre | aceito |
 | [0056](adr/0056-leitura-offline-do-painel.md) | Leitura offline do painel: o último retrato confirmado | aceito |
-| [0065](adr/0065-teto-de-custo-e-free-tier-primeiro.md) | Teto de custo e free tier primeiro | proposto |
+| [0066](adr/0066-teto-de-custo-e-free-tier-primeiro.md) | Teto de custo e free tier primeiro | proposto |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.
