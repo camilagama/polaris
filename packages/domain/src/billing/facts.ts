@@ -132,7 +132,12 @@ export interface BillingRecord extends BillingFacts {
   lastFactAt: Date | null;
   /** A cycle change that takes effect at the next renewal. */
   pendingCycleMonths: BillingCycleMonths | null;
-  /** The newest payment taken back by a refund or a chargeback, while the record is not Pro. */
+  /**
+   * What is remembered of a payment taken back (a refund or a chargeback: never
+   * held on a paid period, cleared when the record is paid again) or of a
+   * chargeback won before it was applied (held in any state, kept until another
+   * memory replaces it).
+   */
   revoked: RevokedPayment | null;
   /** The trial was used, or waived by subscribing without one: it is offered once. */
   trialConsumed: boolean;
@@ -443,9 +448,11 @@ function reasonableFutureEnd(end: Date, now: Date): boolean {
 }
 
 /**
- * A won chargeback worth remembering: a period still ahead, or one that ended
- * within the grace it could still be standing on (a chargeback on that payment
- * would take the grace away), and no further than a paid period can run.
+ * A won chargeback worth remembering: a period still ahead, or, for a record on
+ * a paid period (active, or grace), one that ended within the grace it could
+ * still be standing on (a chargeback on that payment would take the grace away,
+ * or the grace the sweep is about to open), and no further than a paid period
+ * can run. A record that is on no paid period only remembers periods ahead.
  */
 function rememberableWonEnd(
   end: Date,

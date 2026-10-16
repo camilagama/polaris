@@ -1328,6 +1328,23 @@ async function run() {
       "a won chargeback cannot be turned into a chargeback while the subscription is active",
       "organization_billing_revoked_coherent"
     );
+    // a won chargeback carries no cycle and no cancellation, whoever writes it
+    for (const change of [
+      "revoked_cycle_months = 6",
+      "revoked_cancel_at_period_end = true",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Two probes, in order.
+      await expectSqlState(
+        () =>
+          admin.pool.query(
+            `UPDATE public.organization_billing SET ${change} WHERE organization_id = $1`,
+            [activeWon.organizationId]
+          ),
+        "23514",
+        `a won chargeback cannot carry: ${change}`,
+        "organization_billing_revoked_coherent"
+      );
+    }
     // but a won chargeback may live there (the state it was remembered in above)
     assert.equal(
       (await billing.readRecord(activeWon.organizationId))?.revoked?.reason,
