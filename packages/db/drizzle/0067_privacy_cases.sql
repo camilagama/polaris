@@ -49,8 +49,8 @@ CREATE TABLE "privacy_cases" (
 	CONSTRAINT "privacy_cases_decision_allowed" CHECK (("privacy_cases"."decision" IS NULL OR "privacy_cases"."decision" IN ('accept', 'partially_accept', 'reject', 'redirect_to_controller'))
         AND ("privacy_cases"."decision_reason" IS NULL OR "privacy_cases"."decision_reason" IN ('identity_not_verified', 'no_authority', 'controller_is_reseller', 'legal_retention', 'manifestly_unfounded', 'not_personal_data', 'other'))
         AND ("privacy_cases"."decision" IS NULL OR "privacy_cases"."decision" = 'accept' OR "privacy_cases"."decision_reason" IS NOT NULL)),
-	CONSTRAINT "privacy_cases_texts_allowed" CHECK (("privacy_cases"."note" IS NULL OR char_length("privacy_cases"."note") BETWEEN 1 AND 500)
-        AND ("privacy_cases"."decision_note" IS NULL OR char_length("privacy_cases"."decision_note") BETWEEN 1 AND 500)
+	CONSTRAINT "privacy_cases_texts_allowed" CHECK (("privacy_cases"."note" IS NULL OR (char_length("privacy_cases"."note") BETWEEN 1 AND 500 AND "privacy_cases"."note" !~ '[[:cntrl:]]'))
+        AND ("privacy_cases"."decision_note" IS NULL OR (char_length("privacy_cases"."decision_note") BETWEEN 1 AND 500 AND "privacy_cases"."decision_note" !~ '[[:cntrl:]]'))
         AND ("privacy_cases"."subject_reference" IS NULL OR (char_length("privacy_cases"."subject_reference") BETWEEN 1 AND 64 AND "privacy_cases"."subject_reference" ~ '^[A-Za-z0-9_-]+$'))),
 	CONSTRAINT "privacy_cases_steps_in_order" CHECK ((("privacy_cases"."stage" = 'requested') = ("privacy_cases"."identity_status" IS NULL))
         AND (("privacy_cases"."stage" IN ('requested', 'identity_checked')) = ("privacy_cases"."polaris_role" IS NULL))
@@ -192,7 +192,8 @@ BEGIN
   IF clean_note IS NOT NULL AND pg_catalog.char_length(clean_note) > 500 THEN
     RAISE EXCEPTION 'invalid_privacy_request' USING ERRCODE = '22023';
   END IF;
-  IF p_due_days IS NULL OR p_due_days < 1 OR p_due_days > 90 OR received > pg_catalog.now() THEN
+  IF p_due_days IS NULL OR p_due_days < 1 OR p_due_days > 90 OR received > pg_catalog.now()
+     OR received < pg_catalog.now() - interval '8760 hours' THEN
     RAISE EXCEPTION 'invalid_privacy_request' USING ERRCODE = '22023';
   END IF;
   IF p_request_type IS NULL OR p_request_type NOT IN ('access', 'correction', 'deletion', 'portability', 'objection', 'restriction', 'other')
@@ -394,9 +395,9 @@ BEGIN
   IF case_row.stage NOT IN ('decided', 'executed') OR case_row.decision = 'reject' THEN
     RAISE EXCEPTION 'privacy_stage_conflict' USING ERRCODE = '22023';
   END IF;
-  -- and what is recorded fits what was decided: a redirect is carried out by telling the controller, an acceptance by doing it
+  -- and what is recorded fits what was decided: a redirect is carried out by telling the controller, an acceptance by doing something (not by redirecting, not by doing nothing)
   IF (case_row.decision = 'redirect_to_controller' AND p_action NOT IN ('redirected_to_reseller', 'no_action_required', 'other'))
-     OR (case_row.decision IN ('accept', 'partially_accept') AND p_action = 'redirected_to_reseller') THEN
+     OR (case_row.decision IN ('accept', 'partially_accept') AND p_action IN ('redirected_to_reseller', 'no_action_required')) THEN
     RAISE EXCEPTION 'privacy_decision_not_allowed' USING ERRCODE = '22023';
   END IF;
   INSERT INTO public.privacy_case_actions (support_case_id, action, entity_id, recorded_by)

@@ -128,6 +128,8 @@ export type PrivacyStage = (typeof PRIVACY_STAGES)[number];
  * the case stores its own due date, so changing this changes only new cases.
  */
 export const PRIVACY_CASE_RESPONSE_DAYS = 15;
+/** A request that arrived by another channel can be typed in late, but not more than a year late. */
+export const MAX_PRIVACY_RECEIVED_AGE_DAYS = 365;
 export const MAX_PRIVACY_NOTE_LENGTH = 500;
 export const MAX_PRIVACY_REFERENCE_LENGTH = 64;
 
@@ -203,7 +205,9 @@ export function normalizePrivacyRequest(
   const receivedAt = input.receivedAt ?? now;
   if (
     !Number.isFinite(receivedAt.getTime()) ||
-    receivedAt.getTime() > now.getTime()
+    receivedAt.getTime() > now.getTime() ||
+    receivedAt.getTime() <
+      now.getTime() - MAX_PRIVACY_RECEIVED_AGE_DAYS * 86_400_000
   ) {
     throw new InvalidPrivacyStepError("invalid_privacy_request");
   }
@@ -336,8 +340,9 @@ export function assertActionAllowed(
   if (
     (decision === "redirect_to_controller" &&
       !redirectActions.includes(action)) ||
+    // an acceptance is carried out by doing something: neither redirecting nor doing nothing
     ((decision === "accept" || decision === "partially_accept") &&
-      action === "redirected_to_reseller")
+      (action === "redirected_to_reseller" || action === "no_action_required"))
   ) {
     throw new InvalidPrivacyStepError("privacy_decision_not_allowed");
   }

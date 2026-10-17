@@ -223,6 +223,11 @@ async function run() {
         "invalid_privacy_request",
       ],
       [
+        "a request from more than a year ago",
+        { receivedAt: new Date(Date.now() - 400 * DAY_MS) },
+        "invalid_privacy_request",
+      ],
+      [
         "a request from the future",
         { receivedAt: new Date(Date.now() + 3_600_000) },
         "invalid_privacy_request",
@@ -245,6 +250,13 @@ async function run() {
         `${label} is refused`
       );
     }
+    // the notes carry no control characters in the database either (the API refuses them first)
+    await expectSqlState(
+      () => open({ note: "ab" }),
+      "23514",
+      "a note with a control character is refused by the table",
+      "privacy_cases_texts_allowed"
+    );
     const arrived = new Date(Date.now() - 3 * DAY_MS);
     const first = await open({ receivedAt: arrived });
     assert.ok(first);

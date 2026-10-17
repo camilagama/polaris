@@ -47,6 +47,29 @@ describe("a request", () => {
     );
   });
 
+  it("may be typed in late, but not more than a year late", () => {
+    const base = {
+      channel: "email",
+      requestType: "access",
+      requesterKind: "data_subject",
+    };
+    const day = 86_400_000;
+    expect(
+      normalizePrivacyRequest(
+        { ...base, receivedAt: new Date(now.getTime() - 364 * day) },
+        now
+      ).receivedAt
+    ).toEqual(new Date(now.getTime() - 364 * day));
+    expect(
+      code(() =>
+        normalizePrivacyRequest(
+          { ...base, receivedAt: new Date(now.getTime() - 366 * day) },
+          now
+        )
+      )
+    ).toBe("invalid_privacy_request");
+  });
+
   it("arrives now by default and never in the future", () => {
     const ok = normalizePrivacyRequest(
       {
@@ -314,6 +337,11 @@ describe("what may be recorded as carried out", () => {
       expect(() =>
         assertActionAllowed(decision, "customer_anonymized")
       ).not.toThrow();
+      expect(() => assertActionAllowed(decision, "other")).not.toThrow();
+      // an acceptance is carried out by doing something, not by doing nothing
+      expect(
+        code(() => assertActionAllowed(decision, "no_action_required"))
+      ).toBe("privacy_decision_not_allowed");
       expect(
         code(() => assertActionAllowed(decision, "redirected_to_reseller"))
       ).toBe("privacy_decision_not_allowed");

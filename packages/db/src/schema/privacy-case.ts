@@ -93,8 +93,8 @@ export const privacyCases = pgTable(
     ),
     check(
       "privacy_cases_texts_allowed",
-      sql`(${table.note} IS NULL OR char_length(${table.note}) BETWEEN 1 AND 500)
-        AND (${table.decisionNote} IS NULL OR char_length(${table.decisionNote}) BETWEEN 1 AND 500)
+      sql`(${table.note} IS NULL OR (char_length(${table.note}) BETWEEN 1 AND 500 AND ${table.note} !~ '[[:cntrl:]]'))
+        AND (${table.decisionNote} IS NULL OR (char_length(${table.decisionNote}) BETWEEN 1 AND 500 AND ${table.decisionNote} !~ '[[:cntrl:]]'))
         AND (${table.subjectReference} IS NULL OR (char_length(${table.subjectReference}) BETWEEN 1 AND 64 AND ${table.subjectReference} ~ '^[A-Za-z0-9_-]+$'))`
     ),
     // each step fills in its own part, and only once the one before it is done
