@@ -1,5 +1,6 @@
 import { updateCustomer } from "@polaris/db/customer-repository";
 import {
+  CustomerAnonymizedError,
   CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerProfileError,
@@ -28,6 +29,10 @@ export function createCustomerUpdateHandler(
       }
       if (error instanceof CustomerNotFoundError) {
         return "customer_not_found";
+      }
+      if (error instanceof CustomerAnonymizedError) {
+        // anonymized for privacy meanwhile: the edit can never apply, and the device must not keep resubmitting it
+        return "customer_anonymized";
       }
       if (
         error instanceof InvalidCustomerProfileError ||
