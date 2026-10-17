@@ -418,6 +418,19 @@ describe("reading and revealing", () => {
         )
       ).status
     ).toBe(404);
+
+    // the caller's command ID already holds a different grant: a conflict, not a server error
+    const conflict = setup({
+      grantEntitlement: () =>
+        Promise.reject(new Error("entitlement_grant_id_conflict")),
+    });
+    const conflicted = await conflict.send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      { commandId: grantId, hours: 1, key: "k", reason: "r", value: 1 }
+    );
+    expect(conflicted.status).toBe(409);
+    expect(await conflicted.json()).toEqual({ error: "grant_id_conflict" });
   });
 });
 

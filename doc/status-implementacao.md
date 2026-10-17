@@ -1437,6 +1437,17 @@ Segundo passo da Fase 10 ([ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-po
 | Revisão independente | Concluída | Sem falha de integridade no banco; achados tratados: as vendas recentes guardadas no aparelho (com o nome do cliente) são atualizadas quando um cliente muda, a tela do aparelho reconhece o anonimizado pelo formato que só ele pode ter, arquivar de novo com versão velha é no-op; limites registrados no ADR (hash do log de comandos é pseudonimização, fila de edições offline). |
 | Limites | Registrados | Cópias fora do banco ativo (backups, branches, exportações, aparelhos que não sincronizaram) e texto livre em outros registros ficam para retenção e purge; sem motivo registrado até o PR103; o modelo local não guarda a marca (o servidor recusa). |
 
+### Correções das revisões pós-merge do bot (PR #114 e PR #116)
+
+O bot revisor ([comentário no #114](https://github.com/camilagama/polaris/pull/114) e [no #116](https://github.com/camilagama/polaris/pull/116)) aprovou com ajustes. Tratados num PR à parte:
+
+| Achado | Tratamento |
+| --- | --- |
+| #114: repetir o mesmo `commandId` do comando de conceder virava erro (o fim "daqui a N horas" muda a cada pedido e o store compara o instante) | O comando lê a concessão do ID antes (`findEntitlementGrant`): a repetição é a mesma concessão se tudo menos o relógio confere (a duração pedida inclusive: 1 hora e depois 720 é conflito), e um conflito é 409 `grant_id_conflict` (antes saía 500). Testes do comando e da rota; o gate `admin-suspension` cobre a leitura do store. |
+| #116: `organization_closed` fora da lista de motivos de revogação do domínio | Incluído (espelha o CHECK do banco). |
+| #116: a confirmação digitada vale só no TypeScript | Registrado nos limites do ADR 0074. |
+| #116 e #114: número de ADR que colide com o rascunho #96 | Não é deste PR: o #96 precisa ir para 0076 ou mais (0074 e 0075 estão em uso). |
+
 ### Fase 10C — Privacidade: casos de privacidade (PR103; implementação, gate e verificações locais concluídos; revisão e publicação: ver linhas abaixo)
 
 Terceiro passo da Fase 10 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): o fluxo interno de um pedido sobre dado pessoal, no Admin.

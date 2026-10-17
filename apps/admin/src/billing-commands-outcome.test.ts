@@ -21,6 +21,7 @@ const command = {
 function ports(overrides: Partial<BillingCommandPorts> = {}) {
   const value: BillingCommandPorts = {
     audit: vi.fn(() => Promise.resolve("org-1")),
+    find: vi.fn(() => Promise.resolve(null)),
     grant: vi.fn((input) =>
       Promise.resolve({ created: true, id: input.id ?? "x" })
     ),
@@ -84,6 +85,91 @@ describe("asking twice", () => {
       callerId,
       "key=variants.active.max"
     );
+  });
+});
+
+describe("asking twice, a moment apart", () => {
+  const stored = {
+    // asked for 24 hours at noon, so it ends the next noon
+    expiresAt: new Date("2026-10-17T12:00:00.000Z"),
+    startsAt: new Date("2026-10-16T12:00:00.000Z"),
+    flagValue: null,
+    grantedBy: `admin:${principalId}`,
+    key: "variants.active.max",
+    limitValue: 200,
+    organizationId: "org-1",
+    reason: "Compensação",
+  };
+
+  it("is the same grant when the ID already holds it, even though 'hours from now' is a different instant, and is not given twice", async () => {
+    const find = vi.fn(() => Promise.resolve(stored));
+    const p = ports({ find });
+    const later = new Date(now.getTime() + 90_000);
+    const result = await grantEntitlementCommand(
+      p,
+      principalId,
+      caseId,
+      { ...command, id: callerId },
+      later
+    );
+    expect(find).toHaveBeenCalledWith(callerId);
+    expect(p.grant).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      created: false,
+      id: callerId,
+      organizationId: "org-1",
+      outcomeRecorded: true,
+    });
+    // the repeat is written down like any request and ends with its outcome
+    expect(p.audit).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses the same ID asked for a different length: it is not the command that was given", async () => {
+    const p = ports({ find: vi.fn(() => Promise.resolve(stored)) });
+    await expect(
+      grantEntitlementCommand(
+        p,
+        principalId,
+        caseId,
+        { ...command, hours: 720, id: callerId },
+        new Date(now.getTime() + 90_000)
+      )
+    ).rejects.toThrow("entitlement_grant_id_conflict");
+    expect(p.grant).not.toHaveBeenCalled();
+  });
+
+  it("refuses a different grant under the same ID, after the request was written down", async () => {
+    for (const different of [
+      { key: "images.active.max" },
+      { limitValue: 300 },
+      { reason: "Outro motivo" },
+      { organizationId: "org-2" },
+      { grantedBy: "admin:someone-else" },
+    ]) {
+      const p = ports({
+        find: vi.fn(() => Promise.resolve({ ...stored, ...different })),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: Cases, in order.
+      await expect(
+        grantEntitlementCommand(
+          p,
+          principalId,
+          caseId,
+          { ...command, id: callerId },
+          now
+        )
+      ).rejects.toThrow("entitlement_grant_id_conflict");
+      expect(p.grant).not.toHaveBeenCalled();
+      expect(p.audit).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("does not look anything up when the caller named no ID", async () => {
+    const find = vi.fn(() => Promise.resolve(stored));
+    const p = ports({ find });
+    await grantEntitlementCommand(p, principalId, caseId, command, now);
+    expect(find).not.toHaveBeenCalled();
+    expect(p.grant).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -3,6 +3,7 @@ import { INITIAL_PLAN_CATALOG, resolveEntitlements } from "./entitlements";
 import {
   type GrantRequest,
   InvalidEntitlementGrantError,
+  isRepeatOfGrant,
   isValidGrantActor,
   MAX_GRANT_DAYS,
   MAX_GRANT_LIMIT,
@@ -156,5 +157,52 @@ describe("a grant in the entitlements of an organization", () => {
     expect(granted.state).toBe("free");
     expect(granted.accessEndsAt).toBeNull();
     expect(granted.raisedByGrant).toEqual(["variants.active.max"]);
+  });
+});
+
+describe("a repeat of a grant command", () => {
+  const HOUR = 3_600_000;
+  const asked = normalizeGrant(
+    request({ expiresAt: new Date(now.getTime() + 24 * HOUR), startsAt: now }),
+    now
+  );
+  const stored = {
+    expiresAt: asked.expiresAt,
+    flagValue: asked.flagValue,
+    grantedBy: asked.actor,
+    key: asked.key,
+    limitValue: asked.limitValue,
+    organizationId: "org-1",
+    reason: asked.reason,
+    startsAt: asked.startsAt,
+  };
+  const repeat = { grant: asked, hours: 24, organizationId: "org-1" };
+
+  it("is the same grant when everything matches, whatever the clock the repeat was given at", () => {
+    expect(isRepeatOfGrant(stored, repeat)).toBe(true);
+  });
+
+  it("is not the same grant when the length differs: one hour and then 720 are two commands", () => {
+    expect(isRepeatOfGrant(stored, { ...repeat, hours: 720 })).toBe(false);
+    // and the length is exact, not close: a start a moment later is another length
+    expect(
+      isRepeatOfGrant(
+        { ...stored, startsAt: new Date(stored.startsAt.getTime() + 1) },
+        repeat
+      )
+    ).toBe(false);
+  });
+
+  it("is not the same grant when the organization, the key, the value, the reason or the giver differ", () => {
+    for (const different of [
+      { organizationId: "org-2" },
+      { key: "images.active.max" },
+      { limitValue: 300 },
+      { flagValue: true },
+      { reason: "Outro motivo" },
+      { grantedBy: "admin:someone-else" },
+    ]) {
+      expect(isRepeatOfGrant({ ...stored, ...different }, repeat)).toBe(false);
+    }
   });
 });

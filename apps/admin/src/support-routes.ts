@@ -215,6 +215,13 @@ export function supportRoutes(
       report("admin_not_configured");
       return context.json({ error: "admin_not_configured" }, 503);
     }
+    if (
+      error instanceof Error &&
+      error.message === "entitlement_grant_id_conflict"
+    ) {
+      // the caller's command ID already holds a different grant
+      return context.json({ error: "grant_id_conflict" }, 409);
+    }
     if (error instanceof Error && error.message === "organization_not_found") {
       return context.json({ error: "not_found" }, 404);
     }

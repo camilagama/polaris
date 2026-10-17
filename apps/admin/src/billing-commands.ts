@@ -1,9 +1,14 @@
 import type { BillingAuditEvent } from "@polaris/db/admin-support-repository";
-import type { GrantEntitlementInput } from "@polaris/db/billing-store";
+import type {
+  GrantEntitlementInput,
+  StoredEntitlementGrant,
+} from "@polaris/db/billing-store";
 import { hasControlCharacters } from "@polaris/domain/admin/support-access";
 import {
   type GrantRequest,
   InvalidEntitlementGrantError,
+  isRepeatOfGrant,
+  type NormalizedGrant,
   normalizeGrant,
 } from "@polaris/domain/billing/grants";
 
@@ -24,6 +29,8 @@ export interface BillingCommandPorts {
     entityId: string | null,
     detail: string | null
   ) => Promise<string | null>;
+  /** The grant already stored under this ID, or null. */
+  find: (id: string) => Promise<StoredEntitlementGrant | null>;
   grant: (
     input: GrantEntitlementInput
   ) => Promise<{ created: boolean; id: string }>;
@@ -74,6 +81,8 @@ export async function grantEntitlementCommand(
     expiresAt: new Date(now.getTime() + command.hours * HOUR_MS),
     key: command.key,
     reason: command.reason,
+    // the start is the command's own clock, like the end, so the length stored is exactly the hours asked
+    startsAt: now,
     value: command.value,
   };
   // refused here when it is not a valid grant, before anything is recorded or done
@@ -89,7 +98,14 @@ export async function grantEntitlementCommand(
   if (!organizationId) {
     throw new Error("case_organization_unavailable");
   }
-  const result = await ports.grant({ ...request, id, organizationId });
+  // The end of a grant is "hours from now", so a repeat a moment later asks for a different instant. The
+  // caller's own ID is what makes it the same command: when that ID already holds a grant, the repeat is
+  // the same grant if everything but the clock matches (the length asked for included), and a refusal if it
+  // is a different one.
+  const prior = command.id ? await ports.find(id) : null;
+  const result = prior
+    ? repeatResult(prior, organizationId, normalized, command.hours, id)
+    : await ports.grant({ ...request, id, organizationId });
   const outcomeRecorded = await recorded(() =>
     ports.audit(
       principalId,
@@ -100,6 +116,19 @@ export async function grantEntitlementCommand(
     )
   );
   return { ...result, organizationId, outcomeRecorded };
+}
+
+function repeatResult(
+  prior: StoredEntitlementGrant,
+  organizationId: string,
+  grant: NormalizedGrant,
+  hours: number,
+  id: string
+): { created: false; id: string } {
+  if (!isRepeatOfGrant(prior, { grant, hours, organizationId })) {
+    throw new Error("entitlement_grant_id_conflict");
+  }
+  return { created: false, id };
 }
 
 /**
