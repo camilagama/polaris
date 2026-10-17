@@ -10,6 +10,7 @@ O Gate 4 prova seis propriedades: venda atômica, estoque correto, dinheiro corr
 - Nenhuma connection string, senha ou token é impressa, gravada em arquivo ou colada em chat. A URL do gate vive só nas variáveis de ambiente do processo e é removida ao final.
 - Alvo seguro: uma **branch Neon nova e descartável** (schema-only a partir de `production`, expiração de 24 h) com um banco novo `polaris_prNN_gate`. Nunca reutilize uma branch expirada e nunca copie dados de produção. O banco é recriado do zero: as migrations (0000 em diante) são reaplicadas do começo.
 - O plano Neon limita as branches raiz. Apague apenas as branches de gate que você mesmo criou e que já terminaram antes de criar a próxima.
+- **Pegada no Neon ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda da issue #115).** O CI já roda todos os gates a cada pull request, então no Neon rode, por pull request, só o gate novo e os gates dos objetos que o PR tocou, numa única branch reaproveitada e apagada logo depois (uma branch nova só quando uma migration ainda não publicada é emendada; rode então o gate novo primeiro). A suíte completa (`gates:all` ou `ci`) fica para uma vez por fase, antes de uma liberação e quando mudam o executor, o suporte comum dos gates ou os privilégios de forma ampla. Diga no relatório do PR o que rodou em Neon.
 - Não rode dois gates ao mesmo tempo no mesmo banco: os gates de falha injetada criam gatilhos nas tabelas compartilhadas e contaminam a execução do outro.
 
 ## Passos
