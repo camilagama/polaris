@@ -26,6 +26,7 @@ import {
 } from "@polaris/db/category-repository";
 import { createDatabase } from "@polaris/db/client";
 import {
+  anonymizeCustomerForPrivacy,
   archiveCustomer,
   createCustomer,
   findPossibleCustomerDuplicates,
@@ -120,6 +121,7 @@ import {
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 import {
+  CustomerAnonymizedError,
   CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerDuplicateSearchError,
@@ -312,6 +314,7 @@ const uuidPattern =
 
 interface RpcRouterDependencies {
   archiveCategory: typeof archiveCategory;
+  anonymizeCustomerForPrivacy: typeof anonymizeCustomerForPrivacy;
   archiveCustomer: typeof archiveCustomer;
   archivePaymentProfile: typeof archivePaymentProfile;
   archiveProduct: typeof archiveProduct;
@@ -431,6 +434,7 @@ function productReadModel(product: {
 }
 
 function customerReadModel(customer: {
+  anonymizedAt: Date | null;
   archivedAt: Date | null;
   createdAt: Date;
   email: string | null;
@@ -443,6 +447,7 @@ function customerReadModel(customer: {
   version: number;
 }): CustomerReadModel {
   return {
+    anonymizedAt: customer.anonymizedAt?.toISOString() ?? null,
     archivedAt: customer.archivedAt?.toISOString() ?? null,
     createdAt: customer.createdAt.toISOString(),
     email: customer.email,
@@ -735,6 +740,7 @@ const conflictRpcErrors = [
     CategoryNameConflictError,
     CategoryLifecycleError,
     ProductCategoryUnavailableError,
+    CustomerAnonymizedError,
   ],
   [
     ExpenseCategoryNameConflictError,
@@ -869,6 +875,7 @@ function createCustomerRpcHandlers(
   dependencies: Partial<
     Pick<
       RpcRouterDependencies,
+      | "anonymizeCustomerForPrivacy"
       | "archiveCustomer"
       | "createCustomer"
       | "findPossibleCustomerDuplicates"
@@ -879,6 +886,8 @@ function createCustomerRpcHandlers(
   > &
     Pick<RpcRouterDependencies, "withTenantRequestContext">
 ) {
+  const anonymizeTenantCustomer =
+    dependencies.anonymizeCustomerForPrivacy ?? anonymizeCustomerForPrivacy;
   const archiveTenantCustomer = dependencies.archiveCustomer ?? archiveCustomer;
   const createTenantCustomer = dependencies.createCustomer ?? createCustomer;
   const findTenantCustomerDuplicates =
@@ -1017,7 +1026,41 @@ function createCustomerRpcHandlers(
       )
   );
 
-  return { archive, create, findPossibleDuplicates, list, restore, update };
+  const anonymizeForPrivacy =
+    implementContract.customer.anonymizeForPrivacy.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "customer:anonymize",
+            operation: (transaction, identity) =>
+              anonymizeTenantCustomer(transaction, identity, {
+                expectedVersion: input.expectedVersion,
+                id: input.id,
+                requestId: requestAuditId(context.requestId),
+              }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            changed: result.changed,
+            customer: customerReadModel(result.customer),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
+  return {
+    anonymizeForPrivacy,
+    archive,
+    create,
+    findPossibleDuplicates,
+    list,
+    restore,
+    update,
+  };
 }
 
 function createPaymentProfileRpcHandlers(

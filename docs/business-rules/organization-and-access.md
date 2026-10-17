@@ -40,6 +40,7 @@ Cada operação exige uma capability própria, verificada no procedimento e repe
 | `goal:manage` | Criar, editar, cancelar e ler metas (o progresso delas usa o resultado do período). |
 | `catalog:publish` | Gerir o perfil público, ligar e desligar o catálogo público e escolher os produtos publicados ([public-catalog.md](public-catalog.md)). |
 | `organization:manage` | Gerenciar perfis de pagamento da organização. |
+| `customer:anonymize` | Anonimizar um cliente por privacidade (irreversível). |
 | `organization:close` | Encerrar a organização (o pedido de encerramento, com a confirmação do nome). |
 | `expense:create` | Listar, criar, editar, anular e reativar despesas e gerir as categorias de despesa. Na V1 não há `expense:read`, então a leitura de despesas também exige esta capability. |
 

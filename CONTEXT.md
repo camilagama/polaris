@@ -12,6 +12,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Encerramento (closure) e janela de recuperação:** o dono encerra a organização digitando o nome; o acesso acaba na hora e, por 30 dias (`closing`), ele pode desfazer. Distinto da suspensão (medida da plataforma) e da exclusão física (purge).<br>
 **Evitar:** workspace na interface; tenant como nome de produto.
 
+**Anonimização de cliente (customer anonymization):** a pessoa sai do cadastro (nome fixo, sem telefone, email nem observações) e o registro fica, para que as vendas ligadas a ele mantenham seus fatos econômicos. Irreversível; distinta de arquivar.<br>
+
 **Membership (vínculo):** relação de acesso entre um usuário e uma organização.
 
 **Owner:** papel inicial do membro responsável pela organização.

@@ -4373,6 +4373,13 @@ Criar jobs somente onde política estiver aprovada.
 
 
 
+Pendências herdadas do PR102 (anonimização de cliente, [ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)), a tratar aqui ou ao definir a retenção do log de comandos offline:
+
+- `sync_commands.payload_hash` é um SHA-256 sem sal sobre o payload canônico de `customer.create` e `customer.update` (nome, telefone, email e observações). Telefone e email têm pouca entropia, então o hash permite confirmar um valor suspeito por tentativa: é pseudonimização. Trocar por um HMAC com segredo do servidor, ou definir um prazo de retenção do log que acabe com a exposição.
+- Quando o servidor devolver `customer_anonymized` a um `customer.update` offline, o aparelho deveria descartar o corpo do comando (hoje só marca como indisponível e o texto digitado fica na fila até o dono descartar).
+
+
+
 ---
 
 

@@ -33,7 +33,7 @@ import {
 import "./customers-page.css";
 
 type CustomerListStatus = "active" | "archived";
-type CustomerAction = "archive" | "restore";
+type CustomerAction = "anonymize" | "archive" | "restore";
 interface CustomerDraft {
   email: string;
   name: string;
@@ -101,6 +101,13 @@ function errorMessage(
     return "Não foi possível carregar os clientes. Tente novamente.";
   }
   return "Não foi possível salvar o cliente. Revise os campos e tente novamente.";
+}
+
+function customerStatusLabel(customer: CustomerReadModel): string {
+  if (customer.anonymizedAt !== null) {
+    return "Anonimizado";
+  }
+  return customer.status === "active" ? "Ativo" : "Arquivado";
 }
 
 function formatDate(value: string): string {
@@ -387,8 +394,9 @@ interface CustomerCardProps {
   isPending: boolean;
   /** Why editing, archiving and restoring are unavailable for this customer, or null. */
   lockedReason: string | null;
-  /** Why archiving and restoring (not editing) are unavailable right now, or null. */
+  /** Why archiving, restoring and anonymizing (not editing) are unavailable right now, or null. */
   lifecycleReason: string | null;
+  onAnonymize: (customer: CustomerReadModel) => void;
   onArchive: (customer: CustomerReadModel) => void;
   onEdit: (customer: CustomerReadModel) => void;
   onRestore: (customer: CustomerReadModel) => void;
@@ -414,21 +422,31 @@ function syncStateLabel(
   return isUpdate ? "Alteração aguardando envio" : "Aguardando envio";
 }
 
-function CustomerCard({
+interface CustomerActionsProps {
+  customer: CustomerReadModel;
+  isPending: boolean;
+  lifecycleLocked: boolean;
+  lockedReason: string | null;
+  onAnonymize: (customer: CustomerReadModel) => void;
+  onArchive: (customer: CustomerReadModel) => void;
+  onEdit: (customer: CustomerReadModel) => void;
+  onRestore: (customer: CustomerReadModel) => void;
+  pendingAction: string | null;
+}
+
+/** What can be done to a customer that was not anonymized (an anonymized one has no actions). */
+function CustomerActions({
   customer,
-  lifecycleReason,
-  lockedReason,
   isPending,
+  lifecycleLocked,
+  lockedReason,
+  onAnonymize,
   onArchive,
   onEdit,
   onRestore,
   pendingAction,
-  syncState,
-  updateState,
-}: CustomerCardProps) {
-  const shownState = syncState ?? updateState;
-  const reason = lockedReason ?? lifecycleReason;
-  const lifecycleLocked = reason !== null;
+}: CustomerActionsProps) {
+  const [confirmingAnonymize, setConfirmingAnonymize] = useState(false);
   const handleEdit = useCallback(() => onEdit(customer), [customer, onEdit]);
   const handleArchive = useCallback(
     () => onArchive(customer),
@@ -438,7 +456,113 @@ function CustomerCard({
     () => onRestore(customer),
     [customer, onRestore]
   );
-  const actionIsPending = pendingAction?.endsWith(customer.id) ?? false;
+  const handleAskAnonymize = useCallback(
+    () => setConfirmingAnonymize(true),
+    []
+  );
+  const handleCancelAnonymize = useCallback(
+    () => setConfirmingAnonymize(false),
+    []
+  );
+  const handleConfirmAnonymize = useCallback(() => {
+    setConfirmingAnonymize(false);
+    onAnonymize(customer);
+  }, [customer, onAnonymize]);
+  const pendingLabel = (
+    action: CustomerAction,
+    running: string,
+    idle: string
+  ) => (pendingAction === `${action}:${customer.id}` ? running : idle);
+
+  return (
+    <>
+      <div className="customer-card-actions">
+        <button
+          aria-label={`Editar cliente ${customer.name}`}
+          className="quiet-button"
+          disabled={isPending || lockedReason !== null}
+          onClick={handleEdit}
+          type="button"
+        >
+          Editar
+        </button>
+        {customer.status === "active" ? (
+          <button
+            aria-label={`Arquivar cliente ${customer.name}`}
+            className="quiet-button"
+            disabled={isPending || lifecycleLocked}
+            onClick={handleArchive}
+            type="button"
+          >
+            {pendingLabel("archive", "Arquivando…", "Arquivar")}
+          </button>
+        ) : (
+          <button
+            aria-label={`Restaurar cliente ${customer.name}`}
+            className="quiet-button"
+            disabled={isPending || lifecycleLocked}
+            onClick={handleRestore}
+            type="button"
+          >
+            {pendingLabel("restore", "Restaurando…", "Restaurar")}
+          </button>
+        )}
+        <button
+          aria-label={`Anonimizar cliente ${customer.name}`}
+          className="quiet-button"
+          disabled={isPending || lifecycleLocked}
+          onClick={handleAskAnonymize}
+          type="button"
+        >
+          {pendingLabel("anonymize", "Anonimizando…", "Anonimizar")}
+        </button>
+      </div>
+      {confirmingAnonymize ? (
+        <fieldset className="customer-anonymize-confirm" disabled={isPending}>
+          <legend>Confirmar a anonimização de {customer.name}</legend>
+          <p>
+            Anonimizar remove o nome, o telefone, o email e as observações deste
+            cliente. <strong>Não dá para desfazer.</strong> As vendas ligadas a
+            ele continuam com os mesmos valores.
+          </p>
+          <div className="customer-card-actions">
+            <button
+              className="quiet-button"
+              onClick={handleCancelAnonymize}
+              type="button"
+            >
+              Cancelar
+            </button>
+            <button
+              className="danger-button"
+              onClick={handleConfirmAnonymize}
+              type="button"
+            >
+              Anonimizar definitivamente
+            </button>
+          </div>
+        </fieldset>
+      ) : null}
+    </>
+  );
+}
+
+function CustomerCard({
+  customer,
+  lifecycleReason,
+  lockedReason,
+  isPending,
+  onAnonymize,
+  onArchive,
+  onEdit,
+  onRestore,
+  pendingAction,
+  syncState,
+  updateState,
+}: CustomerCardProps) {
+  const isAnonymized = customer.anonymizedAt !== null;
+  const shownState = syncState ?? updateState;
+  const reason = lockedReason ?? lifecycleReason;
 
   return (
     <article className="customer-card">
@@ -446,7 +570,7 @@ function CustomerCard({
         <div className="customer-card-title-row">
           <h3>{customer.name}</h3>
           <span className={`category-status status-${customer.status}`}>
-            {customer.status === "active" ? "Ativo" : "Arquivado"}
+            {customerStatusLabel(customer)}
           </span>
           {shownState ? (
             <span
@@ -474,43 +598,26 @@ function CustomerCard({
           </p>
         ) : null}
         {reason ? <p className="customer-meta">{reason}</p> : null}
+        {isAnonymized ? (
+          <p className="customer-meta">
+            Dados pessoais removidos. Este cadastro não pode ser editado nem
+            restaurado; as vendas ligadas a ele mantêm seus valores.
+          </p>
+        ) : null}
       </div>
-      <div className="customer-card-actions">
-        <button
-          aria-label={`Editar cliente ${customer.name}`}
-          className="quiet-button"
-          disabled={isPending || lockedReason !== null}
-          onClick={handleEdit}
-          type="button"
-        >
-          Editar
-        </button>
-        {customer.status === "active" ? (
-          <button
-            aria-label={`Arquivar cliente ${customer.name}`}
-            className="quiet-button"
-            disabled={isPending || lifecycleLocked}
-            onClick={handleArchive}
-            type="button"
-          >
-            {actionIsPending && pendingAction === `archive:${customer.id}`
-              ? "Arquivando…"
-              : "Arquivar"}
-          </button>
-        ) : (
-          <button
-            aria-label={`Restaurar cliente ${customer.name}`}
-            className="quiet-button"
-            disabled={isPending || lifecycleLocked}
-            onClick={handleRestore}
-            type="button"
-          >
-            {actionIsPending && pendingAction === `restore:${customer.id}`
-              ? "Restaurando…"
-              : "Restaurar"}
-          </button>
-        )}
-      </div>
+      {isAnonymized ? null : (
+        <CustomerActions
+          customer={customer}
+          isPending={isPending}
+          lifecycleLocked={reason !== null}
+          lockedReason={lockedReason}
+          onAnonymize={onAnonymize}
+          onArchive={onArchive}
+          onEdit={onEdit}
+          onRestore={onRestore}
+          pendingAction={pendingAction}
+        />
+      )}
     </article>
   );
 }
@@ -545,6 +652,7 @@ interface CustomerWorkspaceProps {
   /** Working from this device's collections while the connection is down. */
   isOffline: boolean;
   notice: string | null;
+  onAnonymize: (customer: CustomerReadModel) => void;
   onArchive: (customer: CustomerReadModel) => void;
   onCancelEdit: () => void;
   onChange: (field: keyof CustomerDraft, value: string) => void;
@@ -573,6 +681,7 @@ function CustomerWorkspace({
   syncStates,
   updateStates,
   notice,
+  onAnonymize,
   onArchive,
   onCancelEdit,
   onChange,
@@ -682,13 +791,14 @@ function CustomerWorkspace({
                   isPending={pendingAction !== null}
                   lifecycleReason={
                     isOffline
-                      ? "Arquivar e restaurar precisam de conexão."
+                      ? "Arquivar, restaurar e anonimizar precisam de conexão."
                       : null
                   }
                   lockedReason={lockedReasonFor(
                     syncStates.get(customer.id),
                     updateStates.get(customer.id)
                   )}
+                  onAnonymize={onAnonymize}
                   onArchive={onArchive}
                   onEdit={onEdit}
                   onRestore={onRestore}
@@ -1069,7 +1179,14 @@ export function CustomersPage() {
           id: customer.id,
           organizationId,
         };
-        if (action === "archive") {
+        if (action === "anonymize") {
+          const anonymized =
+            await orpcClient.customer.anonymizeForPrivacy(input);
+          await keepLocalRow(workspace, anonymized.customer);
+          setNotice(
+            "Cliente anonimizado. Os dados pessoais foram removidos; as vendas ligadas a ele mantêm seus valores."
+          );
+        } else if (action === "archive") {
           const archived = await orpcClient.customer.archive(input);
           await keepLocalRow(workspace, archived.customer);
           setNotice("Cliente arquivado.");
@@ -1092,6 +1209,10 @@ export function CustomersPage() {
     [editingCustomer, organizationId, refreshList, workspace]
   );
 
+  const handleAnonymize = useCallback(
+    (customer: CustomerReadModel) => handleLifecycle(customer, "anonymize"),
+    [handleLifecycle]
+  );
   const handleArchive = useCallback(
     (customer: CustomerReadModel) => handleLifecycle(customer, "archive"),
     [handleLifecycle]
@@ -1112,6 +1233,7 @@ export function CustomersPage() {
         isLoading={isLoading}
         isOffline={workspace !== null && !workspace.online}
         notice={notice}
+        onAnonymize={handleAnonymize}
         onArchive={handleArchive}
         onCancelEdit={handleCancelEdit}
         onChange={handleDraftChange}

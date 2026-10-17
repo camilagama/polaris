@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANONYMIZED_CUSTOMER_NAME,
+  anonymizedCustomerProfile,
+  CustomerAnonymizedError,
   deriveCustomerLifecycle,
+  hasAnonymizedShape,
   InvalidCustomerDuplicateSearchError,
   InvalidCustomerProfileError,
+  isCustomerAnonymized,
   normalizeCustomerDuplicateSearch,
   normalizeCustomerProfile,
   transitionCustomerLifecycle,
@@ -112,5 +117,44 @@ describe("customer text limits", () => {
     expect(() =>
       normalizeCustomerDuplicateSearch({ phone: "1".repeat(41) })
     ).toThrow(InvalidCustomerDuplicateSearchError);
+  });
+});
+
+describe("anonymizing a customer for privacy", () => {
+  it("replaces everything about the person with a fixed text and nothing else", () => {
+    expect(anonymizedCustomerProfile()).toEqual({
+      email: null,
+      name: ANONYMIZED_CUSTOMER_NAME,
+      notes: null,
+      phone: null,
+    });
+    expect(ANONYMIZED_CUSTOMER_NAME).toBe("Cliente anonimizado");
+  });
+
+  it("is recognized by the moment it happened", () => {
+    expect(isCustomerAnonymized(null)).toBe(false);
+    expect(isCustomerAnonymized(new Date("2026-10-17T12:00:00.000Z"))).toBe(
+      true
+    );
+  });
+
+  it("has a refusal with a stable code for edits and restores", () => {
+    const error = new CustomerAnonymizedError();
+    expect(error.code).toBe("customer_anonymized");
+    expect(error.message).toBe("customer_anonymized");
+  });
+});
+
+describe("recognizing an anonymized record without its mark", () => {
+  it("is the shape only an anonymized customer can have: no phone and no e-mail", () => {
+    expect(hasAnonymizedShape({ email: null, phone: null })).toBe(true);
+    expect(hasAnonymizedShape({ email: "a@b.co", phone: null })).toBe(false);
+    expect(
+      hasAnonymizedShape({ email: null, phone: "+55 11 90000-0000" })
+    ).toBe(false);
+    // an ordinary customer always has a contact, so the shape never mistakes one for an anonymized one
+    expect(() => normalizeCustomerProfile({ name: "Ana" })).toThrow(
+      InvalidCustomerProfileError
+    );
   });
 });
