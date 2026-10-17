@@ -1,5 +1,8 @@
 import type { BillingAuditEvent } from "@polaris/db/admin-support-repository";
-import type { GrantEntitlementInput } from "@polaris/db/billing-store";
+import type {
+  GrantEntitlementInput,
+  StoredEntitlementGrant,
+} from "@polaris/db/billing-store";
 import { hasControlCharacters } from "@polaris/domain/admin/support-access";
 import {
   type GrantRequest,
@@ -24,6 +27,8 @@ export interface BillingCommandPorts {
     entityId: string | null,
     detail: string | null
   ) => Promise<string | null>;
+  /** The grant already stored under this ID, or null. */
+  find: (id: string) => Promise<StoredEntitlementGrant | null>;
   grant: (
     input: GrantEntitlementInput
   ) => Promise<{ created: boolean; id: string }>;
@@ -89,7 +94,13 @@ export async function grantEntitlementCommand(
   if (!organizationId) {
     throw new Error("case_organization_unavailable");
   }
-  const result = await ports.grant({ ...request, id, organizationId });
+  // The end of a grant is "hours from now", so a repeat a moment later asks for a different instant. The
+  // caller's own ID is what makes it the same command: when that ID already holds a grant, the repeat is
+  // the same grant if everything but the clock matches, and a refusal if it is a different one.
+  const prior = command.id ? await ports.find(id) : null;
+  const result = prior
+    ? repeatOf(prior, organizationId, normalized, id)
+    : await ports.grant({ ...request, id, organizationId });
   const outcomeRecorded = await recorded(() =>
     ports.audit(
       principalId,
@@ -100,6 +111,31 @@ export async function grantEntitlementCommand(
     )
   );
   return { ...result, organizationId, outcomeRecorded };
+}
+
+function repeatOf(
+  prior: StoredEntitlementGrant,
+  organizationId: string,
+  asked: {
+    actor: string;
+    flagValue: boolean | null;
+    key: string;
+    limitValue: number | null;
+    reason: string;
+  },
+  id: string
+): { created: false; id: string } {
+  if (
+    prior.organizationId !== organizationId ||
+    prior.key !== asked.key ||
+    prior.limitValue !== asked.limitValue ||
+    prior.flagValue !== asked.flagValue ||
+    prior.reason !== asked.reason ||
+    prior.grantedBy !== asked.actor
+  ) {
+    throw new Error("entitlement_grant_id_conflict");
+  }
+  return { created: false, id };
 }
 
 /**

@@ -80,6 +80,17 @@ export interface GrantEntitlementInput extends GrantRequest {
   organizationId: string;
 }
 
+/** What is stored of a grant, enough to tell whether a repeat of a command is the same grant. */
+export interface StoredEntitlementGrant {
+  expiresAt: Date;
+  flagValue: boolean | null;
+  grantedBy: string;
+  key: string;
+  limitValue: number | null;
+  organizationId: string;
+  reason: string;
+}
+
 export interface BillingStore {
   /** Links the organization's subscription at a provider (the reference webhooks name). */
   attachProvider: (
@@ -99,6 +110,8 @@ export interface BillingStore {
     input: GrantEntitlementInput,
     now?: Date
   ) => Promise<{ created: boolean; id: string }>;
+  /** The grant with this ID, or null. A command that names its own ID reads this first, so a repeat later is the same grant whatever its relative duration. */
+  findEntitlementGrant: (id: string) => Promise<StoredEntitlementGrant | null>;
   /** Applies one stored event to its organization; safe to call again for an event already processed. */
   processEvent: (eventId: string, now?: Date) => Promise<ProcessedBillingEvent>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
@@ -720,6 +733,36 @@ export function createBillingStore(connectionString: string): BillingStore {
     },
     async close() {
       await pool.end();
+    },
+    async findEntitlementGrant(id) {
+      if (!uuidPattern.test(id)) {
+        throw new InvalidEntitlementGrantError("invalid_id");
+      }
+      const found = await pool.query<{
+        expires_at: Date;
+        flag_value: boolean | null;
+        granted_by: string;
+        key: string;
+        limit_value: number | null;
+        organization_id: string;
+        reason: string;
+      }>(
+        `SELECT organization_id, key, limit_value, flag_value, reason, granted_by, expires_at
+           FROM public.entitlement_grants WHERE id = $1`,
+        [id]
+      );
+      const [row] = found.rows;
+      return row
+        ? {
+            expiresAt: row.expires_at,
+            flagValue: row.flag_value,
+            grantedBy: row.granted_by,
+            key: row.key,
+            limitValue: row.limit_value,
+            organizationId: row.organization_id,
+            reason: row.reason,
+          }
+        : null;
     },
     async grantEntitlement(input, now = new Date()) {
       const grant = normalizeGrant(input, now);

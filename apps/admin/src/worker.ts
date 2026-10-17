@@ -97,6 +97,7 @@ async function withBillingPorts<T>(
             detail
           )
         ),
+      find: (id) => store.findEntitlementGrant(id),
       grant: (input) => store.grantEntitlement(input),
       newId: () => crypto.randomUUID(),
       revoke: (input) => store.revokeEntitlementGrant(input),

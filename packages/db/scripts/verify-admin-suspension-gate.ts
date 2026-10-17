@@ -525,6 +525,21 @@ async function run() {
         reason: "Compensação",
         value: 300,
       });
+      // a command that names its own ID reads the grant first, so a repeat a moment later is the same grant
+      const found = await store.findEntitlementGrant(first.id);
+      assert.equal(found?.organizationId, orgA.organizationId);
+      assert.equal(found?.key, "variants.active.max");
+      assert.equal(found?.limitValue, 300);
+      assert.equal(found?.flagValue, null);
+      assert.equal(found?.grantedBy, actor);
+      assert.equal(found?.reason, "Compensação");
+      assert.ok(found?.expiresAt instanceof Date);
+      assert.equal(
+        await store.findEntitlementGrant(randomUUID()),
+        null,
+        "an unknown ID finds nothing"
+      );
+      await assert.rejects(() => store.findEntitlementGrant("not-a-uuid"));
       assert.deepEqual(
         await store.revokeEntitlementGrant({
           actor,
@@ -559,7 +574,7 @@ async function run() {
       await store.close();
     }
     tests.push(
-      "the billing store ends a grant through a case only when it belongs to the case's organization (another organization's grant is left as it is), and behaves as before when no organization is named"
+      "the billing store ends a grant through a case only when it belongs to the case's organization (another organization's grant is left as it is), behaves as before when no organization is named, and finds a grant by its ID (nothing for an unknown one) so a repeated command can be recognized"
     );
 
     console.log(

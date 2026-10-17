@@ -19,6 +19,7 @@ function ports(overrides: Partial<BillingCommandPorts> = {}) {
       calls.push(`audit:${event}`);
       return Promise.resolve("org-1");
     }),
+    find: vi.fn(() => Promise.resolve(null)),
     grant: vi.fn((input) => {
       calls.push("billing:grant");
       return Promise.resolve({ created: true, id: input.id ?? "x" });
