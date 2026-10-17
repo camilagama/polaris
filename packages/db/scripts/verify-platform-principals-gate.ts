@@ -243,9 +243,9 @@ async function run() {
          FROM pg_proc p
         WHERE p.pronamespace = 'public'::regnamespace
           AND p.proname NOT IN (
-            'admin_close_support_case', 'admin_grant_tenant_access', 'admin_list_support_cases', 'admin_open_support_case',
-            'admin_organization_diagnostics', 'admin_organizations_overview', 'admin_reveal_customer_field',
-            'admin_revoke_tenant_access', 'admin_support_case_detail', 'admin_tenant_customers'
+            'admin_audit_billing_command', 'admin_close_support_case', 'admin_grant_tenant_access', 'admin_list_support_cases', 'admin_open_support_case',
+            'admin_organization_diagnostics', 'admin_organizations_overview', 'admin_reactivate_organization', 'admin_reveal_customer_field',
+            'admin_revoke_tenant_access', 'admin_support_case_detail', 'admin_suspend_organization', 'admin_tenant_customers'
           )
           AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE')`
     );

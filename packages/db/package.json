@@ -102,6 +102,7 @@
     "poc:platform-principals:verify": "bun scripts/verify-platform-principals-gate.ts",
     "poc:admin-diagnostics:verify": "bun scripts/verify-admin-diagnostics-gate.ts",
     "poc:admin-support:verify": "bun scripts/verify-admin-support-gate.ts",
+    "poc:admin-suspension:verify": "bun scripts/verify-admin-suspension-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",

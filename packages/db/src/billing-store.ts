@@ -110,7 +110,8 @@ export interface BillingStore {
   retryPending: (now?: Date, limit?: number) => Promise<BillingRetryReport>;
   /** Ends a grant now (or, if it has not started, as soon as it could); ending one twice is one ending. */
   revokeEntitlementGrant: (
-    input: { actor: string; id: string },
+    /** `organizationId`, when given, must be the grant's own: a grant of another organization is left as it is. */
+    input: { actor: string; id: string; organizationId?: string },
     now?: Date
   ) => Promise<{ revoked: boolean }>;
   /** The organization opts into the trial (the renewal method comes next). */
@@ -831,8 +832,9 @@ export function createBillingStore(connectionString: string): BillingStore {
           `UPDATE public.entitlement_grants
               SET expires_at = LEAST(expires_at, GREATEST($3::timestamptz, starts_at + interval '1 millisecond')), revoked_at = $3, revoked_by = $2
             WHERE id = $1 AND revoked_at IS NULL AND expires_at > $3::timestamptz
+              AND ($4::text IS NULL OR organization_id = $4)
             RETURNING organization_id, key`,
-          [input.id, actor, now]
+          [input.id, actor, now, input.organizationId ?? null]
         );
         const [grant] = ended.rows;
         if (!grant) {

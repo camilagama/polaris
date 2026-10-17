@@ -251,3 +251,56 @@ export function revealCustomerField(
     [principalId, caseId, customerId, field]
   );
 }
+
+/** Suspends the organization of an open case: status, authorization epoch and offline leases; billing is untouched. */
+export function suspendOrganization(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string
+) {
+  return call<{ changed: boolean; revokedLeases?: number; status: string }>(
+    client,
+    "public.admin_suspend_organization($1, $2)",
+    [principalId, caseId]
+  );
+}
+
+/** Undoes a suspension (a closed organization stays closed). */
+export function reactivateOrganization(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string
+) {
+  return call<{ changed: boolean; status: string }>(
+    client,
+    "public.admin_reactivate_organization($1, $2)",
+    [principalId, caseId]
+  );
+}
+
+export type BillingAuditEvent =
+  | "billing.entitlement_grant_requested"
+  | "billing.entitlement_granted"
+  | "billing.entitlement_revoke_requested"
+  | "billing.entitlement_revoked";
+
+/**
+ * Records a step of a billing command in the administrative audit and returns
+ * the organization of the open case. The command itself is carried out by the
+ * billing role (the only writer of billing): the record of the request is made
+ * first, so nothing is done that was not first written down.
+ */
+export function auditBillingCommand(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  event: BillingAuditEvent,
+  entityId: string | null,
+  detail: string | null
+) {
+  return call<string>(
+    client,
+    "public.admin_audit_billing_command($1, $2, $3, $4, $5)",
+    [principalId, caseId, event, entityId, detail]
+  );
+}

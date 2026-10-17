@@ -26,6 +26,24 @@ const principal = {
   subject: "subject-1",
 };
 
+function noOperations() {
+  return {
+    grantEntitlement: vi.fn(() =>
+      Promise.resolve({
+        created: true,
+        id: "g",
+        organizationId: "o",
+        outcomeRecorded: true,
+      })
+    ),
+    reactivate: vi.fn(() => Promise.resolve(null)),
+    revokeEntitlement: vi.fn(() =>
+      Promise.resolve({ outcomeRecorded: true, revoked: false })
+    ),
+    suspend: vi.fn(() => Promise.resolve(null)),
+  };
+}
+
 function noSupport() {
   const nothing = vi.fn(() => Promise.resolve(null));
   return {
@@ -37,6 +55,7 @@ function noSupport() {
     open: nothing,
     reveal: nothing,
     revoke: vi.fn(() => Promise.resolve(false)),
+    ...noOperations(),
   };
 }
 

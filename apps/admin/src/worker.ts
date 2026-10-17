@@ -1,13 +1,17 @@
 import {
+  auditBillingCommand,
   closeSupportCase,
   grantTenantAccess,
   listSupportCases,
   listTenantCustomers,
   openSupportCase,
+  reactivateOrganization,
   readSupportCase,
   revealCustomerField,
   revokeTenantAccess,
+  suspendOrganization,
 } from "@polaris/db/admin-support-repository";
+import { createBillingStore } from "@polaris/db/billing-store";
 import {
   listOrganizations,
   readOrganizationDiagnostics,
@@ -16,6 +20,11 @@ import {
   resolvePlatformPrincipal,
   withAdminDatabase,
 } from "@polaris/db/platform-principal-repository";
+import {
+  type BillingCommandPorts,
+  grantEntitlementCommand,
+  revokeEntitlementCommand,
+} from "./billing-commands";
 import {
   type AccessKeyStore,
   accessIssuer,
@@ -61,6 +70,42 @@ function connectionOf(bindings: AdminBindings): string {
   return connectionString;
 }
 
+function billingConnectionOf(bindings: AdminBindings): string {
+  const connectionString = bindings.ADMIN_BILLING_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new Error("admin_not_configured");
+  }
+  return connectionString;
+}
+
+/** The ports of a billing command: the audit through the Admin role, the command through the billing role (one connection per request, closed after). */
+async function withBillingPorts<T>(
+  bindings: AdminBindings,
+  operation: (ports: BillingCommandPorts) => Promise<T>
+): Promise<T> {
+  const store = createBillingStore(billingConnectionOf(bindings));
+  try {
+    return await operation({
+      audit: (principalId, caseId, event, entityId, detail) =>
+        withAdminDatabase(connectionOf(bindings), (client) =>
+          auditBillingCommand(
+            client,
+            principalId,
+            caseId,
+            event,
+            entityId,
+            detail
+          )
+        ),
+      grant: (input) => store.grantEntitlement(input),
+      newId: () => crypto.randomUUID(),
+      revoke: (input) => store.revokeEntitlementGrant(input),
+    });
+  } finally {
+    await store.close();
+  }
+}
+
 const dependencies: AdminDependencies = {
   authenticate: async (token, bindings) => {
     const teamDomain = bindings.ACCESS_TEAM_DOMAIN ?? "";
@@ -97,6 +142,10 @@ const dependencies: AdminDependencies = {
       withAdminDatabase(connectionOf(bindings), (client) =>
         listTenantCustomers(client, principalId, caseId, input)
       ),
+    grantEntitlement: (principalId, caseId, command, bindings) =>
+      withBillingPorts(bindings, (ports) =>
+        grantEntitlementCommand(ports, principalId, caseId, command, new Date())
+      ),
     detail: (caseId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         readSupportCase(client, caseId)
@@ -108,6 +157,18 @@ const dependencies: AdminDependencies = {
     list: (input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         listSupportCases(client, input)
+      ),
+    reactivate: (principalId, caseId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        reactivateOrganization(client, principalId, caseId)
+      ),
+    revokeEntitlement: (principalId, caseId, grantId, bindings) =>
+      withBillingPorts(bindings, (ports) =>
+        revokeEntitlementCommand(ports, principalId, caseId, grantId)
+      ),
+    suspend: (principalId, caseId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        suspendOrganization(client, principalId, caseId)
       ),
     open: (principalId, input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>

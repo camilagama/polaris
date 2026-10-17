@@ -1,3 +1,4 @@
+import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
   TenantAccessDeniedError,
@@ -50,6 +51,23 @@ function support(
       Promise.resolve({ customerId, field: "email", value: "ana@exemplo.com" })
     ),
     revoke: vi.fn(() => Promise.resolve(true)),
+    grantEntitlement: vi.fn(() =>
+      Promise.resolve({
+        created: true,
+        id: grantId,
+        organizationId: "org-1",
+        outcomeRecorded: true,
+      })
+    ),
+    reactivate: vi.fn(() =>
+      Promise.resolve({ changed: true, status: "active" })
+    ),
+    revokeEntitlement: vi.fn(() =>
+      Promise.resolve({ outcomeRecorded: true, revoked: true })
+    ),
+    suspend: vi.fn(() =>
+      Promise.resolve({ changed: true, revokedLeases: 2, status: "suspended" })
+    ),
     ...overrides,
   };
 }
@@ -432,5 +450,147 @@ describe("who may do what, and from where", () => {
       bindings
     );
     expect(response.status).toBe(401);
+  });
+});
+
+describe("suspension and billing commands", () => {
+  it("suspends and reactivates the organization of a case, for an operator who may", async () => {
+    const { send, support: calls } = setup();
+    const suspended = await send(
+      "POST",
+      `/api/support-cases/${caseId}/suspend`,
+      {}
+    );
+    expect(suspended.status).toBe(200);
+    expect(await suspended.json()).toEqual({
+      changed: true,
+      revokedLeases: 2,
+      status: "suspended",
+    });
+    expect(calls.suspend).toHaveBeenCalledWith(principal.id, caseId, bindings);
+    expect(
+      (await send("POST", `/api/support-cases/${caseId}/reactivate`, {})).status
+    ).toBe(200);
+    expect(calls.reactivate).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      bindings
+    );
+    expect(
+      (await send("POST", "/api/support-cases/not-a-uuid/suspend", {})).status
+    ).toBe(404);
+    const other = setup({}, "somebody_else");
+    expect(
+      (await other.send("POST", `/api/support-cases/${caseId}/suspend`, {}))
+        .status
+    ).toBe(403);
+    expect(other.support.suspend).not.toHaveBeenCalled();
+  });
+
+  it("gives and ends an entitlement through the case, with the operator from the login", async () => {
+    const { call, send, support: calls } = setup();
+    const response = await send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      {
+        hours: 48,
+        key: "variants.active.max",
+        reason: "Compensação",
+        value: 200,
+      }
+    );
+    expect(response.status).toBe(201);
+    expect(calls.grantEntitlement).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      {
+        hours: 48,
+        key: "variants.active.max",
+        reason: "Compensação",
+        value: 200,
+      },
+      bindings
+    );
+    const ended = await call(
+      `/api/support-cases/${caseId}/entitlement-grants/${grantId}`,
+      { method: "DELETE" }
+    );
+    expect(await ended.json()).toEqual({
+      outcomeRecorded: true,
+      revoked: true,
+    });
+    expect(calls.revokeEntitlement).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      grantId,
+      bindings
+    );
+    const noCapability = setup({}, "somebody_else");
+    expect(
+      (
+        await noCapability.send(
+          "POST",
+          `/api/support-cases/${caseId}/entitlement-grants`,
+          { hours: 1, key: "k", reason: "r", value: 1 }
+        )
+      ).status
+    ).toBe(403);
+  });
+
+  it("refuses a malformed grant request, names the grant refusals and says when billing is not configured", async () => {
+    const { send, support: calls } = setup();
+    const bad = await Promise.all(
+      [
+        {},
+        { hours: 48, key: "k", reason: "r" },
+        { hours: 1.5, key: "k", reason: "r", value: 1 },
+        { hours: "48", key: "k", reason: "r", value: 1 },
+        { hours: 48, key: 5, reason: "r", value: 1 },
+        { hours: 48, key: "k", reason: "r", value: "1" },
+        { commandId: "not-a-uuid", hours: 48, key: "k", reason: "r", value: 1 },
+        { commandId: 5, hours: 48, key: "k", reason: "r", value: 1 },
+      ].map((body) =>
+        send("POST", `/api/support-cases/${caseId}/entitlement-grants`, body)
+      )
+    );
+    for (const response of bad) {
+      expect(response.status).toBe(400);
+    }
+    expect(calls.grantEntitlement).not.toHaveBeenCalled();
+
+    const invalidGrant = setup({
+      grantEntitlement: () =>
+        Promise.reject(new InvalidEntitlementGrantError("invalid_key")),
+    });
+    const refused = await invalidGrant.send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      { hours: 1, key: "plan.pro", reason: "r", value: 1 }
+    );
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ error: "invalid_key" });
+
+    const unconfigured = setup({
+      revokeEntitlement: () =>
+        Promise.reject(new Error("admin_not_configured")),
+    });
+    const response = await unconfigured.call(
+      `/api/support-cases/${caseId}/entitlement-grants/${grantId}`,
+      { method: "DELETE" }
+    );
+    expect(response.status).toBe(503);
+    const gone = setup({
+      grantEntitlement: () =>
+        Promise.reject(new Error("organization_not_found")),
+    });
+    expect(
+      (
+        await gone.send(
+          "POST",
+          `/api/support-cases/${caseId}/entitlement-grants`,
+          { hours: 1, key: "k", reason: "r", value: 1 }
+        )
+      ).status
+    ).toBe(404);
   });
 });

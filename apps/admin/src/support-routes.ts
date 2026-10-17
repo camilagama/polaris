@@ -8,6 +8,7 @@ import {
   hasPlatformCapability,
   type PlatformCapability,
 } from "@polaris/domain/admin/platform-capabilities";
+import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
   isRevealableField,
@@ -19,6 +20,7 @@ import {
 } from "@polaris/domain/admin/support-access";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
+import type { GrantCommand } from "./billing-commands";
 
 /**
  * Support cases, temporary tenant access, the masked read and the reveal (plan
@@ -28,6 +30,39 @@ import type { AdminBindings, AdminEnv } from "./app";
  */
 
 export interface SupportDependencies {
+  /** Gives the organization of an open case a temporary entitlement (recorded before and after). */
+  grantEntitlement: (
+    principalId: string,
+    caseId: string,
+    command: GrantCommand,
+    bindings: AdminBindings
+  ) => Promise<{
+    created: boolean;
+    id: string;
+    organizationId: string;
+    outcomeRecorded: boolean;
+  }>;
+  reactivate: (
+    principalId: string,
+    caseId: string,
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; status: string } | null>;
+  /** Ends a grant of the case's organization (recorded before and after). */
+  revokeEntitlement: (
+    principalId: string,
+    caseId: string,
+    grantId: string,
+    bindings: AdminBindings
+  ) => Promise<{ outcomeRecorded: boolean; revoked: boolean }>;
+  suspend: (
+    principalId: string,
+    caseId: string,
+    bindings: AdminBindings
+  ) => Promise<{
+    changed: boolean;
+    revokedLeases?: number;
+    status: string;
+  } | null>;
   close: (
     principalId: string,
     caseId: string,
@@ -170,6 +205,16 @@ export function supportRoutes(
         route: context.req.path.replaceAll(UUID_IN_PATH, ":id"),
       });
       return context.json({ error: "tenant_access_denied" }, 403);
+    }
+    if (error instanceof InvalidEntitlementGrantError) {
+      return context.json({ error: error.code }, 400);
+    }
+    if (error instanceof Error && error.message === "admin_not_configured") {
+      report("admin_not_configured");
+      return context.json({ error: "admin_not_configured" }, 503);
+    }
+    if (error instanceof Error && error.message === "organization_not_found") {
+      return context.json({ error: "not_found" }, 404);
     }
     if (error instanceof InvalidSupportRequestError) {
       return context.json(
@@ -344,6 +389,93 @@ export function supportRoutes(
         context.env
       );
       return context.json({ revoked });
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/suspend",
+    requireCapability("organization:suspend"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      if (!caseId) {
+        return notFound(context);
+      }
+      return context.json(
+        await dependencies.suspend(principalOf(context), caseId, context.env)
+      );
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/reactivate",
+    requireCapability("organization:suspend"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      if (!caseId) {
+        return notFound(context);
+      }
+      return context.json(
+        await dependencies.reactivate(principalOf(context), caseId, context.env)
+      );
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/entitlement-grants",
+    requireCapability("billing:operate"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      const body = await readBody(context);
+      if (!caseId) {
+        return notFound(context);
+      }
+      if (
+        !body ||
+        typeof body.key !== "string" ||
+        typeof body.reason !== "string" ||
+        !(typeof body.value === "number" || typeof body.value === "boolean") ||
+        typeof body.hours !== "number" ||
+        !Number.isInteger(body.hours) ||
+        (body.commandId !== undefined &&
+          !(typeof body.commandId === "string" && UUID.test(body.commandId)))
+      ) {
+        return invalid(context);
+      }
+      const granted = await dependencies.grantEntitlement(
+        principalOf(context),
+        caseId,
+        {
+          hours: body.hours,
+          ...(typeof body.commandId === "string"
+            ? { id: body.commandId.toLowerCase() }
+            : {}),
+          key: body.key,
+          reason: body.reason,
+          value: body.value,
+        },
+        context.env
+      );
+      return context.json(granted, granted.created ? 201 : 200);
+    }
+  );
+
+  routes.delete(
+    "/support-cases/:caseId/entitlement-grants/:grantId",
+    requireCapability("billing:operate"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      const grantId = idParam(context, "grantId");
+      if (!(caseId && grantId)) {
+        return notFound(context);
+      }
+      return context.json(
+        await dependencies.revokeEntitlement(
+          principalOf(context),
+          caseId,
+          grantId,
+          context.env
+        )
+      );
     }
   );
 
