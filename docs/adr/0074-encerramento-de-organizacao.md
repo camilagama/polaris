@@ -30,6 +30,7 @@ A Fase 10 do plano trata de privacidade. O primeiro passo (PR101) é o **encerra
 - Não há aviso por e-mail ao dono (nem no pedido, nem perto do fim da janela): exige o envio transacional, e o e-mail só é habilitado antes do go-live.
 - O encerramento não exporta nem oferece os dados automaticamente (o export é o PR104, a pedido).
 - Uma operação tenant que já passou da checagem de status quando o pedido confirma termina normalmente; a partir da confirmação nenhuma nova começa. Uma membership criada durante a janela não tem a época movida (não há fluxo de convite hoje).
+- A confirmação pelo nome é verificada só no TypeScript (`requestOrganizationClosure`): a função do banco não a exige. Quem chamar `request_organization_closure` direto com o papel do runtime tenant, já dentro de uma transação autorizada, dispensa a confirmação. É coerente com o desenho (o servidor é a fronteira de confiança; o banco confia no que a transação autorizou), e fica registrado aqui.
 - A revogação das concessões offline não gera `tenant_audit_event` por concessão, só o evento do pedido.
 - Uma organização suspensa não pode ser encerrada pelo dono (não opera): a plataforma reativa primeiro.
 - A chave de bloqueio por usuário atravessa organizações: encerrar espera a emissão de concessão do mesmo usuário em qualquer outra; um tempo esgotado vira erro 500 e o pedido pode ser repetido.

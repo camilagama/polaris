@@ -4,6 +4,10 @@ import {
   InvalidSupportRequestError,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import {
+  isRepeatOfGrant,
+  normalizeGrant,
+} from "@polaris/domain/billing/grants";
 import { Client } from "pg";
 import {
   auditBillingCommand,
@@ -525,6 +529,87 @@ async function run() {
         reason: "Compensação",
         value: 300,
       });
+      // a command that names its own ID reads the grant first, so a repeat a moment later is the same grant
+      const found = await store.findEntitlementGrant(first.id);
+      assert.equal(found?.organizationId, orgA.organizationId);
+      assert.equal(found?.key, "variants.active.max");
+      assert.equal(found?.limitValue, 300);
+      assert.equal(found?.flagValue, null);
+      assert.equal(found?.grantedBy, actor);
+      assert.equal(found?.reason, "Compensação");
+      assert.ok(found?.expiresAt instanceof Date);
+      assert.ok(found?.startsAt instanceof Date);
+      // a command sends its own start, so start and end come from one clock and the length stored is exact;
+      // the Admin recognizes a repeat by that length, from the real stored values
+      const t0 = new Date(Math.floor(Date.now() / 1000) * 1000);
+      const commandId = randomUUID();
+      const exact = {
+        actor,
+        expiresAt: new Date(t0.getTime() + 48 * 3_600_000),
+        id: commandId,
+        key: "variants.active.max",
+        organizationId: orgA.organizationId,
+        reason: "Compensação",
+        startsAt: t0,
+        value: 300,
+      };
+      assert.deepEqual(await store.grantEntitlement(exact), {
+        created: true,
+        id: commandId,
+      });
+      const stored = await store.findEntitlementGrant(commandId);
+      assert.ok(stored);
+      assert.equal(
+        stored.expiresAt.getTime() - stored.startsAt.getTime(),
+        48 * 3_600_000,
+        "the length stored is exactly the hours asked"
+      );
+      const asked = normalizeGrant(exact, t0);
+      assert.equal(
+        isRepeatOfGrant(stored, {
+          grant: asked,
+          hours: 48,
+          organizationId: orgA.organizationId,
+        }),
+        true,
+        "a repeat of the same command is recognized from what is stored"
+      );
+      assert.equal(
+        isRepeatOfGrant(stored, {
+          grant: asked,
+          hours: 720,
+          organizationId: orgA.organizationId,
+        }),
+        false,
+        "and the same ID asked for another length is not"
+      );
+      assert.deepEqual(
+        await store.grantEntitlement(exact),
+        { created: false, id: commandId },
+        "the store itself gives back the same grant for the same facts"
+      );
+      // the store itself compares the instant exactly, which is why the command reads the grant first
+      await assert.rejects(
+        () =>
+          store.grantEntitlement({
+            actor,
+            expiresAt: new Date(Date.now() + 49 * 3_600_000),
+            id: first.id,
+            key: "variants.active.max",
+            organizationId: orgA.organizationId,
+            reason: "Compensação",
+            value: 300,
+          }),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message === "entitlement_grant_id_conflict"
+      );
+      assert.equal(
+        await store.findEntitlementGrant(randomUUID()),
+        null,
+        "an unknown ID finds nothing"
+      );
+      await assert.rejects(() => store.findEntitlementGrant("not-a-uuid"));
       assert.deepEqual(
         await store.revokeEntitlementGrant({
           actor,
@@ -559,7 +644,7 @@ async function run() {
       await store.close();
     }
     tests.push(
-      "the billing store ends a grant through a case only when it belongs to the case's organization (another organization's grant is left as it is), and behaves as before when no organization is named"
+      "the billing store ends a grant through a case only when it belongs to the case's organization (another organization's grant is left as it is), behaves as before when no organization is named, and finds a grant by its ID (nothing for an unknown one) so a repeated command can be recognized"
     );
 
     console.log(
