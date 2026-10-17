@@ -15,6 +15,7 @@ import {
 } from "@polaris/domain/admin/platform-capabilities";
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
+import { type SupportDependencies, supportRoutes } from "./support-routes";
 
 /**
  * The Admin app's HTTP surface (plan PR92 to PR94, ADR 0070). Cloudflare Access
@@ -52,11 +53,13 @@ export interface AdminDependencies {
       bindings: AdminBindings
     ) => Promise<AdminOrganizationPage>;
   };
+  /** Support cases, temporary tenant access, the masked read and the reveal (ADR 0072). */
+  support: SupportDependencies;
   /** Diagnostics for the operator's logs: a stable code, never the token or the e-mail. */
   report: (event: string, fields?: Record<string, string>) => void;
 }
 
-interface AdminEnv {
+export interface AdminEnv {
   Bindings: AdminBindings;
   Variables: { principal: PlatformPrincipal };
 }
@@ -261,6 +264,10 @@ export function createAdminApp(dependencies: AdminDependencies) {
         return context.json({ error: "plan_catalog_incomplete" }, 503);
       }
     }
+  );
+  api.route(
+    "/",
+    supportRoutes(dependencies.support, requireCapability, dependencies.report)
   );
   app.route("/api", api);
 

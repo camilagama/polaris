@@ -206,6 +206,7 @@
                       "@polaris/db/*",
                       "!@polaris/db/platform-principal-repository",
                       "!@polaris/db/admin-diagnostics-repository",
+                      "!@polaris/db/admin-support-repository",
                       "@polaris/billing",
                       "@polaris/billing/**",
                       "drizzle-orm",
