@@ -59,6 +59,21 @@ function noSupport() {
   };
 }
 
+function noPrivacy() {
+  const step = vi.fn(() => Promise.resolve(null));
+  return {
+    action: step,
+    decision: step,
+    detail: step,
+    identity: step,
+    list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    open: step,
+    resolve: step,
+    role: step,
+    scope: step,
+  };
+}
+
 function setup(overrides: Partial<AdminDependencies> = {}) {
   const dependencies: AdminDependencies = {
     authenticate: vi.fn(() => Promise.resolve(claims)),
@@ -67,6 +82,7 @@ function setup(overrides: Partial<AdminDependencies> = {}) {
       diagnostics: vi.fn(() => Promise.resolve(null)),
       list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
     },
+    privacy: noPrivacy(),
     resolvePrincipal: vi.fn(() => Promise.resolve(principal)),
     support: noSupport(),
     ...overrides,
