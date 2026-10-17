@@ -73,6 +73,7 @@ const gates: Gate[] = [
   ["admin-diagnostics", "verify-admin-diagnostics-gate.ts"],
   ["admin-support", "verify-admin-support-gate.ts"],
   ["admin-suspension", "verify-admin-suspension-gate.ts"],
+  ["organization-closure", "verify-organization-closure-gate.ts"],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -162,6 +163,7 @@ const suites: Record<string, string[]> = {
     "admin-diagnostics",
     "admin-support",
     "admin-suspension",
+    "organization-closure",
     "media-commands",
     "offline-devices",
     "offline-lease",
@@ -224,6 +226,8 @@ const suites: Record<string, string[]> = {
     "admin-support",
     "admin-suspension",
   ],
+  // Phase 10 (privacy): grows with every gate of the phase.
+  gate10: ["organization-closure"],
 };
 
 function withVerifyFull(url: string): string {

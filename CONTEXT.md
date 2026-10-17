@@ -8,7 +8,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Evitar:** conta, quando o assunto for a pessoa autenticada.
 
 **Organização (organization):** unidade operacional que possui o catálogo, o estoque, as vendas e os registros do revendedor.<br>
-**Estado da organização (organization status):** estado operacional `active`, `suspended` ou `closed`; não representa o estado de billing.<br>
+**Estado da organização (organization status):** `active` e `suspended` (operacionais) e `closing`, `closed`, `purge_pending` e `purged` (o encerramento); não representa o estado de billing.<br>
+**Encerramento (closure) e janela de recuperação:** o dono encerra a organização digitando o nome; o acesso acaba na hora e, por 30 dias (`closing`), ele pode desfazer. Distinto da suspensão (medida da plataforma) e da exclusão física (purge).<br>
 **Evitar:** workspace na interface; tenant como nome de produto.
 
 **Membership (vínculo):** relação de acesso entre um usuário e uma organização.

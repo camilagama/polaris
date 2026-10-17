@@ -4,7 +4,10 @@ const mocks = vi.hoisted(() => ({
   billingClose: vi.fn(),
   createBillingStore: vi.fn(),
   createMediaCleanupClient: vi.fn(),
+  createPrivacyMaintenanceClient: vi.fn(),
   mediaClose: vi.fn(),
+  privacyClose: vi.fn(),
+  runPrivacyMaintenance: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
   runBillingMaintenance: vi.fn(),
@@ -15,6 +18,12 @@ vi.mock("@polaris/db/billing-store", () => ({
 }));
 vi.mock("@polaris/db/media-cleanup", () => ({
   createMediaCleanupClient: mocks.createMediaCleanupClient,
+}));
+vi.mock("@polaris/db/privacy-maintenance", () => ({
+  createPrivacyMaintenanceClient: mocks.createPrivacyMaintenanceClient,
+}));
+vi.mock("../src/server/privacy/maintenance", () => ({
+  runPrivacyMaintenance: mocks.runPrivacyMaintenance,
 }));
 vi.mock("../src/server/app", () => ({ app: { fetch: vi.fn() } }));
 vi.mock("../src/server/media-reconciler", () => ({
@@ -51,6 +60,11 @@ describe("the scheduled maintenance", () => {
     mocks.reconcileStagedMedia.mockResolvedValue({});
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
+    mocks.createPrivacyMaintenanceClient.mockReturnValue({
+      close: mocks.privacyClose,
+    });
+    mocks.privacyClose.mockResolvedValue(undefined);
+    mocks.runPrivacyMaintenance.mockResolvedValue({ closedOrganizations: 0 });
   });
 
   it("runs media and billing and finishes quietly when both succeed", async () => {
@@ -120,5 +134,57 @@ describe("the scheduled maintenance", () => {
     ).toEqual(["staged_failed", "billing_failed"]);
     // the removed-media reconciler ran although the staged one failed
     expect(mocks.reconcileRemovedMedia).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the privacy job", () => {
+    const privacy = {
+      PRIVACY_HYPERDRIVE: {
+        connectionString: "postgresql://privacy.invalid/db",
+      },
+    };
+
+    it("marks expired closures as closed and closes its connection", async () => {
+      await expect(
+        runScheduled({ ...configured, ...privacy })
+      ).resolves.toBeUndefined();
+
+      expect(mocks.createPrivacyMaintenanceClient).toHaveBeenCalledWith(
+        privacy.PRIVACY_HYPERDRIVE.connectionString
+      );
+      expect(mocks.runPrivacyMaintenance).toHaveBeenCalledTimes(1);
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("is skipped, without failing, where the privacy role is not provisioned", async () => {
+      await expect(runScheduled(configured)).resolves.toBeUndefined();
+
+      expect(mocks.createPrivacyMaintenanceClient).not.toHaveBeenCalled();
+      expect(mocks.runPrivacyMaintenance).not.toHaveBeenCalled();
+    });
+
+    it("reports its failure without stopping media or billing", async () => {
+      mocks.runPrivacyMaintenance.mockRejectedValue(
+        new Error("privacy_failed")
+      );
+      mocks.privacyClose.mockRejectedValue(new Error("close_failed"));
+
+      await expect(runScheduled({ ...configured, ...privacy })).rejects.toThrow(
+        "privacy_failed"
+      );
+
+      expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
+      expect(mocks.reconcileStagedMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports a connection that cannot be opened", async () => {
+      mocks.createPrivacyMaintenanceClient.mockImplementation(() => {
+        throw new Error("privacy_connection_failed");
+      });
+
+      await expect(runScheduled({ ...configured, ...privacy })).rejects.toThrow(
+        "privacy_connection_failed"
+      );
+      expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
+    });
   });
 });
