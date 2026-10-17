@@ -4,6 +4,10 @@ import {
   InvalidSupportRequestError,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import {
+  isRepeatOfGrant,
+  normalizeGrant,
+} from "@polaris/domain/billing/grants";
 import { Client } from "pg";
 import {
   auditBillingCommand,
@@ -535,12 +539,54 @@ async function run() {
       assert.equal(found?.reason, "Compensação");
       assert.ok(found?.expiresAt instanceof Date);
       assert.ok(found?.startsAt instanceof Date);
-      // the length asked for is recoverable from what is stored (the Admin compares it on a repeat)
-      const lengthMs =
-        (found?.expiresAt.getTime() ?? 0) - (found?.startsAt.getTime() ?? 0);
-      assert.ok(
-        lengthMs <= 48 * 3_600_000 && lengthMs > 48 * 3_600_000 - 60_000,
-        "the grant was asked for 48 hours"
+      // a command sends its own start, so start and end come from one clock and the length stored is exact;
+      // the Admin recognizes a repeat by that length, from the real stored values
+      const t0 = new Date(Math.floor(Date.now() / 1000) * 1000);
+      const commandId = randomUUID();
+      const exact = {
+        actor,
+        expiresAt: new Date(t0.getTime() + 48 * 3_600_000),
+        id: commandId,
+        key: "variants.active.max",
+        organizationId: orgA.organizationId,
+        reason: "Compensação",
+        startsAt: t0,
+        value: 300,
+      };
+      assert.deepEqual(await store.grantEntitlement(exact), {
+        created: true,
+        id: commandId,
+      });
+      const stored = await store.findEntitlementGrant(commandId);
+      assert.ok(stored);
+      assert.equal(
+        stored.expiresAt.getTime() - stored.startsAt.getTime(),
+        48 * 3_600_000,
+        "the length stored is exactly the hours asked"
+      );
+      const asked = normalizeGrant(exact, t0);
+      assert.equal(
+        isRepeatOfGrant(stored, {
+          grant: asked,
+          hours: 48,
+          organizationId: orgA.organizationId,
+        }),
+        true,
+        "a repeat of the same command is recognized from what is stored"
+      );
+      assert.equal(
+        isRepeatOfGrant(stored, {
+          grant: asked,
+          hours: 720,
+          organizationId: orgA.organizationId,
+        }),
+        false,
+        "and the same ID asked for another length is not"
+      );
+      assert.deepEqual(
+        await store.grantEntitlement(exact),
+        { created: false, id: commandId },
+        "the store itself gives back the same grant for the same facts"
       );
       // the store itself compares the instant exactly, which is why the command reads the grant first
       await assert.rejects(

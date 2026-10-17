@@ -162,3 +162,38 @@ export function normalizeGrant(
     startsAt,
   };
 }
+
+/** What is stored of a grant, enough to tell whether a repeat of a command asks for the same one. */
+export interface StoredGrantFacts {
+  expiresAt: Date;
+  flagValue: boolean | null;
+  grantedBy: string;
+  key: string;
+  limitValue: number | null;
+  organizationId: string;
+  reason: string;
+  startsAt: Date;
+}
+
+/**
+ * Whether a command that names its own ID, asked again, asks for the grant already stored
+ * under it: the same organization, key, value, reason, giver and **length**. The clock the
+ * command was given at is not part of it (the end of a grant is "hours from now"), but the
+ * length is: one hour and then 720 is not the same command. The length is exact because the
+ * command sends its own start, so start and end come from one clock.
+ */
+export function isRepeatOfGrant(
+  stored: StoredGrantFacts,
+  asked: { grant: NormalizedGrant; hours: number; organizationId: string }
+): boolean {
+  return (
+    stored.organizationId === asked.organizationId &&
+    stored.key === asked.grant.key &&
+    stored.limitValue === asked.grant.limitValue &&
+    stored.flagValue === asked.grant.flagValue &&
+    stored.reason === asked.grant.reason &&
+    stored.grantedBy === asked.grant.actor &&
+    stored.expiresAt.getTime() - stored.startsAt.getTime() ===
+      asked.hours * 3_600_000
+  );
+}

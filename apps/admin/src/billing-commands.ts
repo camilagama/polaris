@@ -7,6 +7,8 @@ import { hasControlCharacters } from "@polaris/domain/admin/support-access";
 import {
   type GrantRequest,
   InvalidEntitlementGrantError,
+  isRepeatOfGrant,
+  type NormalizedGrant,
   normalizeGrant,
 } from "@polaris/domain/billing/grants";
 
@@ -79,6 +81,8 @@ export async function grantEntitlementCommand(
     expiresAt: new Date(now.getTime() + command.hours * HOUR_MS),
     key: command.key,
     reason: command.reason,
+    // the start is the command's own clock, like the end, so the length stored is exactly the hours asked
+    startsAt: now,
     value: command.value,
   };
   // refused here when it is not a valid grant, before anything is recorded or done
@@ -100,7 +104,7 @@ export async function grantEntitlementCommand(
   // is a different one.
   const prior = command.id ? await ports.find(id) : null;
   const result = prior
-    ? repeatOf(prior, organizationId, normalized, id, command.hours)
+    ? repeatResult(prior, organizationId, normalized, command.hours, id)
     : await ports.grant({ ...request, id, organizationId });
   const outcomeRecorded = await recorded(() =>
     ports.audit(
@@ -114,29 +118,14 @@ export async function grantEntitlementCommand(
   return { ...result, organizationId, outcomeRecorded };
 }
 
-function repeatOf(
+function repeatResult(
   prior: StoredEntitlementGrant,
   organizationId: string,
-  asked: {
-    actor: string;
-    flagValue: boolean | null;
-    key: string;
-    limitValue: number | null;
-    reason: string;
-  },
-  id: string,
-  hours: number
+  grant: NormalizedGrant,
+  hours: number,
+  id: string
 ): { created: false; id: string } {
-  if (
-    prior.organizationId !== organizationId ||
-    prior.key !== asked.key ||
-    prior.limitValue !== asked.limitValue ||
-    prior.flagValue !== asked.flagValue ||
-    prior.reason !== asked.reason ||
-    prior.grantedBy !== asked.actor ||
-    // the length asked for is part of the command; only the clock it was asked at is not
-    prior.expiresAt.getTime() - prior.startsAt.getTime() !== hours * HOUR_MS
-  ) {
+  if (!isRepeatOfGrant(prior, { grant, hours, organizationId })) {
     throw new Error("entitlement_grant_id_conflict");
   }
   return { created: false, id };

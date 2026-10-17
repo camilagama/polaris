@@ -69,6 +69,8 @@ describe("granting an entitlement", () => {
       key: "variants.active.max",
       organizationId: "org-1",
       reason: "Compensação",
+      // the command's own clock, for the start as for the end: the length stored is exactly the hours asked
+      startsAt: now,
       value: 200,
     });
   });
