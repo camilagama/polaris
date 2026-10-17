@@ -32,7 +32,12 @@ export type SupportRefusalCode =
   | "invalid_case_resolution"
   | "invalid_duration"
   | "invalid_field"
+  | "invalid_privacy_request"
+  | "invalid_privacy_step"
   | "invalid_request"
+  | "privacy_case_workflow_required"
+  | "privacy_decision_not_allowed"
+  | "privacy_stage_conflict"
   | "unknown_case"
   | "unknown_organization";
 
@@ -65,6 +70,11 @@ const KNOWN_CODES: readonly SupportRefusalCode[] = [
   "invalid_case_resolution",
   "invalid_duration",
   "invalid_field",
+  "invalid_privacy_request",
+  "invalid_privacy_step",
+  "privacy_case_workflow_required",
+  "privacy_decision_not_allowed",
+  "privacy_stage_conflict",
   "unknown_case",
   "unknown_organization",
 ];

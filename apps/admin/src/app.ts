@@ -15,6 +15,7 @@ import {
 } from "@polaris/domain/admin/platform-capabilities";
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
+import { type PrivacyDependencies, privacyRoutes } from "./privacy-routes";
 import { type SupportDependencies, supportRoutes } from "./support-routes";
 
 /**
@@ -55,6 +56,8 @@ export interface AdminDependencies {
       bindings: AdminBindings
     ) => Promise<AdminOrganizationPage>;
   };
+  /** The workflow of a privacy request (ADR 0077). */
+  privacy: PrivacyDependencies;
   /** Support cases, temporary tenant access, the masked read and the reveal (ADR 0072). */
   support: SupportDependencies;
   /** Diagnostics for the operator's logs: a stable code, never the token or the e-mail. */
@@ -270,6 +273,10 @@ export function createAdminApp(dependencies: AdminDependencies) {
   api.route(
     "/",
     supportRoutes(dependencies.support, requireCapability, dependencies.report)
+  );
+  api.route(
+    "/",
+    privacyRoutes(dependencies.privacy, requireCapability, dependencies.report)
   );
   app.route("/api", api);
 

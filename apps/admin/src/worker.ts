@@ -2,11 +2,20 @@ import {
   auditBillingCommand,
   closeSupportCase,
   grantTenantAccess,
+  listPrivacyCases,
   listSupportCases,
   listTenantCustomers,
+  openPrivacyCase,
   openSupportCase,
   reactivateOrganization,
+  readPrivacyCase,
   readSupportCase,
+  recordPrivacyAction,
+  recordPrivacyDecision,
+  recordPrivacyIdentity,
+  recordPrivacyRole,
+  recordPrivacyScope,
+  resolvePrivacyCase,
   revealCustomerField,
   revokeTenantAccess,
   suspendOrganization,
@@ -130,6 +139,44 @@ const dependencies: AdminDependencies = {
     list: (input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         listOrganizations(client, input)
+      ),
+  },
+  privacy: {
+    action: (principalId, caseId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        recordPrivacyAction(client, principalId, caseId, input)
+      ),
+    decision: (principalId, caseId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        recordPrivacyDecision(client, principalId, caseId, input)
+      ),
+    detail: (caseId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readPrivacyCase(client, caseId)
+      ),
+    identity: (principalId, caseId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        recordPrivacyIdentity(client, principalId, caseId, input)
+      ),
+    list: (input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listPrivacyCases(client, input)
+      ),
+    open: (principalId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        openPrivacyCase(client, principalId, input)
+      ),
+    resolve: (principalId, caseId, resolution, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        resolvePrivacyCase(client, principalId, caseId, resolution)
+      ),
+    role: (principalId, caseId, role, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        recordPrivacyRole(client, principalId, caseId, role)
+      ),
+    scope: (principalId, caseId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        recordPrivacyScope(client, principalId, caseId, input)
       ),
   },
   report: (event, fields) =>

@@ -1448,3 +1448,18 @@ O bot revisor ([comentário no #114](https://github.com/camilagama/polaris/pull/
 | #116: a confirmação digitada vale só no TypeScript | Registrado nos limites do ADR 0074. |
 | #116 e #114: número de ADR que colide com o rascunho #96 | Não é deste PR: o #96 precisa ir para 0076 ou mais (0074 e 0075 estão em uso). |
 
+### Fase 10C — Privacidade: casos de privacidade (PR103; implementação, gate e verificações locais concluídos; revisão e publicação: ver linhas abaixo)
+
+Terceiro passo da Fase 10 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): o fluxo interno de um pedido sobre dado pessoal, no Admin.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/privacy-cases` sobre o PR #117 (migration 0067). |
+| Domínio | Concluído | `@polaris/domain/admin/privacy-case`: códigos, ordem das etapas, regras de decisão (identidade que falhou, operador que não aceita por conta própria, encaminhamento), prazo provisório de 15 dias contado de quando o pedido chegou, atraso; 15 testes. |
+| Banco | Concluído | Migration 0067: tabelas `privacy_cases` (CHECKs de ordem e de decisão) e `privacy_case_actions` (somente inserção), gatilho que só deixa o caso avançar e não muda passo gravado, nove funções do Admin (abrir, identidade, papel, escopo, decisão, ação, resolver, ler, listar) e a troca das funções genéricas de abrir e fechar caso, que passam a recusar o tipo `privacy`. |
+| API do Admin | Concluída | `POST /api/privacy-cases` e um `POST` por etapa, `GET` de lista (abertos, fechados, atrasados) e de leitura, tudo com `privacy_case:manage`; recusas do domínio viram 400, passo fora de ordem e caso fechado viram 409; 10 testes de rota novos. |
+| Gate PostgreSQL 18 | Concluído | `privacy-cases` (suítes `gate10` e `ci`): abertura e validações, ordem das etapas, decisões permitidas e recusadas, execução e resolução (fecha o caso e revoga o acesso temporário), o banco recusando pular etapa, voltar, mudar passo gravado, caso resolvido, aceitação indevida e mudar ou apagar ação, lista e atraso, auditoria só com códigos (a nota nunca chega nela) e privilégios exatos. Os gates `admin-support`, `admin-diagnostics`, `platform-principals`, `admin-suspension`, `review-hardening` e `gate2-runtime` também passaram na mesma branch (política do ADR 0025: só os afetados). |
+| Revisão independente | Concluída | Achados tratados: `partially_accept` sem motivo (a função deixava passar e o CHECK recusava: virava 500), o motivo de identidade só para identidade que falhou em qualquer decisão, o gatilho só aceitando o passo seguinte (antes a adjacência estava só na função), a ação registrada combinando com a decisão, caso inexistente respondendo 404 (não 409), `admin_not_configured` respondendo 503, a resolução travando o caso de suporte (como o fechamento genérico), a referência ao titular só como identificador, e um teste de paridade no gate entre o banco e o domínio em todas as combinações. Limites no ADR: o papel é declarado pelo operador; o purge (PR107) precisa tratar essas tabelas. |
+| Suíte completa em Neon | Parcial | PR101 e PR102 rodaram a suíte `ci` inteira e o `gate2-runtime`; este PR rodou só os afetados (política do ADR 0025). A suíte completa da Fase 10 roda ao entregar o último PR da fase. |
+| Limites | Registrados | Sem tela do Admin; sem aviso nem contato do titular; prazo provisório, sem lembrete; um caso é sempre de uma organização; a execução é só registrada (os comandos de anonimizar e encerrar seguem do dono). |
+

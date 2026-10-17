@@ -108,6 +108,7 @@
     "poc:admin-suspension:verify": "bun scripts/verify-admin-suspension-gate.ts",
     "poc:organization-closure:verify": "bun scripts/verify-organization-closure-gate.ts",
     "poc:customer-anonymization:verify": "bun scripts/verify-customer-anonymization-gate.ts",
+    "poc:privacy-cases:verify": "bun scripts/verify-privacy-cases-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",
     "poc:rls:bootstrap": "bun scripts/bootstrap-rls-gate.ts",
