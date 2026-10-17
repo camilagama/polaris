@@ -29,6 +29,8 @@ export interface AdminBindings {
   ACCESS_AUDIENCE?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ADMIN_HYPERDRIVE?: { connectionString: string };
+  /** The billing role's login: the only writer of billing, used only for the billing commands (ADR 0073). */
+  ADMIN_BILLING_HYPERDRIVE?: { connectionString: string };
 }
 
 export interface AdminDependencies {

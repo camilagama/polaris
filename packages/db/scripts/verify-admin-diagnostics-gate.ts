@@ -188,7 +188,12 @@ async function run() {
         "starts_at",
       ],
       goals: ["organization_id", "status"],
-      memberships: ["authorization_epoch", "organization_id", "status"],
+      memberships: [
+        "authorization_epoch",
+        "organization_id",
+        "status",
+        "user_id",
+      ],
       offline_grants: [
         "device_id",
         "expires_at",
@@ -255,7 +260,16 @@ async function run() {
       "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ANY($1::text[])",
       [Object.keys(platformTables)]
     );
+    // what suspending an organization may change (ADR 0073), and nothing else of the tenant
+    const tenantUpdates: Record<string, string[]> = {
+      memberships: ["authorization_epoch", "updated_at"],
+      offline_grants: ["revoked_at", "revoked_reason"],
+      organizations: ["status", "updated_at"],
+    };
     const wanted = [
+      ...Object.entries(tenantUpdates).flatMap(([table, columns]) =>
+        columns.map((column) => `${table}.${column}:UPDATE`)
+      ),
       ...Object.entries(expectedColumns).flatMap(([table, columns]) =>
         columns.map((column) => `${table}.${column}:SELECT`)
       ),
@@ -323,6 +337,9 @@ async function run() {
       ...Object.fromEntries(
         Object.keys(expectedColumns).map((table) => [table, ["SELECT"]])
       ),
+      memberships: ["SELECT", "UPDATE"],
+      offline_grants: ["SELECT", "UPDATE"],
+      organizations: ["SELECT", "UPDATE"],
       platform_audit_events: ["INSERT", "SELECT"],
       support_cases: ["INSERT", "SELECT", "UPDATE"],
       tenant_access_grants: ["INSERT", "SELECT", "UPDATE"],
@@ -334,15 +351,18 @@ async function run() {
     assert.deepEqual(
       runnable.rows.map((row) => row.name),
       [
+        "admin_audit_billing_command",
         "admin_close_support_case",
         "admin_grant_tenant_access",
         "admin_list_support_cases",
         "admin_open_support_case",
         "admin_organization_diagnostics",
         "admin_organizations_overview",
+        "admin_reactivate_organization",
         "admin_reveal_customer_field",
         "admin_revoke_tenant_access",
         "admin_support_case_detail",
+        "admin_suspend_organization",
         "admin_tenant_customers",
       ]
     );
