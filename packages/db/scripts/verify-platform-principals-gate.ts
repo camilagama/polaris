@@ -164,14 +164,16 @@ async function run() {
     );
     assert.deepEqual(flags.rows, [{ forced: true, rls: true }]);
     const policies = await owner.pool.query<{ cmd: string; roles: string }>(
-      "SELECT cmd, roles FROM pg_policies WHERE tablename = 'platform_principals' ORDER BY cmd"
+      "SELECT cmd, roles FROM pg_policies WHERE tablename = 'platform_principals' ORDER BY cmd, roles"
     );
+    // the Admin role reads and refreshes principals; the owner of the Admin's functions only reads who is active (ADR 0072)
     assert.deepEqual(policies.rows, [
+      { cmd: "SELECT", roles: "{polaris_admin_owner}" },
       { cmd: "SELECT", roles: "{polaris_admin_runtime}" },
       { cmd: "UPDATE", roles: "{polaris_admin_runtime}" },
     ]);
     tests.push(
-      "a principal is the issuer and subject (one per pair, the same subject under another issuer is another identity), with a known role and status, an https issuer and a subject; the table forces row security and only the Admin role has policies"
+      "a principal is the issuer and subject (one per pair, the same subject under another issuer is another identity), with a known role and status, an https issuer and a subject; the table forces row security and only the Admin role and the owner of its functions have policies"
     );
 
     // ------------------------------------------------- 2. who can do what
@@ -240,7 +242,11 @@ async function run() {
        SELECT p.proname, 'function'
          FROM pg_proc p
         WHERE p.pronamespace = 'public'::regnamespace
-          AND p.proname NOT IN ('admin_organizations_overview', 'admin_organization_diagnostics')
+          AND p.proname NOT IN (
+            'admin_close_support_case', 'admin_grant_tenant_access', 'admin_list_support_cases', 'admin_open_support_case',
+            'admin_organization_diagnostics', 'admin_organizations_overview', 'admin_reveal_customer_field',
+            'admin_revoke_tenant_access', 'admin_support_case_detail', 'admin_tenant_customers'
+          )
           AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE')`
     );
     assert.deepEqual(

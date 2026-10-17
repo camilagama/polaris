@@ -49,6 +49,7 @@ const expectedDatabase =
 
 const HOUR = 3_600_000;
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the gate is one linear list of independent scenarios
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -228,11 +229,46 @@ async function run() {
         "received_at",
       ],
     };
-    const wanted = Object.entries(expectedColumns)
-      .flatMap(([table, columns]) =>
+    // the tables the Admin's own functions keep (cases, grants, audit) are the owner's to write, and the
+    // customers and principals are read for the support functions (ADR 0072)
+    Object.assign(expectedColumns, {
+      customers: [
+        "archived_at",
+        "email",
+        "id",
+        "name",
+        "notes",
+        "organization_id",
+        "phone",
+      ],
+      platform_principals: ["id", "status"],
+    });
+    const platformTables = {
+      platform_audit_events: [] as string[],
+      support_cases: ["closed_at", "closed_by", "resolution", "status"],
+      tenant_access_grants: ["revoked_at", "revoked_by"],
+    };
+    const platformColumns = await owner.pool.query<{
+      column_name: string;
+      table_name: string;
+    }>(
+      "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ANY($1::text[])",
+      [Object.keys(platformTables)]
+    );
+    const wanted = [
+      ...Object.entries(expectedColumns).flatMap(([table, columns]) =>
         columns.map((column) => `${table}.${column}:SELECT`)
-      )
-      .sort();
+      ),
+      ...platformColumns.rows.flatMap((row) => [
+        `${row.table_name}.${row.column_name}:SELECT`,
+        `${row.table_name}.${row.column_name}:INSERT`,
+        ...((platformTables as Record<string, string[]>)[
+          row.table_name
+        ]?.includes(row.column_name)
+          ? [`${row.table_name}.${row.column_name}:UPDATE`]
+          : []),
+      ]),
+    ].sort();
     const granted = await owner.pool.query<{ grant: string }>(
       `SELECT table_name || '.' || column_name || ':' || privilege_type AS grant
          FROM information_schema.column_privileges
@@ -244,10 +280,21 @@ async function run() {
       wanted,
       "the owner of the functions reads exactly these columns, and can only read"
     );
-    const tableLevel = await owner.pool.query(
-      "SELECT 1 FROM information_schema.table_privileges WHERE grantee = 'polaris_admin_owner' AND table_schema = 'public'"
+    const tableLevel = await owner.pool.query<{ privilege: string }>(
+      "SELECT table_name || ':' || privilege_type AS privilege FROM information_schema.table_privileges WHERE grantee = 'polaris_admin_owner' AND table_schema = 'public' ORDER BY 1"
     );
-    assert.equal(tableLevel.rows.length, 0, "no table-level privilege");
+    assert.deepEqual(
+      tableLevel.rows.map((row) => row.privilege),
+      [
+        "platform_audit_events:INSERT",
+        "platform_audit_events:SELECT",
+        "support_cases:INSERT",
+        "support_cases:SELECT",
+        "tenant_access_grants:INSERT",
+        "tenant_access_grants:SELECT",
+      ],
+      "table-level privileges only on the Admin's own tables, and never to change or delete"
+    );
     const memberships = await owner.pool.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM pg_auth_members WHERE member = 'polaris_admin_owner'::regrole OR (roleid = 'polaris_admin_owner'::regrole AND (set_option OR inherit_option))"
     );
@@ -258,27 +305,46 @@ async function run() {
     );
     const ownerPolicies = await owner.pool.query<{
       cmd: string;
-      qual: string;
+      qual: string | null;
       tablename: string;
+      with_check: string | null;
     }>(
-      "SELECT tablename, cmd, qual FROM pg_policies WHERE roles = '{polaris_admin_owner}' ORDER BY tablename"
+      "SELECT tablename, cmd, qual, with_check FROM pg_policies WHERE roles = '{polaris_admin_owner}' ORDER BY tablename, cmd"
     );
-    assert.deepEqual(
-      ownerPolicies.rows.map((row) => row.tablename),
-      Object.keys(expectedColumns).sort()
-    );
-    assert.ok(
-      ownerPolicies.rows.every(
-        (row) => row.cmd === "SELECT" && row.qual === "true"
-      )
-    );
-    // the Admin role runs exactly these two functions, and no other login role can run them
+    const policyMap: Record<string, string[]> = {};
+    for (const row of ownerPolicies.rows) {
+      policyMap[row.tablename] = [...(policyMap[row.tablename] ?? []), row.cmd];
+      assert.ok(
+        (row.cmd === "INSERT" ? row.with_check : row.qual) === "true",
+        `the owner's ${row.cmd} policy on ${row.tablename} is for the whole table: the function decides`
+      );
+    }
+    assert.deepEqual(policyMap, {
+      ...Object.fromEntries(
+        Object.keys(expectedColumns).map((table) => [table, ["SELECT"]])
+      ),
+      platform_audit_events: ["INSERT", "SELECT"],
+      support_cases: ["INSERT", "SELECT", "UPDATE"],
+      tenant_access_grants: ["INSERT", "SELECT", "UPDATE"],
+    });
+    // the Admin role runs exactly the Admin functions, and no other login role can run them
     const runnable = await owner.pool.query<{ name: string }>(
       "SELECT p.proname AS name FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE') ORDER BY 1"
     );
     assert.deepEqual(
       runnable.rows.map((row) => row.name),
-      ["admin_organization_diagnostics", "admin_organizations_overview"]
+      [
+        "admin_close_support_case",
+        "admin_grant_tenant_access",
+        "admin_list_support_cases",
+        "admin_open_support_case",
+        "admin_organization_diagnostics",
+        "admin_organizations_overview",
+        "admin_reveal_customer_field",
+        "admin_revoke_tenant_access",
+        "admin_support_case_detail",
+        "admin_tenant_customers",
+      ]
     );
     const others = await owner.pool.query<{ name: string }>(
       `SELECT r.rolname AS name

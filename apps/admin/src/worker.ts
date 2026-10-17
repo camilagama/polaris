@@ -1,4 +1,14 @@
 import {
+  closeSupportCase,
+  grantTenantAccess,
+  listSupportCases,
+  listTenantCustomers,
+  openSupportCase,
+  readSupportCase,
+  revealCustomerField,
+  revokeTenantAccess,
+} from "@polaris/db/admin-support-repository";
+import {
   listOrganizations,
   readOrganizationDiagnostics,
 } from "@polaris/db/admin-diagnostics-repository";
@@ -78,6 +88,40 @@ const dependencies: AdminDependencies = {
   },
   report: (event, fields) =>
     console.warn({ event: `admin.${event}`, ...fields }),
+  support: {
+    close: (principalId, caseId, resolution, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        closeSupportCase(client, principalId, caseId, resolution)
+      ),
+    customers: (principalId, caseId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listTenantCustomers(client, principalId, caseId, input)
+      ),
+    detail: (caseId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readSupportCase(client, caseId)
+      ),
+    grant: (principalId, caseId, minutes, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        grantTenantAccess(client, principalId, caseId, minutes)
+      ),
+    list: (input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listSupportCases(client, input)
+      ),
+    open: (principalId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        openSupportCase(client, principalId, input)
+      ),
+    reveal: (principalId, caseId, customerId, field, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        revealCustomerField(client, principalId, caseId, customerId, field)
+      ),
+    revoke: (principalId, grantId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        revokeTenantAccess(client, principalId, grantId)
+      ),
+  },
   resolvePrincipal: (identity, bindings) =>
     withAdminDatabase(connectionOf(bindings), (client) =>
       resolvePlatformPrincipal(client, identity)

@@ -26,6 +26,20 @@ const principal = {
   subject: "subject-1",
 };
 
+function noSupport() {
+  const nothing = vi.fn(() => Promise.resolve(null));
+  return {
+    close: nothing,
+    customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
+    detail: nothing,
+    grant: nothing,
+    list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    open: nothing,
+    reveal: nothing,
+    revoke: vi.fn(() => Promise.resolve(false)),
+  };
+}
+
 function setup(overrides: Partial<AdminDependencies> = {}) {
   const dependencies: AdminDependencies = {
     authenticate: vi.fn(() => Promise.resolve(claims)),
@@ -35,6 +49,7 @@ function setup(overrides: Partial<AdminDependencies> = {}) {
       list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
     },
     resolvePrincipal: vi.fn(() => Promise.resolve(principal)),
+    support: noSupport(),
     ...overrides,
   };
   const app = createAdminApp(dependencies);

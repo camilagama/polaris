@@ -15,7 +15,7 @@
   // - ACCESS_AUDIENCE: the audience tag of the Access application for this Worker
   // The id below only serves local development. A deployed Worker needs a real
   // Hyperdrive configuration with query caching disabled, using the login of the
-  // Admin role (a member of polaris_admin_runtime), which reads only platform_principals.
+  // Admin role (a member of polaris_admin_runtime), which reads no table and runs only the Admin functions. Caching must stay off: the audit of every read and reveal is written by the function the query calls.
   "hyperdrive": [
     {
       "binding": "ADMIN_HYPERDRIVE",

@@ -111,6 +111,12 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Principal de plataforma:** a pessoa que opera o Polaris, identificada pelo emissor e subject do Cloudflare Access (nunca pelo e-mail). Só entra no Admin se o dono do banco a cadastrou e ela está ativa.
 
+**Caso de suporte:** o motivo registrado pelo qual um operador olha uma organização (suporte ou privacidade); dele pendem os acessos temporários.
+
+**Acesso temporário:** permissão de somente leitura de um operador a uma organização, ligada a um caso aberto, com prazo curto (60 minutos por padrão, de 5 a 240); dar outro acesso é uma nova decisão registrada; é a única porta do Admin para registros do tenant.
+
+**Revelação:** a ação explícita de ver um campo real de um cliente que o Admin vê mascarado; sempre auditada, sem guardar o valor.
+
 **Capacidade de plataforma:** permissão nomeada do Admin (por exemplo `pii:reveal`), separada das capacidades de tenant; cada rota do Admin pede uma, nenhum caso de uso compara o papel pelo nome.
 
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.

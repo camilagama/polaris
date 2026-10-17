@@ -10,6 +10,7 @@ export const PLATFORM_CAPABILITIES = Object.freeze([
   "organization:diagnose",
   "support_case:manage",
   "tenant_access:grant",
+  "tenant_data:read",
   "pii:reveal",
   "billing:operate",
   "organization:suspend",
