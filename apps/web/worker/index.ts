@@ -1,11 +1,13 @@
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
+import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import { app } from "../src/server/app";
 import {
   reconcileRemovedMedia,
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
 import { runBillingMaintenance } from "../src/server/billing/maintenance";
+import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
 import type { WorkerBindings } from "../src/server/environment";
 
 /** Closing a connection is best effort: it must not replace what the job found. */
@@ -74,6 +76,31 @@ async function runBillingJobs(env: WorkerBindings): Promise<unknown[]> {
   }
 }
 
+/** Marks the closures whose recovery window ended as closed (ADR 0074). */
+async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
+  const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    // the privacy role is not provisioned in this environment yet: nothing to do
+    console.warn("privacy_maintenance_not_configured");
+    return [];
+  }
+  let client: ReturnType<typeof createPrivacyMaintenanceClient>;
+  try {
+    client = createPrivacyMaintenanceClient(connectionString);
+  } catch (error: unknown) {
+    return [error];
+  }
+  try {
+    const report = await runPrivacyMaintenance(client);
+    console.info("privacy_maintenance_complete", report);
+    return [];
+  } catch (error: unknown) {
+    return [error];
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
 /** Runs a job so that whatever it throws becomes its failure, never another job's. */
 async function isolated(job: () => Promise<unknown[]>): Promise<unknown[]> {
   try {
@@ -86,10 +113,11 @@ async function isolated(job: () => Promise<unknown[]>): Promise<unknown[]> {
 export default {
   fetch: app.fetch,
   scheduled: async (_controller, env) => {
-    // media and billing are independent jobs: one failing never hides the other
+    // media, billing and privacy are independent jobs: one failing never hides another
     const failures = [
       ...(await isolated(() => runMediaMaintenance(env))),
       ...(await isolated(() => runBillingJobs(env))),
+      ...(await isolated(() => runPrivacyJobs(env))),
     ];
     if (failures.length === 1) {
       throw failures[0];

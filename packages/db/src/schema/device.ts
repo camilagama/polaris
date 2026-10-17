@@ -129,7 +129,7 @@ export const offlineGrants = pgTable(
       ),
       check(
         "offline_grants_revocation_consistent",
-        sql`(${table.revokedAt} IS NULL) = (${table.revokedReason} IS NULL) AND (${table.revokedReason} IS NULL OR ${table.revokedReason} IN ('device_revoked', 'user_revoked', 'security_event', 'organization_suspended'))`
+        sql`(${table.revokedAt} IS NULL) = (${table.revokedReason} IS NULL) AND (${table.revokedReason} IS NULL OR ${table.revokedReason} IN ('device_revoked', 'user_revoked', 'security_event', 'organization_suspended', 'organization_closed'))`
       ),
       index("offline_grants_org_user_device_idx").on(
         table.organizationId,

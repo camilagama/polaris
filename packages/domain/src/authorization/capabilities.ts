@@ -15,6 +15,7 @@ export const CAPABILITIES = Object.freeze([
   "goal:manage",
   "catalog:publish",
   "organization:manage",
+  "organization:close",
   "sync:push",
   "sync:read",
   "offline:manage",

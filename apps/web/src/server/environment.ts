@@ -68,6 +68,8 @@ export interface WorkerBindings {
   OFFLINE_LEASE_PREVIOUS_SECRET?: string;
   OFFLINE_LEASE_SECRET?: string;
   ONBOARDING_HYPERDRIVE?: HyperdriveBinding;
+  /** The privacy role (marks expired closure windows as closed): it executes one function and reads nothing. */
+  PRIVACY_HYPERDRIVE?: HyperdriveBinding;
   RESEND_API_KEY?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
   TURNSTILE_SECRET_KEY?: string;

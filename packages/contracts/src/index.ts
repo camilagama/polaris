@@ -932,7 +932,14 @@ const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
   name: z.string().min(1),
-  status: z.enum(["active", "suspended", "closed"]),
+  status: z.enum([
+    "active",
+    "suspended",
+    "closing",
+    "closed",
+    "purge_pending",
+    "purged",
+  ]),
   timezone: z.string().min(1),
 });
 
@@ -1592,6 +1599,37 @@ export const polarisContract = {
     listMine: oc.output(
       z.object({ organizations: z.array(organizationMembership) })
     ),
+    // The owner's own organizations whose closure can still be undone. Not tenant-scoped:
+    // an organization in closure no longer opens as a tenant.
+    listClosing: oc.output(
+      z.object({
+        organizations: z.array(
+          z.object({
+            id: z.string().uuid(),
+            name: z.string().min(1),
+            recoverUntil: z.string().datetime(),
+          })
+        ),
+      })
+    ),
+    // Undo a closure while its recovery window is open. The leases revoked at the request stay revoked.
+    recoverClosure: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(z.object({ recovered: z.literal(true) })),
+    // Closing revokes access at once. The owner types the organization's name to confirm.
+    requestClosure: oc
+      .input(
+        z.object({
+          confirmation: z.string().min(1).max(256),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          recoverUntil: z.string().datetime(),
+          revokedLeases: z.number().int().nonnegative(),
+        })
+      ),
   },
   paymentProfile: {
     archive: oc

@@ -51,6 +51,11 @@ import {
   writeOffStock,
 } from "@polaris/db/inventory-repository";
 import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
+import {
+  listOrganizationsInClosure,
+  recoverOrganizationClosure,
+  requestOrganizationClosure,
+} from "@polaris/db/organization-closure-repository";
 import { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import {
   archivePaymentProfile,
@@ -196,6 +201,13 @@ import {
 } from "@polaris/domain/offline/offline-grant";
 import { OfflineLeaseNotAvailableError } from "@polaris/domain/offline/offline-lease";
 import {
+  ClosureConfirmationError,
+  ClosureNotRecoverableError,
+  isOrganizationStatus,
+  OrganizationNotActiveError,
+  type OrganizationStatus,
+} from "@polaris/domain/organization/closure";
+import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -268,7 +280,10 @@ import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
-import { createOrganizationRpcHandlers } from "./organization-handlers";
+import {
+  type ClosureRepository,
+  createOrganizationRpcHandlers,
+} from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 import { createSyncRpcHandlers } from "./sync-handlers";
 import { runSyncCommand } from "@polaris/db/sync-command-repository";
@@ -300,6 +315,7 @@ interface RpcRouterDependencies {
   archiveCustomer: typeof archiveCustomer;
   archivePaymentProfile: typeof archivePaymentProfile;
   archiveProduct: typeof archiveProduct;
+  closureRepository: Partial<ClosureRepository>;
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
   configureProductVariants: typeof configureProductVariants;
@@ -356,8 +372,8 @@ interface RpcRouterDependencies {
   writeOffStock: typeof writeOffStock;
 }
 
-function organizationStatus(status: string): "active" | "suspended" | "closed" {
-  if (status === "active" || status === "suspended" || status === "closed") {
+function organizationStatus(status: string): OrganizationStatus {
+  if (isOrganizationStatus(status)) {
     return status;
   }
   throw new Error("invalid_organization_status");
@@ -639,6 +655,7 @@ const badRequestRpcErrors = [
     ProductNameError,
     ProductDescriptionError,
     InvalidPaymentProfileError,
+    ClosureConfirmationError,
   ],
   [
     InvalidCustomerProfileError,
@@ -739,6 +756,8 @@ const conflictRpcErrors = [
     PublicCatalogVersionConflictError,
     PublicCatalogProfileMissingError,
     PublicCatalogProductUnavailableError,
+    OrganizationNotActiveError,
+    ClosureNotRecoverableError,
   ],
   [
     ProductDeletedError,
@@ -1230,10 +1249,17 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const organizationHandlers = createOrganizationRpcHandlers({
+    closureRepository: {
+      listOrganizationsInClosure,
+      recoverOrganizationClosure,
+      requestOrganizationClosure,
+      ...overrides.closureRepository,
+    },
     defaultListUserOrganizations: listUserOrganizations,
     listUserOrganizations: overrides.listUserOrganizations,
     toRpcError,
     withAuthenticatedRequestContext: authenticatedRequest,
+    withTenantRequestContext: tenantRequest,
   });
   const customerHandlers = createCustomerRpcHandlers({
     ...overrides,
@@ -1346,7 +1372,7 @@ export function createRpcRouter(
           name: string;
           timezone: string;
           currency: "BRL";
-          status: "active" | "suspended" | "closed";
+          status: OrganizationStatus;
         };
       }>;
 
@@ -1828,7 +1854,13 @@ export function createRpcRouter(
       writeOffStock: writeOffStockRecord,
     },
     offline: offlineHandlers.offline,
-    organization: { createInitial, listMine: organizationHandlers.listMine },
+    organization: {
+      createInitial,
+      listClosing: organizationHandlers.listClosing,
+      listMine: organizationHandlers.listMine,
+      recoverClosure: organizationHandlers.recoverClosure,
+      requestClosure: organizationHandlers.requestClosure,
+    },
     plan: planHandlers,
     publicCatalog: publicCatalogHandlers,
     report: reportHandlers,

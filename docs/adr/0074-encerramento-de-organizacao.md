@@ -1,0 +1,46 @@
+---
+status: accepted
+---
+
+# Encerramento de organização e janela de recuperação
+
+## Contexto
+
+A Fase 10 do plano trata de privacidade. O primeiro passo (PR101) é o **encerramento de organização**: o dono decide sair, o acesso é revogado na hora e os dados só deixam de existir depois de uma janela em que ele pode voltar atrás. O plano nomeia os estados (`active`, `closing`, `closed`, `purge_pending`, `purged`) e uma recuperação normal de 30 dias. A suspensão (ADR 0073) é outra coisa: é uma medida da plataforma, reversível por ela, e não é um encerramento.
+
+## Decisão
+
+- **Estados.** `organizations.status` passa a aceitar `active`, `suspended`, `closing`, `closed`, `purge_pending` e `purged`. `closing` é a janela de recuperação: o acesso já foi revogado e o catálogo público já sumiu (todos leem `status = 'active'`), mas nada foi apagado. `closed` começa quando a janela termina e o dono não desfaz mais. `purge_pending` e `purged` pertencem ao fluxo de purge (PR107); ficam nomeados aqui para que o status não precise de outra migration, e nada antes desse fluxo os atribui. A máquina de estados e o prazo estão em `@polaris/domain/organization/closure` (30 dias, que o banco só valida entre 1 e 90).
+- **Quem pede, e como.** Só o `owner`, com a capacidade nova `organization:close`, dentro de uma transação tenant da própria organização, **digitando o nome dela** (maiúsculas e espaços à parte; é a confirmação de uma ação destrutiva). A função do banco `request_organization_closure` lê quem é o usuário e qual é a organização das configurações da própria transação (definidas só depois de o servidor autorizar o pedido), nunca de um argumento, e repete a checagem de membership `owner` ativo.
+- **O que o pedido muda, numa transação só.** Status `closing`; época de autorização de todas as memberships +1; **todas as concessões offline em vigor revogadas** (motivo `organization_closed`); o registro da janela em `organization_closures` (quem pediu, quando, até quando); um evento de auditoria do tenant (`organization.closure_requested`). Antes disso, a função trava, em ordem, a mesma chave por usuário que a emissão de concessões usa (como a suspensão), de modo que uma concessão é emitida antes (e revogada) ou depois (e recusada, a organização já não está ativa). **Cobrança, plano, concessões de entitlement e o resto da organização não são tocados.**
+- **Recuperar.** Enquanto a janela está aberta, o dono desfaz o encerramento por `recover_organization_closure`. A organização não abre mais como tenant, então isso **não roda numa transação tenant**: roda só com o usuário autenticado, e a função confere a membership `owner` ativa. A época não volta e as concessões offline revogadas não renascem (cada aparelho pede de novo). Um encerramento depois de uma recuperação reescreve o registro; o histórico fica na auditoria do tenant (um evento por pedido, um por recuperação). `list_organizations_in_closure` mostra ao usuário as próprias organizações recuperáveis, para a interface oferecer o caminho de volta.
+- **A janela acaba.** `finalize_expired_closures` (limite 1 a 1000) marca como `closed` as organizações em `closing` cuja janela terminou. É a **única** função do papel de privacidade (`polaris_privacy_runtime`, login próprio e binding `PRIVACY_HYPERDRIVE`): ela não lê tabela, não move nada de volta e não apaga. Roda na varredura horária do Worker, em lotes limitados (100 por chamada, até 10 chamadas por execução), isolada das outras manutenções. Recuperar e fechar usam predicados que se excluem (`recover_until` aberto ou vencido) e a varredura trava a linha da organização (`FOR UPDATE ... SKIP LOCKED`), então um dos dois vence e o outro não age; isso foi verificado por leitura, e o gate não exercita os dois ao mesmo tempo. Depois de `closed`, nem o dono nem a reativação do Admin reabrem a organização (a reativação desfaz só uma suspensão, e a suspensão só age em `active`).
+- **Quem pode o quê no banco.** O papel dono das funções (`polaris_privacy_owner`, nunca um login) tem somente o necessário: ler `id`, `name` e `status` e atualizar `status` e `updated_at` de `organizations`; ler e atualizar a época de `memberships`; ler `revoked_at` e atualizar a revogação de `offline_grants`; inserir em `tenant_audit_event`; e ler, inserir e atualizar `organization_closures`. Nenhum papel de serviço lê ou escreve `organization_closures`; só o runtime tenant executa pedir, recuperar e listar; só o runtime de privacidade executa a varredura.
+- **Cobrança.** Encerrar não cancela renovação nem reembolsa: são comandos de provedor, que dependem do adaptador e do Gate 7 (ADR 0073). Quando o provedor existir, o encerramento precisará cancelar a renovação ao fim do período; até lá, é um pré-requisito de go-live registrado nos limites.
+
+## Consequências
+
+- O dono sai por conta própria, com confirmação, sem esperar suporte; o acesso (de rede e offline) acaba no mesmo instante e nada é perdido nos 30 dias seguintes.
+- O encerramento é distinto da exclusão física: dados e arquivos continuam existindo até o purge (PR107), que tem de respeitar retenção e o deletion ledger (PR105 e PR106).
+- Uma organização em `closing` não aparece em `listMine` (só ativas); a interface descobre a recuperação por `listClosing`.
+
+## Limites aceitos
+
+- Não há tela ainda: a interface de encerrar e de recuperar vem depois (as rotas e os modelos existem).
+- Não há aviso por e-mail ao dono (nem no pedido, nem perto do fim da janela): exige o envio transacional, e o e-mail só é habilitado antes do go-live.
+- O encerramento não exporta nem oferece os dados automaticamente (o export é o PR104, a pedido).
+- Uma operação tenant que já passou da checagem de status quando o pedido confirma termina normalmente; a partir da confirmação nenhuma nova começa. Uma membership criada durante a janela não tem a época movida (não há fluxo de convite hoje).
+- A revogação das concessões offline não gera `tenant_audit_event` por concessão, só o evento do pedido.
+- Uma organização suspensa não pode ser encerrada pelo dono (não opera): a plataforma reativa primeiro.
+- A chave de bloqueio por usuário atravessa organizações: encerrar espera a emissão de concessão do mesmo usuário em qualquer outra; um tempo esgotado vira erro 500 e o pedido pode ser repetido.
+- O cancelamento da renovação no provedor, no encerramento, espera o Gate 7.
+- **Quem tem uma única organização e a encerra não consegue abrir outra até o purge.** A criação da organização inicial (migration 0012) recusa o usuário cuja única membership aponta para uma organização que não está ativa, e `closed` dura até o purge (PR107). A regra de "recomeçar" é uma decisão de produto ainda não tomada (por exemplo, ignorar organizações `closed` ou posteriores nessa checagem); fica registrada aqui para não passar despercebida.
+- Sem o binding `PRIVACY_HYPERDRIVE` a varredura apenas registra `privacy_maintenance_not_configured` e segue (como a de billing): uma organização fica em `closing` depois do fim da janela, sem poder ser recuperada pelo dono (a função confere o prazo), e o purge futuro só começará depois da varredura. O runbook pede o binding; um alerta sobre esse registro entra com a observabilidade (Fase 12).
+- `organization:close` entra no conjunto de capacidades do dono e, por isso, no instantâneo das concessões offline, embora o encerramento só exista online.
+
+## Alternativas rejeitadas
+
+- **Soft delete por data (`deleted_at`) em vez de status:** mistura o estado operacional com o do ciclo de encerramento e não diz em que ponto da janela a organização está.
+- **Recuperação só pelo Admin:** o plano pede recuperação normal de 30 dias, feita pelo próprio dono; o Admin fica para casos excepcionais (privacidade, PR103).
+- **Varredura que já apaga ao fechar a janela:** o apagamento tem de passar pela retenção, pelo deletion ledger e pelo purge de arquivos (PR105 a PR107); misturar os dois aqui apagaria sem essas proteções.
+- **O servidor passar o usuário e a organização como argumentos da função:** uma função com privilégio maior confiaria no que o chamador diz; as configurações da transação só existem depois da autorização.

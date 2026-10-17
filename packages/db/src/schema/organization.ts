@@ -32,7 +32,7 @@ export const organizations = pgTable(
   (table) => [
     check(
       "organizations_status_check",
-      sql`${table.status} in ('active', 'suspended', 'closed')`
+      sql`${table.status} in ('active', 'suspended', 'closing', 'closed', 'purge_pending', 'purged')`
     ),
     check("organizations_currency_check", sql`${table.currency} = 'BRL'`),
     pgPolicy("organizations_active_tenant_select", {
