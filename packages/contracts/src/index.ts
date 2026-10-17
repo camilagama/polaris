@@ -114,6 +114,8 @@ function requireCustomerContact(
 }
 
 const customer = z.object({
+  // Set once the customer was anonymized for privacy: the record holds no personal data and cannot change.
+  anonymizedAt: z.string().datetime().nullable(),
   archivedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   email: z.string().nullable(),
@@ -1149,6 +1151,16 @@ export const polarisContract = {
       .output(z.object({ category, changed: z.boolean() })),
   },
   customer: {
+    // Irreversible: replaces the name and removes phone, e-mail and notes; sales keep their economic facts.
+    anonymizeForPrivacy: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), customer })),
     archive: oc
       .input(
         z.object({

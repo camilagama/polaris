@@ -253,7 +253,12 @@ async function applyChanges(
   );
   // Payment profiles are not a local collection yet; sales refresh the window.
   return {
-    salesChanged: changes.some((change) => change.entityType === "sale"),
+    // The recent sales carry the customer's name (the history shows it), so a change to a customer
+    // (an anonymization above all) refreshes them too, or the old name would stay on the device.
+    salesChanged: changes.some(
+      (change) =>
+        change.entityType === "sale" || change.entityType === "customer"
+    ),
   };
 }
 

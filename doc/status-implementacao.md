@@ -1421,6 +1421,22 @@ Primeiro passo da Fase 10 ([ADR 0074](../docs/adr/0074-encerramento-de-organizac
 | Revisão independente | Concluída | Sem defeito de segurança; achados tratados: janela em horas (independente do fuso), recusas casadas por SQLSTATE e mensagem (uma permissão faltando não vira recusa educada), cenários novos no gate (concessão depois do pedido, pedidos simultâneos); decisão de produto registrada no ADR: quem encerra a única organização não abre outra até o purge. |
 | Limites | Registrados | Sem tela, sem e-mail ao dono, sem export automático, cancelamento da renovação no provedor só no Gate 7 (ver ADR 0074). |
 
+### Fase 10B — Privacidade: anonimização de cliente (PR102; implementação, gate e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+
+Segundo passo da Fase 10 ([ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)): `customer.anonymizeForPrivacy` remove a pessoa do cadastro e preserva os fatos econômicos das vendas.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/customer-anonymization` sobre a `main` com o PR101 (migration 0066). |
+| Domínio | Concluído | `ANONYMIZED_CUSTOMER_NAME`, `anonymizedCustomerProfile`, `CustomerAnonymizedError`; capacidade nova `customer:anonymize`; 3 testes. |
+| Banco | Concluído | Migration 0066: coluna `anonymized_at`, CHECK que exige o formato anonimizado (nome fixo, sem contato nem observações, arquivado), CHECK de contato só para quem não foi anonimizado, gatilho que recusa qualquer alteração de uma linha anonimizada, `UPDATE` do runtime só na coluna nova. |
+| Repositório e API | Concluídos | `anonymizeCustomerForPrivacy` (capacidade própria, versão esperada, idempotente, auditoria só com IDs); editar e restaurar um anonimizado são recusados (409); `customer.anonymizeForPrivacy` no contrato; `anonymizedAt` no modelo de leitura; o comando offline `customer.update` é rejeitado como `customer_anonymized` (pendência indisponível); 3 testes de roteador. |
+| Interface | Concluída | Lista de clientes: selo "Anonimizado", sem editar nem restaurar, botão "Anonimizar" com confirmação em duas etapas (desligado sem conexão). Sem clique em navegador nesta etapa. |
+| Gate PostgreSQL 18 | Concluído | `customer-anonymization` (suítes `gate10` e `ci`): capacidade própria, versão esperada, só o cliente da própria organização; o cadastro vira o nome fixo sem telefone, email nem observações, é arquivado e a versão avança, com um evento de auditoria só com IDs; a venda, os itens, ajustes, pagamento, vínculo, movimentos de estoque e saldos ficam idênticos byte a byte; nenhum dado da pessoa sobra no cadastro, na auditoria, no log de mudanças, no log de comandos nem nas vendas; repetir não muda nada (nem arquivar com versão velha); editar e restaurar são recusados; direto no banco o runtime não consegue desfazer, recolocar dado nem alterar a linha; o banco recusa um anonimizado com nome, telefone, email ou observações, ou não arquivado; a lista mostra a marca, a busca por duplicados não o acha e uma venda não pode ser ligada a ele de novo. A suíte `ci` inteira (36 gates) e `gate2-runtime` passaram na mesma branch Neon nova (migrations 0000–0066 do zero). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (167 arquivos, 1892 testes), `build` e `db:generate` sem drift. |
+| Revisão independente | Concluída | Sem falha de integridade no banco; achados tratados: as vendas recentes guardadas no aparelho (com o nome do cliente) são atualizadas quando um cliente muda, a tela do aparelho reconhece o anonimizado pelo formato que só ele pode ter, arquivar de novo com versão velha é no-op; limites registrados no ADR (hash do log de comandos é pseudonimização, fila de edições offline). |
+| Limites | Registrados | Cópias fora do banco ativo (backups, branches, exportações, aparelhos que não sincronizaram) e texto livre em outros registros ficam para retenção e purge; sem motivo registrado até o PR103; o modelo local não guarda a marca (o servidor recusa). |
+
 ### Correções das revisões pós-merge do bot (PR #114 e PR #116)
 
 O bot revisor ([comentário no #114](https://github.com/camilagama/polaris/pull/114) e [no #116](https://github.com/camilagama/polaris/pull/116)) aprovou com ajustes. Tratados num PR à parte:

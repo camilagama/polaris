@@ -69,6 +69,7 @@ const ACCOUNT_CAUSES: Readonly<Record<string, AttentionCause>> = {
 
 const DATA_CAUSES: Readonly<Record<string, AttentionCause>> = {
   category_unavailable: "unavailable",
+  customer_anonymized: "unavailable",
   customer_id_conflict: "id_conflict",
   customer_not_found: "unavailable",
   customer_version_conflict: "version_conflict",

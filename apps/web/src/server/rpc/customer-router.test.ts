@@ -8,6 +8,7 @@ import type {
 } from "@polaris/db/tenant-transaction";
 import {
   CustomerNotFoundError,
+  CustomerAnonymizedError,
   CustomerVersionConflictError,
 } from "@polaris/domain/customers/customer";
 import { describe, expect, it, vi } from "vitest";
@@ -29,6 +30,7 @@ const identity: TenantRequestIdentity = {
 };
 
 const customerRow = {
+  anonymizedAt: null,
   archivedAt: null,
   createdAt: new Date("2026-10-10T12:00:00.000Z"),
   email: "ana@example.com",
@@ -61,6 +63,10 @@ function createRpcClient(router = createRpcRouter()) {
 
   return createORPCClient(link) as unknown as {
     customer: {
+      anonymizeForPrivacy: (input: unknown) => Promise<{
+        changed: boolean;
+        customer: CustomerReadModel;
+      }>;
       archive: (input: unknown) => Promise<{
         changed: boolean;
         customer: CustomerReadModel;
@@ -279,5 +285,111 @@ describe("customer RPCs", () => {
         organizationId,
       })
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("anonymizes with its own capability and the server-authorized organization", async () => {
+    let observedCapability = "";
+    const anonymizeCustomerForPrivacy = vi.fn(
+      async (
+        _transaction: TenantRequestTransaction,
+        authorizedIdentity: TenantRequestIdentity,
+        input: { expectedVersion: number; id: string }
+      ) => ({
+        changed: true,
+        customer: {
+          ...customerRow,
+          anonymizedAt: new Date("2026-10-17T12:00:00.000Z"),
+          archivedAt: new Date("2026-10-17T12:00:00.000Z"),
+          email: null,
+          id: input.id,
+          name: "Cliente anonimizado",
+          organizationId: authorizedIdentity.organizationId,
+          phone: null,
+          version: input.expectedVersion + 1,
+        },
+      })
+    );
+    const client = createRpcClient(
+      createRpcRouter({
+        anonymizeCustomerForPrivacy,
+        withTenantRequestContext: createTenantRequestStub((capability) => {
+          observedCapability = capability;
+        }),
+      })
+    );
+
+    await expect(
+      client.customer.anonymizeForPrivacy({
+        expectedVersion: 3,
+        id: customerRow.id,
+        organizationId: "requested-org",
+      })
+    ).resolves.toMatchObject({
+      changed: true,
+      customer: {
+        anonymizedAt: "2026-10-17T12:00:00.000Z",
+        email: null,
+        name: "Cliente anonimizado",
+        organizationId,
+        phone: null,
+        status: "archived",
+        version: 4,
+      },
+    });
+    expect(observedCapability).toBe("customer:anonymize");
+    expect(anonymizeCustomerForPrivacy).toHaveBeenCalledWith(
+      expect.anything(),
+      identity,
+      expect.objectContaining({ expectedVersion: 3, id: customerRow.id })
+    );
+  });
+
+  it("rejects anonymizing without a version or with a malformed id before anything runs", async () => {
+    const withTenantRequestContext = vi.fn();
+    const client = createRpcClient(
+      createRpcRouter({ withTenantRequestContext })
+    );
+    await expect(
+      client.customer.anonymizeForPrivacy({
+        id: customerRow.id,
+        organizationId,
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      client.customer.anonymizeForPrivacy({
+        expectedVersion: 1,
+        id: "not-a-uuid",
+        organizationId,
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it("answers a conflict when an anonymized customer is edited or restored", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        restoreCustomer: () => Promise.reject(new CustomerAnonymizedError()),
+        updateCustomer: () => Promise.reject(new CustomerAnonymizedError()),
+        withTenantRequestContext: createTenantRequestStub(),
+      })
+    );
+    await expect(
+      client.customer.restore({
+        expectedVersion: 1,
+        id: customerRow.id,
+        organizationId,
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(
+      client.customer.update({
+        email: "ana@example.com",
+        expectedVersion: 1,
+        id: customerRow.id,
+        name: "Ana Silva",
+        notes: null,
+        organizationId,
+        phone: "+5511999990000",
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

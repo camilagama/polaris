@@ -140,3 +140,54 @@ export function transitionCustomerLifecycle(
     lifecycle: target,
   };
 }
+
+/**
+ * What a customer becomes when it is anonymized for privacy (plan PR102, ADR 0075):
+ * the same record, so every sale that points to it keeps its economic facts, with
+ * no name, phone, e-mail or notes left. The text is fixed on purpose: it carries
+ * nothing of the person, and the database requires exactly this.
+ */
+export const ANONYMIZED_CUSTOMER_NAME = "Cliente anonimizado";
+
+/** The customer was anonymized: it can no longer be edited or restored (it cannot be undone). */
+export class CustomerAnonymizedError extends Error {
+  readonly code = "customer_anonymized";
+
+  constructor() {
+    super("customer_anonymized");
+    this.name = "CustomerAnonymizedError";
+  }
+}
+
+/** Whether a customer record has been anonymized. */
+export function isCustomerAnonymized(anonymizedAt: Date | null): boolean {
+  return anonymizedAt !== null;
+}
+
+/**
+ * Whether a customer record is an anonymized one, from the record alone. The database
+ * requires every customer that is NOT anonymized to have a phone or an e-mail
+ * (`customers_contact_required`), so a record with neither can only be an anonymized
+ * one. A device that keeps no `anonymized_at` uses this to show the state.
+ */
+export function hasAnonymizedShape(record: {
+  email: string | null;
+  phone: string | null;
+}): boolean {
+  return record.phone === null && record.email === null;
+}
+
+/** What replaces the person's data. Nothing from the previous values is read. */
+export function anonymizedCustomerProfile(): {
+  email: null;
+  name: string;
+  notes: null;
+  phone: null;
+} {
+  return {
+    email: null,
+    name: ANONYMIZED_CUSTOMER_NAME,
+    notes: null,
+    phone: null,
+  };
+}

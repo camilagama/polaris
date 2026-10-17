@@ -3,7 +3,10 @@ import type {
   CustomerReadModel,
   LocalCustomerReadModel,
 } from "@polaris/contracts";
-import { normalizeCustomerDuplicateSearch } from "@polaris/domain/customers/customer";
+import {
+  hasAnonymizedShape,
+  normalizeCustomerDuplicateSearch,
+} from "@polaris/domain/customers/customer";
 
 /**
  * The customers screen reading this device's collection (plan PR64). The local
@@ -17,6 +20,9 @@ export function toCustomerReadModel(
   organizationId: string
 ): CustomerReadModel {
   return {
+    // The device does not keep the moment; the database only lets an anonymized customer have no phone
+    // and no e-mail, so that shape tells it, and the last change stands in for when.
+    anonymizedAt: hasAnonymizedShape(row) ? row.updatedAt : null,
     archivedAt: row.archivedAt,
     // The device does not keep the creation date; the last change stands in for it.
     createdAt: row.updatedAt,

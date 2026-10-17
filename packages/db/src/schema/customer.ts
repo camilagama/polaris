@@ -37,6 +37,12 @@ function activeTenantScope(organizationId: AnyPgColumn) {
 export const customers = pgTable(
   "customers",
   {
+    /**
+     * Set once, when the customer is anonymized for privacy (ADR 0075): the record
+     * keeps its ID, so sales keep pointing to it, and holds no personal data.
+     * Never unset (a trigger refuses it).
+     */
+    anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -65,9 +71,22 @@ export const customers = pgTable(
       check(
         "customers_contact_required",
         sql`
-          (${table.phone} IS NOT NULL OR ${table.email} IS NOT NULL)
+          (${table.anonymizedAt} IS NOT NULL OR (${table.phone} IS NOT NULL OR ${table.email} IS NOT NULL))
           AND (${table.phone} IS NULL OR char_length(btrim(${table.phone})) >= 1)
           AND (${table.email} IS NULL OR char_length(btrim(${table.email})) >= 1)
+        `
+      ),
+      check(
+        "customers_anonymized_scrubbed",
+        sql`
+          ${table.anonymizedAt} IS NULL
+          OR (
+            ${table.name} = 'Cliente anonimizado'
+            AND ${table.phone} IS NULL
+            AND ${table.email} IS NULL
+            AND ${table.notes} IS NULL
+            AND ${table.archivedAt} IS NOT NULL
+          )
         `
       ),
       check("customers_version_positive", sql`${table.version} >= 1`),

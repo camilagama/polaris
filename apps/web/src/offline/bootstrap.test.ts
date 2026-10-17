@@ -421,6 +421,15 @@ describe("pullLocalChanges", () => {
     expect(writer.count("recentSales")).toBe(3);
   });
 
+  it("refreshes the recent sales when a customer changed, because they carry the customer's name", async () => {
+    const { server, writer } = await readyStore();
+    server.sales = [sale(2), sale(1)];
+    server.change("customer", uuid(5000));
+    await pullLocalChanges(server, writer, "0");
+    expect(server.salesCalls).toBe(1);
+    expect(writer.count("recentSales")).toBe(2);
+  });
+
   it("ignores payment profiles and does not call the server for them", async () => {
     const { server, writer } = await readyStore();
     server.change("payment_profile", uuid(5000));
