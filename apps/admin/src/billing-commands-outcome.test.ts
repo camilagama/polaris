@@ -90,7 +90,9 @@ describe("asking twice", () => {
 
 describe("asking twice, a moment apart", () => {
   const stored = {
-    expiresAt: new Date("2026-10-18T12:00:00.000Z"),
+    // asked for 24 hours at noon, so it ends the next noon
+    expiresAt: new Date("2026-10-17T12:00:00.000Z"),
+    startsAt: new Date("2026-10-16T12:00:00.000Z"),
     flagValue: null,
     grantedBy: `admin:${principalId}`,
     key: "variants.active.max",
@@ -120,6 +122,20 @@ describe("asking twice, a moment apart", () => {
     });
     // the repeat is written down like any request and ends with its outcome
     expect(p.audit).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses the same ID asked for a different length: it is not the command that was given", async () => {
+    const p = ports({ find: vi.fn(() => Promise.resolve(stored)) });
+    await expect(
+      grantEntitlementCommand(
+        p,
+        principalId,
+        caseId,
+        { ...command, hours: 720, id: callerId },
+        new Date(now.getTime() + 90_000)
+      )
+    ).rejects.toThrow("entitlement_grant_id_conflict");
+    expect(p.grant).not.toHaveBeenCalled();
   });
 
   it("refuses a different grant under the same ID, after the request was written down", async () => {

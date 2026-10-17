@@ -89,6 +89,7 @@ export interface StoredEntitlementGrant {
   limitValue: number | null;
   organizationId: string;
   reason: string;
+  startsAt: Date;
 }
 
 export interface BillingStore {
@@ -746,8 +747,9 @@ export function createBillingStore(connectionString: string): BillingStore {
         limit_value: number | null;
         organization_id: string;
         reason: string;
+        starts_at: Date;
       }>(
-        `SELECT organization_id, key, limit_value, flag_value, reason, granted_by, expires_at
+        `SELECT organization_id, key, limit_value, flag_value, reason, granted_by, starts_at, expires_at
            FROM public.entitlement_grants WHERE id = $1`,
         [id]
       );
@@ -761,6 +763,7 @@ export function createBillingStore(connectionString: string): BillingStore {
             limitValue: row.limit_value,
             organizationId: row.organization_id,
             reason: row.reason,
+            startsAt: row.starts_at,
           }
         : null;
     },

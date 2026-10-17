@@ -1427,7 +1427,7 @@ O bot revisor ([comentário no #114](https://github.com/camilagama/polaris/pull/
 
 | Achado | Tratamento |
 | --- | --- |
-| #114: repetir o mesmo `commandId` do comando de conceder virava erro (o fim "daqui a N horas" muda a cada pedido e o store compara o instante) | O comando lê a concessão do ID antes (`findEntitlementGrant`): a repetição é a mesma concessão se tudo menos o relógio confere, e um conflito é 409 `grant_id_conflict` (antes saía 500). Testes do comando e da rota; o gate `admin-suspension` cobre a leitura do store. |
+| #114: repetir o mesmo `commandId` do comando de conceder virava erro (o fim "daqui a N horas" muda a cada pedido e o store compara o instante) | O comando lê a concessão do ID antes (`findEntitlementGrant`): a repetição é a mesma concessão se tudo menos o relógio confere (a duração pedida inclusive: 1 hora e depois 720 é conflito), e um conflito é 409 `grant_id_conflict` (antes saía 500). Testes do comando e da rota; o gate `admin-suspension` cobre a leitura do store. |
 | #116: `organization_closed` fora da lista de motivos de revogação do domínio | Incluído (espelha o CHECK do banco). |
 | #116: a confirmação digitada vale só no TypeScript | Registrado nos limites do ADR 0074. |
 | #116 e #114: número de ADR que colide com o rascunho #96 | Não é deste PR: o #96 precisa ir para 0076 ou mais (0074 e 0075 estão em uso). |

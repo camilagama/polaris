@@ -534,6 +534,30 @@ async function run() {
       assert.equal(found?.grantedBy, actor);
       assert.equal(found?.reason, "Compensação");
       assert.ok(found?.expiresAt instanceof Date);
+      assert.ok(found?.startsAt instanceof Date);
+      // the length asked for is recoverable from what is stored (the Admin compares it on a repeat)
+      const lengthMs =
+        (found?.expiresAt.getTime() ?? 0) - (found?.startsAt.getTime() ?? 0);
+      assert.ok(
+        lengthMs <= 48 * 3_600_000 && lengthMs > 48 * 3_600_000 - 60_000,
+        "the grant was asked for 48 hours"
+      );
+      // the store itself compares the instant exactly, which is why the command reads the grant first
+      await assert.rejects(
+        () =>
+          store.grantEntitlement({
+            actor,
+            expiresAt: new Date(Date.now() + 49 * 3_600_000),
+            id: first.id,
+            key: "variants.active.max",
+            organizationId: orgA.organizationId,
+            reason: "Compensação",
+            value: 300,
+          }),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message === "entitlement_grant_id_conflict"
+      );
       assert.equal(
         await store.findEntitlementGrant(randomUUID()),
         null,

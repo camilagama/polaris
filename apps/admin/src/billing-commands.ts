@@ -96,10 +96,11 @@ export async function grantEntitlementCommand(
   }
   // The end of a grant is "hours from now", so a repeat a moment later asks for a different instant. The
   // caller's own ID is what makes it the same command: when that ID already holds a grant, the repeat is
-  // the same grant if everything but the clock matches, and a refusal if it is a different one.
+  // the same grant if everything but the clock matches (the length asked for included), and a refusal if it
+  // is a different one.
   const prior = command.id ? await ports.find(id) : null;
   const result = prior
-    ? repeatOf(prior, organizationId, normalized, id)
+    ? repeatOf(prior, organizationId, normalized, id, command.hours)
     : await ports.grant({ ...request, id, organizationId });
   const outcomeRecorded = await recorded(() =>
     ports.audit(
@@ -123,7 +124,8 @@ function repeatOf(
     limitValue: number | null;
     reason: string;
   },
-  id: string
+  id: string,
+  hours: number
 ): { created: false; id: string } {
   if (
     prior.organizationId !== organizationId ||
@@ -131,7 +133,9 @@ function repeatOf(
     prior.limitValue !== asked.limitValue ||
     prior.flagValue !== asked.flagValue ||
     prior.reason !== asked.reason ||
-    prior.grantedBy !== asked.actor
+    prior.grantedBy !== asked.actor ||
+    // the length asked for is part of the command; only the clock it was asked at is not
+    prior.expiresAt.getTime() - prior.startsAt.getTime() !== hours * HOUR_MS
   ) {
     throw new Error("entitlement_grant_id_conflict");
   }
