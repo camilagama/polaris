@@ -34,3 +34,13 @@ Registro retroativo das decisões do PR33 ao PR35, confirmadas na revisão do ch
 - **Bucket público com URLs assinadas ou públicas.** Simplifica a entrega e o cache de borda, mas contraria a minimização de dados e o isolamento por organização.
 - **Gerar derivados no upload.** Evita o custo na primeira leitura, mas gera variantes nunca usadas e dificulta mudar os tamanhos.
 - **Apagar o master assim que a referência falha.** Simples, porém vulnerável à corrida entre a checagem de referência e a exclusão, motivo do claim com tombstone.
+
+## Emenda (16/10/2026)
+
+Registro datado; a decisão original acima permanece como está.
+
+- **Images Hosted fica proibido.** O produto Images Hosted cobra armazenamento e entrega; a mídia continua no R2 privado, com o Images apenas para transformação.
+- **Fallback obrigatório acima da franquia de transformações.** Acima de 5.000 transformações únicas no mês, o Images Free retorna o erro 9422 e não cobra (fontes: [preços do Cloudflare Images](https://developers.cloudflare.com/images/pricing) e a descrição do 9422 no [troubleshooting do Images](https://developers.cloudflare.com/images/reference/troubleshooting/)).
+  - **Derivados (PENDENTE de implementação):** servir o master (já em WebP 1200 px) no lugar do derivado.
+  - **Upload (PENDENTE de implementação):** o upload também consome transformação e o original não pode ser gravado; no erro 9422 durante o upload, o envio é recusado com mensagem clara ao usuário e pode ser tentado no próximo ciclo.
+- **Pendência de go-live:** a cota Pro de 5.000 imagens por organização ([PRODUCT.md](../../PRODUCT.md)), com até 3 transformações por imagem, pode esgotar a franquia mensal de transformações com um único cliente; decidir antes do go-live, junto com o checklist de go-live (`docs/runbooks`).
