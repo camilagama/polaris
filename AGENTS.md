@@ -39,6 +39,7 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - Usar migrations revisadas e reproduzíveis. Não usar schema push como processo de migration de produção.
 - Manter query caching SQL do Hyperdrive desabilitado para dados tenant/Admin; o gate RLS remoto precisa provar contexto transacional e reuso de conexão.
 - Para qualquer acesso via CLI Cloudflare ou Neon, siga [CLI profile policy](./docs/runbooks/cli-profile-policy.md). Não execute o CLI se não puder confirmar o perfil e a identidade permitidos; não use o plugin Neon conectado.
+- Gates de PostgreSQL em Neon: por pull request, só o gate novo e os dos objetos tocados, numa branch reaproveitada e apagada logo depois; a suíte completa uma vez por fase e antes de liberação (o CI roda todos a cada PR). Ver a emenda do [ADR 0025](./docs/adr/0025-estrategia-de-testes-de-banco.md) e o [runbook do Gate 4](./docs/runbooks/gate-4-sales-core.md).
 - Provisionar ou alterar recursos de produção, fazer deploy, processar pagamentos reais ou apagar dados de produção somente quando o usuário pedir explicitamente.
 
 ## Verificação
