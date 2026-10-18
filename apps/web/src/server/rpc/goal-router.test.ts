@@ -8,6 +8,7 @@ import type {
 import {
   GoalNotActiveError,
   GoalNotFoundError,
+  GoalPausedByPlanError,
   GoalVersionConflictError,
   InvalidGoalError,
 } from "@polaris/domain/goals/goal";
@@ -140,13 +141,21 @@ describe("goal RPCs", () => {
     ]);
     const result = await client(
       createRpcRouter({
-        goalRepository: { evaluateActiveGoals, listGoals, settleGoals },
+        goalRepository: {
+          evaluateActiveGoals,
+          listGoals,
+          // the second goal is the one the plan pauses
+          listPausedGoalIds: () =>
+            Promise.resolve(["0199c2d0-0000-7000-8000-0000000000a2"]),
+          settleGoals,
+        },
         withTenantRequestContext: tenantStub((input) => calls.push(input)),
       })
     ).goal.list({ organizationId });
 
     expect(calls).toEqual([
       { capability: "goal:manage", isolationLevel: "repeatable read" },
+      { capability: "goal:manage" },
       { capability: "goal:manage" },
       { capability: "goal:manage" },
     ]);
@@ -162,9 +171,11 @@ describe("goal RPCs", () => {
     const [done, running] = result.goals;
     expect(done).toMatchObject({
       achievedValue: "1125.00",
+      paused: false,
       progress: null,
       status: "completed",
     });
+    expect(running).toMatchObject({ paused: true });
     expect(running).toMatchObject({
       progress: {
         percent: "10.0",
@@ -250,6 +261,7 @@ describe("goal RPCs", () => {
     ["an invalid goal", new InvalidGoalError(), "BAD_REQUEST"],
     ["a stale version", new GoalVersionConflictError(), "CONFLICT"],
     ["a goal that is no longer active", new GoalNotActiveError(), "CONFLICT"],
+    ["a goal the plan pauses", new GoalPausedByPlanError(), "CONFLICT"],
     ["a missing goal", new GoalNotFoundError(), "NOT_FOUND"],
   ])("maps %s to a safe RPC error", async (_label, error, code) => {
     await expect(

@@ -46,6 +46,7 @@ function customer(
   status: "active" | "archived" = "active"
 ): CustomerReadModel {
   return {
+    anonymizedAt: null,
     archivedAt: status === "archived" ? "2026-02-01T00:00:00.000Z" : null,
     createdAt: "2026-01-01T00:00:00.000Z",
     email: `${name.toLowerCase()}@example.com`,

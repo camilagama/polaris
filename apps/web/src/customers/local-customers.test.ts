@@ -46,6 +46,19 @@ describe("local customers", () => {
     );
   });
 
+  it("shows an anonymized customer as one: it is the only record with no phone and no e-mail", () => {
+    const anonymized = toCustomerReadModel(
+      row(7, { archivedAt: AT, name: "Cliente anonimizado" }),
+      ORG
+    );
+    expect(anonymized.anonymizedAt).toBe(AT);
+    const ordinary = toCustomerReadModel(
+      row(8, { email: "a@b.com", archivedAt: AT }),
+      ORG
+    );
+    expect(ordinary.anonymizedAt).toBeNull();
+  });
+
   it("lists one state by name, then ID, accents and case aside", () => {
     const rows = [
       row(1, { name: "Zeca" }),

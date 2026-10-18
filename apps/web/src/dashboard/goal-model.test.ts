@@ -31,6 +31,7 @@ function goal(overrides: Partial<GoalReadModel> = {}): GoalReadModel {
     kind: "net_sales",
     name: null,
     organizationId: "org-1",
+    paused: false,
     progress: null,
     settledAt: null,
     startsOn: "2026-10-01",

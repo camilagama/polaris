@@ -8,6 +8,7 @@ export type NavId =
   | "inventory"
   | "payment-profiles"
   | "products"
+  | "public-catalog"
   | "sale";
 
 export type RouteId =
@@ -20,6 +21,7 @@ export type RouteId =
   | "inventory"
   | "payment-profiles"
   | "products"
+  | "public-catalog"
   | "sale"
   | "sale-customer"
   | "sale-detail"
@@ -46,6 +48,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     id: "payment-profiles",
     label: "Perfis de pagamento",
   },
+  { href: "/public-catalog", id: "public-catalog", label: "Catálogo público" },
 ];
 
 /**
@@ -86,6 +89,11 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
     title: "Perfis de pagamento",
   },
   "/products": { id: "products", navId: "products", title: "Produtos" },
+  "/public-catalog": {
+    id: "public-catalog",
+    navId: "public-catalog",
+    title: "Catálogo público",
+  },
   "/sales": { id: "sale", navId: "sale", title: "Nova venda" },
   "/sales/customer": {
     id: "sale-customer",

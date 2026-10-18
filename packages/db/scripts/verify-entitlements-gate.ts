@@ -5,10 +5,20 @@ import {
   EntitlementLimitReachedError,
 } from "@polaris/domain/billing/entitlements";
 import { EntitlementVariantLockedError } from "@polaris/domain/billing/operational-selection";
-import { GoalLimitReachedError } from "@polaris/domain/goals/goal";
+import {
+  GoalLimitReachedError,
+  GoalPausedByPlanError,
+} from "@polaris/domain/goals/goal";
 import { createDatabase } from "../src/client";
 import { registerDevice } from "../src/device-repository";
-import { cancelGoal, createGoal } from "../src/goal-repository";
+import {
+  cancelGoal,
+  createGoal,
+  evaluateActiveGoals,
+  listPausedGoalIds,
+  updateGoal,
+} from "../src/goal-repository";
+import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import {
   type CreateProductMediaAssetInput,
   createProductMediaAsset,
@@ -174,8 +184,8 @@ async function run() {
       value: number | boolean
     ) =>
       admin.pool.query(
-        `INSERT INTO public.entitlement_grants (organization_id, key, ${typeof value === "number" ? "limit_value" : "flag_value"}, reason, expires_at)
-         VALUES ($1, $2, $3, 'gate', now() + interval '1 day')`,
+        `INSERT INTO public.entitlement_grants (organization_id, key, ${typeof value === "number" ? "limit_value" : "flag_value"}, reason, granted_by, expires_at)
+         VALUES ($1, $2, $3, 'gate', 'gate', now() + interval '1 day')`,
         [tenant.organizationId, key, value]
       );
     const newProduct = (tenant: TenantFixture) =>
@@ -470,6 +480,139 @@ async function run() {
     );
     tests.push(
       "Free has 1 active goal (cancelling frees it), Pro has 3, a grant raises it, and the technical ceiling of 20 still holds"
+    );
+
+    // ------------------------------- 6b. goals above the limit after a downgrade are paused
+    const goalsDown = await createTenantFixture(
+      admin.pool,
+      "entitlements goals downgrade"
+    );
+    const g1 = await newGoal(goalsDown);
+    const g2 = await newGoal(goalsDown);
+    const g3 = await newGoal(goalsDown);
+    const pausedIds = () =>
+      as(goalsDown, "goal:manage", (tx, identity) =>
+        listPausedGoalIds(tx, identity)
+      );
+    assert.deepEqual(await pausedIds(), [], "nothing is paused on Pro");
+    await admin.pool.query(
+      "UPDATE public.organization_billing SET state = 'free_over_limit', access_ends_at = NULL WHERE organization_id = $1",
+      [goalsDown.organizationId]
+    );
+    assert.deepEqual(
+      [...(await pausedIds())].sort(),
+      [g2.id, g3.id].sort(),
+      "after a downgrade the oldest goal keeps running and the newer ones are paused"
+    );
+    await expectRejects(
+      () =>
+        as(goalsDown, "goal:manage", (tx, identity) =>
+          updateGoal(tx, identity, {
+            expectedVersion: g2.version,
+            id: g2.id,
+            requestId: randomUUID(),
+            target: "20",
+          })
+        ),
+      GoalPausedByPlanError,
+      "a paused goal cannot be edited"
+    );
+    const edited = await as(goalsDown, "goal:manage", (tx, identity) =>
+      updateGoal(tx, identity, {
+        expectedVersion: g1.version,
+        id: g1.id,
+        requestId: randomUUID(),
+        target: "20",
+      })
+    );
+    assert.equal(edited.changed, true, "the goal that runs can be edited");
+    const measured = await withAuthorizedTenantTransaction(
+      db,
+      {
+        authenticatedUserId: goalsDown.userId,
+        capability: "goal:manage",
+        isolationLevel: "repeatable read",
+        requestedOrganizationId: goalsDown.organizationId,
+      },
+      (tx, identity) => evaluateActiveGoals(tx, identity)
+    );
+    assert.deepEqual(
+      measured.map((entry) => entry.goalId),
+      [g1.id],
+      "a paused goal is not measured"
+    );
+    await as(goalsDown, "goal:manage", (tx, identity) =>
+      cancelGoal(tx, identity, {
+        expectedVersion: g3.version,
+        id: g3.id,
+        requestId: randomUUID(),
+      })
+    );
+    assert.deepEqual(
+      await pausedIds(),
+      [g2.id],
+      "a paused goal can be cancelled, and the rest stays as it was"
+    );
+    await as(goalsDown, "goal:manage", (tx, identity) =>
+      cancelGoal(tx, identity, {
+        expectedVersion: edited.goal.version,
+        id: g1.id,
+        requestId: randomUUID(),
+      })
+    );
+    assert.deepEqual(
+      await pausedIds(),
+      [],
+      "cancelling the goal that ran lets the next one run again: pausing is derived, never stored"
+    );
+    tests.push(
+      "after a downgrade the oldest active goals keep running up to the Free limit and the newer ones are paused (not measured, not editable, still cancellable), and cancelling one moves the next in"
+    );
+
+    // a goal whose period ended takes no place and is settled by the read itself
+    const goalsEnded = await createTenantFixture(
+      admin.pool,
+      "entitlements goals ended"
+    );
+    await admin.pool.query(
+      `INSERT INTO public.goals (organization_id, kind, name, starts_on, ends_on, target, created_at)
+       VALUES ($1, 'sale_count', NULL, ($2::date - 10), ($2::date - 3), 10, now() - interval '1 day')`,
+      [goalsEnded.organizationId, today]
+    );
+    const running = await newGoal(goalsEnded);
+    await admin.pool.query(
+      "UPDATE public.organization_billing SET state = 'free_over_limit', access_ends_at = NULL WHERE organization_id = $1",
+      [goalsEnded.organizationId]
+    );
+    const pausedWithEnded = await as(
+      goalsEnded,
+      "goal:manage",
+      (tx, identity) => listPausedGoalIds(tx, identity)
+    );
+    assert.deepEqual(
+      pausedWithEnded,
+      [],
+      "the ended goal takes no place: the one in progress keeps running"
+    );
+    const measuredEnded = await withAuthorizedTenantTransaction(
+      db,
+      {
+        authenticatedUserId: goalsEnded.userId,
+        capability: "goal:manage",
+        isolationLevel: "repeatable read",
+        requestedOrganizationId: goalsEnded.organizationId,
+      },
+      (tx, identity) => evaluateActiveGoals(tx, identity)
+    );
+    assert.equal(measuredEnded.length, 2, "both are evaluated");
+    assert.ok(
+      measuredEnded.some(
+        (entry) => entry.goalId !== running.id && entry.settlement === "missed"
+      ),
+      "the ended goal is settled as missed"
+    );
+    tests.push(
+      "a goal whose period ended takes no place under a lowered limit and is settled by the read, so the goal in progress is never paused in its place"
     );
 
     // ------------------------------------------------------- 7. offline writes

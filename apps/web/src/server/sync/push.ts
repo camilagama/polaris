@@ -11,9 +11,10 @@ import type {
   TenantRequestTransaction,
 } from "@polaris/db/tenant-transaction";
 import { InvalidOfflineLeaseError } from "@polaris/domain/offline/offline-lease";
-import { canonicalJson, sha256Hex } from "../../lib/canonical-json";
+import { canonicalJson } from "../../lib/canonical-json";
 import { verifyOfflineLease } from "../../lib/offline-lease-token";
 import type { OfflineLeaseKeys } from "../offline-lease-service";
+import { commandPayloadHashes, type SyncPayloadHashKeys } from "./payload-hash";
 
 /**
  * The server side of `sync.push` (plan PR53): turns a batch of queued commands
@@ -82,6 +83,8 @@ export const PUSH_REJECTION = {
 
 export interface PushDependencies {
   handlers: readonly SyncCommandHandler[];
+  /** The secrets of the content hash stored in `sync_commands` (ADR 0079). */
+  hashKeys: SyncPayloadHashKeys;
   keys: OfflineLeaseKeys;
   now: () => Date;
   runSyncCommand: typeof runSyncCommand;
@@ -159,14 +162,15 @@ async function pushOne(
 
   // An oversized payload is not canonicalized (that is the unbounded work): its
   // identity for the stored rejection is its length.
-  const payloadHash = await sha256Hex(
+  const hashes = await commandPayloadHashes(
     oversized
       ? `oversized:${command.type}:${payloadLength(command.payload)}`
       : canonicalJson({
           baseVersion: command.baseVersion,
           payload: command.payload,
           type: command.type,
-        })
+        }),
+    dependencies.hashKeys
   );
   const outcome = await dependencies.withTenant((transaction, identity) =>
     dependencies.runSyncCommand(
@@ -177,9 +181,10 @@ async function pushOne(
         commandType: command.type,
         createdAt: new Date(command.createdAt),
         deviceId: command.deviceId,
+        equivalentPayloadHashes: hashes.equivalent,
         leaseClaims,
         now: dependencies.now(),
-        payloadHash,
+        payloadHash: hashes.stored,
         precheckFailure,
       },
       (savepoint) => {

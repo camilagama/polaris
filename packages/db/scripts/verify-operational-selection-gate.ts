@@ -754,7 +754,7 @@ async function run() {
       [o6.organizationId]
     );
     await admin.pool.query(
-      "INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, expires_at) VALUES ($1, 'variants.active.max', 53, 'gate', now() + interval '1 day')",
+      "INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, expires_at) VALUES ($1, 'variants.active.max', 53, 'gate', 'gate', now() + interval '1 day')",
       [o6.organizationId]
     );
     await downgrade(o6, 8);
@@ -763,7 +763,7 @@ async function run() {
     assert.equal(raised.limit, 53);
     assert.equal(raised.selectedVariantIds.length, 53);
     await admin.pool.query(
-      "UPDATE public.entitlement_grants SET expires_at = now() - interval '1 minute' WHERE organization_id = $1",
+      "UPDATE public.entitlement_grants SET starts_at = now() - interval '2 days', expires_at = now() - interval '1 minute' WHERE organization_id = $1",
       [o6.organizationId]
     );
     const lapsed = await model(o6);

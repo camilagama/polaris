@@ -179,6 +179,7 @@
 
 .customer-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1.2rem;
@@ -316,4 +317,19 @@
   border-color: var(--ui-danger);
   color: var(--ui-danger-strong);
   background: var(--ui-danger-soft);
+}
+
+.customer-anonymize-confirm {
+  border: 0;
+  border-top: 1px solid var(--color-border, rgb(0 0 0 / 12%));
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  flex: 1 1 100%;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.customer-anonymize-confirm p {
+  margin: 0;
 }

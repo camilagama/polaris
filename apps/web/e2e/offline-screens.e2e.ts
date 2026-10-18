@@ -170,7 +170,7 @@ test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o 
   ).toBeEnabled();
 });
 
-test("sem rede, arquivar e restaurar seguem bloqueados, mas editar não", async ({
+test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar não", async ({
   page,
 }) => {
   await openLab(page, `user-${crypto.randomUUID()}`);
@@ -184,8 +184,11 @@ test("sem rede, arquivar e restaurar seguem bloqueados, mas editar não", async 
   await expect(
     page.getByRole("button", { name: "Arquivar cliente Gil Alves" })
   ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Anonimizar cliente Gil Alves" })
+  ).toBeDisabled();
   await expect(card(page, "Gil Alves")).toContainText(
-    "Arquivar e restaurar precisam de conexão."
+    "Arquivar, restaurar e anonimizar precisam de conexão."
   );
 });
 

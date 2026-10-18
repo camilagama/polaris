@@ -174,7 +174,6 @@ async function run() {
         "DELETE FROM public.organization_billing",
         "UPDATE public.organization_billing SET created_at = now()",
         "UPDATE public.billing_events SET fact = '{}'::jsonb",
-        "SELECT 1 FROM public.entitlement_grants",
         "SELECT 1 FROM public.plan_entitlements",
         "SELECT 1 FROM public.product_variants",
         "SELECT 1 FROM public.product_media",
@@ -796,6 +795,564 @@ async function run() {
     );
     tests.push(
       "a payment delayed behind a later cancellation extends the access without undoing it, a new subscription replaces one that is not live (never a live one), a fact from another subscription changes nothing, a future-dated fact does not make later ones stale, a late sweep gives the same grace, and retries wait longer after each failure"
+    );
+
+    // ------------------------- 12. refunds and chargebacks (PR84)
+    const taken = (
+      type: "charge_disputed" | "charge_refunded" | "dispute_reversed",
+      occurredAt: Date,
+      periodEndsAt: Date
+    ): BillingFact => ({ occurredAt, periodEndsAt, type });
+    const subscribed = async (
+      label: string,
+      ref: string,
+      charge: BillingFact
+    ) => {
+      const tenant = await newTenant(label);
+      await billing.attachProvider(tenant.organizationId, "fake", ref);
+      await apply("fake", `evt-${ref}-1`, charge, { providerRef: ref }, at(0));
+      return tenant;
+    };
+
+    // a full refund of the current period takes the access back at once
+    const refundTenant = await subscribed(
+      "lifecycle refund",
+      "sub_R1",
+      succeeded(at(0), at(30), 6)
+    );
+    const refund = await apply(
+      "fake",
+      "evt-R1-refund",
+      taken("charge_refunded", at(2), at(30)),
+      { providerRef: "sub_R1" },
+      at(2)
+    );
+    assert.equal(refund.status, "applied");
+    let refundRecord = await billing.readRecord(refundTenant.organizationId);
+    assert.equal(refundRecord?.state, "free");
+    assert.equal(refundRecord?.accessEndsAt, null);
+    assert.equal(refundRecord?.revoked?.reason, "refund");
+    assert.equal(refundRecord?.revoked?.cycleMonths, 6);
+    assert.equal(
+      refundRecord?.revoked?.periodEndsAt.getTime(),
+      at(30).getTime()
+    );
+    assert.deepEqual(
+      (await eventRows(refundTenant)).map((row) => [
+        row.fact_type,
+        row.status,
+        row.state_after,
+      ]),
+      [
+        ["charge_succeeded", "applied", "active"],
+        ["charge_refunded", "applied", "free"],
+      ]
+    );
+    // a redelivery is one row and one effect
+    const refundAgain = await event(
+      "fake",
+      "evt-R1-refund",
+      taken("charge_refunded", at(2), at(30)),
+      { providerRef: "sub_R1" }
+    );
+    assert.equal(refundAgain.duplicate, true);
+    // a second refund event for a record that has no paid period is not applicable
+    const refundRepeat = await apply(
+      "fake",
+      "evt-R1-refund-2",
+      taken("charge_refunded", at(3), at(30)),
+      { providerRef: "sub_R1" },
+      at(3)
+    );
+    assert.equal(refundRepeat.outcomeCode, "not_applicable");
+    // the refunded payment's own late confirmation never brings the access back
+    const lateConfirmation = await apply(
+      "fake",
+      "evt-R1-late",
+      succeeded(at(0), at(30), 6),
+      { providerRef: "sub_R1" },
+      at(4)
+    );
+    assert.equal(lateConfirmation.status, "ignored");
+    assert.equal(
+      (await billing.readRecord(refundTenant.organizationId))?.state,
+      "free"
+    );
+    // a later payment is a new period: access returns and what was taken back is forgotten
+    const payAgain = await apply(
+      "fake",
+      "evt-R1-again",
+      succeeded(at(5), at(35)),
+      { providerRef: "sub_R1" },
+      at(5)
+    );
+    assert.equal(payAgain.status, "applied");
+    refundRecord = await billing.readRecord(refundTenant.organizationId);
+    assert.equal(refundRecord?.state, "active");
+    assert.equal(refundRecord?.revoked, null);
+    tests.push(
+      "a full refund of the current period ends the paid access at once and is remembered, a redelivery is one effect, a repeat is not applicable, the refunded payment's own late confirmation never revives the access, and a later payment does and forgets it"
+    );
+
+    // an earlier period's refund changes nothing; money facts are never stale
+    const renewal = await subscribed(
+      "lifecycle refund old",
+      "sub_R2",
+      succeeded(at(0), at(30))
+    );
+    await apply(
+      "fake",
+      "evt-R2-renew",
+      succeeded(at(30), at(60)),
+      { providerRef: "sub_R2" },
+      at(30)
+    );
+    const oldRefund = await apply(
+      "fake",
+      "evt-R2-old",
+      taken("charge_refunded", at(31), at(30)),
+      { providerRef: "sub_R2" },
+      at(31)
+    );
+    assert.equal(oldRefund.outcomeCode, "not_applicable");
+    assert.equal(
+      (await billing.readRecord(renewal.organizationId))?.state,
+      "active"
+    );
+    const behind = await subscribed(
+      "lifecycle refund stale",
+      "sub_R3",
+      succeeded(at(0), at(30))
+    );
+    await apply(
+      "fake",
+      "evt-R3-cancel",
+      { occurredAt: at(10), type: "subscription_cancelled" },
+      { providerRef: "sub_R3" },
+      at(10)
+    );
+    const delayedRefund = await apply(
+      "fake",
+      "evt-R3-refund",
+      taken("charge_refunded", at(5), at(30)),
+      { providerRef: "sub_R3" },
+      at(12)
+    );
+    assert.equal(
+      delayedRefund.status,
+      "applied",
+      "a refund that arrives late still counts"
+    );
+    assert.equal(
+      (await billing.readRecord(behind.organizationId))?.state,
+      "free"
+    );
+    tests.push(
+      "a refund of an earlier period than the one in force changes nothing, and a refund delivered behind a newer fact still takes the access back"
+    );
+
+    // a chargeback is immediate (in grace too) and a reversal restores it
+    const chargeback = await subscribed(
+      "lifecycle chargeback",
+      "sub_C1",
+      succeeded(at(0), at(30), 6)
+    );
+    await apply(
+      "fake",
+      "evt-C1-dispute",
+      taken("charge_disputed", at(2), at(30)),
+      { providerRef: "sub_C1" },
+      at(2)
+    );
+    let chargebackRecord = await billing.readRecord(chargeback.organizationId);
+    assert.equal(chargebackRecord?.state, "free");
+    assert.equal(chargebackRecord?.revoked?.reason, "chargeback");
+    const reversal = await apply(
+      "fake",
+      "evt-C1-won",
+      taken("dispute_reversed", at(4), at(30)),
+      { providerRef: "sub_C1" },
+      at(4)
+    );
+    assert.equal(reversal.status, "applied");
+    chargebackRecord = await billing.readRecord(chargeback.organizationId);
+    assert.equal(chargebackRecord?.state, "active");
+    assert.equal(chargebackRecord?.accessEndsAt?.getTime(), at(30).getTime());
+    assert.equal(chargebackRecord?.cycleMonths, 6, "the cycle it had");
+    assert.equal(chargebackRecord?.revoked, null);
+    assert.deepEqual(
+      (await eventRows(chargeback)).map((row) => [
+        row.fact_type,
+        row.state_after,
+      ]),
+      [
+        ["charge_succeeded", "active"],
+        ["charge_disputed", "free"],
+        ["dispute_reversed", "active"],
+      ]
+    );
+    // time then runs as it does for any subscription: unpaid at the end, it goes into grace
+    const sweptAgain = await billing.sweepDue(at(31));
+    assert.ok(sweptAgain.transitioned >= 1);
+    assert.equal(
+      (await billing.readRecord(chargeback.organizationId))?.state,
+      "grace"
+    );
+
+    const graceDispute = await subscribed(
+      "lifecycle chargeback grace",
+      "sub_C2",
+      succeeded(at(0), at(30))
+    );
+    await apply(
+      "fake",
+      "evt-C2-fail",
+      { occurredAt: at(30), type: "charge_failed" },
+      { providerRef: "sub_C2" },
+      at(30)
+    );
+    assert.equal(
+      (await billing.readRecord(graceDispute.organizationId))?.state,
+      "grace"
+    );
+    await apply(
+      "fake",
+      "evt-C2-dispute",
+      taken("charge_disputed", at(31), at(30)),
+      { providerRef: "sub_C2" },
+      at(31)
+    );
+    assert.equal(
+      (await billing.readRecord(graceDispute.organizationId))?.state,
+      "free",
+      "no grace after a chargeback"
+    );
+    // won after the period is over: nothing to restore, the chargeback is only forgotten
+    const lateWin = await apply(
+      "fake",
+      "evt-C2-won",
+      taken("dispute_reversed", at(40), at(30)),
+      { providerRef: "sub_C2" },
+      at(40)
+    );
+    assert.equal(lateWin.status, "applied");
+    const lateWinRecord = await billing.readRecord(graceDispute.organizationId);
+    assert.equal(lateWinRecord?.state, "free");
+    assert.equal(lateWinRecord?.revoked, null);
+    // a reversal that has no chargeback on record is not applicable
+    const orphan = await apply(
+      "fake",
+      "evt-C2-orphan",
+      taken("dispute_reversed", at(41), at(30)),
+      { providerRef: "sub_C2" },
+      at(41)
+    );
+    assert.equal(orphan.outcomeCode, "not_applicable");
+    tests.push(
+      "a chargeback ends the access at once, in grace too, a reversal restores it with its end and cycle (and time then runs as usual), one decided after the period is over only forgets it, and a reversal with no chargeback on record is not applicable"
+    );
+
+    // out of order and awkward deliveries
+    const attachedFree = async (label: string, ref: string) => {
+      const tenant = await newTenant(label);
+      await billing.attachProvider(tenant.organizationId, "fake", ref);
+      return tenant;
+    };
+    // a refund that arrives before its charge is confirmed is remembered
+    const early = await attachedFree("lifecycle early refund", "sub_E1");
+    const earlyRefund = await apply(
+      "fake",
+      "evt-E1-refund",
+      taken("charge_refunded", at(1), at(30)),
+      { providerRef: "sub_E1" },
+      at(1)
+    );
+    assert.equal(earlyRefund.status, "applied");
+    const earlyRecord = await billing.readRecord(early.organizationId);
+    assert.equal(earlyRecord?.state, "free");
+    assert.equal(earlyRecord?.revoked?.reason, "refund");
+    const earlyCharge = await apply(
+      "fake",
+      "evt-E1-charge",
+      succeeded(at(0), at(30)),
+      { providerRef: "sub_E1" },
+      at(2)
+    );
+    assert.equal(earlyCharge.status, "ignored");
+    assert.equal(
+      (await billing.readRecord(early.organizationId))?.state,
+      "free"
+    );
+
+    // the same on a trial: the trial runs, and the first charge cannot convert it
+    const trialRefund = await attachedFree("lifecycle trial refund", "sub_E2");
+    await apply(
+      "fake",
+      "evt-E2-ready",
+      { cycleMonths: 1, occurredAt: at(0), type: "trial_method_ready" },
+      { providerRef: "sub_E2" },
+      at(0)
+    );
+    await apply(
+      "fake",
+      "evt-E2-refund",
+      taken("charge_refunded", at(2), at(30)),
+      { providerRef: "sub_E2" },
+      at(2)
+    );
+    const trialRecord = await billing.readRecord(trialRefund.organizationId);
+    assert.equal(trialRecord?.state, "trialing");
+    assert.equal(trialRecord?.revoked?.reason, "refund");
+    const trialCharge = await apply(
+      "fake",
+      "evt-E2-charge",
+      succeeded(at(7), at(30)),
+      { providerRef: "sub_E2" },
+      at(7)
+    );
+    assert.equal(trialCharge.status, "ignored");
+    assert.equal(
+      (await billing.readRecord(trialRefund.organizationId))?.state,
+      "trialing"
+    );
+    const converts = await apply(
+      "fake",
+      "evt-E2-charge-2",
+      succeeded(at(8), at(60)),
+      { providerRef: "sub_E2" },
+      at(8)
+    );
+    assert.equal(converts.status, "applied");
+    const converted2 = await billing.readRecord(trialRefund.organizationId);
+    assert.equal(converted2?.state, "active");
+    assert.equal(converted2?.revoked, null);
+
+    // a reversal that overtakes its chargeback: the chargeback then changes nothing
+    const won = await attachedFree("lifecycle won first", "sub_E3");
+    await apply(
+      "fake",
+      "evt-E3-won",
+      taken("dispute_reversed", at(1), at(30)),
+      { providerRef: "sub_E3" },
+      at(1)
+    );
+    assert.equal(
+      (await billing.readRecord(won.organizationId))?.revoked?.reason,
+      "won"
+    );
+    const lateDispute = await apply(
+      "fake",
+      "evt-E3-dispute",
+      taken("charge_disputed", at(0), at(30)),
+      { providerRef: "sub_E3" },
+      at(2)
+    );
+    assert.equal(lateDispute.status, "ignored");
+    // a payment for that period is still welcome
+    await apply(
+      "fake",
+      "evt-E3-charge",
+      succeeded(at(2), at(30)),
+      { providerRef: "sub_E3" },
+      at(2)
+    );
+    const wonRecord = await billing.readRecord(won.organizationId);
+    assert.equal(wonRecord?.state, "active");
+    // a win is kept: it only ever blocks a chargeback for that exact period
+    assert.equal(wonRecord?.revoked?.reason, "won");
+
+    // a refund after a chargeback: the reversal then restores nothing
+    const both = await subscribed(
+      "lifecycle both",
+      "sub_E4",
+      succeeded(at(0), at(30))
+    );
+    await apply(
+      "fake",
+      "evt-E4-dispute",
+      taken("charge_disputed", at(1), at(30)),
+      { providerRef: "sub_E4" },
+      at(1)
+    );
+    await apply(
+      "fake",
+      "evt-E4-refund",
+      taken("charge_refunded", at(2), at(30)),
+      { providerRef: "sub_E4" },
+      at(2)
+    );
+    assert.equal(
+      (await billing.readRecord(both.organizationId))?.revoked?.reason,
+      "refund"
+    );
+    const noRestore = await apply(
+      "fake",
+      "evt-E4-won",
+      taken("dispute_reversed", at(5), at(30)),
+      { providerRef: "sub_E4" },
+      at(5)
+    );
+    assert.equal(noRestore.outcomeCode, "not_applicable");
+    assert.equal(
+      (await billing.readRecord(both.organizationId))?.state,
+      "free"
+    );
+
+    // a new checkout does not inherit a payment taken back on the old subscription
+    const recheckout = await subscribed(
+      "lifecycle recheckout",
+      "sub_E5",
+      succeeded(at(0), at(300), 12)
+    );
+    await apply(
+      "fake",
+      "evt-E5-refund",
+      taken("charge_refunded", at(1), at(300)),
+      { providerRef: "sub_E5" },
+      at(1)
+    );
+    assert.equal(
+      (await billing.readRecord(recheckout.organizationId))?.revoked?.reason,
+      "refund"
+    );
+    await billing.attachProvider(recheckout.organizationId, "fake", "sub_E5b");
+    assert.equal(
+      (await billing.readRecord(recheckout.organizationId))?.revoked,
+      null,
+      "a new subscription reference starts clean"
+    );
+    const monthly = await apply(
+      "fake",
+      "evt-E5b-charge",
+      succeeded(at(2), at(32)),
+      { providerRef: "sub_E5b" },
+      at(2)
+    );
+    assert.equal(
+      monthly.status,
+      "applied",
+      "the monthly payment grants access"
+    );
+    // a reversal that overtakes its chargeback on an ACTIVE subscription
+    const activeWon = await subscribed(
+      "lifecycle won on active",
+      "sub_W1",
+      succeeded(at(0), at(30), 6)
+    );
+    const wonFirst = await apply(
+      "fake",
+      "evt-W1-won",
+      taken("dispute_reversed", at(1), at(30)),
+      { providerRef: "sub_W1" },
+      at(1)
+    );
+    assert.equal(wonFirst.status, "applied");
+    const wonActive = await billing.readRecord(activeWon.organizationId);
+    assert.equal(wonActive?.state, "active", "the access is untouched");
+    assert.equal(wonActive?.revoked?.reason, "won");
+    const disputeAfterWin = await apply(
+      "fake",
+      "evt-W1-dispute",
+      taken("charge_disputed", at(0), at(30)),
+      { providerRef: "sub_W1" },
+      at(2)
+    );
+    assert.equal(disputeAfterWin.status, "ignored");
+    assert.equal(
+      (await billing.readRecord(activeWon.organizationId))?.state,
+      "active",
+      "the chargeback that arrives after its own reversal changes nothing"
+    );
+
+    // a chargeback before its charge was known: the cycle is learned from the refused confirmation
+    const unknownCycle = await attachedFree(
+      "lifecycle cycle learned",
+      "sub_W2"
+    );
+    await apply(
+      "fake",
+      "evt-W2-dispute",
+      taken("charge_disputed", at(1), at(30)),
+      { providerRef: "sub_W2" },
+      at(1)
+    );
+    assert.equal(
+      (await billing.readRecord(unknownCycle.organizationId))?.revoked
+        ?.cycleMonths,
+      null
+    );
+    await apply(
+      "fake",
+      "evt-W2-charge",
+      succeeded(at(0), at(30), 6),
+      { providerRef: "sub_W2" },
+      at(2)
+    );
+    const learned = await billing.readRecord(unknownCycle.organizationId);
+    assert.equal(learned?.state, "free", "the confirmation does not grant it");
+    assert.equal(learned?.revoked?.cycleMonths, 6, "but it tells the cycle");
+    await apply(
+      "fake",
+      "evt-W2-won",
+      taken("dispute_reversed", at(3), at(30)),
+      { providerRef: "sub_W2" },
+      at(3)
+    );
+    const restoredCycle = await billing.readRecord(unknownCycle.organizationId);
+    assert.equal(restoredCycle?.state, "active");
+    assert.equal(
+      restoredCycle?.cycleMonths,
+      6,
+      "restored with the cycle it was paid for"
+    );
+    assert.equal(restoredCycle?.accessEndsAt?.getTime(), at(30).getTime());
+
+    // the database refuses what the domain never produces: a refund or chargeback remembered on a paid period
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          "UPDATE public.organization_billing SET revoked_through = now() + interval '5 days', revoked_reason = 'refund' WHERE organization_id = $1",
+          [activeWon.organizationId]
+        ),
+      "23514",
+      "a refund cannot be remembered on an active subscription",
+      "organization_billing_revoked_coherent"
+    );
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          "UPDATE public.organization_billing SET revoked_reason = 'chargeback' WHERE organization_id = $1",
+          [activeWon.organizationId]
+        ),
+      "23514",
+      "a won chargeback cannot be turned into a chargeback while the subscription is active",
+      "organization_billing_revoked_coherent"
+    );
+    // a won chargeback carries no cycle and no cancellation, whoever writes it
+    for (const change of [
+      "revoked_cycle_months = 6",
+      "revoked_cancel_at_period_end = true",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Two probes, in order.
+      await expectSqlState(
+        () =>
+          admin.pool.query(
+            `UPDATE public.organization_billing SET ${change} WHERE organization_id = $1`,
+            [activeWon.organizationId]
+          ),
+        "23514",
+        `a won chargeback cannot carry: ${change}`,
+        "organization_billing_revoked_coherent"
+      );
+    }
+    // but a won chargeback may live there (the state it was remembered in above)
+    assert.equal(
+      (await billing.readRecord(activeWon.organizationId))?.revoked?.reason,
+      "won"
+    );
+
+    tests.push(
+      "a refund that arrives before its charge is confirmed is remembered (on a free record and on a running trial), so the confirmation cannot grant it while a payment for a later period does; a reversal that overtakes its chargeback makes the chargeback change nothing; a refund after a chargeback means the reversal restores nothing; and a new checkout does not inherit a payment taken back on the old subscription"
     );
 
     // ------------------------------------- 11. what a tenant sees

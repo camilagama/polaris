@@ -1,4 +1,4 @@
-import { rpcErrorCode } from "../lib/rpc-error";
+import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
 
 export type GoalAction = "cancel" | "create" | "history" | "load" | "update";
 
@@ -39,6 +39,9 @@ export function goalErrorMessage(error: unknown, action: GoalAction): string {
     return BAD_REQUEST_MESSAGES[action] ?? fallbackMessage(action);
   }
   if (code === "CONFLICT") {
+    if (rpcErrorReason(error) === "goal_paused_by_plan") {
+      return "Seu plano permite menos metas em andamento do que você tem, então esta meta está pausada e não pode ser editada. Cancele-a ou aguarde o plano permitir.";
+    }
     return CONFLICT_MESSAGES[action] ?? fallbackMessage(action);
   }
   if (code === "NOT_FOUND") {

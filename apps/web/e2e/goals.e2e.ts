@@ -237,7 +237,12 @@ class FakeGoalServer {
         value: valueText(goal.kind, value),
       };
     }
-    return { ...rest, organizationId: String(organizationId), progress };
+    return {
+      ...rest,
+      organizationId: String(organizationId),
+      paused: false,
+      progress,
+    };
   }
 
   private list(input: Record<string, unknown>) {

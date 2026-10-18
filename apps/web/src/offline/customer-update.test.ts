@@ -202,6 +202,50 @@ describe("editing a customer offline", () => {
     expect(writer.customer(customerId)?.name).toBe("Ana Souza");
   });
 
+  it("is dropped from the device, typed text and all, when the customer was anonymized, and the queue goes on", async () => {
+    const { edit, outbox, server, sync, writer } = await setup();
+    writer.meta = {
+      bootstrappedAt: now.toISOString(),
+      cursor: "0",
+      status: "ready",
+      updatedAt: now.toISOString(),
+      version: 1,
+    };
+    const otherId = uuid(202);
+    const other = { ...serverRow, id: otherId, name: "Bia", version: 1 };
+    server.customers.set(otherId, other);
+    await writer.upsert("customers", [other]);
+    await edit({ name: "Ana Lima", phone: "11911112222" });
+    await edit({ name: "Bia Lima", phone: "2" }, other);
+    server.anonymized.add(customerId);
+
+    const summary = await sync();
+
+    expect(summary).toMatchObject({
+      accepted: 1,
+      blockedBy: null,
+      discarded: 1,
+      rejected: 0,
+    });
+    expect((await outbox.snapshot()).commands).toEqual([]);
+    expect(JSON.stringify(await outbox.snapshot())).not.toContain(
+      "11911112222"
+    );
+    expect(server.customers.get(otherId)?.name).toBe("Bia Lima");
+  });
+
+  it("drops an edit refused for anonymization before this version kept it", async () => {
+    const { edit, outbox, sync } = await setup();
+    const command = await edit({ name: "Ana Lima", phone: "11911112222" });
+    await outbox.markSending(command.commandId);
+    await outbox.reject(command.commandId, "customer_anonymized");
+
+    const summary = await sync();
+
+    expect(summary.discarded).toBe(1);
+    expect((await outbox.snapshot()).commands).toEqual([]);
+  });
+
   it("can be discarded (even refused), changing no local row; not while being sent", async () => {
     const { edit, outbox, writer } = await setup();
     const first = await edit({ name: "Ana Lima", phone: "1" });
@@ -224,7 +268,7 @@ describe("editing a customer offline", () => {
 describe("overlayPendingCustomerEdits", () => {
   it("shows the waiting edit over the server row, and the server row once it is refused", async () => {
     const { edit, outbox, server, sync } = await setup();
-    await edit({ name: "Ana Lima", phone: "22", email: "ana@example.com" });
+    await edit({ email: "ana@example.com", name: "Ana Lima", phone: "22" });
     const waiting = (await outbox.snapshot()).commands;
 
     expect(overlayPendingCustomerEdits([serverRow], waiting)).toEqual([

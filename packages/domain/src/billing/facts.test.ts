@@ -29,6 +29,7 @@ const free = (overrides: Partial<BillingRecord> = {}): BillingRecord => ({
   cycleMonths: null,
   lastFactAt: null,
   pendingCycleMonths: null,
+  revoked: null,
   state: "free",
   trialConsumed: false,
   ...overrides,
@@ -43,6 +44,7 @@ const pro = (
   cycleMonths: 1,
   lastFactAt: null,
   pendingCycleMonths: null,
+  revoked: null,
   state,
   trialConsumed: state === "trialing" || overrides.trialConsumed === true,
   ...overrides,
@@ -323,7 +325,8 @@ describe("properties of any sequence of facts", () => {
       .tuple(
         fc.integer({ max: 40, min: -3 }),
         cycle,
-        fc.integer({ max: 400, min: 1 })
+        // a small pool of period ends: a chargeback and its reversal name the same period
+        fc.constantFrom(3, 10, 20, 35, 60, 200, 400)
       )
       .chain(([offset, cycleMonths, periodDays]) => {
         const occurredAt = at(offset, clock);
@@ -337,19 +340,67 @@ describe("properties of any sequence of facts", () => {
           },
           { occurredAt, type: "charge_failed" },
           { occurredAt, type: "subscription_cancelled" },
-          { cycleMonths, occurredAt, type: "cycle_change_scheduled" }
+          { cycleMonths, occurredAt, type: "cycle_change_scheduled" },
+          {
+            occurredAt,
+            periodEndsAt: at(periodDays, clock),
+            type: "charge_refunded",
+          },
+          {
+            occurredAt,
+            periodEndsAt: at(periodDays, clock),
+            type: "charge_disputed",
+          },
+          {
+            occurredAt,
+            periodEndsAt: at(periodDays, clock),
+            type: "dispute_reversed",
+          }
         );
       });
   const sequence = fc.array(
     fc.tuple(factArb(base), fc.integer({ max: 20, min: 0 }), fc.boolean()),
     { maxLength: 30 }
   );
-  const start = fc.constantFrom(...states).map((state): BillingRecord => {
-    if (grantsPro(state)) {
-      return pro(state as "active" | "grace" | "trialing", at(10));
+  const marker = fc.constantFrom<BillingRecord["revoked"]>(
+    null,
+    {
+      cancelAtPeriodEnd: false,
+      cycleMonths: 6,
+      periodEndsAt: at(20),
+      reason: "chargeback",
+    },
+    {
+      cancelAtPeriodEnd: true,
+      cycleMonths: null,
+      periodEndsAt: at(35),
+      reason: "chargeback",
+    },
+    {
+      cancelAtPeriodEnd: false,
+      cycleMonths: 1,
+      periodEndsAt: at(10),
+      reason: "refund",
+    },
+    {
+      cancelAtPeriodEnd: false,
+      cycleMonths: null,
+      periodEndsAt: at(20),
+      reason: "won",
     }
-    return free({ state });
-  });
+  );
+  const start = fc
+    .tuple(fc.constantFrom(...states), marker)
+    .map(([state, revoked]): BillingRecord => {
+      if (grantsPro(state)) {
+        const record = pro(state as "active" | "grace" | "trialing", at(10));
+        // a paid period can only remember a won chargeback; a trial can remember any
+        return revoked && (state === "trialing" || revoked.reason === "won")
+          ? { ...record, revoked }
+          : record;
+      }
+      return free({ revoked, state });
+    });
 
   it("the record always stays coherent, and the clock of facts never goes back", () => {
     fc.assert(
@@ -387,7 +438,8 @@ describe("properties of any sequence of facts", () => {
         }
         const second = reconcileFact(first.record, fact, ctx(base, over));
         // the repeat is either refused, or leaves the record as the first left it
-        if (second.outcome === "applied") {
+        // (a reversal delivered again after a restore is remembered, harmlessly)
+        if (second.outcome === "applied" && fact.type !== "dispute_reversed") {
           expect(second.record).toEqual(first.record);
         }
       })
@@ -401,7 +453,8 @@ describe("properties of any sequence of facts", () => {
           return;
         }
         const result = reconcileFact(initial, fact, ctx(base));
-        if (result.outcome === "ignored") {
+        // a refused confirmation that only teaches the cycle of a chargeback moves no access
+        if (result.outcome === "ignored" || result.transition === null) {
           return;
         }
         expect(result.record.accessEndsAt?.getTime()).toBeGreaterThan(
@@ -429,6 +482,9 @@ describe("facts in the inbox", () => {
     { occurredAt: base, type: "charge_failed" },
     { occurredAt: base, type: "subscription_cancelled" },
     { cycleMonths: 1, occurredAt: base, type: "cycle_change_scheduled" },
+    { occurredAt: base, periodEndsAt: at(30), type: "charge_refunded" },
+    { occurredAt: base, periodEndsAt: at(30), type: "charge_disputed" },
+    { occurredAt: base, periodEndsAt: at(30), type: "dispute_reversed" },
   ];
 
   it("round-trips every fact through plain JSON", () => {
@@ -462,6 +518,14 @@ describe("facts in the inbox", () => {
         occurredAt: base.toISOString(),
         periodEndsAt: "never",
         type: "charge_succeeded",
+      },
+      // a refund, a chargeback and its reversal each name the period they concern
+      { occurredAt: base.toISOString(), type: "charge_refunded" },
+      { occurredAt: base.toISOString(), type: "charge_disputed" },
+      {
+        occurredAt: base.toISOString(),
+        periodEndsAt: "never",
+        type: "dispute_reversed",
       },
     ]) {
       expect(parseBillingFact(value)).toBeNull();
@@ -580,5 +644,369 @@ describe("what the review of the lifecycle found", () => {
     const result = applied(free(), succeeded(base, at(30)));
     expect(result.record.trialConsumed).toBe(true);
     expect(isCoherentBillingRecord(result.record)).toBe(true);
+  });
+});
+
+describe("refunds and chargebacks (PR84)", () => {
+  const refunded = (occurredAt: Date, periodEndsAt: Date): BillingFact => ({
+    occurredAt,
+    periodEndsAt,
+    type: "charge_refunded",
+  });
+  const disputed = (occurredAt: Date, periodEndsAt: Date): BillingFact => ({
+    occurredAt,
+    periodEndsAt,
+    type: "charge_disputed",
+  });
+  const reversed = (occurredAt: Date, periodEndsAt: Date): BillingFact => ({
+    occurredAt,
+    periodEndsAt,
+    type: "dispute_reversed",
+  });
+  const paid = (overrides: Partial<BillingRecord> = {}) =>
+    pro("active", at(20), { cycleMonths: 6, ...overrides });
+  const notApplicable = { outcome: "ignored", reason: "not_applicable" };
+
+  it("a full refund of the current period takes the access back at once, into free_over_limit when the organization is over the limits", () => {
+    const result = applied(paid(), refunded(at(1), at(20)), ctx(at(1)));
+    expect(result.transition).toBe("access_revoked");
+    expect(result.record).toMatchObject({
+      accessEndsAt: null,
+      cycleMonths: null,
+      revoked: { cycleMonths: 6, periodEndsAt: at(20), reason: "refund" },
+      state: "free",
+    });
+    expect(
+      applied(paid(), refunded(at(1), at(20)), ctx(at(1), true)).record.state
+    ).toBe("free_over_limit");
+    expect(isCoherentBillingRecord(result.record)).toBe(true);
+  });
+
+  it("a chargeback is just as immediate, in grace too: no seven days to ride out", () => {
+    const result = applied(paid(), disputed(at(1), at(20)), ctx(at(1)));
+    expect(result.record).toMatchObject({
+      accessEndsAt: null,
+      revoked: { periodEndsAt: at(20), reason: "chargeback" },
+      state: "free",
+    });
+    // grace stands on the period that ran out two days ago
+    const inGrace = pro("grace", at(5), { cycleMonths: 1 });
+    const fromGrace = applied(inGrace, disputed(at(1), at(-2)), ctx(at(1)));
+    expect(fromGrace.record.state).toBe("free");
+    expect(fromGrace.record.accessEndsAt).toBeNull();
+  });
+
+  it("only the payment behind the current period takes access away", () => {
+    // an earlier period than the one in force: a renewal already superseded it
+    for (const fact of [refunded(at(1), at(-10)), disputed(at(1), at(-10))]) {
+      expect(reconcileFact(paid(), fact, ctx(at(1)))).toEqual(notApplicable);
+    }
+    const renewed = paid({ accessEndsAt: at(50) });
+    expect(reconcileFact(renewed, refunded(at(1), at(20)), ctx(at(1)))).toEqual(
+      notApplicable
+    );
+    // no paid period at all, and the period the fact names is already over
+    for (const record of [
+      free(),
+      free({ state: "free_over_limit" }),
+      pro("trialing", at(5)),
+      free({ state: "trial_setup" }),
+    ]) {
+      expect(
+        reconcileFact(record, refunded(at(10), at(-3)), ctx(at(10)))
+      ).toEqual(notApplicable);
+    }
+  });
+
+  it("a renewal paid early and refunded before its confirmation does not take the period still in force", () => {
+    const result = reconcileFact(paid(), refunded(at(1), at(50)), ctx(at(1)));
+    expect(result).toEqual(notApplicable);
+  });
+
+  it("a period end is the same one within the provider's rounding", () => {
+    const rounded = new Date(at(20).getTime() + 3 * 3_600_000);
+    const result = applied(paid(), refunded(at(1), rounded), ctx(at(1)));
+    expect(result.record.state).toBe("free");
+    // its late confirmation, with either rounding, never revives the access
+    for (const end of [at(20), rounded]) {
+      expect(
+        reconcileFact(result.record, succeeded(at(0), end), ctx(at(2)))
+      ).toEqual(notApplicable);
+    }
+    // and a reversal naming the other rounding still matches a chargeback
+    const charged = applied(
+      paid(),
+      disputed(at(1), rounded),
+      ctx(at(1))
+    ).record;
+    expect(
+      applied(charged, reversed(at(3), at(20)), ctx(at(4))).record.state
+    ).toBe("active");
+  });
+
+  it("the payment that was taken back never revives the access, a later one does", () => {
+    const revoked = applied(paid(), refunded(at(1), at(20)), ctx(at(1))).record;
+    expect(
+      reconcileFact(revoked, succeeded(at(0), at(20)), ctx(at(2)))
+    ).toEqual(notApplicable);
+    // a new payment is a new subscription period, and forgets what was taken back
+    const again = applied(revoked, succeeded(at(3), at(50)), ctx(at(3)));
+    expect(again.record).toMatchObject({
+      accessEndsAt: at(50),
+      revoked: null,
+      state: "active",
+    });
+    expect(isCoherentBillingRecord(again.record)).toBe(true);
+  });
+
+  it("a refund delivered before its charge is confirmed is remembered, so the confirmation cannot grant what was given back", () => {
+    for (const record of [
+      free(),
+      free({ state: "free_over_limit" }),
+      free({ state: "trial_setup" }),
+      pro("trialing", at(5)),
+    ]) {
+      const early = applied(record, refunded(at(1), at(20)), ctx(at(1)));
+      // nothing changes but the memory: a trial keeps running, a free record stays free
+      expect(early.record.state).toBe(record.state);
+      expect(early.record.revoked).toMatchObject({
+        periodEndsAt: at(20),
+        reason: "refund",
+      });
+      expect(isCoherentBillingRecord(early.record)).toBe(true);
+      expect(
+        reconcileFact(early.record, succeeded(at(0), at(20)), ctx(at(2)))
+      ).toEqual(notApplicable);
+      // a payment for a later period is a different charge
+      expect(
+        applied(early.record, succeeded(at(3), at(50)), ctx(at(3))).record
+      ).toMatchObject({ revoked: null, state: "active" });
+    }
+  });
+
+  it("ignores a period end no provider could report", () => {
+    expect(
+      reconcileFact(free(), refunded(at(1), at(1000)), ctx(at(1)))
+    ).toEqual(notApplicable);
+    expect(
+      reconcileFact(paid(), refunded(at(1), at(1000)), ctx(at(1)))
+    ).toEqual(notApplicable);
+    expect(
+      reconcileFact(free(), reversed(at(1), at(1000)), ctx(at(1)))
+    ).toEqual(notApplicable);
+  });
+
+  it("what moved money is never dropped as stale, however late it arrives", () => {
+    const newer = paid({ lastFactAt: at(5) });
+    const result = applied(newer, refunded(at(1), at(20)), ctx(at(6)));
+    expect(result.record.state).toBe("free");
+    // and the clock of facts does not go back
+    expect(result.record.lastFactAt).toEqual(at(5));
+  });
+
+  it("a chargeback decided in our favour restores the access for what is left of the period, with its cycle and its cancellation", () => {
+    const cancelled = paid({ cancelAtPeriodEnd: true });
+    const charged = applied(
+      cancelled,
+      disputed(at(1), at(20)),
+      ctx(at(1))
+    ).record;
+    const restored = applied(charged, reversed(at(5), at(20)), ctx(at(6)));
+    expect(restored.transition).toBe("subscribe");
+    expect(restored.record).toMatchObject({
+      accessEndsAt: at(20),
+      cancelAtPeriodEnd: true,
+      cycleMonths: 6,
+      revoked: null,
+      state: "active",
+    });
+    expect(isCoherentBillingRecord(restored.record)).toBe(true);
+    // the same reversal delivered again cannot be told from one that overtook its
+    // chargeback, so it is remembered (harmlessly: it only blocks that chargeback)
+    const again = applied(restored.record, reversed(at(5), at(20)), ctx(at(6)));
+    expect(again.record).toMatchObject({
+      accessEndsAt: at(20),
+      revoked: { reason: "won" },
+      state: "active",
+    });
+    expect(
+      reconcileFact(again.record, reversed(at(5), at(20)), ctx(at(6)))
+    ).toEqual(notApplicable);
+  });
+
+  it("restores a trial that was running when the chargeback of an earlier payment is won", () => {
+    const early = applied(
+      pro("trialing", at(5)),
+      disputed(at(1), at(20)),
+      ctx(at(1))
+    ).record;
+    expect(early.state).toBe("trialing");
+    const restored = applied(early, reversed(at(3), at(20)), ctx(at(4)));
+    expect(restored.record).toMatchObject({ revoked: null, state: "active" });
+  });
+
+  it("a reversal after the period is over has nothing to restore, and only forgets the chargeback", () => {
+    const charged = applied(paid(), disputed(at(1), at(20)), ctx(at(1))).record;
+    const result = applied(charged, reversed(at(30), at(20)), ctx(at(30)));
+    expect(result.transition).toBeNull();
+    expect(result.record).toMatchObject({ revoked: null, state: "free" });
+  });
+
+  it("only a chargeback on record, for that period, is restored", () => {
+    const charged = applied(paid(), disputed(at(1), at(20)), ctx(at(1))).record;
+    const refundedRecord = applied(
+      paid(),
+      refunded(at(1), at(20)),
+      ctx(at(1))
+    ).record;
+    for (const [record, fact] of [
+      [charged, reversed(at(5), at(40))],
+      [refundedRecord, reversed(at(5), at(20))],
+    ] as const) {
+      expect(reconcileFact(record, fact, ctx(at(6)))).toEqual(notApplicable);
+    }
+  });
+
+  it("a refund after a chargeback means the reversal restores nothing: the customer has the money", () => {
+    const charged = applied(paid(), disputed(at(1), at(20)), ctx(at(1))).record;
+    const refundedAfter = applied(charged, refunded(at(2), at(20)), ctx(at(2)));
+    expect(refundedAfter.record.state).toBe("free");
+    expect(refundedAfter.record.revoked?.reason).toBe("refund");
+    expect(
+      reconcileFact(refundedAfter.record, reversed(at(5), at(20)), ctx(at(6)))
+    ).toEqual(notApplicable);
+    // and a chargeback after a refund adds nothing either
+    const refundFirst = applied(
+      paid(),
+      refunded(at(1), at(20)),
+      ctx(at(1))
+    ).record;
+    expect(
+      reconcileFact(refundFirst, disputed(at(2), at(20)), ctx(at(2)))
+    ).toEqual(notApplicable);
+  });
+
+  it("a reversal that overtakes its chargeback is remembered, so the chargeback then changes nothing", () => {
+    const early = applied(free(), reversed(at(1), at(20)), ctx(at(1)));
+    expect(early.record.revoked).toMatchObject({
+      periodEndsAt: at(20),
+      reason: "won",
+    });
+    expect(early.record.state).toBe("free");
+    expect(
+      reconcileFact(early.record, disputed(at(0), at(20)), ctx(at(2)))
+    ).toEqual(notApplicable);
+    // a remembered win does not block a real payment for that period
+    expect(
+      applied(early.record, succeeded(at(2), at(20)), ctx(at(2))).record.state
+    ).toBe("active");
+    // and a reversal for a period that is already over is not worth remembering
+    expect(
+      reconcileFact(free(), reversed(at(30), at(20)), ctx(at(30)))
+    ).toEqual(notApplicable);
+  });
+
+  it("a win never pushes out one for a later period, and a past period only matters to grace", () => {
+    const { record } = applied(paid(), reversed(at(1), at(20)), ctx(at(1)));
+    // a reversal for a period that already ended does not replace the one still ahead
+    expect(reconcileFact(record, reversed(at(2), at(-3)), ctx(at(2)))).toEqual(
+      notApplicable
+    );
+    // and a record that is not on a paid period has no use for an ended one
+    expect(reconcileFact(free(), reversed(at(2), at(1)), ctx(at(2)))).toEqual(
+      notApplicable
+    );
+    // a later period replaces an earlier win
+    const later = applied(record, reversed(at(2), at(40)), ctx(at(2))).record;
+    expect(later.revoked?.periodEndsAt).toEqual(at(40));
+  });
+
+  it("learning the cycle of a refused confirmation does not move the clock of facts", () => {
+    const early = applied(free(), disputed(at(1), at(20)), ctx(at(1))).record;
+    const learned = applied(early, succeeded(at(0), at(20), 6), ctx(at(5)));
+    expect(learned.record.lastFactAt).toEqual(early.lastFactAt);
+  });
+
+  it("a reversal that overtakes its chargeback on an active subscription is remembered too, and the chargeback then changes nothing", () => {
+    for (const record of [paid(), pro("grace", at(5), { cycleMonths: 1 })]) {
+      const end = record.state === "grace" ? at(-2) : at(20);
+      const early = applied(record, reversed(at(1), end), ctx(at(1)));
+      // the access is untouched: only the memory changes
+      expect(early.record.state).toBe(record.state);
+      expect(early.record.accessEndsAt).toEqual(record.accessEndsAt);
+      expect(early.record.revoked).toMatchObject({
+        periodEndsAt: end,
+        reason: "won",
+      });
+      expect(isCoherentBillingRecord(early.record)).toBe(true);
+      expect(
+        reconcileFact(early.record, disputed(at(0), end), ctx(at(2)))
+      ).toEqual(notApplicable);
+      // a repeat of the reversal is not applied twice
+      expect(
+        reconcileFact(early.record, reversed(at(1), end), ctx(at(2)))
+      ).toEqual(notApplicable);
+      // a renewal keeps the memory (it concerns another period), and a refund of
+      // the won period still takes the access back: the money was returned
+      const renewed = applied(
+        early.record,
+        succeeded(at(3), at(60)),
+        ctx(at(3))
+      ).record;
+      expect(renewed.revoked?.reason).toBe("won");
+      expect(isCoherentBillingRecord(renewed)).toBe(true);
+    }
+    const won = applied(paid(), reversed(at(1), at(20)), ctx(at(1))).record;
+    const refundedAfter = applied(won, refunded(at(2), at(20)), ctx(at(2)));
+    expect(refundedAfter.record.state).toBe("free");
+    expect(refundedAfter.record.revoked?.reason).toBe("refund");
+  });
+
+  it("learns the cycle of a payment taken back before its charge was known, to restore it if the chargeback is won", () => {
+    const early = applied(free(), disputed(at(1), at(20)), ctx(at(1))).record;
+    expect(early.revoked?.cycleMonths).toBeNull();
+    // the confirmation of that payment is still refused, but tells its cycle
+    const learned = applied(early, succeeded(at(0), at(20), 6), ctx(at(2)));
+    expect(learned.record.state).toBe("free");
+    expect(learned.record.revoked?.cycleMonths).toBe(6);
+    // and a second confirmation is a repeat
+    expect(
+      reconcileFact(learned.record, succeeded(at(0), at(20), 6), ctx(at(2)))
+    ).toEqual(notApplicable);
+    const restored = applied(
+      learned.record,
+      reversed(at(5), at(20)),
+      ctx(at(6))
+    );
+    expect(restored.record).toMatchObject({
+      accessEndsAt: at(20),
+      cycleMonths: 6,
+      state: "active",
+    });
+  });
+
+  it("restores nothing when the cycle was never learned: the confirmation of that charge, if it comes, grants it", () => {
+    const early = applied(free(), disputed(at(1), at(20)), ctx(at(1))).record;
+    const won = applied(early, reversed(at(3), at(20)), ctx(at(4)));
+    expect(won.record).toMatchObject({ revoked: null, state: "free" });
+    expect(
+      applied(won.record, succeeded(at(5), at(20), 12), ctx(at(5))).record
+    ).toMatchObject({ cycleMonths: 12, state: "active" });
+  });
+
+  it("does not restore over a subscription that was paid again in the meantime", () => {
+    const charged = applied(paid(), disputed(at(1), at(20)), ctx(at(1))).record;
+    const resubscribed = applied(
+      charged,
+      succeeded(at(2), at(50)),
+      ctx(at(2))
+    ).record;
+    const late = applied(resubscribed, reversed(at(5), at(20)), ctx(at(6)));
+    // nothing is restored over the new subscription: only the win is remembered
+    expect(late.record).toMatchObject({
+      accessEndsAt: at(50),
+      revoked: { reason: "won" },
+      state: "active",
+    });
   });
 });

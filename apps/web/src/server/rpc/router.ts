@@ -26,6 +26,7 @@ import {
 } from "@polaris/db/category-repository";
 import { createDatabase } from "@polaris/db/client";
 import {
+  anonymizeCustomerForPrivacy,
   archiveCustomer,
   createCustomer,
   findPossibleCustomerDuplicates,
@@ -51,6 +52,11 @@ import {
   writeOffStock,
 } from "@polaris/db/inventory-repository";
 import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
+import {
+  listOrganizationsInClosure,
+  recoverOrganizationClosure,
+  requestOrganizationClosure,
+} from "@polaris/db/organization-closure-repository";
 import { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import {
   archivePaymentProfile,
@@ -115,6 +121,7 @@ import {
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 import {
+  CustomerAnonymizedError,
   CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerDuplicateSearchError,
@@ -134,8 +141,16 @@ import {
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
 import {
+  InvalidPublicCatalogProfileError,
+  PublicCatalogProductUnavailableError,
+  PublicCatalogProfileMissingError,
+  PublicCatalogSlugTakenError,
+  PublicCatalogVersionConflictError,
+} from "@polaris/domain/catalog/public-catalog";
+import {
   GoalLimitReachedError,
   GoalNotActiveError,
+  GoalPausedByPlanError,
   GoalPeriodEndedError,
   GoalNotFoundError,
   GoalVersionConflictError,
@@ -188,6 +203,17 @@ import {
 } from "@polaris/domain/offline/offline-grant";
 import { OfflineLeaseNotAvailableError } from "@polaris/domain/offline/offline-lease";
 import {
+  ClosureConfirmationError,
+  ClosureNotRecoverableError,
+  isOrganizationStatus,
+  OrganizationNotActiveError,
+  type OrganizationStatus,
+} from "@polaris/domain/organization/closure";
+import {
+  DataExportUnavailableError,
+  InvalidExportRequestError,
+} from "@polaris/domain/privacy/data-export";
+import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -239,9 +265,12 @@ import {
   type readPeriodResult,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
+import type { DataExportRepository } from "./data-export-handlers";
 import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
+import type { PublicCatalogRepository } from "./public-catalog-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
+import { SyncPayloadHashUnavailableError } from "../sync/payload-hash";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -253,12 +282,17 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createExpenseRpcHandlers } from "./expense-handlers";
+import { createDataExportRpcHandlers } from "./data-export-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
 import { createPlanRpcHandlers } from "./plan-handlers";
+import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
-import { createOrganizationRpcHandlers } from "./organization-handlers";
+import {
+  type ClosureRepository,
+  createOrganizationRpcHandlers,
+} from "./organization-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 import { createSyncRpcHandlers } from "./sync-handlers";
 import { runSyncCommand } from "@polaris/db/sync-command-repository";
@@ -287,9 +321,11 @@ const uuidPattern =
 
 interface RpcRouterDependencies {
   archiveCategory: typeof archiveCategory;
+  anonymizeCustomerForPrivacy: typeof anonymizeCustomerForPrivacy;
   archiveCustomer: typeof archiveCustomer;
   archivePaymentProfile: typeof archivePaymentProfile;
   archiveProduct: typeof archiveProduct;
+  closureRepository: Partial<ClosureRepository>;
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
   configureProductVariants: typeof configureProductVariants;
@@ -302,8 +338,10 @@ interface RpcRouterDependencies {
   createProduct: typeof createProduct;
   createSaleReturn: typeof createSaleReturn;
   expenseRepository: Partial<ExpenseRepository>;
+  dataExportRepository: Partial<DataExportRepository>;
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
+  publicCatalogRepository: Partial<PublicCatalogRepository>;
   readPeriodResult: typeof readPeriodResult;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
@@ -345,8 +383,8 @@ interface RpcRouterDependencies {
   writeOffStock: typeof writeOffStock;
 }
 
-function organizationStatus(status: string): "active" | "suspended" | "closed" {
-  if (status === "active" || status === "suspended" || status === "closed") {
+function organizationStatus(status: string): OrganizationStatus {
+  if (isOrganizationStatus(status)) {
     return status;
   }
   throw new Error("invalid_organization_status");
@@ -404,6 +442,7 @@ function productReadModel(product: {
 }
 
 function customerReadModel(customer: {
+  anonymizedAt: Date | null;
   archivedAt: Date | null;
   createdAt: Date;
   email: string | null;
@@ -416,6 +455,7 @@ function customerReadModel(customer: {
   version: number;
 }): CustomerReadModel {
   return {
+    anonymizedAt: customer.anonymizedAt?.toISOString() ?? null,
     archivedAt: customer.archivedAt?.toISOString() ?? null,
     createdAt: customer.createdAt.toISOString(),
     email: customer.email,
@@ -570,8 +610,19 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("FORBIDDEN", { cause: error });
   }
 
-  if (error instanceof OfflineLeaseUnavailableError) {
+  if (
+    error instanceof OfflineLeaseUnavailableError ||
+    error instanceof SyncPayloadHashUnavailableError
+  ) {
     throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+  }
+
+  if (error instanceof InvalidExportRequestError) {
+    // a malformed request is the caller's to fix; the other refusals are the state of the organization's exports
+    throw clientRpcError(
+      error.code === "invalid_export_request" ? "BAD_REQUEST" : "CONFLICT",
+      error
+    );
   }
 
   if (isRpcErrorInGroup(error, badRequestRpcErrors)) {
@@ -628,11 +679,13 @@ const badRequestRpcErrors = [
     ProductNameError,
     ProductDescriptionError,
     InvalidPaymentProfileError,
+    ClosureConfirmationError,
   ],
   [
     InvalidCustomerProfileError,
     InvalidCustomerDuplicateSearchError,
     InvalidOperationalSelectionError,
+    InvalidPublicCatalogProfileError,
   ],
   [
     InvalidExpenseError,
@@ -706,6 +759,7 @@ const conflictRpcErrors = [
     CategoryNameConflictError,
     CategoryLifecycleError,
     ProductCategoryUnavailableError,
+    CustomerAnonymizedError,
   ],
   [
     ExpenseCategoryNameConflictError,
@@ -715,6 +769,7 @@ const conflictRpcErrors = [
     ExpenseVoidedError,
     ExpenseRuleVersionConflictError,
     GoalLimitReachedError,
+    GoalPausedByPlanError,
     EntitlementDeniedError,
     EntitlementLimitReachedError,
     EntitlementVariantLockedError,
@@ -722,6 +777,12 @@ const conflictRpcErrors = [
     GoalNotActiveError,
     GoalPeriodEndedError,
     GoalVersionConflictError,
+    PublicCatalogSlugTakenError,
+    PublicCatalogVersionConflictError,
+    PublicCatalogProfileMissingError,
+    PublicCatalogProductUnavailableError,
+    OrganizationNotActiveError,
+    ClosureNotRecoverableError,
   ],
   [
     ProductDeletedError,
@@ -755,6 +816,7 @@ const conflictRpcErrors = [
 ] as const;
 
 const notFoundRpcErrors = [
+  [DataExportUnavailableError],
   [CategoryNotFoundError, ProductNotFoundError, CustomerNotFoundError],
   [
     PaymentProfileNotFoundError,
@@ -833,6 +895,7 @@ function createCustomerRpcHandlers(
   dependencies: Partial<
     Pick<
       RpcRouterDependencies,
+      | "anonymizeCustomerForPrivacy"
       | "archiveCustomer"
       | "createCustomer"
       | "findPossibleCustomerDuplicates"
@@ -843,6 +906,8 @@ function createCustomerRpcHandlers(
   > &
     Pick<RpcRouterDependencies, "withTenantRequestContext">
 ) {
+  const anonymizeTenantCustomer =
+    dependencies.anonymizeCustomerForPrivacy ?? anonymizeCustomerForPrivacy;
   const archiveTenantCustomer = dependencies.archiveCustomer ?? archiveCustomer;
   const createTenantCustomer = dependencies.createCustomer ?? createCustomer;
   const findTenantCustomerDuplicates =
@@ -981,7 +1046,41 @@ function createCustomerRpcHandlers(
       )
   );
 
-  return { archive, create, findPossibleDuplicates, list, restore, update };
+  const anonymizeForPrivacy =
+    implementContract.customer.anonymizeForPrivacy.handler(
+      async ({ context, input }) => {
+        try {
+          const result = await tenantRequest({
+            bindings: context.bindings,
+            capability: "customer:anonymize",
+            operation: (transaction, identity) =>
+              anonymizeTenantCustomer(transaction, identity, {
+                expectedVersion: input.expectedVersion,
+                id: input.id,
+                requestId: requestAuditId(context.requestId),
+              }),
+            request: context.request,
+            requestedOrganizationId: input.organizationId,
+          });
+          return {
+            changed: result.changed,
+            customer: customerReadModel(result.customer),
+          };
+        } catch (error) {
+          return toRpcError(error);
+        }
+      }
+    );
+
+  return {
+    anonymizeForPrivacy,
+    archive,
+    create,
+    findPossibleDuplicates,
+    list,
+    restore,
+    update,
+  };
 }
 
 function createPaymentProfileRpcHandlers(
@@ -1213,10 +1312,17 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const organizationHandlers = createOrganizationRpcHandlers({
+    closureRepository: {
+      listOrganizationsInClosure,
+      recoverOrganizationClosure,
+      requestOrganizationClosure,
+      ...overrides.closureRepository,
+    },
     defaultListUserOrganizations: listUserOrganizations,
     listUserOrganizations: overrides.listUserOrganizations,
     toRpcError,
     withAuthenticatedRequestContext: authenticatedRequest,
+    withTenantRequestContext: tenantRequest,
   });
   const customerHandlers = createCustomerRpcHandlers({
     ...overrides,
@@ -1224,6 +1330,12 @@ export function createRpcRouter(
   });
   const expenseHandlers = createExpenseRpcHandlers({
     expenseRepository: overrides.expenseRepository,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const dataExportHandlers = createDataExportRpcHandlers({
+    dataExportRepository: overrides.dataExportRepository,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1236,6 +1348,12 @@ export function createRpcRouter(
   });
   const planHandlers = createPlanRpcHandlers({
     planRepository: overrides.planRepository,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const publicCatalogHandlers = createPublicCatalogRpcHandlers({
+    publicCatalogRepository: overrides.publicCatalogRepository,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1323,7 +1441,7 @@ export function createRpcRouter(
           name: string;
           timezone: string;
           currency: "BRL";
-          status: "active" | "suspended" | "closed";
+          status: OrganizationStatus;
         };
       }>;
 
@@ -1794,6 +1912,7 @@ export function createRpcRouter(
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     customer: customerHandlers,
+    dataExport: dataExportHandlers,
     device: offlineHandlers.device,
     expense: expenseHandlers,
     goal: goalHandlers,
@@ -1805,8 +1924,15 @@ export function createRpcRouter(
       writeOffStock: writeOffStockRecord,
     },
     offline: offlineHandlers.offline,
-    organization: { createInitial, listMine: organizationHandlers.listMine },
+    organization: {
+      createInitial,
+      listClosing: organizationHandlers.listClosing,
+      listMine: organizationHandlers.listMine,
+      recoverClosure: organizationHandlers.recoverClosure,
+      requestClosure: organizationHandlers.requestClosure,
+    },
     plan: planHandlers,
+    publicCatalog: publicCatalogHandlers,
     report: reportHandlers,
     paymentProfile: paymentProfileHandlers,
     product: {

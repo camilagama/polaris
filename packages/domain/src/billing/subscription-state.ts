@@ -34,6 +34,13 @@ export const GRACE_DAYS = 7;
 export const MAX_PERIOD_DAYS = 400;
 
 export type BillingEvent =
+  | {
+      /**
+       * Paid access is taken back at once, whatever time is left: the payment
+       * behind it was refunded or charged back (PR84). There is no grace.
+       */
+      type: "access_revoked";
+    }
   | { type: "abandon_trial_setup" }
   | { type: "grace_expired" }
   | { type: "payment_failed" }
@@ -186,6 +193,11 @@ const TRANSITIONS: Record<
       }
       return { accessEndsAt: null, state: "trial_setup" };
     },
+  },
+  // a refund or a chargeback ends the paid access immediately, with no grace
+  access_revoked: {
+    from: ["active", "grace"],
+    to: (_facts, _event, context) => freeState(context),
   },
   abandon_trial_setup: {
     from: ["trial_setup"],

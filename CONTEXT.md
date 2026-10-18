@@ -8,8 +8,16 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Evitar:** conta, quando o assunto for a pessoa autenticada.
 
 **Organização (organization):** unidade operacional que possui o catálogo, o estoque, as vendas e os registros do revendedor.<br>
-**Estado da organização (organization status):** estado operacional `active`, `suspended` ou `closed`; não representa o estado de billing.<br>
+**Estado da organização (organization status):** `active` e `suspended` (operacionais) e `closing`, `closed`, `purge_pending` e `purged` (o encerramento); não representa o estado de billing.<br>
+**Encerramento (closure) e janela de recuperação:** o dono encerra a organização digitando o nome; o acesso acaba na hora e, por 30 dias (`closing`), ele pode desfazer. Distinto da suspensão (medida da plataforma) e da exclusão física (purge).<br>
 **Evitar:** workspace na interface; tenant como nome de produto.
+
+**Anonimização de cliente (customer anonymization):** a pessoa sai do cadastro (nome fixo, sem telefone, email nem observações) e o registro fica, para que as vendas ligadas a ele mantenham seus fatos econômicos. Irreversível; distinta de arquivar.<br>
+
+**Caso de privacidade (privacy case):** o fluxo interno de um pedido sobre dado pessoal, do pedido à resolução, com o papel do Polaris (controlador ou operador) determinado antes da decisão. Guarda só códigos, uma referência opaca e uma nota curta; nunca o dado pessoal. É um caso de suporte de um tipo próprio.<br>
+
+**Exportação de dados (data export):** a cópia, a pedido do dono, do que a organização cadastrou (JSON, CSV e imagens), montada em segundo plano com a autorização de quem pediu, privada e válida por 24 horas. Nunca é oferecida nem feita pelo encerramento. Distinta do pedido sobre dados da conta (caso de privacidade).<br>
+**Evitar:** backup, para esta cópia (não é restauração do sistema).
 
 **Membership (vínculo):** relação de acesso entre um usuário e uma organização.
 
@@ -98,5 +106,25 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Free acima do limite:** estado de uma organização no Free que mantém mais variantes do que o plano permite. Nada é apagado; só as **variantes operacionais** (as que ela escolheu, ou as vendidas mais recentemente quando não escolheu) recebem nova atividade comercial.
 
 **Janela de adequação:** os sete dias depois do fim do acesso Pro em que a organização ainda pode trocar quais variantes ficam operacionais; depois dela a escolha só cresce.
+
+**Meta pausada:** meta em andamento que o plano em vigor não comporta (a organização tem mais metas do que o limite). Não é medida nem editada, pode ser cancelada e volta quando o plano permitir; a pausa é derivada, nunca guardada.
+
+**Pagamento tirado:** pagamento de um período que foi reembolsado integralmente ou sofreu chargeback. O Polaris o lembra (e o período que cobria) para que sua confirmação tardia não devolva o acesso e para que um chargeback revertido o restaure.
+
+**Concessão temporária:** entitlement dado por Polaris (compensação, parceria, apoio) além do plano, com autor, motivo, início e fim; só eleva, sempre expira e nunca é uma assinatura. Ao terminar, a organização que mantém mais do que o Free permite entra na janela de adequação.
+
+**Catálogo público:** o que a organização escolheu mostrar a quem não tem conta: um perfil público (nome, endereço e contatos que ela digitou) e produtos publicados. É lido a cada pedido pelo plano em vigor; sair do plano o tira do ar sem apagar a escolha.
+
+**Endereço público:** o slug do catálogo, único entre todas as organizações (`/loja-da-ana`).
+
+**Principal de plataforma:** a pessoa que opera o Polaris, identificada pelo emissor e subject do Cloudflare Access (nunca pelo e-mail). Só entra no Admin se o dono do banco a cadastrou e ela está ativa.
+
+**Caso de suporte:** o motivo registrado pelo qual um operador olha uma organização (suporte ou privacidade); dele pendem os acessos temporários.
+
+**Acesso temporário:** permissão de somente leitura de um operador a uma organização, ligada a um caso aberto, com prazo curto (60 minutos por padrão, de 5 a 240); dar outro acesso é uma nova decisão registrada; é a única porta do Admin para registros do tenant.
+
+**Revelação:** a ação explícita de ver um campo real de um cliente que o Admin vê mascarado; sempre auditada, sem guardar o valor.
+
+**Capacidade de plataforma:** permissão nomeada do Admin (por exemplo `pii:reveal`), separada das capacidades de tenant; cada rota do Admin pede uma, nenhum caso de uso compara o papel pelo nome.
 
 **Billing provider:** serviço externo que processa um meio de pagamento e reporta fatos ao Polaris.

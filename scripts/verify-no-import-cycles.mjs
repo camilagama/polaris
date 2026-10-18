@@ -37,7 +37,9 @@ function walk(directory, found) {
       sourceExtensions.includes(path.extname(full)) &&
       !full.endsWith(".test.ts") &&
       !full.endsWith(".test.tsx") &&
-      !full.endsWith(".d.ts")
+      !full.endsWith(".d.ts") &&
+      // generated files omit semicolons, which the import scan below needs to tell statements apart
+      !full.endsWith(".gen.ts")
     ) {
       found.push(full);
     }

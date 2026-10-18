@@ -1,4 +1,5 @@
 import {
+  CustomerAnonymizedError,
   CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerProfileError,
@@ -101,6 +102,9 @@ describe("customer.update handler", () => {
     const { handler } = handlerWith();
     expect(handler.classify(new CustomerVersionConflictError())).toBe(
       "customer_version_conflict"
+    );
+    expect(handler.classify(new CustomerAnonymizedError())).toBe(
+      "customer_anonymized"
     );
     expect(handler.classify(new CustomerNotFoundError())).toBe(
       "customer_not_found"

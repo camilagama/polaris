@@ -35,6 +35,7 @@ Resultado da revisão completa PR01–PR47 ([`revisao-checkpoint-gate4.md`](revi
 - **Antes da Fase 7.** Comandos para remover, substituir e reordenar mídia de produto.
 - **Retroativos.** A janela retroativa de venda é de 30 dias de calendário no fuso da organização (PR47); custo de venda retroativa usa a média vigente (D-4).
 - **Integração.** A cadeia de PRs é integrada por fase, antes da Fase 5; nenhum merge foi feito nesta rodada.
+- **Fase 8 antes do Gate 7 (16/10/2026, [ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md)).** O Gate 7 depende das contas sandbox do provedor (PR77, PR78, PR80) e continua sendo o gate de saída do billing, executado quando elas existirem e antes de qualquer cobrança real. A Fase 8 não depende do provedor e é implementada antes, em quatro pull requests: 8A (PR87 e PR88: perfil, publicação e leitura pública por funções, [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)), 8B (PR86 e PR90: aplicação e SEO), 8C (PR89 e PR91: rota pública de mídia e despublicação) e 8D (interface do ERP). A despublicação do PR91 é a leitura do plano a cada pedido, sem purge externo; o cache das imagens é de no máximo um minuto.
 
 ---
 
@@ -4370,6 +4371,15 @@ Não hardcode “5 anos em tudo”.
 
 Criar jobs somente onde política estiver aprovada.
 
+Feito no [ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md) (proposto): registro `@polaris/domain/privacy/retention`; nenhum job novo (as classes aprovadas com prazo, de mídia e de exportação, já têm job); as demais classes ficam propostas até o responsável decidir os prazos. As duas pendências abaixo foram tratadas ali: HMAC com `SYNC_PAYLOAD_HASH_SECRET` (linhas antigas mantêm o SHA-256 até existir a retenção do log) e descarte no aparelho da edição recusada com `customer_anonymized`.
+
+
+
+Pendências herdadas do PR102 (anonimização de cliente, [ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)), a tratar aqui ou ao definir a retenção do log de comandos offline:
+
+- [x] `sync_commands.payload_hash` é um SHA-256 sem sal sobre o payload canônico de `customer.create` e `customer.update` (nome, telefone, email e observações). Telefone e email têm pouca entropia, então o hash permite confirmar um valor suspeito por tentativa: é pseudonimização. Trocar por um HMAC com segredo do servidor, ou definir um prazo de retenção do log que acabe com a exposição.
+- [x] Quando o servidor devolver `customer_anonymized` a um `customer.update` offline, o aparelho deveria descartar o corpo do comando (hoje só marca como indisponível e o texto digitado fica na fila até o dono descartar).
+
 
 
 ---
@@ -4389,6 +4399,10 @@ Usada em restore.
 
 
 Sem business payload.
+
+
+
+Entregue no [ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.md): `deletion_ledger` (IDs opacos, tipo, operação, caso opcional, instante; append-only; sem chave estrangeira para a organização), gravada pela anonimização de cliente na mesma transação do comando e lida no restore pelo [runbook](../docs/runbooks/deletion-ledger-restore.md). O que o PR107 herda: gravar o tombstone `organization`/`purge` (ID da organização) **antes e na mesma transação** de apagar as linhas, o que exige o `INSERT` e a política do papel de privacidade na migration dele, e dizer como o ledger e os casos de privacidade sobrevivem à organização. A automação do restore e a cópia do ledger fora do banco ficam para a Fase 16.
 
 
 
@@ -4419,6 +4433,14 @@ Purge:
 
 
 Idempotente.
+
+
+
+Requisito herdado do PR104 ([ADR 0078](../docs/adr/0078-exportacao-de-dados-da-organizacao.md)): `data_exports` e `data_export_files` usam `ON DELETE CASCADE` para a organização. O purge precisa apagar no R2 o prefixo `exports/v1/{organização}/` (as exportações, prontas ou não) **antes** de apagar as linhas; se as linhas forem apagadas primeiro, os ZIPs ficam sem dono, com dado pessoal de clientes, e só o ID da organização (que o ledger do PR106 deve guardar) permite achá-los de novo. O purge deve falhar, e não seguir para o banco, se o apagamento do prefixo falhar. Uma exportação `running` pode escrever no R2 depois do apagamento (o registro do arquivo falha porque a linha sumiu e o objeto fica): antes de apagar o prefixo o purge espera as concessões vigentes vencerem (10 minutos) ou as encerra, e depois de apagar as linhas varre o prefixo uma segunda vez. O ponto natural é `deleteExportObjects`, de `apps/web/src/server/privacy/data-export-job.ts` (remoção por prefixo, paginada; hoje local ao módulo, o PR107 a exporta ou a move). O gate do purge deve provar que nenhum objeto sobra sob o prefixo.
+
+
+
+Pendência herdada do PR103 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): os casos de privacidade (`privacy_cases`, `privacy_case_actions` e o caso de suporte) têm chave estrangeira restritiva para a organização e as tabelas forçam RLS sem política para o papel de purge. O caminho privilegiado do purge precisa tratá-las: são evidência do atendimento e devem sobreviver à organização (sem dado pessoal).
 
 
 

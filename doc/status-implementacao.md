@@ -1,6 +1,6 @@
-# Polaris — acompanhamento da implementação
+﻿# Polaris — acompanhamento da implementação
 
-Atualizado em 14 de outubro de 2026.
+Atualizado em 18 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -1190,3 +1190,374 @@ Quem sai do Pro com mais variantes do que o Free permite mantém todas; só as v
 | Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura. O achado alto foi corrigido: abandonar um checkout de trial apagava o episódio e a escolha (o limite só era recalculado a partir de estados Pro; agora é recalculado em todo estado e o episódio é mantido). Também corrigidos: registro sem início que ganhava janela nova ao abrir um trial; escolha acima do limite depois de uma concessão expirar (agora limitada, preservando as primeiras escolhidas); custo da checagem para Free comum (agora uma consulta); variantes de produto arquivado no fim do padrão; violação de chave estrangeira numa corrida com a reconfiguração de variantes (agora `variant_unavailable`). Aceitos e documentados no ADR: Free comum acima do limite sem episódio (PR85), gravação do padrão desfeita por uma recusa e leitura que escreve, regra "só cresce" só no comando, carência que substitui o episódio. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1683 testes), `build` e `db:generate` sem drift; gates `operational-selection`, `entitlements`, `sync-push`, `offline-sale`, `inventory`, `gate2-runtime`, `billing-catalog` e `billing-lifecycle` em branch Neon descartável (apagada depois). |
 | Limites | Registrados | Sem tela de escolha nem convite ao Pro (PR80); efeitos do downgrade sobre catálogo público, lease offline, imagens e metas são o PR83; o catálogo público ainda não existe; sem exportação específica do excedente. |
+
+### PR83 — Efeitos do downgrade: metas pausadas (implementação, gate, revisão independente e verificações locais concluídos; publicação: ver PR)
+
+Fecha os efeitos do downgrade que cabem hoje: as metas excedentes ficam pausadas. Lease offline e restrição de novas imagens já existiam (ADR 0058) e o catálogo público ainda não existe.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/downgrade-effects` sobre a `main` (PR #95). |
+| Decisões | Tomadas pelo projeto | [ADR 0065](../docs/adr/0065-efeitos-do-downgrade-metas-pausadas.md): meta pausada é derivada do limite em vigor (as mais antigas rodam, as mais novas pausam), nunca guardada; pausada não é medida nem editada e pode ser cancelada; a de período vencido nunca é pausada (a leitura a liquida); meta que ainda não começou fica depois das que começaram; lease e imagens já cobertos (ADR 0058); catálogo público fica como regra para a Fase 8 (lido do plano a cada pedido). |
+| Domínio | Concluído | `goals/goal.ts` (`pausedGoalIds`, `GoalPausedByPlanError`), 6 testes novos. |
+| Servidor | Concluído | `goal-repository.ts` (`listPausedGoalIds`; `updateGoal` recusa meta pausada; `evaluateActiveGoals` não mede pausada); contrato: `paused` por meta (o contrato só cresce); roteador mapeia `goal_paused_by_plan` para conflito. |
+| Interface | Concluída | A meta pausada mostra "Pausada pelo plano" com o motivo, sem progresso e sem o botão de editar; cancelar continua. |
+| Testes | Concluídos | Domínio (6), roteador (a lista informa a meta pausada; o erro vira conflito) o texto do erro (1) e o gate `entitlements` (passos novos 6b e 6c: o 6c prova que uma meta de período vencido não ocupa lugar e é liquidada pela leitura; 6b: nada pausado no Pro; após o downgrade a mais antiga roda e as outras pausam; editar a pausada é recusado e a que roda pode ser editada; a pausada não é medida; cancelar uma pausada e depois a que roda move a próxima). |
+| Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura. Corrigidos: uma meta de período vencido ocupava um lugar e a meta em andamento aparecia sem progresso e sem pausa na primeira leitura (agora a de período vencido não ocupa lugar nem é pausada); meta que ainda não começou tomava o lugar da meta do período em curso (agora fica depois das que começaram); texto de erro que dizia "mudou em outra solicitação" para uma meta pausada (agora tem texto próprio); fixture do e2e sem `paused`; limite não finito (agora pausa tudo de forma explícita). Aceitos e documentados no ADR: a meta pausada que volta a rodar é medida desde o início do período e pode concluir na hora; a liquidação não relê a pausa (janela mínima). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1691 testes), `build` e `db:generate` sem drift; gates `goals` e `entitlements` (com os passos 6b e 6c) em branch Neon descartável, apagada depois. |
+| Limites | Registrados | O catálogo público não existe (a regra de despublicar vale quando ele existir, Fase 8); sem tela de plano nem convite ao Pro (PR80); a pausa não tem aviso fora do cartão da meta. |
+
+### PR84 — Reembolso e chargeback (implementação, gate, revisão independente e verificações locais concluídos; publicação: ver PR)
+
+Fecha o ciclo de vida do billing no que não depende de um provedor: dinheiro devolvido ou contestado tira o Pro, e a reversão o restaura.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/refund-chargeback` sobre a `main` (PR #97). |
+| Decisões | Tomadas pelo projeto | [ADR 0066](../docs/adr/0066-reembolso-e-chargeback.md): três fatos que nomeiam o período (`charge_refunded` integral, `charge_disputed`, `dispute_reversed`); só o período em vigor conta; efeito imediato e sem carência (evento `access_revoked`); o pagamento tirado fica registrado (impede a confirmação tardia de reviver o acesso e permite restaurar); reversão restaura até o fim do período com o ciclo que tinha; fatos de dinheiro nunca são obsoletos. |
+| Domínio | Concluído | `billing/facts.ts` (os fatos, `revokePayment`, `disputeReversed`, `RevokedPayment`, serialização e leitura) e `billing/subscription-state.ts` (`access_revoked`): 18 testes novos (inclui as propriedades sobre sequências aleatórias com os fatos novos: o registro continua coerente e repetir um fato não o aplica duas vezes). |
+| Banco | Concluído | Migration 0055: colunas `revoked_through`, `revoked_reason`, `revoked_cycle_months` e `revoked_cancel_at_period_end` em `organization_billing` (grant de UPDATE só ao papel de billing, check de coerência) e os três tipos de fato aceitos na caixa de entrada. |
+| Servidor | Concluído | `billing-store.ts` lê e grava o pagamento tirado. |
+| Gate PostgreSQL 18 | Concluído | `billing-lifecycle` (seção 12): reembolso integral remove o acesso na hora e fica no razão; redelivery é um efeito; repetição não se aplica; a confirmação tardia do pagamento reembolsado é ignorada e um pagamento novo revive e esquece; reembolso de período anterior não muda nada; reembolso entregue atrás de fato mais novo ainda vale; chargeback imediato, em carência também; reversão restaura fim e ciclo e o tempo corre depois; reversão depois do fim do período só esquece; reversão sem chargeback é `not_applicable`; reembolso antes da confirmação da cobrança (em registro Free e em trial) é lembrado e a confirmação não concede; reversão antes do chargeback faz o chargeback não mudar nada; reembolso depois de chargeback impede a restauração; nova referência de assinatura começa limpa. |
+| Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura achou três altos e cinco médios, todos tratados: reembolso ou chargeback entregue antes da confirmação da cobrança era descartado e a confirmação concedia Pro (agora o pagamento é lembrado, em registro Free e em trial); um pagamento tirado de um plano anual bloqueava uma nova assinatura mensal (agora o registro é apagado quando a referência da assinatura muda); reembolso depois de chargeback deixava a reversão restaurar (agora o reembolso vence); fim de período sem limite (agora até 400 dias); reversão antes do chargeback tirava o Pro para sempre (agora é lembrada); igualdade exata do fim do período (agora a tolerância de um dia); renovação paga antes do fim do período reembolsada derrubava o período em vigor (agora só conta o período que bate); restauração perdia o cancelamento (agora é guardado). Documentados no ADR: renovação reembolsada antes da confirmação com o registro ainda num período pago, carência restaurada, nova janela de adequação a cada retirada. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1709 testes), `build` e `db:generate` sem drift; gates `billing-lifecycle`, `billing-catalog`, `gate2-runtime`, `operational-selection` e `sync-push` em branch Neon descartável criada do zero com a migration 0055 (apagada depois). |
+| Limites | Registrados | Nenhum adaptador reporta esses fatos ainda (PR77 e PR78, sandbox); reembolso parcial não é fato; sem tela; os fatos precisam trazer a referência da assinatura (responsabilidade do adaptador).
+
+### Revisão pós-merge do PR #98 (reembolso e chargeback): reversão antes do chargeback e ciclo desconhecido
+
+Uma revisão feita depois do merge achou duas falhas (nenhum adaptador está registrado, então nada chegou a usuários), corrigidas aqui antes do PR77 e do PR78.
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Reversão antes do chargeback com assinatura ativa era ignorada (médio) | Corrigido | A reversão é lembrada como `won` em qualquer estado (período à frente, ou terminado há menos de sete dias, para a carência); a constraint do banco passou a aceitar `won` sobre um período pago (migration 0056); `won` é mantido por renovações e por transições de estado; o chargeback que vem depois não muda nada, e um reembolso do mesmo período ainda tira o acesso. Testes de domínio e passo novo no gate `billing-lifecycle` com a assinatura ativa. |
+| Ciclo `?? 1` ao restaurar (baixo) | Corrigido | O ciclo de um chargeback registrado antes da cobrança é aprendido da confirmação recusada; sem ciclo conhecido a reversão só esquece o chargeback (não restaura com ciclo presumido). Testes e passo no gate. |
+| O CI roda o gate `billing-lifecycle`? | Sim | O job "PostgreSQL 18 gates" roda `gates:ci` (suíte `ci`), que inclui `billing-lifecycle`, `entitlements` e `operational-selection`. |
+| Algum DTO devolve `revoked_*` ao tenant? | Não | Nenhuma rota nem contrato lê essas colunas: `billing-repository` e `operational-selection-repository` selecionam só estado, fim do acesso e início do episódio. As colunas são legíveis pela própria organização na tabela (grant de SELECT da tabela), mas o tenant não tem SQL próprio; restringir o SELECT por coluna fica como endurecimento opcional. |
+| Revisão independente da correção | Concluída sem Critical nem alto | Uma segunda leitura, somente de leitura, conferiu o desenho e achou dois pontos, corrigidos: uma reversão para um período já terminado empurrava para fora a de um período ainda à frente (agora uma vitória nunca desloca outra de período posterior, e período terminado só importa a quem está em carência) e os testes de propriedade nunca partiam de um registro com memória (agora partem de todos os tipos, com períodos tirados de um conjunto pequeno para que reembolso, chargeback e reversão se encontrem). Também: aprender o ciclo de uma confirmação recusada não move mais o relógio dos fatos; a vitória guardada não carrega ciclo nem cancelamento (coerência); sondas diretas no gate provam que o banco ainda recusa reembolso ou chargeback lembrado sobre um período pago. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1714 testes), `build` e `db:generate` sem drift; gates `billing-lifecycle`, `billing-catalog`, `gate2-runtime` e `sync-push` em branch Neon criada do zero com a migration 0056 (apagada depois). |
+
+Mesclado no [PR #99](https://github.com/camilagama/polaris/pull/99) (merge `ae3c729`).
+
+### PR85 — Concessões temporárias de entitlement (implementação, gate, revisão independente e verificações locais concluídos; mesclado no PR #102)
+
+Dá a Polaris (e, na Fase 9, ao Admin) uma forma de conceder mais do que o plano por um tempo, sem assinatura falsa, e fecha a lacuna do PR82 para quem passa do limite do Free quando a concessão termina.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/entitlement-grants` sobre a `main` (PR #99). |
+| Decisões | Tomadas pelo projeto | [ADR 0067](../docs/adr/0067-concessoes-temporarias-de-entitlement.md): só o papel de billing escreve (comandos `grantEntitlement` e `revokeEntitlementGrant`); sempre autor, motivo, início e fim, até 366 dias; só eleva; nunca muda o estado de assinatura; idempotente por ID; razão sem o motivo; o fim de uma concessão de limite abre a janela de adequação (ADR 0064) para quem passa do limite Free. |
+| Domínio | Concluído | `billing/grants.ts` (`normalizeGrant`, limites, `InvalidEntitlementGrantError`) e o início (`startsAt`) na resolução dos entitlements: 7 testes novos. |
+| Banco | Concluído | Migration 0057: `granted_by`, `starts_at`, `revoked_at` e `revoked_by` em `entitlement_grants`, checks de autor, período (início antes do fim, no máximo 366 dias) e encerramento, índice por fim, o acesso do papel de billing (inserir, encurtar a vigência; sem apagar nem editar o resto) com as políticas de linha, o gatilho "só encurta" (o fim nunca avança, uma concessão encerrada não volta) e a função `organization_free_limit_excess` (quais limites Free a organização ultrapassa, por chave). |
+| Servidor | Concluído | `billing-store.ts`: `grantEntitlement`, `revokeEntitlementGrant` e a varredura das concessões de limite que terminaram dentro de `sweepDue`; `readGrants` lê o início. |
+| Gate PostgreSQL 18 | Concluído | `entitlement-grants` (suítes `gate7`, `ci` e `all`): privilégios (o tenant não escreve; o billing só insere e encurta); recusas no comando e no banco; concessão eleva sem virar assinatura e sem tocar o estado; mesmo ID é uma concessão; razão sem o motivo; início e fim; encerramento antecipado; o fim de uma concessão de limite abre a janela uma vez, dá janela nova a quem já estava acima do limite e deixa em paz quem ainda tem concessão, quem está dentro do limite e quem paga. Os gates que inserem concessões (catálogo, entitlements, metas, variantes operacionais) passaram a informar o autor. |
+| Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura achou um alto e seis médios, todos tratados: a varredura podia deixar sem exame o fim mais novo atrás de candidatos que não precisavam de nada (agora vem do mais novo para o mais antigo e já exclui quem paga, quem monta um trial e quem já passou daquele fim); "só encurta" não era garantido pelo banco (agora um gatilho: o fim nunca avança e uma concessão encerrada não volta, para qualquer papel); encerrar uma concessão podia estendê-la ou deixá-la valendo um segundo (agora o encerramento nunca avança o fim e uma concessão encerrada antes de começar nunca vale); o teste de "ainda em vigor" ignorava a chave (agora é por limite, com a função `organization_free_limit_excess`); o mesmo ID com valores diferentes era descartado em silêncio (agora é recusado). Também: mínimo de um minuto, início até um ano à frente, autor sem e-mail, motivo sem caractere nulo, códigos de erro corretos e organização inexistente. Documentados no ADR: janela nova não carrega a escolha anterior, intervalo até a varredura, Pro com concessão acima do plano. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (149 arquivos, 1721 testes), `build` e `db:generate` sem drift; gates `entitlement-grants`, `billing-lifecycle`, `billing-catalog`, `entitlements`, `goals`, `operational-selection` e `gate2-runtime` em branches Neon criadas do zero com a migration 0057 (apagadas depois). |
+| Limites | Registrados | Sem tela de Admin (Fase 9): os comandos são a interface; a varredura olha 90 dias para trás; a checagem de excedente ignora outras concessões ainda não iniciadas. |
+| Publicação | Concluída | [GitHub PR #102](https://github.com/camilagama/polaris/pull/102) mesclado na `main` (merge `da50b20`). |
+
+### Ajustes da revisão pós-merge do #99 (issue #101): ADR 0066, comentários e uma CHECK
+
+A revisão pós-merge do PR #99 (aprovada com ajustes; nada bloqueava) pediu cinco ajustes e deixou três pontos em aberto. Os cinco ajustes estão aqui; o endurecimento do SELECT por coluna é o PR seguinte.
+
+| Item da issue | Status | Evidência |
+| --- | --- | --- |
+| ADR 0066: "nunca sobre um período pago" e "apaga o registro" contradiziam o `won` | Corrigido | O ADR agora diz que reembolso e chargeback nunca ficam guardados sobre um período pago, que o `won` é a única memória que pode ficar (sem ciclo nem cancelamento) e que um pagamento novo apaga o registro de reembolso ou chargeback, mas não o `won`. |
+| "Limites aceitos" do ADR 0066 | Corrigido | Acrescentados: o `won` permanece depois do fim do período; só um período fica lembrado por vez; o que o banco garante e o que só o domínio garante. |
+| Comentários desatualizados (`schema/billing.ts`, `RevokedPayment`, `BillingRecord.revoked`) | Corrigido | Textos reescritos para o que o código faz. |
+| `rememberableWonEnd`: "só em carência" não batia com o código | Corrigido (texto) | A condição está certa (vale para `active` e `grace`, período terminado há até sete dias, que é onde a carência se apoia ou vai se abrir); o comentário e o ADR passaram a dizer isso. |
+| A CHECK não forçava ciclo nulo e cancelamento falso no `won` | Corrigido | Migration 0058: a CHECK exige os dois; o gate `billing-lifecycle` prova com sondas diretas que o banco recusa. |
+| PR separado para restringir o SELECT de `revoked_*` por coluna | Próximo PR | Aceito pelo time; sem alteração aqui. |
+| "PostgreSQL 18 gates" com `continue-on-error: true` (ADR 0025) | Decisão do responsável | Recomendação registrada na descrição do PR: o job passou em todos os PRs desta cadeia e cada falha que ele mostrou era um defeito real (a auditoria de funções do `review-hardening`, uma corrida de milissegundos na revogação de concessões). Tirar o `continue-on-error` é uma linha no workflow, mas é uma decisão sobre bloquear ou não o merge. |
+| Nenhum DTO devolve `revoked_*`? (não verificado pelo bot) | Verificado | Nenhum contrato nem rota lê essas colunas (`billing-repository` e `operational-selection-repository` selecionam só estado, fim do acesso e início do episódio; `billing-store` só roda no papel de billing). O SELECT por coluna do PR seguinte torna isso uma garantia do banco. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, testes, `build` e `db:generate` sem drift; gates `billing-lifecycle`, `review-hardening` e `gate2-runtime` em branch Neon criada do zero com a migration 0058 (apagada depois). |
+
+Mesclado no [PR #103](https://github.com/camilagama/polaris/pull/103) (merge `f32cfed`).
+
+### SELECT por coluna do registro de billing e das concessões (ponto em aberto da revisão do #99)
+
+Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e transforma a verificação de que nenhum DTO devolve essas colunas numa garantia do banco.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Decisão | Tomada pelo projeto | Emenda ao [ADR 0057](../docs/adr/0057-catalogo-de-planos-e-entitlements.md): o tenant lê só colunas nomeadas; colunas novas nascem invisíveis. Foi além do pedido no mesmo espírito: também ficam fora do tenant a referência da assinatura no provedor, o relógio dos fatos e, nas concessões, o motivo, quem deu e quem encerrou. |
+| Banco | Concluído | Migration 0059: `REVOKE SELECT` da tabela e `GRANT SELECT` por coluna ao papel do tenant em `organization_billing` e `entitlement_grants`. |
+| Código | Sem mudança | Os repositórios já selecionavam colunas nomeadas. |
+| Gate PostgreSQL 18 | Concluído | `entitlement-grants`: o tenant é recusado (`42501`) ao ler cada coluna interna e com `SELECT *`, e ainda lê as colunas que o produto usa; os gates de entitlements, metas, variantes operacionais, catálogo, lifecycle, runtime, auditoria e sync passaram na mesma branch descartável. |
+| Publicação | Concluída | [GitHub PR #104](https://github.com/camilagama/polaris/pull/104) mesclado na `main` (merge `71ba4f5`). |
+
+### CI: o job de banco deixa de ser consultivo
+
+Cumpre o item "promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde" (linha de pendências do Gate 4), só para o `database`: o job "PostgreSQL 18 gates" perdeu o `continue-on-error` (emenda ao [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md)). A auditoria de dependências segue consultiva. A proteção de branch que torna o check obrigatório para o merge é do responsável.
+
+Mesclado no [PR #105](https://github.com/camilagama/polaris/pull/105) (merge `f988872`).
+
+### Fase 8A — catálogo público: dados, comandos e leitura por funções (PR87 e PR88; implementação, gate, revisão independente e verificações locais concluídos; mesclada no PR #106)
+
+A Fase 8 passa a ser implementada antes do Gate 7 ([ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md)), que segue pendente das contas sandbox. Este pull request é só a camada de dados e de comandos; a aplicação `apps/catalog` (8B), a rota pública de mídia e a despublicação (8C) e as telas do ERP (8D) vêm depois.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/public-catalog-data` sobre a `main` (migration 0060). |
+| Decisões | Tomadas pelo projeto | [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md): perfil digitado (nunca derivado do dono), publicação por produto sem cópia de dados, papel público sem acesso a tabelas e com quatro funções, plano lido a cada chamada com a regra do motor de entitlements. Regras em [public-catalog.md](../docs/business-rules/public-catalog.md). |
+| Domínio | Concluído | `catalog/public-catalog.ts` (endereço, nomes reservados, perfil, caracteres ocultos) e a capability `catalog:publish`. |
+| Banco | Concluído | Migration 0060: `public_catalog_profiles` e `product_publications` (FORCE RLS, grants por coluna), papéis `polaris_catalog_owner` e `polaris_catalog_runtime`, leitura por coluna e políticas do dono das funções, duas funções internas e quatro públicas (`public_catalog_profile`, `_products`, `_product`, `_media`). |
+| Repositório do tenant | Concluído | `public-catalog-repository.ts`: perfil por versão, interruptor, publicar e despublicar produtos (só com o plano para o que expõe), auditoria por produto. |
+| Gate PostgreSQL 18 | Concluído | `public-catalog` (suítes `gate8`, `ci` e `all`): o papel público não lê tabela nem executa os auxiliares; o tenant não executa as funções; Free recusado; endereço único, reservados (lista inteira no banco), versão e corrida de dois primeiros salvamentos; paginação, preços e rótulos; chaves exatas sem ID da organização, custo, estoque ou SKU; arquivado, removido e despublicado não saem; downgrade, conta suspensa e encerrada não saem sem escrita; paridade com o motor de entitlements em 54 combinações de estado de billing e concessão; isolamento entre organizações; auditoria por produto. Também passaram na mesma branch Neon: `review-hardening`, `gate2-runtime`, `entitlements`, `billing-catalog`, `billing-lifecycle`, `operational-selection`, `entitlement-grants` e `media-commands`. |
+| Revisão independente | Concluída sem Critical | Achou um alto e três médios, tratados: os gates `gate2-runtime` e `tenant-context` fixavam a lista exata de políticas (agora ignoram as do dono das funções); `storageKey` contém o prefixo da organização (documentado: só o servidor a vê, nunca o navegador); dois primeiros salvamentos simultâneos viravam erro cru (agora conflito de versão); a auditoria não dizia qual produto (agora um evento por produto). Também tratados: leitura da tela sem trava, ID de produto inválido, relógio ao despublicar, caracteres ocultos, auditoria de repetição e lacunas do gate. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (150 arquivos, 1728 testes), `build` e `db:generate` sem drift. O gate `poc:tenant:verify` (que não está no runner) recebeu só o filtro das políticas e não foi executado. |
+| Limites | Registrados | Endereço antigo liberado na troca; ordem pelo ID do produto (UUIDv7); sem tela (8D) nem aplicação pública (8B); o teste de propriedade de `facts.test.ts` foi ajustado por uma falha intermitente sem relação (um pagamento que só aprende o ciclo não tem transição). |
+| Publicação | Concluída | [GitHub PR #106](https://github.com/camilagama/polaris/pull/106) mesclado na `main` (merge `766f2b7`). |
+
+### Fase 8B — aplicação do catálogo público e SEO (PR86 e PR90; implementação, verificação no navegador e verificações locais concluídos; mesclada no PR #107)
+
+Segunda etapa da Fase 8 ([ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md) e [0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)): a primeira aplicação aberta a quem não tem conta.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/catalog-app` sobre a `main` com a 8A (#106). |
+| Aplicação | Concluída | `apps/catalog`: TanStack Start no Cloudflare Workers (`@cloudflare/vite-plugin` com ambiente `ssr`), páginas `/`, `/<endereço>` (grade com cursor) e `/<endereço>/p/<produto>`, `robots.txt`, 404 único para loja ou produto que não está sendo exibido. Ver [DESIGN.md](../DESIGN.md). |
+| Leitor | Concluído | `@polaris/db/public-catalog-reader`: as quatro funções, uma conexão por pedido, endereço em minúsculas, ID e cursor inválidos viram `null`, página limitada a 60. Coberto no gate `public-catalog`. |
+| SEO | Concluído | Título, descrição (com texto de reserva), endereço canônico a partir de `CATALOG_ORIGIN`, Open Graph e Twitter; 8 testes unitários (`seo.test.ts`). Sem imagem de pré-visualização até a rota de mídia (8C). |
+| Fronteiras | Concluídas | Biome e 5 fixtures novas em `verify-import-boundaries`: o app só importa o leitor (nada de `@polaris/db/*` tenant, billing, auth, `pg` nem Drizzle). Knip configurado para as rotas. |
+| Verificação no navegador | Concluída | Servidor local contra uma branch Neon descartável, com o login do papel público: loja, produto com variantes e preços, endereço em maiúsculas, 404 de loja inexistente, de ID e de cursor inválidos, `robots.txt`, título e metas no HTML, tela de 375 px. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build` (inclui `vite build` do app) e o gate `public-catalog` de novo em Neon. |
+| Limites | Registrados | Sem imagens (8C), sem cache de borda (8C decide o TTL), sem `sitemap.xml` (não há função que liste lojas; um sitemap por loja pode vir depois), páginas com `?after=` repetem o canonical da primeira (e um cursor que já não existe mostra "sem produtos"); o script de ciclos ignora o arquivo gerado `routeTree.gen.ts`; `CATALOG_ORIGIN` precisa ser definida por ambiente (sem ela o Worker falha em vez de publicar um endereço de desenvolvimento); Hyperdrive real e login do papel público são do go-live (runbook). Sem teste automatizado de navegador do app (a verificação foi manual). |
+| Publicação | Concluída | [GitHub PR #107](https://github.com/camilagama/polaris/pull/107) mesclado na `main` (merge `cf78d79`). |
+
+### Fase 8C — rota pública de imagens e despublicação (PR89 e PR91; implementação, verificação no navegador e verificações locais concluídos; mesclada no PR #108)
+
+Terceira etapa da Fase 8: as imagens do catálogo público, sem abrir o bucket.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/catalog-media` sobre a `main` com a 8B (#107). |
+| Rota | Concluída | `/<endereço>/m/<produto>/<imagem>` (`?s=320` ou `640`): valida a entrada (sem conexão se não for endereço ou UUID), pergunta à base se a imagem pode ser exibida **agora**, lê o derivado (ou o original, até o ERP gerá-lo) do bucket privado e responde com `Cache-Control` de 60 s, `ETag` e 304. Falha de autorização ou do bucket é uma resposta genérica sem detalhe; a chave de armazenamento nunca sai. 10 testes (`media.test.ts`). |
+| Despublicação (PR91) | Concluída | Não há purge: a base é consultada a cada pedido (produto, loja, plano, conta), então despublicar, sair do plano ou encerrar a conta para de servir no pedido seguinte; só caches do navegador e da borda duram até um minuto ([ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)). |
+| Páginas e SEO | Concluídos | Capa nos cartões, galeria na página do produto (largura e altura declaradas), `og:image` e `twitter:image` absolutos, cartão grande quando há imagem. |
+| Domínio | Concluído | `mediaDerivativeKey` e os tamanhos dos derivados passaram para `@polaris/domain/catalog/media`, compartilhados pelo ERP (rota e reconciliador, sem mudança de comportamento) e pelo catálogo. |
+| Verificação no navegador | Concluída | Servidor local contra Neon descartável e R2 local: original e derivado ausente, `304`, tamanho inválido, imagem de outro produto (`404`), metas `og:image` no HTML. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build` e `bun install --frozen-lockfile`. |
+| Limites | Registrados | O binding R2 do Worker público não pode ser somente leitura (só `get` é usado); o Worker não gera derivados e os derivados passam a ser gerados no envio pelo ERP (ver a seção abaixo); um teste de navegador automatizado do app continua pendente. |
+| Publicação | Concluída | [GitHub PR #108](https://github.com/camilagama/polaris/pull/108) mesclado na `main` (merge `42a4427`). |
+
+### Derivados de imagem gerados no envio (fecha o limite da 8C)
+
+A revisão da 8C notou que nada gerava os derivados de 320 e 640 px, então o catálogo público serviria o original de até 1200 px nos cartões e no `og:image`. O ERP agora gera os dois derivados quando a imagem é enviada (`storeUploadDerivatives`, em `apps/web/src/server/routes/media.ts`): depois de o envio ser confirmado e só se não for um reenvio idempotente, um tamanho de cada vez, com a mesma chave e a mesma função do pedido sob demanda. Uma falha é registrada (`media_derivative_deferred`) e **não** falha o envio: o derivado nasce no primeiro pedido do ERP, como antes. A limpeza horária já apagava os derivados junto da imagem. Testes: o envio escreve a marca, o original e os dois derivados (chaves conferidas), um derivado que falha não derruba o envio, o reenvio não gera nada. Imagens enviadas antes (só ambientes de teste) seguem servidas em tamanho original. Regras em [media.md](../docs/business-rules/media.md), decisão no [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md).
+
+Mesclado no [PR #109](https://github.com/camilagama/polaris/pull/109) (merge `2f1c545`).
+
+### Fase 8D — o catálogo público no ERP: perfil, interruptor e produtos (PR87 e PR88, lado da organização; implementação e verificações locais concluídas; mesclada no PR #110)
+
+Última etapa da Fase 8: a organização passa a gerir o catálogo pela interface, sem comandos manuais.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/catalog-erp` sobre a `main` com 8A a 8C e os derivados no envio. |
+| Contrato e servidor | Concluídos | `publicCatalog.*` (`setup`, `saveProfile`, `setPublished`, `publishProducts`, `unpublishProducts`) com a capability `catalog:publish`, identidade e organização da sessão (nunca do corpo), ID de auditoria do servidor e a origem pública (`CATALOG_ORIGIN`) só para montar o link. Recusas do domínio viram `BAD_REQUEST` ou `CONFLICT` com o motivo estável. 11 testes de roteador. |
+| Tela | Concluída | `/public-catalog` ("Catálogo público" no menu): perfil, interruptor e produtos, com o endereço sugerido pelo nome, contador da descrição, estados "No ar", "Fora do ar" e "Ligado, mas fora do ar" (plano), lotes de até 200 produtos, mensagens em português ([DESIGN.md](../DESIGN.md)). Modelo, mensagens de erro e os três painéis têm testes (`public-catalog-model`, `-errors`, `-panels`). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (156 arquivos, 1782 testes), `build`. |
+| Limites | Registrados | A tela não foi aberta no navegador (o login do ERP exige conta; foi coberta por testes de renderização dos painéis e de roteador); sem teste de navegador automatizado; sem pré-visualização do catálogo dentro do ERP (há o link). |
+| Publicação | Concluída | [GitHub PR #110](https://github.com/camilagama/polaris/pull/110) mesclado na `main` (merge `94740f3`). |
+
+Com isso a Fase 8 está completa no código. Pendências da fase: o Gate 7 (billing com sandboxes reais) segue como gate de saída do billing, e o go-live exige o login do papel público, o Hyperdrive sem query cache e as variáveis por ambiente (runbook).
+
+### Fase 9A — Admin: acesso pelo Cloudflare Access, principal de plataforma e capacidades (PR92, PR93 e PR94; implementação, gate, revisão e verificações locais concluídos; mesclada no PR #111)
+
+Primeira etapa da Fase 9 ([ADR 0070](../docs/adr/0070-admin-acesso-identidade-e-capacidades.md)): a pergunta "quem opera o Polaris e o que pode" passa a ter uma resposta verificada.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/admin-access` sobre a `main` com a Fase 8 (migration 0061). |
+| Verificação do Access (PR92) | Concluída | `apps/admin/src/access-jwt.ts`: RS256 contra as chaves do time (cache e renovação), emissor, audiência, validade com tolerância, `sub`, tipo `app`; recusa `none`, HS256, outro emissor ou audiência, expirado, adulterado, chave desconhecida, token de serviço. 17 testes com chaves RSA reais (mais 12 da API). |
+| API do Admin | Concluída | `apps/admin/src/app.ts` e `worker.ts` (Hono, `wrangler.jsonc`): `/health` sem login, `/api/whoami` com a capacidade `platform:read`; sem configuração, 503; sem token, 401; login que não é principal, 403; `no-store` e demais cabeçalhos; chaves ou banco fora do ar são 503. `wrangler deploy --dry-run` no build. |
+| Principal de plataforma (PR93) | Concluído | Tabela `platform_principals` (emissor e subject únicos, papel e estado validados, e-mail só como rótulo), papel de banco `polaris_admin_runtime` que lê e atualiza só o rótulo e a última vez visto; migration 0061; `platform-principal-repository.ts`. |
+| Capacidades (PR94) | Concluídas | `@polaris/domain/admin/platform-capabilities`: capacidades nomeadas por papel, separadas das de tenant, falha fechada (5 testes). |
+| Gate PostgreSQL 18 | Concluído | `platform-principals` (suítes `gate9`, `ci` e `all`): unicidade e checks, FORCE RLS, o papel do Admin não cria, apaga, trunca nem muda papel, estado, emissor ou subject, não lê nenhuma tabela de tenant, auth ou cobrança nem roda função de tenant; nenhum papel de tenant lê os principais; o operador é achado só por emissor e subject (desconhecido, outro emissor e desativado são ninguém); o rótulo acompanha o login sem nunca achar ninguém; a última vez visto é regravada no máximo a cada cinco minutos. Também passaram na mesma branch Neon `review-hardening` e `gate2-runtime`. |
+| Fronteiras | Concluídas | Biome e 6 fixtures novas: o Admin só importa o repositório de principais (nada de tenant, cobrança, auth, `pg` nem Drizzle); Knip configurado. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
+| Limites | Registrados | MFA e duração da sessão são política do Access (runbook), não do Worker; sem tela do Admin (só `/api/whoami`); o fluxo contra um Access real não foi exercitado (precisa da conta do responsável): coberto por testes com chaves e tokens gerados; casos de suporte, acesso temporário, revelação de dados pessoais, cobrança e suspensão são as próximas etapas. |
+| Publicação | Concluída | [GitHub PR #111](https://github.com/camilagama/polaris/pull/111) mesclado na `main` (merge `c593c63`). |
+
+### Fase 9B — Admin: diagnóstico de organização sem acesso ao tenant (PR95; implementação, gate e verificações locais concluídos; mesclada no PR #112; revisão independente não registrada nesta seção)
+
+Segunda etapa da Fase 9 ([ADR 0071](../docs/adr/0071-admin-diagnostico-sem-acesso-ao-tenant.md)): o operador enxerga o estado de uma organização sem ler nenhum dado do tenant.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/admin-diagnostics` sobre a `main` com 9A (migration 0062). |
+| Banco | Concluído | Duas funções `SECURITY DEFINER` (`admin_organizations_overview`, `admin_organization_diagnostics`) de um papel sem login (`polaris_admin_owner`) que só lê colunas necessárias com políticas próprias; só o papel do Admin as executa. |
+| Relatório | Concluído | `@polaris/domain/admin/organization-diagnostics`: plano e concessões pelo motor do produto, uso contra cada limite e pontos de atenção (7 testes). |
+| API do Admin | Concluída | `GET /api/organizations` (busca por ID ou começo do nome, páginas de 1 a 50) e `GET /api/organizations/:id/diagnostics`, com a capacidade `organization:diagnose`, entrada validada antes de consultar (4 testes novos de rota). |
+| Gate PostgreSQL 18 | Concluído | `admin-diagnostics` (suítes `gate9`, `ci` e `all`): só o papel do Admin executa as funções (tenant, cobrança, catálogo e PUBLIC não), o Admin segue sem alcançar nenhuma tabela além dos principais, as contagens batem numa organização com produtos, imagens, metas, concessão, aparelho, comandos e eventos de cobrança, nenhum texto digitado (produto, e-mail, rótulo, motivo de concessão, caminho de arquivo) aparece, o plano é o do motor (concessão em vigor, período vencido é Free, sem cobrança é Free), busca, páginas e entradas inválidas. Também passaram `platform-principals`, `review-hardening` e `gate2-runtime` (os gates que fixam a lista de políticas passaram a ignorar as do dono das funções do Admin). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
+| Limites | Registrados | Sem tela do Admin (só API); o nome da organização aparece ao operador; a leitura não é auditada (não é dado sensível); os pontos de atenção são heurísticas fixas. |
+| Publicação | Concluída | [GitHub PR #112](https://github.com/camilagama/polaris/pull/112) mesclado na `main` (merge `600db43`). |
+
+### Fase 9C — Admin: casos de suporte, acesso temporário, leitura mascarada e revelação auditada (PR96, PR97 e PR98; implementação, gate e verificações locais concluídos; mesclada no PR #113; revisão independente não registrada nesta seção)
+
+Terceira etapa da Fase 9 ([ADR 0072](../docs/adr/0072-admin-casos-acesso-temporario-e-revelacao.md)): ver dados de um cliente passa a exigir motivo, tempo limitado, mascaramento e registro.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/admin-support-access` sobre a `main` com 9B (migration 0063). |
+| Banco | Concluído | Tabelas `support_cases`, `tenant_access_grants` e `platform_audit_events` (somente inserção, até para o dono), dez funções do Admin executáveis pelo papel do Admin (duas da 9B e oito novas), ajudantes e máscaras que ninguém além do dono executa, gatilhos que impedem reabrir um caso e desfazer uma revogação; o dono das funções lê por coluna só `customers` do tenant. O papel do Admin segue sem ler nenhuma tabela. |
+| Domínio | Concluído | `@polaris/domain/admin/support-access` (regras de abertura e de resolução, caracteres de controle, minutos de acesso, campos revelaveis, recusas nomeadas; 6 testes) e a capacidade `tenant_data:read`. |
+| API do Admin | Concluída | Casos (abrir, listar, ler com trilha, fechar), acesso (dar, revogar), clientes mascarados e revelação, cada rota com a sua capacidade, operador do login (nunca do corpo), corpo JSON limitado, verificação de origem em mudanças, recusas com código e sem texto do banco (11 testes novos de rota). |
+| Gate PostgreSQL 18 | Concluído | `admin-support` (suítes `gate9`, `ci` e `all`): sem acesso nada se lê nem revela; as funções certas são as únicas executáveis pelo Admin; casos só para organização real, tipo conhecido e operador ativo; acesso de 5 a 240 minutos (uma hora por padrão), de um operador e um caso; clientes mascarados no formato combinado, sem nenhum valor real, só da organização do caso; revelação só de campo permitido, de cliente da organização, só com acesso, registrada **sem o valor**; auditoria que nem o dono do banco altera; acesso termina por tempo, revogação e fechamento do caso. Os gates `admin-diagnostics` e `platform-principals` passaram a provar também os novos privilégios do dono, por coluna, por tabela e por política. Também `review-hardening` e `gate2-runtime`. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
+| Limites | Registrados | Sem tela do Admin (só API); só clientes são legíveis; o banco confia no ID do operador que o Worker passa (um Worker comprometido age como operador, mas não lê sem acesso nem deixa de auditar); sem aviso ao cliente de que seus dados foram vistos. |
+| Publicação | Concluída | [GitHub PR #113](https://github.com/camilagama/polaris/pull/113) mesclado na `main` (merge `12a240f`). |
+
+### Fase 9D — Admin: suspensão de organização e comandos de cobrança (PR99 parcial e PR100; mesclada no PR #114)
+
+Última etapa da Fase 9 ([ADR 0073](../docs/adr/0073-admin-suspensao-e-comandos-de-cobranca.md)). Os comandos de cobrança que dependem de um provedor (reconciliar, cancelar a renovação, reembolsar) ficam para depois do Gate 7.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/admin-suspension` sobre a `main` com 9C (migration 0064). |
+| Suspensão (PR100) | Concluída | `admin_suspend_organization` e `admin_reactivate_organization`: exigem operador ativo e caso aberto; mudam status, época de autorização e concessões offline na mesma transação (com o mesmo travamento por usuário da emissão de concessões); não tocam a cobrança; reativar nunca reabre uma organização encerrada nem devolve concessões revogadas; auditadas. |
+| Comandos de cobrança (PR99, parte sem provedor) | Concluída | Conceder e encerrar um entitlement temporário pelos comandos do produto, pelo papel de billing (`ADMIN_BILLING_HYPERDRIVE`), com o registro **antes e depois** na auditoria (`admin_audit_billing_command`, que exige caso aberto) e encerramento restrito às concessões da organização do caso (parâmetro opcional novo no comando de billing). |
+| API do Admin | Concluída | `POST /api/support-cases/:id/suspend` e `/reactivate` (`organization:suspend`); `POST` e `DELETE /api/support-cases/:id/entitlement-grants` (`billing:operate`); recusas do domínio de concessões viram 400 com código; billing não configurado é 503 (testes de rota e de orquestração novos, inclusive o `commandId` de idempotência e o resultado que não pôde ser gravado, `outcomeRecorded: false`). |
+| Gate PostgreSQL 18 | Concluído | `admin-suspension` (suítes `gate9`, `ci` e `all`): exige operador ativo e caso aberto; suspender muda status, época e concessões, deixa a cobrança e outra organização exatamente como estavam, a organização deixa de abrir para os usuários, repetir é uma vez, a suspensão espera uma concessão sendo emitida (mesma chave por usuário) e a revoga, um usuário em duas organizações só perde a suspensa, concessões e livro de cobrança intactos, a auditoria registra o número de concessões; reativar não ressuscita o revogado nem reabre encerrada; passos de cobrança só dos quatro tipos, de caso aberto e operador ativo; o comando de billing recusa encerrar concessão de outra organização. Os gates `admin-support`, `admin-diagnostics` e `platform-principals` provam também os novos privilégios do dono (colunas atualizáveis, políticas) e o conjunto exato de funções do Admin. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
+| Limites | Registrados | Reconciliar, cancelar renovação e reembolsar só existem com provedor (Gate 7); a auditoria dos comandos de cobrança não é atômica com a ação (pedido antes, resultado depois); sem aprovação de uma segunda pessoa; sem aviso ao cliente. Com isto a Fase 9 está completa no código; resta o Gate H do plano (Admin/RLS), cuja parte de banco está nos gates `admin-*`, e a prova com um Cloudflare Access real, que depende da conta do responsável. |
+| Publicação | Concluída | [GitHub PR #114](https://github.com/camilagama/polaris/pull/114) mesclado na `main` (merge `70b835c`). |
+
+### Fase 10A — Privacidade: encerramento de organização (PR101; implementação, gate e verificações locais concluídos; mesclada no PR #116)
+
+Primeiro passo da Fase 10 ([ADR 0074](../docs/adr/0074-encerramento-de-organizacao.md)): o dono encerra a organização, o acesso acaba na hora e ele pode desfazer por 30 dias. A purga, a anonimização, os casos de privacidade, o export, a retenção e o deletion ledger são os PR seguintes (PR102 a PR107).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/organization-closure` sobre a `main` com a Fase 9 (migration 0065). |
+| Domínio | Concluído | `@polaris/domain/organization/closure`: os seis estados, a janela de 30 dias, quem pode recuperar e quando, a confirmação pelo nome (sem diferenciar caixa, espaços e acentos compostos), recusas nomeadas; 9 testes. Capacidade nova `organization:close`. |
+| Banco | Concluído | Migration 0065: status ampliado, motivo `organization_closed` nas concessões offline, tabela `organization_closures` (sem acesso de nenhum papel de serviço), papéis `polaris_privacy_owner` e `polaris_privacy_runtime` (nunca logins), quatro funções (pedir, recuperar, listar as próprias em encerramento e a varredura). |
+| API | Concluída | `organization.requestClosure` (tenant, `organization:close`, confirmação pelo nome), `organization.listClosing` e `organization.recoverClosure` (só o usuário autenticado); recusas viram 400 (nome errado) e 409 (organização inativa, janela vencida); 9 testes de roteador. |
+| Varredura | Concluída | `PRIVACY_HYPERDRIVE` no Worker `polaris-web`, lotes de 100 (até 10 por execução), isolada de mídia e billing, sem o binding apenas registra; 4 testes da orquestração e 4 do Worker. |
+| Gate PostgreSQL 18 | Concluído | `organization-closure` (suítes `gate10` e `ci`): confirmação pelo nome e capacidade própria; o pedido muda status, época e concessões numa transação e deixa cobrança, concessões de entitlement, livro e outra organização como estavam; recusas da função (janela fora de 1 a 90 dias, usuário que não é membro, sem identidade da transação, organização inativa); espera por uma concessão em emissão e a revoga, sem tocar a do mesmo usuário em outra organização; nenhuma concessão é emitida depois; dois pedidos simultâneos, um vence; listar e recuperar (só o dono, época não volta, concessões revogadas ficam, novo encerramento reescreve o registro); janela vencida (não recupera, não é listada, a varredura fecha exatamente as vencidas, é limitada e idempotente); reativação e suspensão do Admin não reabrem uma encerrada; privilégios exatos do papel dono, funções executáveis só pelos papéis certos e RLS forçado. A suíte `ci` inteira (35 gates) e `gate2-runtime` passaram na mesma branch Neon nova (migrations 0000–0065 do zero). O gate `poc:tenant:verify` (fora do runner) recebeu só o filtro da nova política do dono e não foi executado. |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (167 arquivos, 1883 testes), `build` e `db:generate` sem drift. |
+| Revisão independente | Concluída | Sem defeito de segurança; achados tratados: janela em horas (independente do fuso), recusas casadas por SQLSTATE e mensagem (uma permissão faltando não vira recusa educada), cenários novos no gate (concessão depois do pedido, pedidos simultâneos); decisão de produto registrada no ADR: quem encerra a única organização não abre outra até o purge. |
+| Limites | Registrados | Sem tela, sem e-mail ao dono, sem export automático, cancelamento da renovação no provedor só no Gate 7 (ver ADR 0074). |
+| Publicação | Concluída | [GitHub PR #116](https://github.com/camilagama/polaris/pull/116) mesclado na `main` (merge `29733cd`). |
+
+### Fase 10B — Privacidade: anonimização de cliente (PR102; implementação, gate e verificações locais concluídos; mesclada no PR #117)
+
+Segundo passo da Fase 10 ([ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)): `customer.anonymizeForPrivacy` remove a pessoa do cadastro e preserva os fatos econômicos das vendas.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/customer-anonymization` sobre a `main` com o PR101 (migration 0066). |
+| Domínio | Concluído | `ANONYMIZED_CUSTOMER_NAME`, `anonymizedCustomerProfile`, `CustomerAnonymizedError`; capacidade nova `customer:anonymize`; 3 testes. |
+| Banco | Concluído | Migration 0066: coluna `anonymized_at`, CHECK que exige o formato anonimizado (nome fixo, sem contato nem observações, arquivado), CHECK de contato só para quem não foi anonimizado, gatilho que recusa qualquer alteração de uma linha anonimizada, `UPDATE` do runtime só na coluna nova. |
+| Repositório e API | Concluídos | `anonymizeCustomerForPrivacy` (capacidade própria, versão esperada, idempotente, auditoria só com IDs); editar e restaurar um anonimizado são recusados (409); `customer.anonymizeForPrivacy` no contrato; `anonymizedAt` no modelo de leitura; o comando offline `customer.update` é rejeitado como `customer_anonymized` (pendência indisponível); 3 testes de roteador. |
+| Interface | Concluída | Lista de clientes: selo "Anonimizado", sem editar nem restaurar, botão "Anonimizar" com confirmação em duas etapas (desligado sem conexão). Sem clique em navegador nesta etapa. |
+| Gate PostgreSQL 18 | Concluído | `customer-anonymization` (suítes `gate10` e `ci`): capacidade própria, versão esperada, só o cliente da própria organização; o cadastro vira o nome fixo sem telefone, email nem observações, é arquivado e a versão avança, com um evento de auditoria só com IDs; a venda, os itens, ajustes, pagamento, vínculo, movimentos de estoque e saldos ficam idênticos byte a byte; nenhum dado da pessoa sobra no cadastro, na auditoria, no log de mudanças, no log de comandos nem nas vendas; repetir não muda nada (nem arquivar com versão velha); editar e restaurar são recusados; direto no banco o runtime não consegue desfazer, recolocar dado nem alterar a linha; o banco recusa um anonimizado com nome, telefone, email ou observações, ou não arquivado; a lista mostra a marca, a busca por duplicados não o acha e uma venda não pode ser ligada a ele de novo. A suíte `ci` inteira (36 gates) e `gate2-runtime` passaram na mesma branch Neon nova (migrations 0000–0066 do zero). |
+| Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (167 arquivos, 1892 testes), `build` e `db:generate` sem drift. |
+| Revisão independente | Concluída | Sem falha de integridade no banco; achados tratados: as vendas recentes guardadas no aparelho (com o nome do cliente) são atualizadas quando um cliente muda, a tela do aparelho reconhece o anonimizado pelo formato que só ele pode ter, arquivar de novo com versão velha é no-op; limites registrados no ADR (hash do log de comandos é pseudonimização, fila de edições offline). |
+| Limites | Registrados | Cópias fora do banco ativo (backups, branches, exportações, aparelhos que não sincronizaram) e texto livre em outros registros ficam para retenção e purge; sem motivo registrado até o PR103; o modelo local não guarda a marca (o servidor recusa). |
+| Publicação | Concluída | [GitHub PR #117](https://github.com/camilagama/polaris/pull/117) mesclado na `main` (merge `8188579`). |
+
+### Correções das revisões pós-merge do bot (PR #114 e PR #116)
+
+O bot revisor ([comentário no #114](https://github.com/camilagama/polaris/pull/114) e [no #116](https://github.com/camilagama/polaris/pull/116)) aprovou com ajustes. Tratados num PR à parte:
+
+| Achado | Tratamento |
+| --- | --- |
+| #114: repetir o mesmo `commandId` do comando de conceder virava erro (o fim "daqui a N horas" muda a cada pedido e o store compara o instante) | O comando lê a concessão do ID antes (`findEntitlementGrant`): a repetição é a mesma concessão se tudo menos o relógio confere (a duração pedida inclusive: 1 hora e depois 720 é conflito), e um conflito é 409 `grant_id_conflict` (antes saía 500). Testes do comando e da rota; o gate `admin-suspension` cobre a leitura do store. |
+| #116: `organization_closed` fora da lista de motivos de revogação do domínio | Incluído (espelha o CHECK do banco). |
+| #116: a confirmação digitada vale só no TypeScript | Registrado nos limites do ADR 0074. |
+| #116 e #114: número de ADR que colide com o rascunho #96 | Não é deste PR: o #96 precisa ir para 0076 ou mais (0074 e 0075 estão em uso). |
+
+Mesclado no [PR #119](https://github.com/camilagama/polaris/pull/119) (merge `12243a9`).
+
+### Fase 10C — Privacidade: casos de privacidade (PR103; implementação, gate e verificações locais concluídos; mesclada no PR #120)
+
+Terceiro passo da Fase 10 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): o fluxo interno de um pedido sobre dado pessoal, no Admin.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/privacy-cases` sobre o PR #117 (migration 0067). |
+| Domínio | Concluído | `@polaris/domain/admin/privacy-case`: códigos, ordem das etapas, regras de decisão (identidade que falhou, operador que não aceita por conta própria, encaminhamento), prazo provisório de 15 dias contado de quando o pedido chegou, atraso; 15 testes. |
+| Banco | Concluído | Migration 0067: tabelas `privacy_cases` (CHECKs de ordem e de decisão) e `privacy_case_actions` (somente inserção), gatilho que só deixa o caso avançar e não muda passo gravado, nove funções do Admin (abrir, identidade, papel, escopo, decisão, ação, resolver, ler, listar) e a troca das funções genéricas de abrir e fechar caso, que passam a recusar o tipo `privacy`. |
+| API do Admin | Concluída | `POST /api/privacy-cases` e um `POST` por etapa, `GET` de lista (abertos, fechados, atrasados) e de leitura, tudo com `privacy_case:manage`; recusas do domínio viram 400, passo fora de ordem e caso fechado viram 409; 10 testes de rota novos. |
+| Gate PostgreSQL 18 | Concluído | `privacy-cases` (suítes `gate10` e `ci`): abertura e validações, ordem das etapas, decisões permitidas e recusadas, execução e resolução (fecha o caso e revoga o acesso temporário), o banco recusando pular etapa, voltar, mudar passo gravado, caso resolvido, aceitação indevida e mudar ou apagar ação, lista e atraso, auditoria só com códigos (a nota nunca chega nela) e privilégios exatos. Os gates `admin-support`, `admin-diagnostics`, `platform-principals`, `admin-suspension`, `review-hardening` e `gate2-runtime` também passaram na mesma branch (política do ADR 0025: só os afetados). |
+| Revisão independente | Concluída | Achados tratados: `partially_accept` sem motivo (a função deixava passar e o CHECK recusava: virava 500), o motivo de identidade só para identidade que falhou em qualquer decisão, o gatilho só aceitando o passo seguinte (antes a adjacência estava só na função), a ação registrada combinando com a decisão, caso inexistente respondendo 404 (não 409), `admin_not_configured` respondendo 503, a resolução travando o caso de suporte (como o fechamento genérico), a referência ao titular só como identificador, e um teste de paridade no gate entre o banco e o domínio em todas as combinações. Limites no ADR: o papel é declarado pelo operador; o purge (PR107) precisa tratar essas tabelas. |
+| Suíte completa em Neon | Parcial | PR101 e PR102 rodaram a suíte `ci` inteira e o `gate2-runtime`; este PR rodou só os afetados (política do ADR 0025). A suíte completa da Fase 10 roda ao entregar o último PR da fase. |
+| Limites | Registrados | Sem tela do Admin; sem aviso nem contato do titular; prazo provisório, sem lembrete; um caso é sempre de uma organização; a execução é só registrada (os comandos de anonimizar e encerrar seguem do dono). |
+| Publicação | Concluída | [GitHub PR #120](https://github.com/camilagama/polaris/pull/120) mesclado na `main` (merge `ff9343c`). |
+
+
+### Fase 10D — Privacidade: exportação de dados (PR104; implementação, gate e verificações locais concluídos; revisão e publicação: ver linhas abaixo)
+
+Quarto passo da Fase 10 ([ADR 0078](../docs/adr/0078-exportacao-de-dados-da-organizacao.md)): o dono pede uma cópia dos dados da organização, montada em segundo plano e baixada por tempo limitado.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `codex/data-export` sobre o PR #120 (migration 0068). |
+| Domínio | Concluído | `@polaris/domain/privacy/{zip,csv,data-export}`: ZIP sem compressão com nomes validados e bytes determinísticos, CSV com a defesa contra fórmula de planilha, formatos, prazo de 24 horas, nome do arquivo por data; capability `organization:export` (owner). |
+| Banco | Concluído | Migration 0068: `data_exports` e `data_export_files` (RLS forçado, CHECKs de estado coerente), um pedido em andamento por organização (índice parcial único), no máximo três por 24 horas (gatilho), e sete funções do papel de privacidade (pegar, gravar arquivo, concluir, falhar, expirar, listar e marcar os arquivos apagados). O papel do tenant só lê e insere as três colunas do pedido. |
+| O que entra | Concluído | `export-datasets.ts`: 31 tabelas exportadas e as tabelas da organização deixadas de fora, cada uma com a razão; colunas lidas do catálogo (`has_column_privilege`), leitura paginada pela chave primária sob o RLS do solicitante. O gate falha se uma tabela com `organization_id` não estiver em uma das listas. |
+| Job e API | Concluídos | Job no `scheduled` horário (mesma conexão do papel de privacidade), lendo como o solicitante em `REPEATABLE READ`; ZIP de dados (JSON e CSV conforme o pedido, manifesto, LEIA-ME) e partes de imagens de até 32 MiB no R2 em `exports/v1/…`; `dataExport.request` e `dataExport.list`; download por rota autenticada e auditada, sem cache. Testes: job (retentativa, falha definitiva, limpeza, expiração), roteador, rota de download, worker. |
+| Gate PostgreSQL 18 | Concluído | `data-export` (suítes `gate10` e `ci`): pedido, um por vez, limite diário (também no banco), o papel do tenant sem atualizar nem apagar, ciclo de vida pelas funções, retomada de execução parada, download só da própria organização e dentro do prazo, expiração e remoção, cobertura completa das tabelas, isolamento entre organizações e privilégios exatos. O gate `organization-closure` teve a lista exata de políticas do dono de privacidade atualizada. |
+| Revisão independente | Concluída | Sem vazamento entre organizações nem injeção. Achados tratados: o teto de memória contava só o JSON e guardava as linhas como objetos (agora só texto, teto de 16 MiB e os dados soltos antes das imagens), pedir só imagens ou só CSV lia e media tudo em JSON (agora só o pedido), teto de 400 imagens por causa das chamadas externas por execução, a segunda exportação só começa com folga de tempo, falha ao registrar falha não derruba o laço, as datas saíam no texto cru do banco (agora ISO 8601 em UTC), `HEAD` não roda o download. Registrados nos limites do ADR: execução morta vira abandono sem evento de auditoria, funções sem conferir a tentativa, pedido `requested` parado, contagem de chamadas a medir na conta. |
+| Suíte completa em Neon | Parcial | O gate novo e os afetados rodaram (`data-export`, `organization-closure`, `customer-anonymization`, `privacy-cases`, `platform-principals`, `admin-diagnostics`, `admin-support`, `admin-suspension`, `review-hardening`; política do ADR 0025); a suíte completa da Fase 10 roda ao entregar o último PR da fase. |
+| Limites | Registrados | Não é imediata (job horário); sem aviso por e-mail nem tela; a trilha de auditoria, cobrança, sincronização e membros não entram; organizações com mais de 16 MiB de dados ou 400 imagens falham (`export_too_large`); miniaturas derivadas não entram; o arquivo baixado fica com quem baixou. |
+
+### Fase 10E — Privacidade: retenção por classe (PR105; implementação e verificações locais concluídas; gates de banco no CI)
+
+Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md), proposto; o número pode mudar).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 20 classes com origem, regra, fontes e estado (a `deletion_ledger` entrou com o PR106, proposta e sem job); só as duas de mídia e a de exportação estão aprovadas, com prazo e job (os jobs horários existentes); as constantes do reconciliador e da exportação vêm do registro. |
+| Jobs de expurgo | Nenhum novo | As classes aprovadas com prazo (mídia e exportação) já tinham job; as demais ficam propostas, sem job, até a decisão do responsável. |
+| HMAC do `payload_hash` | Concluído | `SYNC_PAYLOAD_HASH_SECRET` (503 sem ele); reenvio compara também o SHA-256 legado e o segredo anterior. Sem migration. O segredo não foi criado em nenhum ambiente. |
+| Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
+| Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
+| Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até a retenção do log ser aprovada; prazos legais a confirmar pelo responsável. |
+
+### Fase 10F — Privacidade: deletion ledger (PR106; implementação e verificações locais concluídas; gate de banco no CI)
+
+Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.md); o número pode mudar): um tombstone mínimo de cada exclusão, para um restore de backup refazer o que a privacidade já tinha tirado.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/deletion-ledger` sobre a `main` (migration 0069, só aditiva). |
+| Domínio | Concluído | `@polaris/domain/privacy/deletion-ledger`: os dois pares permitidos (`customer`/`anonymize`, `organization`/`purge`), IDs opacos, recusa de qualquer campo além do contrato. |
+| Banco | Concluído | `deletion_ledger` (RLS forçado, CHECKs de vocabulário e de ID opaco, índice único por tipo, ID e operação, sem chave estrangeira para a organização). O runtime do tenant só insere as quatro colunas de um tombstone, só de cliente já anonimizado na própria organização, e não lê nada; nenhuma política permite `UPDATE` ou `DELETE`; o dono de privacidade só lê. |
+| Quem grava | Concluído | `anonymizeCustomerForPrivacy` grava na mesma transação do comando (`recordDeletionLedgerEntry`); o comportamento do comando não muda. O purge (PR107) grava o tombstone da organização antes de apagar, em migration própria. |
+| Restore | Concluído (procedimento) | [Runbook](../docs/runbooks/deletion-ledger-restore.md): ler o ledger do ambiente que será substituído, reaplicar, conferir por consulta vazia. Sem automação (Fase 16); item novo no checklist de go-live. |
+| Gate PostgreSQL 18 | No CI | `deletion-ledger` (suítes `ci` e `gate10`); não rodado localmente (sem PostgreSQL 18 no ambiente). |
+| Retenção | Classe proposta | A classe `deletion_ledger` está no ADR 0079 e no registro de retenção (`proposta`, sem job); a regra vem do ADR 0080 e o prazo final é a confirmar pelo responsável. |
+| Limites | Registrados | O ledger mora no mesmo banco: perda total do banco perde os tombstones posteriores ao último backup (cópia fora do banco: Fase 16); reaplicar é manual; o caso de privacidade ainda não é preenchido pelo comando; o ID opaco é pseudônimo enquanto houver backup antigo. |
+
+## Fase 11 — infraestrutura assíncrona
+
+### Fase 11A — Outbox transacional (PR108; implementação e verificações locais concluídas; gate de banco no CI)
+
+Primeiro passo da Fase 11 ([ADR 0082](../docs/adr/0082-outbox-transacional.md); o número pode mudar): o evento nasce na mesma transação do comando, sem despachante (PR110), sem filas (PR109).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/transactional-outbox` sobre a `main` (migration 0070, só aditiva; a do PR #126 também é 0070, e o segundo a entrar renumera a migration e o snapshot; o número do ADR também pode mudar). |
+| Domínio | Concluído | `@polaris/domain/events/outbox`: tipos permitidos, corpo só de IDs opacos, inteiros e booleanos (texto livre recusado), chave de idempotência e correlação. |
+| Banco | Concluído | `event_outbox` (RLS forçado; `event`, `type`, `status` `pending`/`dispatched`, `available_at`, `attempts`, `idempotency_key`, `correlation_id`; índice único por organização e chave; CHECK do corpo; `ON DELETE CASCADE` na organização). O runtime do tenant só insere cinco colunas, na própria organização e nos tipos que a política lista (cada evento amarrado a uma exportação pedida pelo mesmo usuário); ninguém lê, atualiza ou apaga; nenhum outro papel tem privilégio (o do despachante nasce no PR110). |
+| Quem grava | Concluído | `recordOutboxEvent` (`@polaris/db/event-outbox`) na transação do comando. Integração: `requestDataExport` grava `data_export.requested` com o ID do pedido; o comportamento não muda (o job continua achando o pedido pela tabela) e nada consome o evento ainda. |
+| Gate PostgreSQL 18 | No CI | `event-outbox` (suítes `ci` e `gate11`); não rodado localmente (sem PostgreSQL 18 no ambiente). O CHECK do corpo e a política foram provados num PostgreSQL 18.6 em memória (PGlite), fora do repositório. |
+| Limites | Registrados | Sem despacho, tentativa, recuo, DLQ nem retenção dos despachados (PR110 a PR112); o purge (PR107) não apaga a linha da organização, então o cascade não dispara e `event_outbox` precisa entrar nas listas do purge de quem entrar depois; evento de plataforma (sem organização) fica para quando um comando exigir; o banco confere a forma do corpo, não o sentido; a exportação tem dois mecanismos por ora (a varredura vale, o evento não). |
+
+### Fase 11B — Infraestrutura de filas (PR109; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
+
+Segundo passo da Fase 11 ([ADR 0083](../docs/adr/0083-filas-cloudflare-e-consumidor-idempotente.md); o número pode mudar): três filas, envelope tipado e consumidor idempotente, sem despachante (PR110) nem DLQ (PR111).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/queue-infrastructure` sobre a `main`; sem migration. |
+| Plano e custo | Sem decisão pendente de custo | Queues está no Workers Free (10.000 operações por dia, retenção de 24 horas; changelog de 04/02/2026), cerca de 3.300 mensagens por dia; o plano pago continua não contratado. O responsável só precisa aprovar a criação das filas (runbook). |
+| Declaração | Concluída | `apps/web/wrangler.jsonc`: produtores `QUEUE_CRITICAL`, `QUEUE_DEFAULT`, `QUEUE_MEDIA` e consumidores de `polaris-critical`, `polaris-default` e `polaris-media`. Nada criado na conta; `bun run build` aceita a configuração. |
+| Domínio | Concluído | `@polaris/domain/events/queue-envelope`: versão, tipo, ID do evento do outbox, chave, correlação, organização, tentativa e corpo do outbox (sem texto livre), validado na borda; `queueForEventType`. |
+| Consumidor | Concluído | `handleQueueBatch` (`apps/web/src/server/queue`): envelope inválido (inclui tipo ou versão desconhecidos) ou mensagem na fila de outro tipo dá `ack`; chave de idempotência no registro de processamento; `ack` ao concluir; `retry` com recuo; falha permanente dá `ack`; nada do corpo vai ao log. Uma mensagem e uma invocação por vez no `wrangler.jsonc`. Exportado como `queue` do Worker `polaris-web`. |
+| Registro de processamento | Em memória | Interface `ProcessingLedger` com adaptador em memória por isolate; o durável (tabela e papel) vem com o despachante (PR110). A idempotência real hoje é a do handler. |
+| Handler | Concluído | `data_export.requested` acorda o job de exportação existente (`runDataExports`) para um pedido, sem a varredura de expiração (fica com o job horário); o job horário continua valendo e o comportamento observável não muda (nada envia o evento ainda). |
+| Gate PostgreSQL 18 | Não se aplica | Sem migration nem tabela neste PR. |
+| Limites | Registrados | Sem despachante, varredor, DLQ nem registro durável; filas não testadas em nuvem; mensagem que expira em 24 horas ou esgota as tentativas se perde (a varredura horária cobre a exportação). |

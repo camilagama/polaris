@@ -244,6 +244,24 @@ async function run() {
       "the same command ID with another payload or type is refused with command_id_reused, stores nothing and leaves the first outcome standing"
     );
 
+    // A row written under an older hash (the unkeyed SHA-256 or a rotated key)
+    // replays when the same content arrives with that hash among the equivalent ones.
+    const olderForm = await push({
+      commandId: firstId,
+      equivalentPayloadHashes: [hash(1)],
+      payloadHash: hash(3),
+    });
+    assert.deepEqual(olderForm, { ...first, replayed: true });
+    const unrelated = await push({
+      commandId: firstId,
+      equivalentPayloadHashes: [hash(4)],
+      payloadHash: hash(3),
+    });
+    assert.equal(unrelated.code, "command_id_reused");
+    tests.push(
+      "a retry whose stored row holds an older hash of the same content replays; an unrelated hash is still command_id_reused"
+    );
+
     // ------------------------------------------ 4. refusals leave no trace
     const refusedId = randomUUID();
     const beforeRefusal = await categoryCount(tenantA);

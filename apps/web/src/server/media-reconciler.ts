@@ -1,9 +1,14 @@
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
 import type { MediaBucketBinding } from "./environment";
-import { isMediaObjectKey, mediaDerivativeKey } from "./media-upload-command";
+import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
+import { approvedRetention } from "@polaris/domain/privacy/retention";
+import { isMediaObjectKey } from "./media-upload-command";
 
 const MEDIA_STAGING_PREFIX = "media/staging/v1/";
-export const MEDIA_STAGING_RETENTION_MS = 24 * 60 * 60 * 1000;
+/** How long a staging marker is kept (retention class `media_staging_marker`, ADR 0079). */
+export const MEDIA_STAGING_RETENTION_MS = approvedRetention(
+  "media_staging_marker"
+);
 const MAX_STAGING_MARKER_BYTES = 4096;
 const PAGE_SIZE = 500;
 
@@ -166,8 +171,13 @@ export async function reconcileStagedMedia(input: {
   return report;
 }
 
-/** An image removed from a product waits this long (counted from the creation of its asset). */
-export const MEDIA_REMOVED_RETENTION_MS = 60 * 60 * 1000;
+/**
+ * An image removed from a product waits this long, counted from the creation of
+ * its asset (retention class `media_removed_image`, ADR 0079).
+ */
+export const MEDIA_REMOVED_RETENTION_MS = approvedRetention(
+  "media_removed_image"
+);
 // Each asset costs three bucket calls, and a Worker invocation has a ceiling on
 // the calls it may make: keep a run small, the next hourly run continues.
 const REMOVED_BATCH_SIZE = 50;
