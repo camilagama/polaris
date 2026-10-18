@@ -171,6 +171,165 @@ function expectBillingPseudonymized(before: BillingRow[], after: BillingRow[]) {
   }
 }
 
+/**
+ * A grant written while a purge still holds the organization waits for it and loses its text: the trigger must
+ * not decide from the state the organization had when the statement began.
+ */
+async function expectGrantWrittenDuringPurgeLosesText(
+  pool: Parameters<typeof queryAs>[0] &
+    Parameters<typeof createTenantFixture>[0],
+  suffix: string
+) {
+  const racing = await createTenantFixture(pool, `race ${suffix}`);
+  await pool.query(
+    "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1",
+    [racing.organizationId]
+  );
+  const purging = await pool.connect();
+  try {
+    await purging.query("BEGIN");
+    await purging.query(
+      "SELECT 1 FROM public.organizations WHERE id = $1 FOR UPDATE",
+      [racing.organizationId]
+    );
+    const racingGrant = queryAs(
+      pool,
+      "polaris_billing_runtime",
+      `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
+       VALUES ($1, 'goals.active.max', 70, $2, 'admin:gate', now(), now() + interval '1 day') RETURNING reason`,
+      [racing.organizationId, GRANT_REASON]
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await purging.query(
+      "UPDATE public.organizations SET status = 'purged' WHERE id = $1",
+      [racing.organizationId]
+    );
+    await purging.query("COMMIT");
+    assert.equal(
+      (await racingGrant).rows[0]?.reason,
+      PURGE_REMOVED_TEXT,
+      "a grant written during the purge ends up with the fixed text"
+    );
+  } finally {
+    await purging.query("ROLLBACK").catch(() => undefined);
+    purging.release();
+  }
+}
+
+/** The review date of a legal hold: required and bounded, renewed only forward and never by a release in between. */
+async function expectReviewDateRules(context: {
+  admin: Parameters<typeof placeOrganizationLegalHold>[0];
+  caseId: string;
+  pool: Parameters<typeof createTenantFixture>[0];
+  principal: string;
+  target: string;
+  witness: string;
+}) {
+  const { admin, caseId, pool, principal, target, witness } = context;
+  const reviewIn = (days: number) =>
+    new Date(Date.now() + days * 86_400_000).toISOString();
+  // the review date is required, in the future and at most 366 days away: nothing is written otherwise
+  await Promise.all(
+    [reviewIn(-1), new Date().toISOString(), reviewIn(367)].map((reviewAt) =>
+      assert.rejects(
+        () =>
+          placeOrganizationLegalHold(
+            admin,
+            principal,
+            caseId,
+            target,
+            reviewAt
+          ),
+        (error: unknown) =>
+          error instanceof InvalidSupportRequestError &&
+          error.code === "invalid_review_at",
+        `a review date of ${reviewAt} is refused`
+      )
+    )
+  );
+  await expectSqlState(
+    () =>
+      pool.query(
+        "INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by, review_at) VALUES ($1, $2, $3, now() - interval '1 day')",
+        [witness, caseId, principal]
+      ),
+    "23514",
+    "the table itself refuses a review date before the hold was placed"
+  );
+  await expectSqlState(
+    () =>
+      pool.query(
+        "INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by) VALUES ($1, $2, $3)",
+        [witness, caseId, principal]
+      ),
+    "23502",
+    "a hold has no row without its review date"
+  );
+  assert.equal(
+    (
+      await pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM public.organization_legal_holds WHERE organization_id = $1",
+        [witness]
+      )
+    ).rows[0]?.count,
+    "0",
+    "no hold was written for the witness"
+  );
+  // placing again with an earlier or equal date changes nothing; with a later one it renews the hold, in one step
+  const reviewOf = async () =>
+    (
+      await pool.query<{ id: string; review_at: string }>(
+        "SELECT id, review_at::text FROM public.organization_legal_holds WHERE organization_id = $1 AND released_at IS NULL",
+        [target]
+      )
+    ).rows;
+  const heldBefore = await reviewOf();
+  assert.equal(heldBefore.length, 1);
+  assert.deepEqual(
+    await placeOrganizationLegalHold(
+      admin,
+      principal,
+      caseId,
+      target,
+      reviewIn(5)
+    ),
+    { changed: false, held: true, renewed: false, storageTouched: false }
+  );
+  assert.deepEqual(
+    await reviewOf(),
+    heldBefore,
+    "an earlier date keeps the review date"
+  );
+  assert.deepEqual(
+    await placeOrganizationLegalHold(
+      admin,
+      principal,
+      caseId,
+      target,
+      reviewIn(300)
+    ),
+    { changed: true, held: true, renewed: true, storageTouched: false }
+  );
+  const renewedHold = await reviewOf();
+  assert.equal(renewedHold.length, 1);
+  assert.equal(renewedHold[0]?.id, heldBefore[0]?.id, "the same hold, renewed");
+  assert.ok(
+    Date.parse(renewedHold[0]?.review_at ?? "") >
+      Date.parse(heldBefore[0]?.review_at ?? ""),
+    "a later date renews the hold"
+  );
+  // nobody moves the review date back, not even the table's owner, and the hold is never released by a renewal
+  await expectSqlState(
+    () =>
+      pool.query(
+        "UPDATE public.organization_legal_holds SET review_at = review_at - interval '1 day' WHERE organization_id = $1 AND released_at IS NULL",
+        [target]
+      ),
+    "23514",
+    "a review date only moves forward"
+  );
+}
+
 /** Runs one statement as a role, in a transaction that is always undone, and returns its result. */
 async function queryAs(
   pool: {
@@ -1007,6 +1166,7 @@ async function run() {
     // a legal hold: placed under a case of the organization named, audited, and while in force no schedule
     const reviewIn = (days: number) =>
       new Date(Date.now() + days * 86_400_000).toISOString();
+    const firstReview = reviewIn(30);
     const legalHold = (action: "place" | "release", organizationId: string) =>
       action === "place"
         ? placeOrganizationLegalHold(
@@ -1014,7 +1174,7 @@ async function run() {
             principal,
             supportCase.id,
             organizationId,
-            reviewIn(30)
+            firstReview
           )
         : releaseOrganizationLegalHold(
             admin,
@@ -1032,86 +1192,23 @@ async function run() {
     assert.deepEqual(await legalHold("place", target.organizationId), {
       changed: true,
       held: true,
+      renewed: false,
       storageTouched: false,
     });
     assert.deepEqual(await legalHold("place", target.organizationId), {
       changed: false,
       held: true,
+      renewed: false,
       storageTouched: false,
     });
-    // the review date is required, in the future and at most 366 days away: nothing is written otherwise
-    await Promise.all(
-      [reviewIn(-1), new Date().toISOString(), reviewIn(367)].map((reviewAt) =>
-        assert.rejects(
-          () =>
-            placeOrganizationLegalHold(
-              admin,
-              principal,
-              supportCase.id,
-              target.organizationId,
-              reviewAt
-            ),
-          (error: unknown) =>
-            error instanceof InvalidSupportRequestError &&
-            error.code === "invalid_review_at",
-          `a review date of ${reviewAt} is refused`
-        )
-      )
-    );
-    await expectSqlState(
-      () =>
-        owner.pool.query(
-          "INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by, review_at) VALUES ($1, $2, $3, now() - interval '1 day')",
-          [witness.organizationId, supportCase.id, principal]
-        ),
-      "23514",
-      "the table itself refuses a review date before the hold was placed"
-    );
-    await expectSqlState(
-      () =>
-        owner.pool.query(
-          "INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by) VALUES ($1, $2, $3)",
-          [witness.organizationId, supportCase.id, principal]
-        ),
-      "23502",
-      "a hold has no row without its review date"
-    );
-    assert.equal(
-      (
-        await owner.pool.query<{ count: string }>(
-          "SELECT count(*)::text AS count FROM public.organization_legal_holds WHERE organization_id = $1",
-          [witness.organizationId]
-        )
-      ).rows[0]?.count,
-      "0",
-      "no hold was written for the witness"
-    );
-    // placing again changes nothing, the review date included
-    const heldBefore = await owner.pool.query<{ review_at: string }>(
-      "SELECT review_at::text FROM public.organization_legal_holds WHERE organization_id = $1 AND released_at IS NULL",
-      [target.organizationId]
-    );
-    assert.equal(heldBefore.rows.length, 1);
-    assert.deepEqual(
-      await placeOrganizationLegalHold(
-        admin,
-        principal,
-        supportCase.id,
-        target.organizationId,
-        reviewIn(300)
-      ),
-      { changed: false, held: true, storageTouched: false }
-    );
-    assert.deepEqual(
-      (
-        await owner.pool.query(
-          "SELECT review_at::text FROM public.organization_legal_holds WHERE organization_id = $1 AND released_at IS NULL",
-          [target.organizationId]
-        )
-      ).rows,
-      heldBefore.rows,
-      "placing again keeps the review date"
-    );
+    await expectReviewDateRules({
+      admin,
+      caseId: supportCase.id,
+      pool: owner.pool,
+      principal,
+      target: target.organizationId,
+      witness: witness.organizationId,
+    });
     // the list of the holds in force (read only): this one, not yet due for review
     const listedHolds = await listOrganizationLegalHolds(admin, {
       after: null,
@@ -1201,6 +1298,11 @@ async function run() {
         detail: null,
         entity_type: "organization_legal_hold",
         event_type: "organization.legal_hold_placed",
+      },
+      {
+        detail: null,
+        entity_type: "organization_legal_hold",
+        event_type: "organization.legal_hold_reviewed",
       },
       {
         detail: null,
@@ -2176,6 +2278,7 @@ async function run() {
       [target.organizationId, GRANT_REASON]
     );
     assert.equal(written.rows[0]?.reason, PURGE_REMOVED_TEXT);
+    await expectGrantWrittenDuringPurgeLosesText(owner.pool, suffix);
     tests.push(
       "the entitlement grants of the purged organization stay with every column but the reason, which becomes the fixed text (also when written after the purge); another organization's grant keeps its reason; the purge owner can write nothing else in a grant"
     );

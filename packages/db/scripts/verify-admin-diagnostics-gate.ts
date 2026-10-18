@@ -293,8 +293,8 @@ async function run() {
         "support_case_id",
         "swept_at",
       ],
-      // the legal holds: placed by the Admin, and only released afterwards (ADR 0081)
-      organization_legal_holds: ["released_at", "released_by"],
+      // the legal holds: placed by the Admin, and afterwards only released or renewed (a later review date, ADR 0081)
+      organization_legal_holds: ["released_at", "released_by", "review_at"],
       // every cancellation of a purge with its reason: the cancel function appends, nothing changes a row
       organization_purge_cancellations: [] as string[],
       platform_audit_events: [] as string[],

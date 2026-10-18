@@ -171,7 +171,23 @@ export function normalizeAccessMinutes(minutes: number | undefined): number {
 export const MAX_LEGAL_HOLD_REVIEW_DAYS = 366;
 
 const ISO_INSTANT =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+
+/** Whether the numbers of an ISO instant are a real moment (30 February, hour 24 and minute 60 are not): `Date` would roll them over. */
+function isRealInstant(parts: readonly (string | undefined)[]): boolean {
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] =
+    parts.map((part) => (part === undefined ? 0 : Number(part)));
+  const probe = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 0));
+  return (
+    probe.getUTCMonth() === (month ?? 0) - 1 &&
+    probe.getUTCDate() === day &&
+    (hour ?? 0) <= 23 &&
+    (minute ?? 0) <= 59 &&
+    (second ?? 0) <= 59 &&
+    (offsetHour ?? 0) <= 23 &&
+    (offsetMinute ?? 0) <= 59
+  );
+}
 
 /**
  * The review date of a legal hold (ADR 0081): an ISO 8601 instant with its offset, in the future and no more than
@@ -181,28 +197,11 @@ export function normalizeLegalHoldReviewAt(
   value: unknown,
   now: Date = new Date()
 ): string {
-  if (typeof value !== "string" || !ISO_INSTANT.test(value)) {
+  const parts = typeof value === "string" ? ISO_INSTANT.exec(value) : null;
+  if (!parts || typeof value !== "string" || !isRealInstant(parts.slice(1))) {
     throw new InvalidSupportRequestError("invalid_review_at");
   }
   const at = new Date(value);
-  // an impossible calendar date (30 February, hour 24) is rolled over by `Date`, not refused: compare the day written
-  const written = /^(\d{4}-\d{2}-\d{2})T(\d{2})/.exec(value);
-  const offsetMinutes = /([+-])(\d{2}):(\d{2})$/.exec(value);
-  const local = offsetMinutes
-    ? new Date(
-        at.getTime() +
-          (offsetMinutes[1] === "-" ? -1 : 1) *
-            (Number(offsetMinutes[2]) * 60 + Number(offsetMinutes[3])) *
-            60_000
-      )
-    : at;
-  if (
-    Number.isNaN(at.getTime()) ||
-    local.toISOString().slice(0, 10) !== written?.[1] ||
-    Number(written?.[2]) > 23
-  ) {
-    throw new InvalidSupportRequestError("invalid_review_at");
-  }
   const limit = now.getTime() + MAX_LEGAL_HOLD_REVIEW_DAYS * 86_400_000;
   if (
     Number.isNaN(at.getTime()) ||

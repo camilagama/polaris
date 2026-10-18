@@ -80,7 +80,7 @@ ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_support_ca
 CREATE UNIQUE INDEX "organization_legal_holds_active_unique" ON "organization_legal_holds" USING btree ("organization_id") WHERE "organization_legal_holds"."released_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "organization_purge_cancellations_organization_idx" ON "organization_purge_cancellations" USING btree ("organization_id","cancelled_at");--> statement-breakpoint
 CREATE INDEX "organization_purges_due_idx" ON "organization_purges" USING btree ("not_before");--> statement-breakpoint
-ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released'));--> statement-breakpoint
+ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed'));--> statement-breakpoint
 CREATE POLICY "platform_audit_events_purge_owner_insert" ON "platform_audit_events" AS PERMISSIVE FOR INSERT TO "polaris_purge_owner" WITH CHECK (event_type = 'organization.purge_completed'
         AND entity_type = 'organization'
         AND entity_id = organization_id
@@ -101,11 +101,11 @@ CREATE POLICY "organization_purges_admin_owner_update" ON "organization_purges" 
 ALTER TABLE "organization_purge_cancellations" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "organization_purges" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "organization_legal_holds" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
--- the legal holds: the owner of the Admin functions places (INSERT) and releases (only the release columns)
--- them, the purge owner only reads whether one is in force, and nobody deletes one
+-- the legal holds: the owner of the Admin functions places (INSERT), releases and renews (only the release columns
+-- and the review date) them, the purge owner only reads whether one is in force, and nobody deletes one
 REVOKE ALL ON TABLE public.organization_legal_holds FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_privacy_owner, polaris_purge_owner;--> statement-breakpoint
 GRANT SELECT, INSERT ON TABLE public.organization_legal_holds TO polaris_admin_owner;--> statement-breakpoint
-GRANT UPDATE (released_at, released_by) ON TABLE public.organization_legal_holds TO polaris_admin_owner;--> statement-breakpoint
+GRANT UPDATE (released_at, released_by, review_at) ON TABLE public.organization_legal_holds TO polaris_admin_owner;--> statement-breakpoint
 GRANT SELECT (organization_id, released_at) ON TABLE public.organization_legal_holds TO polaris_purge_owner;--> statement-breakpoint
 -- a released hold is final, and no hold is ever deleted, even around the functions
 CREATE FUNCTION public.organization_legal_holds_release_is_final()
@@ -122,9 +122,13 @@ BEGIN
      OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
      OR NEW.support_case_id IS DISTINCT FROM OLD.support_case_id
      OR NEW.placed_at IS DISTINCT FROM OLD.placed_at
-     OR NEW.placed_by IS DISTINCT FROM OLD.placed_by
-     OR NEW.review_at IS DISTINCT FROM OLD.review_at THEN
+     OR NEW.placed_by IS DISTINCT FROM OLD.placed_by THEN
     RAISE EXCEPTION 'a legal hold only changes when it is released, once' USING ERRCODE = '23514';
+  END IF;
+  -- the review date only moves forward, on a hold in force (a review that renews the hold)
+  IF NEW.review_at IS DISTINCT FROM OLD.review_at
+     AND (NEW.review_at < OLD.review_at OR NEW.released_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'the review date of a legal hold only moves forward' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
 END;
@@ -482,6 +486,10 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $function$
 BEGIN
+  -- a purge holds the organization's row (FOR UPDATE) until it commits: wait for it, so a grant written meanwhile
+  -- sees the organization as `purged` and not as it was when the statement began (a lock on a row the policy does
+  -- not show to this role finds nothing and does not wait, which is right: no purge runs on it)
+  PERFORM 1 FROM public.organizations AS purging WHERE purging.id = NEW.organization_id FOR KEY SHARE;
   IF EXISTS (
     SELECT 1 FROM public.organizations AS purged_scope
      WHERE purged_scope.id = NEW.organization_id AND purged_scope.status = 'purged'
@@ -727,7 +735,9 @@ $function$;--> statement-breakpoint
 -- first and the purge refuses, or the purge comes first and the hold is refused (`purge_already_done`). It has
 -- no free text: why it exists is the case. It carries a review date, required: in the future and no more than 366
 -- days away. When the date passes the hold stays in force (it never releases itself) and the list shows it as due
--- for review; ending it is the operator's decision.
+-- for review; ending it is the operator's decision. Placing it again with a later date renews it (audited as
+-- `organization.legal_hold_reviewed`) without a moment in which no hold is in force; with an earlier or equal date it
+-- changes nothing (`renewed: false`).
 CREATE FUNCTION public.admin_place_organization_legal_hold(p_principal uuid, p_case uuid, p_organization text, p_review_at timestamp with time zone)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -738,6 +748,7 @@ DECLARE
   target text;
   current_status text;
   created uuid;
+  renewed uuid;
   storage_touched boolean;
 BEGIN
   PERFORM public.admin_require_principal(p_principal);
@@ -761,7 +772,19 @@ BEGIN
     SELECT 1 FROM public.organization_legal_holds AS hold
      WHERE hold.organization_id = target AND hold.released_at IS NULL
   ) THEN
-    RETURN pg_catalog.jsonb_build_object('changed', false, 'held', true, 'storageTouched', storage_touched);
+    -- placing it again renews it: a later review date replaces the current one, in the same transaction and under
+    -- the organization's lock, so the hold is never released in between; an earlier or equal date changes nothing
+    UPDATE public.organization_legal_holds AS hold
+       SET review_at = p_review_at
+     WHERE hold.organization_id = target AND hold.released_at IS NULL AND hold.review_at < p_review_at
+    RETURNING hold.id INTO renewed;
+    IF renewed IS NULL THEN
+      RETURN pg_catalog.jsonb_build_object('changed', false, 'held', true, 'renewed', false, 'storageTouched', storage_touched);
+    END IF;
+    PERFORM public.admin_record_audit(
+      p_principal, 'organization.legal_hold_reviewed', target, p_case, 'organization_legal_hold', renewed::text, NULL
+    );
+    RETURN pg_catalog.jsonb_build_object('changed', true, 'held', true, 'renewed', true, 'storageTouched', storage_touched);
   END IF;
   INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by, review_at)
   VALUES (target, p_case, p_principal, p_review_at)
@@ -770,7 +793,7 @@ BEGIN
     p_principal, 'organization.legal_hold_placed', target, p_case, 'organization_legal_hold', created::text, NULL
   );
   -- the operator learns whether a purge already removed objects from the storage: those do not come back
-  RETURN pg_catalog.jsonb_build_object('changed', true, 'held', true, 'storageTouched', storage_touched);
+  RETURN pg_catalog.jsonb_build_object('changed', true, 'held', true, 'renewed', false, 'storageTouched', storage_touched);
 END;
 $function$;--> statement-breakpoint
 -- Ends the legal hold in force (the row stays, released); with none in force it changes nothing. A purge that was

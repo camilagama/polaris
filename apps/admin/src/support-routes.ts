@@ -57,7 +57,7 @@ export interface SupportDependencies {
   }>;
   /**
    * Places or releases the legal hold on the case's organization: while one is in force, no purge. Placing it
-   * needs a review date (`reviewAt`, an ISO instant in UTC).
+   * needs a review date (`reviewAt`, an ISO instant in UTC); placing again with a later one renews the hold.
    */
   legalHold: (
     principalId: string,
@@ -69,6 +69,7 @@ export interface SupportDependencies {
   ) => Promise<{
     changed: boolean;
     held: boolean;
+    renewed?: boolean;
     storageTouched?: boolean;
   } | null>;
   /** Schedules the purge of the case's organization (it must be closed, its recovery window over). */
