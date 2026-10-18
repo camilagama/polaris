@@ -576,7 +576,15 @@ async function run() {
       [dated.organizationId]
     );
     await endGrant(dated, 5);
+    const versionOf = async (org: TenantFixture) =>
+      (
+        await admin.pool.query<{ version: string }>(
+          "SELECT version::text AS version FROM public.organization_billing WHERE organization_id = $1",
+          [org.organizationId]
+        )
+      ).rows[0]?.version;
     const datedBefore = await stateOf(dated);
+    const datedVersion = await versionOf(dated);
     await billing.sweepDue(new Date());
     const undatedState = await stateOf(undated);
     const [undatedGrant] = await grantRows(undated);
@@ -593,6 +601,11 @@ async function run() {
       await stateOf(dated),
       datedBefore,
       "a window that began after the end of the grant is left as it is"
+    );
+    assert.equal(
+      await versionOf(dated),
+      datedVersion,
+      "and it is not written again"
     );
     tests.push(
       "a free_over_limit record without a start is still picked by the sweep and dated by the end of the grant, while one whose window began after that end is left alone"
