@@ -1515,3 +1515,18 @@ Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado
 | Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
 | Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
 | Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até a retenção do log ser aprovada; prazos legais a confirmar pelo responsável. |
+
+### Fase 10F — Privacidade: deletion ledger (PR106; implementação e verificações locais concluídas; gate de banco no CI)
+
+Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.md); o número pode mudar): um tombstone mínimo de cada exclusão, para um restore de backup refazer o que a privacidade já tinha tirado.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/deletion-ledger` sobre a `main` (migration 0069, só aditiva). |
+| Domínio | Concluído | `@polaris/domain/privacy/deletion-ledger`: os dois pares permitidos (`customer`/`anonymize`, `organization`/`purge`), IDs opacos, recusa de qualquer campo além do contrato. |
+| Banco | Concluído | `deletion_ledger` (RLS forçado, CHECKs de vocabulário e de ID opaco, índice único por tipo, ID e operação, sem chave estrangeira para a organização). O runtime do tenant só insere as quatro colunas de um tombstone, só de cliente já anonimizado na própria organização, e não lê nada; nenhuma política permite `UPDATE` ou `DELETE`; o dono de privacidade só lê. |
+| Quem grava | Concluído | `anonymizeCustomerForPrivacy` grava na mesma transação do comando (`recordDeletionLedgerEntry`); o comportamento do comando não muda. O purge (PR107) grava o tombstone da organização antes de apagar, em migration própria. |
+| Restore | Concluído (procedimento) | [Runbook](../docs/runbooks/deletion-ledger-restore.md): ler o ledger do ambiente que será substituído, reaplicar, conferir por consulta vazia. Sem automação (Fase 16); item novo no checklist de go-live. |
+| Gate PostgreSQL 18 | No CI | `deletion-ledger` (suítes `ci` e `gate10`); não rodado localmente (sem PostgreSQL 18 no ambiente). |
+| Retenção | Necessidade declarada | O ADR 0079 (PR105, em revisão) não tem classe para o ledger; as condições estão no ADR 0080. |
+| Limites | Registrados | O ledger mora no mesmo banco: perda total do banco perde os tombstones posteriores ao último backup (cópia fora do banco: Fase 16); reaplicar é manual; o caso de privacidade ainda não é preenchido pelo comando; o ID opaco é pseudônimo enquanto houver backup antigo. |
