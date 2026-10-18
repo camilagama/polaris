@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -706,12 +706,15 @@ describe("the cron triggers", () => {
   });
 
   it("stay within the five Cron Triggers of the Workers Free plan, across every Worker of the account", () => {
-    const others = [
-      "../../admin/wrangler.jsonc",
-      "../../catalog/wrangler.jsonc",
-    ]
-      .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
-      .filter((config) => config.includes('"crons"'));
+    const apps = new URL("../../", import.meta.url);
+    const others = readdirSync(apps)
+      .filter((name) => name !== "web")
+      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
+      .filter((name) =>
+        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
+          '"crons"'
+        )
+      );
     expect(others).toEqual([]);
     expect(declaredCrons().length).toBeLessThanOrEqual(5);
   });

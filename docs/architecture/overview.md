@@ -19,6 +19,8 @@ Os workspaces billing e ui são, por enquanto, apenas estrutura prevista; o admi
 
 O Worker de Web responde por autenticação, procedures, mídia, health, sincronização, acesso ao banco e bindings assíncronos. A V1 não tem um deployment apps/api separado. A casca da SPA é servida pelos Static Assets sem passar pelo Worker, então seus headers de segurança são configurados à parte ([ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)).
 
+Os jobs por relógio rodam num **agendador** de um tick por pista de cron (hoje duas, de cinco Cron Triggers do plano Free): o registro tipado `@polaris/domain/scheduling/scheduled-jobs` declara cada job, e o Worker toma o *lease* de cada um no banco (papel do outbox), roda os vencidos uma vez por janela e cobre as janelas perdidas numa execução só; trabalho pesado vai para a fila ([ADR 0086](../adr/0086-framework-de-jobs-agendados.md)).
+
 ## Acesso a dados e isolamento por organização
 
 PostgreSQL 18 no Neon é o baseline ([ADR 0002](../adr/0002-neon-postgresql18-hyperdrive-rls.md)). Hyperdrive fornece connection pooling com SQL query caching desabilitado para caminhos tenant e Admin.

@@ -35,7 +35,7 @@ export interface SchedulerStore {
 /** What a job tells the tick: it did its work, it had nothing to do here, or it found failures. */
 export type JobResult =
   | { failures: unknown[]; status: "failed" }
-  | { reason: string; status: "skipped" }
+  | { reason: "not_configured"; status: "skipped" }
   | { status: "completed" };
 
 /** What the tick tells a job about the window it covers. */

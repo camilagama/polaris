@@ -4611,9 +4611,10 @@ Jobs:
 Todos catch-up safe.
 
 
+> **Nota de escopo ([ADR 0086](../docs/adr/0086-framework-de-jobs-agendados.md)):** o PR112 entrega o framework (registro tipado, um tick por pista de cron, *lease* por job, janelas catch-up safe) e migra os jobs existentes (despachante do outbox, grace/trial como a varredura de cobrança, manutenção de mídia e de privacidade). `recurring expenses` e `provider reconcile` ficam **registrados e desligados**, com a pendência escrita: a geração das despesas recorrentes já roda ao ler com catch-up (ADR 0052) e um job exigiria um papel que escreve em todas as organizações (decisão de segurança do responsável); o reconcile depende do Gate 7 (Asaas e Woovi). Nenhum job de expurgo existe para classe de retenção ainda em proposta.
+
 
 ---
-
 
 
 # PR 113 — Workflows

@@ -31,14 +31,6 @@ const SCHEDULER_FUNCTIONS = [
   "public.complete_scheduled_job(text,uuid)",
   "public.release_scheduled_job(text,uuid,boolean)",
 ];
-const OTHER_ROLES = [
-  "polaris_pr11_runtime",
-  "polaris_billing_runtime",
-  "polaris_catalog_runtime",
-  "polaris_admin_runtime",
-  "polaris_privacy_runtime",
-  "polaris_privacy_owner",
-];
 const TOKEN = /^[0-9a-f-]{36}$/;
 const HOUR = 3600;
 const DAY = 86_400;
@@ -122,12 +114,32 @@ async function run() {
     };
 
     // ------------------------------------------------- 1. who reaches what
+    // every other polaris role, whichever the migrations created (the gate's own login is the runtime's member)
+    const otherRoles = (
+      await owner.pool.query<{ rolname: string }>(
+        "SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\\_%' AND rolname NOT IN ('polaris_outbox_owner', 'polaris_outbox_runtime') AND rolname NOT LIKE 'polaris\\_sch\\_disp\\_%' ORDER BY rolname"
+      )
+    ).rows.map((row) => row.rolname);
+    for (const expected of [
+      "polaris_pr11_runtime",
+      "polaris_billing_runtime",
+      "polaris_catalog_runtime",
+      "polaris_admin_runtime",
+      "polaris_admin_owner",
+      "polaris_privacy_runtime",
+      "polaris_privacy_owner",
+    ]) {
+      assert.ok(
+        otherRoles.includes(expected),
+        `${expected} is among the roles probed`
+      );
+    }
     const permission = async (text: string, values: unknown[]) =>
       Boolean(
         (await owner.pool.query<{ allowed: boolean }>(text, values)).rows[0]
           ?.allowed
       );
-    for (const role of ["polaris_outbox_runtime", ...OTHER_ROLES]) {
+    for (const role of ["polaris_outbox_runtime", ...otherRoles]) {
       assert.equal(
         // biome-ignore lint/performance/noAwaitInLoops: one role at a time, for a clear failure.
         await permission(
@@ -155,7 +167,7 @@ async function run() {
       "row level security is forced"
     );
     for (const signature of SCHEDULER_FUNCTIONS) {
-      for (const role of ["polaris_outbox_runtime", ...OTHER_ROLES]) {
+      for (const role of ["polaris_outbox_runtime", ...otherRoles]) {
         assert.equal(
           // biome-ignore lint/performance/noAwaitInLoops: privilege probes, in order.
           await permission(
@@ -370,14 +382,14 @@ async function run() {
       await scheduler.completeScheduledJob(cadence, slowCadence.token),
       true
     );
-    await owner.pool.query(
-      "UPDATE public.scheduled_job_state SET covered_at = now() - interval '2 minutes' WHERE job_id = $1",
-      [cadence]
-    );
     assert.deepEqual(
       await scheduler.claimScheduledJob(cadence, DAY, LEASE),
       { result: "not_due" },
-      "two minutes ago is the same day"
+      "a run that just ended covers the day"
+    );
+    await owner.pool.query(
+      "UPDATE public.scheduled_job_state SET covered_at = now() - interval '2 minutes' WHERE job_id = $1",
+      [cadence]
     );
     const faster = await scheduler.claimScheduledJob(cadence, 60, LEASE);
     assert.ok(

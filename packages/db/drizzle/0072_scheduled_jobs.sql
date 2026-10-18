@@ -16,7 +16,7 @@ CREATE TABLE "scheduled_job_state" (
 --> statement-breakpoint
 ALTER TABLE "scheduled_job_state" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE POLICY "scheduled_job_state_outbox_owner_all" ON "scheduled_job_state" AS PERMISSIVE FOR ALL TO "polaris_outbox_owner" USING (true) WITH CHECK (true);--> statement-breakpoint
--- The scheduler's state (plan PR112, ADR 0086): additive, one table and four functions, in the role the
+-- The scheduler's state (plan PR112, ADR 0086): additive, one table and three functions, in the role the
 -- outbox dispatcher already uses (one login, one Hyperdrive). Nothing else changes.
 ALTER TABLE "scheduled_job_state" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 REVOKE ALL ON TABLE public.scheduled_job_state FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_admin_owner, polaris_privacy_runtime, polaris_privacy_owner, polaris_outbox_runtime;--> statement-breakpoint
