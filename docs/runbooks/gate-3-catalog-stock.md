@@ -2,7 +2,7 @@
 
 Gatilho: fechamento da Fase 3 (PR24–PR35) e qualquer mudança posterior em catálogo, estoque, custo médio, variantes ou mídia. O plano pede que o Gate 3 prove: nenhum estoque negativo, razão consistente, custo médio correto, variantes corretas e mídia privada.
 
-Este gate não existia como entrega formal: as provas estavam espalhadas pelos gates por PR. Ele passa a ser o conjunto nomeado `gate3` do executor de gates, com o mapa propriedade → evidência abaixo. Alvo, pré-requisitos e passos são os do [Gate 4](./gate-4-sales-core.md) (branch Neon descartável, URL só no ambiente do processo, gates em sequência no mesmo banco); o comando é:
+Este gate não existia como entrega formal: as provas estavam espalhadas pelos gates por PR. Ele passa a ser o conjunto nomeado `gate3` do executor de gates, com o mapa propriedade → evidência abaixo. Alvo, pré-requisitos e passos são os do [Gate 4](./gate-4-sales-core.md) (branch Neon descartável filha de `production` na prova de liberação, URL só no ambiente do processo, gates em sequência no mesmo banco; ver a seção [Prova antes de liberação em Neon](./gate-4-sales-core.md#prova-antes-de-liberação-em-neon)); o comando é:
 
     bun run --filter @polaris/db gates:gate3
 
@@ -21,7 +21,7 @@ O conjunto roda `gate2-runtime` (catálogo sob RLS com sessão, organização e 
 ## Limites conhecidos
 
 - **Mídia privada ponta a ponta** (rota Worker + banco real + R2 real) não é provada por um gate repetível: o isolamento no banco é provado aqui, a autorização das rotas por testes de unidade com armazenamento simulado, e o caminho Cloudflare Images/R2 real foi exercitado manualmente nos PR34 e PR35 com Worker temporário. A orientação EXIF e a remoção de metadados do upload não têm prova no provedor real.
-- Os gates PostgreSQL ainda rodam em Neon descartável, não no CI (ADR de testes de banco; ver o job de CI com Postgres 18).
+- `gate2-runtime`, `inventory` e `media-upload` exigem um endpoint Neon e não estão na suíte `ci`: rodam só na prova de liberação e no fim da fase, em Neon descartável ([Gate 4](./gate-4-sales-core.md#prova-antes-de-liberação-em-neon)). Os demais gates PostgreSQL rodam no CI e no PostgreSQL 18 local.
 - O gate `media-derivatives` (reconciliação com papéis de limpeza) fica fora do conjunto por exigir três URLs com logins próprios; segue como gate avulso.
 
 ## Rollback ou forward-fix

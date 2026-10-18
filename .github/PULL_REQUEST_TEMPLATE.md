@@ -34,7 +34,7 @@ Não cole segredos, connection strings, tokens nem dados reais de clientes.
 
 ## Verificação executada
 
-<!-- Comandos realmente executados e o resultado. Exemplos: `bun run check`, `bun run build`, `bun run boundaries`, `bun run knip`, gates `poc:*:verify`. Não afirme que um check não executado passou. Gates em Neon: liste os que rodaram e os objetos tocados que os justificam; o restante fica com o job de CI (ADR 0025). -->
+<!-- Comandos realmente executados e o resultado. Exemplos: `bun run check`, `bun run build`, `bun run boundaries`, `bun run knip`, gates `poc:*:verify`. Não afirme que um check não executado passou. Gates rodam no PostgreSQL 18 local ou no CI; em Neon só a prova antes de liberação (ADR 0025): liste o que rodou e diga o que ficou com o CI. -->
 
 ## Limites
 
