@@ -23,6 +23,8 @@
     "@polaris/contracts": "workspace:*",
     "@polaris/db": "workspace:*",
     "@polaris/domain": "workspace:*",
+    "@polaris/http-security": "workspace:*",
+    "@polaris/observability": "workspace:*",
     "@tanstack/browser-db-sqlite-persistence": "^0.2.30",
     "@tanstack/db": "^0.12.1",
     "@tanstack/offline-transactions": "^1.0.63",

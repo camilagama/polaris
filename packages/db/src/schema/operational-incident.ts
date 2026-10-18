@@ -19,10 +19,11 @@ const adminOwnerRole = "polaris_admin_owner";
 
 /**
  * Operational incidents (plan PR111, ADR 0085): something the platform itself must look at, kept
- * apart from any tenant. Today two kinds: a queue message that ended in the dead-letter queue and an
- * outbox event that passed the cap of delivery attempts. One row per cause (kind, cause and subject,
- * the event type or `unknown`), never per message: the next occurrence of a cause adds to the count
- * and moves the last occurrence. It holds codes, counts, dates and one opaque reference, never the
+ * apart from any tenant. Today three kinds: a queue message that ended in the dead-letter queue, an
+ * outbox event that passed the cap of delivery attempts and a billing fact whose subscription reference
+ * did not match the record's or never found a subscription (ADR 0087; the subject is
+ * `billing.<fact type>`). One row per cause (kind, cause and subject, the event type or `unknown`),
+ * never per message: the next occurrence of a cause adds to the count and moves the last occurrence. It holds codes, counts, dates and one opaque reference, never the
  * body of a message or anything a person typed.
  *
  * Only the functions of `polaris_outbox_owner` write it; `polaris_admin_owner` reads it for the Admin.
@@ -56,12 +57,13 @@ export const operationalIncidents = pgTable(
     ),
     check(
       "operational_incidents_kind_allowed",
-      sql`${table.kind} IN ('queue_dead_letter', 'outbox_attempts_exhausted')`
+      sql`${table.kind} IN ('queue_dead_letter', 'outbox_attempts_exhausted', 'billing_reference_mismatch')`
     ),
     check(
       "operational_incidents_cause_allowed",
       sql`(${table.kind} = 'queue_dead_letter' AND ${table.cause} IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))
-        OR (${table.kind} = 'outbox_attempts_exhausted' AND ${table.cause} = 'attempts_exhausted')`
+        OR (${table.kind} = 'outbox_attempts_exhausted' AND ${table.cause} = 'attempts_exhausted')
+        OR (${table.kind} = 'billing_reference_mismatch' AND ${table.cause} IN ('reference_mismatch', 'reference_unresolved'))`
     ),
     check(
       "operational_incidents_subject_format",

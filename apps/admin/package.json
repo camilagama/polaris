@@ -11,6 +11,8 @@
   "dependencies": {
     "@polaris/db": "workspace:*",
     "@polaris/domain": "workspace:*",
+    "@polaris/http-security": "workspace:*",
+    "@polaris/observability": "workspace:*",
     "hono": "^4.13.0"
   },
   "devDependencies": {

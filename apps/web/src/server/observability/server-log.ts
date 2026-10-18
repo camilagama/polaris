@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import type { Context } from "hono";
 import { routePath } from "hono/route";
 import type { ServerEnv } from "../environment";
@@ -74,12 +75,12 @@ export interface ServerErrorLogInput {
 export function logServerError(input: ServerErrorLogInput): void {
   const [top, ...causes] = summarizeError(input.error);
 
-  console.error({
+  logger.error("server_error", {
     ...input.extra,
-    causes: causes.length > 0 ? causes : undefined,
+    causes:
+      causes.length > 0 ? causes.map((cause) => ({ ...cause })) : undefined,
     errorCode: top?.code,
     errorName: top?.name,
-    event: "server_error",
     method: input.method,
     requestId: input.requestId,
     route: input.route,
@@ -114,9 +115,8 @@ export function logServerEvent(
   context: Context<ServerEnv>,
   fields: Record<string, LogValue> = {}
 ): void {
-  console.warn({
+  logger.warn(event, {
     ...fields,
-    event,
     method: context.req.method,
     requestId: context.get("requestId"),
     route: honoRoute(context),

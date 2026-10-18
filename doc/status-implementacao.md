@@ -688,7 +688,7 @@ A revisão completa ([`doc/revisao-checkpoint-gate4.md`](revisao-checkpoint-gate
 
 ### Borda e segurança (frente 2)
 
-Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS em `public/_headers`, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
+Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS e demais headers de segurança montados pelo pacote `@polaris/http-security` (ADR 0090) e aplicados no `public/_headers` (gerado), no Worker do web, no Admin e no catálogo, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
 
 ### Produto e interface (frente 3)
 
@@ -1221,7 +1221,7 @@ Fecha o ciclo de vida do billing no que não depende de um provedor: dinheiro de
 | Gate PostgreSQL 18 | Concluído | `billing-lifecycle` (seção 12): reembolso integral remove o acesso na hora e fica no razão; redelivery é um efeito; repetição não se aplica; a confirmação tardia do pagamento reembolsado é ignorada e um pagamento novo revive e esquece; reembolso de período anterior não muda nada; reembolso entregue atrás de fato mais novo ainda vale; chargeback imediato, em carência também; reversão restaura fim e ciclo e o tempo corre depois; reversão depois do fim do período só esquece; reversão sem chargeback é `not_applicable`; reembolso antes da confirmação da cobrança (em registro Free e em trial) é lembrado e a confirmação não concede; reversão antes do chargeback faz o chargeback não mudar nada; reembolso depois de chargeback impede a restauração; nova referência de assinatura começa limpa. |
 | Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura achou três altos e cinco médios, todos tratados: reembolso ou chargeback entregue antes da confirmação da cobrança era descartado e a confirmação concedia Pro (agora o pagamento é lembrado, em registro Free e em trial); um pagamento tirado de um plano anual bloqueava uma nova assinatura mensal (agora o registro é apagado quando a referência da assinatura muda); reembolso depois de chargeback deixava a reversão restaurar (agora o reembolso vence); fim de período sem limite (agora até 400 dias); reversão antes do chargeback tirava o Pro para sempre (agora é lembrada); igualdade exata do fim do período (agora a tolerância de um dia); renovação paga antes do fim do período reembolsada derrubava o período em vigor (agora só conta o período que bate); restauração perdia o cancelamento (agora é guardado). Documentados no ADR: renovação reembolsada antes da confirmação com o registro ainda num período pago, carência restaurada, nova janela de adequação a cada retirada. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1709 testes), `build` e `db:generate` sem drift; gates `billing-lifecycle`, `billing-catalog`, `gate2-runtime`, `operational-selection` e `sync-push` em branch Neon descartável criada do zero com a migration 0055 (apagada depois). |
-| Limites | Registrados | Nenhum adaptador reporta esses fatos ainda (PR77 e PR78, sandbox); reembolso parcial não é fato; sem tela; os fatos precisam trazer a referência da assinatura (responsabilidade do adaptador).
+| Limites | Registrados | Nenhum adaptador reporta esses fatos ainda (PR77 e PR78, sandbox); reembolso parcial não é fato; sem tela; os fatos trazem a referência da assinatura (o adaptador a informa) e o armazenamento a confere: sem ela, ou com a de outra assinatura, o fato não tem efeito (`reference_mismatch`; todos os fatos, não só estes: ver a seção "Referência do provedor em todos os fatos de cobrança").
 
 ### Revisão pós-merge do PR #98 (reembolso e chargeback): reversão antes do chargeback e ciclo desconhecido
 
@@ -1290,6 +1290,18 @@ Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e tr
 Cumpre o item "promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde" (linha de pendências do Gate 4), só para o `database`: o job "PostgreSQL 18 gates" perdeu o `continue-on-error` (emenda ao [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md)). A auditoria de dependências segue consultiva. A proteção de branch que torna o check obrigatório para o merge é do responsável.
 
 Mesclado no [PR #105](https://github.com/camilagama/polaris/pull/105) (merge `f988872`).
+
+### Referência do provedor em todos os fatos de cobrança (POL-21, parte 2; implementação, gate e verificações locais concluídos; publicação: ver PR)
+
+Segue o PR #133: a conferência que o reembolso, o chargeback e a reversão já tinham passa a valer para todos os fatos do provedor, e o `reference_mismatch` deixa de ser silencioso ([ADR 0087](../docs/adr/0087-referencia-do-provedor-em-todos-os-fatos-de-cobranca.md); o número pode mudar).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `fix/billing-provider-ref-all-facts` sobre a `main` (migration 0074, só aditiva; o PR #126 ainda usa 0072, e quem entrar depois renumera). |
+| Servidor | Concluído | `billing-store.ts`: todo fato exige `provider` e `provider_ref` iguais aos do registro; só `attachProvider` liga a referência (o fato deixa de ligá-la); o fato com referência para um registro sem assinatura ligada falha com `unknown_organization` e espera o reprocessamento; o que ainda não achou assinatura na última tentativa é incidente (`reference_unresolved`). |
+| Banco | Concluído | `operational_incidents` aceita `billing_reference_mismatch` (causas `reference_mismatch` e `reference_unresolved`, assunto `billing.<tipo do fato>`); função `record_billing_reference_incident` (dono do outbox; o login do billing só a executa), chamada na mesma transação do desfecho; só causa, tipo do fato e ID opaco do evento. |
+| Gate PostgreSQL 18 | Local e CI | `billing-lifecycle` (seção 13): para cada um dos oito fatos, sem referência, referência de outra assinatura, de outro provedor, antes da ligação e o caso válido; a referência ligada a outra organização; a ordem entre webhook e ligação (nos dois sentidos); o fato que nenhuma assinatura reivindica virando incidente na última tentativa; privilégios da função e da tabela. |
+| Limites | Registrados | O fato que espera a ligação é tentado cinco vezes (cerca de duas horas e meia); o incidente conta por tipo de fato e não se encerra; nenhum adaptador chama `attachProvider` ainda (PR77 e PR78). |
 
 ### Fase 8A — catálogo público: dados, comandos e leitura por funções (PR87 e PR88; implementação, gate, revisão independente e verificações locais concluídos; mesclada no PR #106)
 
@@ -1608,3 +1620,43 @@ Quinto passo da Fase 11 ([ADR 0086](../docs/adr/0086-framework-de-jobs-agendados
 | Cleanup | Só o aprovado | Os quatro expurgos existentes rodam pelo agendador; nenhum job para classe em `proposta` (o teste da retenção e o do registro garantem); expurgo dos `dispatched` e dos incidentes espera o prazo do responsável. |
 | Gate PostgreSQL 18 | Local e CI | `scheduled-jobs` (suítes `ci` e `gate11`), novo. |
 | Limites | Registrados | Nada criado nem medido em nuvem (CPU dos ticks, em especial a pista `maintenance`, que abre uma conexão a mais); cadência horária (decisão de custo); sem tela de estado no Admin. |
+
+### Fase 11F — Workflows (PR113; decisão sem Workflow; nada criado na conta Cloudflare)
+
+Sexto passo da Fase 11 ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md); o número pode mudar): nenhum Cloudflare Workflow por ora.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Limites | Conferidos | Documentação da Cloudflare de 18/10/2026: Workflows existe no Free, com 10 ms de CPU por step, 3.000 steps por dia e 100 MB de estado por instância; o consumidor da fila tem 30 s de CPU por padrão pela página do Queues (ambígua para o Free, como o ADR 0084 registrou; não medido). Um step nunca tem mais CPU que o consumidor. Nenhum custo criado. |
+| Exportação | Sem Workflow | Continua no consumidor da fila (ADR 0084): montar o ZIP não cabe em 10 ms, e a retomada, a idempotência e o recuo já são do banco. |
+| Purge | Sem Workflow | Não tocado (PR #126, à espera do POL-81). Quando entrar: job do agendador e, se não couber no cron, a fila; o estado fica em `organization_purges`. |
+| Cobrança | Fora | O estado canônico continua no banco. |
+| Guarda | Concluída | Teste em `apps/web/worker/index.test.ts`: nenhum `wrangler.jsonc` declara `workflows` sem um ADR que emende o 0088. |
+| Limites | Registrados | Números da documentação, não medidos na conta; não está documentado se o Hyperdrive conta como subrequisição externa no Free. |
+
+## Fase 12 — observabilidade e segurança
+
+### Fase 12A — evlog e logger tipado (PR114; implementação local concluída; nada criado na conta Cloudflare)
+
+Primeiro passo da Fase 12 ([ADR 0089](../docs/adr/0089-evlog-e-logger-tipado-no-backend.md); o número pode mudar): o evlog entra no backend atrás de um wrapper tipado, sem destino externo.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Pacote | Concluído | `@polaris/observability/logger` (`logger`, `configureLogging`), único importador do `evlog` (2.33.0, MIT, compatível com Workers); testes do wrapper. |
+| Fronteira | Concluída | Biome recusa `evlog` e o wrapper em `packages/domain` e no código do navegador; `bun run boundaries` tem fixtures para os dois. |
+| Migração | Parcial | `server-log`, agendador, entrada do Worker web e relatório do Admin; o resto dos `console.*` migra no PR que tocar cada um. |
+| Limites | Registrados | Sem *drain*; a redação embutida do evlog fica ligada e a política própria é do PR116; sem esquema de campos (PR115); o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
+
+### Fase 12B — Headers de segurança e CSP centralizados (PR120; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
+
+Pacote `@polaris/http-security` e [ADR 0090](../docs/adr/0090-headers-de-seguranca-centralizados.md) (o número pode mudar). A Fase 12A é o PR114 (evlog), independente deste.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Módulo | Concluído | `packages/http-security`: perfis `app-shell`, `api`, `admin`, `public-document` e `public-media`; nonce por resposta; origens extras só por `connectSources`/`imgSources`, exatas e em https. |
+| Web | Concluído | `public/_headers` gerado pelo módulo (teste de igualdade); o Worker aplica o perfil `api` a toda resposta e `no-store` quando o handler não escolheu outro `Cache-Control`. |
+| Admin | Concluído | Perfil `admin` (CSP fechada, HSTS, COOP/CORP, sem referrer, `no-store`) em toda resposta, inclusive 401, 403 e 404. |
+| Catálogo | Concluído | Entrada `src/server.ts` (o `main` do Worker) com nonce por requisição e CSP sem `'unsafe-inline'`; páginas nunca em cache compartilhado; imagem pública com `sandbox` e `Cross-Origin-Resource-Policy: cross-origin`. |
+| Testes | Concluídos | Unitários do módulo (nenhum curinga, `unsafe-inline` ou esquema solto em nenhum perfil) e de integração nas respostas dos três apps. |
+| Gate de navegador | Ver o PR | CSP do shell inalterada na parte de script, estilo e conexão; o resultado de `test:offline-poc` e `test:pwa` está na seção "Verificação" do PR. |
+| Limites | Registrados | Catálogo com nonce não aberto em navegador contra o Worker rodando (ADR 0090); sem `report-uri`; Sentry ainda não ligado (nenhuma origem aberta). |

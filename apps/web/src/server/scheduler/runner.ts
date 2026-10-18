@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import type { ScheduledJobClaim } from "@polaris/db/outbox-dispatch";
 import {
   jobsOfLane,
@@ -125,7 +126,7 @@ async function takeLease(
       job.leaseSeconds
     );
     if (claim.result !== "claimed") {
-      console.info("scheduled_job_skipped", {
+      logger.info("scheduled_job_skipped", {
         job: jobId,
         lane,
         reason: claim.result,
@@ -138,7 +139,7 @@ async function takeLease(
     };
   } catch (error: unknown) {
     // without the lease nothing is run: two runs could overlap. The cron shows the failure.
-    console.error("scheduled_job_claim_failed", {
+    logger.error("scheduled_job_claim_failed", {
       job: jobId,
       lane,
       ...describeFailure(error),
@@ -166,7 +167,7 @@ async function recordOutcome(
           );
     if (!recorded) {
       // the lease ended while the job ran and another run took it over: that run records the outcome
-      console.warn("scheduled_job_lease_lost", {
+      logger.warn("scheduled_job_lease_lost", {
         job: jobId,
         lane,
         outcome: result.status,
@@ -174,7 +175,7 @@ async function recordOutcome(
     }
     return null;
   } catch (error: unknown) {
-    console.error("scheduled_job_record_failed", {
+    logger.error("scheduled_job_record_failed", {
       job: jobId,
       lane,
       outcome: result.status,
@@ -191,15 +192,15 @@ function logRun(
   result: JobResult
 ): void {
   if (result.status === "failed") {
-    console.error("scheduled_job_run", {
+    logger.error("scheduled_job_run", {
       ...metrics,
       ...describeFailure(result.failures[0]),
       failures: result.failures.length,
     });
   } else if (result.status === "skipped") {
-    console.info("scheduled_job_run", { ...metrics, reason: result.reason });
+    logger.info("scheduled_job_run", { ...metrics, reason: result.reason });
   } else {
-    console.info("scheduled_job_run", metrics);
+    logger.info("scheduled_job_run", metrics);
   }
 }
 
@@ -208,12 +209,12 @@ export async function runLane(options: RunLaneOptions): Promise<void> {
   const now = options.now ?? Date.now;
   const failures: unknown[] = [];
   if (store === null) {
-    console.warn("scheduler_state_unavailable", { lane });
+    logger.warn("scheduler_state_unavailable", { lane });
   }
   for (const jobId of jobsOfLane(lane)) {
     const handler = handlers[jobId];
     if (!handler) {
-      console.error("scheduled_job_handler_missing", { job: jobId, lane });
+      logger.error("scheduled_job_handler_missing", { job: jobId, lane });
       failures.push(new Error("scheduled_job_handler_missing"));
       continue;
     }

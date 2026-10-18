@@ -30,7 +30,7 @@ Resultado da revisão completa PR01–PR47 ([`revisao-checkpoint-gate4.md`](revi
 - **PR50.** A variante ganha preço de tabela (decisão D-6); o contrato offline do PR55 parte dessa decisão.
 - **Antes do PR52.** Teste real em Android físico (a emulação não substitui) e uso de `navigator.storage.persist()` para a persistência offline.
 - **PR49.** Definir namespace de armazenamento por usuário e organização e o apagamento no logout.
-- **PR120.** Cabeçalhos de segurança e verificação de `Origin` (CSRF) foram antecipados e já existem; o PR120 fica reduzido à auditoria em staging.
+- **PR120.** A verificação de `Origin` (CSRF) foi antecipada e já existe. Os cabeçalhos de segurança e a CSP foram centralizados no pacote `@polaris/http-security` e aplicados ao web, ao Admin e ao catálogo ([ADR 0090](../docs/adr/0090-headers-de-seguranca-centralizados.md)); o que resta do PR120 é a auditoria em staging.
 - **Antes do PR67.** Decidir a regra de rateio de descontos e frete entre itens.
 - **Antes da Fase 7.** Comandos para remover, substituir e reordenar mídia de produto.
 - **Retroativos.** A janela retroativa de venda é de 30 dias de calendário no fuso da organização (PR47); custo de venda retroativa usa a média vigente (D-4).
@@ -4634,6 +4634,9 @@ Adicionar Cloudflare Workflows somente para:
 
 
 Não mover billing canonical state para Workflow.
+
+
+> **Nota de escopo ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md)):** o PR113 não adiciona nenhum Workflow. No Workers Free um step de Workflow tem 10 ms de CPU (o consumidor da fila tem 30 s por padrão, a medir no Free), então a exportação continua no consumidor da fila, que já retoma pelo banco; o purge (PR107, à espera do aceite do responsável) segue o agendador e, se não couber no cron, a fila; cobrança fica no banco. Um teste impede binding de Workflow sem um ADR que emende o 0088.
 
 
 

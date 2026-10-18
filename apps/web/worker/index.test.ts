@@ -443,7 +443,9 @@ describe("the outbox cron", () => {
   it("warns and finishes where the outbox role is not provisioned", async () => {
     await expect(runCron(OUTBOX_CRON, {})).resolves.toBeUndefined();
 
-    expect(console.warn).toHaveBeenCalledWith("outbox_dispatch_not_configured");
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "outbox_dispatch_not_configured" })
+    );
     expect(mocks.createOutboxClient).not.toHaveBeenCalled();
     expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
   });
@@ -480,15 +482,14 @@ describe("the outbox cron", () => {
     expect(client.recordExhaustedOutboxEvents).toHaveBeenCalledWith(100);
     expect(order).toEqual(["dispatch", "exhausted", "expire"]);
     expect(console.warn).not.toHaveBeenCalledWith(
-      "outbox_events_exhausted",
-      expect.anything()
+      expect.objectContaining({ event: "outbox_events_exhausted" })
     );
 
     client.recordExhaustedOutboxEvents.mockResolvedValue(3);
     await runCron(OUTBOX_CRON, outbox);
-    expect(console.warn).toHaveBeenCalledWith("outbox_events_exhausted", {
-      recorded: 3,
-    });
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "outbox_events_exhausted", recorded: 3 })
+    );
   });
 
   it("still expires the records, and closes, when recording the exhausted events fails, and throws that failure", async () => {
@@ -661,7 +662,9 @@ describe("the queue consumer", () => {
   it("warns when the ledger is only in memory", async () => {
     await runQueue({ ...configured, ...privacy }, message(exportEvent));
 
-    expect(console.warn).toHaveBeenCalledWith("queue_ledger_in_memory");
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "queue_ledger_in_memory" })
+    );
   });
 
   it("acks a body that is not an envelope and runs nothing", async () => {
@@ -708,7 +711,9 @@ describe("the queue consumer", () => {
       expect(mocks.outboxClose).toHaveBeenCalledOnce();
       // the consumer of the normal queues did not see it
       expect(mocks.runDataExports).not.toHaveBeenCalled();
-      expect(console.warn).not.toHaveBeenCalledWith("queue_ledger_in_memory");
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "queue_ledger_in_memory" })
+      );
     });
 
     it("retries an hour later, and warns, without the outbox role", async () => {
@@ -721,7 +726,9 @@ describe("the queue consumer", () => {
       expect(sent.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
       expect(sent.ack).not.toHaveBeenCalled();
       expect(console.warn).toHaveBeenCalledWith(
-        "dead_letter_not_recorded_unconfigured"
+        expect.objectContaining({
+          event: "dead_letter_not_recorded_unconfigured",
+        })
       );
     });
 
@@ -886,6 +893,20 @@ describe("the cron triggers", () => {
   });
 });
 
+describe("Cloudflare Workflows", () => {
+  it("are not bound by any Worker: on the Free plan a step gets 10 ms of CPU, less than the queue consumer (ADR 0088)", () => {
+    const apps = new URL("../../", import.meta.url);
+    const withWorkflows = readdirSync(apps)
+      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
+      .filter((name) =>
+        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
+          '"workflows"'
+        )
+      );
+    expect(withWorkflows).toEqual([]);
+  });
+});
+
 describe("the scheduler tick", () => {
   const outbox = {
     OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
@@ -1043,7 +1064,9 @@ describe("the scheduler tick", () => {
   it("runs the maintenance on an expression it does not declare, and says so", async () => {
     await tick("*/5 * * * *", everything);
 
-    expect(console.warn).toHaveBeenCalledWith("scheduler_unknown_cron");
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "scheduler_unknown_cron" })
+    );
     expect(mocks.runBillingMaintenance).toHaveBeenCalledOnce();
     expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
   });
@@ -1054,8 +1077,11 @@ describe("the scheduler tick", () => {
 
     expect(mocks.createOutboxClient).not.toHaveBeenCalled();
     expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(2);
-    expect(console.warn).toHaveBeenCalledWith("scheduler_state_unavailable", {
-      lane: "maintenance",
-    });
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "scheduler_state_unavailable",
+        lane: "maintenance",
+      })
+    );
   });
 });

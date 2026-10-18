@@ -1,0 +1,133 @@
+# Checklist de release para produção
+
+Status: proposta, aguardando decisão do time. Nenhum item foi executado para uma promoção ainda. Onde o time ainda não decidiu, o texto traz um valor padrão conservador marcado como **proposta, pendente de decisão**; a lista está em [Decisões pendentes](#decisões-pendentes).
+
+Checklist canônico para promover um SHA de `main` ao ambiente de produção do Polaris: os Workers `polaris-web` (com os Static Assets, as filas e os Cron Triggers declarados em `apps/web/wrangler.jsonc`), `polaris-catalog` e `polaris-admin`, e as migrations do banco. Ele não substitui o [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon), que cobre a primeira exposição pública. Os itens de go-live aparecem por link e não são copiados aqui.
+
+## Gatilho
+
+Qualquer promoção de SHA para produção. Mudança neste checklist entra por PR, como as demais fontes de runbook.
+
+## Pré-requisitos de acesso
+
+- Leitura do repositório e do histórico de CI no GitHub.
+- Leitura do banco de produção (tabela de controle de migrations) e do host de deploy, sempre com o perfil autorizado pela [política de perfis de CLI](./cli-profile-policy.md). Este checklist só lê; alterar produção exige autorização explícita do responsável.
+- Relatórios não contêm segredos, connection strings nem tokens: só nomes e datas.
+
+## Regras
+
+- **CI verde não é aceito.** O verde é conferido job a job, no SHA candidato (itens 2 e 4); o CI não substitui os gates em Neon descartável (item 4).
+- **Nunca aprovar parcialmente um item BLOCK.** Ou ele tem evidência e passa, ou não passa.
+- **Nunca editar o resultado esperado para ficar verde.** Se o resultado esperado de um teste ou gate precisa mudar, a mudança é um commit próprio, revisado, e o SHA candidato muda.
+- **Sem critério de aceite, o veredito é dados insuficientes.**
+- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**.
+
+## Itens
+
+### 1. SHA candidato identificado (BLOCK)
+
+- Critério: um SHA completo, já em `main`, com o PR de origem identificado.
+- Evidência: o SHA, o link do PR e a saída de `git rev-parse origin/main` no momento da leitura.
+
+### 2. CI do SHA verde, job a job (BLOCK)
+
+- Critério: no SHA candidato, terminam com sucesso os jobs `Changed areas`, `Checks (lint, types, knip, build, tests)` e `PostgreSQL 18 gates`. Este último deixou de ser consultivo: perdeu o `continue-on-error` e a falha dele é falha do CI, como diz a emenda do [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md). Tornar o check obrigatório para o merge é proteção de branch do GitHub, do responsável, e não está no repositório: confira o resultado do job, não a proteção.
+- `Dependency audit` é consultivo (`continue-on-error: true` em `.github/workflows/ci.yml`): o job pode terminar em falha sem derrubar o CI. O resultado real é lido e registrado, e cada aviso é comparado com o [runbook de auditoria de dependências](./dependency-audit.md): o job pode ficar vermelho só pelas exceções vigentes da tabela dele, dentro do prazo de revisão. Aviso que não está na tabela, ou exceção com prazo vencido, não é ignorado. **Proposta, pendente de decisão:** aviso alto em dependência que chega ao runtime bloqueia (o runbook já o trata como bloqueio); aviso só de ferramenta de desenvolvimento, com exceção vigente, é WARN, com dono e data no relatório (item 10).
+- `Dependency audit` e `Offline persistence browser gate` dependem do job `Changed areas`. Nenhum dos dois é executado quando a mudança não toca o que ele exercita, e o gate de navegador não roda em evento `push`. Nesse caso, a evidência é a execução do evento `pull_request` do PR de origem; se `main` mudou depois dela, o job é reexecutado. A execução completa sob demanda (`workflow_dispatch`) roda os dois, e é o caminho para ter ambos no SHA candidato, desde que o SHA candidato seja a ponta do ref escolhido (normalmente `main`); se `main` já avançou, o dispatch não testa o candidato.
+- `skipped` só vale quando `Changed areas` mostra que a área não mudou (`browser=false` ou `dependencies=false`). Qualquer outro `skipped` é falha. `Checks` e `PostgreSQL 18 gates` não têm condição: `skipped` neles é falha.
+- Evidência: link da execução de CI do SHA, com o estado de cada job e, para o gate de navegador e a auditoria, o evento de onde vieram.
+
+### 3. Migrações pendentes com plano de aplicação e de volta (BLOCK)
+
+- Critério: listar as migrations de `packages/db/drizzle` ainda não aplicadas em produção, comparando com a tabela de controle do Drizzle, lida em modo leitura.
+- Para cada migration: se é aditiva ou destrutiva, a ordem de aplicação e o plano de volta (rollback ou forward-fix).
+- Migration destrutiva sem plano de volta bloqueia.
+- Respeitar a ordem de publicação de cada gate. A migration vai ao banco **antes** do Worker que a usa (Worker novo sobre banco antigo falha nas funções novas; ver o passo 1 do [checklist das filas](./queues.md)); o servidor vai ao ar antes do app que usa um campo novo de comando ([Gate 5](./gate-5-offline.md#ordem-de-publicação)).
+- Comando de produção só entra no plano depois de testado em branch descartável ou staging, como pede o [README de runbooks](./README.md).
+- Evidência: lista das migrations pendentes (nome e hash), saída da leitura do banco e o plano escrito.
+
+### 4. Gates de banco em Neon descartável (BLOCK)
+
+- Critério: a suíte completa (`bun run --filter @polaris/db gates:all`) passa a partir do SHA candidato, numa branch Neon descartável com as migrations replayadas do zero. Pela emenda do [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), a suíte completa em Neon roda uma vez por fase e antes de uma liberação; por pull request só rodam o gate novo e os dos objetos tocados. Este item é a execução "antes de uma liberação". O job `PostgreSQL 18 gates` do CI (item 2) roda a suíte `ci`, um subconjunto de `all`, num PostgreSQL em container e não a substitui, porque não reproduz o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon).
+- Uma única branch para a execução inteira, reaproveitada por todos os gates e apagada ao final. Não se cria uma branch por gate. Procedimento, nome da branch e limites: [Gate 4](./gate-4-sales-core.md#pré-requisitos-de-acesso) e a política de perfis de CLI. O tipo de branch é o do procedimento vigente do Gate 4, que pode mudar; este item exige só uma branch descartável, única por execução e apagada ao final.
+- **Proposta, pendente de decisão:** a suíte completa é executada para cada promoção, a partir do SHA candidato. A alternativa é aceitar uma execução anterior (por exemplo, a do fim da fase, registrada na linha "Suíte completa em Neon" de `doc/status-implementacao.md`) quando nada que a emenda do ADR 0025 lista como gatilho mudou depois dela (executor `run-gates.ts`, suporte comum dos gates, migration que muda privilégios amplamente, objetos de banco tocados).
+- Evidência: o resumo de cada gate (`"status": "passed"`), o nome da branch, a data e a confirmação de que a branch foi apagada. Sem connection string.
+
+### 5. Pendências de ambiente do go-live (BLOCK)
+
+- Critério: cada item do [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon) que a promoção toca está marcado com leitura de volta: bindings Hyperdrive com query caching desabilitado, segredos, namespaces de rate limit, bucket de mídia e demais itens do trecho que se aplica; para as filas e os crons, o [checklist das filas](./queues.md#checklist-de-go-live-do-despachante-responsável) e o [Antes de ligar dos jobs agendados](./scheduled-jobs.md#antes-de-ligar-responsável). Itens que a promoção não toca ficam listados como não aplicáveis, com o motivo.
+- **Proposta, pendente de decisão:** este item bloqueia **toda** promoção enquanto houver item tocado aberto no go-live, e não só a primeira exposição pública. A alternativa é bloquear só a primeira.
+- Segredos: só nomes e data de criação, nunca valores.
+- Evidência: lista dos itens tocados com a leitura de volta, a data e quem leu.
+
+### 6. Smoke test definido e executado (BLOCK)
+
+- Critério: antes da promoção, a lista de verificações de fumaça está escrita: rota, resposta esperada e o que fazer se falhar, para cada Worker promovido. Ela é executada contra o ambiente que recebe o SHA e, depois da implantação em produção, contra produção.
+- **Proposta, pendente de decisão:** lista manual, escrita no relatório da execução e executada por uma pessoa com o perfil autorizado, porque o repositório não tem script de smoke test. A alternativa (script versionado ou verificação no CI) é decisão do time e muda este item.
+- Evidência: a lista, o resultado de cada verificação, a data e o host. Sem tokens nem dados de cliente.
+
+### 7. Critérios de rollback e responsável (BLOCK)
+
+- Critério: para os Workers, os Static Assets e as migrations, a condição que dispara rollback ou forward-fix, a ação e o responsável com o escalonamento. Migration sem reversão automática precisa de forward-fix descrito. Os runbooks de [Filas Cloudflare](./queues.md#rollback-ou-forward-fix) e de [Jobs agendados](./scheduled-jobs.md#rollback-ou-forward-fix) já descrevem como parar o consumo e os crons.
+- Evidência: o plano no relatório da execução, com nome ou papel do responsável (**proposta, pendente de decisão:** o responsável pelo projeto, como nos demais runbooks).
+
+### 8. SHA implantado conferido no host de deploy (BLOCK)
+
+- Critério: para cada Worker promovido, o SHA lido de volta no host de deploy (versão do Worker ou identificador exposto pelo deploy) é igual ao SHA candidato. A promoção só é dada como feita depois disso.
+- **Proposta, pendente de decisão:** leitura manual, por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)), sem script. O repositório não expõe o SHA no Worker nem tem script de deploy.
+- Se o host não expõe o SHA, o item fica como dados insuficientes. Não se presume que o deploy é igual ao candidato.
+- Evidência: a leitura de volta, com o identificador e a data.
+
+### 9. Nenhum achado "bloqueia" aberto do revisor (BLOCK)
+
+- Critério: na revisão do PR de origem, nenhum achado de severidade "bloqueia" está aberto e nenhum achado de segurança está sem resolução.
+- Evidência: link da revisão e o estado de cada achado.
+
+### 10. Achados "vale corrigir" e "menor" registrados (WARN)
+
+- Critério: os achados abertos desses níveis ficam listados no relatório, com dono e data prevista de correção.
+- Evidência: a lista, com links.
+
+### 11. Status com evidência de commit (WARN)
+
+- Critério: o status do repositório (`doc/status-implementacao.md`) foi conferido contra o SHA promovido. Só é marcado como feito o que tem commit de evidência.
+- Evidência: o trecho do status atualizado e o commit citado.
+
+## Veredito
+
+Ordem de decisão:
+
+1. **Bloquear**: algum item BLOCK falhou, com evidência.
+2. **Dados insuficientes**: algum item BLOCK não tem evidência, critério ou leitura. Diga qual leitura falhou e por quê.
+3. **Aprovar**: todos os itens BLOCK passaram com evidência, e os WARN estão registrados.
+
+Nunca "talvez". O veredito vale só para o SHA e o ambiente lidos.
+
+## Registro da execução
+
+- O relatório de cada execução fica fora do repositório, na pasta compartilhada de operações do Polaris, com o nome `run-AAAA-MM-DD-<SHA curto>.md` (**proposta, pendente de decisão**).
+- Conteúdo: SHA, cada item com status e evidência, veredito, incógnitas e decisões que faltam.
+
+## Rollback ou forward-fix
+
+Este checklist não altera recursos. Quando o veredito é bloquear, ele não reverte nada: a correção é um commit novo ou uma decisão do responsável.
+
+## Escalonamento
+
+**Proposta, pendente de decisão:** o responsável pelo projeto, como nos demais runbooks, até o time nomear pessoa ou papel. Veredito de bloquear ou dados insuficientes vai para o responsável e para quem pediu a promoção.
+
+## Estado atual
+
+- O checklist de go-live declara que nada foi executado. Enquanto um item tocado estiver aberto, a primeira execução tende a bloquear.
+- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). Os itens 6 e 8 precisam de definição antes da primeira execução.
+
+## Decisões pendentes
+
+Cada uma está marcada no texto como proposta, pendente de decisão:
+
+1. Severidade final de cada item (hoje 9 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
+2. Se o item 5 bloqueia toda promoção ou só a primeira.
+3. Quem é o responsável no escalonamento e no item 7.
+4. Como fazer o smoke test do item 6.
+5. Como ler o SHA no host de deploy (item 8).
+6. Se uma execução anterior da suíte completa em Neon (a do fim da fase) vale como evidência do item 4, e se o nome `run-AAAA-MM-DD-<SHA curto>.md` é o adotado para o relatório.

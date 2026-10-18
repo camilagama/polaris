@@ -24,7 +24,7 @@ O plano (PR84) pede: reembolso integral remove o Pro; chargeback remove o Pro im
 
 ## Consequências
 
-- Um adaptador (PR77 e PR78) reduz o reembolso integral, a disputa e a vitória da disputa do seu provedor a esses fatos, informando o fim do período cobrado pelo pagamento em questão; reembolso parcial vira lista vazia. Os fatos devem trazer a referência da assinatura: sem ela a rota não consegue conferir se pertencem à assinatura ligada (responsabilidade do adaptador).
+- Um adaptador (PR77 e PR78) reduz o reembolso integral, a disputa e a vitória da disputa do seu provedor a esses fatos, informando o fim do período cobrado pelo pagamento em questão; reembolso parcial vira lista vazia. Os fatos devem trazer a referência da assinatura, e o armazenamento a confere: reembolso, chargeback e reversão sem referência, com a referência de outra assinatura (ou ligada a outra organização) ficam registrados como ignorados (`reference_mismatch`), sem efeito; para um registro sem assinatura ligada o fato espera a ligação (falha com `unknown_organization` e o reprocessamento o aplica depois). O [ADR 0087](0087-referencia-do-provedor-em-todos-os-fatos-de-cobranca.md) estende a mesma exigência a todos os fatos e torna o que não confere um incidente operacional.
 - A restauração depende de o chargeback ter sido registrado e de a reversão nomear o mesmo período.
 - Cada saída do Pro por reembolso ou chargeback começa uma nova janela de adequação (ADR 0064), datada do momento da retirada do acesso.
 

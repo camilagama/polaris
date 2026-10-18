@@ -1,3 +1,4 @@
+import { configureLogging, logger } from "@polaris/observability/logger";
 import {
   listOperationalIncidents,
   readOperationalIncident,
@@ -198,8 +199,7 @@ const dependencies: AdminDependencies = {
         recordPrivacyScope(client, principalId, caseId, input)
       ),
   },
-  report: (event, fields) =>
-    console.warn({ event: `admin.${event}`, ...fields }),
+  report: (event, fields) => logger.warn(`admin.${event}`, fields),
   support: {
     close: (principalId, caseId, resolution, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
@@ -255,6 +255,8 @@ const dependencies: AdminDependencies = {
       resolvePlatformPrincipal(client, identity)
     ),
 };
+
+configureLogging({ service: "polaris-admin" });
 
 const app = createAdminApp(dependencies);
 
