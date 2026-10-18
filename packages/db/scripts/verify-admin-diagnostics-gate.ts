@@ -247,6 +247,29 @@ async function run() {
         "phone",
       ],
       platform_principals: ["id", "status"],
+      // the dead-letter queue the Admin's incident functions read, and only read (ADR 0085)
+      operational_incidents: [
+        "cause",
+        "first_seen_at",
+        "id",
+        "kind",
+        "last_reference",
+        "last_seen_at",
+        "occurrence_count",
+        "subject",
+      ],
+      queue_dead_letters: [
+        "event_id",
+        "event_type",
+        "first_seen_at",
+        "incident_id",
+        "last_seen_at",
+        "occurrences",
+        "organization_id",
+        "retried_at",
+        "retry_count",
+        "state",
+      ],
     });
     const platformTables = {
       platform_audit_events: [] as string[],
@@ -314,18 +337,20 @@ async function run() {
     assert.deepEqual(
       tableLevel.rows.map((row) => row.privilege),
       [
+        "operational_incidents:SELECT",
         "platform_audit_events:INSERT",
         "platform_audit_events:SELECT",
         "privacy_case_actions:INSERT",
         "privacy_case_actions:SELECT",
         "privacy_cases:INSERT",
         "privacy_cases:SELECT",
+        "queue_dead_letters:SELECT",
         "support_cases:INSERT",
         "support_cases:SELECT",
         "tenant_access_grants:INSERT",
         "tenant_access_grants:SELECT",
       ],
-      "table-level privileges only on the Admin's own tables, and never to change or delete"
+      "table-level privileges only on the Admin's own tables (and read on the dead-letter queue), and never to change or delete"
     );
     const memberships = await owner.pool.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM pg_auth_members WHERE member = 'polaris_admin_owner'::regrole OR (roleid = 'polaris_admin_owner'::regrole AND (set_option OR inherit_option))"
@@ -374,6 +399,7 @@ async function run() {
         "admin_audit_billing_command",
         "admin_close_support_case",
         "admin_grant_tenant_access",
+        "admin_list_operational_incidents",
         "admin_list_privacy_cases",
         "admin_list_support_cases",
         "admin_open_privacy_case",
@@ -388,6 +414,8 @@ async function run() {
         "admin_privacy_record_scope",
         "admin_privacy_resolve",
         "admin_reactivate_organization",
+        "admin_read_operational_incident",
+        "admin_retry_dead_letter",
         "admin_reveal_customer_field",
         "admin_revoke_tenant_access",
         "admin_support_case_detail",

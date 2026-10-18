@@ -13,6 +13,10 @@ import { createRequesterReader } from "../src/server/privacy/data-export-reader"
 import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
 import type { WorkerBindings } from "../src/server/environment";
 import {
+  handleDeadLetterBatch,
+  isDeadLetterQueue,
+} from "../src/server/queue/dead-letter";
+import {
   handleQueueBatch,
   PermanentHandlerError,
   type QueueBatch,
@@ -37,6 +41,8 @@ const REARM_MIN_AGE_SECONDS = 30 * 60;
 const REARM_BATCH = 100;
 const PROCESSING_KEEP_HOURS = approvedRetention("queue_processing") / 3_600_000;
 const PROCESSING_EXPIRY_BATCH = 500;
+/** How many events past the attempt cap one dispatcher run turns into incidents (ADR 0085). */
+const EXHAUSTED_BATCH = 100;
 
 /**
  * The queue path of the data export is live when the outbox role and the default queue are bound: the
@@ -233,6 +239,16 @@ async function runOutboxJobs(env: WorkerBindings): Promise<unknown[]> {
       failures.push(error);
     }
     try {
+      // an event past the attempt cap is no longer claimed: it becomes an incident and a dead event (ADR 0085)
+      const recorded =
+        await client.recordExhaustedOutboxEvents(EXHAUSTED_BATCH);
+      if (recorded > 0) {
+        console.warn("outbox_events_exhausted", { recorded });
+      }
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+    try {
       const removed = await client.expireProcessing(
         PROCESSING_KEEP_HOURS,
         PROCESSING_EXPIRY_BATCH
@@ -307,7 +323,32 @@ async function handleDataExportRequested(
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */
 const inMemoryLedger = createInMemoryProcessingLedger();
 
+/**
+ * The dead-letter queue (ADR 0085): its messages become incidents. Without the outbox role there is nowhere to
+ * record them, so the messages are retried (the queue keeps them for its retention and its retries).
+ */
+async function consumeDeadLetters(batch: QueueBatch, env: WorkerBindings) {
+  const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    console.warn("dead_letter_not_recorded_unconfigured");
+    for (const message of batch.messages) {
+      message.retry({ delaySeconds: 3600 });
+    }
+    return;
+  }
+  const client = createOutboxClient(connectionString);
+  try {
+    await handleDeadLetterBatch(batch, client);
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
 async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
+  if (isDeadLetterQueue(batch.queue)) {
+    await consumeDeadLetters(batch, env);
+    return;
+  }
   const handlers = {
     "data_export.requested": (envelope: QueueEnvelope) =>
       handleDataExportRequested(env, envelope),
@@ -316,6 +357,7 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
   if (!connectionString) {
     // no check against the outbox and no deduplication across isolates: only the handler's own guards
     console.warn("queue_ledger_in_memory");
+    // and no dead-letter queue either: nothing could record what lands there, so a refused message is only dropped
     await handleQueueBatch(batch, { handlers, ledger: inMemoryLedger });
     return;
   }
@@ -323,6 +365,7 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
   const client = createOutboxClient(connectionString);
   try {
     await handleQueueBatch(batch, {
+      deadLetters: env.QUEUE_DLQ,
       handlers,
       ledger: createDurableProcessingLedger(client),
     });

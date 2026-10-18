@@ -1576,3 +1576,18 @@ Terceiro passo da Fase 11 ([ADR 0084](../docs/adr/0084-despachante-e-varredor-do
 | Retenção | Classe aprovada | `queue_processing`: uma semana, job `outbox.processing_expiry` (execução do despachante). Despachados de `event_outbox` continuam `proposta` (PR112). |
 | Gate PostgreSQL 18 | Local e CI | `outbox-dispatcher` (suítes `ci` e `gate11`), novo; `event-outbox` e `data-export` ajustados. `gates:ci` completo passou num PostgreSQL 18.4 local. |
 | Limites | Registrados | Nada criado nem medido em nuvem (filas, Hyperdrive, CPU); latência de até uma hora (cadência é do PR112 e decisão de custo); sem DLQ; o PR do purge precisa classificar `queue_processing` se entrar depois. |
+
+### Fase 11D — DLQ, incidente operacional e retry no Admin (PR111; implementação e gates locais concluídos; nada criado na conta Cloudflare)
+
+Quarto passo da Fase 11 ([ADR 0085](../docs/adr/0085-dlq-incidente-operacional-e-retry-no-admin.md); o número pode mudar): a mensagem que esgota as tentativas ou que o consumidor recusa de vez vai para a DLQ e vira incidente operacional; o evento do outbox que passa de 1000 tentativas também; o Admin reenvia um evento morto, com motivo e auditoria.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/dlq` sobre a `main` (migration 0072, só aditiva; a do PR #126 também é 0072, e o segundo a entrar renumera a migration e o snapshot). |
+| Filas | Declarado | `polaris-dlq` compartilhada: `dead_letter_queue` nos três consumidores, produtor `QUEUE_DLQ`, consumidor próprio (10 tentativas). O consumidor envia à DLQ um **aviso** (causa e IDs, nunca o corpo) para envelope inválido, tipo ou versão desconhecidos e fila errada. Nada criado na conta: o runbook ganha o passo de criar a DLQ. |
+| Banco | Concluído | `operational_incidents` (uma linha por causa, contagem e datas) e `queue_dead_letters` (um evento morto por linha, só IDs); funções `record_dead_letter`, `record_exhausted_outbox_events`, `retry_dead_letter` (dono do outbox) e `admin_list_operational_incidents`, `admin_read_operational_incident`, `admin_retry_dead_letter` (dono do Admin); o evento `operational_incident.retry` na auditoria. Ninguém apaga linha. |
+| Domínio | Concluído | `@polaris/domain/events/dead-letter` (aviso e classificação) e `@polaris/domain/admin/operational-incident` (motivo do retry); capacidades `operational_incident:read` e `operational_incident:retry`. |
+| Worker e Admin | Concluído | Consumidor da DLQ (`handleDeadLetterBatch`), passo do cron do despachante que registra os eventos no teto; rotas `/api/operational-incidents` (lista, detalhe, retry). |
+| Retenção | Proposta | Classe `operational_incident` (sem prazo e sem job; PR112). |
+| Gate PostgreSQL 18 | Local e CI | `dead-letter` (suítes `ci` e `gate11`), novo. |
+| Limites | Registrados | Nada criado nem medido em nuvem; a DLQ não tem DLQ (retenção de 24 horas no Free); falha permanente do handler continua `ack`; o retry espera o cron do despachante; incidente não se encerra; o PR do purge (#126, a refazer) precisa apagar `queue_dead_letters` explicitamente (política e DELETE do papel do purge, com a prova no gate dele), porque a linha da organização fica e a cascata não dispara, e unir `platform_audit_events_type_allowed` aos tipos do purge; `operational_incidents` não tem organização. |
