@@ -23,7 +23,7 @@ Se um override ou atualização quebrar `bun run build`, `bun run check` ou um g
 
 ## Escalonamento
 
-O responsável pelo CI decide passar `--ignore` no workflow, aceitar uma exceção que dure além do prazo e tratar qualquer aviso que chegue ao runtime.
+O responsável pelo CI decide aceitar uma exceção que dure além do prazo (o `--ignore` no workflow não expira sozinho: na data de revisão, remover ou renovar explicitamente) e tratar qualquer aviso que chegue ao runtime.
 
 ## Exceções vigentes
 
