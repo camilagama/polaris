@@ -1,11 +1,11 @@
 import { Pool } from "pg";
 
 /**
- * What the privacy role does in the background (plan PR101 and PR104, ADRs 0074 and 0078).
- * It runs under its own database role, which can execute a few functions and read nothing:
- * closing organizations whose recovery window ended, and the data exports (claim a request,
+ * What the privacy role does in the background (plan PR101, PR104 and PR107, ADRs 0074, 0078,
+ * 0081 and 0084). It runs under its own database role, which can execute a few functions and read
+ * nothing: closing organizations whose recovery window ended, the data exports (claim a request,
  * record its files, finish or fail it, expire it, and send its outbox event again while it is
- * still owed, ADR 0084).
+ * still owed) and the purges an operator scheduled.
  */
 export interface ClaimedDataExport {
   attempt: number;
@@ -15,10 +15,21 @@ export interface ClaimedDataExport {
   requestedBy: string;
 }
 
+/** A purge held by this run: `purge` removes storage and rows; `sweep` only looks at the storage again. */
+export interface ClaimedOrganizationPurge {
+  attempt: number;
+  organizationId: string;
+  phase: "purge" | "sweep";
+}
+
 export interface PrivacyMaintenanceClient {
-  close: () => Promise<void>;
   /** Takes the oldest export that is waiting (or whose run stopped); null when there is none. */
   claimDataExport: (leaseSeconds: number) => Promise<ClaimedDataExport | null>;
+  /** Takes the oldest due purge (or one whose second sweep did not finish); null when there is none. */
+  claimOrganizationPurge: (
+    leaseSeconds: number
+  ) => Promise<ClaimedOrganizationPurge | null>;
+  close: () => Promise<void>;
   /**
    * Takes the one export a queue event names, by ID and organization, under the same rules (not before
    * the delay of a failed run, not past its attempts); null when it is not there to take.
@@ -32,23 +43,47 @@ export interface PrivacyMaintenanceClient {
     exportId: string,
     validityHours: number
   ) => Promise<{ expiresAt: Date; totalBytes: number }>;
+  /** The second sweep found nothing left: the purge is over. */
+  completeOrganizationPurgeSweep: (organizationId: string) => Promise<boolean>;
   /** Makes finished and failed exports unavailable when their time is up; returns how many. */
   expireDataExports: (
     failedKeepHours: number,
     limit: number
   ) => Promise<number>;
-  /** Marks the recovery windows that ended as closed, at most `limit` organizations; returns how many. */
-  finalizeExpiredClosures: (limit: number) => Promise<number>;
   /** Fails a run: it is tried again unless `final` or it has used its attempts. Returns whether it is final. */
   failDataExport: (
     exportId: string,
     code: string,
     final: boolean
   ) => Promise<boolean>;
+  /** Marks the recovery windows that ended as closed, at most `limit` organizations; returns how many. */
+  finalizeExpiredClosures: (limit: number) => Promise<number>;
   listDataExportsToDelete: (
     limit: number
   ) => Promise<{ id: string; organizationId: string }[]>;
+  /** Every image of a held purge (asset ID and master key), read before the rows go. */
+  listOrganizationPurgeMedia: (
+    organizationId: string
+  ) => Promise<{ id: string; storageKey: string }[]>;
   markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
+  /**
+   * The purge is about to remove its first object from the storage; from now on it cannot be cancelled.
+   * Refused (`purge_not_claimed`) when this run no longer holds the purge.
+   */
+  markOrganizationPurgeStorageTouched: (
+    organizationId: string
+  ) => Promise<void>;
+  /**
+   * Writes the tombstone, deletes every row of the tenant, takes the payer out of the billing events and the
+   * free text out of the cases, in one transaction. Refused (`legal_hold_active`, `closure_period_not_elapsed`)
+   * with nothing removed while a legal hold is in force or the closure is younger than 30 days.
+   */
+  purgeOrganizationData: (organizationId: string) => Promise<{
+    alreadyPurged: boolean;
+    pseudonymizedBillingEvents: number;
+    deletedRows: number;
+    scrubbedTexts: number;
+  }>;
   /**
    * Sends back to pending the export events dispatched at least `minAgeSeconds` ago whose export is
    * still owed and may be taken now; returns how many.
@@ -64,6 +99,11 @@ export interface PrivacyMaintenanceClient {
     ordinal: number;
     sizeBytes: number;
   }) => Promise<void>;
+  /** A step failed: a short code is written; the purge stays held until its lease ends and a later run tries again. */
+  recordOrganizationPurgeFailure: (
+    organizationId: string,
+    code: string
+  ) => Promise<void>;
 }
 
 export function createPrivacyMaintenanceClient(
@@ -93,6 +133,14 @@ export function createPrivacyMaintenanceClient(
         | undefined;
       return claimed ?? null;
     },
+    async claimOrganizationPurge(leaseSeconds) {
+      const result = await pool.query<{
+        claimed: ClaimedOrganizationPurge | null;
+      }>("SELECT public.claim_organization_purge($1::integer) AS claimed", [
+        leaseSeconds,
+      ]);
+      return result.rows[0]?.claimed ?? null;
+    },
     async claimDataExportById(exportId, organizationId, leaseSeconds) {
       const result = await pool.query<{ claimed: ClaimedDataExport | null }>(
         "SELECT public.claim_data_export_by_id($1::uuid, $2::text, $3::integer) AS claimed",
@@ -118,6 +166,13 @@ export function createPrivacyMaintenanceClient(
         expiresAt: new Date(completed.expiresAt),
         totalBytes: Number(completed.totalBytes),
       };
+    },
+    async completeOrganizationPurgeSweep(organizationId) {
+      const result = await pool.query<{ completed: boolean }>(
+        "SELECT public.complete_organization_purge_sweep($1::text) AS completed",
+        [organizationId]
+      );
+      return result.rows[0]?.completed === true;
     },
     async expireDataExports(failedKeepHours, limit) {
       const result = await pool.query<{ expired: number }>(
@@ -150,12 +205,50 @@ export function createPrivacyMaintenanceClient(
         organizationId: row.organization_id,
       }));
     },
+    async listOrganizationPurgeMedia(organizationId) {
+      const result = await pool.query<{ id: string; storage_key: string }>(
+        "SELECT id, storage_key FROM public.list_organization_purge_media($1::text)",
+        [organizationId]
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        storageKey: row.storage_key,
+      }));
+    },
     async markDataExportFilesDeleted(exportId) {
       const result = await pool.query<{ marked: boolean }>(
         "SELECT public.mark_data_export_files_deleted($1::uuid) AS marked",
         [exportId]
       );
       return result.rows[0]?.marked === true;
+    },
+    async markOrganizationPurgeStorageTouched(organizationId) {
+      await pool.query(
+        "SELECT public.mark_organization_purge_storage_touched($1::text)",
+        [organizationId]
+      );
+    },
+    async purgeOrganizationData(organizationId) {
+      const result = await pool.query<{
+        purged: {
+          alreadyPurged: boolean;
+          pseudonymizedBillingEvents: number | string;
+          deletedRows: number | string;
+          scrubbedTexts: number | string;
+        };
+      }>("SELECT public.purge_organization_data($1::text) AS purged", [
+        organizationId,
+      ]);
+      const purged = result.rows[0]?.purged;
+      if (!purged) {
+        throw new Error("organization_not_purged");
+      }
+      return {
+        alreadyPurged: purged.alreadyPurged === true,
+        pseudonymizedBillingEvents: Number(purged.pseudonymizedBillingEvents),
+        deletedRows: Number(purged.deletedRows),
+        scrubbedTexts: Number(purged.scrubbedTexts),
+      };
     },
     async rearmDataExportEvents(minAgeSeconds, limit) {
       const result = await pool.query<{ rearmed: number }>(
@@ -168,6 +261,12 @@ export function createPrivacyMaintenanceClient(
       await pool.query(
         "SELECT public.record_data_export_file($1::uuid, $2::integer, $3::text, $4::text, $5::bigint)",
         [file.exportId, file.ordinal, file.name, file.key, file.sizeBytes]
+      );
+    },
+    async recordOrganizationPurgeFailure(organizationId, code) {
+      await pool.query(
+        "SELECT public.record_organization_purge_failure($1::text, $2::text)",
+        [organizationId, code]
       );
     },
   };

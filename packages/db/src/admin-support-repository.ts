@@ -4,6 +4,11 @@ import {
   supportRefusalFromMessage,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import {
+  OrganizationPurgeRefusedError,
+  organizationPurgeRefusalFromMessage,
+  purgeDelayAfterWindowMs,
+} from "@polaris/domain/privacy/organization-purge";
 import type { AdminQueryable } from "./platform-principal-repository";
 
 /**
@@ -80,6 +85,7 @@ export interface MaskedCustomerPage {
 
 const ACCESS_DENIED = "42501";
 const INVALID_PARAMETER = "22023";
+const OBJECT_NOT_IN_STATE = "55000";
 
 function sqlState(error: unknown): string | undefined {
   const visited = new Set<object>();
@@ -115,6 +121,14 @@ async function call<T>(
     if (state === ACCESS_DENIED) {
       // biome-ignore lint/style/useErrorCause: TenantAccessDeniedError forwards this cause to Error.
       throw new TenantAccessDeniedError({ cause: error });
+    }
+    const refusal =
+      state === OBJECT_NOT_IN_STATE && error instanceof Error
+        ? organizationPurgeRefusalFromMessage(error.message)
+        : null;
+    if (refusal) {
+      // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks its code.
+      throw new OrganizationPurgeRefusedError(refusal);
     }
     if (state === INVALID_PARAMETER) {
       // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks its code.
@@ -262,6 +276,120 @@ export function suspendOrganization(
     client,
     "public.admin_suspend_organization($1, $2)",
     [principalId, caseId]
+  );
+}
+
+/**
+ * Schedules the purge of the case's organization (plan PR107, ADR 0081): only a `closed` one whose
+ * recovery window is over, and only when the operator names that same organization (a confirmation). The delay after the window comes from the retention registry (none while
+ * the retention of a closed organization is proposed). Scheduling again is not a change.
+ */
+export function scheduleOrganizationPurge(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string
+) {
+  return call<{ changed: boolean; notBefore?: string; status: string }>(
+    client,
+    "public.admin_schedule_organization_purge($1, $2, $3, $4::bigint)",
+    [
+      principalId,
+      caseId,
+      organizationId,
+      Math.ceil(purgeDelayAfterWindowMs() / 1000),
+    ]
+  );
+}
+
+/**
+ * Cancels a scheduled purge (plan PR107, ADR 0081): the organization goes back from `purge_pending` to
+ * `closed`, and only while no run holds the purge. The reason is required and stays on the purge row.
+ */
+export function cancelOrganizationPurge(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string,
+  reason: string
+) {
+  return call<{ changed: boolean; status: string }>(
+    client,
+    "public.admin_cancel_organization_purge($1, $2, $3, $4)",
+    [principalId, caseId, organizationId, reason]
+  );
+}
+
+/**
+ * Places a legal hold on the case's organization (ADR 0081, decision of 18/10/2026): while it is in force the
+ * purge is neither scheduled nor run. `storageTouched` tells that a scheduled purge already removed objects from
+ * the storage (they do not come back). The operator names the organization (a confirmation) and a review date
+ * (in the future, at most 366 days away: when it passes the hold stays and is listed as due for review). Placing
+ * it again with a later date renews it (`renewed`), in one transaction with no moment without a hold; with an
+ * earlier or equal date it changes nothing. A purged organization is refused (`purge_already_done`).
+ */
+export function placeOrganizationLegalHold(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string,
+  reviewAt: string
+) {
+  return call<{
+    changed: boolean;
+    held: boolean;
+    renewed: boolean;
+    storageTouched: boolean;
+  }>(
+    client,
+    "public.admin_place_organization_legal_hold($1, $2, $3, $4::timestamptz)",
+    [principalId, caseId, organizationId, reviewAt]
+  );
+}
+
+export interface LegalHoldSummary {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  placedAt: string;
+  placedBy: string;
+  reviewAt: string;
+  /** The review date passed: the hold is still in force and waits for an operator to review it. */
+  reviewDue: boolean;
+  supportCaseId: string;
+}
+
+export interface LegalHoldPage {
+  /** How many holds in force are past their review date, over all of them and not only this page. */
+  dueForReview: number;
+  holds: LegalHoldSummary[];
+  next: string | null;
+}
+
+/** The legal holds in force, newest first, read only: a purge that waits for a hold has one to show. */
+export async function listOrganizationLegalHolds(
+  client: AdminQueryable,
+  input: { after: string | null; limit: number }
+): Promise<LegalHoldPage> {
+  const page = await call<LegalHoldPage>(
+    client,
+    "public.admin_list_organization_legal_holds($1, $2)",
+    [input.limit, input.after]
+  );
+  return page ?? { dueForReview: 0, holds: [], next: null };
+}
+
+/** Releases the legal hold in force on the case's organization; with none in force it changes nothing. */
+export function releaseOrganizationLegalHold(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string
+) {
+  return call<{ changed: boolean; held: boolean }>(
+    client,
+    "public.admin_release_organization_legal_hold($1, $2, $3)",
+    [principalId, caseId, organizationId]
   );
 }
 

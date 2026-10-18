@@ -45,3 +45,7 @@ Pessoas (e donos de organização) pedem acesso, correção, exclusão, portabil
 - **Guardar os dados do solicitante para contato:** cria um novo repositório de dado pessoal só para atender o pedido sobre dado pessoal.
 - **Deixar o Admin executar a anonimização ou o encerramento direto:** abriria uma segunda via de alterar dado de tenant sem a autoridade do dono; hoje o Admin só lê com acesso temporário e registra.
 - **Manter o caso de privacidade aberto e fechado pelas funções genéricas:** um caso poderia ser fechado sem decisão nem trilha.
+
+## Emenda (ADR 0081)
+
+O risco para o purge, apontado nos limites acima, foi tratado mantendo a linha da organização como tombstone: a chave estrangeira restritiva continua válida, e casos, ações e o caso de suporte sobrevivem sem dado pessoal. Pela decisão do responsável de 18/10/2026 (ADR 0081, "Decisões do responsável", item 4), o purge não deixa os casos intactos: apaga o texto livre (a nota do caso de privacidade e a nota da decisão; o motivo, o contexto e a resolução do caso de suporte, trocados pelo texto fixo ou por nulo) e mantém o registro, isto é, datas, tipo, estado, decisão, motivo codificado, escopo, referência opaca e IDs. Para isso, o papel de purge (`polaris_purge_owner`) tem uma exceção estreita nos gatilhos `support_cases_closed_is_final` e `privacy_cases_forward_only`: deixam passar só um `UPDATE` seu, numa organização em `purge_pending`, que troque essas colunas pelo texto fixo ou por nulo e não mude mais nada. Fora do purge, os dois gatilhos continuam recusando qualquer alteração.

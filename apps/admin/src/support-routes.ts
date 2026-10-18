@@ -1,5 +1,6 @@
 import { describeError } from "@polaris/observability/wide-event";
 import type {
+  LegalHoldPage,
   MaskedCustomerPage,
   SupportCaseDetail,
   SupportCasePage,
@@ -10,12 +11,18 @@ import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
   isRevealableField,
+  MAX_CASE_REASON_LENGTH,
   normalizeAccessMinutes,
+  normalizeLegalHoldReviewAt,
   normalizeOpenCase,
   normalizeResolution,
   type RevealableCustomerField,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import {
+  OrganizationPurgeRefusedError,
+  organizationPurgeRefusalMessage,
+} from "@polaris/domain/privacy/organization-purge";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
 import type { GrantCommand } from "./billing-commands";
@@ -28,6 +35,14 @@ import type { GrantCommand } from "./billing-commands";
  */
 
 export interface SupportDependencies {
+  /** Cancels a scheduled purge while no run holds it (the organization goes back to `closed`). */
+  cancelPurge: (
+    principalId: string,
+    caseId: string,
+    organizationId: string,
+    reason: string,
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; status: string } | null>;
   /** Gives the organization of an open case a temporary entitlement (recorded before and after). */
   grantEntitlement: (
     principalId: string,
@@ -40,6 +55,30 @@ export interface SupportDependencies {
     organizationId: string;
     outcomeRecorded: boolean;
   }>;
+  /**
+   * Places or releases the legal hold on the case's organization: while one is in force, no purge. Placing it
+   * needs a review date (`reviewAt`, an ISO instant in UTC); placing again with a later one renews the hold.
+   */
+  legalHold: (
+    principalId: string,
+    caseId: string,
+    organizationId: string,
+    action: "place" | "release",
+    reviewAt: string | null,
+    bindings: AdminBindings
+  ) => Promise<{
+    changed: boolean;
+    held: boolean;
+    renewed?: boolean;
+    storageTouched?: boolean;
+  } | null>;
+  /** Schedules the purge of the case's organization (it must be closed, its recovery window over). */
+  purge: (
+    principalId: string,
+    caseId: string,
+    organizationId: string,
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; notBefore?: string; status: string } | null>;
   reactivate: (
     principalId: string,
     caseId: string,
@@ -92,6 +131,11 @@ export interface SupportDependencies {
     },
     bindings: AdminBindings
   ) => Promise<SupportCasePage>;
+  /** The legal holds in force, read only (a purge that waits for a hold has one to show). */
+  listLegalHolds: (
+    input: { after: string | null; limit: number },
+    bindings: AdminBindings
+  ) => Promise<LegalHoldPage>;
   open: (
     principalId: string,
     input: {
@@ -208,6 +252,18 @@ export function supportRoutes(
         route: context.req.path.replaceAll(UUID_IN_PATH, ":id"),
       });
       return context.json({ error: "tenant_access_denied" }, 403);
+    }
+    if (error instanceof OrganizationPurgeRefusedError) {
+      // the organization is not in a state that allows it yet; nothing was changed, and the answer says why.
+      // The refused attempt leaves no row (the transaction is undone), so it is at least in the operator's log
+      report("organization_purge_refused", { errorCode: error.code });
+      return context.json(
+        {
+          error: error.code,
+          message: organizationPurgeRefusalMessage(error.code),
+        },
+        409
+      );
     }
     if (error instanceof InvalidEntitlementGrantError) {
       return context.json({ error: error.code }, 400);
@@ -420,6 +476,126 @@ export function supportRoutes(
       }
       return context.json(
         await dependencies.reactivate(principalOf(context), caseId, context.env)
+      );
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/purge",
+    requireCapability("organization:purge"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      if (!caseId) {
+        return notFound(context);
+      }
+      // the operator names the organization: an irreversible action on the wrong case is refused (409)
+      const body = await readBody(context);
+      const organizationId = body?.organizationId;
+      if (
+        typeof organizationId !== "string" ||
+        organizationId.length === 0 ||
+        organizationId.length > MAX_ID_LENGTH ||
+        controlCharacter(organizationId)
+      ) {
+        return invalid(context);
+      }
+      return context.json(
+        await dependencies.purge(
+          principalOf(context),
+          caseId,
+          organizationId,
+          context.env
+        )
+      );
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/purge/cancel",
+    requireCapability("organization:purge"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      if (!caseId) {
+        return notFound(context);
+      }
+      // the same confirmation as the scheduling, and a reason: the cancellation is audited and kept
+      const body = await readBody(context);
+      const organizationId = body?.organizationId;
+      const reason =
+        typeof body?.reason === "string" ? body.reason.trim() : undefined;
+      if (
+        typeof organizationId !== "string" ||
+        organizationId.length === 0 ||
+        organizationId.length > MAX_ID_LENGTH ||
+        controlCharacter(organizationId) ||
+        reason === undefined ||
+        reason.length === 0 ||
+        [...reason].length > MAX_CASE_REASON_LENGTH ||
+        controlCharacter(reason)
+      ) {
+        return invalid(context);
+      }
+      return context.json(
+        await dependencies.cancelPurge(
+          principalOf(context),
+          caseId,
+          organizationId,
+          reason,
+          context.env
+        )
+      );
+    }
+  );
+
+  for (const action of ["place", "release"] as const) {
+    routes.post(
+      `/support-cases/:caseId/legal-hold${action === "place" ? "" : "/release"}`,
+      requireCapability("organization:legal_hold"),
+      async (context) => {
+        const caseId = idParam(context, "caseId");
+        if (!caseId) {
+          return notFound(context);
+        }
+        // the operator names the organization, as for the purge: a hold on the wrong case is refused (409)
+        const body = await readBody(context);
+        const organizationId = body?.organizationId;
+        if (
+          typeof organizationId !== "string" ||
+          organizationId.length === 0 ||
+          organizationId.length > MAX_ID_LENGTH ||
+          controlCharacter(organizationId)
+        ) {
+          return invalid(context);
+        }
+        // placing needs a review date (the hold stays when it passes and is listed as due for review)
+        const reviewAt =
+          action === "place"
+            ? normalizeLegalHoldReviewAt(body?.reviewAt)
+            : null;
+        return context.json(
+          await dependencies.legalHold(
+            principalOf(context),
+            caseId,
+            organizationId,
+            action,
+            reviewAt,
+            context.env
+          )
+        );
+      }
+    );
+  }
+
+  routes.get(
+    "/legal-holds",
+    requireCapability("organization:legal_hold"),
+    async (context) => {
+      const paging = page(context);
+      if (!paging) {
+        return invalid(context);
+      }
+      return context.json(
+        await dependencies.listLegalHolds(paging, context.env)
       );
     }
   );

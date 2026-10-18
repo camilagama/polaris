@@ -185,7 +185,7 @@ export const platformAuditEvents = pgTable(
     ),
     check(
       "platform_audit_events_type_allowed",
-      sql`${table.eventType} IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry')`
+      sql`${table.eventType} IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed')`
     ),
     check(
       "platform_audit_events_detail_allowed",
@@ -200,6 +200,17 @@ export const platformAuditEvents = pgTable(
       for: "insert",
       to: ownerRole,
       withCheck: sql`true`,
+    }),
+    // the one event the purge writes itself (ADR 0081): the completion, once the organization is `purged`
+    pgPolicy("platform_audit_events_purge_owner_insert", {
+      for: "insert",
+      to: "polaris_purge_owner",
+      withCheck: sql`event_type = 'organization.purge_completed'
+        AND entity_type = 'organization'
+        AND entity_id = organization_id
+        AND detail IS NULL
+        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
+        AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id AND purge_plan.scheduled_by = platform_audit_events.principal_id AND purge_plan.support_case_id = platform_audit_events.support_case_id)`,
     }),
   ]
 ).enableRLS();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_TRIGGERED_REMOVALS,
   approvedRetention,
   isRetentionClass,
   RETENTION_CLASSES,
@@ -66,6 +67,30 @@ describe("purge jobs", () => {
   });
 });
 
+describe("proposed classes", () => {
+  it("have no job and no cron, so nothing expires them on its own", () => {
+    const scheduled = new Set(RETENTION_PURGE_JOBS.map((job) => job.class));
+    for (const policy of RETENTION_POLICIES) {
+      if (policy.status === "proposta") {
+        expect("job" in policy, policy.class).toBe(false);
+        expect(scheduled.has(policy.class), policy.class).toBe(false);
+      }
+    }
+  });
+
+  it("are removed only after an explicit administrative command, never by a job", () => {
+    const scheduledIds = new Set<string>(
+      RETENTION_PURGE_JOBS.map((job) => job.id)
+    );
+    for (const removal of ADMIN_TRIGGERED_REMOVALS) {
+      expect(scheduledIds.has(removal.id)).toBe(false);
+    }
+    expect(ADMIN_TRIGGERED_REMOVALS.map((removal) => removal.class)).toEqual([
+      "closed_organization",
+    ]);
+  });
+});
+
 describe("approved periods", () => {
   it("keep a staging marker 24 hours and a removed image one hour", () => {
     expect(approvedRetention("media_staging_marker")).toBe(24 * HOUR_MS);
@@ -80,14 +105,34 @@ describe("approved periods", () => {
     expect(() => approvedRetention("sync_commands")).toThrow(
       RetentionNotApprovedError
     );
-    expect(() => approvedRetention("sales_records")).toThrow(
+    expect(() => approvedRetention("auth_sessions")).toThrow(
       "retention_not_approved"
     );
   });
 
-  it("treat the tenant audit as proposed while its legal period is open", () => {
-    expect(retentionPolicy("tenant_audit_events").status).toBe("proposta");
-    expect(() => approvedRetention("tenant_audit_events")).toThrow(
+  it("keep the tenant's operational data until the purge, which no job expires", () => {
+    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after 30 days
+    for (const retentionClass of [
+      "tenant_audit_events",
+      "sales_records",
+      "inventory_ledger",
+      "expenses_and_goals",
+      "product_media",
+    ] as const) {
+      const policy = retentionPolicy(retentionClass);
+      expect(policy.status, retentionClass).toBe("aprovada");
+      expect(policy.period.kind, retentionClass).toBe(
+        "until_organization_purge"
+      );
+      expect(() => approvedRetention(retentionClass)).toThrow(
+        RetentionNotApprovedError
+      );
+    }
+  });
+
+  it("keep the billing events proposed until the fiscal period is decided", () => {
+    expect(retentionPolicy("billing_events").status).toBe("proposta");
+    expect(() => approvedRetention("billing_events")).toThrow(
       RetentionNotApprovedError
     );
   });

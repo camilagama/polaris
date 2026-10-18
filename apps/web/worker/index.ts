@@ -15,6 +15,7 @@ import { runBillingMaintenance } from "../src/server/billing/maintenance";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import { createRequesterReader } from "../src/server/privacy/data-export-reader";
 import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
+import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 import type { WorkerBindings } from "../src/server/environment";
 import {
   handleDeadLetterBatch,
@@ -166,8 +167,9 @@ function runDataExportsWith(
 
 /**
  * What the privacy role does in the background: marks the closures whose recovery window ended as
- * closed (ADR 0074), then builds the data exports that were asked for and removes the ones whose time
- * is up (ADR 0078). One connection serves both, and one failing never hides the other.
+ * closed (ADR 0074), builds the data exports that were asked for and removes the ones whose time is up
+ * (ADR 0078), and runs the purges an operator scheduled (ADR 0081; nothing schedules one on its own).
+ * One connection serves all three, and one failing never hides the others.
  */
 async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
@@ -217,8 +219,20 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
       } catch (error: unknown) {
         failures.push(error);
       }
+      try {
+        const report = await runOrganizationPurges({
+          bucket,
+          client,
+          now: () => new Date(),
+        });
+        logger.info("organization_purge_complete", { ...report });
+      } catch (error: unknown) {
+        failures.push(error);
+      }
     } else {
+      // without the bucket neither the exports nor the purges can touch storage: the purge must not reach the rows
       logger.warn("data_export_not_configured");
+      logger.warn("organization_purge_not_configured");
     }
   } finally {
     await quietly(() => client.close());

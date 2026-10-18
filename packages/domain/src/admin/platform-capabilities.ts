@@ -15,6 +15,8 @@ export const PLATFORM_CAPABILITIES = Object.freeze([
   "billing:operate",
   "organization:suspend",
   "privacy_case:manage",
+  "organization:purge",
+  "organization:legal_hold",
   "operational_incident:read",
   "operational_incident:retry",
 ] as const);

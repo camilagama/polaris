@@ -1,8 +1,12 @@
-import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
+import {
+  OrganizationPurgeRefusedError,
+  organizationPurgeRefusalMessage,
+} from "@polaris/domain/privacy/organization-purge";
 import { describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
@@ -24,6 +28,11 @@ const principal = {
   subject: "subject-1",
 };
 const caseId = "0199a0a0-0000-7000-8000-0000000000c1";
+
+/** An ISO instant in UTC, this many days from now (a day only counts whole: the tests stay away from the edges). */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
 const customerId = "0199a0a0-0000-7000-8000-0000000000d1";
 const grantId = "0199a0a0-0000-7000-8000-0000000000e1";
 
@@ -31,6 +40,9 @@ function support(
   overrides: Partial<SupportDependencies> = {}
 ): SupportDependencies {
   return {
+    cancelPurge: vi.fn(() =>
+      Promise.resolve({ changed: true, status: "closed" })
+    ),
     close: vi.fn(() =>
       Promise.resolve({ changed: true, id: caseId, status: "closed" })
     ),
@@ -45,12 +57,6 @@ function support(
         startsAt: "2026-10-16T12:00:00.000Z",
       })
     ),
-    list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
-    open: vi.fn(() => Promise.resolve({ id: caseId })),
-    reveal: vi.fn(() =>
-      Promise.resolve({ customerId, field: "email", value: "ana@exemplo.com" })
-    ),
-    revoke: vi.fn(() => Promise.resolve(true)),
     grantEntitlement: vi.fn(() =>
       Promise.resolve({
         created: true,
@@ -59,9 +65,28 @@ function support(
         outcomeRecorded: true,
       })
     ),
+    legalHold: vi.fn((_principal, _case, _organization, action) =>
+      Promise.resolve({ changed: true, held: action === "place" })
+    ),
+    list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    listLegalHolds: vi.fn(() =>
+      Promise.resolve({ dueForReview: 0, holds: [], next: null })
+    ),
+    open: vi.fn(() => Promise.resolve({ id: caseId })),
+    purge: vi.fn(() =>
+      Promise.resolve({
+        changed: true,
+        notBefore: "2026-11-01T12:00:00.000Z",
+        status: "purge_pending",
+      })
+    ),
     reactivate: vi.fn(() =>
       Promise.resolve({ changed: true, status: "active" })
     ),
+    reveal: vi.fn(() =>
+      Promise.resolve({ customerId, field: "email", value: "ana@exemplo.com" })
+    ),
+    revoke: vi.fn(() => Promise.resolve(true)),
     revokeEntitlement: vi.fn(() =>
       Promise.resolve({ outcomeRecorded: true, revoked: true })
     ),
@@ -179,7 +204,7 @@ describe("opening and listing cases", () => {
       { kind: "support", organizationId: "a\u0000b", reason: "x" },
       { kind: "audit", organizationId: "org-1", reason: "x" },
       { kind: "support", organizationId: "org-1", reason: "   " },
-      { kind: "support", organizationId: "org-1", reason: "x", context: 7 },
+      { context: 7, kind: "support", organizationId: "org-1", reason: "x" },
     ].map((body) => send("POST", "/api/support-cases", body));
     for (const response of await Promise.all(refused)) {
       expect(response.status).toBe(400);
@@ -524,6 +549,338 @@ describe("suspension and billing commands", () => {
         .status
     ).toBe(403);
     expect(other.support.suspend).not.toHaveBeenCalled();
+  });
+
+  it("schedules the purge of a case's organization, with the operator from the login", async () => {
+    const { send, support: calls } = setup();
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_1",
+      principalId: "forged",
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      changed: true,
+      notBefore: "2026-11-01T12:00:00.000Z",
+      status: "purge_pending",
+    });
+    expect(calls.purge).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      bindings
+    );
+    expect(
+      (await send("POST", `/api/support-cases/${caseId}/purge`, {})).status
+    ).toBe(400);
+    expect(calls.purge).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        await send("POST", "/api/support-cases/not-a-uuid/purge", {
+          organizationId: "org_1",
+        })
+      ).status
+    ).toBe(404);
+    const other = setup({}, "somebody_else");
+    expect(
+      (
+        await other.send("POST", `/api/support-cases/${caseId}/purge`, {
+          organizationId: "org_1",
+        })
+      ).status
+    ).toBe(403);
+    expect(other.support.purge).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when the organization cannot be purged yet", async () => {
+    const { send } = setup({
+      purge: vi.fn(() =>
+        Promise.reject(
+          new OrganizationPurgeRefusedError("organization_mismatch")
+        )
+      ),
+    });
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_other",
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "organization_mismatch",
+      message: organizationPurgeRefusalMessage("organization_mismatch"),
+    });
+  });
+
+  it("cancels a scheduled purge with a reason, the operator from the login and the organization named", async () => {
+    const { send, support: calls } = setup();
+    const response = await send(
+      "POST",
+      `/api/support-cases/${caseId}/purge/cancel`,
+      {
+        organizationId: "org_1",
+        principalId: "forged",
+        reason: "  Pedido retirado pelo dono  ",
+      }
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ changed: true, status: "closed" });
+    expect(calls.cancelPurge).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      "Pedido retirado pelo dono",
+      bindings
+    );
+  });
+
+  it("refuses to cancel a purge without a usable reason or organization, an unknown case or a missing capability", async () => {
+    const { send, support: calls } = setup();
+    const path = `/api/support-cases/${caseId}/purge/cancel`;
+    const refused = await Promise.all(
+      [
+        { organizationId: "org_1" },
+        { organizationId: "org_1", reason: "   " },
+        { organizationId: "org_1", reason: 42 },
+        { organizationId: "org_1", reason: "linha\nquebrada" },
+        { organizationId: "org_1", reason: "x".repeat(501) },
+        { organizationId: "", reason: "motivo" },
+        { reason: "motivo" },
+      ].map((body) => send("POST", path, body))
+    );
+    expect(refused.map((response) => response.status)).toEqual(
+      new Array(7).fill(400)
+    );
+    expect(
+      (
+        await send("POST", "/api/support-cases/not-a-uuid/purge/cancel", {
+          organizationId: "org_1",
+          reason: "motivo",
+        })
+      ).status
+    ).toBe(404);
+    const other = setup({}, "somebody_else");
+    expect(
+      (
+        await other.send("POST", path, {
+          organizationId: "org_1",
+          reason: "motivo",
+        })
+      ).status
+    ).toBe(403);
+    expect(calls.cancelPurge).not.toHaveBeenCalled();
+    expect(other.support.cancelPurge).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when the purge cannot be cancelled", async () => {
+    for (const code of [
+      "purge_in_progress",
+      "purge_storage_touched",
+      "purge_already_done",
+      "purge_not_scheduled",
+    ] as const) {
+      const { dependencies, send } = setup({
+        cancelPurge: vi.fn(() =>
+          Promise.reject(new OrganizationPurgeRefusedError(code))
+        ),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: each code has its own app, answered in turn.
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/purge/cancel`,
+        { organizationId: "org_1", reason: "motivo" }
+      );
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as {
+        error: string;
+        message: string;
+      };
+      expect(body).toEqual({
+        error: code,
+        message: organizationPurgeRefusalMessage(code),
+      });
+      expect(body.message.length).toBeGreaterThan(10);
+      // the refused attempt leaves no row, so it is in the log: the code only, nothing of the request
+      expect(dependencies.report).toHaveBeenCalledWith(
+        "organization_purge_refused",
+        { errorCode: code }
+      );
+    }
+  });
+
+  it("places and releases a legal hold on the case's organization, with the operator from the login", async () => {
+    const { send, support: calls } = setup();
+    const reviewAt = daysFromNow(90);
+    const placed = await send(
+      "POST",
+      `/api/support-cases/${caseId}/legal-hold`,
+      {
+        organizationId: "org_1",
+        principalId: "forged",
+        reviewAt,
+      }
+    );
+    expect(placed.status).toBe(200);
+    expect(await placed.json()).toEqual({ changed: true, held: true });
+    expect(calls.legalHold).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      "place",
+      reviewAt,
+      bindings
+    );
+    const released = await send(
+      "POST",
+      `/api/support-cases/${caseId}/legal-hold/release`,
+      { organizationId: "org_1" }
+    );
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ changed: true, held: false });
+    expect(calls.legalHold).toHaveBeenLastCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      "release",
+      null,
+      bindings
+    );
+  });
+
+  it("requires a review date to place a legal hold: an ISO instant, in the future, at most 366 days away", async () => {
+    const { send, support: calls } = setup();
+    const path = `/api/support-cases/${caseId}/legal-hold`;
+    const bad: unknown[] = [
+      undefined,
+      null,
+      42,
+      "",
+      "amanhã",
+      "2026-13-40T00:00:00Z",
+      // no offset: the date would depend on the server's zone
+      daysFromNow(10).replace("Z", ""),
+      // a day only, in the past, now, and past the limit
+      daysFromNow(10).slice(0, 10),
+      daysFromNow(-1),
+      daysFromNow(367),
+    ];
+    for (const reviewAt of bad) {
+      // biome-ignore lint/performance/noAwaitInLoops: each value is answered in turn.
+      const refused = await send("POST", path, {
+        organizationId: "org_1",
+        reviewAt,
+      });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "invalid_review_at" });
+    }
+    expect(calls.legalHold).not.toHaveBeenCalled();
+    const edge = await send("POST", path, {
+      organizationId: "org_1",
+      reviewAt: daysFromNow(365),
+    });
+    expect(edge.status).toBe(200);
+  });
+
+  it("lists the legal holds in force, read only, with the capability and a page", async () => {
+    const page = {
+      dueForReview: 1,
+      holds: [
+        {
+          id: caseId,
+          organizationId: "org_1",
+          organizationName: "Loja",
+          placedAt: "2026-10-01T12:00:00.000Z",
+          placedBy: principal.id,
+          reviewAt: "2026-10-10T12:00:00.000Z",
+          reviewDue: true,
+          supportCaseId: caseId,
+        },
+      ],
+      next: null,
+    };
+    const { call, support: calls } = setup({
+      listLegalHolds: vi.fn(() => Promise.resolve(page)),
+    });
+    const listed = await call("/api/legal-holds?limit=10");
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual(page);
+    expect(calls.listLegalHolds).toHaveBeenCalledWith(
+      { after: null, limit: 10 },
+      bindings
+    );
+    expect((await call("/api/legal-holds?limit=0")).status).toBe(400);
+    expect((await call("/api/legal-holds?after=not-a-uuid")).status).toBe(400);
+    const other = setup({}, "somebody_else");
+    expect((await other.call("/api/legal-holds")).status).toBe(403);
+    expect(other.support.listLegalHolds).not.toHaveBeenCalled();
+  });
+
+  it("refuses a legal hold without the organization named, on an unknown case or without the capability", async () => {
+    const { send, support: calls } = setup();
+    for (const path of ["legal-hold", "legal-hold/release"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: two paths, answered in turn.
+      const refused = await Promise.all(
+        [{}, { organizationId: "" }, { organizationId: "org\n1" }].map((body) =>
+          send("POST", `/api/support-cases/${caseId}/${path}`, body)
+        )
+      );
+      expect(refused.map((response) => response.status)).toEqual([
+        400, 400, 400,
+      ]);
+      expect(
+        (
+          await send("POST", `/api/support-cases/not-a-uuid/${path}`, {
+            organizationId: "org_1",
+          })
+        ).status
+      ).toBe(404);
+      const other = setup({}, "somebody_else");
+      expect(
+        (
+          await other.send("POST", `/api/support-cases/${caseId}/${path}`, {
+            organizationId: "org_1",
+          })
+        ).status
+      ).toBe(403);
+      expect(other.support.legalHold).not.toHaveBeenCalled();
+    }
+    expect(calls.legalHold).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when a legal hold or a purge is refused for the hold or the closure period", async () => {
+    const hold = setup({
+      legalHold: vi.fn(() =>
+        Promise.reject(new OrganizationPurgeRefusedError("purge_already_done"))
+      ),
+    });
+    const refusedHold = await hold.send(
+      "POST",
+      `/api/support-cases/${caseId}/legal-hold`,
+      { organizationId: "org_1", reviewAt: daysFromNow(30) }
+    );
+    expect(refusedHold.status).toBe(409);
+    expect(await refusedHold.json()).toEqual({
+      error: "purge_already_done",
+      message: organizationPurgeRefusalMessage("purge_already_done"),
+    });
+    for (const code of [
+      "legal_hold_active",
+      "closure_period_not_elapsed",
+    ] as const) {
+      const { send } = setup({
+        purge: vi.fn(() =>
+          Promise.reject(new OrganizationPurgeRefusedError(code))
+        ),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: each code has its own app, answered in turn.
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/purge`,
+        { organizationId: "org_1" }
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: code,
+        message: organizationPurgeRefusalMessage(code),
+      });
+    }
   });
 
   it("gives and ends an entitlement through the case, with the operator from the login", async () => {

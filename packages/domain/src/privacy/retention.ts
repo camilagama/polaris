@@ -118,14 +118,13 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "aprovada",
   },
   {
-    basis: "lei",
+    basis: "decisao",
     class: "tenant_audit_events",
     data: ["tenant_audit_event"],
-    period: { kind: "undecided" },
-    proposed: `Até o purge da organização, sem expiração automática; prazo legal e legal hold (${TO_CONFIRM}).`,
-    rule: "Sem expiração automática; os eventos saem com a purga física da organização (ON DELETE CASCADE).",
-    sources: ["ADR 0006", "docs/business-rules/privacy.md"],
-    status: "proposta",
+    period: { kind: "until_organization_purge" },
+    rule: "Sem expiração automática. O Polaris é operador desses dados (LGPD) e a obrigação fiscal de guardá-los é do cliente, que tem a exportação: saem no purge ao fim do prazo de encerramento de 30 dias, salvo legal hold (decisão do responsável de 18/10/2026, ADR 0081).",
+    sources: ["ADR 0006", "ADR 0081", "docs/business-rules/privacy.md"],
+    status: "aprovada",
   },
   {
     basis: "decisao",
@@ -134,12 +133,10 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
       "media_assets e vínculos de produtos não removidos ou com tombstone",
       "R2 masters e derivados",
     ],
-    period: { kind: "undecided" },
-    proposed:
-      "Enquanto o produto existir (inclusive com tombstone); depois, junto com o produto ou com o purge da organização.",
-    rule: "Um produto excluído (tombstone) mantém vínculos e imagens; não há prazo próprio.",
-    sources: ["ADR 0061", "docs/business-rules/media.md"],
-    status: "proposta",
+    period: { kind: "until_organization_purge" },
+    rule: "Enquanto o produto existir (inclusive com tombstone); um produto excluído mantém vínculos e imagens, sem prazo próprio. O Polaris é operador desses dados (LGPD) e a obrigação fiscal de guardá-los é do cliente, que tem a exportação: saem no purge ao fim do prazo de encerramento de 30 dias, salvo legal hold (decisão do responsável de 18/10/2026, ADR 0081).",
+    sources: ["ADR 0061", "ADR 0081", "docs/business-rules/media.md"],
+    status: "aprovada",
   },
   {
     basis: "contrato",
@@ -153,43 +150,45 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "proposta",
   },
   {
-    basis: "lei",
+    basis: "decisao",
     class: "sales_records",
     data: [
       "sales, sale_items, sale_adjustments, sale_payments",
       "sale_cancellations, sale_returns, sale_return_items, sale_customer_links",
     ],
-    period: { kind: "undecided" },
-    proposed: `Enquanto a organização existir; depois do encerramento, o prazo fiscal e contábil (${TO_CONFIRM}).`,
-    rule: "Venda confirmada é snapshot econômico; corrige-se por cancelamento ou devolução, nunca apagando.",
-    sources: ["docs/business-rules/sales.md", "docs/business-rules/privacy.md"],
-    status: "proposta",
+    period: { kind: "until_organization_purge" },
+    rule: "Venda confirmada é snapshot econômico; corrige-se por cancelamento ou devolução, nunca apagando. O Polaris é operador desses dados (LGPD) e a obrigação fiscal de guardá-los é do cliente, que tem a exportação: saem no purge ao fim do prazo de encerramento de 30 dias, salvo legal hold (decisão do responsável de 18/10/2026, ADR 0081).",
+    sources: [
+      "ADR 0081",
+      "docs/business-rules/sales.md",
+      "docs/business-rules/privacy.md",
+    ],
+    status: "aprovada",
   },
   {
-    basis: "lei",
+    basis: "decisao",
     class: "inventory_ledger",
     data: ["stock_movements", "inventory_balances"],
-    period: { kind: "undecided" },
-    proposed: `Como as vendas: enquanto a organização existir e depois o prazo fiscal e contábil (${TO_CONFIRM}).`,
-    rule: "Movimentos são append-only e impedem a remoção física da variante e da organização até existir o caminho privilegiado de purge.",
+    period: { kind: "until_organization_purge" },
+    rule: "Movimentos são append-only; só o papel do purge os apaga, numa organização com purge agendado (exceção aceita pelo responsável). O Polaris é operador desses dados (LGPD) e a obrigação fiscal de guardá-los é do cliente, que tem a exportação: saem no purge ao fim do prazo de encerramento de 30 dias, salvo legal hold (decisão do responsável de 18/10/2026, ADR 0081).",
     sources: [
+      "ADR 0081",
       "docs/business-rules/inventory.md",
       "docs/business-rules/privacy.md",
     ],
-    status: "proposta",
+    status: "aprovada",
   },
   {
-    basis: "lei",
+    basis: "decisao",
     class: "expenses_and_goals",
     data: [
       "expenses, expense_categories, expense_recurring_rules",
       "goals, goal_target_changes",
     ],
-    period: { kind: "undecided" },
-    proposed: `Despesas como as vendas (prazo contábil, ${TO_CONFIRM}); metas até o purge da organização.`,
-    rule: "Despesa e meta são dados de gestão da organização; não há prazo próprio na main.",
-    sources: ["docs/business-rules/expenses-and-results.md"],
-    status: "proposta",
+    period: { kind: "until_organization_purge" },
+    rule: "Despesa e meta são dados de gestão da organização, sem prazo próprio. O Polaris é operador desses dados (LGPD) e a obrigação fiscal de guardá-los é do cliente, que tem a exportação: saem no purge ao fim do prazo de encerramento de 30 dias, salvo legal hold (decisão do responsável de 18/10/2026, ADR 0081).",
+    sources: ["ADR 0081", "docs/business-rules/expenses-and-results.md"],
+    status: "aprovada",
   },
   {
     basis: "lei",
@@ -199,9 +198,9 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
       "organization_billing, entitlement_grants",
     ],
     period: { kind: "undecided" },
-    proposed: `Registro financeiro: o prazo fiscal e contábil depois do fim da relação (${TO_CONFIRM}); a chave estrangeira restritiva bloqueia o purge até essa decisão.`,
-    rule: "O runtime nunca apaga uma linha do razão: é uma restrição de quem pode apagar, não um prazo.",
-    sources: ["ADR 0062", "ADR 0066"],
+    proposed: `Registro financeiro: o prazo fiscal e contábil depois do fim da relação (${TO_CONFIRM}).`,
+    rule: "O runtime nunca apaga uma linha do razão: é uma restrição de quem pode apagar, não um prazo. O purge da organização mantém os eventos e pseudonimiza o pagador: o fato fica só com valores, datas, tipos e referências opacas, e `provider_ref` e `provider_event_id` continuam e ainda localizam o pagador no provedor, pelo prazo fiscal (5 anos do 1º de janeiro seguinte); o motivo das concessões vira texto fixo (decisão do responsável de 18/10/2026, ADR 0081).",
+    sources: ["ADR 0062", "ADR 0066", "ADR 0081"],
     status: "proposta",
   },
   {
@@ -246,9 +245,9 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     class: "closed_organization",
     data: ["todos os dados de uma organização closed"],
     period: { kind: "undecided" },
-    proposed: `Purge depois do fim da janela de recuperação de 30 dias, respeitando as classes com prazo legal (${TO_CONFIRM}).`,
-    rule: "Nada é apagado na janela de recuperação; dados elegíveis saem depois, pelo purge, respeitando retenção e deletion ledger.",
-    sources: ["ADR 0074", "docs/business-rules/privacy.md"],
+    proposed: `Agendar o purge sozinho depois do fim do prazo de encerramento de 30 dias (${TO_CONFIRM}: hoje nenhum job o agenda).`,
+    rule: "Nada é apagado na janela de recuperação. O purge só começa por comando administrativo explícito sobre uma organização closed, e recusa rodar antes de 30 dias do encerramento ou com legal hold vigente (decisão do responsável de 18/10/2026, ADR 0081); respeita o deletion ledger. Nenhum job o agenda.",
+    sources: ["ADR 0074", "ADR 0081", "docs/business-rules/privacy.md"],
     status: "proposta",
   },
   {
@@ -290,7 +289,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: ["platform_audit_events", "support_cases", "tenant_access_grants"],
     period: { kind: "undecided" },
     proposed: `Sobrevive à organização, sem dado pessoal; prazo de registro de acesso privilegiado (${TO_CONFIRM}).`,
-    rule: "O Admin registra cada acesso e comando; não há prazo na main.",
+    rule: "O Admin registra cada acesso e comando; não há prazo na main. No purge da organização, o caso de suporte perde o texto livre (motivo, contexto e resolução) e fica só o registro (decisão do responsável de 18/10/2026, ADR 0081).",
     sources: ["ADR 0070", "ADR 0072", "ADR 0073"],
     status: "proposta",
   },
@@ -300,8 +299,8 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: ["privacy_cases", "privacy_case_actions"],
     period: { kind: "undecided" },
     proposed: `Sobrevive à organização como evidência do atendimento, sem dado pessoal (${TO_CONFIRM}).`,
-    rule: "O caso guarda só códigos e referência opaca; o purge precisa tratá-lo (chave estrangeira restritiva).",
-    sources: ["ADR 0077"],
+    rule: "O caso guarda só códigos e referência opaca; sobrevive ao purge porque a linha da organização fica como tombstone (chave estrangeira restritiva preservada). O purge apaga as notas (texto livre) e mantém datas, tipo, decisão e IDs opacos (decisão do responsável de 18/10/2026, ADR 0081).",
+    sources: ["ADR 0077", "ADR 0081"],
     status: "proposta",
   },
   {
@@ -343,7 +342,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     ],
     period: { kind: "undecided" },
     proposed: `Apagar o incidente e os itens já reenviados depois de um prazo de operação, definido com o job agendado (${TO_CONFIRM}); os itens de uma organização saem no purge dela, que os apaga explicitamente (a linha da organização fica como tombstone, então a cascata não age).`,
-    rule: "O incidente guarda só código, contagem, datas e uma referência opaca; o item guarda só o ID do evento e da organização. Nenhum papel apaga hoje; o expurgo é do job agendado (PR112), e o purge da organização precisa apagar os itens dela explicitamente (política e DELETE do papel do purge, no PR do purge): a cascata da chave estrangeira não dispara, porque o purge mantém a linha da organização. O incidente não tem organização e não entra no purge.",
+    rule: "O incidente guarda só código, contagem, datas e uma referência opaca; o item guarda só o ID do evento e da organização. Fora do purge nenhum papel apaga; o expurgo é do job agendado (PR112). O purge da organização apaga os itens dela explicitamente (política e DELETE do papel do purge, ADR 0081): a cascata da chave estrangeira não dispara, porque o purge mantém a linha da organização. O incidente não tem organização e não entra no purge.",
     sources: ["ADR 0085"],
     status: "proposta",
   },
@@ -373,6 +372,18 @@ export const RETENTION_PURGE_JOBS: readonly {
   { class: "queue_processing", id: "outbox.processing_expiry" },
 ]);
 
+/**
+ * Removals that are not jobs: nothing schedules them. Each one runs only after an explicit
+ * administrative command names what to remove (the purge of a closed organization, ADR 0081), so it
+ * can exist for a class that is only proposed. A job of `RETENTION_PURGE_JOBS` never can.
+ */
+export const ADMIN_TRIGGERED_REMOVALS: readonly {
+  class: RetentionClass;
+  id: "privacy.organization_purge";
+}[] = Object.freeze([
+  { class: "closed_organization", id: "privacy.organization_purge" },
+]);
+
 /** A period was asked for a class that has no approved period. */
 export class RetentionNotApprovedError extends Error {
   readonly code = "retention_not_approved";
@@ -389,16 +400,24 @@ export function isRetentionClass(value: string): value is RetentionClass {
   return RETENTION_CLASSES.some((candidate) => candidate === value);
 }
 
-export function retentionPolicy(
+/** The policy of a class in a given registry (the real one, or a changed copy in a test). */
+export function retentionPolicyIn(
+  policies: readonly RetentionPolicy[],
   retentionClass: RetentionClass
 ): RetentionPolicy {
-  const policy = RETENTION_POLICIES.find(
+  const policy = policies.find(
     (candidate) => candidate.class === retentionClass
   );
   if (!policy) {
     throw new RetentionNotApprovedError(retentionClass);
   }
   return policy;
+}
+
+export function retentionPolicy(
+  retentionClass: RetentionClass
+): RetentionPolicy {
+  return retentionPolicyIn(RETENTION_POLICIES, retentionClass);
 }
 
 /**

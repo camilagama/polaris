@@ -212,6 +212,24 @@ async function run() {
         `${role} does not reach the processing record`
       );
     }
+    // the purge owner reads and deletes the rows of an organization being purged, and nothing else (ADR 0081)
+    for (const [privilege, allowed] of [
+      ["SELECT", true],
+      ["DELETE", true],
+      ["INSERT", false],
+      ["UPDATE", false],
+      ["TRUNCATE", false],
+    ] as const) {
+      assert.equal(
+        // biome-ignore lint/performance/noAwaitInLoops: one privilege at a time, for a clear failure.
+        await permission(
+          "SELECT has_table_privilege('polaris_purge_owner', 'public.queue_processing'::regclass, $1) AS allowed",
+          [privilege]
+        ),
+        allowed,
+        `the purge owner ${allowed ? "has" : "lacks"} ${privilege} on the processing record`
+      );
+    }
     for (const signature of OUTBOX_FUNCTIONS) {
       for (const role of ["polaris_outbox_runtime", ...OTHER_ROLES]) {
         assert.equal(
@@ -304,7 +322,7 @@ async function run() {
       "the privacy runtime cannot read the events directly"
     );
     tests.push(
-      "the outbox runtime has no privilege on event_outbox, queue_processing or data_exports and executes only its seven SECURITY DEFINER functions, owned by polaris_outbox_owner (no other runtime, nor PUBLIC, executes them); both outbox roles never log in nor pass RLS; the outbox owner updates only the delivery columns, the privacy owner only status and available_at; queue_processing forces RLS and no other role reaches it"
+      "the outbox runtime has no privilege on event_outbox, queue_processing or data_exports and executes only its seven SECURITY DEFINER functions, owned by polaris_outbox_owner (no other runtime, nor PUBLIC, executes them); both outbox roles never log in nor pass RLS; the outbox owner updates only the delivery columns, the privacy owner only status and available_at; queue_processing forces RLS and no other role reaches it but the purge owner, which only reads and deletes (ADR 0081)"
     );
 
     // ------------------------------------------------- 2. claim, send, mark: the fence and the delay

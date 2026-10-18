@@ -3,7 +3,9 @@ import {
   DEFAULT_ACCESS_MINUTES,
   InvalidSupportRequestError,
   isRevealableField,
+  MAX_LEGAL_HOLD_REVIEW_DAYS,
   normalizeAccessMinutes,
+  normalizeLegalHoldReviewAt,
   normalizeOpenCase,
   normalizeResolution,
   supportRefusalFromMessage,
@@ -124,5 +126,50 @@ describe("the rest", () => {
       "invalid_request"
     );
     expect(supportRefusalFromMessage("")).toBe("invalid_request");
+  });
+});
+
+describe("normalizeLegalHoldReviewAt", () => {
+  const now = new Date("2026-10-18T12:00:00.000Z");
+
+  it("accepts an instant with an offset, in the future and within the limit, and returns it in UTC", () => {
+    expect(normalizeLegalHoldReviewAt("2026-11-18T09:00:00-03:00", now)).toBe(
+      "2026-11-18T12:00:00.000Z"
+    );
+    expect(normalizeLegalHoldReviewAt("2026-10-18T12:00:01Z", now)).toBe(
+      "2026-10-18T12:00:01.000Z"
+    );
+    const limit = new Date(
+      now.getTime() + MAX_LEGAL_HOLD_REVIEW_DAYS * 86_400_000
+    );
+    expect(normalizeLegalHoldReviewAt(limit.toISOString(), now)).toBe(
+      limit.toISOString()
+    );
+  });
+
+  it("refuses what is not an instant with an offset, the past, now and what is past the limit", () => {
+    const limit = new Date(
+      now.getTime() + MAX_LEGAL_HOLD_REVIEW_DAYS * 86_400_000
+    );
+    for (const value of [
+      undefined,
+      null,
+      20_261_118,
+      "",
+      "2026-11-18",
+      "2026-11-18T09:00:00",
+      "2026-13-40T09:00:00Z",
+      "2026-11-31T09:00:00Z",
+      "2027-02-30T09:00:00-03:00",
+      "2026-11-18T24:00:00Z",
+      "em 90 dias",
+      "2026-10-18T12:00:00.000Z",
+      "2026-10-17T12:00:00.000Z",
+      new Date(limit.getTime() + 1).toISOString(),
+    ]) {
+      expect(() => normalizeLegalHoldReviewAt(value, now)).toThrow(
+        InvalidSupportRequestError
+      );
+    }
   });
 });

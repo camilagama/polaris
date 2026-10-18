@@ -1,7 +1,7 @@
 /**
  * What an operator may ask of an operational incident (plan PR111, ADR 0085): to send one dead event
- * again, with a reason. The reason is typed by a person and kept in the administrative audit, which other
- * operators read, so it is short, has no control or invisible formatting character (a line break, a
+ * again, with a reason. The reason is typed by a person; it is checked on the call and not written to the
+ * administrative audit (immutable, so free text must not get in, ADR 0081), and it is short, has no control or invisible formatting character (a line break, a
  * direction override) and says nothing about a tenant's data (the form of the field cannot enforce that
  * last part; the runbook says it). The database repeats the check with the same explicit list, not the
  * locale's idea of a control character.

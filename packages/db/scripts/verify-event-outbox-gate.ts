@@ -26,7 +26,8 @@ import {
  * writes one `data_export.requested` event in the same transaction, holding only opaque IDs and the
  * correlation of the request; a repeated key writes nothing; the table is insert-only for the tenant
  * runtime, in its own organization and only for the listed types (with exactly the body keys of the type),
- * and only the dispatcher's and the privacy owners read or move it; the database refuses a body that could hold a person's data.
+ * and only the dispatcher's, the privacy and the purge owners read or move it (the purge owner also deletes,
+ * for an organization whose purge was scheduled); the database refuses a body that could hold a person's data.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -174,7 +175,7 @@ async function run() {
     assert.deepEqual(
       foreignKeys.rows,
       [{ confdeltype: "c", target: "organizations" }],
-      "the events go with their organization, so the purge needs no step of its own"
+      "the events go with their organization when it is deleted (the purge deletes them in a step of its own, ADR 0081)"
     );
     tests.push(
       "the table has the plan's fields (event, type, status, available_at, attempts, idempotency, correlation) and its only foreign key is the organization, ON DELETE CASCADE"
@@ -512,15 +513,20 @@ async function run() {
     }>(
       `SELECT g.grantee, p.privilege, (has_table_privilege(g.grantee, 'public.event_outbox', p.privilege)
                 OR (p.privilege IN ('SELECT', 'INSERT', 'UPDATE', 'REFERENCES') AND has_any_column_privilege(g.grantee, 'public.event_outbox', p.privilege))) AS allowed
-         FROM (VALUES ('${runtimeRole}'), ${OTHER_ROLES.map((name) => `('${name}')`).join(", ")}) AS g(grantee)
+         FROM (VALUES ('${runtimeRole}'), ${OTHER_ROLES.map((name) => `('${name}')`).join(", ")}, ('polaris_purge_owner')) AS g(grantee)
         CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES')) AS p(privilege)`
     );
     assert.deepEqual(
       privileges.rows
         .filter((row) => row.allowed)
-        .map((row) => `${row.grantee}:${row.privilege}`),
-      [`${runtimeRole}:INSERT`],
-      "only the tenant runtime holds a privilege, and it is INSERT"
+        .map((row) => `${row.grantee}:${row.privilege}`)
+        .sort(),
+      [
+        "polaris_purge_owner:DELETE",
+        "polaris_purge_owner:SELECT",
+        `${runtimeRole}:INSERT`,
+      ].sort(),
+      "only the tenant runtime holds a privilege, and it is INSERT; the purge owner reads and deletes, for the organization it purges (ADR 0081)"
     );
     const insertable = await owner.pool.query<{
       column_name: string;
@@ -542,20 +548,22 @@ async function run() {
     assert.deepEqual(
       policies.rows.map((row) => [row.cmd, row.roles]),
       [
+        ["DELETE", ["polaris_purge_owner"]],
         ["INSERT", [runtimeRole]],
         ["SELECT", ["polaris_outbox_owner"]],
         ["SELECT", ["polaris_privacy_owner"]],
+        ["SELECT", ["polaris_purge_owner"]],
         ["UPDATE", ["polaris_outbox_owner"]],
         ["UPDATE", ["polaris_privacy_owner"]],
       ],
-      "the tenant only inserts; reads and updates are the owners' (dispatcher and re-arm), through their functions; nobody deletes"
+      "the tenant only inserts; reads and updates are the owners' (dispatcher and re-arm), through their functions; only the purge owner deletes (ADR 0081)"
     );
     const forced = await owner.pool.query<{ relforcerowsecurity: boolean }>(
       "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.event_outbox'::regclass"
     );
     assert.equal(forced.rows[0]?.relforcerowsecurity, true);
     tests.push(
-      "the tenant runtime cannot read, update, delete or truncate the outbox and can insert only the five columns of an event (not the status, attempts, times or ID), only in its own organization and only for a type the policy lists; only for an export that the same user asked for in the same organization, with the key the type and that export's ID and no body key beyond the type's (an extra key with a valid ID is refused); a duplicate key is refused by the unique index; no other runtime holds any privilege, only the dispatcher's and the privacy owners have read and update policies, nobody deletes, and row level security is forced"
+      "the tenant runtime cannot read, update, delete or truncate the outbox and can insert only the five columns of an event (not the status, attempts, times or ID), only in its own organization and only for a type the policy lists; only for an export that the same user asked for in the same organization, with the key the type and that export's ID and no body key beyond the type's (an extra key with a valid ID is refused); a duplicate key is refused by the unique index; no other runtime holds any privilege, only the dispatcher's and the privacy owners have read and update policies, only the purge owner deletes (and reads, for an organization whose purge was scheduled), and row level security is forced"
     );
 
     // ------------------------------------------------- 5. the database refuses a body that could hold a person's data

@@ -246,6 +246,13 @@ async function run() {
         "organization_id",
         "phone",
       ],
+      // the closure, read before a purge is scheduled: the recovery window and the 30 days (ADR 0081)
+      organization_closures: [
+        "closed_at",
+        "organization_id",
+        "recover_until",
+        "requested_at",
+      ],
       platform_principals: ["id", "status"],
       // the dead-letter queue the Admin's incident functions read, and only read (ADR 0085)
       operational_incidents: [
@@ -272,6 +279,24 @@ async function run() {
       ],
     });
     const platformTables = {
+      // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081)
+      organization_purges: [
+        "attempts",
+        "last_error_code",
+        "locked_until",
+        "not_before",
+        "privacy_case_id",
+        "purged_at",
+        "scheduled_at",
+        "scheduled_by",
+        "storage_touched_at",
+        "support_case_id",
+        "swept_at",
+      ],
+      // the legal holds: placed by the Admin, and afterwards only released or renewed (a later review date, ADR 0081)
+      organization_legal_holds: ["released_at", "released_by", "review_at"],
+      // every cancellation of a purge with its reason: the cancel function appends, nothing changes a row
+      organization_purge_cancellations: [] as string[],
       platform_audit_events: [] as string[],
       privacy_case_actions: [] as string[],
       privacy_cases: [
@@ -338,6 +363,12 @@ async function run() {
       tableLevel.rows.map((row) => row.privilege),
       [
         "operational_incidents:SELECT",
+        "organization_legal_holds:INSERT",
+        "organization_legal_holds:SELECT",
+        "organization_purge_cancellations:INSERT",
+        "organization_purge_cancellations:SELECT",
+        "organization_purges:INSERT",
+        "organization_purges:SELECT",
         "platform_audit_events:INSERT",
         "platform_audit_events:SELECT",
         "privacy_case_actions:INSERT",
@@ -382,6 +413,9 @@ async function run() {
       ),
       memberships: ["SELECT", "UPDATE"],
       offline_grants: ["SELECT", "UPDATE"],
+      organization_legal_holds: ["INSERT", "SELECT", "UPDATE"],
+      organization_purge_cancellations: ["INSERT", "SELECT"],
+      organization_purges: ["INSERT", "SELECT", "UPDATE"],
       organizations: ["SELECT", "UPDATE"],
       platform_audit_events: ["INSERT", "SELECT"],
       privacy_case_actions: ["INSERT", "SELECT"],
@@ -397,15 +431,18 @@ async function run() {
       runnable.rows.map((row) => row.name),
       [
         "admin_audit_billing_command",
+        "admin_cancel_organization_purge",
         "admin_close_support_case",
         "admin_grant_tenant_access",
         "admin_list_operational_incidents",
+        "admin_list_organization_legal_holds",
         "admin_list_privacy_cases",
         "admin_list_support_cases",
         "admin_open_privacy_case",
         "admin_open_support_case",
         "admin_organization_diagnostics",
         "admin_organizations_overview",
+        "admin_place_organization_legal_hold",
         "admin_privacy_case_detail",
         "admin_privacy_record_action",
         "admin_privacy_record_decision",
@@ -415,9 +452,11 @@ async function run() {
         "admin_privacy_resolve",
         "admin_reactivate_organization",
         "admin_read_operational_incident",
+        "admin_release_organization_legal_hold",
         "admin_retry_dead_letter",
         "admin_reveal_customer_field",
         "admin_revoke_tenant_access",
+        "admin_schedule_organization_purge",
         "admin_support_case_detail",
         "admin_suspend_organization",
         "admin_tenant_customers",

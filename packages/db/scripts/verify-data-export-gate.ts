@@ -898,10 +898,15 @@ async function run() {
         "data_export_files:data_export_files_privacy_owner_delete",
         "data_export_files:data_export_files_privacy_owner_insert",
         "data_export_files:data_export_files_privacy_owner_select",
+        // the purge deletes the exports of an organization whose purge was scheduled (ADR 0081)
+        "data_export_files:data_export_files_purge_owner_delete",
+        "data_export_files:data_export_files_purge_owner_select",
         "data_exports:data_exports_current_owner_insert",
         "data_exports:data_exports_current_tenant_select",
         "data_exports:data_exports_privacy_owner_select",
         "data_exports:data_exports_privacy_owner_update",
+        "data_exports:data_exports_purge_owner_delete",
+        "data_exports:data_exports_purge_owner_select",
       ]
     );
     const forced = await owner.pool.query<{

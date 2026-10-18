@@ -21,6 +21,7 @@ import {
   collectExport,
   ExportTooLargeError,
 } from "./data-export-build";
+import { deleteObjectsUnderPrefix } from "./storage-prefix";
 
 /** An export takes the Worker for a while: a run takes a few, and the rest wait for the next hour. */
 const EXPORTS_PER_RUN = 2;
@@ -28,7 +29,6 @@ const EXPORTS_PER_RUN = 2;
 const SECOND_EXPORT_BUDGET_MS = 4 * 60_000;
 const EXPIRY_BATCH = 100;
 const DELETE_BATCH = 50;
-const LIST_PAGE = 1000;
 
 export interface DataExportReport {
   deleted: number;
@@ -87,32 +87,6 @@ function exportObjectPrefix(organizationId: string, exportId: string) {
   return `exports/v1/${organizationId}/${exportId}/`;
 }
 
-/** Removes every object of an export, listed by prefix, so what an earlier attempt left goes too. */
-async function deleteExportObjects(
-  bucket: Pick<MediaBucketBinding, "delete" | "list">,
-  prefix: string
-): Promise<number> {
-  let removed = 0;
-  let cursor: string | undefined;
-  for (;;) {
-    // biome-ignore lint/performance/noAwaitInLoops: each page continues from the cursor of the one before.
-    const page = await bucket.list({
-      ...(cursor === undefined ? {} : { cursor }),
-      limit: LIST_PAGE,
-      prefix,
-    });
-    for (const object of page.objects) {
-      // biome-ignore lint/performance/noAwaitInLoops: objects are removed one at a time to keep the run light.
-      await bucket.delete(object.key);
-      removed += 1;
-    }
-    if (!(page.truncated && page.cursor)) {
-      return removed;
-    }
-    ({ cursor } = page);
-  }
-}
-
 /** A refusal of authorization means the person can no longer read the data: that is final, not retried. */
 function failureOf(error: unknown): { code: string; final: boolean } {
   if (error instanceof ExportTooLargeError) {
@@ -133,7 +107,7 @@ async function buildAndStore(
   const generatedAt = now();
   const prefix = exportObjectPrefix(claimed.organizationId, claimed.id);
   // a run that is tried again starts from nothing
-  await deleteExportObjects(bucket, prefix);
+  await deleteObjectsUnderPrefix(bucket, prefix);
 
   const collect = dependencies.collect ?? collectExport;
   const collected: CollectedExport = await dependencies.readAsRequester(
@@ -226,7 +200,7 @@ export async function runDataExports(
     : [];
   for (const item of toDelete) {
     // biome-ignore lint/performance/noAwaitInLoops: one export at a time; the objects go before the record says they are gone.
-    await deleteExportObjects(
+    await deleteObjectsUnderPrefix(
       bucket,
       exportObjectPrefix(item.organizationId, item.id)
     );
@@ -271,7 +245,7 @@ export async function runDataExports(
       if (isFinal) {
         report.failed += 1;
         // nothing of a failed export is kept
-        await deleteExportObjects(
+        await deleteObjectsUnderPrefix(
           bucket,
           exportObjectPrefix(claimed.organizationId, claimed.id)
         ).catch(() => undefined);
