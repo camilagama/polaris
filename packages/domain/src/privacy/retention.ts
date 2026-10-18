@@ -33,6 +33,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "auth_sessions",
   "auth_verification",
   "auth_security_audit",
+  "auth_access_log",
   "platform_audit_and_support",
   "privacy_cases",
   "deletion_ledger",
@@ -60,15 +61,17 @@ export type LegalReview =
  * exist yet; a blocker leaves `RESOLVED_RETENTION_BLOCKERS` untouched until the thing is built.
  */
 export const RETENTION_BLOCKERS = Object.freeze({
+  access_log_hold:
+    "Guarda cautelar do registro de acesso (Marco Civil art. 15, §2º): a autoridade policial, administrativa ou o Ministério Público pode pedir a guarda por prazo maior que 6 meses, e o expurgo precisa pular o usuário ou o IP sob guarda antes de existir. Sem a guarda, nenhum job de expurgo do registro pode ser registrado (ADR 0092).",
   access_record_table:
-    "Tabela própria do registro de acesso a aplicação (data, hora e IP, 6 meses, Marco Civil art. 15); tarefa t039. Hoje a linha da sessão é o único lugar com o IP.",
+    "Tabela própria do registro de acesso a aplicação (data, hora e IP, 6 meses, Marco Civil art. 15); tarefa t039. Resolvido: a tabela `auth_access_log` existe (ADR 0092).",
 });
 
 export type RetentionBlocker = keyof typeof RETENTION_BLOCKERS;
 
 /** The blockers already lifted. The change that builds the thing a blocker waits for adds it here. */
 export const RESOLVED_RETENTION_BLOCKERS: readonly RetentionBlocker[] =
-  Object.freeze([]);
+  Object.freeze(["access_record_table"]);
 
 /** The purge jobs that already exist; each one serves exactly one approved class. */
 export type RetentionPurgeJobId =
@@ -317,7 +320,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     class: "auth_sessions",
     data: ["session (IP e user-agent)"],
     period: { kind: "duration", ms: 30 * DAY_MS },
-    rule: "Sessão vale no máximo 30 dias; a linha expirada fica mais 30 dias depois do fim (expires_at) e então é apagada (decisão do responsável de 18/10/2026). Hoje a linha da sessão é o único lugar do banco com o IP, e o registro de acesso mínimo de 6 meses (auth_security_audit) ainda não o guarda. Enquanto essa lacuna estiver aberta (`blockedUntil`), o prazo está aprovado mas nenhum job de expurgo de sessões pode ser registrado: ele apagaria o único IP antes dos 6 meses do Marco Civil, e um teste falha se um for registrado. O job ainda não existe.",
+    rule: "Sessão vale no máximo 30 dias; a linha expirada fica mais 30 dias depois do fim (expires_at) e então é apagada (decisão do responsável de 18/10/2026). A linha guarda o IP da sessão (o último visto, atualizado a cada atualização diária e a cada troca de IP), mas o registro de acesso de 6 meses do Marco Civil mora na tabela própria `auth_access_log` (ADR 0092), então apagar a sessão não perde o IP. O bloqueio `access_record_table` está resolvido; o job de expurgo de sessões ainda não existe.",
     sources: [
       "docs/business-rules/authentication.md",
       "docs/business-rules/privacy.md",
@@ -343,8 +346,29 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     legalReview: "pending",
     legalSources: ["Marco Civil da Internet (Lei 12.965/2014), art. 15"],
     period: { kind: "calendar_months", months: 6 },
-    rule: "Registro de acesso a aplicação e auditoria de segurança ficam 6 meses, o mínimo do Marco Civil; a norma pede ainda sigilo, ambiente controlado e de segurança (decisão do responsável de 18/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; validar com contador ou jurídico antes do go-live). A tabela guarda data, hora, ator e identificador da requisição, mas não o IP: o registro de acesso mínimo com IP ainda precisa de um lugar próprio. O prazo é contado em meses corridos e, ao somar meses, o dia que não existe no mês de destino passa ao mês seguinte (nunca encurta o mínimo). O job de expurgo ainda não existe.",
+    rule: "A auditoria de segurança da autenticação (Google e saída) fica 6 meses, o mínimo do Marco Civil, junto do registro de acesso; a norma pede ainda sigilo, ambiente controlado e de segurança (decisão do responsável de 18/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; validar com contador ou jurídico antes do go-live). A tabela guarda data, hora, ator e identificador da requisição, mas não o IP: o IP de cada acesso está em `auth_access_log` (classe `auth_access_log`, ADR 0092). O prazo é contado em meses corridos e, ao somar meses, o dia que não existe no mês de destino passa ao mês seguinte (nunca encurta o mínimo). O job de expurgo ainda não existe.",
     sources: ["docs/business-rules/privacy.md", "ADR 0079"],
+    status: "aprovada",
+  },
+  {
+    approvedOn: "2026-10-18",
+    basis: "lei",
+    blockedUntil: "access_log_hold",
+    class: "auth_access_log",
+    data: ["auth_access_log (data, hora e IP de cada acesso, por usuário)"],
+    legalReview: "pending",
+    legalSources: [
+      "Marco Civil da Internet (Lei 12.965/2014), art. 15",
+      "Marco Civil da Internet (Lei 12.965/2014), art. 15, §2º",
+    ],
+    period: { kind: "calendar_months", months: 6 },
+    rule: "O registro de acesso a aplicação (login, login que falhou, saída e atualização da sessão, com o IP da requisição) fica 6 meses corridos, o mínimo do Marco Civil, em sigilo e em ambiente de segurança; só se fornece com ordem judicial (decisão do responsável de 18/10/2026, delegada ao orquestrador, POL-80; validar com contador ou jurídico antes do go-live). Não tem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo. O prazo está aprovado, mas nenhum job de expurgo pode existir enquanto não houver a guarda cautelar do art. 15, §2º (`blockedUntil: access_log_hold`): apagar sem ela pode descumprir um pedido de guarda por prazo maior. Nenhuma linha vence antes de 6 meses do go-live. O job futuro corta a data no banco, com margem para o mês curto, e pula o usuário sob guarda. Não há porta lógica de origem: a Cloudflare não a entrega ao Worker (limite no ADR 0092).",
+    sources: [
+      "docs/business-rules/privacy.md",
+      "docs/business-rules/authentication.md",
+      "ADR 0079",
+      "ADR 0092",
+    ],
     status: "aprovada",
   },
   {

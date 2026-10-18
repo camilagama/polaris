@@ -9,6 +9,7 @@ import {
   pendingLegalReviews,
   RETENTION_CLASSES,
   RETENTION_POLICIES,
+  RESOLVED_RETENTION_BLOCKERS,
   RETENTION_PURGE_JOBS,
   type RetentionClass,
   RetentionNotApprovedError,
@@ -152,25 +153,38 @@ describe("legal review", () => {
 });
 
 describe("purge blockers", () => {
-  it("keep the sessions without a purge job until the access record has its own table", () => {
+  it("lifted the sessions' block now that the access record has its own table", () => {
     const sessions = retentionPolicy("auth_sessions");
+    // the policy still names what it waited for; the registry says it exists
     expect(sessions.blockedUntil).toBe("access_record_table");
-    expect(activeRetentionBlocker(sessions)).toBe("access_record_table");
+    expect(RESOLVED_RETENTION_BLOCKERS).toContain("access_record_table");
+    expect(activeRetentionBlocker(sessions)).toBeUndefined();
+  });
+
+  it("keeps the access log without a purge job until the precautionary hold of art. 15 par. 2 exists", () => {
+    const log = retentionPolicy("auth_access_log");
+    expect(log.blockedUntil).toBe("access_log_hold");
+    expect(activeRetentionBlocker(log)).toBe("access_log_hold");
+    expect(RESOLVED_RETENTION_BLOCKERS).not.toContain("access_log_hold");
+    expect("job" in log).toBe(false);
     expect(blockedPurgeJobs()).toEqual([]);
   });
 
-  it("fail when a sessions purge job is registered while the block is active", () => {
-    const sessionsJob = [{ class: "auth_sessions" as const }];
-    expect(blockedPurgeJobs(sessionsJob)).toEqual(["auth_sessions"]);
+  it("fail when an access log purge job is registered while the hold is missing", () => {
+    expect(blockedPurgeJobs([{ class: "auth_access_log" }])).toEqual([
+      "auth_access_log",
+    ]);
     expect(
-      blockedPurgeJobs([], withPolicy("auth_sessions", { job: "x" } as never))
-    ).toEqual(["auth_sessions"]);
+      blockedPurgeJobs([], withPolicy("auth_access_log", { job: "x" } as never))
+    ).toEqual(["auth_access_log"]);
   });
 
-  it("let the job exist once the blocker is resolved", () => {
+  it("let the sessions job exist now, and the access log job once the hold exists", () => {
+    expect(blockedPurgeJobs([{ class: "auth_sessions" }])).toEqual([]);
     expect(
-      blockedPurgeJobs([{ class: "auth_sessions" }], RETENTION_POLICIES, [
-        "access_record_table",
+      blockedPurgeJobs([{ class: "auth_access_log" }], RETENTION_POLICIES, [
+        ...RESOLVED_RETENTION_BLOCKERS,
+        "access_log_hold",
       ])
     ).toEqual([]);
   });
@@ -276,6 +290,25 @@ describe("approved periods", () => {
         new Date("2026-10-18T10:00:00.000Z")
       ).toISOString()
     ).toBe("2027-04-18T10:00:00.000Z");
+  });
+
+  it("keep the access log six calendar months on the law, pending its legal review", () => {
+    const policy = retentionPolicy("auth_access_log");
+    expect(policy.status).toBe("aprovada");
+    expect(policy.basis).toBe("lei");
+    expect(policy.approvedOn).toBe("2026-10-18");
+    expect(policy.period).toEqual({ kind: "calendar_months", months: 6 });
+    expect(policy.legalReview).toBe("pending");
+    expect(pendingLegalReviews()).toContain("auth_access_log");
+    expect(() => approvedRetention("auth_access_log")).toThrow(
+      RetentionNotApprovedError
+    );
+    expect(
+      retentionExpiry(
+        "auth_access_log",
+        new Date("2026-08-31T10:00:00.000Z")
+      ).toISOString()
+    ).toBe("2027-03-03T10:00:00.000Z");
   });
 
   it("leave the provider backups to the provider's own rotation", () => {

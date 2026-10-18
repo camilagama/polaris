@@ -533,6 +533,13 @@
       "when": 1792348595990,
       "tag": "0075_organization_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792362161692,
+      "tag": "0076_registro_de_acesso",
+      "breakpoints": true
     }
   ]
 }

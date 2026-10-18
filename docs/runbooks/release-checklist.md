@@ -88,10 +88,13 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: prazos legais com `legalReview` pendente bloqueiam a promoção a produção. Em `packages/domain/src/privacy/retention.ts`, toda classe de base legal (`basis: "lei"`) está com `legalReview` preenchido por quem validou (`reviewedBy` e `reviewedAt`: contador ou jurídico); uma classe ainda `"pending"` falha o item. Os prazos legais foram decididos pelo orquestrador com base em pesquisa (ADR 0079) e nenhuma validação profissional existe até esse campo ser preenchido.
 - Evidência: a lista das classes legais com o `legalReview` lido no SHA candidato (quem validou e quando).
 
-### 11. Registro de acesso do Marco Civil com lugar próprio (BLOCK)
+### 11. Registro de acesso do Marco Civil: pendências depois da tabela própria (BLOCK)
 
-- Critério: existe uma tabela própria do registro de acesso a aplicação (data, hora e IP, com guarda de 6 meses pelo Marco Civil da Internet, art. 15; tarefa t039), e o bloqueio `blockedUntil` da classe `auth_sessions` do registro de retenção foi resolvido. Hoje `auth_security_audit_event` não guarda o IP e a linha da sessão (o único lugar com o IP) sai 30 dias depois do fim: sem a tabela, o go-live não cumpre o mínimo de 6 meses.
-- Evidência: o nome da tabela, a prova de que ela guarda o IP por 6 meses e o `blockedUntil` resolvido no SHA candidato.
+- Critério: a tabela própria do registro de acesso existe (`auth_access_log`, migration 0076, [ADR 0092](../adr/0092-registro-de-acesso-a-aplicacao.md)) e o bloqueio `access_record_table` da classe `auth_sessions` está resolvido no registro de retenção. Ainda faltam, para o item passar:
+  - a revisão jurídica (`legalReview`) das classes `auth_access_log` e `auth_security_audit`, pendente. A regra geral está no item 10; este item só aponta as duas classes, sem repetir o critério;
+  - o alerta sobre `auth_access_log_write_failed` configurado no destino dos logs, e o `auth_access_log_skipped` acompanhado ([runbook do registro de acesso](./registro-de-acesso.md#6-monitoramento));
+  - o job de expurgo com guarda cautelar (Marco Civil, art. 15, §2º), que só pode existir antes do go-live + 6 meses. Nenhuma linha vence antes de 6 meses do go-live, e o bloqueio `access_log_hold` do registro impede o job até a guarda existir. Item datado: **job de expurgo com guarda cautelar antes de go-live + 6 meses**.
+- Evidência: o nome da tabela e o resultado do gate `access-log` no SHA candidato; o `legalReview` lido no SHA candidato (quem validou e quando) das duas classes; a configuração do alerta (nome da regra, sem segredo); e, para o job, a pendência datada no [status de implementação](../../doc/status-implementacao.md).
 
 ### 12. Achados "vale corrigir" e "menor" registrados (WARN)
 

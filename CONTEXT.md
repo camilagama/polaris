@@ -27,6 +27,11 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Tenant:** termo de arquitetura para processamento com escopo de organização; não usar na interface do produto.
 
+**Registro de acesso (registro de acesso de autenticação):** a lista, guardada por 6 meses, de cada login, falha de login, saída e renovação de sessão, com data, hora, usuário quando houver, IP de origem e identificador da requisição. Não é a auditoria da organização nem a do Admin; é sigiloso e só sai com ordem judicial ([ADR 0092](docs/adr/0092-registro-de-acesso-a-aplicacao.md)).<br>
+**Evitar:** log de acesso, quando o assunto for o registro legal.
+
+**Guarda cautelar:** pedido de autoridade policial, administrativa ou do Ministério Público para preservar registros de acesso além do prazo de 6 meses, que impede a exclusão deles até a decisão (Marco Civil da Internet, art. 15, §2º; a confirmar com o jurídico).
+
 ## Catálogo e estoque
 
 **Produto:** descrição comercial apresentada pelo revendedor ou comprador.

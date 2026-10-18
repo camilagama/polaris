@@ -87,6 +87,12 @@ const gates: Gate[] = [
   ["outbox-dispatcher", "verify-outbox-dispatcher-gate.ts"],
   ["dead-letter", "verify-dead-letter-gate.ts"],
   ["scheduled-jobs", "verify-scheduled-jobs-gate.ts"],
+  ["access-log", "verify-access-log-gate.ts"],
+  // lives in apps/web: it runs the real Better Auth against the database with the log function's EXECUTE revoked
+  [
+    "access-log-login",
+    "../../../apps/web/scripts/verify-access-log-login-gate.ts",
+  ],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -186,6 +192,8 @@ const suites: Record<string, string[]> = {
     "outbox-dispatcher",
     "dead-letter",
     "scheduled-jobs",
+    "access-log",
+    "access-log-login",
     "media-commands",
     "offline-devices",
     "offline-lease",
