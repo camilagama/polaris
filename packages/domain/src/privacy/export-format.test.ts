@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noBitwiseOperators: the reference CRC-32 is a bit-level algorithm.
 /// <reference types="node" />
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
@@ -67,6 +68,22 @@ describe("the zip writer", () => {
   it("checks against the standard CRC-32", () => {
     expect(crc32(new TextEncoder().encode("123456789"))).toBe(0xcb_f4_39_26);
     expect(crc32(new Uint8Array())).toBe(0);
+  });
+
+  it("matches a bit-by-bit CRC-32 on a long buffer of odd length", () => {
+    const data = new Uint8Array(100_003);
+    for (let index = 0; index < data.length; index += 1) {
+      data[index] = (index * 31 + 7) & 0xff;
+    }
+    let reference = 0xff_ff_ff_ff;
+    for (const byte of data) {
+      reference ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) {
+        reference =
+          reference & 1 ? 0xed_b8_83_20 ^ (reference >>> 1) : reference >>> 1;
+      }
+    }
+    expect(crc32(data)).toBe((reference ^ 0xff_ff_ff_ff) >>> 0);
   });
 
   it("reports the size it will have, so a part can be closed before it is too big", () => {

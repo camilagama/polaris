@@ -4430,6 +4430,10 @@ Idempotente.
 
 
 
+Requisito herdado do PR104 ([ADR 0078](../docs/adr/0078-exportacao-de-dados-da-organizacao.md)): `data_exports` e `data_export_files` usam `ON DELETE CASCADE` para a organização. O purge precisa apagar no R2 o prefixo `exports/v1/{organização}/` (as exportações, prontas ou não) **antes** de apagar as linhas; se as linhas forem apagadas primeiro, os ZIPs ficam sem dono, com dado pessoal de clientes, e nada mais os lista. O purge deve falhar, e não seguir para o banco, se o apagamento do prefixo falhar. O ponto natural é `deleteExportObjects`, de `apps/web/src/server/privacy/data-export-job.ts` (remoção por prefixo, paginada). O gate do purge deve provar que nenhum objeto sobra sob o prefixo.
+
+
+
 Pendência herdada do PR103 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): os casos de privacidade (`privacy_cases`, `privacy_case_actions` e o caso de suporte) têm chave estrangeira restritiva para a organização e as tabelas forçam RLS sem política para o papel de purge. O caminho privilegiado do purge precisa tratá-las: são evidência do atendimento e devem sobreviver à organização (sem dado pessoal).
 
 

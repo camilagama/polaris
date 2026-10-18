@@ -58,8 +58,11 @@ const crcTable = (() => {
 
 export function crc32(data: Uint8Array): number {
   let crc = 0xff_ff_ff_ff;
-  for (const byte of data) {
-    crc = (crcTable[(crc ^ byte) & 0xff] as number) ^ (crc >>> 8);
+  // biome-ignore lint/style/useForOf: `for...of` over a typed array took ~0.9 s for 32 MiB, the indexed loop ~0.09 s (ADR 0078).
+  for (let index = 0; index < data.length; index += 1) {
+    crc =
+      (crcTable[(crc ^ (data[index] as number)) & 0xff] as number) ^
+      (crc >>> 8);
   }
   return (crc ^ 0xff_ff_ff_ff) >>> 0;
 }
