@@ -19,6 +19,7 @@
       "dependencies": {
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/observability": "workspace:*",
         "hono": "^4.13.0",
       },
       "devDependencies": {
@@ -55,6 +56,7 @@
         "@polaris/contracts": "workspace:*",
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/observability": "workspace:*",
         "@tanstack/browser-db-sqlite-persistence": "^0.2.30",
         "@tanstack/db": "^0.12.1",
         "@tanstack/offline-transactions": "^1.0.63",
@@ -103,6 +105,12 @@
       "name": "@polaris/domain",
       "devDependencies": {
         "fast-check": "^4.10.2",
+      },
+    },
+    "packages/observability": {
+      "name": "@polaris/observability",
+      "dependencies": {
+        "evlog": "2.33.0",
       },
     },
     "packages/ui": {
@@ -471,6 +479,8 @@
 
     "@polaris/domain": ["@polaris/domain@workspace:packages/domain"],
 
+    "@polaris/observability": ["@polaris/observability@workspace:packages/observability"],
+
     "@polaris/ui": ["@polaris/ui@workspace:packages/ui"],
 
     "@polaris/web": ["@polaris/web@workspace:apps/web"],
@@ -782,6 +792,8 @@
     "escalade": ["escalade@3.2.0", "", {}, "sha512-WUj2qlxaQtO4g6Pq5c29GTcWGDyd8itL8zTlipgECz3JesAiiOKotd8JU6otB3PACgG6xkJUyVhboMS+bje/jA=="],
 
     "estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
+
+    "evlog": ["evlog@2.33.0", "", { "peerDependencies": { "@nestjs/common": ">=11.2.7", "@nestjs/core": ">=11.2.7", "@nuxt/kit": "^4.4.2", "@orpc/server": ">=1.15.4", "@tanstack/start-client-core": "^1.170.34", "ai": ">=6.0.168 <8.0.0", "effect": "^4.0.0", "elysia": ">=1.4.30", "eve": ">=0.30.0", "express": ">=5.2.1", "fastify": ">=5.12.5", "h3": "^1.15.11", "hono": ">=4.13.12", "next": ">=16.3.8", "nitro": "^3.0.260311-beta", "nitropack": "^2.13.4", "ofetch": "^1.5.1", "react": ">=19.3.0", "react-router": ">=7.18.4", "vite": "^7.0.0 || ^8.0.0" }, "optionalPeers": ["@nestjs/common", "@nestjs/core", "@nuxt/kit", "@orpc/server", "@tanstack/start-client-core", "ai", "effect", "elysia", "eve", "express", "fastify", "h3", "hono", "next", "nitro", "nitropack", "ofetch", "react", "react-router", "vite"], "bin": { "evlog": "./bin/evlog.mjs" } }, "sha512-QXu0QCrkY3jw+Wr8s6Pj0W0HLtXXDCnSjNMeYxi4WX6IXuyJqeT9iKp9zn6lJBUGm4a+pFjNccL7eAQq/UrM3A=="],
 
     "execa": ["execa@10.0.1", "", { "dependencies": { "@sindresorhus/merge-streams": "^4.0.0", "figures": "^6.1.0", "get-stream": "^9.0.1", "human-signals": "^8.0.1", "is-plain-obj": "^4.1.0", "is-stream": "^4.0.1", "npm-run-path": "^6.0.0", "pretty-ms": "^9.3.0", "signal-exit": "^4.1.0", "strip-final-newline": "^4.0.0", "which-command": "^0.1.0", "yoctocolors": "^2.1.2" } }, "sha512-ge98qjkRK4IB7tL7Ju/6qmm5LHoH1eEMt5FNZrz3f4UIYhF28lggX20z3FaX1sgc67msLEn0N0BscOs29iuwyw=="],
 

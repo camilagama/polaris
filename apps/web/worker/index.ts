@@ -1,3 +1,4 @@
+import { configureLogging, logger } from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
 import {
@@ -91,7 +92,7 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
     // The two reconcilers are independent: one failing never hides the other.
     try {
       const report = await reconcileStagedMedia({ cleanupClient, mediaBucket });
-      console.info("media_staging_reconciliation_complete", report);
+      logger.info("media_staging_reconciliation_complete", { ...report });
     } catch (error: unknown) {
       failures.push(error);
     }
@@ -100,7 +101,7 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
         cleanupClient,
         mediaBucket,
       });
-      console.info("media_removed_reconciliation_complete", report);
+      logger.info("media_removed_reconciliation_complete", { ...report });
     } catch (error: unknown) {
       failures.push(error);
     }
@@ -115,7 +116,7 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // billing is not provisioned in this environment yet: nothing to do
-    console.warn("billing_maintenance_not_configured");
+    logger.warn("billing_maintenance_not_configured");
     return notConfigured;
   }
   let store: ReturnType<typeof createBillingStore>;
@@ -126,7 +127,10 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   }
   try {
     const report = await runBillingMaintenance(store);
-    console.info("billing_maintenance_complete", report);
+    logger.info("billing_maintenance_complete", {
+      retry: { ...report.retry },
+      sweep: { ...report.sweep },
+    });
     return finished([]);
   } catch (error: unknown) {
     return finished([error]);
@@ -169,7 +173,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // the privacy role is not provisioned in this environment yet: nothing to do
-    console.warn("privacy_maintenance_not_configured");
+    logger.warn("privacy_maintenance_not_configured");
     return notConfigured;
   }
   let client: ReturnType<typeof createPrivacyMaintenanceClient>;
@@ -182,7 +186,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   try {
     try {
       const report = await runPrivacyMaintenance(client);
-      console.info("privacy_maintenance_complete", report);
+      logger.info("privacy_maintenance_complete", { ...report });
     } catch (error: unknown) {
       failures.push(error);
     }
@@ -194,7 +198,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           REARM_MIN_AGE_SECONDS,
           REARM_BATCH
         );
-        console.info("data_export_events_rearmed", { rearmed });
+        logger.info("data_export_events_rearmed", { rearmed });
       } catch (error: unknown) {
         failures.push(error);
       }
@@ -209,12 +213,12 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           bucket,
           live ? { maxExports: 0 } : {}
         );
-        console.info("data_export_complete", report);
+        logger.info("data_export_complete", { ...report });
       } catch (error: unknown) {
         failures.push(error);
       }
     } else {
-      console.warn("data_export_not_configured");
+      logger.warn("data_export_not_configured");
     }
   } finally {
     await quietly(() => client.close());
@@ -234,7 +238,7 @@ async function runOutboxJobs(
 ): Promise<JobResult> {
   if (client === null) {
     // the outbox role is not provisioned in this environment yet: the events wait, pending
-    console.warn("outbox_dispatch_not_configured");
+    logger.warn("outbox_dispatch_not_configured");
     return notConfigured;
   }
   const failures: unknown[] = [];
@@ -247,7 +251,7 @@ async function runOutboxJobs(
       },
       store: client,
     });
-    console.info("outbox_dispatch_complete", report);
+    logger.info("outbox_dispatch_complete", { ...report });
   } catch (error: unknown) {
     failures.push(error);
   }
@@ -255,7 +259,7 @@ async function runOutboxJobs(
     // an event past the attempt cap is no longer claimed: it becomes an incident and a dead event (ADR 0085)
     const recorded = await client.recordExhaustedOutboxEvents(EXHAUSTED_BATCH);
     if (recorded > 0) {
-      console.warn("outbox_events_exhausted", { recorded });
+      logger.warn("outbox_events_exhausted", { recorded });
     }
   } catch (error: unknown) {
     failures.push(error);
@@ -265,7 +269,7 @@ async function runOutboxJobs(
       PROCESSING_KEEP_HOURS,
       PROCESSING_EXPIRY_BATCH
     );
-    console.info("queue_processing_expired", { removed });
+    logger.info("queue_processing_expired", { removed });
   } catch (error: unknown) {
     failures.push(error);
   }
@@ -297,7 +301,7 @@ async function runScheduledTick(
   const known = laneOfCron(cron);
   if (!known) {
     // an expression this Worker does not declare (a manual trigger): the maintenance, as it always was
-    console.warn("scheduler_unknown_cron");
+    logger.warn("scheduler_unknown_cron");
   }
   const lane = known?.id ?? "maintenance";
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
@@ -343,7 +347,7 @@ async function handleDataExportRequested(
       sweep: false,
       target: { exportId, organizationId: envelope.organizationId },
     });
-    console.info("data_export_complete", result);
+    logger.info("data_export_complete", { ...result });
   } finally {
     await quietly(() => client.close());
   }
@@ -359,7 +363,7 @@ const inMemoryLedger = createInMemoryProcessingLedger();
 async function consumeDeadLetters(batch: QueueBatch, env: WorkerBindings) {
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {
-    console.warn("dead_letter_not_recorded_unconfigured");
+    logger.warn("dead_letter_not_recorded_unconfigured");
     for (const message of batch.messages) {
       message.retry({ delaySeconds: 3600 });
     }
@@ -385,7 +389,7 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // no check against the outbox and no deduplication across isolates: only the handler's own guards
-    console.warn("queue_ledger_in_memory");
+    logger.warn("queue_ledger_in_memory");
     // and no dead-letter queue either: nothing could record what lands there, so a refused message is only dropped
     await handleQueueBatch(batch, { handlers, ledger: inMemoryLedger });
     return;
@@ -402,6 +406,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     await quietly(() => client.close());
   }
 }
+
+configureLogging({ service: "polaris-web" });
 
 export default {
   fetch: app.fetch,

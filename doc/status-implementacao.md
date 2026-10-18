@@ -1633,3 +1633,17 @@ Sexto passo da Fase 11 ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessar
 | Cobrança | Fora | O estado canônico continua no banco. |
 | Guarda | Concluída | Teste em `apps/web/worker/index.test.ts`: nenhum `wrangler.jsonc` declara `workflows` sem um ADR que emende o 0088. |
 | Limites | Registrados | Números da documentação, não medidos na conta; não está documentado se o Hyperdrive conta como subrequisição externa no Free. |
+
+## Fase 12 — observabilidade e segurança
+
+### Fase 12A — evlog e logger tipado (PR114; implementação local concluída; nada criado na conta Cloudflare)
+
+Primeiro passo da Fase 12 ([ADR 0089](../docs/adr/0089-evlog-e-logger-tipado-no-backend.md); o número pode mudar): o evlog entra no backend atrás de um wrapper tipado, sem destino externo.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Pacote | Concluído | `@polaris/observability/logger` (`logger`, `configureLogging`), único importador do `evlog` (2.33.0, MIT, compatível com Workers); testes do wrapper. |
+| Fronteira | Concluída | Biome recusa `evlog` e o wrapper em `packages/domain` e no código do navegador; `bun run boundaries` tem fixtures para os dois. |
+| Migração | Parcial | `server-log`, agendador, entrada do Worker web e relatório do Admin; o resto dos `console.*` migra no PR que tocar cada um. |
+| Limites | Registrados | Sem *drain*; a redação embutida do evlog fica ligada e a política própria é do PR116; sem esquema de campos (PR115); o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
+
