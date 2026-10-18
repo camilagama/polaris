@@ -1378,7 +1378,7 @@ Primeira etapa da Fase 9 ([ADR 0070](../docs/adr/0070-admin-acesso-identidade-e-
 | Limites | Registrados | MFA e duração da sessão são política do Access (runbook), não do Worker; sem tela do Admin (só `/api/whoami`); o fluxo contra um Access real não foi exercitado (precisa da conta do responsável): coberto por testes com chaves e tokens gerados; casos de suporte, acesso temporário, revelação de dados pessoais, cobrança e suspensão são as próximas etapas. |
 | Publicação | Concluída | [GitHub PR #111](https://github.com/camilagama/polaris/pull/111) mesclado na `main` (merge `c593c63`). |
 
-### Fase 9B — Admin: diagnóstico de organização sem acesso ao tenant (PR95; implementação, gate e verificações locais concluídos; mesclada no PR #112)
+### Fase 9B — Admin: diagnóstico de organização sem acesso ao tenant (PR95; implementação, gate e verificações locais concluídos; mesclada no PR #112; revisão independente não registrada nesta seção)
 
 Segunda etapa da Fase 9 ([ADR 0071](../docs/adr/0071-admin-diagnostico-sem-acesso-ao-tenant.md)): o operador enxerga o estado de uma organização sem ler nenhum dado do tenant.
 
@@ -1393,7 +1393,7 @@ Segunda etapa da Fase 9 ([ADR 0071](../docs/adr/0071-admin-diagnostico-sem-acess
 | Limites | Registrados | Sem tela do Admin (só API); o nome da organização aparece ao operador; a leitura não é auditada (não é dado sensível); os pontos de atenção são heurísticas fixas. |
 | Publicação | Concluída | [GitHub PR #112](https://github.com/camilagama/polaris/pull/112) mesclado na `main` (merge `600db43`). |
 
-### Fase 9C — Admin: casos de suporte, acesso temporário, leitura mascarada e revelação auditada (PR96, PR97 e PR98; implementação, gate e verificações locais concluídos; mesclada no PR #113)
+### Fase 9C — Admin: casos de suporte, acesso temporário, leitura mascarada e revelação auditada (PR96, PR97 e PR98; implementação, gate e verificações locais concluídos; mesclada no PR #113; revisão independente não registrada nesta seção)
 
 Terceira etapa da Fase 9 ([ADR 0072](../docs/adr/0072-admin-casos-acesso-temporario-e-revelacao.md)): ver dados de um cliente passa a exigir motivo, tempo limitado, mascaramento e registro.
 
