@@ -688,7 +688,7 @@ A revisão completa ([`doc/revisao-checkpoint-gate4.md`](revisao-checkpoint-gate
 
 ### Borda e segurança (frente 2)
 
-Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS em `public/_headers`, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
+Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS e demais headers de segurança montados pelo pacote `@polaris/http-security` (ADR 0090) e aplicados no `public/_headers` (gerado), no Worker do web, no Admin e no catálogo, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
 
 ### Produto e interface (frente 3)
 
@@ -1647,3 +1647,16 @@ Primeiro passo da Fase 12 ([ADR 0089](../docs/adr/0089-evlog-e-logger-tipado-no-
 | Migração | Parcial | `server-log`, agendador, entrada do Worker web e relatório do Admin; o resto dos `console.*` migra no PR que tocar cada um. |
 | Limites | Registrados | Sem *drain*; a redação embutida do evlog fica ligada e a política própria é do PR116; sem esquema de campos (PR115); o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
 
+### Fase 12B — Headers de segurança e CSP centralizados (PR120; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
+
+Pacote `@polaris/http-security` e [ADR 0090](../docs/adr/0090-headers-de-seguranca-centralizados.md) (o número pode mudar). A Fase 12A é o PR114 (evlog), independente deste.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Módulo | Concluído | `packages/http-security`: perfis `app-shell`, `api`, `admin`, `public-document` e `public-media`; nonce por resposta; origens extras só por `connectSources`/`imgSources`, exatas e em https. |
+| Web | Concluído | `public/_headers` gerado pelo módulo (teste de igualdade); o Worker aplica o perfil `api` a toda resposta e `no-store` quando o handler não escolheu outro `Cache-Control`. |
+| Admin | Concluído | Perfil `admin` (CSP fechada, HSTS, COOP/CORP, sem referrer, `no-store`) em toda resposta, inclusive 401, 403 e 404. |
+| Catálogo | Concluído | Entrada `src/server.ts` (o `main` do Worker) com nonce por requisição e CSP sem `'unsafe-inline'`; páginas nunca em cache compartilhado; imagem pública com `sandbox` e `Cross-Origin-Resource-Policy: cross-origin`. |
+| Testes | Concluídos | Unitários do módulo (nenhum curinga, `unsafe-inline` ou esquema solto em nenhum perfil) e de integração nas respostas dos três apps. |
+| Gate de navegador | Ver o PR | CSP do shell inalterada na parte de script, estilo e conexão; o resultado de `test:offline-poc` e `test:pwa` está na seção "Verificação" do PR. |
+| Limites | Registrados | Catálogo com nonce não aberto em navegador contra o Worker rodando (ADR 0090); sem `report-uri`; Sentry ainda não ligado (nenhuma origem aberta). |

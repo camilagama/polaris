@@ -13,6 +13,7 @@ import {
   type PlatformCapability,
   platformCapabilitiesForRole,
 } from "@polaris/domain/admin/platform-capabilities";
+import { defaultCacheControl, securityHeaders } from "@polaris/http-security";
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
 import { type IncidentDependencies, incidentRoutes } from "./incident-routes";
@@ -78,11 +79,18 @@ const MAX_PAGE_SIZE = 50;
 const MAX_QUERY_LENGTH = 100;
 const MAX_ID_LENGTH = 128;
 
-const securityHeaders: MiddlewareHandler = async (context, next) => {
+const ADMIN_HEADERS = Object.entries(securityHeaders("admin"));
+const ADMIN_CACHE_CONTROL = defaultCacheControl("admin");
+
+/** The headers of every answer of the Admin come from the shared module (ADR 0090); nothing here is cacheable. */
+const securityHeadersMiddleware: MiddlewareHandler = async (context, next) => {
   await next();
-  context.header("Cache-Control", "no-store");
-  context.header("X-Content-Type-Options", "nosniff");
-  context.header("Referrer-Policy", "no-referrer");
+  for (const [name, value] of ADMIN_HEADERS) {
+    context.header(name, value);
+  }
+  if (ADMIN_CACHE_CONTROL !== null) {
+    context.header("Cache-Control", ADMIN_CACHE_CONTROL);
+  }
 };
 
 interface Refusal {
@@ -199,7 +207,7 @@ function requireCapability(
 
 export function createAdminApp(dependencies: AdminDependencies) {
   const app = new Hono<AdminEnv>();
-  app.use("*", securityHeaders);
+  app.use("*", securityHeadersMiddleware);
 
   // answers without a login so a deployment can be checked; says nothing about the platform
   app.get("/health", (context) => context.json({ status: "ok" }));
