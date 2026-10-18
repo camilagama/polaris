@@ -4,35 +4,70 @@ Gatilho: fechamento da Fase 4 (clientes e vendas online, PR36–PR47) e qualquer
 
 O Gate 4 prova seis propriedades: venda atômica, estoque correto, dinheiro correto, cancelamento correto, devoluções corretas e reconciliação de cliente que não altera a economia. Ele combina os gates por etapa (profundidade, cada mecanismo isolado) com um cenário ponta a ponta (composição, tudo junto, contra um oráculo independente).
 
-## Pré-requisitos de acesso
+## Execução padrão: PostgreSQL 18 local ou do CI
 
-- Siga a [política de perfis de CLI](./cli-profile-policy.md): Neon CLI com o perfil `junior-pessoal` (conta `juniordiniz56@gmail.com`). Não use o plugin ou conector Neon.
-- Nenhuma connection string, senha ou token é impressa, gravada em arquivo ou colada em chat. A URL do gate vive só nas variáveis de ambiente do processo e é removida ao final.
-- Alvo seguro: uma **branch Neon nova e descartável** (schema-only a partir de `production`, expiração de 24 h) com um banco novo `polaris_prNN_gate`. Nunca reutilize uma branch expirada e nunca copie dados de produção. O banco é recriado do zero: as migrations (0000 em diante) são reaplicadas do começo.
-- O plano Neon limita as branches raiz. Apague apenas as branches de gate que você mesmo criou e que já terminaram antes de criar a próxima.
-- **Pegada no Neon ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda da issue #115).** O CI já roda todos os gates a cada pull request, então no Neon rode, por pull request, só o gate novo e os gates dos objetos que o PR tocou, numa única branch reaproveitada e apagada logo depois (uma branch nova só quando uma migration ainda não publicada é emendada; rode então o gate novo primeiro). A suíte completa (`gates:all` ou `ci`) fica para uma vez por fase, antes de uma liberação e quando mudam o executor, o suporte comum dos gates ou os privilégios de forma ampla. Diga no relatório do PR o que rodou em Neon e por quê (quais objetos tocados justificam cada gate: não há uma tabela objeto→gate, então cobre-se isso na revisão). "Branch reaproveitada" não muda as regras acima: cada execução do executor recria um banco novo do zero dentro da branch, a reutilização vale só enquanto a branch não expirou e dois gates nunca rodam ao mesmo tempo no mesmo banco. A suíte completa por fase é disparada por quem entrega o último PR da fase (ou pelo responsável) e fica registrada numa linha "Suíte completa em Neon" na seção da fase em `doc/status-implementacao.md`.
+O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neon. No pull request, quem roda é o job "PostgreSQL 18 gates" do CI (`bun run --filter @polaris/db gates:ci`); não há passo manual nem acesso a Neon. Para reproduzir ou depurar antes do push, rode o mesmo numa instância local.
+
+**O que a suíte `ci` não cobre.** Ela deixa de fora os gates que dependem de hostname ou de papéis do Neon: `customers` (parte do `gate4`), `gate2-runtime`, `inventory` e `media-upload` (parte do `gate3`). Esses quatro só rodam em Neon, na prova de liberação (e no fim da fase); o `gate4` do executor, como suíte nomeada, inclui `customers` e por isso também exige Neon. As propriedades de venda do Gate 4 (venda, cancelamento, devolução, vínculo de cliente, datas e o cenário ponta a ponta `gate4`) rodam no CI.
+
+### Pré-requisitos
+
+- PostgreSQL 18 em `localhost` (por exemplo, um container `postgres:18`, como o do CI), com o dono `neondb_owner` e um banco vazio e descartável (`polaris_gate`). Nunca aponte para um banco com dados que importem: as migrations e os gates escrevem no banco, e os gates de falha injetada criam gatilhos nele.
+- Cliente `psql` e `docker` (ou outro PostgreSQL 18 em `localhost`). Não é preciso CLI Cloudflare ou Neon, nem credencial alguma além da senha do PostgreSQL local, que fica só nas variáveis do processo.
+- O executor só aceita um host local com `CI=true` (a trava de host de `scripts/run-gates.ts`); fora do CI, ele vai só no prefixo dos comandos do executor, como abaixo.
 - Não rode dois gates ao mesmo tempo no mesmo banco: os gates de falha injetada criam gatilhos nas tabelas compartilhadas e contaminam a execução do outro.
 
-## Passos
+### Passos
 
-1. Criar a branch e o banco (descarte a saída: o comando `neon branches create` imprime a connection string).
+1. Subir o PostgreSQL 18 e preparar o ambiente do processo (valores iguais aos do job do CI; a senha abaixo é a do container descartável do CI, não um segredo):
 
-       neon branches create --name pr471-review-gate --parent production --schema-only --expires-at <agora+24h, UTC, hora cheia> --project-id green-tooth-16857010 --profile junior-pessoal | Out-Null
-       neon databases create --name polaris_pr471_gate --owner-name neondb_owner --branch pr471-review-gate --project-id green-tooth-16857010 --profile junior-pessoal | Out-Null
+       docker run -d --rm --name polaris-gate-pg -p 5432:5432 -e POSTGRES_USER=neondb_owner -e POSTGRES_PASSWORD=polaris-ci -e POSTGRES_DB=polaris_gate postgres:18
+       until pg_isready -h localhost -U neondb_owner -d polaris_gate; do sleep 1; done
+       export DATABASE_URL=postgresql://neondb_owner:polaris-ci@localhost:5432/polaris_gate
+       export POLARIS_GATE_DATABASE_URL="$DATABASE_URL"
+       export POLARIS_GATE_BRANCH=pr0-local-gate
+       export POLARIS_GATE_DATABASE=polaris_gate
 
-   O nome da branch precisa casar `^pr\d+-[a-z0-9-]+-gate$`.
-2. Em um processo que obtenha a URL direta (sem pooler) com `neon connection-string ... --database-name polaris_pr471_gate --role-name neondb_owner --profile junior-pessoal`, exporte somente neste processo `DATABASE_URL`, `POLARIS_GATE_DATABASE_URL`, `POLARIS_GATE_BRANCH` e `POLARIS_GATE_DATABASE`. Confirme que o host tem o formato `ep-…sa-east-1.aws.neon.tech`, sem `pooler`.
-3. Aplicar as migrations do zero (a role `polaris_pr11_runtime` precisa existir antes: ela vem da branch de produção; ver o checklist de go-live): `bun run --filter @polaris/db db:migrate`.
-4. Rodar o executor de gates, que roda **em sequência** no mesmo banco, cria o login temporário que alguns gates exigem e o remove ao final:
+   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo.
+2. Criar a role que vive fora das migrations (no Neon ela vem da `production`; aqui não existe) e aplicar as migrations do zero:
 
-       bun run --filter @polaris/db gates:gate4   # núcleo de vendas (+ clientes)
-       bun run --filter @polaris/db gates:gate3   # catálogo, estoque e mídia
-       bun run --filter @polaris/db gates:all     # tudo
+       psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
+       bun run --filter @polaris/db db:migrate
 
-   Também é possível escolher gates pelo nome: `bun scripts/run-gates.ts sale-return gate4`. Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
-5. Limpar o ambiente do processo (todas as variáveis acima) e, depois do gate, apagar a branch descartável própria: `neon branches delete <nome> --project-id green-tooth-16857010 --profile junior-pessoal`. A expiração de 24 h cobre o esquecimento, mas não libera o limite de branches raiz antes disso.
+3. Rodar o executor, que roda **em sequência** no mesmo banco, cria o login temporário que alguns gates exigem e o remove ao final:
+
+       CI=true bun run --filter @polaris/db gates:ci   # o que o CI roda, incluindo os gates de venda e o gate4
+
+   `gates:gate4` e `gates:all` incluem gates só de Neon (ver acima) e falham num PostgreSQL local. Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
+4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
 
 Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:verify`, `poc:sales:customer-link:verify`, `poc:sales:cancellation:verify`, `poc:sales:return:verify`, `poc:sales:dates:verify`, `poc:gate4:verify`, `poc:review-hardening:verify`) e usam as variáveis `POLARIS_SALES_GATE_*`; o executor é o caminho recomendado.
+
+## Prova antes de liberação em Neon
+
+O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon). Ela roda **antes de uma liberação** e, como o ADR 0025 já pedia, no fim de cada fase e quando mudam o executor (`run-gates.ts`), o suporte comum dos gates (`sales-gate-support.ts`) ou os privilégios de forma ampla ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emendas da issue #115). Por pull request **não** se roda nada em Neon: o job do CI roda a suíte `ci`; os quatro gates só de Neon ficam para esta prova.
+
+### Regras da branch
+
+- **Uma branch descartável, filha de `production`, sem `--schema-only`.** Uma branch `--schema-only` não herda a história da `production`: nasce como **raiz**, e as branches raiz contam no armazenamento do projeto (e no limite de branches raiz do plano). Segundo a decisão do responsável, foi esse o procedimento antigo (uma raiz por execução) que inflou o contador do projeto de gates, embora o banco real tenha poucos MB (a emenda do ADR 0025 cita a leitura de 17/10/2026 e deixa em aberto, por falta de confirmação no console, se o medidor que estourou foram as raízes ou o histórico de restauração). Uma branch filha compartilha as páginas do pai e só acrescenta o que o gate escreve; se o limite voltar a estourar mesmo assim, a primeira prova de liberação servirá de medida e a causa será reaberta.
+- **Nome único por execução**, no padrão `^pr\d+-[a-z0-9-]+-gate$` (por exemplo, `pr900-release-gate`; se repetir o número, acrescente a data, como `pr900-release-20261018-gate`). Nunca reutilize uma branch de outra execução, nem uma expirada; nunca rode duas execuções na mesma branch.
+- **Apagada ao final da própria execução**, com sucesso ou falha, e só a que você criou. Expiração de 24 h como rede de segurança, não como substituta.
+- Um banco novo (`polaris_prNN_gate`) é criado dentro da branch e as migrations (0000 em diante) são reaplicadas nele do zero: a prova de "migrations do zero" continua valendo mesmo com a branch herdando o estado da `production`. O operador cria o banco novo e reaplica nele as migrations; o gate lê e escreve **só** nesse banco novo, nunca nos bancos herdados. Se um dia a `production` guardar dados reais de clientes, pare e peça decisão ao responsável antes de criar a branch filha, porque ela os herdaria.
+- Siga a [política de perfis de CLI](./cli-profile-policy.md): Neon CLI com o perfil `junior-pessoal` (conta `juniordiniz56@gmail.com`). Não use o plugin ou conector Neon. Nenhuma connection string, senha ou token é impressa, gravada em arquivo ou colada em chat; a URL do gate vive só nas variáveis de ambiente do processo e é removida ao final.
+- A suíte completa por fase é disparada por quem entrega o último PR da fase (ou pelo responsável) e fica registrada numa linha "Suíte completa em Neon" na seção da fase em `doc/status-implementacao.md`.
+
+### Passos
+
+1. Criar a branch filha e o banco (descarte a saída: o comando `neon branches create` imprime a connection string). **Sem `--schema-only`.**
+
+       neon branches create --name pr900-release-gate --parent production --expires-at <agora+24h, UTC, hora cheia> --project-id green-tooth-16857010 --profile junior-pessoal > /dev/null
+       neon databases create --name polaris_pr900_gate --owner-name neondb_owner --branch pr900-release-gate --project-id green-tooth-16857010 --profile junior-pessoal > /dev/null
+
+2. Em um processo que obtenha a URL direta (sem pooler) com `neon connection-string ... --database-name polaris_pr900_gate --role-name neondb_owner --profile junior-pessoal`, exporte somente neste processo `DATABASE_URL`, `POLARIS_GATE_DATABASE_URL`, `POLARIS_GATE_BRANCH` e `POLARIS_GATE_DATABASE`. Confirme que o host tem o formato `ep-…sa-east-1.aws.neon.tech`, sem `pooler`.
+3. Aplicar as migrations do zero no banco novo (a role `polaris_pr11_runtime` já existe: vem da `production`; ver o checklist de go-live): `bun run --filter @polaris/db db:migrate`.
+4. Rodar o executor sem `CI=true` (a trava de host exige o endpoint Neon): `bun run --filter @polaris/db gates:all` para a prova de liberação. Aqui rodam também os quatro gates que o CI não cobre.
+5. Limpar o ambiente do processo (todas as variáveis acima) e apagar a branch própria, mesmo se um gate falhou: `neon branches delete pr900-release-gate --project-id green-tooth-16857010 --profile junior-pessoal`. Confira com `neon branches list` que ela sumiu e registre o nome e a data na evidência (sem connection string).
+
 ## O que prova cada propriedade
 
 | Propriedade | Gate por etapa (profundidade) | Cenário ponta a ponta (`poc:gate4:verify`) |
@@ -43,7 +78,7 @@ Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:ve
 | Cancelamento correto | `poc:sales:cancellation:verify`: reposição ao custo do item, regra da média, corridas cancelamento × cancelamento e × venda, gatilho de completude. | Quantidade inteira volta ao estoque ao custo original, a venda e os movimentos originais não são editados, repetir o comando é replay, a venda cancelada mantém os totais e não aceita devolução. |
 | Devoluções corretas | `poc:sales:return:verify`: `returned ≤ disponível`, `restocked ≤ returned`, sequência aleatória contra um modelo, exclusão mútua com o cancelamento, guardas do banco. | Devolvido e reposto são separados, só o reposto movimenta estoque, devolução acima do disponível é recusada, venda com devoluções não cancela, a venda nunca é editada. |
 | Reconciliação de cliente não altera a economia | `poc:sales:customer-link:verify`: histórico versionado, concorrência, cliente arquivado. | Atribuir, reatribuir, conflito de versão e remover (inclusive em venda cancelada) mantêm vendas, itens, ajustes, pagamentos, movimentos e saldos idênticos byte a byte. |
-| Endurecimentos da revisão do checkpoint | poc:review-hardening:verify: instantes 	imestamptz mesmo com fuso de sessão +14h, timeouts por transação, sequência e reconciliação razão × saldo, cancelamento com produto removido, regra da média na reposição, namespaces de commandId, datas de estoque, grants por coluna, limites, chave de mídia, roles auth × tenant, funções endurecidas. | (coberto pelo gate próprio) |
+| Endurecimentos da revisão do checkpoint | `poc:review-hardening:verify`: instantes `timestamptz` mesmo com fuso de sessão +14h, timeouts por transação, sequência e reconciliação razão × saldo, cancelamento com produto removido, regra da média na reposição, namespaces de commandId, datas de estoque, grants por coluna, limites, chave de mídia, roles auth × tenant, funções endurecidas. | (coberto pelo gate próprio) |
 | Datas (PR47) | `poc:sales:dates:verify`: janela retroativa no calendário da organização e tolerância de futuro (valores em [tempo e datas](../business-rules/time-and-dates.md)), data do razão = data comercial, replay e conflito de `recorded_at`. | Venda de 10 dias atrás grava o movimento na sua data comercial. |
 
 ## Limites conhecidos
@@ -55,4 +90,4 @@ Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:ve
 
 ## Rollback ou forward-fix
 
-O gate não altera recursos persistentes: ele roda só na branch descartável. Se um gate falhar, não prossiga para a próxima etapa; corrija na etapa dona do mecanismo, repita o gate falho e depois todos os anteriores. Escalonamento: responsável pelo projeto.
+O gate não altera recursos persistentes: ele roda só no PostgreSQL local ou do CI e, na prova de liberação, só na branch Neon descartável própria. Se um gate falhar, não prossiga para a próxima etapa; corrija na etapa dona do mecanismo, repita o gate falho e depois todos os anteriores. Escalonamento: responsável pelo projeto.

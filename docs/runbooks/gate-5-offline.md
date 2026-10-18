@@ -8,7 +8,7 @@ O plano define o Gate 5 assim: o offline só é considerado pronto quando (1) um
 
 - Siga a [política de perfis de CLI](./cli-profile-policy.md): Neon CLI com o perfil `junior-pessoal`. Não use o plugin ou conector Neon.
 - Nenhuma connection string, senha ou token é impressa, gravada ou colada em chat; a URL do gate vive só nas variáveis de ambiente do processo e é removida ao final.
-- Alvo seguro: uma **branch Neon nova e descartável** (schema-only a partir de `production`, expiração de 24 h) com um banco novo, as migrations reaplicadas do zero e apenas dados sintéticos. Nunca copie dados de produção. O procedimento de criação da branch é o do [Gate 4](./gate-4-sales-core.md#passos).
+- Alvo seguro: uma **branch Neon nova e descartável** (filha de `production`, sem `--schema-only`, expiração de 24 h) com um banco novo, as migrations reaplicadas do zero e apenas dados sintéticos. Nunca copie dados de produção. O procedimento de criação da branch é o do [Gate 4](./gate-4-sales-core.md#prova-antes-de-liberação-em-neon).
 - Não rode dois gates ao mesmo tempo no mesmo banco.
 
 ## Passos automáticos
