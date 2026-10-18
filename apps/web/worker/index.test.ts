@@ -367,6 +367,7 @@ describe("the outbox cron", () => {
   let client: ReturnType<typeof schedulerState> & {
     close: ReturnType<typeof vi.fn>;
     expireProcessing: ReturnType<typeof vi.fn>;
+    recordExhaustedOutboxEvents: ReturnType<typeof vi.fn>;
   };
 
   const runCron = (cron: string | undefined, env: Record<string, unknown>) =>
@@ -383,6 +384,7 @@ describe("the outbox cron", () => {
       ...schedulerState(),
       close: mocks.outboxClose.mockResolvedValue(undefined),
       expireProcessing: vi.fn().mockResolvedValue(0),
+      recordExhaustedOutboxEvents: vi.fn().mockResolvedValue(0),
     };
     mocks.createOutboxClient.mockReturnValue(client);
     mocks.dispatchOutbox.mockResolvedValue({ claimed: 0 });
@@ -455,6 +457,68 @@ describe("the outbox cron", () => {
 
     expect(client.expireProcessing).toHaveBeenCalledOnce();
     expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("records the events past the attempt cap after the dispatcher, 100 at a time, and warns only when some were new", async () => {
+    const order: string[] = [];
+    mocks.dispatchOutbox.mockImplementation(() => {
+      order.push("dispatch");
+      return Promise.resolve({ claimed: 0 });
+    });
+    client.recordExhaustedOutboxEvents.mockImplementation(() => {
+      order.push("exhausted");
+      return Promise.resolve(0);
+    });
+    client.expireProcessing.mockImplementation(() => {
+      order.push("expire");
+      return Promise.resolve(0);
+    });
+
+    await expect(runCron(OUTBOX_CRON, outbox)).resolves.toBeUndefined();
+
+    expect(client.recordExhaustedOutboxEvents).toHaveBeenCalledOnce();
+    expect(client.recordExhaustedOutboxEvents).toHaveBeenCalledWith(100);
+    expect(order).toEqual(["dispatch", "exhausted", "expire"]);
+    expect(console.warn).not.toHaveBeenCalledWith(
+      "outbox_events_exhausted",
+      expect.anything()
+    );
+
+    client.recordExhaustedOutboxEvents.mockResolvedValue(3);
+    await runCron(OUTBOX_CRON, outbox);
+    expect(console.warn).toHaveBeenCalledWith("outbox_events_exhausted", {
+      recorded: 3,
+    });
+  });
+
+  it("still expires the records, and closes, when recording the exhausted events fails, and throws that failure", async () => {
+    client.recordExhaustedOutboxEvents.mockRejectedValue(
+      new Error("exhausted_failed")
+    );
+
+    await expect(runCron(OUTBOX_CRON, outbox)).rejects.toThrow(
+      "exhausted_failed"
+    );
+
+    expect(client.expireProcessing).toHaveBeenCalledOnce();
+    expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("throws the dispatch and the exhausted-events failures together", async () => {
+    mocks.dispatchOutbox.mockRejectedValue(new Error("dispatch_failed"));
+    client.recordExhaustedOutboxEvents.mockRejectedValue(
+      new Error("exhausted_failed")
+    );
+
+    const error = await runCron(OUTBOX_CRON, outbox).catch(
+      (cause: unknown) => cause
+    );
+
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(
+      (error as AggregateError).errors.map((entry: Error) => entry.message)
+    ).toEqual(["dispatch_failed", "exhausted_failed"]);
+    expect(client.expireProcessing).toHaveBeenCalledOnce();
   });
 
   it("reports a connection that cannot be opened", async () => {
@@ -608,6 +672,108 @@ describe("the queue consumer", () => {
     expect(sent.ack).toHaveBeenCalledTimes(1);
   });
 
+  describe("the dead-letter queue", () => {
+    const outbox = {
+      OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
+    };
+
+    function runDlq(env: Record<string, unknown>, ...sent: unknown[]) {
+      return worker.queue(
+        { messages: sent, queue: "polaris-dlq" } as never,
+        env as never
+      );
+    }
+
+    it("records the message through the outbox client, closes it, and never runs the normal consumer", async () => {
+      const recordDeadLetter = vi.fn().mockResolvedValue(undefined);
+      mocks.createOutboxClient.mockReturnValue({
+        close: mocks.outboxClose.mockResolvedValue(undefined),
+        recordDeadLetter,
+      });
+      const sent = message(exportEvent);
+
+      await runDlq({ ...configured, ...privacy, ...outbox }, sent);
+
+      expect(mocks.createOutboxClient).toHaveBeenCalledWith(
+        outbox.OUTBOX_HYPERDRIVE.connectionString
+      );
+      expect(recordDeadLetter).toHaveBeenCalledOnce();
+      expect(recordDeadLetter).toHaveBeenCalledWith({
+        cause: "retries_exhausted",
+        event: { id: exportEvent.eventId, organizationId: "org_1" },
+        reference: exportEvent.eventId,
+        subject: "data_export.requested",
+      });
+      expect(sent.ack).toHaveBeenCalledOnce();
+      expect(mocks.outboxClose).toHaveBeenCalledOnce();
+      // the consumer of the normal queues did not see it
+      expect(mocks.runDataExports).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalledWith("queue_ledger_in_memory");
+    });
+
+    it("retries an hour later, and warns, without the outbox role", async () => {
+      const sent = message(exportEvent);
+
+      await runDlq({ ...configured, ...privacy }, sent);
+
+      expect(mocks.createOutboxClient).not.toHaveBeenCalled();
+      expect(sent.retry).toHaveBeenCalledOnce();
+      expect(sent.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+      expect(sent.ack).not.toHaveBeenCalled();
+      expect(console.warn).toHaveBeenCalledWith(
+        "dead_letter_not_recorded_unconfigured"
+      );
+    });
+
+    it("also takes the queue of an environment suffix", async () => {
+      const sent = message(exportEvent);
+      await worker.queue(
+        { messages: [sent], queue: "polaris-dlq-staging" } as never,
+        {} as never
+      );
+      expect(sent.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+    });
+
+    it("gives the normal consumer the dead-letter producer only with the outbox role (the in-memory ledger could not record what lands there)", async () => {
+      const send = vi.fn().mockResolvedValue(undefined);
+      const QUEUE_DLQ = { send };
+      const refused = message({ junk: true });
+
+      // in-memory ledger: the message is dropped with a warning, nothing is sent
+      await runQueue({ QUEUE_DLQ }, refused);
+      expect(send).not.toHaveBeenCalled();
+      expect(refused.ack).toHaveBeenCalledOnce();
+      expect(console.warn).toHaveBeenCalledWith(
+        "queue_dead_letter_not_configured",
+        { messageId: "m" }
+      );
+
+      // durable ledger
+      mocks.createOutboxClient.mockReturnValue({
+        close: mocks.outboxClose.mockResolvedValue(undefined),
+      });
+      const again = message({ junk: true });
+      await runQueue({ ...outbox, QUEUE_DLQ }, again);
+      expect(send).toHaveBeenCalledOnce();
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ cause: "invalid_envelope" }),
+        { contentType: "json" }
+      );
+      expect(again.ack).toHaveBeenCalledOnce();
+      expect(mocks.outboxClose).toHaveBeenCalledOnce();
+    });
+
+    it("acks a refused message and warns where the dead-letter queue is not bound", async () => {
+      const refused = message({ junk: true });
+      await runQueue({}, refused);
+      expect(refused.ack).toHaveBeenCalledOnce();
+      expect(console.warn).toHaveBeenCalledWith(
+        "queue_dead_letter_not_configured",
+        { messageId: "m" }
+      );
+    });
+  });
+
   describe("the processing ledger", () => {
     const outbox = {
       OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
@@ -747,6 +913,7 @@ describe("the scheduler tick", () => {
       ...state,
       close: mocks.outboxClose.mockResolvedValue(undefined),
       expireProcessing: vi.fn().mockResolvedValue(0),
+      recordExhaustedOutboxEvents: vi.fn().mockResolvedValue(0),
     });
     mocks.createMediaCleanupClient.mockReturnValue({ close: mocks.mediaClose });
     mocks.mediaClose.mockResolvedValue(undefined);

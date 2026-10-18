@@ -4,7 +4,7 @@ status: accepted
 
 # Framework de jobs agendados
 
-> O número deste ADR (0086) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR da DLQ usa 0085, o do purge, 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes. A migration é a 0072, a mesma dos PRs #126 e #131: quem entrar depois renumera a migration e o snapshot.
+> O número deste ADR (0086) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o ADR 0085, da DLQ, já está na `main`; o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes. A migration é a 0073, depois da 0072 da DLQ (PR #131, já na `main`); o PR do purge (#126) ainda usa 0072, e quem entrar depois renumera a migration e o snapshot.
 
 ## Contexto
 
@@ -33,8 +33,8 @@ Limites do plano Workers Free, conferidos nos ADRs 0076 e 0084 (documentação d
 ## Consequências
 
 - Um job novo é uma entrada no registro, um handler e (se for expurgo) a classe aprovada; o agendador, o *lease*, a janela e o log vêm prontos.
-- Antes do deploy: a migration 0072 aplicada **antes** do Worker (ele chama as funções novas assim que o binding `OUTBOX_HYPERDRIVE` existir). Enquanto o binding não for ligado (passo 7 do [runbook das filas](../runbooks/queues.md)), nada muda: os crons seguem rodando tudo a cada hora, sem *lease*. Ao ligá-lo, o agendador passa a valer para todas as pistas.
-- O `OUTBOX_HYPERDRIVE` passa a ser também o do agendador: ligá-lo sem a migration 0072 faz os crons falharem (de propósito, sem rodar nada).
+- Antes do deploy: a migration 0073 aplicada **antes** do Worker (ele chama as funções novas assim que o binding `OUTBOX_HYPERDRIVE` existir). Enquanto o binding não for ligado (passo 7 do [runbook das filas](../runbooks/queues.md)), nada muda: os crons seguem rodando tudo a cada hora, sem *lease*. Ao ligá-lo, o agendador passa a valer para todas as pistas.
+- O `OUTBOX_HYPERDRIVE` passa a ser também o do agendador: ligá-lo sem a migration 0073 faz os crons falharem (de propósito, sem rodar nada).
 - Um segundo disparo dentro da mesma hora (a plataforma repete, ou alguém dispara à mão) já não repete o trabalho: para forçar uma execução, o responsável apaga a cobertura do job (runbook).
 
 ## Limites aceitos

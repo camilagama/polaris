@@ -37,6 +37,18 @@ describe("platform capabilities", () => {
     expect(PLATFORM_ROLES).toEqual(["platform_owner"]);
   });
 
+  it("declares the operational incident capabilities, held by the owner only", () => {
+    for (const capability of [
+      "operational_incident:read",
+      "operational_incident:retry",
+    ]) {
+      expect(PLATFORM_CAPABILITIES as readonly string[]).toContain(capability);
+      expect(hasPlatformCapability("platform_owner", capability)).toBe(true);
+      expect(hasPlatformCapability("somebody_else", capability)).toBe(false);
+      expect(hasPlatformCapability("owner", capability)).toBe(false);
+    }
+  });
+
   it("raises a stable error when a role lacks the capability", () => {
     try {
       assertPlatformCapability("nobody", "platform:read");

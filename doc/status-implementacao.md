@@ -1577,13 +1577,28 @@ Terceiro passo da Fase 11 ([ADR 0084](../docs/adr/0084-despachante-e-varredor-do
 | Gate PostgreSQL 18 | Local e CI | `outbox-dispatcher` (suítes `ci` e `gate11`), novo; `event-outbox` e `data-export` ajustados. `gates:ci` completo passou num PostgreSQL 18.4 local. |
 | Limites | Registrados | Nada criado nem medido em nuvem (filas, Hyperdrive, CPU); latência de até uma hora (cadência é do PR112 e decisão de custo); sem DLQ; o PR do purge precisa classificar `queue_processing` se entrar depois. |
 
+### Fase 11D — DLQ, incidente operacional e retry no Admin (PR111; implementação e gates locais concluídos; nada criado na conta Cloudflare)
+
+Quarto passo da Fase 11 ([ADR 0085](../docs/adr/0085-dlq-incidente-operacional-e-retry-no-admin.md); o número pode mudar): a mensagem que esgota as tentativas ou que o consumidor recusa de vez vai para a DLQ e vira incidente operacional; o evento do outbox que passa de 1000 tentativas também; o Admin reenvia um evento morto, com motivo e auditoria.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/dlq` sobre a `main` (migration 0072, só aditiva; a do PR #126 também é 0072, e o segundo a entrar renumera a migration e o snapshot). |
+| Filas | Declarado | `polaris-dlq` compartilhada: `dead_letter_queue` nos três consumidores, produtor `QUEUE_DLQ`, consumidor próprio (10 tentativas). O consumidor envia à DLQ um **aviso** (causa e IDs, nunca o corpo) para envelope inválido, tipo ou versão desconhecidos e fila errada. Nada criado na conta: o runbook ganha o passo de criar a DLQ. |
+| Banco | Concluído | `operational_incidents` (uma linha por causa, contagem e datas) e `queue_dead_letters` (um evento morto por linha, só IDs); funções `record_dead_letter`, `record_exhausted_outbox_events`, `retry_dead_letter` (dono do outbox) e `admin_list_operational_incidents`, `admin_read_operational_incident`, `admin_retry_dead_letter` (dono do Admin); o evento `operational_incident.retry` na auditoria. Ninguém apaga linha. |
+| Domínio | Concluído | `@polaris/domain/events/dead-letter` (aviso e classificação) e `@polaris/domain/admin/operational-incident` (motivo do retry); capacidades `operational_incident:read` e `operational_incident:retry`. |
+| Worker e Admin | Concluído | Consumidor da DLQ (`handleDeadLetterBatch`), passo do cron do despachante que registra os eventos no teto; rotas `/api/operational-incidents` (lista, detalhe, retry). |
+| Retenção | Proposta | Classe `operational_incident` (sem prazo e sem job; PR112). |
+| Gate PostgreSQL 18 | Local e CI | `dead-letter` (suítes `ci` e `gate11`), novo. |
+| Limites | Registrados | Nada criado nem medido em nuvem; a DLQ não tem DLQ (retenção de 24 horas no Free); falha permanente do handler continua `ack`; o retry espera o cron do despachante; incidente não se encerra; o PR do purge (#126, a refazer) precisa apagar `queue_dead_letters` explicitamente (política e DELETE do papel do purge, com a prova no gate dele), porque a linha da organização fica e a cascata não dispara, e unir `platform_audit_events_type_allowed` aos tipos do purge; `operational_incidents` não tem organização. |
+
 ### Fase 11E — Framework de jobs agendados (PR112; implementação e gates locais concluídos; nada criado na conta Cloudflare)
 
 Quinto passo da Fase 11 ([ADR 0086](../docs/adr/0086-framework-de-jobs-agendados.md); o número pode mudar): um tick por pista de cron despacha os jobs vencidos, cada um sob *lease* e com janelas fixas, catch-up por nível.
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Base | Concluída | Branch `feat/scheduled-jobs` sobre a `main` (migration 0072, só aditiva; os PRs #126 e #131 também usam 0072, e quem entrar depois renumera a migration e o snapshot; conflitos esperados em `worker/index.ts`, `retention.ts` e nos ADRs 0079 e 0084). |
+| Base | Concluída | Branch `feat/scheduled-jobs` sobre a `main` (migration 0073, só aditiva, depois da 0072 da DLQ (PR #131, já na `main`); o PR #126 ainda usa 0072, e quem entrar depois renumera a migration e o snapshot; refeita sobre a `main` com o #131: o job `outbox.dispatch` também registra os eventos no teto de tentativas). |
 | Registro | Concluído | `@polaris/domain/scheduling/scheduled-jobs`: seis jobs (quatro ligados, dois desligados com a pendência), duas pistas (`17 * * * *` e `19 * * * *`), cadência, *lease*, por que repetir é seguro, expurgos que executa; `windowIndex` e `windowsMissed`. Dois dos cinco Cron Triggers do Free em uso; um teste confere o `wrangler.jsonc` contra as pistas. |
 | Banco | Concluído | `scheduled_job_state` (RLS forçado, sem organização nem dado pessoal) e `claim_`, `complete_` e `release_scheduled_job`, do papel do outbox (mesmo login e `OUTBOX_HYPERDRIVE`); `OutboxClient` ganha os três métodos. |
 | Worker | Concluído | `runLane` (`apps/web/src/server/scheduler/runner.ts`): *lease*, janela, falha isolada por job, métrica `scheduled_job_run` sem dado pessoal; `scheduled` do Worker vira o tick (`17` e `19` migrados sem mudar o comportamento; sem o binding, tudo roda a cada disparo, como antes). |

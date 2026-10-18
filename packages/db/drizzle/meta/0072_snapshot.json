@@ -1,5 +1,5 @@
 {
-  "id": "8a38d688-fd32-45cb-b0e5-7a88d5bd31ec",
+  "id": "f9d3db40-00ac-4df9-be5a-9c184d8dd06a",
   "prevId": "0c572b6c-d193-4d52-8042-8cc2058ac592",
   "version": "7",
   "dialect": "postgresql",
@@ -4717,6 +4717,272 @@
       },
       "isRLSEnabled": true
     },
+    "public.operational_incidents": {
+      "name": "operational_incidents",
+      "schema": "",
+      "columns": {
+        "cause": {
+          "name": "cause",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_reference": {
+          "name": "last_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurrence_count": {
+          "name": "occurrence_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "operational_incidents_cause_unique": {
+          "name": "operational_incidents_cause_unique",
+          "nullsNotDistinct": false,
+          "columns": ["kind", "cause", "subject"]
+        }
+      },
+      "policies": {
+        "operational_incidents_outbox_owner_all": {
+          "name": "operational_incidents_outbox_owner_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["polaris_outbox_owner"],
+          "using": "true",
+          "withCheck": "true"
+        },
+        "operational_incidents_admin_owner_select": {
+          "name": "operational_incidents_admin_owner_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_admin_owner"],
+          "using": "true"
+        }
+      },
+      "checkConstraints": {
+        "operational_incidents_kind_allowed": {
+          "name": "operational_incidents_kind_allowed",
+          "value": "\"operational_incidents\".\"kind\" IN ('queue_dead_letter', 'outbox_attempts_exhausted')"
+        },
+        "operational_incidents_cause_allowed": {
+          "name": "operational_incidents_cause_allowed",
+          "value": "(\"operational_incidents\".\"kind\" = 'queue_dead_letter' AND \"operational_incidents\".\"cause\" IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))\n        OR (\"operational_incidents\".\"kind\" = 'outbox_attempts_exhausted' AND \"operational_incidents\".\"cause\" = 'attempts_exhausted')"
+        },
+        "operational_incidents_subject_format": {
+          "name": "operational_incidents_subject_format",
+          "value": "\"operational_incidents\".\"subject\" = 'unknown' OR (\"operational_incidents\".\"subject\" ~ '^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$' AND char_length(\"operational_incidents\".\"subject\") <= 80)"
+        },
+        "operational_incidents_reference_format": {
+          "name": "operational_incidents_reference_format",
+          "value": "\"operational_incidents\".\"last_reference\" IS NULL OR \"operational_incidents\".\"last_reference\" ~ '^[A-Za-z0-9._:-]{1,128}$'"
+        },
+        "operational_incidents_count_positive": {
+          "name": "operational_incidents_count_positive",
+          "value": "\"operational_incidents\".\"occurrence_count\" >= 1"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.queue_dead_letters": {
+      "name": "queue_dead_letters",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "incident_id": {
+          "name": "incident_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "occurrences": {
+          "name": "occurrences",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retried_at": {
+          "name": "retried_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retry_count": {
+          "name": "retry_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'dead'"
+        }
+      },
+      "indexes": {
+        "queue_dead_letters_incident_idx": {
+          "name": "queue_dead_letters_incident_idx",
+          "columns": [
+            {
+              "expression": "incident_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_seen_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "queue_dead_letters_organization_id_organizations_id_fk": {
+          "name": "queue_dead_letters_organization_id_organizations_id_fk",
+          "tableFrom": "queue_dead_letters",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "queue_dead_letters_incident_id_operational_incidents_id_fk": {
+          "name": "queue_dead_letters_incident_id_operational_incidents_id_fk",
+          "tableFrom": "queue_dead_letters",
+          "tableTo": "operational_incidents",
+          "columnsFrom": ["incident_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "queue_dead_letters_outbox_owner_all": {
+          "name": "queue_dead_letters_outbox_owner_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": ["polaris_outbox_owner"],
+          "using": "true",
+          "withCheck": "true"
+        },
+        "queue_dead_letters_admin_owner_select": {
+          "name": "queue_dead_letters_admin_owner_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_admin_owner"],
+          "using": "true"
+        }
+      },
+      "checkConstraints": {
+        "queue_dead_letters_state_allowed": {
+          "name": "queue_dead_letters_state_allowed",
+          "value": "\"queue_dead_letters\".\"state\" IN ('dead', 'retried')"
+        },
+        "queue_dead_letters_state_coherent": {
+          "name": "queue_dead_letters_state_coherent",
+          "value": "(\"queue_dead_letters\".\"state\" = 'dead') OR (\"queue_dead_letters\".\"state\" = 'retried' AND \"queue_dead_letters\".\"retried_at\" IS NOT NULL AND \"queue_dead_letters\".\"retry_count\" >= 1)"
+        },
+        "queue_dead_letters_event_type_format": {
+          "name": "queue_dead_letters_event_type_format",
+          "value": "\"queue_dead_letters\".\"event_type\" ~ '^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$' AND char_length(\"queue_dead_letters\".\"event_type\") <= 80"
+        },
+        "queue_dead_letters_counts_allowed": {
+          "name": "queue_dead_letters_counts_allowed",
+          "value": "\"queue_dead_letters\".\"occurrences\" >= 1 AND \"queue_dead_letters\".\"retry_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.organization_closures": {
       "name": "organization_closures",
       "schema": "",
@@ -5614,7 +5880,7 @@
       "checkConstraints": {
         "platform_audit_events_type_allowed": {
           "name": "platform_audit_events_type_allowed",
-          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded')"
+          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry')"
         },
         "platform_audit_events_detail_allowed": {
           "name": "platform_audit_events_detail_allowed",
@@ -9274,97 +9540,6 @@
         "sales_adjustment_count_nonnegative": {
           "name": "sales_adjustment_count_nonnegative",
           "value": "\"sales\".\"adjustment_count\" >= 0"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.scheduled_job_state": {
-      "name": "scheduled_job_state",
-      "schema": "",
-      "columns": {
-        "consecutive_failures": {
-          "name": "consecutive_failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "covered_at": {
-          "name": "covered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "job_id": {
-          "name": "job_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "last_failure_at": {
-          "name": "last_failure_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_started_at": {
-          "name": "last_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_success_at": {
-          "name": "last_success_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_until": {
-          "name": "lease_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "token": {
-          "name": "token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "scheduled_job_state_outbox_owner_all": {
-          "name": "scheduled_job_state_outbox_owner_all",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": ["polaris_outbox_owner"],
-          "using": "true",
-          "withCheck": "true"
-        }
-      },
-      "checkConstraints": {
-        "scheduled_job_state_job_id_format": {
-          "name": "scheduled_job_state_job_id_format",
-          "value": "\"scheduled_job_state\".\"job_id\" ~ '^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$' AND length(\"scheduled_job_state\".\"job_id\") <= 64"
-        },
-        "scheduled_job_state_lease_coherent": {
-          "name": "scheduled_job_state_lease_coherent",
-          "value": "(\"scheduled_job_state\".\"token\" IS NULL) = (\"scheduled_job_state\".\"lease_until\" IS NULL)"
-        },
-        "scheduled_job_state_failures_non_negative": {
-          "name": "scheduled_job_state_failures_non_negative",
-          "value": "\"scheduled_job_state\".\"consecutive_failures\" >= 0"
         }
       },
       "isRLSEnabled": true

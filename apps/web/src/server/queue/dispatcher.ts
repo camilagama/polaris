@@ -123,7 +123,7 @@ export async function dispatchOutbox(
   for (const row of claimed) {
     const envelope = envelopeOf(row);
     if (!envelope) {
-      // an older deploy, or a row it refuses: it waits the longest and stops being claimed at the cap (PR111)
+      // an older deploy, or a row it refuses: it waits the longest and stops being claimed at the cap (and becomes an incident, ADR 0085)
       console.warn("outbox_event_unsendable", {
         attempts: row.attempts,
         eventId: row.id,

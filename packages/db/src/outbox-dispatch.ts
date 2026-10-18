@@ -43,6 +43,14 @@ export type ProcessingClaim =
   | { reason: UnknownReason; result: "unknown" }
   | { result: "claimed"; token: string };
 
+/** What a message on the dead-letter queue is, for the incident (ADR 0085): a cause, a subject and opaque IDs only. */
+export interface DeadLetterEntry {
+  cause: string;
+  event: { id: string; organizationId: string } | null;
+  reference: string | null;
+  subject: string;
+}
+
 /**
  * What a tick learns when it asks for the lease of a scheduled job (ADR 0086): the job is not due in this
  * window, another run holds it, or it was taken (with the token that fences its outcome, how many windows
@@ -79,6 +87,10 @@ export interface OutboxClient {
   completeScheduledJob: (jobId: string, token: string) => Promise<boolean>;
   /** Removes the finished records (and claims long dead) older than `keepHours`; returns how many. */
   expireProcessing: (keepHours: number, limit: number) => Promise<number>;
+  /** Counts the message in its cause's incident and, when it names an event the outbox holds, keeps the event as dead. */
+  recordDeadLetter: (entry: DeadLetterEntry) => Promise<void>;
+  /** Records the events past the attempt cap as incidents and dead events; returns how many were new. */
+  recordExhaustedOutboxEvents: (limit: number) => Promise<number>;
   /** Returns how many were marked: an event whose claim was taken again, or that the purge removed, is not. */
   markOutboxEventsDispatched: (
     events: readonly OutboxEventFence[]
@@ -232,6 +244,25 @@ export function createOutboxClient(connectionString: string): OutboxClient {
         [events.map((event) => event.id), events.map((event) => event.attempts)]
       );
       return Number(result.rows[0]?.marked ?? 0);
+    },
+    async recordDeadLetter(entry) {
+      await pool.query(
+        "SELECT public.record_dead_letter($1::text, $2::text, $3::text, $4::uuid, $5::text)",
+        [
+          entry.cause,
+          entry.subject,
+          entry.reference,
+          entry.event?.id ?? null,
+          entry.event?.organizationId ?? null,
+        ]
+      );
+    },
+    async recordExhaustedOutboxEvents(limit) {
+      const result = await pool.query<{ recorded: number }>(
+        "SELECT public.record_exhausted_outbox_events($1::integer) AS recorded",
+        [limit]
+      );
+      return Number(result.rows[0]?.recorded ?? 0);
     },
     async releaseOutboxEvents(events) {
       if (events.length === 0) {

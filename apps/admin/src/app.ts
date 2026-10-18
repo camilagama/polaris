@@ -15,6 +15,7 @@ import {
 } from "@polaris/domain/admin/platform-capabilities";
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
+import { type IncidentDependencies, incidentRoutes } from "./incident-routes";
 import { type PrivacyDependencies, privacyRoutes } from "./privacy-routes";
 import { type SupportDependencies, supportRoutes } from "./support-routes";
 
@@ -56,6 +57,8 @@ export interface AdminDependencies {
       bindings: AdminBindings
     ) => Promise<AdminOrganizationPage>;
   };
+  /** Operational incidents (dead letters, outbox events past the attempt cap) and the retry of a dead event (ADR 0085). */
+  incidents: IncidentDependencies;
   /** The workflow of a privacy request (ADR 0077). */
   privacy: PrivacyDependencies;
   /** Support cases, temporary tenant access, the masked read and the reveal (ADR 0072). */
@@ -277,6 +280,14 @@ export function createAdminApp(dependencies: AdminDependencies) {
   api.route(
     "/",
     privacyRoutes(dependencies.privacy, requireCapability, dependencies.report)
+  );
+  api.route(
+    "/",
+    incidentRoutes(
+      dependencies.incidents,
+      requireCapability,
+      dependencies.report
+    )
   );
   app.route("/api", api);
 

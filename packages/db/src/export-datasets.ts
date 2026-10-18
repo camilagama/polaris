@@ -71,6 +71,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
     organization_billing: "cobrança: lida só pelo papel de billing",
     organization_closures: "processo interno de encerramento",
     platform_audit_events: "da plataforma, não do tenant",
+    queue_dead_letters:
+      "eventos mortos do outbox, só IDs opacos: mecanismo interno de operação",
     queue_processing:
       "registro do consumidor de filas, só IDs opacos: mecanismo interno",
     rls_poc_operations: "tabela de prova técnica",
