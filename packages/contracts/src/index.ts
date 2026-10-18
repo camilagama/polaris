@@ -1448,6 +1448,53 @@ export const polarisContract = {
       )
       .output(periodSummary),
   },
+  // A copy of the organization's data, built in the background and kept for a short time
+  // (ADR 0078). Asking is a tenant operation of the owner; the file itself is downloaded from
+  // /api/data-exports/{id}/files/{ordinal}, not through RPC.
+  dataExport: {
+    list: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(
+        z.object({
+          exports: z.array(
+            z.object({
+              errorCode: z.string().nullable(),
+              expiresAt: z.string().datetime().nullable(),
+              files: z.array(
+                z.object({
+                  name: z.string().min(1),
+                  ordinal: z.number().int().positive(),
+                  sizeBytes: z.number().int().positive(),
+                })
+              ),
+              formats: z.array(z.enum(["json", "csv", "images"])),
+              id: z.string().uuid(),
+              readyAt: z.string().datetime().nullable(),
+              requestedAt: z.string().datetime(),
+              status: z.enum([
+                "requested",
+                "running",
+                "ready",
+                "failed",
+                "expired",
+              ]),
+              totalBytes: z.number().int().nonnegative().nullable(),
+            })
+          ),
+        })
+      ),
+    request: oc
+      .input(
+        z.object({
+          formats: z
+            .array(z.enum(["json", "csv", "images"]))
+            .min(1)
+            .max(3),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ id: z.string().uuid() })),
+  },
   device: {
     // Devices belong to the signed-in user, never to an organization: no
     // organization or user field to trust, the server reads the session.

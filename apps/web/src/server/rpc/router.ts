@@ -210,6 +210,10 @@ import {
   type OrganizationStatus,
 } from "@polaris/domain/organization/closure";
 import {
+  DataExportUnavailableError,
+  InvalidExportRequestError,
+} from "@polaris/domain/privacy/data-export";
+import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -261,6 +265,7 @@ import {
   type readPeriodResult,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
+import type { DataExportRepository } from "./data-export-handlers";
 import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
 import type { PublicCatalogRepository } from "./public-catalog-handlers";
@@ -276,6 +281,7 @@ import {
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
 import { createExpenseRpcHandlers } from "./expense-handlers";
+import { createDataExportRpcHandlers } from "./data-export-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
 import { createPlanRpcHandlers } from "./plan-handlers";
 import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
@@ -331,6 +337,7 @@ interface RpcRouterDependencies {
   createProduct: typeof createProduct;
   createSaleReturn: typeof createSaleReturn;
   expenseRepository: Partial<ExpenseRepository>;
+  dataExportRepository: Partial<DataExportRepository>;
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
   publicCatalogRepository: Partial<PublicCatalogRepository>;
@@ -606,6 +613,14 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
   }
 
+  if (error instanceof InvalidExportRequestError) {
+    // a malformed request is the caller's to fix; the other refusals are the state of the organization's exports
+    throw clientRpcError(
+      error.code === "invalid_export_request" ? "BAD_REQUEST" : "CONFLICT",
+      error
+    );
+  }
+
   if (isRpcErrorInGroup(error, badRequestRpcErrors)) {
     throw clientRpcError("BAD_REQUEST", error);
   }
@@ -797,6 +812,7 @@ const conflictRpcErrors = [
 ] as const;
 
 const notFoundRpcErrors = [
+  [DataExportUnavailableError],
   [CategoryNotFoundError, ProductNotFoundError, CustomerNotFoundError],
   [
     PaymentProfileNotFoundError,
@@ -1310,6 +1326,12 @@ export function createRpcRouter(
   });
   const expenseHandlers = createExpenseRpcHandlers({
     expenseRepository: overrides.expenseRepository,
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
+  const dataExportHandlers = createDataExportRpcHandlers({
+    dataExportRepository: overrides.dataExportRepository,
     requestAuditId,
     toRpcError,
     withTenantRequestContext: tenantRequest,
@@ -1886,6 +1908,7 @@ export function createRpcRouter(
   return implementContract.router({
     category: { archive, create, delete: remove, list, rename, restore },
     customer: customerHandlers,
+    dataExport: dataExportHandlers,
     device: offlineHandlers.device,
     expense: expenseHandlers,
     goal: goalHandlers,
