@@ -6,10 +6,13 @@ import {
   RETENTION_POLICIES,
   RETENTION_PURGE_JOBS,
   RetentionNotApprovedError,
+  retentionExpiry,
   retentionPolicy,
 } from "./retention";
 
 const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 describe("the retention registry", () => {
   it("declares every class once, in one place", () => {
@@ -40,10 +43,24 @@ describe("the retention registry", () => {
     }
   });
 
-  it("leaves a legal period to the person responsible, never to the code", () => {
+  it("approves a legal period only with the decision's date and the norm it rests on", () => {
     for (const policy of RETENTION_POLICIES) {
-      if (policy.basis === "lei") {
-        expect(policy.status).toBe("proposta");
+      if (policy.basis === "lei" && policy.status === "aprovada") {
+        expect(policy.approvedOn, policy.class).toMatch(ISO_DATE);
+        expect(policy.legalSources?.length, policy.class).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("never approves a period without saying when, outside the classes decided earlier", () => {
+    const decidedBefore = new Set<string>([
+      "media_staging_marker",
+      "media_removed_image",
+      "queue_processing",
+    ]);
+    for (const policy of RETENTION_POLICIES) {
+      if (policy.status === "aprovada" && !decidedBefore.has(policy.class)) {
+        expect(policy.approvedOn, policy.class).toBeDefined();
       }
     }
   });
@@ -77,11 +94,62 @@ describe("approved periods", () => {
   });
 
   it("refuse a class whose policy is only proposed", () => {
-    expect(() => approvedRetention("sync_commands")).toThrow(
+    expect(() => approvedRetention("sync_change_log")).toThrow(
       RetentionNotApprovedError
     );
     expect(() => approvedRetention("sales_records")).toThrow(
       "retention_not_approved"
+    );
+  });
+
+  it("keep the offline command log 90 days, the age the server refuses", () => {
+    expect(approvedRetention("sync_commands")).toBe(90 * DAY_MS);
+  });
+
+  it("keep sessions 30 days after they end and a verification token one day after it expires", () => {
+    expect(approvedRetention("auth_sessions")).toBe(30 * DAY_MS);
+    expect(approvedRetention("auth_verification")).toBe(DAY_MS);
+  });
+
+  it("keep the access record six calendar months, as the Marco Civil asks", () => {
+    const policy = retentionPolicy("auth_security_audit");
+    expect(policy.status).toBe("aprovada");
+    expect(policy.period).toEqual({ kind: "calendar_months", months: 6 });
+    expect(() => approvedRetention("auth_security_audit")).toThrow(
+      RetentionNotApprovedError
+    );
+    expect(
+      retentionExpiry(
+        "auth_security_audit",
+        new Date("2026-08-31T10:00:00.000Z")
+      ).toISOString()
+    ).toBe("2027-03-03T10:00:00.000Z");
+    expect(
+      retentionExpiry(
+        "auth_security_audit",
+        new Date("2026-10-18T10:00:00.000Z")
+      ).toISOString()
+    ).toBe("2027-04-18T10:00:00.000Z");
+  });
+
+  it("leave the provider backups to the provider's own rotation", () => {
+    const policy = retentionPolicy("provider_backups");
+    expect(policy.status).toBe("aprovada");
+    expect(policy.period).toEqual({ kind: "provider_rotation" });
+    expect(() => retentionExpiry("provider_backups", new Date())).toThrow(
+      RetentionNotApprovedError
+    );
+  });
+
+  it("count an expiry from a moment for a duration and refuse a proposed class", () => {
+    expect(
+      retentionExpiry(
+        "sync_commands",
+        new Date("2026-01-01T00:00:00.000Z")
+      ).toISOString()
+    ).toBe("2026-04-01T00:00:00.000Z");
+    expect(() => retentionExpiry("sync_change_log", new Date())).toThrow(
+      RetentionNotApprovedError
     );
   });
 

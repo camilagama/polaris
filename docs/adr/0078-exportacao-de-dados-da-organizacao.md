@@ -45,5 +45,5 @@ O dono de uma organização precisa poder levar embora o que cadastrou (portabil
 - **Uma imagem ausente do armazenamento** é listada, não recuperada. As miniaturas derivadas não entram; só as imagens mestras.
 - **O arquivo baixado fica com quem baixou.** Não há como recolher uma cópia depois de baixada; o texto do `LEIA-ME.txt` avisa que contém dado pessoal.
 - **O limite de três por dia e de uma por vez é por organização, não por usuário**, e a janela de 24 horas é deslizante.
-- O prazo de 24 horas é uma decisão provisória de produto, a rever junto com o jurídico no go-live; mudar a constante só afeta as exportações novas.
+- O prazo de 24 horas foi aprovado pelo responsável em 18/10/2026 (deixou de ser provisório); mudar a constante só afeta as exportações novas.
 - Em caso de um download interrompido, o dono baixa de novo dentro do prazo; cada entrega concluída na transação é auditada (também a que o navegador não terminou de receber).
