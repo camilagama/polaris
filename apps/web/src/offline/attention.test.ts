@@ -194,6 +194,7 @@ describe("the attention summary", () => {
         ["review_account", "discard"],
       ],
       ["lease_invalid", "authorization_revoked", ["review_account", "discard"]],
+      ["command_too_old", "command_too_old", ["discard"]],
       ["something_new", "other", ["discard"]],
     ];
     const details = new Set<string>();

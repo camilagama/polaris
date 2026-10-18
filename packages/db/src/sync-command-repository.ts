@@ -5,6 +5,7 @@ import {
 import { EntitlementVariantLockedError } from "@polaris/domain/billing/operational-selection";
 import type { OfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { OFFLINE_LEASE_CLOCK_SKEW_MS } from "@polaris/domain/offline/offline-lease";
+import { approvedRetention } from "@polaris/domain/privacy/retention";
 import { and, eq, sql } from "drizzle-orm";
 import { isFlagEnabled } from "./entitlement-enforcement";
 import {
@@ -72,6 +73,7 @@ export interface RunSyncCommandInput {
 export const SYNC_REJECTION = {
   authorizationRevoked: "authorization_revoked",
   commandIdReused: "command_id_reused",
+  commandTooOld: "command_too_old",
   entitlementChanged: "entitlement_changed",
   invalidCreationTime: "invalid_creation_time",
   wrongDevice: "wrong_device",
@@ -157,6 +159,23 @@ function isSameContent(stored: string, input: RunSyncCommandInput): boolean {
   );
 }
 
+/**
+ * A command created longer ago than the retention of `sync_commands` (90 days,
+ * ADR 0079) is refused: the record that makes a resend idempotent may be gone by
+ * then, and without it the command would run twice. An unreadable creation time
+ * is not "too old"; the lease window check below refuses it.
+ *
+ * The creation time is the device's and may be ahead of `received_at` by the
+ * lease clock skew, so a future expiry job must not delete a record before
+ * `received_at + 90 days + OFFLINE_LEASE_CLOCK_SKEW_MS`; otherwise a resend could
+ * find neither the record nor this refusal.
+ */
+export function isCommandTooOld(createdAt: Date, now: Date): boolean {
+  return (
+    now.getTime() - createdAt.getTime() > approvedRetention("sync_commands")
+  );
+}
+
 /** The creation time must sit inside the lease window (device clock, with skew). */
 function creationTimeInsideLease(
   input: RunSyncCommandInput,
@@ -177,6 +196,11 @@ function creationTimeInsideLease(
  * - A command ID seen before replays its stored outcome (`replayed: true`); the
  *   same ID with a different type or payload is refused with `command_id_reused`
  *   and stores nothing, so the first outcome stands.
+ * - A new command created more than 90 days ago is refused with
+ *   `command_too_old` before the lease is read. It is not stored: the refusal
+ *   follows from the command's own creation time. A command whose record still
+ *   exists replays above, so a resend of an accepted command never turns into a
+ *   refusal while the record can be read.
  * - Otherwise the lease is revalidated (principal, grant, device, epoch,
  *   capabilities) and the creation time must fall inside the lease window; an
  *   expired lease is fine for a command made while it was valid.
@@ -229,6 +253,10 @@ export async function runSyncCommand(
       result: existing.outcomeResult as SyncJson | null,
       status: existing.outcomeStatus as SyncCommandStatus,
     };
+  }
+
+  if (isCommandTooOld(input.createdAt, now)) {
+    return notStored(SYNC_REJECTION.commandTooOld);
   }
 
   if (input.precheckFailure || !input.leaseClaims) {

@@ -1526,7 +1526,23 @@ Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado
 | HMAC do `payload_hash` | Concluído | `SYNC_PAYLOAD_HASH_SECRET` (503 sem ele); reenvio compara também o SHA-256 legado e o segredo anterior. Sem migration. O segredo não foi criado em nenhum ambiente. |
 | Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
 | Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
-| Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até a retenção do log ser aprovada; prazos legais a confirmar pelo responsável. |
+| Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até o job de expurgo do log (90 dias, já aprovado) existir; prazos legais a confirmar pelo responsável. |
+
+### Fase 10E-2 — Privacidade: prazos de retenção aprovados (POL-80; verificações locais concluídas, gates no PostgreSQL 18 local)
+
+Decisões do responsável de 18/10/2026 sobre os prazos do [ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md); as legais foram delegadas ao orquestrador, com base em pesquisa, e **precisam de validação por contador ou jurídico antes do go-live**.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Registro de retenção | Concluído para 6 classes | `sync_commands` (90 dias), `auth_sessions` (30 dias depois do fim), `auth_verification` (1 dia), `auth_security_audit` (6 meses, Marco Civil da Internet, art. 15) e `provider_backups` (rotação do provedor) passam a `aprovada`, com `approvedOn` e, nas legais, `legalSources`; `data_exports` perde o "provisório". Novos tipos de período: meses corridos e rotação do provedor; `retentionExpiry` calcula a data de expurgo. |
+| Recusa de comando offline | Concluída | O servidor recusa, com `command_too_old` (não gravado), o comando novo criado há mais de 90 dias; o reenvio de um comando que ainda tem registro devolve o resultado gravado. Teste unitário e casos novos no gate `sync-push`; o aparelho mostra um aviso próprio (conferir antes de refazer, pois o registro pode já ter sido aceito). O job de expurgo, quando existir, só apaga depois de `received_at` + 90 dias + 5 minutos (margem do relógio do lease). |
+| Backups do provedor | Documentado | Neon Free: 6 horas de histórico de restauração (documentação do Neon, 18/10/2026); R2 sem política de versões descrita e sem backup de bucket configurado. O prazo configurado na conta não foi conferido (sem acesso ao Neon por regra). |
+| Pendência: jobs de expurgo | Não criados | Nenhum job novo nesta tarefa. Faltam o expurgo de `sync_commands` (90 dias de `received_at` mais a margem de 5 minutos), de sessões (30 dias depois do fim; bloqueado por `blockedUntil` até o registro de acesso com IP ter tabela própria), de verificações (1 dia) e do registro de acesso (6 meses). |
+| Merge com o PR do purge (126) | Concluído | O PR 126 (ADR 0081) entrou na main; o registro e o ADR 0079 foram conferidos contra o código mesclado. `tenant_audit_events`, `product_media`, `sales_records`, `inventory_ledger` e `expenses_and_goals` já são `aprovada` (até o purge); `billing_events`, `platform_audit_and_support` e `privacy_cases` seguem `proposta` (5 anos; o registro ainda não expressa "ano seguinte mais 5 anos"). |
+| Validação jurídica estruturada | Concluída | `legalReview` (`"pending"` ou `{ reviewedBy, reviewedAt }`) em toda classe de base legal, todas `"pending"`; teste falha se uma for marcada revisada sem os dois campos. Item 10 (BLOCK) do checklist de release: prazos legais com `legalReview` pendente bloqueiam a promoção a produção. |
+| Pendência: registro de acesso com IP (Marco Civil) | Aberta | `auth_security_audit_event` não guarda IP e a linha da sessão (com o IP) sai 30 dias depois do fim: falta a tabela própria do registro de acesso de 6 meses (tarefa futura t039). `auth_sessions` tem `blockedUntil` e um teste falha se um job de expurgo de sessões for registrado antes disso; item 11 (BLOCK) do checklist de release. |
+| Bordas | Concluídas | 90 dias: o servidor recusa o comando criado há mais de 90 dias (exatamente 90 é aceito), no código, no teste e no texto. Meses de calendário: 31/08 mais 6 meses é 03/03, com teste (inclusive ano bissexto). |
+| Verificação local | Concluída | `bun run check` e `gates:ci` no PostgreSQL 18 local passaram no SHA do merge (resultado no PR). |
 
 ### Fase 10F — Privacidade: deletion ledger (PR106; implementação e verificações locais concluídas; gate de banco no CI)
 

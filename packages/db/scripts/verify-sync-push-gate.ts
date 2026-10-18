@@ -348,6 +348,33 @@ async function run() {
       "the command's creation time must sit inside the lease window and not in the future"
     );
 
+    // a command older than the retention of the command log is refused, not stored
+    const staleCommandId = randomUUID();
+    const stale = await push({
+      commandId: staleCommandId,
+      createdAt: new Date(Date.now() - 91 * 24 * HOUR),
+    });
+    assert.equal(stale.status, "rejected");
+    assert.equal(stale.code, "command_too_old");
+    assert.equal(stale.replayed, false);
+    const staleRows = await admin.pool.query(
+      "SELECT 1 FROM public.sync_commands WHERE command_id = $1",
+      [staleCommandId]
+    );
+    assert.equal(staleRows.rowCount, 0, "the refusal is not stored");
+    const recordedCommandId = randomUUID();
+    const acceptedBefore = await push({ commandId: recordedCommandId });
+    assert.equal(acceptedBefore.status, "accepted");
+    const lateResend = await push({
+      commandId: recordedCommandId,
+      createdAt: new Date(Date.now() - 91 * 24 * HOUR),
+    });
+    assert.equal(lateResend.replayed, true, "a recorded command still replays");
+    assert.equal(lateResend.status, "accepted");
+    tests.push(
+      "a new command created more than 90 days ago is refused with command_too_old and nothing is stored, while one whose record exists still replays"
+    );
+
     // an expired lease still covers a command made while it was valid
     const expiredIssuedAt = new Date(Date.now() - 80 * HOUR);
     const expiredAt = new Date(Date.now() - 10 * HOUR);
