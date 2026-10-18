@@ -27,6 +27,11 @@ export const organizationPurges = pgTable(
   "organization_purges",
   {
     attempts: integer("attempts").default(0).notNull(),
+    /** Set only by `admin_cancel_organization_purge`, while no run holds the purge (ADR 0081). */
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledBy: uuid("cancelled_by").references(() => platformPrincipals.id),
+    /** Why the operator cancelled it: short free text, kept here and never in the audit event. */
+    cancelReason: text("cancel_reason"),
     /** A short code of the last failed step; never a message, a key or tenant data. */
     lastErrorCode: text("last_error_code"),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
@@ -35,8 +40,8 @@ export const organizationPurges = pgTable(
     organizationId: text("organization_id")
       .primaryKey()
       .references(() => organizations.id, { onDelete: "restrict" }),
-    /** The case, when it is a privacy case: it goes to the deletion ledger tombstone. */
-    privacyCaseId: uuid("privacy_case_id"),
+    /** The deletion case that accepted the purge (always a privacy case): it goes to the deletion ledger tombstone. */
+    privacyCaseId: uuid("privacy_case_id").notNull(),
     purgedAt: timestamp("purged_at", { withTimezone: true }),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true })
       .defaultNow()
@@ -59,7 +64,14 @@ export const organizationPurges = pgTable(
     check(
       "organization_purges_progress_coherent",
       sql`(${table.sweptAt} IS NULL OR ${table.purgedAt} IS NOT NULL)
-        AND (${table.privacyCaseId} IS NULL OR ${table.privacyCaseId} = ${table.supportCaseId})`
+        AND ${table.privacyCaseId} = ${table.supportCaseId}`
+    ),
+    check(
+      "organization_purges_cancellation_coherent",
+      sql`((${table.cancelledAt} IS NULL) = (${table.cancelledBy} IS NULL))
+        AND ((${table.cancelledAt} IS NULL) = (${table.cancelReason} IS NULL))
+        AND (${table.cancelledAt} IS NULL OR ${table.purgedAt} IS NULL)
+        AND (${table.cancelReason} IS NULL OR (char_length(${table.cancelReason}) BETWEEN 1 AND 500 AND ${table.cancelReason} = btrim(${table.cancelReason}) AND ${table.cancelReason} !~ '[[:cntrl:]]'))`
     ),
     pgPolicy("organization_purges_purge_owner_select", {
       for: "select",

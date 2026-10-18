@@ -254,6 +254,9 @@ async function run() {
       // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081)
       organization_purges: [
         "attempts",
+        "cancel_reason",
+        "cancelled_at",
+        "cancelled_by",
         "last_error_code",
         "locked_until",
         "not_before",
@@ -390,6 +393,7 @@ async function run() {
       runnable.rows.map((row) => row.name),
       [
         "admin_audit_billing_command",
+        "admin_cancel_organization_purge",
         "admin_close_support_case",
         "admin_grant_tenant_access",
         "admin_list_privacy_cases",

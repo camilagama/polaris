@@ -28,6 +28,7 @@ const principal = {
 
 function noOperations() {
   return {
+    cancelPurge: vi.fn(() => Promise.resolve(null)),
     grantEntitlement: vi.fn(() =>
       Promise.resolve({
         created: true,

@@ -4637,6 +4637,24 @@
           "notNull": true,
           "default": 0
         },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_error_code": {
           "name": "last_error_code",
           "type": "text",
@@ -4665,7 +4683,7 @@
           "name": "privacy_case_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "purged_at": {
           "name": "purged_at",
@@ -4717,6 +4735,15 @@
         }
       },
       "foreignKeys": {
+        "organization_purges_cancelled_by_platform_principals_id_fk": {
+          "name": "organization_purges_cancelled_by_platform_principals_id_fk",
+          "tableFrom": "organization_purges",
+          "tableTo": "platform_principals",
+          "columnsFrom": ["cancelled_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "organization_purges_organization_id_organizations_id_fk": {
           "name": "organization_purges_organization_id_organizations_id_fk",
           "tableFrom": "organization_purges",
@@ -4797,7 +4824,11 @@
         },
         "organization_purges_progress_coherent": {
           "name": "organization_purges_progress_coherent",
-          "value": "(\"organization_purges\".\"swept_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NOT NULL)\n        AND (\"organization_purges\".\"privacy_case_id\" IS NULL OR \"organization_purges\".\"privacy_case_id\" = \"organization_purges\".\"support_case_id\")"
+          "value": "(\"organization_purges\".\"swept_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NOT NULL)\n        AND \"organization_purges\".\"privacy_case_id\" = \"organization_purges\".\"support_case_id\""
+        },
+        "organization_purges_cancellation_coherent": {
+          "name": "organization_purges_cancellation_coherent",
+          "value": "((\"organization_purges\".\"cancelled_at\" IS NULL) = (\"organization_purges\".\"cancelled_by\" IS NULL))\n        AND ((\"organization_purges\".\"cancelled_at\" IS NULL) = (\"organization_purges\".\"cancel_reason\" IS NULL))\n        AND (\"organization_purges\".\"cancelled_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NULL)\n        AND (\"organization_purges\".\"cancel_reason\" IS NULL OR (char_length(\"organization_purges\".\"cancel_reason\") BETWEEN 1 AND 500 AND \"organization_purges\".\"cancel_reason\" = btrim(\"organization_purges\".\"cancel_reason\") AND \"organization_purges\".\"cancel_reason\" !~ '[[:cntrl:]]'))"
         }
       },
       "isRLSEnabled": true
@@ -5582,12 +5613,19 @@
           "for": "INSERT",
           "to": ["polaris_admin_owner"],
           "withCheck": "true"
+        },
+        "platform_audit_events_purge_owner_insert": {
+          "name": "platform_audit_events_purge_owner_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_purge_owner"],
+          "withCheck": "event_type = 'organization.purge_completed'\n        AND entity_type = 'organization'\n        AND entity_id = organization_id\n        AND detail IS NULL\n        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')"
         }
       },
       "checkConstraints": {
         "platform_audit_events_type_allowed": {
           "name": "platform_audit_events_type_allowed",
-          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'organization.purge_scheduled')"
+          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed')"
         },
         "platform_audit_events_detail_allowed": {
           "name": "platform_audit_events_detail_allowed",

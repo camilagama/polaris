@@ -302,6 +302,24 @@ export function scheduleOrganizationPurge(
   );
 }
 
+/**
+ * Cancels a scheduled purge (plan PR107, ADR 0081): the organization goes back from `purge_pending` to
+ * `closed`, and only while no run holds the purge. The reason is required and stays on the purge row.
+ */
+export function cancelOrganizationPurge(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string,
+  reason: string
+) {
+  return call<{ changed: boolean; status: string }>(
+    client,
+    "public.admin_cancel_organization_purge($1, $2, $3, $4)",
+    [principalId, caseId, organizationId, reason]
+  );
+}
+
 /** Undoes a suspension (a closed organization stays closed). */
 export function reactivateOrganization(
   client: AdminQueryable,

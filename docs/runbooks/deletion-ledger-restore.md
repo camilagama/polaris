@@ -113,16 +113,17 @@ UPDATE public.organizations
  WHERE id = '<ID da organização>' AND status <> 'purged';
 
 INSERT INTO public.organization_purges (organization_id, scheduled_by, support_case_id, privacy_case_id, not_before)
-VALUES ('<ID da organização>', '<quem agendou>', '<caso de suporte>', '<caso de privacidade, ou NULL>', now())
+VALUES ('<ID da organização>', '<quem agendou>', '<caso de privacidade>', '<caso de privacidade>', now())
 ON CONFLICT (organization_id) DO UPDATE
    SET not_before = now(), attempts = 0, locked_until = NULL,
-       last_error_code = NULL, purged_at = NULL, swept_at = NULL;
+       last_error_code = NULL, purged_at = NULL, swept_at = NULL,
+       cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL;
 
 COMMIT;
 ```
 
-- `scheduled_by` e `support_case_id` são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e esses dois valores vêm de um caso de suporte aberto para o restore.
-- Se o agendamento veio de um caso de privacidade, `privacy_case_id` é o mesmo ID do caso de suporte (a tabela recusa outro valor).
+- `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger` (todo purge nasce de um caso de privacidade de exclusão, ADR 0081).
+- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois.
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
 
 Depois do `COMMIT`, o purge precisa do job de privacidade, que roda no `scheduled` do Worker. Esse gatilho só faz manutenção (mídia, cobrança, privacidade) e não abre rota nem sincronização a usuários: com o ambiente ainda fechado (antes do passo 6), deixe só o cron ativo, ou dispare-o à mão uma vez, seguindo a [política de perfis da CLI](cli-profile-policy.md). Uma organização com exportação em andamento vigente fica para a execução seguinte, como qualquer purge. Confira:

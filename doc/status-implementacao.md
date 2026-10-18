@@ -1539,8 +1539,8 @@ Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organiza
 | --- | --- | --- |
 | Base | Concluída | Branch `feat/full-purge` sobre a `main` depois do PR #125. |
 | Domínio | Concluído | `@polaris/domain/privacy/organization-purge`; registro `ADMIN_TRIGGERED_REMOVALS` (separado de `RETENTION_PURGE_JOBS`); teste que falha se uma classe proposta tiver job. |
-| Banco | Concluído | Migration 0070: `organization_purges`, papel `polaris_purge_owner` (sem login), cinco funções, `admin_schedule_organization_purge`, exceção estreita em dois gatilhos (`CREATE OR REPLACE`), gatilho de `data_export_files` que recusa organização inativa. |
-| Admin | Concluído | `POST /support-cases/{caso}/purge`, capacidade `organization:purge`. |
+| Banco | Concluído | Migration 0070: `organization_purges`, papel `polaris_purge_owner` (sem login), cinco funções, `admin_schedule_organization_purge` (só o caso de exclusão do dono, aceito em integral e com escopo da organização inteira), `admin_cancel_organization_purge`, evento de auditoria da conclusão, exceção estreita em dois gatilhos (`CREATE OR REPLACE`), gatilho de `data_export_files` que recusa organização inativa. |
+| Admin | Concluído | `POST /support-cases/{caso}/purge` e `POST /support-cases/{caso}/purge/cancel` (motivo obrigatório), capacidade `organization:purge`. |
 | Worker | Concluído | `runOrganizationPurges` no job horário de privacidade; `deleteObjectsUnderPrefix` em `apps/web/src/server/privacy/storage-prefix.ts`. |
 | Gate PostgreSQL 18 | Passou localmente (PostgreSQL 18.1); roda no CI | `organization-purge`. |
 | Verificação local | Concluída | `bun run check` e `bun run build` passaram; a suíte `ci` de gates (40, com `organization-purge`) passou num PostgreSQL 18.1 local descartável. Nada rodou contra Neon ou Cloudflare. |

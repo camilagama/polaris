@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { PRIVACY_DATA_CATEGORIES } from "../admin/privacy-case";
 import {
   automaticPurgeSchedulingAllowed,
   ORGANIZATION_PURGE_LEASE_SECONDS,
+  ORGANIZATION_PURGE_REFUSALS,
+  ORGANIZATION_PURGE_REQUIRED_SCOPE,
   ORGANIZATION_PURGE_STEPS,
   OrganizationPurgeRefusedError,
   organizationExportPrefix,
@@ -91,7 +94,7 @@ describe("the purge workflow", () => {
   });
 });
 
-describe("refusals to schedule a purge", () => {
+describe("refusals to schedule or cancel a purge", () => {
   it("are named from the database message, and nothing else is", () => {
     expect(organizationPurgeRefusalFromMessage("recovery_window_open")).toBe(
       "recovery_window_open"
@@ -103,5 +106,38 @@ describe("refusals to schedule a purge", () => {
     expect(new OrganizationPurgeRefusedError("tenant_access_active").code).toBe(
       "tenant_access_active"
     );
+  });
+
+  it("name the case rules and the cancellation, and each one maps back from its message", () => {
+    for (const code of [
+      "privacy_case_required",
+      "privacy_case_not_deletion",
+      "privacy_requester_not_owner",
+      "privacy_case_not_accepted",
+      "privacy_scope_incomplete",
+      "purge_not_scheduled",
+      "purge_in_progress",
+      "purge_already_done",
+    ]) {
+      expect(ORGANIZATION_PURGE_REFUSALS).toContain(code);
+      expect(organizationPurgeRefusalFromMessage(code)).toBe(code);
+    }
+  });
+});
+
+describe("the scope a privacy case needs to start a purge", () => {
+  it("is every tenant category the purge removes, and none of the data it keeps", () => {
+    expect([...ORGANIZATION_PURGE_REQUIRED_SCOPE].sort()).toEqual([
+      "audit_logs",
+      "customers",
+      "inventory_catalog",
+      "media",
+      "organization_profile",
+      "sales",
+    ]);
+    for (const kept of ["account", "authentication", "billing"]) {
+      expect(ORGANIZATION_PURGE_REQUIRED_SCOPE).not.toContain(kept);
+      expect(PRIVACY_DATA_CATEGORIES).toContain(kept);
+    }
   });
 });

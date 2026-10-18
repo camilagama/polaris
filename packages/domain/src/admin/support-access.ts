@@ -26,6 +26,7 @@ export const MAX_CASE_RESOLUTION_LENGTH = 500;
 
 export type SupportRefusalCode =
   | "case_not_open"
+  | "invalid_cancel_reason"
   | "invalid_case_context"
   | "invalid_case_kind"
   | "invalid_case_reason"
@@ -64,6 +65,7 @@ export class TenantAccessDeniedError extends Error {
 
 const KNOWN_CODES: readonly SupportRefusalCode[] = [
   "case_not_open",
+  "invalid_cancel_reason",
   "invalid_case_context",
   "invalid_case_kind",
   "invalid_case_reason",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  cancelOrganizationPurge,
   grantTenantAccess,
   openPrivacyCase,
   openSupportCase,
@@ -24,7 +25,10 @@ import {
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
-import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
+import {
+  ORGANIZATION_PURGE_REQUIRED_SCOPE,
+  OrganizationPurgeRefusedError,
+} from "@polaris/domain/privacy/organization-purge";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -357,6 +361,68 @@ async function run() {
     });
     assert.ok(supportCase);
 
+    // the deletion cases the schedule is tried with: the owner's request, whole scope, accepted in full
+    // (the one that starts the purge), and every way a case can fall short of that
+    const openDeletion = async (
+      options: {
+        requestType?: "access" | "deletion";
+        requesterKind?: "data_subject" | "organization_owner";
+      } = {}
+    ) => {
+      const opened = await openPrivacyCase(admin, principal, {
+        channel: "email",
+        dueDays: 15,
+        note: null,
+        organizationId: target.organizationId,
+        reason: "Pedido sobre a organização",
+        receivedAt: null,
+        requesterKind: options.requesterKind ?? "organization_owner",
+        requestType: options.requestType ?? "deletion",
+      });
+      assert.ok(opened);
+      return opened.id;
+    };
+    const driveCase = async (
+      caseId: string,
+      steps: {
+        categories?: string[];
+        decision?: "accept" | "partially_accept" | "reject";
+        identity?: "failed" | "verified";
+        role?: "controller" | "processor";
+      }
+    ) => {
+      const identity = steps.identity ?? "verified";
+      await recordPrivacyIdentity(admin, principal, caseId, {
+        method: identity === "verified" ? "owner_confirmation" : "other",
+        status: identity,
+      });
+      await recordPrivacyRole(
+        admin,
+        principal,
+        caseId,
+        steps.role ?? "controller"
+      );
+      await recordPrivacyScope(admin, principal, caseId, {
+        categories: steps.categories ?? [...ORGANIZATION_PURGE_REQUIRED_SCOPE],
+        subjectReference: null,
+      });
+      if (steps.decision === "accept") {
+        await recordPrivacyDecision(admin, principal, caseId, {
+          decision: "accept",
+          note: null,
+          reason: null,
+        });
+      } else if (steps.decision) {
+        await recordPrivacyDecision(admin, principal, caseId, {
+          decision: steps.decision,
+          note: null,
+          reason:
+            identity === "failed" ? "identity_not_verified" : "legal_retention",
+        });
+      }
+    };
+    await driveCase(privacyCase.id, { decision: "accept" });
+
     // an export requested while the organization was active (POL-79 probe below)
     const pendingExport = await withTenantAs(
       db,
@@ -531,63 +597,75 @@ async function run() {
         error.code === "organization_mismatch",
       "the organization named by the operator must be the case's"
     );
-    // a privacy case that did not accept the request never deletes tenant data (ADR 0077)
+    // only the deletion case of the organization's owner, accepted in full and covering the whole tenant,
+    // starts a purge (ADR 0077 and 0081); a plain support case never does, whatever the organization's state
     await expectRefusal(
-      privacyCase.id,
-      "privacy_case_not_accepted",
-      "a privacy case still waiting for its decision"
+      supportCase.id,
+      "privacy_case_required",
+      "a plain support case"
     );
-    await recordPrivacyIdentity(admin, principal, privacyCase.id, {
-      method: "owner_confirmation",
-      status: "verified",
-    });
-    await recordPrivacyRole(admin, principal, privacyCase.id, "controller");
-    await recordPrivacyScope(admin, principal, privacyCase.id, {
-      categories: ["organization_profile", "customers", "sales"],
-      subjectReference: null,
-    });
     await expectRefusal(
-      privacyCase.id,
-      "privacy_case_not_accepted",
-      "a privacy case scoped but not decided"
+      await openDeletion({ requestType: "access" }),
+      "privacy_case_not_deletion",
+      "a privacy case that is not a deletion"
     );
-    const refusedCase = await openPrivacyCase(admin, principal, {
-      channel: "email",
-      dueDays: 15,
-      note: null,
-      organizationId: target.organizationId,
-      reason: "Pedido sem identidade",
-      receivedAt: null,
-      requesterKind: "data_subject",
-      requestType: "deletion",
-    });
-    assert.ok(refusedCase);
-    await recordPrivacyIdentity(admin, principal, refusedCase.id, {
-      method: "other",
-      status: "failed",
-    });
-    await recordPrivacyRole(admin, principal, refusedCase.id, "processor");
-    await recordPrivacyScope(admin, principal, refusedCase.id, {
-      categories: ["customers"],
-      subjectReference: null,
-    });
-    await recordPrivacyDecision(admin, principal, refusedCase.id, {
+    await expectRefusal(
+      await openDeletion({ requesterKind: "data_subject" }),
+      "privacy_requester_not_owner",
+      "a deletion not requested by the organization's owner"
+    );
+    const undecided = await openDeletion();
+    await expectRefusal(
+      undecided,
+      "privacy_case_not_accepted",
+      "a deletion case still at the start"
+    );
+    await driveCase(undecided, {});
+    await expectRefusal(
+      undecided,
+      "privacy_case_not_accepted",
+      "a deletion case scoped but not decided"
+    );
+    const refusedCase = await openDeletion();
+    await driveCase(refusedCase, {
       decision: "reject",
-      note: null,
-      reason: "identity_not_verified",
+      identity: "failed",
+      role: "processor",
     });
     await expectRefusal(
-      refusedCase.id,
+      refusedCase,
       "privacy_case_not_accepted",
-      "a refused privacy case"
+      "a refused deletion case"
     );
-    await recordPrivacyDecision(admin, principal, privacyCase.id, {
-      decision: "accept",
-      note: null,
-      reason: null,
-    });
+    const partialDecision = await openDeletion();
+    await driveCase(partialDecision, { decision: "partially_accept" });
+    await expectRefusal(
+      partialDecision,
+      "privacy_case_not_accepted",
+      "a deletion accepted only in part"
+    );
+    for (const missing of ORGANIZATION_PURGE_REQUIRED_SCOPE) {
+      // an accepted deletion whose scope leaves one tenant category out (and adds data the purge keeps)
+      // biome-ignore lint/performance/noAwaitInLoops: each case is opened and refused in turn.
+      const narrow = await openDeletion();
+      await driveCase(narrow, {
+        categories: [
+          ...ORGANIZATION_PURGE_REQUIRED_SCOPE.filter(
+            (category) => category !== missing
+          ),
+          "account",
+          "billing",
+        ],
+        decision: "accept",
+      });
+      await expectRefusal(
+        narrow,
+        "privacy_scope_incomplete",
+        `an accepted deletion without ${missing} in its scope`
+      );
+    }
     tests.push(
-      "the schedule refuses an organization other than the case's, and a privacy case that is undecided or refused"
+      "the schedule refuses a plain support case, a privacy case that is not a deletion or not the owner's, a deletion that is undecided, refused or accepted only in part, and one whose scope misses any single tenant category"
     );
 
     // a running export holding its lease keeps the purge waiting
@@ -686,6 +764,207 @@ async function run() {
       );
     }
 
+    // the way back: only while no run holds the purge, with a reason, audited, and the purge can be scheduled again
+    const cancel = (
+      caseId: string,
+      reason: string,
+      organizationId: string = target.organizationId
+    ) =>
+      cancelOrganizationPurge(admin, principal, caseId, organizationId, reason);
+    const purgeState = async () =>
+      (
+        await owner.pool.query<{
+          cancelled: boolean;
+          reason: string | null;
+          status: string;
+        }>(
+          `SELECT o.status, p.cancelled_at IS NOT NULL AS cancelled, p.cancel_reason AS reason
+             FROM public.organizations AS o JOIN public.organization_purges AS p ON p.organization_id = o.id
+            WHERE o.id = $1`,
+          [target.organizationId]
+        )
+      ).rows[0];
+    const auditCount = async (eventType: string) =>
+      (
+        await owner.pool.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM public.platform_audit_events WHERE organization_id = $1 AND event_type = $2",
+          [target.organizationId, eventType]
+        )
+      ).rows[0]?.count;
+    await assert.rejects(
+      () => cancel(privacyCase.id, "   "),
+      InvalidSupportRequestError,
+      "a reason is required"
+    );
+    await assert.rejects(
+      () => cancel(privacyCase.id, "linha\nquebrada"),
+      InvalidSupportRequestError,
+      "a reason without control characters"
+    );
+    await assert.rejects(
+      () => cancel(privacyCase.id, "x".repeat(501)),
+      InvalidSupportRequestError,
+      "a reason of at most 500 characters"
+    );
+    await assert.rejects(
+      () => cancel(privacyCase.id, "Motivo", witness.organizationId),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "organization_mismatch",
+      "the organization named must be the case's"
+    );
+    await assert.rejects(
+      () => cancel(randomUUID(), "Motivo"),
+      InvalidSupportRequestError,
+      "an unknown case"
+    );
+    assert.equal((await purgeState())?.status, "purge_pending");
+    // a run holds the purge: nothing is undone
+    const held = await maintenance.claimOrganizationPurge(900);
+    assert.deepEqual(held, {
+      attempt: 1,
+      organizationId: target.organizationId,
+      phase: "purge",
+    });
+    await assert.rejects(
+      () => cancel(privacyCase.id, "Motivo"),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "purge_in_progress",
+      "a purge held by a run cannot be cancelled"
+    );
+    assert.deepEqual(await purgeState(), {
+      cancelled: false,
+      reason: null,
+      status: "purge_pending",
+    });
+    assert.equal(await auditCount("organization.purge_cancelled"), "0");
+    // the lease ends (the run died): any open case of the organization can cancel, a plain support case too
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET locked_until = now() - interval '1 second' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    assert.deepEqual(
+      await cancel(supportCase.id, "  Pedido retirado pelo dono  "),
+      {
+        changed: true,
+        status: "closed",
+      }
+    );
+    assert.deepEqual(await purgeState(), {
+      cancelled: true,
+      reason: "Pedido retirado pelo dono",
+      status: "closed",
+    });
+    const cancelAudit = await owner.pool.query<{
+      detail: string | null;
+      principal_id: string;
+      support_case_id: string;
+    }>(
+      "SELECT principal_id, support_case_id, detail FROM public.platform_audit_events WHERE organization_id = $1 AND event_type = 'organization.purge_cancelled'",
+      [target.organizationId]
+    );
+    assert.deepEqual(cancelAudit.rows, [
+      {
+        detail: null,
+        principal_id: principal,
+        support_case_id: supportCase.id,
+      },
+    ]);
+    const reasonInAudit = await owner.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.platform_audit_events WHERE to_jsonb(platform_audit_events)::text LIKE '%retirado pelo dono%'"
+    );
+    assert.equal(
+      reasonInAudit.rows[0]?.count,
+      "0",
+      "the reason stays out of the audit"
+    );
+    // closed again: nothing to claim, nothing to purge, nothing more to cancel
+    assert.equal(await maintenance.claimOrganizationPurge(900), null);
+    await expectSqlState(
+      () => maintenance.purgeOrganizationData(target.organizationId),
+      "55000",
+      "a cancelled purge deletes nothing"
+    );
+    await assert.rejects(
+      () => cancel(privacyCase.id, "De novo"),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "purge_not_scheduled",
+      "a purge that is not scheduled has nothing to cancel"
+    );
+    const stillThere = await counts(target);
+    assert.ok(stillThere.sales > 0, "cancelling deletes nothing");
+    // an organization still active has no purge to cancel either
+    await assert.rejects(
+      () => cancel(privacyCase.id, "Motivo", witness.organizationId),
+      OrganizationPurgeRefusedError
+    );
+    // scheduled again under the deletion case: the record starts from nothing and the audit shows both
+    assert.deepEqual(
+      { changed: (await schedule(privacyCase.id))?.changed },
+      { changed: true }
+    );
+    assert.deepEqual(await purgeState(), {
+      cancelled: false,
+      reason: null,
+      status: "purge_pending",
+    });
+    assert.equal(await auditCount("organization.purge_scheduled"), "2");
+    assert.equal(await auditCount("organization.purge_cancelled"), "1");
+    tests.push(
+      "a scheduled purge is cancelled only with a reason and while no run holds it: the organization goes back to closed, the audit records it without the reason, nothing is deleted, and it can be scheduled again"
+    );
+
+    // the purge owner writes one audit event only: the completion, once the organization is purged
+    const asPurgeOwner = async (statement: string, values: unknown[] = []) => {
+      const client = await owner.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SET LOCAL ROLE polaris_purge_owner");
+        return await client.query(statement, values);
+      } finally {
+        await client.query("ROLLBACK").catch(() => undefined);
+        client.release();
+      }
+    };
+    const insertAudit = (eventType: string, organizationId: string) =>
+      asPurgeOwner(
+        `INSERT INTO public.platform_audit_events (principal_id, event_type, organization_id, support_case_id, entity_type, entity_id)
+         VALUES ($1, $2, $3, $4, 'organization', $3)`,
+        [principal, eventType, organizationId, privacyCase.id]
+      );
+    await expectSqlState(
+      () => insertAudit("organization.purge_completed", target.organizationId),
+      "42501",
+      "the completion is not written before the organization is purged"
+    );
+    await expectSqlState(
+      () => insertAudit("organization.purge_completed", witness.organizationId),
+      "42501",
+      "nor for an active organization"
+    );
+    await expectSqlState(
+      () => insertAudit("organization.purge_scheduled", target.organizationId),
+      "42501",
+      "no other event type"
+    );
+    for (const statement of [
+      "SELECT 1 FROM public.platform_audit_events",
+      "DELETE FROM public.platform_audit_events",
+      "UPDATE public.platform_audit_events SET detail = 'x'",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: a few probes, in order.
+      await expectSqlState(
+        () => asPurgeOwner(statement),
+        "42501",
+        `the purge owner cannot run: ${statement}`
+      );
+    }
+    tests.push(
+      "the purge owner can write only the completion event, and only for an organization that is purged; it cannot read, change or delete the audit"
+    );
+
     const purgeReport = await runOrganizationPurges({
       bucket,
       client: maintenance,
@@ -768,6 +1047,41 @@ async function run() {
       "the support and privacy cases, the Admin audit and the billing record survive the organization"
     );
 
+    // the completion is audited in the same transaction, with the IDs only
+    const completionEvents = async () =>
+      (
+        await owner.pool.query<{
+          detail: string | null;
+          entity_id: string;
+          entity_type: string;
+          principal_id: string;
+          support_case_id: string;
+        }>(
+          "SELECT principal_id, support_case_id, entity_type, entity_id, detail FROM public.platform_audit_events WHERE organization_id = $1 AND event_type = 'organization.purge_completed'",
+          [target.organizationId]
+        )
+      ).rows;
+    assert.deepEqual(await completionEvents(), [
+      {
+        detail: null,
+        entity_id: target.organizationId,
+        entity_type: "organization",
+        principal_id: principal,
+        support_case_id: privacyCase.id,
+      },
+    ]);
+    // a purge that was carried out cannot be cancelled
+    await assert.rejects(
+      () => cancel(privacyCase.id, "Tarde demais"),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "purge_already_done",
+      "a purged organization has nothing to cancel"
+    );
+    tests.push(
+      "the completion of the purge is audited once, with the organization and the case and no personal data, and a purge already done cannot be cancelled"
+    );
+
     // running it again changes nothing
     const purgeRecord = await owner.pool.query<{
       purged: boolean;
@@ -793,6 +1107,7 @@ async function run() {
       changed: false,
       status: "purged",
     });
+    assert.equal((await completionEvents()).length, 1);
     tests.push(
       "running the purge again, calling its last step again or scheduling it again changes nothing"
     );
@@ -826,7 +1141,8 @@ async function run() {
        VALUES ($1, $2, $3, $3, now())
        ON CONFLICT (organization_id) DO UPDATE
           SET not_before = now(), attempts = 0, locked_until = NULL,
-              last_error_code = NULL, purged_at = NULL, swept_at = NULL`,
+              last_error_code = NULL, purged_at = NULL, swept_at = NULL,
+              cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL`,
         [target.organizationId, principal, privacyCase.id]
       );
       await restoreClient.query("COMMIT");
@@ -853,6 +1169,11 @@ async function run() {
       [target.organizationId]
     );
     assert.equal(ledgerAfterRestore.rows[0]?.count, "1");
+    assert.equal(
+      (await completionEvents()).length,
+      2,
+      "the reapplied purge is audited again"
+    );
     tests.push(
       "after a restore brings the organization back, the runbook's check shows it and its reapplication purges it again, with one tombstone"
     );

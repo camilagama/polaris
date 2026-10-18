@@ -9,6 +9,7 @@ import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
   isRevealableField,
+  MAX_CASE_REASON_LENGTH,
   normalizeAccessMinutes,
   normalizeOpenCase,
   normalizeResolution,
@@ -28,6 +29,14 @@ import type { GrantCommand } from "./billing-commands";
  */
 
 export interface SupportDependencies {
+  /** Cancels a scheduled purge while no run holds it (the organization goes back to `closed`). */
+  cancelPurge: (
+    principalId: string,
+    caseId: string,
+    organizationId: string,
+    reason: string,
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; status: string } | null>;
   /** Gives the organization of an open case a temporary entitlement (recorded before and after). */
   grantEntitlement: (
     principalId: string,
@@ -459,6 +468,43 @@ export function supportRoutes(
           principalOf(context),
           caseId,
           organizationId,
+          context.env
+        )
+      );
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/purge/cancel",
+    requireCapability("organization:purge"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      if (!caseId) {
+        return notFound(context);
+      }
+      // the same confirmation as the scheduling, and a reason: the cancellation is audited and kept
+      const body = await readBody(context);
+      const organizationId = body?.organizationId;
+      const reason =
+        typeof body?.reason === "string" ? body.reason.trim() : undefined;
+      if (
+        typeof organizationId !== "string" ||
+        organizationId.length === 0 ||
+        organizationId.length > MAX_ID_LENGTH ||
+        controlCharacter(organizationId) ||
+        reason === undefined ||
+        reason.length === 0 ||
+        [...reason].length > MAX_CASE_REASON_LENGTH ||
+        controlCharacter(reason)
+      ) {
+        return invalid(context);
+      }
+      return context.json(
+        await dependencies.cancelPurge(
+          principalOf(context),
+          caseId,
+          organizationId,
+          reason,
           context.env
         )
       );

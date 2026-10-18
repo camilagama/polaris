@@ -5,6 +5,7 @@
  * storage first (exports and image masters and derivatives), the rows second, in one transaction that
  * writes the deletion ledger tombstone before deleting, and sweeps the storage prefixes once more.
  */
+import type { PrivacyDataCategory } from "../admin/privacy-case";
 import {
   RETENTION_POLICIES,
   type RetentionPolicy,
@@ -82,14 +83,39 @@ export function automaticPurgeSchedulingAllowed(
   return policy.status === "aprovada" && policy.period.kind === "duration";
 }
 
-/** Why the database refused to schedule a purge; each one is a state to change first, not an input error. */
+/**
+ * The categories a privacy case must cover for its accepted deletion to start a purge: every tenant
+ * category the purge removes (ADR 0081). Account, authentication and billing are not here: the purge
+ * keeps them. The migration holds the same list (`whole_organization` in `admin_schedule_organization_purge`),
+ * and the gate proves each category is required.
+ */
+export const ORGANIZATION_PURGE_REQUIRED_SCOPE = Object.freeze([
+  "organization_profile",
+  "customers",
+  "sales",
+  "inventory_catalog",
+  "media",
+  "audit_logs",
+] as const satisfies readonly PrivacyDataCategory[]);
+
+/**
+ * Why the database refused to schedule or cancel a purge; each one is a state to change first, not an
+ * input error.
+ */
 export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "organization_mismatch",
   "organization_not_closed",
+  "privacy_case_required",
+  "privacy_case_not_deletion",
+  "privacy_requester_not_owner",
   "privacy_case_not_accepted",
+  "privacy_scope_incomplete",
   "recovery_window_open",
   "tenant_access_active",
   "paid_access_running",
+  "purge_not_scheduled",
+  "purge_in_progress",
+  "purge_already_done",
 ] as const);
 
 export type OrganizationPurgeRefusalCode =

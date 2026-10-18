@@ -1,5 +1,6 @@
 import {
   auditBillingCommand,
+  cancelOrganizationPurge,
   closeSupportCase,
   grantTenantAccess,
   listPrivacyCases,
@@ -183,6 +184,16 @@ const dependencies: AdminDependencies = {
   report: (event, fields) =>
     console.warn({ event: `admin.${event}`, ...fields }),
   support: {
+    cancelPurge: (principalId, caseId, organizationId, reason, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        cancelOrganizationPurge(
+          client,
+          principalId,
+          caseId,
+          organizationId,
+          reason
+        )
+      ),
     close: (principalId, caseId, resolution, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         closeSupportCase(client, principalId, caseId, resolution)

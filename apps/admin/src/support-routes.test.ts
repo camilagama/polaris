@@ -32,6 +32,9 @@ function support(
   overrides: Partial<SupportDependencies> = {}
 ): SupportDependencies {
   return {
+    cancelPurge: vi.fn(() =>
+      Promise.resolve({ changed: true, status: "closed" })
+    ),
     close: vi.fn(() =>
       Promise.resolve({ changed: true, id: caseId, status: "closed" })
     ),
@@ -586,6 +589,88 @@ describe("suspension and billing commands", () => {
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "organization_mismatch" });
+  });
+
+  it("cancels a scheduled purge with a reason, the operator from the login and the organization named", async () => {
+    const { send, support: calls } = setup();
+    const response = await send(
+      "POST",
+      `/api/support-cases/${caseId}/purge/cancel`,
+      {
+        organizationId: "org_1",
+        principalId: "forged",
+        reason: "  Pedido retirado pelo dono  ",
+      }
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ changed: true, status: "closed" });
+    expect(calls.cancelPurge).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      "Pedido retirado pelo dono",
+      bindings
+    );
+  });
+
+  it("refuses to cancel a purge without a usable reason or organization, an unknown case or a missing capability", async () => {
+    const { send, support: calls } = setup();
+    const path = `/api/support-cases/${caseId}/purge/cancel`;
+    const refused = await Promise.all(
+      [
+        { organizationId: "org_1" },
+        { organizationId: "org_1", reason: "   " },
+        { organizationId: "org_1", reason: 42 },
+        { organizationId: "org_1", reason: "linha\nquebrada" },
+        { organizationId: "org_1", reason: "x".repeat(501) },
+        { organizationId: "", reason: "motivo" },
+        { reason: "motivo" },
+      ].map((body) => send("POST", path, body))
+    );
+    expect(refused.map((response) => response.status)).toEqual(
+      new Array(7).fill(400)
+    );
+    expect(
+      (
+        await send("POST", "/api/support-cases/not-a-uuid/purge/cancel", {
+          organizationId: "org_1",
+          reason: "motivo",
+        })
+      ).status
+    ).toBe(404);
+    const other = setup({}, "somebody_else");
+    expect(
+      (
+        await other.send("POST", path, {
+          organizationId: "org_1",
+          reason: "motivo",
+        })
+      ).status
+    ).toBe(403);
+    expect(calls.cancelPurge).not.toHaveBeenCalled();
+    expect(other.support.cancelPurge).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when the purge cannot be cancelled", async () => {
+    for (const code of [
+      "purge_in_progress",
+      "purge_already_done",
+      "purge_not_scheduled",
+    ] as const) {
+      const { send } = setup({
+        cancelPurge: vi.fn(() =>
+          Promise.reject(new OrganizationPurgeRefusedError(code))
+        ),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: each code has its own app, answered in turn.
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/purge/cancel`,
+        { organizationId: "org_1", reason: "motivo" }
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: code });
+    }
   });
 
   it("gives and ends an entitlement through the case, with the operator from the login", async () => {
