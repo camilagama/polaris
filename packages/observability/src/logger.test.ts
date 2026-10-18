@@ -27,7 +27,7 @@ describe("logger", () => {
   });
 
   it("writes one object per call on the console method of the level", () => {
-    logger.info("job_done", { job: "outbox.dispatch", durationMs: 12 });
+    logger.info("job_done", { durationMs: 12, job: "outbox.dispatch" });
     logger.warn("job_skipped", { reason: "busy" });
     logger.error("job_failed", { errorName: "Error" });
 
@@ -96,9 +96,29 @@ describe("logger", () => {
     expect(fields).toBeDefined();
   });
 
-  it("works before configureLogging with the default service", () => {
-    logger.info("early");
+  it("does not let a caller forge the audit trail key of evlog", () => {
+    logger.info("with_audit", {
+      audit: { action: "x" },
+    } as unknown as LogFields);
 
-    expect(lastCall(info)).toMatchObject({ event: "early" });
+    expect("audit" in lastCall(info)).toBe(false);
+  });
+
+  it("masks personal data that slips into a value", () => {
+    logger.info("leaky", { note: "contact maria@example.com" });
+
+    expect(JSON.stringify(lastCall(info))).not.toContain("maria@example.com");
+  });
+
+  it("works before configureLogging with the default service", async () => {
+    vi.resetModules();
+    const fresh = await import("./logger");
+
+    fresh.logger.info("early");
+
+    expect(lastCall(info)).toMatchObject({
+      event: "early",
+      service: "polaris",
+    });
   });
 });
