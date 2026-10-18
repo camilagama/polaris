@@ -157,6 +157,17 @@ describe("describeMediaFailure", () => {
     expect(failure.message).not.toMatch(priceWords);
   });
 
+  it("explains that uploads are paused for the month when Images is over quota", () => {
+    const failure = describeMediaFailure(
+      "upload",
+      http("media_transform_quota_exceeded", 503)
+    );
+    expect(failure.reloadList).toBe(false);
+    expect(failure.message).toContain("pausado");
+    expect(failure.message).toContain("Nada foi perdido");
+    expect(failure.message).not.toMatch(priceWords);
+  });
+
   it("explains the per-product limit on upload", () => {
     const failure = describeMediaFailure("upload", http("product_media_limit"));
     expect(failure.message).toContain("máximo de imagens");

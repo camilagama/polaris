@@ -16,6 +16,7 @@ import {
   MAX_PRODUCT_MEDIA,
   MediaImageProcessingError,
   MediaImageTooLargeError,
+  MediaTransformQuotaExceededError,
   InvalidMediaOrderError,
   MEDIA_DERIVATIVE_SIZES,
   mediaDerivativeKey,
@@ -35,6 +36,7 @@ import { type Context, Hono } from "hono";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
 import type { ProcessedMediaImage } from "../media-image-pipeline";
 import {
+  isMediaTransformQuotaExceeded,
   processMediaDerivative,
   processMediaImage,
 } from "../media-image-pipeline";
@@ -82,6 +84,21 @@ interface MediaUploadTarget {
   productId: string;
   uploadCommandId: string;
   variantIds: string[];
+}
+
+/** The signal the future alert reads (plan PR119): one event per refused or degraded request. */
+function logMediaTransformQuotaExceeded(
+  context: Context<ServerEnv>,
+  operation: "media.delivery" | "media.derivative" | "media.upload",
+  outcome: "partial" | "rejected"
+): void {
+  logServerEvent("media_transform_quota_exceeded", context, {
+    errorCode: "9422",
+    operation,
+    outcome,
+    provider: "cloudflare_images",
+    reason: "transform_quota_exceeded",
+  });
 }
 
 function parseUploadTarget(context: Context<ServerEnv>): MediaUploadTarget {
@@ -228,6 +245,34 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
+function processingErrorResponse(
+  context: Context<ServerEnv>,
+  error: unknown
+): Response | null {
+  if (error instanceof MediaTransformQuotaExceededError) {
+    // ADR 0018 amendment: refused on purpose, nothing stored, nothing charged
+    logMediaTransformQuotaExceeded(context, "media.upload", "rejected");
+    return context.json(
+      {
+        error: { code: error.code },
+        requestId: context.get("requestId"),
+      },
+      503
+    );
+  }
+  if (error instanceof MediaImageProcessingError) {
+    logServerErrorFromContext(context, error, 503);
+    return context.json(
+      {
+        error: { code: "media_processing_unavailable" },
+        requestId: context.get("requestId"),
+      },
+      503
+    );
+  }
+  return null;
+}
+
 function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
   if (error instanceof InvalidMediaCropError) {
     return context.json(
@@ -314,15 +359,9 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
       404
     );
   }
-  if (error instanceof MediaImageProcessingError) {
-    logServerErrorFromContext(context, error, 503);
-    return context.json(
-      {
-        error: { code: "media_processing_unavailable" },
-        requestId: context.get("requestId"),
-      },
-      503
-    );
+  const processing = processingErrorResponse(context, error);
+  if (processing) {
+    return processing;
   }
   if (error instanceof TenantRequestContextError) {
     const status = error.code === "session_required" ? 401 : 503;
@@ -639,8 +678,13 @@ async function storeUploadDerivatives(
         mediaDerivativeKey(input.assetId, size),
         derivative.bytes
       );
-    } catch {
+    } catch (error: unknown) {
       logServerEvent("media_derivative_deferred", context, { size });
+      if (isMediaTransformQuotaExceeded(error)) {
+        logMediaTransformQuotaExceeded(context, "media.derivative", "partial");
+        // the other size would be refused too: do not ask Images again
+        return;
+      }
     }
   }
 }
@@ -650,6 +694,8 @@ type ParsedMediaDerivativeRequestSize = MediaDerivativeRequestSize | "invalid";
 interface MediaDeliveryPayload {
   body: ReadableStream<Uint8Array> | ArrayBuffer;
   byteLength: number;
+  /** Set when the master stands in for a derivative the provider refused to make (quota). */
+  fallback?: "master";
 }
 type StoredMediaObject = NonNullable<
   Awaited<ReturnType<MediaBucketBinding["get"]>>
@@ -733,11 +779,26 @@ async function createOrReadMediaDerivative(input: {
     return null;
   }
 
-  const derivative = await input.derivativeProcessor({
-    images: input.images,
-    maxEdge: input.size,
-    sourceBytes: await readStoredMediaBytes(master),
-  });
+  const sourceBytes = await readStoredMediaBytes(master);
+  let derivative: ProcessedMediaImage;
+  try {
+    derivative = await input.derivativeProcessor({
+      images: input.images,
+      maxEdge: input.size,
+      sourceBytes,
+    });
+  } catch (error: unknown) {
+    if (!isMediaTransformQuotaExceeded(error)) {
+      throw error;
+    }
+    // Images is over its free allowance: serve the master (already WebP, 1200 px
+    // at most) instead of the derivative, never breaking the screen (ADR 0018 amendment).
+    return {
+      body: sourceBytes.slice().buffer as ArrayBuffer,
+      byteLength: sourceBytes.byteLength,
+      fallback: "master",
+    };
+  }
   const stored = await putMediaDerivative(
     input.mediaBucket,
     derivativeKey,
@@ -812,15 +873,25 @@ function mediaNotFoundResponse(context: Context<ServerEnv>): Response {
   );
 }
 
+const MEDIA_FALLBACK_MAX_AGE_SECONDS = 60;
+
 function mediaDeliveryResponse(
   context: Context<ServerEnv>,
   payload: MediaDeliveryPayload
 ): Response {
   return context.body(payload.body, 200, {
-    "Cache-Control": "private, no-store",
+    // The master stands in only while the quota lasts: a short private cache
+    // stops the browser from asking Images again on every render.
+    "Cache-Control":
+      payload.fallback === "master"
+        ? `private, max-age=${MEDIA_FALLBACK_MAX_AGE_SECONDS}`
+        : "private, no-store",
     "Content-Length": String(payload.byteLength),
     "Content-Type": "image/webp",
     "X-Content-Type-Options": "nosniff",
+    ...(payload.fallback === undefined
+      ? {}
+      : { "X-Media-Fallback": payload.fallback }),
   });
 }
 
@@ -869,6 +940,9 @@ async function handleMediaDelivery(
       mediaBucket,
       size,
     });
+    if (payload?.fallback) {
+      logMediaTransformQuotaExceeded(context, "media.delivery", "partial");
+    }
     return payload
       ? mediaDeliveryResponse(context, payload)
       : mediaNotFoundResponse(context);

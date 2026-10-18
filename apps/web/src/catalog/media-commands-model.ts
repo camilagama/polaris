@@ -188,6 +188,12 @@ function codeMessage(code: string): MediaFailure | null {
           "Este produto já tem o máximo de imagens. Remova uma imagem para liberar um lugar e envie de novo.",
         reloadList: true,
       };
+    case "media_transform_quota_exceeded":
+      return {
+        message:
+          "O envio de imagens está pausado: o limite mensal de processamento de imagens foi atingido. Nada foi perdido; tente de novo no próximo ciclo (início do mês).",
+        reloadList: false,
+      };
     case "media_image_too_large":
       return {
         message:

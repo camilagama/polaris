@@ -4,6 +4,7 @@ import {
   MAX_MEDIA_OUTPUT_EDGE,
   MediaImageProcessingError,
   MediaImageTooLargeError,
+  MediaTransformQuotaExceededError,
   type NormalizedMediaCropRect,
   UnsupportedMediaImageError,
   validateMediaImageSource,
@@ -78,6 +79,47 @@ function normalizedImageFormat(format: string): string | null {
   }
 }
 
+/**
+ * Cloudflare Images answers 9422 ("the transformation request is rejected because
+ * the usage limit was reached") once the free allowance of 5,000 unique
+ * transformations in the month is spent. The documentation does not show how the
+ * Workers binding exposes it, so the numeric (or numeric string) `code`, the same
+ * shape used for 9412, and the `Cf-Resized: err=9422` header of a rejected
+ * response are all accepted. Source: developers.cloudflare.com/images/pricing and
+ * /images/reference/troubleshooting (consulted 18/10/2026).
+ */
+const QUOTA_EXCEEDED_CODE = 9422;
+const QUOTA_EXCEEDED_HEADER = /(?:^|[\s,;])err=9422(?:$|[\s,;])/;
+
+function hasQuotaExceededCode(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === QUOTA_EXCEEDED_CODE ||
+      error.code === String(QUOTA_EXCEEDED_CODE))
+  );
+}
+
+function isQuotaExceededResponse(response: Response): boolean {
+  return QUOTA_EXCEEDED_HEADER.test(response.headers.get("cf-resized") ?? "");
+}
+
+/** The transformation was refused for quota; any other failure is a processing error. */
+export function isMediaTransformQuotaExceeded(error: unknown): boolean {
+  return (
+    error instanceof MediaTransformQuotaExceededError ||
+    hasQuotaExceededCode(error)
+  );
+}
+
+function providerFailure(cause: unknown): Error {
+  if (hasQuotaExceededCode(cause)) {
+    return new MediaTransformQuotaExceededError({ cause });
+  }
+  return new MediaImageProcessingError({ cause });
+}
+
 function hasProviderInvalidImageCode(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -98,8 +140,7 @@ async function readImageInfo(
       // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable image validation error.
       throw new UnsupportedMediaImageError({ cause });
     }
-    // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 }
 
@@ -168,18 +209,19 @@ export async function processMediaImage({
       })
       .output({ format: "image/webp", quality: 85 });
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 
   let response: Response;
   try {
     response = transformed.response();
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 
+  if (isQuotaExceededResponse(response)) {
+    throw new MediaTransformQuotaExceededError();
+  }
   if (!response.ok || response.body === null) {
     throw new MediaImageProcessingError();
   }
@@ -254,16 +296,17 @@ export async function processMediaDerivative(input: {
       })
       .output({ format: "image/webp", quality: 85 });
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 
   let response: Response;
   try {
     response = transformed.response();
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
+  }
+  if (isQuotaExceededResponse(response)) {
+    throw new MediaTransformQuotaExceededError();
   }
   if (!response.ok || response.body === null) {
     throw new MediaImageProcessingError();

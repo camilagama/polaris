@@ -2,6 +2,7 @@ import {
   InvalidMediaCropError,
   MediaImageProcessingError,
   MediaImageTooLargeError,
+  MediaTransformQuotaExceededError,
   UnsupportedMediaImageError,
 } from "@polaris/domain/catalog/media";
 import { describe, expect, it, vi } from "vitest";
@@ -116,6 +117,43 @@ describe("processMediaImage", () => {
         sourceBytes: new Uint8Array([1, 2, 3]),
       })
     ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+  });
+
+  it.each([
+    ["a numeric code", 9422],
+    ["a numeric string code", "9422"],
+  ])(
+    "maps the provider's quota error (%s) to the quota error",
+    async (_name, code) => {
+      const { binding } = imageBinding();
+      binding.input.mockImplementationOnce(() => {
+        throw Object.assign(new Error("usage limit"), { code });
+      });
+
+      await expect(
+        processMediaImage({
+          crop: { height: 1, width: 1, x: 0, y: 0 },
+          declaredContentType: "image/jpeg",
+          images: binding,
+          sourceBytes: new Uint8Array([1, 2, 3]),
+        })
+      ).rejects.toBeInstanceOf(MediaTransformQuotaExceededError);
+    }
+  );
+
+  it("maps a quota error raised while decoding to the quota error", async () => {
+    const { binding } = imageBinding();
+    binding.info.mockRejectedValueOnce(
+      Object.assign(new Error("usage limit"), { code: 9422 })
+    );
+
+    await expect(
+      processMediaImage({
+        crop: { height: 1, width: 1, x: 0, y: 0 },
+        images: binding,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      })
+    ).rejects.toBeInstanceOf(MediaTransformQuotaExceededError);
   });
 
   it("does not expose transient provider errors as invalid user files", async () => {
@@ -256,5 +294,64 @@ describe("processMediaDerivative", () => {
         sourceBytes: new Uint8Array([1, 2, 3]),
       })
     ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+  });
+
+  it("maps the provider's quota error to the quota error", async () => {
+    const { binding } = imageBinding({
+      decoded: { format: "image/webp", height: 900, width: 1600 },
+    });
+    binding.input.mockImplementationOnce(() => {
+      throw Object.assign(new Error("usage limit"), { code: 9422 });
+    });
+
+    await expect(
+      processMediaDerivative({
+        images: binding,
+        maxEdge: 320,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      })
+    ).rejects.toBeInstanceOf(MediaTransformQuotaExceededError);
+  });
+
+  it("recognizes a rejected response that carries Cf-Resized err=9422", async () => {
+    const { binding } = imageBinding({
+      decoded: { format: "image/webp", height: 900, width: 1600 },
+    });
+    binding.input.mockReturnValueOnce({
+      output: () =>
+        Promise.resolve({
+          response: () =>
+            new Response("", {
+              headers: { "Cf-Resized": "err=9422" },
+              status: 409,
+            }),
+        }),
+      transform: vi.fn().mockReturnThis(),
+    } as never);
+
+    await expect(
+      processMediaDerivative({
+        images: binding,
+        maxEdge: 320,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      })
+    ).rejects.toBeInstanceOf(MediaTransformQuotaExceededError);
+  });
+
+  it("keeps other provider failures as processing errors", async () => {
+    const { binding } = imageBinding({
+      decoded: { format: "image/webp", height: 900, width: 1600 },
+    });
+    binding.input.mockImplementationOnce(() => {
+      throw Object.assign(new Error("boom"), { code: 9999 });
+    });
+
+    await expect(
+      processMediaDerivative({
+        images: binding,
+        maxEdge: 320,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      })
+    ).rejects.toBeInstanceOf(MediaImageProcessingError);
   });
 });
