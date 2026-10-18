@@ -32,7 +32,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 2. CI do SHA verde, job a job (BLOCK)
 
 - Critério: no SHA candidato, terminam com sucesso os jobs `Changed areas`, `Checks (lint, types, knip, build, tests)` e `PostgreSQL 18 gates`. Este último deixou de ser consultivo: perdeu o `continue-on-error` e a falha dele é falha do CI, como diz a emenda do [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md). Tornar o check obrigatório para o merge é proteção de branch do GitHub, do responsável, e não está no repositório: confira o resultado do job, não a proteção.
-- `Dependency audit` é consultivo (`continue-on-error: true` em `.github/workflows/ci.yml`): o job pode terminar em falha sem derrubar o CI. O resultado real é lido e registrado, e cada aviso é comparado com o [runbook de auditoria de dependências](./dependency-audit.md): o job pode ficar vermelho só pelas exceções vigentes da tabela dele, dentro do prazo de revisão. Aviso que não está na tabela, ou exceção com prazo vencido, não é ignorado. **Proposta, pendente de decisão:** aviso alto em dependência que chega ao runtime bloqueia (o runbook já o trata como bloqueio); aviso só de ferramenta de desenvolvimento, com exceção vigente, é WARN, com dono e data no relatório (item 10).
+- `Dependency audit` é consultivo (`continue-on-error: true` em `.github/workflows/ci.yml`): o job pode terminar em falha sem derrubar o CI. O resultado real é lido e registrado, e cada aviso é comparado com o [runbook de auditoria de dependências](./dependency-audit.md): o job pode ficar vermelho só pelas exceções vigentes da tabela dele, dentro do prazo de revisão. Aviso que não está na tabela, ou exceção com prazo vencido, não é ignorado. **Proposta, pendente de decisão:** aviso alto em dependência que chega ao runtime bloqueia (o runbook já o trata como bloqueio); aviso só de ferramenta de desenvolvimento, com exceção vigente, é WARN, com dono e data no relatório (item 12).
 - `Dependency audit` e `Offline persistence browser gate` dependem do job `Changed areas`. Nenhum dos dois é executado quando a mudança não toca o que ele exercita, e o gate de navegador não roda em evento `push`. Nesse caso, a evidência é a execução do evento `pull_request` do PR de origem; se `main` mudou depois dela, o job é reexecutado. A execução completa sob demanda (`workflow_dispatch`) roda os dois, e é o caminho para ter ambos no SHA candidato, desde que o SHA candidato seja a ponta do ref escolhido (normalmente `main`); se `main` já avançou, o dispatch não testa o candidato.
 - `skipped` só vale quando `Changed areas` mostra que a área não mudou (`browser=false` ou `dependencies=false`). Qualquer outro `skipped` é falha. `Checks` e `PostgreSQL 18 gates` não têm condição: `skipped` neles é falha.
 - Evidência: link da execução de CI do SHA, com o estado de cada job e, para o gate de navegador e a auditoria, o evento de onde vieram.
@@ -83,12 +83,22 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: na revisão do PR de origem, nenhum achado de severidade "bloqueia" está aberto e nenhum achado de segurança está sem resolução.
 - Evidência: link da revisão e o estado de cada achado.
 
-### 10. Achados "vale corrigir" e "menor" registrados (WARN)
+### 10. Prazos legais com validação jurídica pendente (BLOCK)
+
+- Critério: prazos legais com `legalReview` pendente bloqueiam a promoção a produção. Em `packages/domain/src/privacy/retention.ts`, toda classe de base legal (`basis: "lei"`) está com `legalReview` preenchido por quem validou (`reviewedBy` e `reviewedAt`: contador ou jurídico); uma classe ainda `"pending"` falha o item. Os prazos legais foram decididos pelo orquestrador com base em pesquisa (ADR 0079) e nenhuma validação profissional existe até esse campo ser preenchido.
+- Evidência: a lista das classes legais com o `legalReview` lido no SHA candidato (quem validou e quando).
+
+### 11. Registro de acesso do Marco Civil com lugar próprio (BLOCK)
+
+- Critério: existe uma tabela própria do registro de acesso a aplicação (data, hora e IP, com guarda de 6 meses pelo Marco Civil da Internet, art. 15; tarefa t039), e o bloqueio `blockedUntil` da classe `auth_sessions` do registro de retenção foi resolvido. Hoje `auth_security_audit_event` não guarda o IP e a linha da sessão (o único lugar com o IP) sai 30 dias depois do fim: sem a tabela, o go-live não cumpre o mínimo de 6 meses.
+- Evidência: o nome da tabela, a prova de que ela guarda o IP por 6 meses e o `blockedUntil` resolvido no SHA candidato.
+
+### 12. Achados "vale corrigir" e "menor" registrados (WARN)
 
 - Critério: os achados abertos desses níveis ficam listados no relatório, com dono e data prevista de correção.
 - Evidência: a lista, com links.
 
-### 11. Status com evidência de commit (WARN)
+### 13. Status com evidência de commit (WARN)
 
 - Critério: o status do repositório (`doc/status-implementacao.md`) foi conferido contra o SHA promovido. Só é marcado como feito o que tem commit de evidência.
 - Evidência: o trecho do status atualizado e o commit citado.
@@ -125,7 +135,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item (hoje 9 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item (hoje 11 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

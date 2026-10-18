@@ -20,6 +20,7 @@ import { discardPendingStock } from "./stock-commands";
  */
 type AttentionCause =
   | "authorization_revoked"
+  | "command_too_old"
   | "entitlement_changed"
   | "id_conflict"
   | "insufficient_stock"
@@ -69,6 +70,7 @@ const ACCOUNT_CAUSES: Readonly<Record<string, AttentionCause>> = {
 
 const DATA_CAUSES: Readonly<Record<string, AttentionCause>> = {
   category_unavailable: "unavailable",
+  command_too_old: "command_too_old",
   customer_id_conflict: "id_conflict",
   customer_not_found: "unavailable",
   customer_version_conflict: "version_conflict",
@@ -169,6 +171,8 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
       return "O perfil de pagamento usado nesta venda mudou (taxas ou prazo) depois que este aparelho o viu, então o servidor não a registrou com ele. Reenvie a venda sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte-a e refaça a venda com o perfil atual.";
     case "profile_unavailable":
       return "O perfil de pagamento usado nesta venda foi arquivado ou removido. Reenvie a venda sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte-a e refaça a venda com outro perfil.";
+    case "command_too_old":
+      return "Este registro foi criado há mais de 90 dias, mais do que o servidor guarda para reconhecer um reenvio. Ele pode já ter sido registrado antes: confira a lista de vendas, estoque ou cadastro antes de refazer e, só então, descarte-o.";
     case "sale_too_old":
       return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
     case "entitlement_changed":
