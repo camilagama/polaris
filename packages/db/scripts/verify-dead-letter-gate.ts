@@ -32,8 +32,9 @@ import {
  * outbox event back to pending, starts an event past the attempts cap over and forgets its processing
  * record, and refuses while a run holds it); the Admin role lists, reads and retries only through three
  * functions that check the operator and the reason and write the audit in the retry's transaction; the
- * incident carries a cause, a type and opaque IDs, never a message body; the purge of an organization
- * removes its dead events and leaves the incidents.
+ * incident carries a cause, a type and opaque IDs, never a message body; the incidents carry no
+ * organization, so the purge of an organization leaves them. Removing an organization's dead events
+ * is the purge's own job (its policy and DELETE grant come with the purge PR, which proves it).
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -2427,51 +2428,42 @@ async function run() {
       "admin_read_operational_incident: returns the incident (exactly eight fields) and its events newest ID first in pages (limit 2 over five events gives 2, 2, 1 with next set on the first two and null on the last), each with exactly nine fields (IDs, type, state, counts, dates); a retried item shows state retried, retryCount and retriedAt; an incident that does not exist is null; a page size outside 1..50 is refused with 22023; no event body, key or correlation appears anywhere in the answer"
     );
 
-    // ------------------------------------------------- 7. the purge of an organization
-    const typePurge = typeName("purge");
-    const keepA = await deadItem(orgA.organizationId, typePurge, {
+    // ------------------------------------------------- 7. the incident has no organization (the purge removes the items in its own PR)
+    const typeScope = typeName("scope");
+    const keepA = await deadItem(orgA.organizationId, typeScope, {
       attempts: 2,
       status: "dispatched",
     });
-    const goneC1 = await deadItem(orgC.organizationId, typePurge, {
+    const itemC1 = await deadItem(orgC.organizationId, typeScope, {
       attempts: 2,
       status: "dispatched",
     });
-    const goneC2 = await deadItem(orgC.organizationId, typePurge, {
+    const itemC2 = await deadItem(orgC.organizationId, typeScope, {
       attempts: 1000,
     });
-    assert.equal(keepA.incident, goneC1.incident);
-    const purgeIncident = await incidentOf(
+    assert.equal(keepA.incident, itemC1.incident);
+    const scopeIncident = await incidentOf(
       "queue_dead_letter",
       "retries_exhausted",
-      typePurge
+      typeScope
     );
-    assert.equal(purgeIncident?.occurrence_count, "3");
-    await owner.pool.query("DELETE FROM public.organizations WHERE id = $1", [
-      orgC.organizationId,
-    ]);
+    assert.equal(scopeIncident?.occurrence_count, "3");
+    // no role holds DELETE on the item table here (checked in section 1), and the purge keeps the
+    // organization row as a tombstone, so the foreign key cascade never fires for it: the purge has
+    // to delete the items itself, with a policy and DELETE grant of its role (the purge PR proves it)
     assert.equal(
       await countOf(
         "SELECT count(*)::text AS count FROM public.queue_dead_letters WHERE organization_id = $1",
         [orgC.organizationId]
       ),
-      0,
-      "the organization's dead events went with it"
+      2,
+      "the organization's dead events stay until the purge deletes them itself"
     );
-    assert.equal(await itemOf(goneC1.id), undefined);
-    assert.equal(await itemOf(goneC2.id), undefined);
     assert.equal(
       (await itemOf(keepA.id))?.state,
       "dead",
-      "another organization's item stays"
+      "another organization's item is untouched"
     );
-    const afterPurge = await incidentOf(
-      "queue_dead_letter",
-      "retries_exhausted",
-      typePurge
-    );
-    assert.equal(afterPurge?.id, purgeIncident?.id, "the incident stays");
-    assert.equal(afterPurge?.occurrence_count, "3", "with its count");
     const incidentColumns = await owner.pool.query<{ column_name: string }>(
       "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'operational_incidents' AND column_name LIKE '%organization%'"
     );
@@ -2483,30 +2475,31 @@ async function run() {
     const incidentText = (
       await owner.pool.query<{ text: string }>(
         "SELECT row_to_json(incident)::text AS text FROM public.operational_incidents incident WHERE subject = $1",
-        [typePurge]
+        [typeScope]
       )
     ).rows[0]?.text as string;
     assert.equal(incidentText.includes(orgC.organizationId), false);
     assert.equal(incidentText.includes(orgC.userId), false);
     assert.equal(
-      incidentText.includes(goneC2.id),
+      incidentText.includes(itemC2.id),
       true,
       "the incident keeps only the last opaque reference (an event ID)"
     );
-    const afterPurgeDetail = await readOperationalIncident(
+    const detail = await readOperationalIncident(
       adminClient,
-      purgeIncident?.id as string,
+      scopeIncident?.id as string,
       {
         after: null,
         limit: 10,
       }
     );
     assert.deepEqual(
-      afterPurgeDetail?.events.map((row) => row.eventId),
-      [keepA.id]
+      detail?.events.map((row) => row.eventId).sort(),
+      [keepA.id, itemC1.id, itemC2.id].sort(),
+      "the Admin's detail lists the items of both organizations, by event ID only"
     );
     tests.push(
-      "purge: deleting an organization (as the owner) removes its queue_dead_letters items by cascade, keeps another organization's item, and keeps the incident with its count; an incident has no organization column and holds only the opaque reference (no organization or user ID); the Admin's detail afterwards lists only the item that remains"
+      "no organization in the incident: an incident has no organization column and holds only the opaque reference (no organization or user ID); the items of an organization stay until the purge deletes them itself (no role here holds DELETE, and the purge keeps the organization row, so the foreign key cascade does not fire: the purge PR adds the policy and the DELETE grant of its role and proves the removal); another organization's item is untouched; the Admin's detail lists the items by event ID only"
     );
 
     console.log(
@@ -2548,7 +2541,7 @@ async function run() {
       "audit trigger function",
       "DROP FUNCTION IF EXISTS public.gate_dlq_block_audit()"
     );
-    // the organizations take their events, dead events and processing records with them
+    // test teardown only (superuser): the throwaway organizations take their events, dead events and processing records with them
     for (const tenant of fixtures) {
       await cleanup(
         "organization",

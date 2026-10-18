@@ -93,8 +93,10 @@ export const operationalIncidents = pgTable(
  * The outbox events that are dead (plan PR111, ADR 0085): one row per event, so an operator can send
  * that event again. It names the event by its opaque ID and organization, and says nothing more:
  * the event itself stays in the outbox, and the retry puts that same event back to pending. A retry
- * marks the row `retried`; if the event dies again the row is `dead` again. Rows go with the
- * organization (`ON DELETE CASCADE`).
+ * marks the row `retried`; if the event dies again the row is `dead` again. The foreign key to the
+ * organization is `ON DELETE CASCADE`, but the purge keeps the organization row as a tombstone, so the
+ * cascade does not fire for it: the purge has to delete these rows itself (policy and DELETE grant of
+ * its role, in the purge PR). `operational_incidents` has no organization column.
  */
 export const queueDeadLetters = pgTable(
   "queue_dead_letters",
