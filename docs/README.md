@@ -105,5 +105,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0081](adr/0081-purge-completo-da-organizacao-encerrada.md) | Purge completo da organização encerrada | proposto |
 | [0082](adr/0082-outbox-transacional.md) | Outbox transacional | aceito |
 | [0083](adr/0083-filas-cloudflare-e-consumidor-idempotente.md) | Filas Cloudflare e consumidor idempotente | aceito |
+| [0084](adr/0084-despachante-e-varredor-do-outbox.md) | Despachante e varredor do outbox | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

@@ -39,6 +39,10 @@ function fixture(input: {
   const claims = [...(input.claims ?? [claimed, null])];
   const client = {
     claimDataExport: vi.fn(() => Promise.resolve(claims.shift() ?? null)),
+    claimDataExportById: vi.fn(
+      (_exportId: string, _organizationId: string, _lease: number) =>
+        Promise.resolve(claims.shift() ?? null)
+    ),
     completeDataExport: vi.fn(() =>
       Promise.resolve({ expiresAt: now, totalBytes: 1 })
     ),
@@ -149,6 +153,55 @@ describe("the data export job", () => {
     expect(f.client.expireDataExports).not.toHaveBeenCalled();
     expect(f.client.listDataExportsToDelete).not.toHaveBeenCalled();
     expect(f.client.markDataExportFilesDeleted).not.toHaveBeenCalled();
+  });
+
+  it("takes only the export a queue event names, by ID and organization, once, whatever maxExports says", async () => {
+    const f = fixture({ claims: [claimed, claimed, null] });
+    const report = await runDataExports({
+      ...(f.deps as object),
+      maxExports: 5,
+      sweep: false,
+      target: { exportId, organizationId },
+    } as never);
+    expect(report).toEqual({ deleted: 0, expired: 0, failed: 0, ready: 1 });
+    expect(f.client.claimDataExportById).toHaveBeenCalledTimes(1);
+    expect(f.client.claimDataExportById).toHaveBeenCalledWith(
+      exportId,
+      organizationId,
+      960
+    );
+    expect(f.client.claimDataExport).not.toHaveBeenCalled();
+    expect(f.client.completeDataExport).toHaveBeenCalledWith(exportId, 24);
+  });
+
+  it("builds nothing when the named export cannot be taken", async () => {
+    const f = fixture({ claims: [null] });
+    const report = await runDataExports({
+      ...(f.deps as object),
+      target: { exportId, organizationId },
+    } as never);
+    expect(report).toMatchObject({ failed: 0, ready: 0 });
+    expect(f.client.claimDataExportById).toHaveBeenCalledTimes(1);
+    expect(f.client.claimDataExport).not.toHaveBeenCalled();
+    expect(f.collect).not.toHaveBeenCalled();
+    expect(f.bucket.put).not.toHaveBeenCalled();
+    expect(f.client.completeDataExport).not.toHaveBeenCalled();
+  });
+
+  it("only sweeps, and claims nothing, when maxExports is 0", async () => {
+    const f = fixture({
+      claims: [claimed],
+      deletable: [{ id: exportId, organizationId }],
+    });
+    const report = await runDataExports({
+      ...(f.deps as object),
+      maxExports: 0,
+    } as never);
+    expect(report).toEqual({ deleted: 1, expired: 2, failed: 0, ready: 0 });
+    expect(f.client.expireDataExports).toHaveBeenCalledTimes(1);
+    expect(f.client.markDataExportFilesDeleted).toHaveBeenCalledWith(exportId);
+    expect(f.client.claimDataExport).not.toHaveBeenCalled();
+    expect(f.client.claimDataExportById).not.toHaveBeenCalled();
   });
 
   it("stores the images in parts after the data archive", async () => {

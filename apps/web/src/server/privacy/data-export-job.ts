@@ -40,6 +40,7 @@ export interface DataExportReport {
 type ExportClient = Pick<
   PrivacyMaintenanceClient,
   | "claimDataExport"
+  | "claimDataExportById"
   | "completeDataExport"
   | "expireDataExports"
   | "failDataExport"
@@ -51,19 +52,14 @@ type ExportClient = Pick<
 export interface DataExportJobDependencies {
   bucket: Pick<MediaBucketBinding, "delete" | "get" | "list" | "put">;
   client: ExportClient;
-  /**
-   * How many requests one run may take (default: the run's own limit). The queue consumer takes one,
-   * so a message costs one export, never a pair.
-   */
-  maxExports?: number;
-  /**
-   * Whether the run also expires the exports whose time is up and removes their files (default
-   * true: the hourly run). The queue consumer leaves it to the hourly run, so a message does not
-   * repeat the sweep.
-   */
-  sweep?: boolean;
   /** Reads and turns the tables into files; tests replace it. */
   collect?: typeof collectExport;
+  /**
+   * How many requests one run may take (default: the run's own limit). The hourly run passes 0 when
+   * the queue path is live (ADR 0084): building archives does not fit the 10 ms of CPU a cron has on
+   * the Free plan, so it only sweeps and the queue consumer builds.
+   */
+  maxExports?: number;
   now: () => Date;
   /**
    * Runs `operation` in a read-only snapshot, as the person who asked, with the same authorization a
@@ -73,6 +69,18 @@ export interface DataExportJobDependencies {
     claimed: ClaimedDataExport,
     operation: (transaction: TenantRequestTransaction) => Promise<T>
   ) => Promise<T>;
+  /**
+   * Whether the run also expires the exports whose time is up and removes their files (default
+   * true: the hourly run). The queue consumer leaves it to the hourly run, so a message does not
+   * repeat the sweep.
+   */
+  sweep?: boolean;
+  /**
+   * The one export a queue event names (ADR 0084): the run takes that export, by ID and organization,
+   * or nothing (it is done, failed, held by another run or waiting for the delay of a failed run), and
+   * never another request. Without it the run takes the oldest requests, as the hourly run does.
+   */
+  target?: { exportId: string; organizationId: string };
 }
 
 function exportObjectPrefix(organizationId: string, exportId: string) {
@@ -148,6 +156,20 @@ async function buildAndStore(
   await client.completeDataExport(claimed.id, EXPORT_VALIDITY_HOURS);
 }
 
+/** The export a queue event names, or the oldest one waiting. */
+function claimNext(
+  client: ExportClient,
+  target: DataExportJobDependencies["target"]
+): Promise<ClaimedDataExport | null> {
+  return target
+    ? client.claimDataExportById(
+        target.exportId,
+        target.organizationId,
+        EXPORT_LEASE_SECONDS
+      )
+    : client.claimDataExport(EXPORT_LEASE_SECONDS);
+}
+
 /**
  * The background work of the data exports (ADR 0078): take a request, read the data as the person
  * who asked, store the archives in a private temporary place and finish, or fail it (tried again,
@@ -187,11 +209,9 @@ export async function runDataExports(
     }
   }
 
-  for (
-    let run = 0;
-    run < (dependencies.maxExports ?? EXPORTS_PER_RUN);
-    run += 1
-  ) {
+  const { target } = dependencies;
+  const runs = target ? 1 : (dependencies.maxExports ?? EXPORTS_PER_RUN);
+  for (let run = 0; run < runs; run += 1) {
     if (
       run > 0 &&
       dependencies.now().getTime() - startedAt > SECOND_EXPORT_BUDGET_MS
@@ -199,7 +219,7 @@ export async function runDataExports(
       break;
     }
     // biome-ignore lint/performance/noAwaitInLoops: each export needs the one before out of memory.
-    const claimed = await client.claimDataExport(EXPORT_LEASE_SECONDS);
+    const claimed = await claimNext(client, target);
     if (!claimed) {
       break;
     }

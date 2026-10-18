@@ -14,6 +14,8 @@ import {
 import { organizations } from "./organization";
 
 const runtimeRole = "polaris_pr11_runtime";
+const outboxOwnerRole = "polaris_outbox_owner";
+const privacyOwnerRole = "polaris_privacy_owner";
 
 /**
  * The transactional outbox (plan PR108, ADR 0082): an event written in the same transaction as the
@@ -23,10 +25,12 @@ const runtimeRole = "polaris_pr11_runtime";
  *
  * The tenant runtime only inserts, in its own organization and only the events its policy lists (a
  * `data_export.requested` must name an export that the same user requested in that organization); it
- * reads, updates and deletes nothing, and no other role has a privilege here yet: the dispatcher's role
- * and its policies arrive with PR110, in their own migration. The rows go with the organization
- * (`ON DELETE CASCADE`), but the purge keeps the organization's row as a tombstone, so the cascade never
- * fires and the purge deletes this table in a step of its own (ADR 0081).
+ * reads, updates and deletes nothing. The dispatcher (plan PR110, ADR 0084) reaches the table only
+ * through functions owned by `polaris_outbox_owner`, which claims the due events of every organization,
+ * marks them dispatched or gives them back with a delay; the privacy owner may send a dispatched
+ * `data_export.requested` back to pending while its export is still owed (the re-arm). The rows go
+ * with the organization (`ON DELETE CASCADE`), but the purge keeps the organization's row as a
+ * tombstone, so the cascade never fires and the purge deletes this table in a step of its own (ADR 0081).
  */
 export const eventOutbox = pgTable(
   "event_outbox",
@@ -42,9 +46,13 @@ export const eventOutbox = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    /** When the queue last accepted it (the dispatcher marks it only after the send). */
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     event: jsonb("event").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     idempotencyKey: text("idempotency_key").notNull(),
+    /** While a dispatcher run holds it; a claim that outlives a run is taken again (the sweep). */
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -96,6 +104,7 @@ export const eventOutbox = pgTable(
         AND ${table.status} = 'pending'
         AND ${table.attempts} = 0
         AND ${table.idempotencyKey} = ${table.type} || ':' || (${table.event} ->> 'exportId')
+        AND (${table.event} - 'exportId') = '{}'::jsonb
         AND EXISTS (
           SELECT 1
           FROM public.data_exports AS export_scope
@@ -116,6 +125,30 @@ export const eventOutbox = pgTable(
           WHERE organization_scope.id = ${table.organizationId}
             AND organization_scope.status = 'active'
         )`,
+    }),
+    // the dispatcher's owner reads and moves every organization's events, only through its functions
+    pgPolicy("event_outbox_outbox_owner_select", {
+      for: "select",
+      to: outboxOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("event_outbox_outbox_owner_update", {
+      for: "update",
+      to: outboxOwnerRole,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    // the privacy owner sees the export events and sends a dispatched one back to pending (the re-arm)
+    pgPolicy("event_outbox_privacy_owner_select", {
+      for: "select",
+      to: privacyOwnerRole,
+      using: sql`${table.type} = 'data_export.requested'`,
+    }),
+    pgPolicy("event_outbox_privacy_owner_rearm", {
+      for: "update",
+      to: privacyOwnerRole,
+      using: sql`${table.type} = 'data_export.requested' AND ${table.status} = 'dispatched'`,
+      withCheck: sql`${table.type} = 'data_export.requested' AND ${table.status} = 'pending'`,
     }),
   ]
 ).enableRLS();

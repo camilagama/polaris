@@ -93,8 +93,8 @@ DECLARE
     'products', 'media_assets', 'categories', 'customers', 'goal_target_changes', 'goals',
     'expense_recurring_rules', 'expense_categories', 'payment_profile_rules', 'payment_profiles',
     'sync_commands', 'sync_changes', 'sync_cursors', 'offline_grants', 'data_export_files',
-    'data_exports', 'public_catalog_profiles', 'tenant_audit_event', 'event_outbox', 'organization_closures',
-    'memberships'
+    'data_exports', 'public_catalog_profiles', 'tenant_audit_event', 'event_outbox', 'queue_processing',
+    'organization_closures', 'memberships'
   ];
   cascaded_tables text[] := ARRAY['product_variants', 'product_options', 'product_option_values', 'variant_option_values'];
   target text;
@@ -531,8 +531,8 @@ DECLARE
     'products', 'media_assets', 'categories', 'customers', 'goal_target_changes', 'goals',
     'expense_recurring_rules', 'expense_categories', 'payment_profile_rules', 'payment_profiles',
     'sync_commands', 'sync_changes', 'sync_cursors', 'offline_grants', 'data_export_files',
-    'data_exports', 'public_catalog_profiles', 'tenant_audit_event', 'event_outbox', 'organization_closures',
-    'memberships'
+    'data_exports', 'public_catalog_profiles', 'tenant_audit_event', 'event_outbox', 'queue_processing',
+    'organization_closures', 'memberships'
   ];
   target text;
   removed bigint;

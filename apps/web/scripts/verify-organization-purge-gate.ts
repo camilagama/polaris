@@ -434,12 +434,17 @@ async function run() {
         "UPDATE public.products SET deleted_at = now(), version = version + 1 WHERE organization_id = $1 AND id = $2",
         [tenant.organizationId, removable.productId]
       );
+      // the queue consumer's record of an event it processed: opaque IDs, the purge takes it with the rest
+      await owner.pool.query(
+        "INSERT INTO public.queue_processing (organization_id, idempotency_key, event_id, attempt, state) VALUES ($1, $2, $3, 1, 'done')",
+        [tenant.organizationId, `gate:${randomUUID()}`, randomUUID()]
+      );
       return { assetId, storageKey };
     };
     const targetMedia = await populate(target, `alvo-${suffix}`);
     const witnessMedia = await populate(witness, `testemunha-${suffix}`);
     tests.push(
-      "both organizations hold products, stock movements, a sale, a customer and an image of a removed product"
+      "both organizations hold products, stock movements, a sale, a customer, an image of a removed product and the queue consumer's record of an event"
     );
 
     // the storage of both, as the upload, the derivatives and an export would have left it
@@ -947,6 +952,7 @@ async function run() {
       "tenant_audit_event",
       "data_exports",
       "event_outbox",
+      "queue_processing",
     ]) {
       assert.ok(
         (targetBefore[table] ?? 0) > 0,

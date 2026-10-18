@@ -32,6 +32,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "privacy_cases",
   "deletion_ledger",
   "event_outbox",
+  "queue_processing",
   "provider_backups",
 ] as const);
 
@@ -44,6 +45,7 @@ export type RetentionBasis = "contrato" | "decisao" | "lei";
 export type RetentionPurgeJobId =
   | "media.removed_cleanup"
   | "media.staging_reconcile"
+  | "outbox.processing_expiry"
   | "privacy.data_export_expiry";
 
 interface RetentionPolicyBase {
@@ -322,6 +324,16 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "proposta",
   },
   {
+    basis: "decisao",
+    class: "queue_processing",
+    data: ["queue_processing (registro do consumidor de filas, só IDs opacos)"],
+    job: "outbox.processing_expiry",
+    period: { kind: "duration", ms: 7 * 24 * HOUR_MS },
+    rule: "O registro de uma mensagem processada fica uma semana (mais que as 24 horas de retenção da fila e as novas tentativas) e sai na execução horária do despachante; uma tomada cujo consumidor morreu sai uma semana depois do fim do prazo dela.",
+    sources: ["ADR 0084"],
+    status: "aprovada",
+  },
+  {
     basis: "contrato",
     class: "provider_backups",
     data: [
@@ -344,6 +356,7 @@ export const RETENTION_PURGE_JOBS: readonly {
   { class: "media_staging_marker", id: "media.staging_reconcile" },
   { class: "media_removed_image", id: "media.removed_cleanup" },
   { class: "data_exports", id: "privacy.data_export_expiry" },
+  { class: "queue_processing", id: "outbox.processing_expiry" },
 ]);
 
 /**

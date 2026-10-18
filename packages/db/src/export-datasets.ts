@@ -74,6 +74,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
       "histórico interno do purge, da plataforma",
     organization_purges: "processo interno do purge, da plataforma",
     platform_audit_events: "da plataforma, não do tenant",
+    queue_processing:
+      "registro do consumidor de filas, só IDs opacos: mecanismo interno",
     rls_poc_operations: "tabela de prova técnica",
     support_cases: "da plataforma, não do tenant",
     sync_changes: "mecanismo interno de sincronização",

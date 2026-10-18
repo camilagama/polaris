@@ -25,8 +25,9 @@ import {
  * The transactional outbox on a real PostgreSQL 18 (plan PR108, ADR 0082): requesting a data export
  * writes one `data_export.requested` event in the same transaction, holding only opaque IDs and the
  * correlation of the request; a repeated key writes nothing; the table is insert-only for the tenant
- * runtime, in its own organization and only for the listed types, and no other role has a privilege on
- * it but the purge owner; the database refuses a body that could hold a person's data.
+ * runtime, in its own organization and only for the listed types (with exactly the body keys of the type),
+ * and only the dispatcher's, the privacy and the purge owners read or move it (the purge owner also deletes,
+ * for an organization whose purge was scheduled); the database refuses a body that could hold a person's data.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -38,9 +39,11 @@ const OUTBOX_COLUMNS = [
   "available_at",
   "correlation_id",
   "created_at",
+  "dispatched_at",
   "event",
   "id",
   "idempotency_key",
+  "locked_until",
   "organization_id",
   "status",
   "type",
@@ -52,12 +55,15 @@ const INSERTABLE_COLUMNS = [
   "organization_id",
   "type",
 ];
+// the owners that move the events (the outbox owner, and the privacy owner for the re-arm) are proved
+// by the outbox-dispatcher gate; these roles hold nothing here
 const OTHER_ROLES = [
   "polaris_billing_runtime",
   "polaris_catalog_runtime",
   "polaris_admin_runtime",
+  "polaris_admin_owner",
   "polaris_privacy_runtime",
-  "polaris_privacy_owner",
+  "polaris_outbox_runtime",
 ];
 
 const ROLLED_BACK_ON_PURPOSE = /rolled back on purpose/;
@@ -434,6 +440,27 @@ async function run() {
       "42501",
       "no event whose key is not the type and the export's ID"
     );
+    // the body holds exactly the keys of its type: an extra key is refused even with a valid ID (the
+    // policy, not the unique index: that would be 23505)
+    for (const extra of [
+      { exportId: exportA.id, saleId: randomUUID() },
+      { exportId: exportA.id, files: 3 },
+      { exportId: exportA.id, retry: false },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is its own refused statement.
+      await expectSqlState(
+        () =>
+          attempt(tenantA, insertEvent, [
+            tenantA.organizationId,
+            "data_export.requested",
+            JSON.stringify(extra),
+            `data_export.requested:${exportA.id}`,
+            "c",
+          ]),
+        "42501",
+        "no key in the body beyond the ones its type declares"
+      );
+    }
     // a second member of the same organization cannot write an event for the export of the first
     const secondUser = randomUUID();
     await owner.pool.query(
@@ -516,23 +543,27 @@ async function run() {
       INSERTABLE_COLUMNS
     );
     const policies = await owner.pool.query<{ cmd: string; roles: string[] }>(
-      "SELECT cmd, roles::text[] AS roles FROM pg_policies WHERE schemaname = 'public' AND tablename = 'event_outbox' ORDER BY cmd"
+      "SELECT cmd, roles::text[] AS roles FROM pg_policies WHERE schemaname = 'public' AND tablename = 'event_outbox' ORDER BY cmd, roles::text"
     );
     assert.deepEqual(
       policies.rows.map((row) => [row.cmd, row.roles]),
       [
         ["DELETE", ["polaris_purge_owner"]],
         ["INSERT", [runtimeRole]],
+        ["SELECT", ["polaris_outbox_owner"]],
+        ["SELECT", ["polaris_privacy_owner"]],
         ["SELECT", ["polaris_purge_owner"]],
+        ["UPDATE", ["polaris_outbox_owner"]],
+        ["UPDATE", ["polaris_privacy_owner"]],
       ],
-      "no policy allows an update to any role, nor a read or a delete to any role but the purge owner (ADR 0081)"
+      "the tenant only inserts; reads and updates are the owners' (dispatcher and re-arm), through their functions; only the purge owner deletes (ADR 0081)"
     );
     const forced = await owner.pool.query<{ relforcerowsecurity: boolean }>(
       "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.event_outbox'::regclass"
     );
     assert.equal(forced.rows[0]?.relforcerowsecurity, true);
     tests.push(
-      "the tenant runtime cannot read, update, delete or truncate the outbox and can insert only the five columns of an event (not the status, attempts, times or ID), only in its own organization and only for a type the policy lists; only for an export that the same user asked for in the same organization, with the key the type and that export's ID; a duplicate key is refused by the unique index; no other role holds any privilege but the purge owner (read and delete, only for an organization whose purge was scheduled), no policy allows an update, and row level security is forced"
+      "the tenant runtime cannot read, update, delete or truncate the outbox and can insert only the five columns of an event (not the status, attempts, times or ID), only in its own organization and only for a type the policy lists; only for an export that the same user asked for in the same organization, with the key the type and that export's ID and no body key beyond the type's (an extra key with a valid ID is refused); a duplicate key is refused by the unique index; no other runtime holds any privilege, only the dispatcher's and the privacy owners have read and update policies, only the purge owner deletes (and reads, for an organization whose purge was scheduled), and row level security is forced"
     );
 
     // ------------------------------------------------- 5. the database refuses a body that could hold a person's data
@@ -573,18 +604,19 @@ async function run() {
         ),
       ],
     ];
-    // the policy runs before the CHECKs, so every probe names the real export, with the key the policy wants,
-    // and adds the one thing that must be refused
+    // the tenant policy refuses any key beyond the type's before a CHECK runs (section 4), so the CHECKs,
+    // the defence in depth for every role, are probed as the owner, who passes the policies: every probe
+    // names the real export and adds the one thing that must be refused
     const exportKey = `data_export.requested:${exportA.id}`;
     for (const [label, extra] of bodies) {
       // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
       await expectSqlState(
         () =>
-          attempt(tenantA, insertEvent, [
+          owner.pool.query(insertEvent, [
             tenantA.organizationId,
             "data_export.requested",
             JSON.stringify({ exportId: exportA.id, ...JSON.parse(extra) }),
-            exportKey,
+            `${exportKey}-${randomUUID().slice(0, 8)}`,
             "c",
           ]),
         "23514",
@@ -611,7 +643,7 @@ async function run() {
       "every probe left the outbox as it was"
     );
     tests.push(
-      "the CHECKs refuse a body with an e-mail, a name, a phone with symbols, a string longer than an ID or with a line break, an empty string, an accented name, a nested object, a list, a null, a decimal, an unsafe integer, a body that is too large, a key that is not a short name, and a correlation that is not a token (the real events of section 2 show that an ID is accepted)"
+      "the CHECKs refuse a body with an e-mail, a name, a phone with symbols, a string longer than an ID or with a line break, an empty string, an accented name, a nested object, a list, a null, a decimal, an unsafe integer, a body that is too large, a key that is not a short name, and a correlation that is not a token, probed as the owner past the policies (the real events of section 2 show that an ID is accepted)"
     );
 
     console.log(

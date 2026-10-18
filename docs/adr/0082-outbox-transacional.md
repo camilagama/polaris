@@ -6,6 +6,8 @@ status: accepted
 
 > O número deste ADR (0082) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081); pode mudar se outro entrar antes.
 
+> **Emenda ([ADR 0084](0084-despachante-e-varredor-do-outbox.md)):** o papel do despachante (`polaris_outbox_owner`/`polaris_outbox_runtime`) existe, `event_outbox` ganhou `locked_until` e `dispatched_at`, o papel de privacidade pode devolver a `pending` um `data_export.requested` despachado (re-arm) e a política do tenant limita as chaves do corpo por tipo. O texto abaixo é o da decisão original.
+
 ## Contexto
 
 Vários comandos têm um efeito que não cabe na transação do pedido: montar uma exportação, apagar objetos no R2, regenerar um derivado de imagem. Hoje cada um se resolve por um job que varre a própria tabela (a exportação, ADR 0078; a mídia, ADR 0014; o encerramento, ADR 0074). Isso funciona, mas cada caso inventa o seu mecanismo. O plano (Fase 11, PR108) pede a peça comum, sem exagero: uma tabela `event_outbox` e o ponto de gravação, de modo que o evento nasça **na mesma transação** do comando e nunca exista sem ele, nem o comando sem ele. As filas (PR109), o despachante e o varredor (PR110), a DLQ (PR111), os jobs agendados (PR112) e os workflows (PR113) são PRs seguintes; este não os cria. Também não confundir com o outbox **do aparelho** (ADR 0032), que é a fila local de comandos offline.

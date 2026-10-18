@@ -1,18 +1,22 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   billingClose: vi.fn(),
   createBillingStore: vi.fn(),
   createMediaCleanupClient: vi.fn(),
+  createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
+  dispatchOutbox: vi.fn(),
   mediaClose: vi.fn(),
+  outboxClose: vi.fn(),
   privacyClose: vi.fn(),
-  runDataExports: vi.fn(),
-  runOrganizationPurges: vi.fn(),
-  runPrivacyMaintenance: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
   runBillingMaintenance: vi.fn(),
+  runDataExports: vi.fn(),
+  runOrganizationPurges: vi.fn(),
+  runPrivacyMaintenance: vi.fn(),
 }));
 
 vi.mock("@polaris/db/billing-store", () => ({
@@ -20,6 +24,12 @@ vi.mock("@polaris/db/billing-store", () => ({
 }));
 vi.mock("@polaris/db/media-cleanup", () => ({
   createMediaCleanupClient: mocks.createMediaCleanupClient,
+}));
+vi.mock("@polaris/db/outbox-dispatch", () => ({
+  createOutboxClient: mocks.createOutboxClient,
+}));
+vi.mock("../src/server/queue/dispatcher", () => ({
+  dispatchOutbox: mocks.dispatchOutbox,
 }));
 vi.mock("@polaris/db/privacy-maintenance", () => ({
   createPrivacyMaintenanceClient: mocks.createPrivacyMaintenanceClient,
@@ -288,6 +298,75 @@ describe("the scheduled maintenance", () => {
       ).toEqual(["sweep_failed", "export_failed"]);
     });
 
+    describe("with the queue path live", () => {
+      const live = {
+        ...configured,
+        ...privacy,
+        OUTBOX_HYPERDRIVE: {
+          connectionString: "postgresql://outbox.invalid/db",
+        },
+        QUEUE_DEFAULT: { sendBatch: vi.fn() },
+      };
+
+      it("re-arms the export events and only sweeps, leaving the build to the consumer", async () => {
+        const rearm = vi.fn().mockResolvedValue(0);
+        mocks.createPrivacyMaintenanceClient.mockReturnValue({
+          close: mocks.privacyClose,
+          rearmDataExportEvents: rearm,
+        });
+
+        await expect(runScheduled(live)).resolves.toBeUndefined();
+
+        expect(rearm).toHaveBeenCalledOnce();
+        expect(rearm).toHaveBeenCalledWith(1800, 100);
+        expect(mocks.runDataExports).toHaveBeenCalledOnce();
+        expect(mocks.runDataExports).toHaveBeenCalledWith(
+          expect.objectContaining({ maxExports: 0 })
+        );
+      });
+
+      it("reports a failed re-arm without stopping the sweep", async () => {
+        mocks.createPrivacyMaintenanceClient.mockReturnValue({
+          close: mocks.privacyClose,
+          rearmDataExportEvents: vi
+            .fn()
+            .mockRejectedValue(new Error("rearm_failed")),
+        });
+
+        await expect(runScheduled(live)).rejects.toThrow("rearm_failed");
+
+        expect(mocks.runDataExports).toHaveBeenCalledOnce();
+        expect(mocks.privacyClose).toHaveBeenCalledOnce();
+      });
+    });
+
+    it.each([
+      ["the outbox role", { QUEUE_DEFAULT: { sendBatch: vi.fn() } }],
+      [
+        "the default queue",
+        {
+          OUTBOX_HYPERDRIVE: { connectionString: "postgresql://o.invalid/db" },
+        },
+      ],
+    ])(
+      "builds as before, with no re-arm, when %s is missing",
+      async (_name, extra) => {
+        const rearm = vi.fn();
+        mocks.createPrivacyMaintenanceClient.mockReturnValue({
+          close: mocks.privacyClose,
+          rearmDataExportEvents: rearm,
+        });
+
+        await expect(
+          runScheduled({ ...configured, ...privacy, ...extra })
+        ).resolves.toBeUndefined();
+
+        expect(rearm).not.toHaveBeenCalled();
+        const [options] = mocks.runDataExports.mock.calls[0] ?? [];
+        expect(options).not.toHaveProperty("maxExports");
+      }
+    );
+
     it("reports a connection that cannot be opened", async () => {
       mocks.createPrivacyMaintenanceClient.mockImplementation(() => {
         throw new Error("privacy_connection_failed");
@@ -299,6 +378,136 @@ describe("the scheduled maintenance", () => {
       expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
     });
   });
+});
+
+describe("the outbox cron", () => {
+  const outbox = {
+    OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
+  };
+  const OUTBOX_CRON = "19 * * * *";
+  const everything = {
+    ...configured,
+    ...outbox,
+    PRIVACY_HYPERDRIVE: { connectionString: "postgresql://privacy.invalid/db" },
+  };
+  let client: {
+    close: ReturnType<typeof vi.fn>;
+    expireProcessing: ReturnType<typeof vi.fn>;
+  };
+
+  const runCron = (cron: string | undefined, env: Record<string, unknown>) =>
+    worker.scheduled(
+      (cron === undefined ? {} : { cron }) as ScheduledController,
+      env as never
+    );
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    client = {
+      close: mocks.outboxClose.mockResolvedValue(undefined),
+      expireProcessing: vi.fn().mockResolvedValue(0),
+    };
+    mocks.createOutboxClient.mockReturnValue(client);
+    mocks.dispatchOutbox.mockResolvedValue({ claimed: 0 });
+    mocks.createMediaCleanupClient.mockReturnValue({ close: mocks.mediaClose });
+    mocks.mediaClose.mockResolvedValue(undefined);
+    mocks.createBillingStore.mockReturnValue({ close: mocks.billingClose });
+    mocks.billingClose.mockResolvedValue(undefined);
+    mocks.reconcileStagedMedia.mockResolvedValue({});
+    mocks.reconcileRemovedMedia.mockResolvedValue({});
+    mocks.runBillingMaintenance.mockResolvedValue({});
+    mocks.createPrivacyMaintenanceClient.mockReturnValue({
+      close: mocks.privacyClose,
+    });
+    mocks.privacyClose.mockResolvedValue(undefined);
+    mocks.runPrivacyMaintenance.mockResolvedValue({});
+    mocks.runDataExports.mockResolvedValue({});
+  });
+
+  it("runs only the dispatcher and the expiry of the processing records, and closes its connection", async () => {
+    await expect(runCron(OUTBOX_CRON, everything)).resolves.toBeUndefined();
+
+    expect(mocks.createOutboxClient).toHaveBeenCalledWith(
+      outbox.OUTBOX_HYPERDRIVE.connectionString
+    );
+    expect(mocks.dispatchOutbox).toHaveBeenCalledOnce();
+    expect(mocks.dispatchOutbox).toHaveBeenCalledWith(
+      expect.objectContaining({ store: client })
+    );
+    expect(client.expireProcessing).toHaveBeenCalledOnce();
+    expect(client.expireProcessing).toHaveBeenCalledWith(168, 500);
+    expect(mocks.outboxClose).toHaveBeenCalledOnce();
+    expect(mocks.reconcileStagedMedia).not.toHaveBeenCalled();
+    expect(mocks.runBillingMaintenance).not.toHaveBeenCalled();
+    expect(mocks.runPrivacyMaintenance).not.toHaveBeenCalled();
+    expect(mocks.runDataExports).not.toHaveBeenCalled();
+  });
+
+  it("hands the dispatcher the queues that are bound", async () => {
+    const queues = {
+      QUEUE_CRITICAL: { sendBatch: vi.fn() },
+      QUEUE_DEFAULT: { sendBatch: vi.fn() },
+      QUEUE_MEDIA: { sendBatch: vi.fn() },
+    };
+    await runCron(OUTBOX_CRON, { ...outbox, ...queues });
+    expect(mocks.dispatchOutbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queues: {
+          critical: queues.QUEUE_CRITICAL,
+          default: queues.QUEUE_DEFAULT,
+          media: queues.QUEUE_MEDIA,
+        },
+      })
+    );
+  });
+
+  it("warns and finishes where the outbox role is not provisioned", async () => {
+    await expect(runCron(OUTBOX_CRON, {})).resolves.toBeUndefined();
+
+    expect(console.warn).toHaveBeenCalledWith("outbox_dispatch_not_configured");
+    expect(mocks.createOutboxClient).not.toHaveBeenCalled();
+    expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
+  });
+
+  it("throws a dispatch failure, but still expires the records and closes", async () => {
+    mocks.dispatchOutbox.mockRejectedValue(new Error("dispatch_failed"));
+
+    await expect(runCron(OUTBOX_CRON, outbox)).rejects.toThrow(
+      "dispatch_failed"
+    );
+
+    expect(client.expireProcessing).toHaveBeenCalledOnce();
+    expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("reports a connection that cannot be opened", async () => {
+    mocks.createOutboxClient.mockImplementation(() => {
+      throw new Error("outbox_connection_failed");
+    });
+
+    await expect(runCron(OUTBOX_CRON, outbox)).rejects.toThrow(
+      "outbox_connection_failed"
+    );
+    expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the hourly cron", "17 * * * *"],
+    ["no cron at all", undefined],
+  ])(
+    "runs the maintenance as before, not the dispatcher, on %s",
+    async (_name, cron) => {
+      await expect(runCron(cron, everything)).resolves.toBeUndefined();
+
+      expect(mocks.reconcileStagedMedia).toHaveBeenCalledOnce();
+      expect(mocks.runBillingMaintenance).toHaveBeenCalledOnce();
+      expect(mocks.runPrivacyMaintenance).toHaveBeenCalledOnce();
+      expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
+      expect(client.expireProcessing).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("the queue consumer", () => {
@@ -350,9 +559,15 @@ describe("the queue consumer", () => {
     await runQueue({ ...configured, ...privacy }, sent);
 
     expect(mocks.runDataExports).toHaveBeenCalledTimes(1);
-    // one request and no sweep of expired exports: that stays with the hourly run
+    // that export only, by ID and organization, and no sweep of expired exports (the hourly run's)
     expect(mocks.runDataExports).toHaveBeenCalledWith(
-      expect.objectContaining({ maxExports: 1, sweep: false })
+      expect.objectContaining({
+        sweep: false,
+        target: {
+          exportId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+          organizationId: "org_1",
+        },
+      })
     );
     expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
     expect(sent.ack).toHaveBeenCalledTimes(1);
@@ -390,11 +605,118 @@ describe("the queue consumer", () => {
     expect(sent.ack).toHaveBeenCalledTimes(1);
   });
 
+  it("acks without running a message whose body names another export than its key", async () => {
+    const sent = message({
+      ...exportEvent,
+      event: { exportId: "0199a1b2-c3d4-7e5f-8a6b-dddddddddddd" },
+      idempotencyKey:
+        "data_export.requested:0199a1b2-c3d4-7e5f-8a6b-eeeeeeeeeeee",
+    });
+    await runQueue({ ...configured, ...privacy }, sent);
+
+    expect(mocks.runDataExports).not.toHaveBeenCalled();
+    expect(sent.ack).toHaveBeenCalledTimes(1);
+    expect(sent.retry).not.toHaveBeenCalled();
+  });
+
+  it("warns when the ledger is only in memory", async () => {
+    await runQueue({ ...configured, ...privacy }, message(exportEvent));
+
+    expect(console.warn).toHaveBeenCalledWith("queue_ledger_in_memory");
+  });
+
   it("acks a body that is not an envelope and runs nothing", async () => {
     const sent = message({ type: "data_export.requested" });
     await runQueue({ ...configured, ...privacy }, sent);
 
     expect(mocks.runDataExports).not.toHaveBeenCalled();
     expect(sent.ack).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the processing ledger", () => {
+    const outbox = {
+      OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
+    };
+    const exportId = "0199a1b2-c3d4-7e5f-8a6b-cccccccccccc";
+    const body = {
+      ...exportEvent,
+      event: { exportId },
+      idempotencyKey: `data_export.requested:${exportId}`,
+    };
+
+    it("is the durable one, and its connection is closed after the batch, when the outbox role is bound", async () => {
+      const store = {
+        claimProcessing: vi
+          .fn()
+          .mockResolvedValue({ result: "claimed", token: "t" }),
+        close: mocks.outboxClose.mockResolvedValue(undefined),
+        completeProcessing: vi.fn().mockResolvedValue(undefined),
+        releaseProcessing: vi.fn().mockResolvedValue(undefined),
+      };
+      mocks.createOutboxClient.mockReturnValue(store);
+      const sent = message(body);
+
+      await runQueue({ ...configured, ...privacy, ...outbox }, sent);
+
+      expect(mocks.createOutboxClient).toHaveBeenCalledWith(
+        outbox.OUTBOX_HYPERDRIVE.connectionString
+      );
+      expect(store.claimProcessing).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attempt: 1,
+          eventId: body.eventId,
+          idempotencyKey: body.idempotencyKey,
+        }),
+        960
+      );
+      expect(store.completeProcessing).toHaveBeenCalledOnce();
+      expect(mocks.runDataExports).toHaveBeenCalledOnce();
+      expect(sent.ack).toHaveBeenCalledOnce();
+      expect(mocks.outboxClose).toHaveBeenCalledOnce();
+    });
+
+    it("closes the connection and leaves the message to retry when the durable ledger is down", async () => {
+      mocks.createOutboxClient.mockReturnValue({
+        claimProcessing: vi.fn().mockRejectedValue(new Error("down")),
+        close: mocks.outboxClose.mockResolvedValue(undefined),
+        completeProcessing: vi.fn(),
+        releaseProcessing: vi.fn(),
+      });
+      const sent = message(body);
+
+      await runQueue({ ...configured, ...privacy, ...outbox }, sent);
+
+      expect(mocks.runDataExports).not.toHaveBeenCalled();
+      expect(sent.retry).toHaveBeenCalledOnce();
+      expect(mocks.outboxClose).toHaveBeenCalledOnce();
+    });
+
+    it("is in memory, with no outbox connection, when the outbox role is not bound", async () => {
+      const memoryId = "0199a1b2-c3d4-7e5f-8a6b-dddddddddddd";
+      const first = message({
+        ...body,
+        event: { exportId: memoryId },
+        idempotencyKey: `data_export.requested:${memoryId}`,
+      });
+      const duplicate = message(first.body);
+
+      await runQueue({ ...configured, ...privacy }, first, duplicate);
+
+      expect(mocks.createOutboxClient).not.toHaveBeenCalled();
+      // the in-memory ledger still absorbs the duplicate
+      expect(mocks.runDataExports).toHaveBeenCalledOnce();
+      expect(first.ack).toHaveBeenCalledOnce();
+      expect(duplicate.ack).toHaveBeenCalledOnce();
+    });
+  });
+});
+
+describe("the cron triggers", () => {
+  it("declare the dispatcher's own cron, the one the scheduled handler tells apart", () => {
+    const config = readFileSync(
+      new URL("../wrangler.jsonc", import.meta.url),
+      "utf8"
+    );
+    expect(config).toContain('"crons": ["17 * * * *", "19 * * * *"]');
   });
 });

@@ -27,8 +27,11 @@ export const EXPORT_VALIDITY_HOURS =
 export const MAX_EXPORTS_PER_DAY = 3;
 /** A run that dies is tried again, up to this many times, and then the export fails. */
 export const MAX_EXPORT_ATTEMPTS = 3;
-/** How long one run holds an export before another may take it (the Worker has stopped by then). */
-export const EXPORT_LEASE_SECONDS = 600;
+/**
+ * How long one run holds an export before another may take it: longer than the 15 minutes of wall time
+ * a queue consumer or cron invocation can live, so a run still alive never loses its export.
+ */
+export const EXPORT_LEASE_SECONDS = 960;
 /** What a failed export is kept for before it is removed (the same retention class). */
 export const FAILED_EXPORT_KEEP_HOURS =
   approvedRetention("data_exports") / HOUR_MS;

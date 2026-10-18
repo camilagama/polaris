@@ -4,6 +4,8 @@ status: accepted
 
 # Exportação de dados da organização: uma cópia a pedido do dono, feita em segundo plano
 
+> **Emenda ([ADR 0084](0084-despachante-e-varredor-do-outbox.md)):** com o despachante do outbox ligado, a exportação é montada pelo consumidor da fila, não pelo cron; uma falha não final espera 15 minutos (1 hora depois da segunda) antes de a exportação poder ser tomada de novo, e o prazo de uma tomada é 960 s. O texto abaixo é o da decisão original.
+
 ## Contexto
 
 O dono de uma organização precisa poder levar embora o que cadastrou (portabilidade) e o Polaris, como operador dos dados de clientes do revendedor, precisa entregar essa cópia sem abrir caminho para vazamento: a cópia contém dado pessoal de clientes. O PR104 do plano pede a exportação em formatos abertos, privada e temporária. As regras de privacidade já dizem que encerrar a organização **não** exporta os dados automaticamente ([privacidade](../business-rules/privacy.md), ADR 0074). Uma exportação lê praticamente tudo da organização, então ela não pode rodar dentro de uma requisição do usuário (limite de CPU e de memória do Worker) nem escapar da autorização que o usuário já tem.

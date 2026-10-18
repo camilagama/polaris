@@ -42,6 +42,7 @@ export const PURGE_DELETE_ORDER = Object.freeze([
   "public_catalog_profiles",
   "tenant_audit_event",
   "event_outbox",
+  "queue_processing",
   "organization_closures",
   "memberships",
 ] as const);

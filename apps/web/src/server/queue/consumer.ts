@@ -4,12 +4,14 @@ import {
   type QueueEnvelope,
   queueForEventType,
 } from "@polaris/domain/events/queue-envelope";
-import type { ProcessingLedger } from "./processing-ledger";
+import type { ProcessingKey, ProcessingLedger } from "./processing-ledger";
 
 /**
- * The generic consumer of the queues (plan PR109, ADR 0083). For each message: validate the envelope
- * at the edge, take its idempotency key in the ledger, run the handler of its type, record it done and
- * ack; on a failure give the key back and retry with a delay. It knows no event type: the handlers
+ * The generic consumer of the queues (plans PR109 and PR110, ADRs 0083 and 0084). For each message:
+ * validate the envelope at the edge, take its idempotency key in the ledger (which refuses the key under
+ * another event ID and, when durable, an event the outbox does not hold), run the handler of its type,
+ * record it done and ack; on a failure give the key back and retry with a delay. A handler reads the
+ * state it acts on by the IDs of the event, with its own authority, and never acts on the envelope alone. It knows no event type: the handlers
  * are given to it. The queue's own limit of retries ends a message that keeps failing (no dead-letter
  * queue yet: PR111).
  *
@@ -28,9 +30,9 @@ export interface QueueMessage {
 }
 
 export interface QueueBatch {
+  messages: readonly QueueMessage[];
   /** The name of the queue it came from: `polaris-<critical|default|media>`, with an optional environment suffix. */
   queue: string;
-  messages: readonly QueueMessage[];
 }
 
 export type QueueHandler = (envelope: QueueEnvelope) => Promise<void>;
@@ -48,12 +50,12 @@ export class PermanentHandlerError extends Error {
 
 export interface QueueConsumerDependencies {
   handlers: Readonly<Partial<Record<OutboxEventType, QueueHandler>>>;
-  ledger: ProcessingLedger;
-  /** How long a claim holds the key while its handler runs (default: ten minutes, longer than a Worker invocation). */
+  /** How long a claim holds the key while its handler runs (default: longer than the 15 minutes a consumer invocation can live). */
   leaseSeconds?: number;
+  ledger: ProcessingLedger;
 }
 
-const DEFAULT_LEASE_SECONDS = 600;
+const DEFAULT_LEASE_SECONDS = 960;
 const BASE_RETRY_DELAY_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 3600;
 
@@ -64,6 +66,12 @@ export function retryDelaySeconds(deliveries: number): number {
     BASE_RETRY_DELAY_SECONDS * 2 ** exponent,
     MAX_RETRY_DELAY_SECONDS
   );
+}
+
+/** The SQLSTATE of a database error (five characters, no message): tells a contended claim from a database that is down. */
+function sqlState(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.length === 5 ? code : undefined;
 }
 
 function errorClass(error: unknown): string {
@@ -106,7 +114,13 @@ async function processMessage(
     message.retry({ delaySeconds: delay });
     return;
   }
-  const key = `${envelope.organizationId}:${envelope.idempotencyKey}`;
+  const key: ProcessingKey = {
+    attempt: envelope.attempt,
+    eventId: envelope.eventId,
+    idempotencyKey: envelope.idempotencyKey,
+    organizationId: envelope.organizationId,
+    type: envelope.type,
+  };
   const { ledger } = dependencies;
   let claim: Awaited<ReturnType<ProcessingLedger["claim"]>>;
   try {
@@ -118,6 +132,7 @@ async function processMessage(
     console.error("queue_ledger_unavailable", {
       errorName: errorClass(error),
       messageId: message.id,
+      sqlState: sqlState(error),
     });
     message.retry({ delaySeconds: delay });
     return;
@@ -126,6 +141,18 @@ async function processMessage(
     console.info("queue_message_duplicate", {
       eventId: envelope.eventId,
       messageId: message.id,
+    });
+    message.ack();
+    return;
+  }
+  if (claim.result === "unknown") {
+    // the key belongs to another event, or the outbox does not hold this one (forged, or purged since):
+    // it will not become known, and nothing runs on the envelope alone
+    console.warn("queue_message_unknown_event", {
+      eventId: envelope.eventId,
+      messageId: message.id,
+      reason: claim.reason,
+      type: envelope.type,
     });
     message.ack();
     return;
