@@ -9,6 +9,7 @@ import {
   cancelOrganizationPurge,
   closeSupportCase,
   grantTenantAccess,
+  listOrganizationLegalHolds,
   listPrivacyCases,
   listSupportCases,
   listTenantCustomers,
@@ -39,6 +40,7 @@ import {
   resolvePlatformPrincipal,
   withAdminDatabase,
 } from "@polaris/db/platform-principal-repository";
+import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
 import {
   type BillingCommandPorts,
   grantEntitlementCommand,
@@ -239,16 +241,38 @@ const dependencies: AdminDependencies = {
       withAdminDatabase(connectionOf(bindings), (client) =>
         listSupportCases(client, input)
       ),
-    legalHold: (principalId, caseId, organizationId, action, bindings) =>
-      withAdminDatabase(connectionOf(bindings), (client) =>
-        (action === "place"
-          ? placeOrganizationLegalHold
-          : releaseOrganizationLegalHold)(
+    legalHold: (
+      principalId,
+      caseId,
+      organizationId,
+      action,
+      reviewAt,
+      bindings
+    ) =>
+      withAdminDatabase(connectionOf(bindings), (client) => {
+        if (action === "release") {
+          return releaseOrganizationLegalHold(
+            client,
+            principalId,
+            caseId,
+            organizationId
+          );
+        }
+        if (reviewAt === null) {
+          // the route always sends one; a hold is never placed without its review date
+          throw new InvalidSupportRequestError("invalid_review_at");
+        }
+        return placeOrganizationLegalHold(
           client,
           principalId,
           caseId,
-          organizationId
-        )
+          organizationId,
+          reviewAt
+        );
+      }),
+    listLegalHolds: (input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listOrganizationLegalHolds(client, input)
       ),
     purge: (principalId, caseId, organizationId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>

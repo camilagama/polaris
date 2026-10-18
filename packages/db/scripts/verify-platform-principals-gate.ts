@@ -249,7 +249,7 @@ async function run() {
             'admin_list_privacy_cases', 'admin_open_privacy_case', 'admin_privacy_case_detail', 'admin_privacy_record_action', 'admin_privacy_record_decision',
             'admin_privacy_record_identity', 'admin_privacy_record_role', 'admin_privacy_record_scope', 'admin_privacy_resolve',
             'admin_list_operational_incidents', 'admin_read_operational_incident', 'admin_retry_dead_letter',
-            'admin_place_organization_legal_hold', 'admin_release_organization_legal_hold'
+            'admin_place_organization_legal_hold', 'admin_release_organization_legal_hold', 'admin_list_organization_legal_holds'
           )
           AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE')`
     );

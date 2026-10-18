@@ -36,6 +36,7 @@ export type SupportRefusalCode =
   | "invalid_privacy_request"
   | "invalid_privacy_step"
   | "invalid_request"
+  | "invalid_review_at"
   | "privacy_case_workflow_required"
   | "privacy_decision_not_allowed"
   | "privacy_stage_conflict"
@@ -74,6 +75,7 @@ const KNOWN_CODES: readonly SupportRefusalCode[] = [
   "invalid_field",
   "invalid_privacy_request",
   "invalid_privacy_step",
+  "invalid_review_at",
   "privacy_case_workflow_required",
   "privacy_decision_not_allowed",
   "privacy_stage_conflict",
@@ -163,6 +165,35 @@ export function normalizeAccessMinutes(minutes: number | undefined): number {
     throw new InvalidSupportRequestError("invalid_duration");
   }
   return value;
+}
+
+/** A legal hold is reviewed at most this far from the day it is placed (the database holds the same limit). */
+export const MAX_LEGAL_HOLD_REVIEW_DAYS = 366;
+
+const ISO_INSTANT =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * The review date of a legal hold (ADR 0081): an ISO 8601 instant with its offset, in the future and no more than
+ * `MAX_LEGAL_HOLD_REVIEW_DAYS` away. Returns it in UTC; the database checks the same bounds again.
+ */
+export function normalizeLegalHoldReviewAt(
+  value: unknown,
+  now: Date = new Date()
+): string {
+  if (typeof value !== "string" || !ISO_INSTANT.test(value)) {
+    throw new InvalidSupportRequestError("invalid_review_at");
+  }
+  const at = new Date(value);
+  const limit = now.getTime() + MAX_LEGAL_HOLD_REVIEW_DAYS * 86_400_000;
+  if (
+    Number.isNaN(at.getTime()) ||
+    at.getTime() <= now.getTime() ||
+    at.getTime() > limit
+  ) {
+    throw new InvalidSupportRequestError("invalid_review_at");
+  }
+  return at.toISOString();
 }
 
 export function isRevealableField(

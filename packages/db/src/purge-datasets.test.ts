@@ -80,7 +80,7 @@ describe("the purge of the billing facts", () => {
     ]);
   });
 
-  it("keeps nothing that names the payer", () => {
+  it("keeps no payer data in the fact (pseudonymization)", () => {
     for (const key of [
       "name",
       "document",
@@ -107,6 +107,6 @@ describe("the purge in the migration", () => {
 
   it("writes the same fixed text it declares in place of the free text", () => {
     expect(migration).toContain(`'${PURGE_REMOVED_TEXT}'`);
-    expect(migration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(7);
+    expect(migration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(11);
   });
 });

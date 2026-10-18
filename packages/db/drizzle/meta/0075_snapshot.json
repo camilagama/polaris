@@ -5137,6 +5137,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "review_at": {
+          "name": "review_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
         "support_case_id": {
           "name": "support_case_id",
           "type": "uuid",
@@ -5234,6 +5240,10 @@
         }
       },
       "checkConstraints": {
+        "organization_legal_holds_review_after_placed": {
+          "name": "organization_legal_holds_review_after_placed",
+          "value": "\"organization_legal_holds\".\"review_at\" > \"organization_legal_holds\".\"placed_at\""
+        },
         "organization_legal_holds_release_coherent": {
           "name": "organization_legal_holds_release_coherent",
           "value": "(\"organization_legal_holds\".\"released_at\" IS NULL) = (\"organization_legal_holds\".\"released_by\" IS NULL)\n        AND (\"organization_legal_holds\".\"released_at\" IS NULL OR \"organization_legal_holds\".\"released_at\" >= \"organization_legal_holds\".\"placed_at\")"

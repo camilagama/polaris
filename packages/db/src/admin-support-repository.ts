@@ -323,20 +323,54 @@ export function cancelOrganizationPurge(
 /**
  * Places a legal hold on the case's organization (ADR 0081, decision of 18/10/2026): while it is in force the
  * purge is neither scheduled nor run. `storageTouched` tells that a scheduled purge already removed objects from
- * the storage (they do not come back). The operator names the organization (a confirmation); placing it again
- * changes nothing, and a purged organization is refused (`purge_already_done`).
+ * the storage (they do not come back). The operator names the organization (a confirmation) and a review date
+ * (in the future, at most 366 days away: when it passes the hold stays and is listed as due for review); placing
+ * it again changes nothing, and a purged organization is refused (`purge_already_done`).
  */
 export function placeOrganizationLegalHold(
   client: AdminQueryable,
   principalId: string,
   caseId: string,
-  organizationId: string
+  organizationId: string,
+  reviewAt: string
 ) {
   return call<{ changed: boolean; held: boolean; storageTouched: boolean }>(
     client,
-    "public.admin_place_organization_legal_hold($1, $2, $3)",
-    [principalId, caseId, organizationId]
+    "public.admin_place_organization_legal_hold($1, $2, $3, $4::timestamptz)",
+    [principalId, caseId, organizationId, reviewAt]
   );
+}
+
+export interface LegalHoldSummary {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  placedAt: string;
+  placedBy: string;
+  reviewAt: string;
+  /** The review date passed: the hold is still in force and waits for an operator to review it. */
+  reviewDue: boolean;
+  supportCaseId: string;
+}
+
+export interface LegalHoldPage {
+  /** How many holds in force are past their review date, over all of them and not only this page. */
+  dueForReview: number;
+  holds: LegalHoldSummary[];
+  next: string | null;
+}
+
+/** The legal holds in force, newest first, read only: a purge that waits for a hold has one to show. */
+export async function listOrganizationLegalHolds(
+  client: AdminQueryable,
+  input: { after: string | null; limit: number }
+): Promise<LegalHoldPage> {
+  const page = await call<LegalHoldPage>(
+    client,
+    "public.admin_list_organization_legal_holds($1, $2)",
+    [input.limit, input.after]
+  );
+  return page ?? { dueForReview: 0, holds: [], next: null };
 }
 
 /** Releases the legal hold in force on the case's organization; with none in force it changes nothing. */

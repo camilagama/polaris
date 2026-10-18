@@ -150,9 +150,11 @@ export const organizationPurgeCancellations = pgTable(
 /**
  * A legal hold on an organization (ADR 0081, decision of 18/10/2026): while one is in force, the purge is
  * neither scheduled nor run, and nothing of the organization is removed. One row per hold; released holds
- * stay as the record of it. It carries no free text: why the hold exists is the case it hangs from. The
- * Admin places and releases it through `admin_place_organization_legal_hold` and
- * `admin_release_organization_legal_hold`; the purge functions only read it. Nobody deletes a row.
+ * stay as the record of it. It carries no free text: why the hold exists is the case it hangs from. It has a
+ * required review date: when it passes the hold stays in force (nothing releases it but an operator) and the
+ * Admin list shows it as due for review. The Admin places and releases it through
+ * `admin_place_organization_legal_hold` and `admin_release_organization_legal_hold` and reads the ones in force
+ * through `admin_list_organization_legal_holds`; the purge functions only read it. Nobody deletes a row.
  */
 export const organizationLegalHolds = pgTable(
   "organization_legal_holds",
@@ -169,6 +171,8 @@ export const organizationLegalHolds = pgTable(
       .references(() => platformPrincipals.id),
     releasedAt: timestamp("released_at", { withTimezone: true }),
     releasedBy: uuid("released_by").references(() => platformPrincipals.id),
+    /** When the hold must be looked at again; after it the hold stays and is listed as due for review. */
+    reviewAt: timestamp("review_at", { withTimezone: true }).notNull(),
     supportCaseId: uuid("support_case_id")
       .notNull()
       .references(() => supportCases.id, { onDelete: "restrict" }),
@@ -178,6 +182,10 @@ export const organizationLegalHolds = pgTable(
     uniqueIndex("organization_legal_holds_active_unique")
       .on(table.organizationId)
       .where(sql`${table.releasedAt} IS NULL`),
+    check(
+      "organization_legal_holds_review_after_placed",
+      sql`${table.reviewAt} > ${table.placedAt}`
+    ),
     check(
       "organization_legal_holds_release_coherent",
       sql`(${table.releasedAt} IS NULL) = (${table.releasedBy} IS NULL)

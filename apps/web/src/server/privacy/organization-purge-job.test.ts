@@ -1,4 +1,5 @@
 import type { ClaimedOrganizationPurge } from "@polaris/db/privacy-maintenance";
+import { logger } from "@polaris/observability/logger";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runOrganizationPurges } from "./organization-purge-job";
 
@@ -87,6 +88,14 @@ function keysUnder(objects: Map<string, Uint8Array>, ...prefixes: string[]) {
   );
 }
 
+/** The job writes through the typed logger; the tests read what it wrote and keep the output quiet. */
+function quiet() {
+  return {
+    error: vi.spyOn(logger, "error").mockImplementation(() => undefined),
+    warn: vi.spyOn(logger, "warn").mockImplementation(() => undefined),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -166,7 +175,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("leaves the storage alone when the run no longer holds the purge", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    quiet();
     const ctx = fixture({
       markTouched: () => Promise.reject(new Error("purge_not_claimed")),
     });
@@ -187,7 +196,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("asks again before every removal of images, and stops when a legal hold came in meanwhile", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    quiet();
     let marks = 0;
     const ctx = fixture({
       markTouched: () => {
@@ -218,7 +227,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("stops before the media and the database when the exports cannot be removed", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    quiet();
     const ctx = fixture();
     seed(ctx.objects, [`${exportsA}e1/data.json`]);
     ctx.bucket.delete.mockImplementation((keys: string | string[]) =>
@@ -240,7 +249,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("records a database failure and does not complete the sweep", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    quiet();
     const ctx = fixture({
       onPurge: () => Promise.reject(new Error("db down")),
     });
@@ -256,7 +265,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("removes an export written late during the second sweep", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { warn } = quiet();
     const ctx = fixture({
       onPurge: () => {
         seed(ctx.objects, [`${exportsA}late/data.json`]);
@@ -268,7 +277,10 @@ describe("runOrganizationPurges", () => {
     expect(report).toEqual({ failed: 0, purged: 1, swept: 1 });
     expect(keysUnder(ctx.objects, exportsA, mediaA)).toEqual([]);
     expect(warn).toHaveBeenCalledWith("organization_purge_sweep_removed", {
+      job: "organization_purge",
       objects: 1,
+      organizationId: orgA,
+      outcome: "partial",
     });
   });
 
@@ -292,7 +304,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("takes the next purge of the run after one fails", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    quiet();
     const ctx = fixture({
       claims: [claim(orgA), claim(orgB), null],
       onPurge: (id) =>
@@ -357,7 +369,7 @@ describe("runOrganizationPurges", () => {
   });
 
   it("survives a failure that cannot be recorded", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { error } = quiet();
     const ctx = fixture({
       claims: [claim(orgA), claim(orgB), null],
       onPurge: (id) =>
@@ -368,16 +380,14 @@ describe("runOrganizationPurges", () => {
     const report = await ctx.run();
 
     expect(report).toEqual({ failed: 1, purged: 1, swept: 1 });
-    expect(warn).toHaveBeenCalledWith(
+    expect(error).toHaveBeenCalledWith(
       "organization_purge_failure_not_recorded",
-      {
-        organizationId: orgA,
-      }
+      { job: "organization_purge", organizationId: orgA, outcome: "failure" }
     );
   });
 
   it("does not log the message of the error", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { error, warn } = quiet();
     const ctx = fixture({
       onPurge: () => Promise.reject(new Error("segredo-xyz")),
       recordFailure: () => Promise.reject(new Error("segredo-xyz")),
@@ -385,8 +395,39 @@ describe("runOrganizationPurges", () => {
 
     await ctx.run();
 
-    expect(warn).toHaveBeenCalled();
-    expect(JSON.stringify(warn.mock.calls)).not.toContain("segredo-xyz");
+    expect(error).toHaveBeenCalledWith(
+      "organization_purge_step_failed",
+      expect.objectContaining({
+        attempt: 1,
+        job: "organization_purge",
+        organizationId: orgA,
+        outcome: "failure",
+        reason: "purge_database_failed",
+        step: "database",
+      })
+    );
+    expect(
+      JSON.stringify([...error.mock.calls, ...warn.mock.calls])
+    ).not.toContain("segredo-xyz");
+  });
+
+  it("logs a purge held by a legal hold as a refusal, with its code", async () => {
+    const { error, warn } = quiet();
+    const ctx = fixture({
+      onPurge: () => Promise.reject(new Error("legal_hold_active")),
+    });
+
+    await ctx.run();
+
+    expect(warn).toHaveBeenCalledWith("organization_purge_step_failed", {
+      attempt: 1,
+      job: "organization_purge",
+      organizationId: orgA,
+      outcome: "rejected",
+      reason: "legal_hold_active",
+      step: "database",
+    });
+    expect(error).not.toHaveBeenCalled();
   });
 
   it("stops before the database when a listed master is outside the organization's prefix", async () => {

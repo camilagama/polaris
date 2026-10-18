@@ -7,7 +7,8 @@
 -- a role of their own that is never a login; only the privacy runtime executes them. The decisions of
 -- 18/10/2026 (ADR 0081): the purge runs only once the organization has been closed for 30 days and never
 -- while a legal hold is in force; it removes the tenant's operational data (Polaris is its processor), keeps
--- the billing events with the payer's data taken out, and removes the free text of the cases it keeps.
+-- the billing events pseudonymized (the payer's data taken out; the provider's references stay, for the fiscal
+-- period), and removes the free text of the cases and of the entitlement grants it keeps.
 DO $roles$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'polaris_purge_owner') THEN
@@ -25,7 +26,9 @@ CREATE TABLE "organization_legal_holds" (
 	"placed_by" uuid NOT NULL,
 	"released_at" timestamp with time zone,
 	"released_by" uuid,
+	"review_at" timestamp with time zone NOT NULL,
 	"support_case_id" uuid NOT NULL,
+	CONSTRAINT "organization_legal_holds_review_after_placed" CHECK ("organization_legal_holds"."review_at" > "organization_legal_holds"."placed_at"),
 	CONSTRAINT "organization_legal_holds_release_coherent" CHECK (("organization_legal_holds"."released_at" IS NULL) = ("organization_legal_holds"."released_by" IS NULL)
         AND ("organization_legal_holds"."released_at" IS NULL OR "organization_legal_holds"."released_at" >= "organization_legal_holds"."placed_at"))
 );
@@ -119,7 +122,8 @@ BEGIN
      OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
      OR NEW.support_case_id IS DISTINCT FROM OLD.support_case_id
      OR NEW.placed_at IS DISTINCT FROM OLD.placed_at
-     OR NEW.placed_by IS DISTINCT FROM OLD.placed_by THEN
+     OR NEW.placed_by IS DISTINCT FROM OLD.placed_by
+     OR NEW.review_at IS DISTINCT FROM OLD.review_at THEN
     RAISE EXCEPTION 'a legal hold only changes when it is released, once' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
@@ -218,6 +222,17 @@ CREATE POLICY organization_purge_cancellations_purge_owner_update ON public.orga
   AS PERMISSIVE FOR UPDATE TO polaris_purge_owner
   USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = organization_purge_cancellations.organization_id AND purge_scope.status = 'purge_pending'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = organization_purge_cancellations.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+-- the entitlement grants stay as part of the billing record (the key, the value, the dates, the operator's
+-- identifier); the reason the operator typed is free text and goes: the purge owner reads and rewrites only that
+-- column, only for an organization being purged
+GRANT SELECT (id, organization_id, reason) ON TABLE public.entitlement_grants TO polaris_purge_owner;--> statement-breakpoint
+GRANT UPDATE (reason) ON TABLE public.entitlement_grants TO polaris_purge_owner;--> statement-breakpoint
+CREATE POLICY entitlement_grants_purge_owner_select ON public.entitlement_grants
+  AS PERMISSIVE FOR SELECT TO polaris_purge_owner USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = entitlement_grants.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+CREATE POLICY entitlement_grants_purge_owner_update ON public.entitlement_grants
+  AS PERMISSIVE FOR UPDATE TO polaris_purge_owner
+  USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = entitlement_grants.organization_id AND purge_scope.status = 'purge_pending'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = entitlement_grants.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
 -- a purge reapplied after a restore (runbook) finds its own tombstone: the purge owner reads only the purge
 -- tombstones, to know the organization was already purged once after its closure period
 GRANT SELECT (organization_id, entity_type, entity_id, operation) ON TABLE public.deletion_ledger TO polaris_purge_owner;--> statement-breakpoint
@@ -455,6 +470,50 @@ REVOKE ALL ON FUNCTION public.privacy_cases_no_text_after_purge() FROM PUBLIC;--
 CREATE TRIGGER privacy_cases_no_text_after_purge
   BEFORE INSERT OR UPDATE ON public.privacy_cases
   FOR EACH ROW EXECUTE FUNCTION public.privacy_cases_no_text_after_purge();--> statement-breakpoint
+-- The same for the reason of an entitlement grant (decision of 18/10/2026, ADR 0081). Written after the purge, the
+-- row keeps the grant and the fixed text: the runtime that writes grants cannot read the organizations, so this
+-- trigger function is SECURITY DEFINER, owned by the purge owner (which reads the tombstone, nothing else of the
+-- organization). And the purge owner, which can write that column only for an organization being purged, can write
+-- nothing in it but the fixed text and change nothing else of the row (this one runs as the caller, to see who it is).
+CREATE FUNCTION public.entitlement_grants_no_text_after_purge()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.organizations AS purged_scope
+     WHERE purged_scope.id = NEW.organization_id AND purged_scope.status = 'purged'
+  ) THEN
+    NEW.reason := 'Texto removido pelo purge da organização.';
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.entitlement_grants_no_text_after_purge() FROM PUBLIC;--> statement-breakpoint
+CREATE TRIGGER entitlement_grants_no_text_after_purge
+  BEFORE INSERT OR UPDATE ON public.entitlement_grants
+  FOR EACH ROW EXECUTE FUNCTION public.entitlement_grants_no_text_after_purge();--> statement-breakpoint
+CREATE FUNCTION public.entitlement_grants_purge_text_only()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF current_user = 'polaris_purge_owner'
+     AND (TG_OP <> 'UPDATE'
+          OR NEW.reason <> 'Texto removido pelo purge da organização.'
+          OR (pg_catalog.to_jsonb(NEW) - 'reason') <> (pg_catalog.to_jsonb(OLD) - 'reason')) THEN
+    RAISE EXCEPTION 'the purge only replaces the reason of a grant by the fixed text' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.entitlement_grants_purge_text_only() FROM PUBLIC;--> statement-breakpoint
+CREATE TRIGGER entitlement_grants_purge_text_only
+  BEFORE INSERT OR UPDATE ON public.entitlement_grants
+  FOR EACH ROW EXECUTE FUNCTION public.entitlement_grants_purge_text_only();--> statement-breakpoint
 -- An export file is recorded only for an active organization (ADR 0078 and 0081): a run that read before
 -- the closure, or a claim of an export whose organization is no longer active, cannot leave a copy on
 -- record. The job writes the object before recording it and removes the export's objects when it fails.
@@ -666,8 +725,10 @@ $function$;--> statement-breakpoint
 -- named (a confirmation, as in the purge), on any organization not yet purged; placing it again changes nothing.
 -- It takes the organization's lock, the one the purge's database step takes first, so either the hold comes
 -- first and the purge refuses, or the purge comes first and the hold is refused (`purge_already_done`). It has
--- no free text: why it exists is the case.
-CREATE FUNCTION public.admin_place_organization_legal_hold(p_principal uuid, p_case uuid, p_organization text)
+-- no free text: why it exists is the case. It carries a review date, required: in the future and no more than 366
+-- days away. When the date passes the hold stays in force (it never releases itself) and the list shows it as due
+-- for review; ending it is the operator's decision.
+CREATE FUNCTION public.admin_place_organization_legal_hold(p_principal uuid, p_case uuid, p_organization text, p_review_at timestamp with time zone)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -684,6 +745,9 @@ BEGIN
   IF p_organization IS DISTINCT FROM target THEN
     RAISE EXCEPTION 'organization_mismatch' USING ERRCODE = '55000';
   END IF;
+  IF p_review_at IS NULL OR p_review_at <= pg_catalog.now() OR p_review_at > pg_catalog.now() + interval '366 days' THEN
+    RAISE EXCEPTION 'invalid_review_at' USING ERRCODE = '22023';
+  END IF;
   SELECT organization.status INTO current_status
     FROM public.organizations AS organization WHERE organization.id = target FOR UPDATE;
   IF current_status = 'purged' THEN
@@ -699,8 +763,8 @@ BEGIN
   ) THEN
     RETURN pg_catalog.jsonb_build_object('changed', false, 'held', true, 'storageTouched', storage_touched);
   END IF;
-  INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by)
-  VALUES (target, p_case, p_principal)
+  INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by, review_at)
+  VALUES (target, p_case, p_principal, p_review_at)
   RETURNING id INTO created;
   PERFORM public.admin_record_audit(
     p_principal, 'organization.legal_hold_placed', target, p_case, 'organization_legal_hold', created::text, NULL
@@ -738,6 +802,61 @@ BEGIN
     p_principal, 'organization.legal_hold_released', target, p_case, 'organization_legal_hold', released::text, NULL
   );
   RETURN pg_catalog.jsonb_build_object('changed', true, 'held', false);
+END;
+$function$;--> statement-breakpoint
+-- The legal holds in force, read only, newest first: a purge that waits has a hold to show. A hold whose review
+-- date passed is `reviewDue`; it still blocks the purge (nothing releases it but an operator), and `dueForReview`
+-- counts them over every hold in force, not only the page. The reader's capability is checked by the route, as for
+-- the list of cases; no free text and no personal data in the answer (IDs, names of organizations and dates).
+CREATE FUNCTION public.admin_list_organization_legal_holds(p_limit integer, p_after uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 50 THEN
+    RAISE EXCEPTION 'invalid page size' USING ERRCODE = '22023';
+  END IF;
+  RETURN (
+    WITH page AS (
+      SELECT hold.id, hold.organization_id, organization.name AS organization_name, hold.support_case_id,
+             hold.placed_at, hold.placed_by, hold.review_at
+        FROM public.organization_legal_holds AS hold
+        JOIN public.organizations AS organization ON organization.id = hold.organization_id
+       WHERE hold.released_at IS NULL
+         AND (p_after IS NULL OR hold.id < p_after)
+       ORDER BY hold.id DESC
+       LIMIT p_limit + 1
+    ),
+    shown AS (SELECT * FROM page ORDER BY id DESC LIMIT p_limit)
+    SELECT pg_catalog.jsonb_build_object(
+      'holds', COALESCE((
+        SELECT pg_catalog.jsonb_agg(
+          pg_catalog.jsonb_build_object(
+            'id', shown.id,
+            'organizationId', shown.organization_id,
+            'organizationName', shown.organization_name,
+            'supportCaseId', shown.support_case_id,
+            'placedAt', shown.placed_at,
+            'placedBy', shown.placed_by,
+            'reviewAt', shown.review_at,
+            'reviewDue', shown.review_at <= pg_catalog.now()
+          ) ORDER BY shown.id DESC
+        ) FROM shown
+      ), '[]'::jsonb),
+      'dueForReview', (
+        SELECT pg_catalog.count(*) FROM public.organization_legal_holds AS due
+         WHERE due.released_at IS NULL AND due.review_at <= pg_catalog.now()
+      ),
+      'next', CASE
+        WHEN (SELECT pg_catalog.count(*) FROM page) > p_limit
+          THEN (SELECT shown.id FROM shown ORDER BY shown.id LIMIT 1)
+        ELSE NULL
+      END
+    )
+  );
 END;
 $function$;--> statement-breakpoint
 -- the history of cancellations is append-only for everyone, the table's owner included: no UPDATE, DELETE or
@@ -909,12 +1028,14 @@ DECLARE
   removed bigint;
   total bigint := 0;
   blocker text;
-  anonymized bigint;
+  pseudonymized bigint;
   scrubbed bigint := 0;
   -- the keys the billing lifecycle writes in a fact (`serializeBillingFact` and the ledger's commands): values,
   -- dates, types and opaque references, and only as plain values (a nested object or list goes too). Anything
-  -- else (a payer's name, document, e-mail, phone, address or ID at the provider) is taken out;
-  -- `PURGE_BILLING_FACT_KEYS` in `purge-datasets.ts` holds the same list
+  -- else in the fact (a payer's name, document, e-mail, phone, address or ID) is taken out;
+  -- `PURGE_BILLING_FACT_KEYS` in `purge-datasets.ts` holds the same list. This is pseudonymization, not
+  -- anonymization: the columns `billing_events.provider_ref` and `provider_event_id` and
+  -- `organization_billing.provider_ref` stay, and they still find the payer at the provider
   kept_fact_keys text[] := ARRAY[
     'type', 'occurredAt', 'cycleMonths', 'periodEndsAt', 'transition', 'grantId', 'key', 'startsAt', 'expiresAt', 'actor'
   ];
@@ -928,7 +1049,7 @@ BEGIN
       FROM public.organizations AS organization WHERE organization.id = p_organization;
     IF current_status = 'purged' THEN
       RETURN pg_catalog.jsonb_build_object(
-        'alreadyPurged', true, 'deletedRows', 0, 'anonymizedBillingEvents', 0, 'scrubbedTexts', 0
+        'alreadyPurged', true, 'deletedRows', 0, 'pseudonymizedBillingEvents', 0, 'scrubbedTexts', 0
       );
     END IF;
     RAISE EXCEPTION 'organization_not_purge_pending' USING ERRCODE = '55000';
@@ -962,7 +1083,8 @@ BEGIN
     GET DIAGNOSTICS removed = ROW_COUNT;
     total := total + removed;
   END LOOP;
-  -- the billing events stay for the fiscal period, without the payer: values, dates, types and opaque references
+  -- the billing events stay for the fiscal period, pseudonymized: values, dates, types and opaque references in the
+  -- fact (the provider's references stay in their columns, ADR 0081)
   UPDATE public.billing_events AS billing
      SET fact = (
        SELECT COALESCE(pg_catalog.jsonb_object_agg(entry.key, entry.value), '{}'::jsonb)
@@ -976,7 +1098,7 @@ BEGIN
         WHERE fact_entry.key <> ALL (kept_fact_keys)
            OR pg_catalog.jsonb_typeof(fact_entry.value) NOT IN ('string', 'number', 'boolean')
      );
-  GET DIAGNOSTICS anonymized = ROW_COUNT;
+  GET DIAGNOSTICS pseudonymized = ROW_COUNT;
   -- the cases stay as the record of the case (dates, kind, decision, opaque IDs); the free text goes
   UPDATE public.support_cases AS support_case
      SET reason = 'Texto removido pelo purge da organização.', context = NULL, resolution = NULL
@@ -1000,6 +1122,13 @@ BEGIN
      AND cancellation.reason <> 'Texto removido pelo purge da organização.';
   GET DIAGNOSTICS removed = ROW_COUNT;
   scrubbed := scrubbed + removed;
+  -- the grants stay (billing record); the operator's reason is free text and becomes the fixed text
+  UPDATE public.entitlement_grants AS grant_row
+     SET reason = 'Texto removido pelo purge da organização.'
+   WHERE grant_row.organization_id = p_organization
+     AND grant_row.reason <> 'Texto removido pelo purge da organização.';
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  scrubbed := scrubbed + removed;
   -- the deferred checks of the variants run here, while the rows are still visible to this role
   SET CONSTRAINTS ALL IMMEDIATE;
   UPDATE public.organizations
@@ -1015,7 +1144,7 @@ BEGIN
     (plan.scheduled_by, 'organization.purge_completed', p_organization, plan.support_case_id,
      'organization', p_organization, NULL);
   RETURN pg_catalog.jsonb_build_object(
-    'alreadyPurged', false, 'deletedRows', total, 'anonymizedBillingEvents', anonymized, 'scrubbedTexts', scrubbed
+    'alreadyPurged', false, 'deletedRows', total, 'pseudonymizedBillingEvents', pseudonymized, 'scrubbedTexts', scrubbed
   );
 END;
 $function$;--> statement-breakpoint
@@ -1089,23 +1218,61 @@ GRANT polaris_admin_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FA
 GRANT CREATE ON SCHEMA public TO polaris_admin_owner;--> statement-breakpoint
 ALTER FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) OWNER TO polaris_admin_owner;--> statement-breakpoint
 ALTER FUNCTION public.admin_cancel_organization_purge(uuid, uuid, text, text) OWNER TO polaris_admin_owner;--> statement-breakpoint
-ALTER FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text) OWNER TO polaris_admin_owner;--> statement-breakpoint
+ALTER FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text, timestamp with time zone) OWNER TO polaris_admin_owner;--> statement-breakpoint
 ALTER FUNCTION public.admin_release_organization_legal_hold(uuid, uuid, text) OWNER TO polaris_admin_owner;--> statement-breakpoint
+ALTER FUNCTION public.admin_list_organization_legal_holds(integer, uuid) OWNER TO polaris_admin_owner;--> statement-breakpoint
 SET ROLE polaris_admin_owner;--> statement-breakpoint
+-- The audit of the retry of a dead event no longer records the operator's reason (decision of 18/10/2026, ADR 0081
+-- and 0085): the audit is immutable and the purge cannot rewrite it, so free text must not get in. The row keeps
+-- the type, the event's ID, the organization, the operator and the result. The reason is still required and checked
+-- (the operator states it to call), but it is not written anywhere. Same signature, owner and grants as in 0072.
+CREATE OR REPLACE FUNCTION public.admin_retry_dead_letter(p_principal uuid, p_incident uuid, p_event uuid, p_reason text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  clean_reason text := pg_catalog.btrim(p_reason);
+  retried jsonb;
+  outcome text;
+BEGIN
+  PERFORM public.admin_require_principal(p_principal);
+  IF clean_reason IS NULL OR pg_catalog.char_length(clean_reason) < 1 OR pg_catalog.char_length(clean_reason) > 150
+     OR clean_reason ~ '[\x01-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]' THEN
+    RAISE EXCEPTION 'invalid_incident_reason' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.queue_dead_letters AS dead WHERE dead.event_id = p_event AND dead.incident_id = p_incident
+  ) THEN
+    RETURN pg_catalog.jsonb_build_object('result', 'unknown_item');
+  END IF;
+  retried := public.retry_dead_letter(p_event);
+  outcome := retried ->> 'result';
+  PERFORM public.admin_record_audit(
+    p_principal, 'operational_incident.retry', retried ->> 'organizationId', NULL,
+    'queue_dead_letter', p_event::text, 'result=' || outcome
+  );
+  RETURN pg_catalog.jsonb_build_object('result', outcome);
+END;
+$function$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) TO polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.admin_cancel_organization_purge(uuid, uuid, text, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.admin_cancel_organization_purge(uuid, uuid, text, text) TO polaris_admin_runtime;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text) TO polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text, timestamp with time zone) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text, timestamp with time zone) TO polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.admin_release_organization_legal_hold(uuid, uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.admin_release_organization_legal_hold(uuid, uuid, text) TO polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_list_organization_legal_holds(integer, uuid) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.admin_list_organization_legal_holds(integer, uuid) TO polaris_admin_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_admin_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_admin_owner;--> statement-breakpoint
 GRANT polaris_purge_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 GRANT CREATE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.organization_purge_blocker(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
+ALTER FUNCTION public.entitlement_grants_no_text_after_purge() OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.claim_organization_purge(integer) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.list_organization_purge_media(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.mark_organization_purge_storage_touched(text) OWNER TO polaris_purge_owner;--> statement-breakpoint

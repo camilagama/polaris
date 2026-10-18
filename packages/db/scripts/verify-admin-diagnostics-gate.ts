@@ -435,6 +435,7 @@ async function run() {
         "admin_close_support_case",
         "admin_grant_tenant_access",
         "admin_list_operational_incidents",
+        "admin_list_organization_legal_holds",
         "admin_list_privacy_cases",
         "admin_list_support_cases",
         "admin_open_privacy_case",

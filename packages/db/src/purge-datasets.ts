@@ -58,20 +58,21 @@ export const PURGE_CASCADED_TABLES = Object.freeze([
 
 /**
  * Tables with an organization that the purge keeps, and why. Since the decisions of 18/10/2026 (ADR 0081) the
- * purge also rewrites three of them in the same transaction: the facts of `billing_events` lose every key but
- * `PURGE_BILLING_FACT_KEYS`, and the free text of `support_cases`, `privacy_cases` (no organization column: it
- * hangs from the support case) and `organization_purge_cancellations` is removed.
+ * purge also rewrites four of them in the same transaction: the facts of `billing_events` lose every key but
+ * `PURGE_BILLING_FACT_KEYS` (a pseudonymization: the provider's references stay and still find the payer at the
+ * provider), and the free text of `support_cases`, `privacy_cases` (no organization column: it hangs from the
+ * support case), `organization_purge_cancellations` and `entitlement_grants` is removed.
  */
 export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
   Object.freeze({
     billing_events:
-      "Registro financeiro da plataforma, mantido pelo prazo fiscal: o purge anonimiza o fato (fica só valores, datas, tipos e referências opacas; sai qualquer dado do pagador) e mantém a linha (ADR 0081, decisão de 18/10/2026).",
+      "Registro financeiro da plataforma, mantido pelo prazo fiscal (5 anos do 1º de janeiro seguinte): o purge pseudonimiza o fato (fica só valores, datas, tipos e referências opacas; sai nome, documento, e-mail, telefone e endereço do pagador) e mantém a linha, com `provider_ref` e `provider_event_id`, que ainda localizam o pagador no provedor e servem à conciliação, ao estorno e à contestação (ADR 0081, decisão de 18/10/2026).",
     deletion_ledger:
       "Tombstones para o restore: sobrevivem à organização, sem expiração (ADR 0080).",
     entitlement_grants:
-      "Concessões da plataforma, parte do registro de cobrança, com o motivo e o autor escritos pelo operador (ADR 0067 e 0079); sem dado do pagador. O motivo é texto livre que o purge não reescreve: fora das decisões de 18/10/2026, a decidir (ADR 0081).",
+      "Concessões da plataforma, parte do registro de cobrança (ADR 0067 e 0079): ficam a chave, o valor, as datas e o identificador de quem concedeu, sem dado do pagador; o motivo escrito pelo operador é trocado por um texto fixo no purge (ADR 0081, decisão de 18/10/2026).",
     organization_billing:
-      "Estado da assinatura e referência opaca da assinatura no provedor, registro da plataforma sem dado do pagador; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
+      "Estado da assinatura e `provider_ref`, a referência da assinatura no provedor: registro da plataforma sem dado do pagador na linha, mas a referência localiza o pagador no provedor (pseudonimização), mantida pelo prazo fiscal; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
     organization_legal_holds:
       "Registro das travas legais (quem, sob qual caso, quando entrou e saiu), sem texto livre: é a prova de que o purge esperou a trava (ADR 0081).",
     organization_purge_cancellations:
@@ -79,7 +80,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     organization_purges:
       "O registro do próprio purge (quem agendou, até onde foi, quando começou a mexer no armazenamento e quando terminou), sem dado pessoal.",
     platform_audit_events:
-      "Auditoria do Admin, imutável: sobrevive à organização (ADR 0070 e 0079). O detalhe é curto e quase sempre um código; a exceção é o motivo do reenvio de um evento morto (ADR 0085), que o purge não reescreve (limite no ADR 0081).",
+      "Auditoria do Admin, imutável: sobrevive à organização (ADR 0070 e 0079). O detalhe é curto, um código ou um resultado; o reenvio de um evento morto (ADR 0085) deixou de gravar o motivo do operador (migration 0075), mas uma linha escrita antes dela pode trazê-lo, e o purge não reescreve a auditoria (limite no ADR 0081).",
     rls_poc_operations:
       "Tabela da prova de RLS da Fase 1, sem chave estrangeira para organizations e sem dado de tenant real.",
     support_cases:
@@ -106,7 +107,8 @@ export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
  * The keys a billing fact keeps after the purge (ADR 0081, decision of 18/10/2026): what the lifecycle writes
  * (`serializeBillingFact` and the ledger's commands), that is values, dates, types and opaque references.
  * `purge_organization_data` holds the same list (`kept_fact_keys`); any other key, such as a payer's name,
- * document, e-mail, phone, address or ID at the provider, is removed.
+ * document, e-mail, phone, address or ID, is removed from the fact. This is pseudonymization, not anonymization:
+ * the columns `provider_ref` and `provider_event_id` stay outside the fact and still find the payer at the provider.
  */
 export const PURGE_BILLING_FACT_KEYS = Object.freeze([
   "type",

@@ -1,5 +1,6 @@
 import { describeError } from "@polaris/observability/wide-event";
 import type {
+  LegalHoldPage,
   MaskedCustomerPage,
   SupportCaseDetail,
   SupportCasePage,
@@ -12,6 +13,7 @@ import {
   isRevealableField,
   MAX_CASE_REASON_LENGTH,
   normalizeAccessMinutes,
+  normalizeLegalHoldReviewAt,
   normalizeOpenCase,
   normalizeResolution,
   type RevealableCustomerField,
@@ -53,12 +55,16 @@ export interface SupportDependencies {
     organizationId: string;
     outcomeRecorded: boolean;
   }>;
-  /** Places or releases the legal hold on the case's organization: while one is in force, no purge. */
+  /**
+   * Places or releases the legal hold on the case's organization: while one is in force, no purge. Placing it
+   * needs a review date (`reviewAt`, an ISO instant in UTC).
+   */
   legalHold: (
     principalId: string,
     caseId: string,
     organizationId: string,
     action: "place" | "release",
+    reviewAt: string | null,
     bindings: AdminBindings
   ) => Promise<{
     changed: boolean;
@@ -124,6 +130,11 @@ export interface SupportDependencies {
     },
     bindings: AdminBindings
   ) => Promise<SupportCasePage>;
+  /** The legal holds in force, read only (a purge that waits for a hold has one to show). */
+  listLegalHolds: (
+    input: { after: string | null; limit: number },
+    bindings: AdminBindings
+  ) => Promise<LegalHoldPage>;
   open: (
     principalId: string,
     input: {
@@ -555,18 +566,38 @@ export function supportRoutes(
         ) {
           return invalid(context);
         }
+        // placing needs a review date (the hold stays when it passes and is listed as due for review)
+        const reviewAt =
+          action === "place"
+            ? normalizeLegalHoldReviewAt(body?.reviewAt)
+            : null;
         return context.json(
           await dependencies.legalHold(
             principalOf(context),
             caseId,
             organizationId,
             action,
+            reviewAt,
             context.env
           )
         );
       }
     );
   }
+
+  routes.get(
+    "/legal-holds",
+    requireCapability("organization:legal_hold"),
+    async (context) => {
+      const paging = page(context);
+      if (!paging) {
+        return invalid(context);
+      }
+      return context.json(
+        await dependencies.listLegalHolds(paging, context.env)
+      );
+    }
+  );
 
   routes.post(
     "/support-cases/:caseId/entitlement-grants",

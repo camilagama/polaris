@@ -12,8 +12,11 @@ import {
   organizationExportPrefix,
   organizationMediaPrefix,
 } from "@polaris/domain/privacy/organization-purge";
+import { logger } from "@polaris/observability/logger";
 import type { MediaBucketBinding } from "../environment";
 import { deleteObjectsUnderPrefix } from "./storage-prefix";
+
+const JOB = "organization_purge";
 
 /** A purge removes a whole organization: a run takes a few, and the rest wait for the next hour. */
 const PURGES_PER_RUN = 3;
@@ -98,7 +101,12 @@ async function sweep(
       organizationMediaPrefix(organizationId)
     ));
   if (late > 0) {
-    console.warn("organization_purge_sweep_removed", { objects: late });
+    logger.warn("organization_purge_sweep_removed", {
+      job: JOB,
+      objects: late,
+      organizationId,
+      outcome: "partial",
+    });
   }
 }
 
@@ -158,18 +166,36 @@ async function purgeOne(
     }
   } catch (error: unknown) {
     report.failed += 1;
-    // the organization's ID is opaque; nothing of the error (which may quote a key) is logged
-    console.warn("organization_purge_step_failed", {
+    const code = failureCode(step, error);
+    // the organization's ID is opaque; nothing of the error (which may quote a key) is logged, only the code
+    // written for it. A refusal the database names (a legal hold, the closure period) is a purge held on
+    // purpose (`rejected`, a warning that says why); any other failure is an error
+    const event = {
       attempt: claimed.attempt,
+      job: JOB,
       organizationId,
+      reason: code,
       step,
-    });
+    } as const;
+    if (NAMED_REFUSALS.has(code)) {
+      logger.warn("organization_purge_step_failed", {
+        ...event,
+        outcome: "rejected",
+      });
+    } else {
+      logger.error("organization_purge_step_failed", {
+        ...event,
+        outcome: "failure",
+      });
+    }
     // the purge stays held until its lease ends, so this run does not take it again; recording can fail too
     await client
-      .recordOrganizationPurgeFailure(organizationId, failureCode(step, error))
+      .recordOrganizationPurgeFailure(organizationId, code)
       .catch(() => {
-        console.warn("organization_purge_failure_not_recorded", {
+        logger.error("organization_purge_failure_not_recorded", {
+          job: JOB,
           organizationId,
+          outcome: "failure",
         });
       });
   }

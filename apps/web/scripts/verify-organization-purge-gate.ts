@@ -4,6 +4,7 @@ import {
   cancelOrganizationPurge,
   closeSupportCase,
   grantTenantAccess,
+  listOrganizationLegalHolds,
   openPrivacyCase,
   openSupportCase,
   placeOrganizationLegalHold,
@@ -68,7 +69,8 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * ledger tombstone first; the cases, the audit, the billing and the ledger survive; running it again
  * changes nothing; and an export cannot leave a copy of an organization that is no longer active. The
  * decisions of 18/10/2026: the purge refuses a closure younger than 30 days and a legal hold, with nothing
- * removed; the billing events stay without the payer; the cases stay without their free text.
+ * removed; the billing events stay pseudonymized (the payer's data out of the fact, the provider's references
+ * kept); the cases and the entitlement grants stay without their free text.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -89,6 +91,9 @@ const PAYER_FACT = Object.freeze({
 
 /** Free text an operator could have typed in a case, with someone's contact in it. */
 const CASE_TEXT = "Dono ligou de 81 98888-7777 (Joana)";
+
+/** The reason an operator typed when giving an entitlement grant: free text, with someone's contact in it. */
+const GRANT_REASON = "Compensação combinada com Rita (81 97777-6666)";
 
 /** The call is refused with this code (SQLSTATE 55000), and nothing else. */
 async function expectBlocked(
@@ -141,8 +146,11 @@ interface BillingRow {
   provider_ref: string | null;
 }
 
-/** Every billing event stays, with its columns, and its fact keeps only what the lifecycle wrote. */
-function expectBillingAnonymized(before: BillingRow[], after: BillingRow[]) {
+/**
+ * Every billing event stays, with its columns, and its fact keeps only what the lifecycle wrote. The provider's
+ * references stay too: they are why this is pseudonymization, not anonymization.
+ */
+function expectBillingPseudonymized(before: BillingRow[], after: BillingRow[]) {
   assert.equal(after.length, before.length);
   assert.ok(after.length >= 2);
   for (const [index, row] of after.entries()) {
@@ -160,6 +168,55 @@ function expectBillingAnonymized(before: BillingRow[], after: BillingRow[]) {
       )
     );
     assert.deepEqual(row.fact, kept, "the fact keeps what the lifecycle wrote");
+  }
+}
+
+/** Runs one statement as a role, in a transaction that is always undone, and returns its result. */
+async function queryAs(
+  pool: {
+    connect: () => Promise<{
+      query: (
+        statement: string,
+        values?: unknown[]
+      ) => Promise<{ rows: { reason?: string }[] }>;
+      release: () => void;
+    }>;
+  },
+  role: string,
+  statement: string,
+  values: unknown[]
+) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SET LOCAL ROLE ${role}`);
+    return await client.query(statement, values);
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
+}
+
+/**
+ * Moves the hold in force into the past (placed 40 days ago, review date yesterday): the trigger that keeps a hold
+ * as it was is off for this one statement, which only the table's owner can do.
+ */
+async function makeHoldOverdue(
+  pool: { query: (statement: string, values?: unknown[]) => Promise<unknown> },
+  organizationId: string
+) {
+  await pool.query(
+    "ALTER TABLE public.organization_legal_holds DISABLE TRIGGER organization_legal_holds_release_is_final"
+  );
+  try {
+    await pool.query(
+      "UPDATE public.organization_legal_holds SET placed_at = now() - interval '40 days', review_at = now() - interval '1 day' WHERE organization_id = $1 AND released_at IS NULL",
+      [organizationId]
+    );
+  } finally {
+    await pool.query(
+      "ALTER TABLE public.organization_legal_holds ENABLE TRIGGER organization_legal_holds_release_is_final"
+    );
   }
 }
 
@@ -416,6 +473,7 @@ async function run() {
         [
           "billing_events",
           "deletion_ledger",
+          "entitlement_grants",
           "organization_legal_holds",
           "organization_purge_cancellations",
           "privacy_cases",
@@ -439,6 +497,10 @@ async function run() {
         "deletion_ledger.organization_id:INSERT",
         "deletion_ledger.organization_id:SELECT",
         "deletion_ledger.privacy_case_id:INSERT",
+        "entitlement_grants.id:SELECT",
+        "entitlement_grants.organization_id:SELECT",
+        "entitlement_grants.reason:SELECT",
+        "entitlement_grants.reason:UPDATE",
         "organization_legal_holds.organization_id:SELECT",
         "organization_legal_holds.released_at:SELECT",
         "organization_purge_cancellations.organization_id:SELECT",
@@ -499,6 +561,7 @@ async function run() {
                             'record_organization_purge_failure', 'complete_organization_purge_sweep', 'admin_schedule_organization_purge',
                             'admin_cancel_organization_purge', 'mark_organization_purge_storage_touched',
                             'admin_place_organization_legal_hold', 'admin_release_organization_legal_hold',
+                            'admin_list_organization_legal_holds',
                             'organization_purge_blocker')
           AND acl.privilege_type = 'EXECUTE' AND r.rolname NOT IN ('polaris_purge_owner', 'polaris_admin_owner')
         ORDER BY 1, 2`
@@ -618,6 +681,12 @@ async function run() {
           JSON.stringify(billingFact),
           `gate-command-${randomUUID()}`,
         ]
+      );
+      // a temporary grant with the reason the operator typed (the grant stays, its reason does not)
+      await owner.pool.query(
+        `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
+         VALUES ($1, 'variants.active.max', 3000, $2, 'admin:gate', now() - interval '1 day', now() + interval '2 days')`,
+        [tenant.organizationId, `${GRANT_REASON} ${suffix}`]
       );
       return { assetId, storageKey };
     };
@@ -905,8 +974,8 @@ async function run() {
       "a trial still running (it could turn into a charge)"
     );
     await owner.pool.query(
-      "UPDATE public.organization_billing SET state = 'active', access_ends_at = now() - interval '1 day' WHERE organization_id = $1",
-      [target.organizationId]
+      "UPDATE public.organization_billing SET state = 'active', access_ends_at = now() - interval '1 day', provider_ref = $2 WHERE organization_id = $1",
+      [target.organizationId, `sub_org_${randomUUID()}`]
     );
     const grant = await grantTenantAccess(admin, principal, supportCase.id, 15);
     assert.ok(grant);
@@ -936,15 +1005,23 @@ async function run() {
       [target.organizationId]
     );
     // a legal hold: placed under a case of the organization named, audited, and while in force no schedule
+    const reviewIn = (days: number) =>
+      new Date(Date.now() + days * 86_400_000).toISOString();
     const legalHold = (action: "place" | "release", organizationId: string) =>
-      (action === "place"
-        ? placeOrganizationLegalHold
-        : releaseOrganizationLegalHold)(
-        admin,
-        principal,
-        supportCase.id,
-        organizationId
-      );
+      action === "place"
+        ? placeOrganizationLegalHold(
+            admin,
+            principal,
+            supportCase.id,
+            organizationId,
+            reviewIn(30)
+          )
+        : releaseOrganizationLegalHold(
+            admin,
+            principal,
+            supportCase.id,
+            organizationId
+          );
     await assert.rejects(
       () => legalHold("place", witness.organizationId),
       (error: unknown) =>
@@ -962,6 +1039,142 @@ async function run() {
       held: true,
       storageTouched: false,
     });
+    // the review date is required, in the future and at most 366 days away: nothing is written otherwise
+    await Promise.all(
+      [reviewIn(-1), new Date().toISOString(), reviewIn(367)].map((reviewAt) =>
+        assert.rejects(
+          () =>
+            placeOrganizationLegalHold(
+              admin,
+              principal,
+              supportCase.id,
+              target.organizationId,
+              reviewAt
+            ),
+          (error: unknown) =>
+            error instanceof InvalidSupportRequestError &&
+            error.code === "invalid_review_at",
+          `a review date of ${reviewAt} is refused`
+        )
+      )
+    );
+    await expectSqlState(
+      () =>
+        owner.pool.query(
+          "INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by, review_at) VALUES ($1, $2, $3, now() - interval '1 day')",
+          [witness.organizationId, supportCase.id, principal]
+        ),
+      "23514",
+      "the table itself refuses a review date before the hold was placed"
+    );
+    await expectSqlState(
+      () =>
+        owner.pool.query(
+          "INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by) VALUES ($1, $2, $3)",
+          [witness.organizationId, supportCase.id, principal]
+        ),
+      "23502",
+      "a hold has no row without its review date"
+    );
+    assert.equal(
+      (
+        await owner.pool.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM public.organization_legal_holds WHERE organization_id = $1",
+          [witness.organizationId]
+        )
+      ).rows[0]?.count,
+      "0",
+      "no hold was written for the witness"
+    );
+    // placing again changes nothing, the review date included
+    const heldBefore = await owner.pool.query<{ review_at: string }>(
+      "SELECT review_at::text FROM public.organization_legal_holds WHERE organization_id = $1 AND released_at IS NULL",
+      [target.organizationId]
+    );
+    assert.equal(heldBefore.rows.length, 1);
+    assert.deepEqual(
+      await placeOrganizationLegalHold(
+        admin,
+        principal,
+        supportCase.id,
+        target.organizationId,
+        reviewIn(300)
+      ),
+      { changed: false, held: true, storageTouched: false }
+    );
+    assert.deepEqual(
+      (
+        await owner.pool.query(
+          "SELECT review_at::text FROM public.organization_legal_holds WHERE organization_id = $1 AND released_at IS NULL",
+          [target.organizationId]
+        )
+      ).rows,
+      heldBefore.rows,
+      "placing again keeps the review date"
+    );
+    // the list of the holds in force (read only): this one, not yet due for review
+    const listedHolds = await listOrganizationLegalHolds(admin, {
+      after: null,
+      limit: 50,
+    });
+    const listedTarget = listedHolds.holds.find(
+      (hold) => hold.organizationId === target.organizationId
+    );
+    assert.ok(listedTarget, "the hold in force is listed");
+    assert.equal(listedTarget.reviewDue, false);
+    assert.equal(listedTarget.supportCaseId, supportCase.id);
+    assert.equal(listedTarget.placedBy, principal);
+    assert.equal(
+      listedHolds.holds.some(
+        (hold) => hold.organizationId === witness.organizationId
+      ),
+      false
+    );
+    const dueBefore = listedHolds.dueForReview;
+    // past its review date the hold is due for review, still in force: nothing releases it, the purge still waits
+    await makeHoldOverdue(owner.pool, target.organizationId);
+    const overdue = await listOrganizationLegalHolds(admin, {
+      after: null,
+      limit: 50,
+    });
+    assert.equal(
+      overdue.holds.find(
+        (hold) => hold.organizationId === target.organizationId
+      )?.reviewDue,
+      true,
+      "a hold past its review date is listed as due for review"
+    );
+    assert.equal(overdue.dueForReview, dueBefore + 1);
+    assert.equal(
+      (
+        await owner.pool.query<{ held: boolean }>(
+          "SELECT (released_at IS NULL) AS held FROM public.organization_legal_holds WHERE organization_id = $1 AND placed_at < now() - interval '39 days'",
+          [target.organizationId]
+        )
+      ).rows[0]?.held,
+      true,
+      "a hold past its review date is still in force"
+    );
+    await expectRefusal(
+      privacyCase.id,
+      "legal_hold_active",
+      "an organization whose legal hold is past its review date"
+    );
+    await expectSqlState(
+      () =>
+        admin.query(
+          "SELECT public.admin_list_organization_legal_holds(0, NULL)"
+        ),
+      "22023",
+      "the list refuses an empty page"
+    );
+    // the page: one at a time, newest first, and the cursor reaches the rest
+    const firstPage = await listOrganizationLegalHolds(admin, {
+      after: null,
+      limit: 1,
+    });
+    assert.equal(firstPage.holds.length, 1);
+    assert.equal(firstPage.dueForReview, overdue.dueForReview);
     await expectRefusal(
       privacyCase.id,
       "legal_hold_active",
@@ -1236,7 +1449,8 @@ async function run() {
       admin,
       principal,
       supportCase.id,
-      target.organizationId
+      target.organizationId,
+      new Date(Date.now() + 30 * 86_400_000).toISOString()
     );
     assert.equal(
       await maintenance.claimOrganizationPurge(900),
@@ -1724,8 +1938,36 @@ async function run() {
       "42501",
       "and changes nothing of a billing event but its fact"
     );
+    await expectSqlState(
+      () =>
+        asPurgeOwnerWrite(
+          "UPDATE public.entitlement_grants SET reason = 'Outro motivo' WHERE organization_id = $1",
+          [target.organizationId]
+        ),
+      "23514",
+      "nor another reason in an entitlement grant"
+    );
+    await expectSqlState(
+      () =>
+        asPurgeOwnerWrite(
+          "UPDATE public.entitlement_grants SET limit_value = 1 WHERE organization_id = $1",
+          [target.organizationId]
+        ),
+      "42501",
+      "nor any other column of it"
+    );
+    assert.equal(
+      (
+        await asPurgeOwner(
+          "UPDATE public.entitlement_grants SET reason = 'Texto removido pelo purge da organização.' WHERE organization_id = $1",
+          [witness.organizationId]
+        )
+      ).rowCount,
+      0,
+      "and not a grant of an organization that is not being purged"
+    );
     tests.push(
-      "the purge owner cannot write another text in a closed case, a privacy case or the history of cancellations, nor change anything of a billing event but its fact"
+      "the purge owner cannot write another text in a closed case, a privacy case, the history of cancellations or an entitlement grant, nor change anything of a billing event but its fact"
     );
 
     const billingBefore = await owner.pool.query<BillingRow>(
@@ -1735,6 +1977,22 @@ async function run() {
     const witnessBillingBefore = await owner.pool.query(
       "SELECT provider_event_id, fact FROM public.billing_events WHERE organization_id = $1 ORDER BY provider_event_id",
       [witness.organizationId]
+    );
+    const grantColumns =
+      "id, key, limit_value, flag_value, granted_by, starts_at::text, expires_at::text, revoked_at, revoked_by, created_at::text";
+    const grantsBefore = await owner.pool.query(
+      `SELECT ${grantColumns} FROM public.entitlement_grants WHERE organization_id = $1 ORDER BY id`,
+      [target.organizationId]
+    );
+    assert.equal(grantsBefore.rows.length, 1);
+    const witnessGrantsBefore = await owner.pool.query(
+      "SELECT id, reason FROM public.entitlement_grants WHERE organization_id = $1 ORDER BY id",
+      [witness.organizationId]
+    );
+    assert.equal(witnessGrantsBefore.rows.length, 1);
+    const subscriptionBefore = await owner.pool.query(
+      "SELECT provider_ref, state FROM public.organization_billing WHERE organization_id = $1",
+      [target.organizationId]
     );
     const casesBefore = await owner.pool.query(
       "SELECT id, kind, status, opened_at, opened_by, closed_at, closed_by FROM public.support_cases WHERE organization_id = $1 ORDER BY id",
@@ -1830,12 +2088,13 @@ async function run() {
       "the support and privacy cases, the Admin audit, the billing record and the history of cancellations survive the organization"
     );
 
-    // the billing events stay, each one, with values, dates, types and opaque references, and without the payer
+    // the billing events stay, each one, pseudonymized: values, dates, types and opaque references in the fact, the
+    // provider's references in their columns (they still find the payer at the provider, so this is not anonymous)
     const billingAfter = await owner.pool.query<BillingRow>(
       "SELECT provider_event_id, provider_ref, fact_type, occurred_at::text, fact FROM public.billing_events WHERE organization_id = $1 ORDER BY provider_event_id",
       [target.organizationId]
     );
-    expectBillingAnonymized(billingBefore.rows, billingAfter.rows);
+    expectBillingPseudonymized(billingBefore.rows, billingAfter.rows);
     const charge = billingAfter.rows.find(
       (row) => row.fact_type === "charge_succeeded"
     );
@@ -1855,8 +2114,70 @@ async function run() {
       witnessBillingBefore.rows,
       "the witness's billing events are untouched, payer and all"
     );
+    // the subscription's reference at the provider stays too, in its column
+    assert.ok(subscriptionBefore.rows[0]?.provider_ref);
+    assert.deepEqual(
+      (
+        await owner.pool.query(
+          "SELECT provider_ref, state FROM public.organization_billing WHERE organization_id = $1",
+          [target.organizationId]
+        )
+      ).rows,
+      subscriptionBefore.rows,
+      "organization_billing.provider_ref stays"
+    );
     tests.push(
-      "the billing events of the purged organization stay, every one, with values, dates, types and opaque references, and without the payer's name, document, e-mail, phone, address or ID at the provider; another organization's are untouched"
+      "the billing events of the purged organization stay, every one, pseudonymized: values, dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
+    );
+
+    // the entitlement grants stay (key, value, dates, who gave it) and lose the reason the operator typed
+    assert.deepEqual(
+      (
+        await owner.pool.query(
+          `SELECT ${grantColumns} FROM public.entitlement_grants WHERE organization_id = $1 ORDER BY id`,
+          [target.organizationId]
+        )
+      ).rows,
+      grantsBefore.rows,
+      "a grant keeps every column but its reason"
+    );
+    assert.deepEqual(
+      (
+        await owner.pool.query(
+          "SELECT DISTINCT reason FROM public.entitlement_grants WHERE organization_id = $1",
+          [target.organizationId]
+        )
+      ).rows,
+      [{ reason: PURGE_REMOVED_TEXT }]
+    );
+    assert.deepEqual(
+      (
+        await owner.pool.query(
+          "SELECT id, reason FROM public.entitlement_grants WHERE organization_id = $1 ORDER BY id",
+          [witness.organizationId]
+        )
+      ).rows,
+      witnessGrantsBefore.rows,
+      "another organization's grant keeps its reason"
+    );
+    // a grant written after the purge (the organization row is a tombstone) keeps no text either, whoever writes it
+    const lateGrant = await owner.pool.query<{ reason: string }>(
+      `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
+       VALUES ($1, 'goals.active.max', 50, $2, 'admin:gate', now(), now() + interval '1 day') RETURNING reason`,
+      [target.organizationId, GRANT_REASON]
+    );
+    assert.equal(lateGrant.rows[0]?.reason, PURGE_REMOVED_TEXT);
+    // the runtime that writes grants is the one the trigger runs for: it must see the tombstone too
+    const written = await queryAs(
+      owner.pool,
+      "polaris_billing_runtime",
+      `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
+       VALUES ($1, 'goals.active.max', 60, $2, 'admin:gate', now(), now() + interval '1 day') RETURNING reason`,
+      [target.organizationId, GRANT_REASON]
+    );
+    assert.equal(written.rows[0]?.reason, PURGE_REMOVED_TEXT);
+    tests.push(
+      "the entitlement grants of the purged organization stay with every column but the reason, which becomes the fixed text (also when written after the purge); another organization's grant keeps its reason; the purge owner can write nothing else in a grant"
     );
 
     // the cases stay as the record of the case, without the free text
@@ -1915,6 +2236,7 @@ async function run() {
            JOIN public.support_cases AS support_case ON support_case.id = privacy.support_case_id WHERE support_case.organization_id = $1
          UNION ALL SELECT to_jsonb(cancellation)::text FROM public.organization_purge_cancellations AS cancellation WHERE organization_id = $1
          UNION ALL SELECT to_jsonb(billing)::text FROM public.billing_events AS billing WHERE organization_id = $1
+         UNION ALL SELECT to_jsonb(grant_row)::text FROM public.entitlement_grants AS grant_row WHERE organization_id = $1
          UNION ALL SELECT to_jsonb(audit)::text FROM public.platform_audit_events AS audit WHERE organization_id = $1
        ) AS survived
        WHERE body LIKE ANY ($2::text[])`,
@@ -1924,6 +2246,8 @@ async function run() {
           "%Joana%",
           "%98888%",
           "%retirado pelo dono%",
+          "%Rita%",
+          "%97777%",
           ...Object.values(PAYER_FACT).map((value) => `%${value}%`),
         ],
       ]
@@ -2027,7 +2351,7 @@ async function run() {
       await maintenance.purgeOrganizationData(target.organizationId),
       {
         alreadyPurged: true,
-        anonymizedBillingEvents: 0,
+        pseudonymizedBillingEvents: 0,
         deletedRows: 0,
         scrubbedTexts: 0,
       }

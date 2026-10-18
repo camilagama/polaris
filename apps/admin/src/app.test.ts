@@ -58,6 +58,9 @@ function noSupport() {
     detail: nothing,
     grant: nothing,
     list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    listLegalHolds: vi.fn(() =>
+      Promise.resolve({ dueForReview: 0, holds: [], next: null })
+    ),
     open: nothing,
     reveal: nothing,
     revoke: vi.fn(() => Promise.resolve(false)),

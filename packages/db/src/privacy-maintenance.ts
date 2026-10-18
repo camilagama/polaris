@@ -80,7 +80,7 @@ export interface PrivacyMaintenanceClient {
    */
   purgeOrganizationData: (organizationId: string) => Promise<{
     alreadyPurged: boolean;
-    anonymizedBillingEvents: number;
+    pseudonymizedBillingEvents: number;
     deletedRows: number;
     scrubbedTexts: number;
   }>;
@@ -232,7 +232,7 @@ export function createPrivacyMaintenanceClient(
       const result = await pool.query<{
         purged: {
           alreadyPurged: boolean;
-          anonymizedBillingEvents: number | string;
+          pseudonymizedBillingEvents: number | string;
           deletedRows: number | string;
           scrubbedTexts: number | string;
         };
@@ -245,7 +245,7 @@ export function createPrivacyMaintenanceClient(
       }
       return {
         alreadyPurged: purged.alreadyPurged === true,
-        anonymizedBillingEvents: Number(purged.anonymizedBillingEvents),
+        pseudonymizedBillingEvents: Number(purged.pseudonymizedBillingEvents),
         deletedRows: Number(purged.deletedRows),
         scrubbedTexts: Number(purged.scrubbedTexts),
       };

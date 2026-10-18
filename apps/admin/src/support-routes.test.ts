@@ -28,6 +28,11 @@ const principal = {
   subject: "subject-1",
 };
 const caseId = "0199a0a0-0000-7000-8000-0000000000c1";
+
+/** An ISO instant in UTC, this many days from now (a day only counts whole: the tests stay away from the edges). */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
 const customerId = "0199a0a0-0000-7000-8000-0000000000d1";
 const grantId = "0199a0a0-0000-7000-8000-0000000000e1";
 
@@ -64,6 +69,9 @@ function support(
       Promise.resolve({ changed: true, held: action === "place" })
     ),
     list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    listLegalHolds: vi.fn(() =>
+      Promise.resolve({ dueForReview: 0, holds: [], next: null })
+    ),
     open: vi.fn(() => Promise.resolve({ id: caseId })),
     purge: vi.fn(() =>
       Promise.resolve({
@@ -699,12 +707,14 @@ describe("suspension and billing commands", () => {
 
   it("places and releases a legal hold on the case's organization, with the operator from the login", async () => {
     const { send, support: calls } = setup();
+    const reviewAt = daysFromNow(90);
     const placed = await send(
       "POST",
       `/api/support-cases/${caseId}/legal-hold`,
       {
         organizationId: "org_1",
         principalId: "forged",
+        reviewAt,
       }
     );
     expect(placed.status).toBe(200);
@@ -714,6 +724,7 @@ describe("suspension and billing commands", () => {
       caseId,
       "org_1",
       "place",
+      reviewAt,
       bindings
     );
     const released = await send(
@@ -728,8 +739,77 @@ describe("suspension and billing commands", () => {
       caseId,
       "org_1",
       "release",
+      null,
       bindings
     );
+  });
+
+  it("requires a review date to place a legal hold: an ISO instant, in the future, at most 366 days away", async () => {
+    const { send, support: calls } = setup();
+    const path = `/api/support-cases/${caseId}/legal-hold`;
+    const bad: unknown[] = [
+      undefined,
+      null,
+      42,
+      "",
+      "amanhã",
+      "2026-13-40T00:00:00Z",
+      // no offset: the date would depend on the server's zone
+      daysFromNow(10).replace("Z", ""),
+      // a day only, in the past, now, and past the limit
+      daysFromNow(10).slice(0, 10),
+      daysFromNow(-1),
+      daysFromNow(367),
+    ];
+    for (const reviewAt of bad) {
+      // biome-ignore lint/performance/noAwaitInLoops: each value is answered in turn.
+      const refused = await send("POST", path, {
+        organizationId: "org_1",
+        reviewAt,
+      });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "invalid_review_at" });
+    }
+    expect(calls.legalHold).not.toHaveBeenCalled();
+    const edge = await send("POST", path, {
+      organizationId: "org_1",
+      reviewAt: daysFromNow(365),
+    });
+    expect(edge.status).toBe(200);
+  });
+
+  it("lists the legal holds in force, read only, with the capability and a page", async () => {
+    const page = {
+      dueForReview: 1,
+      holds: [
+        {
+          id: caseId,
+          organizationId: "org_1",
+          organizationName: "Loja",
+          placedAt: "2026-10-01T12:00:00.000Z",
+          placedBy: principal.id,
+          reviewAt: "2026-10-10T12:00:00.000Z",
+          reviewDue: true,
+          supportCaseId: caseId,
+        },
+      ],
+      next: null,
+    };
+    const { call, support: calls } = setup({
+      listLegalHolds: vi.fn(() => Promise.resolve(page)),
+    });
+    const listed = await call("/api/legal-holds?limit=10");
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual(page);
+    expect(calls.listLegalHolds).toHaveBeenCalledWith(
+      { after: null, limit: 10 },
+      bindings
+    );
+    expect((await call("/api/legal-holds?limit=0")).status).toBe(400);
+    expect((await call("/api/legal-holds?after=not-a-uuid")).status).toBe(400);
+    const other = setup({}, "somebody_else");
+    expect((await other.call("/api/legal-holds")).status).toBe(403);
+    expect(other.support.listLegalHolds).not.toHaveBeenCalled();
   });
 
   it("refuses a legal hold without the organization named, on an unknown case or without the capability", async () => {
@@ -773,7 +853,7 @@ describe("suspension and billing commands", () => {
     const refusedHold = await hold.send(
       "POST",
       `/api/support-cases/${caseId}/legal-hold`,
-      { organizationId: "org_1" }
+      { organizationId: "org_1", reviewAt: daysFromNow(30) }
     );
     expect(refusedHold.status).toBe(409);
     expect(await refusedHold.json()).toEqual({
