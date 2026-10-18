@@ -21,6 +21,8 @@ Gates e provas por fase:
 - Privacidade (Fase 10): [Restore de backup e deletion ledger](./deletion-ledger-restore.md), com o que ler antes de substituir um ambiente e como reaplicar as exclusões.
 - Infraestrutura assíncrona (Fase 11): [Filas Cloudflare](./queues.md), com o que está declarado, o plano Free e o comando de criação para o responsável, e [Jobs agendados](./scheduled-jobs.md), com os crons, o estado de cada job, o log e como forçar ou desligar uma execução.
 
+Dependências: [Auditoria de dependências](./dependency-audit.md), com o procedimento do job "Dependency audit", as exceções vigentes e seus prazos de revisão.
+
 A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md). O CI é desenhado para gastar poucos minutos do GitHub Actions (repositório privado; cada job é cobrado arredondado ao minuto): os checks leves são um job só, o gate de navegador roda só quando algo que ele exercita mudou e não se repete na `main`, e a auditoria só quando uma dependência mudou. Uma execução completa sob demanda existe (`workflow_dispatch`). Racional e números no [ADR 0060](../adr/0060-ci-economico-em-minutos.md). Se os jobs não iniciarem com a mensagem "pagamentos recentes falharam ou o limite de gastos precisa aumentar", é a cobrança da conta **dona do repositório** (não de quem faz o push): conferir plano, minutos usados, limite de gastos e forma de pagamento nessa conta.
 
 Promoção de um SHA para produção: [Checklist de release](./release-checklist.md), com itens BLOCK e WARN e veredito fechado.
