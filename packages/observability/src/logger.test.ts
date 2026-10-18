@@ -29,7 +29,7 @@ describe("logger", () => {
   it("writes one object per call on the console method of the level", () => {
     logger.info("job_done", { durationMs: 12, job: "outbox.dispatch" });
     logger.warn("job_skipped", { reason: "busy" });
-    logger.error("job_failed", { errorName: "Error" });
+    logger.error("job_failed", { errorClass: "Error" });
 
     expect(info).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledTimes(1);
@@ -119,6 +119,50 @@ describe("logger", () => {
     expect(lastCall(info)).toMatchObject({
       event: "early",
       service: "polaris",
+    });
+  });
+
+  it("rejects the forbidden aliases at type level", () => {
+    // @ts-expect-error `orgId` is an alias of `organizationId`.
+    const orgId: LogFields = { orgId: "org-1" };
+    // @ts-expect-error `duration` is an alias of `durationMs`.
+    const duration: LogFields = { duration: 12 };
+    // @ts-expect-error `errorName` is an alias of `errorClass`.
+    const errorName: LogFields = { errorName: "Error" };
+    // @ts-expect-error `outcome` takes the known values only.
+    const outcome: LogFields = { outcome: "ok" };
+    expect([orgId, duration, errorName, outcome]).toHaveLength(4);
+  });
+
+  it("drops an alias that a cast or a loose record lets through, and names it", () => {
+    const loose: Record<string, string> = {
+      org_id: "org-1",
+      reqId: "req-1",
+      requestId: "req-2",
+    };
+
+    logger.info("aliased", loose);
+
+    const event = lastCall(info);
+    expect(event).toMatchObject({
+      ignoredFields: ["org_id", "reqId"],
+      requestId: "req-2",
+    });
+    expect("org_id" in event).toBe(false);
+    expect("reqId" in event).toBe(false);
+  });
+
+  it("drops an opaque id that holds personal data", () => {
+    logger.info("leaky", {
+      actorId: "maria@example.com",
+      organizationId: "org-1",
+    });
+
+    const event = lastCall(info);
+    expect(JSON.stringify(event)).not.toContain("maria@example.com");
+    expect(event).toMatchObject({
+      ignoredFields: ["actorId"],
+      organizationId: "org-1",
     });
   });
 });

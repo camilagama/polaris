@@ -1,4 +1,9 @@
-import { logger } from "@polaris/observability/logger";
+import { logger, type Outcome } from "@polaris/observability/logger";
+import {
+  describeError,
+  startWideEvent,
+  type WideEvent,
+} from "@polaris/observability/wide-event";
 import type { ScheduledJobClaim } from "@polaris/db/outbox-dispatch";
 import {
   jobsOfLane,
@@ -60,26 +65,12 @@ export interface RunLaneOptions {
   store: SchedulerStore | null;
 }
 
-const safeNamePattern = /^[A-Za-z][A-Za-z0-9_.]{0,63}$/;
-const safeCodePattern = /^[A-Za-z0-9_.-]{1,64}$/;
-
-/** A failure as the log may carry it: the class and a provider or SQLSTATE style code, never the message. */
-function describeFailure(error: unknown): {
-  errorCode?: string | undefined;
-  errorName: string;
-} {
-  if (typeof error !== "object" || error === null) {
-    return { errorName: "NonObjectError" };
+/** The canonical outcome of a run (the job's own `status` is the registry's word, not the log's). */
+function outcomeOf(result: JobResult): Outcome {
+  if (result.status === "failed") {
+    return "failure";
   }
-  const { code, name } = error as { code?: unknown; name?: unknown };
-  return {
-    errorCode:
-      typeof code === "string" && safeCodePattern.test(code) ? code : undefined,
-    errorName:
-      typeof name === "string" && safeNamePattern.test(name)
-        ? name
-        : "UnknownError",
-  };
+  return result.status === "skipped" ? "skipped" : "success";
 }
 
 /** Throws what the jobs found: one failure as itself, several together. */
@@ -129,6 +120,7 @@ async function takeLease(
       logger.info("scheduled_job_skipped", {
         job: jobId,
         lane,
+        outcome: "skipped",
         reason: claim.result,
       });
       return { skipped: true };
@@ -142,7 +134,8 @@ async function takeLease(
     logger.error("scheduled_job_claim_failed", {
       job: jobId,
       lane,
-      ...describeFailure(error),
+      outcome: "failure",
+      ...describeError(error),
     });
     return { failure: error };
   }
@@ -170,7 +163,7 @@ async function recordOutcome(
       logger.warn("scheduled_job_lease_lost", {
         job: jobId,
         lane,
-        outcome: result.status,
+        runOutcome: outcomeOf(result),
       });
     }
     return null;
@@ -178,30 +171,24 @@ async function recordOutcome(
     logger.error("scheduled_job_record_failed", {
       job: jobId,
       lane,
-      outcome: result.status,
-      ...describeFailure(error),
+      outcome: "failure",
+      runOutcome: outcomeOf(result),
+      ...describeError(error),
     });
     // a success that could not be recorded runs again next tick (the jobs allow it): show it
     return result.status === "completed" ? { failure: error } : null;
   }
 }
 
-/** One metric line per run, by outcome: failures say their class and code, never their message. */
-function logRun(
-  metrics: Record<string, boolean | number | string>,
-  result: JobResult
-): void {
+/** Closes the run's wide event by outcome: failures say their class and code, never their message. */
+function endRun(wide: WideEvent, result: JobResult): void {
   if (result.status === "failed") {
-    logger.error("scheduled_job_run", {
-      ...metrics,
-      ...describeFailure(result.failures[0]),
-      failures: result.failures.length,
-    });
+    wide.fail(result.failures[0]);
+    wide.set({ failures: result.failures.length });
   } else if (result.status === "skipped") {
-    logger.info("scheduled_job_run", { ...metrics, reason: result.reason });
-  } else {
-    logger.info("scheduled_job_run", metrics);
+    wide.set({ reason: result.reason });
   }
+  wide.emit(outcomeOf(result));
 }
 
 export async function runLane(options: RunLaneOptions): Promise<void> {
@@ -214,7 +201,11 @@ export async function runLane(options: RunLaneOptions): Promise<void> {
   for (const jobId of jobsOfLane(lane)) {
     const handler = handlers[jobId];
     if (!handler) {
-      logger.error("scheduled_job_handler_missing", { job: jobId, lane });
+      logger.error("scheduled_job_handler_missing", {
+        job: jobId,
+        lane,
+        outcome: "failure",
+      });
       failures.push(new Error("scheduled_job_handler_missing"));
       continue;
     }
@@ -229,19 +220,18 @@ export async function runLane(options: RunLaneOptions): Promise<void> {
     }
     const { run, token } = claimed;
 
-    const startedAt = now();
-    const result = await runHandler(handler, run);
-    logRun(
+    const wide = startWideEvent(
+      "scheduled_job_run",
       {
-        durationMs: now() - startedAt,
         job: jobId,
         lane,
         missedWindows: run.missedWindows,
-        outcome: result.status,
         recovered: run.recovered,
       },
-      result
+      { now }
     );
+    const result = await runHandler(handler, run);
+    endRun(wide, result);
     if (result.status === "failed") {
       failures.push(...result.failures);
     }

@@ -1645,7 +1645,7 @@ Primeiro passo da Fase 12 ([ADR 0089](../docs/adr/0089-evlog-e-logger-tipado-no-
 | Pacote | Concluído | `@polaris/observability/logger` (`logger`, `configureLogging`), único importador do `evlog` (2.33.0, MIT, compatível com Workers); testes do wrapper. |
 | Fronteira | Concluída | Biome recusa `evlog` e o wrapper em `packages/domain` e no código do navegador; `bun run boundaries` tem fixtures para os dois. |
 | Migração | Parcial | `server-log`, agendador, entrada do Worker web e relatório do Admin; o resto dos `console.*` migra no PR que tocar cada um. |
-| Limites | Registrados | Sem *drain*; a redação embutida do evlog fica ligada e a política própria é do PR116; sem esquema de campos (PR115); o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
+| Limites | Registrados | Sem *drain*; a redação embutida do evlog fica ligada e a política própria é do PR116; o esquema de campos é da Fase 12C; o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
 
 ### Fase 12B — Headers de segurança e CSP centralizados (PR120; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
 
@@ -1660,3 +1660,15 @@ Pacote `@polaris/http-security` e [ADR 0090](../docs/adr/0090-headers-de-seguran
 | Testes | Concluídos | Unitários do módulo (nenhum curinga, `unsafe-inline` ou esquema solto em nenhum perfil) e de integração nas respostas dos três apps. |
 | Gate de navegador | Ver o PR | CSP do shell inalterada na parte de script, estilo e conexão; o resultado de `test:offline-poc` e `test:pwa` está na seção "Verificação" do PR. |
 | Limites | Registrados | Catálogo com nonce não aberto em navegador contra o Worker rodando (ADR 0090); sem `report-uri`; Sentry ainda não ligado (nenhuma origem aberta). |
+
+### Fase 12C — esquema canônico de eventos largos (PR115; implementação local concluída; nada criado na conta Cloudflare)
+
+Terceiro passo da Fase 12 ([ADR 0091](../docs/adr/0091-esquema-canonico-de-eventos-largos.md); o número pode mudar): nomes, unidades e valores de campo fixos, aliases proibidos e um evento largo por requisição, comando ou job.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Esquema | Concluído | `fields.ts`: campos canônicos tipados, `outcome` (`success`, `partial`, `rejected`, `skipped`, `failure`), `durationMs` em ms, IDs opacos (`organizationId`, `actorId`, `deviceId` e afins) conferidos pelo formato. |
+| Aliases | Concluído | `LogFields` recusa os aliases no tipo; o logger os descarta e lista em `ignoredFields`; `call-sites.test.ts` falha se uma chamada de log do backend usar um. |
+| Evento largo | Concluído | `startWideEvent`, `withWideEvent` e `describeError` (`@polaris/observability/wide-event`); o agendador emite `scheduled_job_run` por eles. |
+| Migração | Parcial | Todos os pontos que já chamavam o logger, só nos nomes dos campos (`errorName` → `errorClass`, `status` → `httpStatus`, `outcome` do agendador → `success\|failure\|skipped`); os `console.*` restantes migram no PR que tocar cada um. |
+| Limites | Registrados | Nenhum evento por requisição HTTP ainda (volume e amostragem: PR117); a política de redação é do PR116. |

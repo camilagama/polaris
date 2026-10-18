@@ -1,4 +1,5 @@
-import { logger } from "@polaris/observability/logger";
+import { type LogFields, logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { Context } from "hono";
 import { routePath } from "hono/route";
 import type { ServerEnv } from "../environment";
@@ -13,43 +14,16 @@ import type { ServerEnv } from "../environment";
  * SQL parameters). Clients keep receiving generic responses.
  */
 
-type LogValue = boolean | number | string | undefined;
-
-const safeNamePattern = /^[A-Za-z][A-Za-z0-9_.]{0,63}$/;
-const safeCodePattern = /^[A-Za-z0-9_.-]{1,64}$/;
 const MAX_CAUSE_DEPTH = 4;
 
-interface ErrorSummary {
-  code?: string;
-  name: string;
-}
-
-function summarizeOne(error: unknown): ErrorSummary {
-  if (typeof error !== "object" || error === null) {
-    return { name: "NonObjectError" };
-  }
-
-  const { code, name } = error as { code?: unknown; name?: unknown };
-  const summary: ErrorSummary = {
-    name:
-      typeof name === "string" && safeNamePattern.test(name)
-        ? name
-        : "UnknownError",
-  };
-  if (typeof code === "string" && safeCodePattern.test(code)) {
-    summary.code = code;
-  } else if (typeof code === "number" && Number.isSafeInteger(code)) {
-    summary.code = String(code);
-  }
-  return summary;
-}
+type ErrorSummary = ReturnType<typeof describeError>;
 
 function summarizeError(error: unknown): ErrorSummary[] {
   const chain: ErrorSummary[] = [];
   let current: unknown = error;
 
   while (chain.length < MAX_CAUSE_DEPTH) {
-    chain.push(summarizeOne(current));
+    chain.push(describeError(current));
     if (typeof current !== "object" || current === null) {
       break;
     }
@@ -65,10 +39,11 @@ function summarizeError(error: unknown): ErrorSummary[] {
 
 export interface ServerErrorLogInput {
   error: unknown;
-  extra?: Record<string, LogValue>;
+  extra?: LogFields;
   method: string;
   requestId: string;
   route: string;
+  /** HTTP status of the answer; logged as `httpStatus`. */
   status?: number;
 }
 
@@ -79,12 +54,12 @@ export function logServerError(input: ServerErrorLogInput): void {
     ...input.extra,
     causes:
       causes.length > 0 ? causes.map((cause) => ({ ...cause })) : undefined,
-    errorCode: top?.code,
-    errorName: top?.name,
+    errorClass: top?.errorClass,
+    errorCode: top?.errorCode,
+    httpStatus: input.status,
     method: input.method,
     requestId: input.requestId,
     route: input.route,
-    status: input.status,
   });
 }
 
@@ -113,7 +88,7 @@ export function logServerErrorFromContext(
 export function logServerEvent(
   event: string,
   context: Context<ServerEnv>,
-  fields: Record<string, LogValue> = {}
+  fields: LogFields = {}
 ): void {
   logger.warn(event, {
     ...fields,
