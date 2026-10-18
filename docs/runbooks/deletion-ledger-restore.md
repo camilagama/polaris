@@ -125,6 +125,9 @@ COMMIT;
 - `storage_touched_at` vai preenchido de propósito: o tombstone só existe porque o purge original já apagou o R2, então o purge reaplicado não pode ser cancelado (a função de cancelamento recusa com `purge_storage_touched`) e deixar a organização `closed` com mídia e exportações que apontam para objetos que não existem mais.
 - A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois.
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
+- O purge reaplicado também refaz a anonimização da cobrança (o `fact` de `billing_events`, só com as chaves de `PURGE_BILLING_FACT_KEYS`) e a troca do texto livre dos casos de suporte e de privacidade e dos cancelamentos. Isso acontece no job de privacidade, na mesma transação das linhas; não há passo SQL à parte para isso.
+- A trava dos 30 dias não impede a reaplicação. O tombstone `organization`/`purge` já está no ledger (o passo 3 o recoloca), e o purge confere o prazo por ele, não pela data de encerramento do backup, que pode não ter voltado.
+- Uma trava legal vigente no ambiente restaurado (linha em `organization_legal_holds` sem `released_at`) impede o purge enquanto não for liberada no Admin, e a reaplicação não a libera. O purge fica agendado e não roda. Registre a trava encontrada (ID da organização e do caso, sem texto) no registro do incidente, e libere-a só com a decisão do responsável.
 
 Depois do `COMMIT`, o purge precisa do job de privacidade, que roda no `scheduled` do Worker. Esse gatilho só faz manutenção (mídia, cobrança, privacidade) e não abre rota nem sincronização a usuários: com o ambiente ainda fechado (antes do passo 6), deixe só o cron ativo, ou dispare-o à mão uma vez, seguindo a [política de perfis da CLI](cli-profile-policy.md). Uma organização com exportação em andamento vigente fica para a execução seguinte, como qualquer purge. Confira:
 
@@ -135,7 +138,7 @@ SELECT o.status, p.swept_at IS NOT NULL AS varrida
  WHERE p.organization_id = '<ID da organização>';
 ```
 
-O resultado esperado é `purged` e `varrida` verdadeiro. Além disso, a organização não pode ter linha em nenhuma tabela listada em `PURGE_DELETE_ORDER` (`packages/db/src/purge-datasets.ts`). O R2 não volta com o backup do banco, mas a varredura dos prefixos `exports/v1/{organização}/` e `media/v2/{organização}/` roda mesmo assim, antes e depois de apagar as linhas. Registre o resultado sem IDs.
+O resultado esperado é `purged` e `varrida` verdadeiro. Além disso, a organização não pode ter linha em nenhuma tabela listada em `PURGE_DELETE_ORDER` (`packages/db/src/purge-datasets.ts`). O R2 não volta com o backup do banco, mas a varredura dos prefixos `exports/v1/{organização}/` e `media/v2/{organização}/` roda mesmo assim, antes e depois de apagar as linhas. Também, `billing_events` da organização só pode ter no `fact` chaves da lista `PURGE_BILLING_FACT_KEYS`, e os casos da organização (`support_cases`, `privacy_cases` e `organization_purge_cancellations`) não podem ter texto livre: o motivo do caso de suporte e o do cancelamento são o texto fixo `Texto removido pelo purge da organização.`, e `context`, `resolution`, `note` e `decision_note` estão nulos. Registre o resultado sem IDs.
 
 ## Verificação do procedimento
 

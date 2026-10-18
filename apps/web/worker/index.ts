@@ -1,6 +1,10 @@
+import { configureLogging, logger } from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
-import { createOutboxClient } from "@polaris/db/outbox-dispatch";
+import {
+  createOutboxClient,
+  type OutboxClient,
+} from "@polaris/db/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import { app } from "../src/server/app";
 import {
@@ -14,6 +18,10 @@ import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 import type { WorkerBindings } from "../src/server/environment";
 import {
+  handleDeadLetterBatch,
+  isDeadLetterQueue,
+} from "../src/server/queue/dead-letter";
+import {
   handleQueueBatch,
   PermanentHandlerError,
   type QueueBatch,
@@ -21,23 +29,25 @@ import {
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { approvedRetention } from "@polaris/domain/privacy/retention";
+import { laneOfCron } from "@polaris/domain/scheduling/scheduled-jobs";
 import { dispatchOutbox } from "../src/server/queue/dispatcher";
 import {
   createDurableProcessingLedger,
   createInMemoryProcessingLedger,
 } from "../src/server/queue/processing-ledger";
+import {
+  type JobHandlers,
+  type JobResult,
+  runLane,
+} from "../src/server/scheduler/runner";
 
-/**
- * The outbox dispatcher's own cron (ADR 0084): an invocation of its own, so its 10 ms of CPU on the
- * Free plan are not shared with the maintenance jobs, two minutes after them (the database is still
- * awake). Its cadence is the scheduler's to change (plan PR112).
- */
-const OUTBOX_CRON = "19 * * * *";
 /** An export event dispatched this long ago whose export is still owed is sent again (the re-arm). */
 const REARM_MIN_AGE_SECONDS = 30 * 60;
 const REARM_BATCH = 100;
 const PROCESSING_KEEP_HOURS = approvedRetention("queue_processing") / 3_600_000;
 const PROCESSING_EXPIRY_BATCH = 500;
+/** How many events past the attempt cap one dispatcher run turns into incidents (ADR 0085). */
+const EXHAUSTED_BATCH = 100;
 
 /**
  * The queue path of the data export is live when the outbox role and the default queue are bound: the
@@ -52,25 +62,38 @@ function queuePathLive(env: WorkerBindings): boolean {
 const quietly = (close: () => Promise<unknown>): Promise<unknown> =>
   close().catch(() => undefined);
 
+/** A job that finished: with the failures it found, or none. */
+function finished(failures: unknown[]): JobResult {
+  return failures.length > 0
+    ? { failures, status: "failed" }
+    : { status: "completed" };
+}
+
+/** A job with nothing to do in this environment: the window stays open, so it runs once it is provisioned. */
+const notConfigured: JobResult = {
+  reason: "not_configured",
+  status: "skipped",
+};
+
 /** Reclaims what media left behind: unfinished uploads and the objects of removed images. */
-async function runMediaMaintenance(env: WorkerBindings): Promise<unknown[]> {
+async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
   const mediaBucket = env.MEDIA_BUCKET;
   const connectionString = env.MEDIA_CLEANUP_HYPERDRIVE?.connectionString;
   if (!(mediaBucket && connectionString)) {
-    return [new Error("media_staging_reconciler_not_configured")];
+    return finished([new Error("media_staging_reconciler_not_configured")]);
   }
   const failures: unknown[] = [];
   let cleanupClient: ReturnType<typeof createMediaCleanupClient>;
   try {
     cleanupClient = createMediaCleanupClient(connectionString);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   }
   try {
     // The two reconcilers are independent: one failing never hides the other.
     try {
       const report = await reconcileStagedMedia({ cleanupClient, mediaBucket });
-      console.info("media_staging_reconciliation_complete", report);
+      logger.info("media_staging_reconciliation_complete", { ...report });
     } catch (error: unknown) {
       failures.push(error);
     }
@@ -79,36 +102,39 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<unknown[]> {
         cleanupClient,
         mediaBucket,
       });
-      console.info("media_removed_reconciliation_complete", report);
+      logger.info("media_removed_reconciliation_complete", { ...report });
     } catch (error: unknown) {
       failures.push(error);
     }
   } finally {
     await quietly(() => cleanupClient.close());
   }
-  return failures;
+  return finished(failures);
 }
 
 /** Applies the events that were received but not processed, then what time itself causes. */
-async function runBillingJobs(env: WorkerBindings): Promise<unknown[]> {
+async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // billing is not provisioned in this environment yet: nothing to do
-    console.warn("billing_maintenance_not_configured");
-    return [];
+    logger.warn("billing_maintenance_not_configured");
+    return notConfigured;
   }
   let store: ReturnType<typeof createBillingStore>;
   try {
     store = createBillingStore(connectionString);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   }
   try {
     const report = await runBillingMaintenance(store);
-    console.info("billing_maintenance_complete", report);
-    return [];
+    logger.info("billing_maintenance_complete", {
+      retry: { ...report.retry },
+      sweep: { ...report.sweep },
+    });
+    return finished([]);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   } finally {
     await quietly(() => store.close());
   }
@@ -145,24 +171,24 @@ function runDataExportsWith(
  * (ADR 0078), and runs the purges an operator scheduled (ADR 0081; nothing schedules one on its own).
  * One connection serves all three, and one failing never hides the others.
  */
-async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
+async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // the privacy role is not provisioned in this environment yet: nothing to do
-    console.warn("privacy_maintenance_not_configured");
-    return [];
+    logger.warn("privacy_maintenance_not_configured");
+    return notConfigured;
   }
   let client: ReturnType<typeof createPrivacyMaintenanceClient>;
   try {
     client = createPrivacyMaintenanceClient(connectionString);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   }
   const failures: unknown[] = [];
   try {
     try {
       const report = await runPrivacyMaintenance(client);
-      console.info("privacy_maintenance_complete", report);
+      logger.info("privacy_maintenance_complete", { ...report });
     } catch (error: unknown) {
       failures.push(error);
     }
@@ -174,7 +200,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
           REARM_MIN_AGE_SECONDS,
           REARM_BATCH
         );
-        console.info("data_export_events_rearmed", { rearmed });
+        logger.info("data_export_events_rearmed", { rearmed });
       } catch (error: unknown) {
         failures.push(error);
       }
@@ -189,7 +215,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
           bucket,
           live ? { maxExports: 0 } : {}
         );
-        console.info("data_export_complete", report);
+        logger.info("data_export_complete", { ...report });
       } catch (error: unknown) {
         failures.push(error);
       }
@@ -199,84 +225,107 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
           client,
           now: () => new Date(),
         });
-        console.info("organization_purge_complete", report);
+        logger.info("organization_purge_complete", { ...report });
       } catch (error: unknown) {
         failures.push(error);
       }
     } else {
       // without the bucket neither the exports nor the purges can touch storage: the purge must not reach the rows
-      console.warn("data_export_not_configured");
-      console.warn("organization_purge_not_configured");
+      logger.warn("data_export_not_configured");
+      logger.warn("organization_purge_not_configured");
     }
   } finally {
     await quietly(() => client.close());
   }
-  return failures;
+  return finished(failures);
 }
 
 /**
  * The outbox dispatcher and sweeper (ADR 0084): sends the due events (and those whose claim ran out)
- * to their queues and marks them dispatched, then removes the consumer's old processing records.
+ * to their queues and marks them dispatched, then removes the consumer's old processing records. It
+ * uses the connection of the tick (the outbox role also keeps the scheduler's state), which the tick
+ * closes; there is none where the outbox role is not provisioned.
  */
-async function runOutboxJobs(env: WorkerBindings): Promise<unknown[]> {
-  const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
-  if (!connectionString) {
+async function runOutboxJobs(
+  env: WorkerBindings,
+  client: OutboxClient | null
+): Promise<JobResult> {
+  if (client === null) {
     // the outbox role is not provisioned in this environment yet: the events wait, pending
-    console.warn("outbox_dispatch_not_configured");
-    return [];
-  }
-  let client: ReturnType<typeof createOutboxClient>;
-  try {
-    client = createOutboxClient(connectionString);
-  } catch (error: unknown) {
-    return [error];
+    logger.warn("outbox_dispatch_not_configured");
+    return notConfigured;
   }
   const failures: unknown[] = [];
   try {
-    try {
-      const report = await dispatchOutbox({
-        queues: {
-          critical: env.QUEUE_CRITICAL,
-          default: env.QUEUE_DEFAULT,
-          media: env.QUEUE_MEDIA,
-        },
-        store: client,
-      });
-      console.info("outbox_dispatch_complete", report);
-    } catch (error: unknown) {
-      failures.push(error);
-    }
-    try {
-      const removed = await client.expireProcessing(
-        PROCESSING_KEEP_HOURS,
-        PROCESSING_EXPIRY_BATCH
-      );
-      console.info("queue_processing_expired", { removed });
-    } catch (error: unknown) {
-      failures.push(error);
-    }
-  } finally {
-    await quietly(() => client.close());
-  }
-  return failures;
-}
-
-/** Throws what the jobs found: one failure as itself, several together. */
-function throwFailures(failures: unknown[], message: string): void {
-  if (failures.length === 1) {
-    throw failures[0];
-  }
-  if (failures.length > 1) {
-    throw new AggregateError(failures, message);
-  }
-}
-
-/** Runs a job so that whatever it throws becomes its failure, never another job's. */
-async function isolated(job: () => Promise<unknown[]>): Promise<unknown[]> {
-  try {
-    return await job();
+    const report = await dispatchOutbox({
+      queues: {
+        critical: env.QUEUE_CRITICAL,
+        default: env.QUEUE_DEFAULT,
+        media: env.QUEUE_MEDIA,
+      },
+      store: client,
+    });
+    logger.info("outbox_dispatch_complete", { ...report });
   } catch (error: unknown) {
-    return [error];
+    failures.push(error);
+  }
+  try {
+    // an event past the attempt cap is no longer claimed: it becomes an incident and a dead event (ADR 0085)
+    const recorded = await client.recordExhaustedOutboxEvents(EXHAUSTED_BATCH);
+    if (recorded > 0) {
+      logger.warn("outbox_events_exhausted", { recorded });
+    }
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
+    const removed = await client.expireProcessing(
+      PROCESSING_KEEP_HOURS,
+      PROCESSING_EXPIRY_BATCH
+    );
+    logger.info("queue_processing_expired", { removed });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  return finished(failures);
+}
+
+/** The jobs of the registry that are enabled, each tied to the code that runs it. */
+function jobHandlers(
+  env: WorkerBindings,
+  outbox: OutboxClient | null
+): JobHandlers {
+  return {
+    "billing.maintenance": () => runBillingJobs(env),
+    "media.maintenance": () => runMediaMaintenance(env),
+    "outbox.dispatch": () => runOutboxJobs(env, outbox),
+    "privacy.maintenance": () => runPrivacyJobs(env),
+  };
+}
+
+/**
+ * One tick of the scheduler (ADR 0086) for the lane of the cron that fired: the lane's due jobs run, each
+ * under its lease. The connection of the outbox role serves the scheduler's state and the dispatcher
+ * alike; without it every job of the lane runs on every tick, as the crons did before the scheduler.
+ */
+async function runScheduledTick(
+  cron: string | undefined,
+  env: WorkerBindings
+): Promise<void> {
+  const known = laneOfCron(cron);
+  if (!known) {
+    // an expression this Worker does not declare (a manual trigger): the maintenance, as it always was
+    logger.warn("scheduler_unknown_cron");
+  }
+  const lane = known?.id ?? "maintenance";
+  const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
+  const outbox = connectionString ? createOutboxClient(connectionString) : null;
+  try {
+    await runLane({ handlers: jobHandlers(env, outbox), lane, store: outbox });
+  } finally {
+    if (outbox) {
+      await quietly(() => outbox.close());
+    }
   }
 }
 
@@ -312,7 +361,7 @@ async function handleDataExportRequested(
       sweep: false,
       target: { exportId, organizationId: envelope.organizationId },
     });
-    console.info("data_export_complete", result);
+    logger.info("data_export_complete", { ...result });
   } finally {
     await quietly(() => client.close());
   }
@@ -321,7 +370,32 @@ async function handleDataExportRequested(
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */
 const inMemoryLedger = createInMemoryProcessingLedger();
 
+/**
+ * The dead-letter queue (ADR 0085): its messages become incidents. Without the outbox role there is nowhere to
+ * record them, so the messages are retried (the queue keeps them for its retention and its retries).
+ */
+async function consumeDeadLetters(batch: QueueBatch, env: WorkerBindings) {
+  const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    logger.warn("dead_letter_not_recorded_unconfigured");
+    for (const message of batch.messages) {
+      message.retry({ delaySeconds: 3600 });
+    }
+    return;
+  }
+  const client = createOutboxClient(connectionString);
+  try {
+    await handleDeadLetterBatch(batch, client);
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
 async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
+  if (isDeadLetterQueue(batch.queue)) {
+    await consumeDeadLetters(batch, env);
+    return;
+  }
   const handlers = {
     "data_export.requested": (envelope: QueueEnvelope) =>
       handleDataExportRequested(env, envelope),
@@ -329,7 +403,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // no check against the outbox and no deduplication across isolates: only the handler's own guards
-    console.warn("queue_ledger_in_memory");
+    logger.warn("queue_ledger_in_memory");
+    // and no dead-letter queue either: nothing could record what lands there, so a refused message is only dropped
     await handleQueueBatch(batch, { handlers, ledger: inMemoryLedger });
     return;
   }
@@ -337,6 +412,7 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
   const client = createOutboxClient(connectionString);
   try {
     await handleQueueBatch(batch, {
+      deadLetters: env.QUEUE_DLQ,
       handlers,
       ledger: createDurableProcessingLedger(client),
     });
@@ -345,25 +421,10 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
   }
 }
 
+configureLogging({ service: "polaris-web" });
+
 export default {
   fetch: app.fetch,
   queue: (batch: QueueBatch, env) => consumeQueue(batch, env),
-  scheduled: async (controller, env) => {
-    if (controller.cron === OUTBOX_CRON) {
-      throwFailures(
-        await isolated(() => runOutboxJobs(env)),
-        "outbox_jobs_failed"
-      );
-      return;
-    }
-    // media, billing and privacy are independent jobs: one failing never hides another
-    throwFailures(
-      [
-        ...(await isolated(() => runMediaMaintenance(env))),
-        ...(await isolated(() => runBillingJobs(env))),
-        ...(await isolated(() => runPrivacyJobs(env))),
-      ],
-      "scheduled_maintenance_failed"
-    );
-  },
+  scheduled: (controller, env) => runScheduledTick(controller.cron, env),
 } satisfies ExportedHandler<WorkerBindings>;

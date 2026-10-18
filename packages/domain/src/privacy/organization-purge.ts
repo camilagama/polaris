@@ -59,6 +59,16 @@ export function organizationMediaPrefix(organizationId: string): string {
 }
 
 /**
+ * The closure period (decision of 18/10/2026, ADR 0081): the purge removes the tenant's operational data only
+ * once the organization has been closed for this long, and refuses before it (`closure_period_not_elapsed`),
+ * whatever recovery window the closure had. During it the owner can still export (by recovering). Polaris is
+ * the processor of that data and the fiscal duty to keep it is the customer's, who has the export. The
+ * migration holds the same period (`interval '30 days'` in `admin_schedule_organization_purge` and
+ * `organization_purge_blocker`).
+ */
+export const ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS = 30;
+
+/**
  * The time between the end of the recovery window and the earliest purge, from the retention
  * registry. While `closed_organization` is only proposed it adds nothing: the window (approved, ADR
  * 0074) is the only wait, and the purge needs the explicit command. No period is invented here.
@@ -117,6 +127,8 @@ export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "privacy_scope_incomplete",
   "privacy_scope_covers_kept_data",
   "recovery_window_open",
+  "closure_period_not_elapsed",
+  "legal_hold_active",
   "tenant_access_active",
   "paid_access_running",
   "purge_not_scheduled",
@@ -132,6 +144,9 @@ export type OrganizationPurgeRefusalCode =
 const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   Record<OrganizationPurgeRefusalCode, string>
 > = Object.freeze({
+  closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, em que o dono pode exportar os dados.`,
+  legal_hold_active:
+    "Há uma trava legal vigente na organização: o purge não é agendado nem executado enquanto ela não for liberada.",
   organization_mismatch: "A organização informada não é a do caso.",
   organization_not_closed:
     "A organização não está encerrada (ativa, suspensa ou ainda em encerramento).",

@@ -2,6 +2,7 @@ import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import { queueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type DeadLetterProducer,
   handleQueueBatch,
   PermanentHandlerError,
   type QueueHandler,
@@ -340,6 +341,169 @@ describe("handleQueueBatch", () => {
     expect(handler).toHaveBeenCalledOnce();
     expect(sent.retry).toHaveBeenCalledOnce();
     expect(sent.ack).not.toHaveBeenCalled();
+  });
+});
+
+describe("the dead-letter queue of a message refused for good", () => {
+  const SECRET = "ana@example.com";
+  let ledger: ProcessingLedger;
+  let handler: ReturnType<typeof vi.fn<QueueHandler>>;
+  let send: ReturnType<typeof vi.fn<DeadLetterProducer["send"]>>;
+
+  beforeEach(() => {
+    ledger = createInMemoryProcessingLedger();
+    handler = vi.fn<QueueHandler>().mockResolvedValue(undefined);
+    send = vi.fn<DeadLetterProducer["send"]>().mockResolvedValue(undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const run = (
+    messages: QueueMessage[],
+    queue = "polaris-default",
+    withProducer = true
+  ) =>
+    handleQueueBatch(
+      { messages, queue },
+      {
+        deadLetters: withProducer ? { send } : undefined,
+        handlers: { "data_export.requested": handler },
+        ledger,
+      }
+    );
+
+  it("sends a notice, never the body, for an envelope that is not valid, and only then acks", async () => {
+    const sent = message({
+      ...envelope(),
+      event: { note: SECRET, random: "zq9-random-body-text" },
+    });
+    send.mockImplementation(() => {
+      // the message is not acknowledged before the queue took the notice
+      expect(sent.ack).not.toHaveBeenCalled();
+      return Promise.resolve();
+    });
+    await run([sent]);
+    expect(handler).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(
+      {
+        cause: "invalid_envelope",
+        kind: "polaris.dead_letter",
+        messageId: "msg-1",
+        version: 1,
+      },
+      { contentType: "json" }
+    );
+    expect(sent.ack).toHaveBeenCalledOnce();
+    expect(sent.retry).not.toHaveBeenCalled();
+    const everything = JSON.stringify([
+      send.mock.calls,
+      vi.mocked(console.warn).mock.calls,
+      vi.mocked(console.error).mock.calls,
+    ]);
+    expect(everything).not.toContain(SECRET);
+    expect(everything).not.toContain("zq9-random-body-text");
+    expect(everything).not.toContain(EXPORT);
+  });
+
+  it("sends the cause unknown_type for a type this deploy does not declare", async () => {
+    const sent = message({ ...envelope(), type: "sale.confirmed" });
+    await run([sent]);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ cause: "unknown_type" });
+    expect(sent.ack).toHaveBeenCalledOnce();
+  });
+
+  it("sends the cause unknown_type for a version this deploy does not read", async () => {
+    const sent = message({ ...envelope(), version: 2 });
+    await run([sent]);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ cause: "unknown_type" });
+    expect(sent.ack).toHaveBeenCalledOnce();
+  });
+
+  it("sends invalid_envelope for a body that is not even an object", async () => {
+    const sent = message("not json");
+    await run([sent]);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({
+      cause: "invalid_envelope",
+    });
+    expect(JSON.stringify(send.mock.calls)).not.toContain("not json");
+    expect(sent.ack).toHaveBeenCalledOnce();
+  });
+
+  it("sends wrong_queue with the IDs and type of the envelope for a message on another type's queue", async () => {
+    const sent = message(envelope());
+    await run([sent], "polaris-media");
+    expect(handler).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith(
+      {
+        cause: "wrong_queue",
+        eventId: envelope().eventId,
+        kind: "polaris.dead_letter",
+        messageId: "msg-1",
+        organizationId: "org_1",
+        type: "data_export.requested",
+        version: 1,
+      },
+      { contentType: "json" }
+    );
+    expect(sent.ack).toHaveBeenCalledOnce();
+    // IDs and type, not the body
+    expect(JSON.stringify(send.mock.calls)).not.toContain(EXPORT);
+    expect(JSON.stringify(send.mock.calls)).not.toContain("req-1");
+  });
+
+  it("retries with the back-off, and does not ack, when the dead-letter queue refuses the notice", async () => {
+    send.mockRejectedValue(new Error(SECRET));
+    const sent = message("junk", 3);
+    await run([sent]);
+    expect(sent.retry).toHaveBeenCalledOnce();
+    expect(sent.retry).toHaveBeenCalledWith({
+      delaySeconds: retryDelaySeconds(3),
+    });
+    expect(sent.ack).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "queue_dead_letter_send_failed",
+      expect.objectContaining({ cause: "invalid_envelope", messageId: "msg-1" })
+    );
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+      SECRET
+    );
+  });
+
+  it("does the same for a wrong queue whose notice is refused", async () => {
+    send.mockRejectedValue(new Error("down"));
+    const sent = message(envelope(), 1);
+    await run([sent], "polaris-critical");
+    expect(sent.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
+    expect(sent.ack).not.toHaveBeenCalled();
+  });
+
+  it("acks and warns queue_dead_letter_not_configured without a producer", async () => {
+    const sent = message("junk");
+    await run([sent], "polaris-default", false);
+    expect(sent.ack).toHaveBeenCalledOnce();
+    expect(sent.retry).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(
+      "queue_dead_letter_not_configured",
+      { messageId: "msg-1" }
+    );
+  });
+
+  it("sends nothing for a valid message that runs, and keeps going after a refused notice", async () => {
+    send.mockRejectedValueOnce(new Error("down"));
+    const refused = message("junk");
+    const good = message(envelope());
+    await run([refused, good]);
+    expect(refused.retry).toHaveBeenCalledOnce();
+    expect(good.ack).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledOnce();
   });
 });
 

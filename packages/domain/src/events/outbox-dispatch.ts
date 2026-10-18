@@ -20,7 +20,7 @@ export const OUTBOX_DISPATCH_BATCH = 25;
 export const OUTBOX_DISPATCH_LEASE_SECONDS = 960;
 
 /**
- * Past this many claims the event is no longer taken (it waits for the dead-letter handling of PR111):
+ * Past this many claims the event is no longer taken (it is recorded as an operational incident and a dead event, PR111 and ADR 0085):
  * the queue envelope counts at most this many attempts.
  */
 export const OUTBOX_MAX_DISPATCH_ATTEMPTS = QUEUE_ENVELOPE_MAX_ATTEMPT;

@@ -473,6 +473,8 @@ async function run() {
         ["INSERT", [runtimeRole]],
         ["INSERT", ["polaris_purge_owner"]],
         ["SELECT", ["polaris_privacy_owner"]],
+        // the purge owner reads only the purge tombstones, for a purge reapplied after a restore (ADR 0081)
+        ["SELECT", ["polaris_purge_owner"]],
       ],
       "no policy allows an update or a delete to any role"
     );

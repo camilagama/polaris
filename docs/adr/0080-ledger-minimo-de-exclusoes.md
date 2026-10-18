@@ -41,6 +41,8 @@ O ADR de retenção por classe de dado ([ADR 0079](0079-retencao-por-classe-de-d
 
 O purge não apaga a linha da organização: ela fica como tombstone `purged`, sem nome, e isso substitui a frase "o purge apaga a organização" da Decisão. O tombstone `organization`/`purge` é gravado por `polaris_purge_owner`, papel próprio do purge (não o `polaris_privacy_owner`), com o caso de privacidade do agendamento, antes das linhas e na mesma transação. A política e o `INSERT` estão na migration 0070.
 
+O papel de purge também lê os tombstones de purge do ledger, para a reaplicação depois de um restore. O `SELECT` é só nas colunas `organization_id`, `entity_type`, `entity_id` e `operation`, e só nas linhas `organization`/`purge`; nada mais do ledger é lido por ele. Assim, um purge reaplicado passa pela trava dos 30 dias pelo próprio tombstone, que prova que o prazo já foi cumprido na primeira vez (ADR 0081, decisão 1).
+
 ## Alternativas rejeitadas
 
 - **Guardar o payload da exclusão para poder refazê-la:** é exatamente o dado que a exclusão tirou; o tombstone diz "isto foi removido", e quem refaz usa o efeito do comando.

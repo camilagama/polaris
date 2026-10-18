@@ -69,6 +69,28 @@ describe("serving a public image", () => {
     expect(authorize).toHaveBeenCalledWith({ assetId, productId, slug });
   });
 
+  it("is embeddable by any origin and inert if a browser opens it as a document", async () => {
+    const missing = setup({ authorize: () => Promise.resolve(null) });
+    const down = setup({
+      getObject: () => Promise.reject(new Error("bucket down")),
+    });
+
+    const responses = await Promise.all([
+      setup().serve(),
+      missing.serve(),
+      down.serve(),
+    ]);
+    for (const response of responses) {
+      expect(response.headers.get("cross-origin-resource-policy")).toBe(
+        "cross-origin"
+      );
+      expect(response.headers.get("content-security-policy")).toBe(
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox"
+      );
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    }
+  });
+
   it("serves the derivative when it exists and the master until then", async () => {
     const derivativeKey = `media/derivatives/v1/${assetId}/320.webp`;
     const withDerivative = setup({

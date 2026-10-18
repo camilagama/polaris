@@ -4,7 +4,10 @@
 -- deletion ledger tombstone and deletes every row of the tenant in one transaction. The organization's
 -- row stays as a tombstone (status `purged`, name replaced), so the support and privacy cases, the
 -- platform audit, the billing records and the deletion ledger survive it. The purge functions belong to
--- a role of their own that is never a login; only the privacy runtime executes them.
+-- a role of their own that is never a login; only the privacy runtime executes them. The decisions of
+-- 18/10/2026 (ADR 0081): the purge runs only once the organization has been closed for 30 days and never
+-- while a legal hold is in force; it removes the tenant's operational data (Polaris is its processor), keeps
+-- the billing events with the payer's data taken out, and removes the free text of the cases it keeps.
 DO $roles$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'polaris_purge_owner') THEN
@@ -15,6 +18,19 @@ BEGIN
 END
 $roles$;--> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
+CREATE TABLE "organization_legal_holds" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"organization_id" text NOT NULL,
+	"placed_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"placed_by" uuid NOT NULL,
+	"released_at" timestamp with time zone,
+	"released_by" uuid,
+	"support_case_id" uuid NOT NULL,
+	CONSTRAINT "organization_legal_holds_release_coherent" CHECK (("organization_legal_holds"."released_at" IS NULL) = ("organization_legal_holds"."released_by" IS NULL)
+        AND ("organization_legal_holds"."released_at" IS NULL OR "organization_legal_holds"."released_at" >= "organization_legal_holds"."placed_at"))
+);
+--> statement-breakpoint
+ALTER TABLE "organization_legal_holds" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "organization_purge_cancellations" (
 	"cancelled_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"cancelled_by" uuid NOT NULL,
@@ -48,15 +64,30 @@ CREATE TABLE "organization_purges" (
 --> statement-breakpoint
 ALTER TABLE "organization_purges" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "platform_audit_events" DROP CONSTRAINT "platform_audit_events_type_allowed";--> statement-breakpoint
+ALTER TABLE "organization_legal_holds" ADD CONSTRAINT "organization_legal_holds_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_legal_holds" ADD CONSTRAINT "organization_legal_holds_placed_by_platform_principals_id_fk" FOREIGN KEY ("placed_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_legal_holds" ADD CONSTRAINT "organization_legal_holds_released_by_platform_principals_id_fk" FOREIGN KEY ("released_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_legal_holds" ADD CONSTRAINT "organization_legal_holds_support_case_id_support_cases_id_fk" FOREIGN KEY ("support_case_id") REFERENCES "public"."support_cases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purge_cancellations" ADD CONSTRAINT "organization_purge_cancellations_cancelled_by_platform_principals_id_fk" FOREIGN KEY ("cancelled_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purge_cancellations" ADD CONSTRAINT "organization_purge_cancellations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purge_cancellations" ADD CONSTRAINT "organization_purge_cancellations_support_case_id_support_cases_id_fk" FOREIGN KEY ("support_case_id") REFERENCES "public"."support_cases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_scheduled_by_platform_principals_id_fk" FOREIGN KEY ("scheduled_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_support_case_id_support_cases_id_fk" FOREIGN KEY ("support_case_id") REFERENCES "public"."support_cases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "organization_legal_holds_active_unique" ON "organization_legal_holds" USING btree ("organization_id") WHERE "organization_legal_holds"."released_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "organization_purge_cancellations_organization_idx" ON "organization_purge_cancellations" USING btree ("organization_id","cancelled_at");--> statement-breakpoint
 CREATE INDEX "organization_purges_due_idx" ON "organization_purges" USING btree ("not_before");--> statement-breakpoint
-ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed'));--> statement-breakpoint
+ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released'));--> statement-breakpoint
+CREATE POLICY "platform_audit_events_purge_owner_insert" ON "platform_audit_events" AS PERMISSIVE FOR INSERT TO "polaris_purge_owner" WITH CHECK (event_type = 'organization.purge_completed'
+        AND entity_type = 'organization'
+        AND entity_id = organization_id
+        AND detail IS NULL
+        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
+        AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id AND purge_plan.scheduled_by = platform_audit_events.principal_id AND purge_plan.support_case_id = platform_audit_events.support_case_id));--> statement-breakpoint
+CREATE POLICY "organization_legal_holds_admin_owner_select" ON "organization_legal_holds" AS PERMISSIVE FOR SELECT TO "polaris_admin_owner" USING (true);--> statement-breakpoint
+CREATE POLICY "organization_legal_holds_admin_owner_insert" ON "organization_legal_holds" AS PERMISSIVE FOR INSERT TO "polaris_admin_owner" WITH CHECK (true);--> statement-breakpoint
+CREATE POLICY "organization_legal_holds_admin_owner_update" ON "organization_legal_holds" AS PERMISSIVE FOR UPDATE TO "polaris_admin_owner" USING (true) WITH CHECK (true);--> statement-breakpoint
+CREATE POLICY "organization_legal_holds_purge_owner_select" ON "organization_legal_holds" AS PERMISSIVE FOR SELECT TO "polaris_purge_owner" USING (true);--> statement-breakpoint
 CREATE POLICY "organization_purge_cancellations_admin_owner_select" ON "organization_purge_cancellations" AS PERMISSIVE FOR SELECT TO "polaris_admin_owner" USING (true);--> statement-breakpoint
 CREATE POLICY "organization_purge_cancellations_admin_owner_insert" ON "organization_purge_cancellations" AS PERMISSIVE FOR INSERT TO "polaris_admin_owner" WITH CHECK (true);--> statement-breakpoint
 CREATE POLICY "organization_purges_purge_owner_select" ON "organization_purges" AS PERMISSIVE FOR SELECT TO "polaris_purge_owner" USING (true);--> statement-breakpoint
@@ -66,6 +97,41 @@ CREATE POLICY "organization_purges_admin_owner_insert" ON "organization_purges" 
 CREATE POLICY "organization_purges_admin_owner_update" ON "organization_purges" AS PERMISSIVE FOR UPDATE TO "polaris_admin_owner" USING (true) WITH CHECK (true);--> statement-breakpoint
 ALTER TABLE "organization_purge_cancellations" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "organization_purges" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "organization_legal_holds" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+-- the legal holds: the owner of the Admin functions places (INSERT) and releases (only the release columns)
+-- them, the purge owner only reads whether one is in force, and nobody deletes one
+REVOKE ALL ON TABLE public.organization_legal_holds FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_privacy_owner, polaris_purge_owner;--> statement-breakpoint
+GRANT SELECT, INSERT ON TABLE public.organization_legal_holds TO polaris_admin_owner;--> statement-breakpoint
+GRANT UPDATE (released_at, released_by) ON TABLE public.organization_legal_holds TO polaris_admin_owner;--> statement-breakpoint
+GRANT SELECT (organization_id, released_at) ON TABLE public.organization_legal_holds TO polaris_purge_owner;--> statement-breakpoint
+-- a released hold is final, and no hold is ever deleted, even around the functions
+CREATE FUNCTION public.organization_legal_holds_release_is_final()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF TG_OP <> 'UPDATE' THEN
+    RAISE EXCEPTION 'organization legal holds are never deleted' USING ERRCODE = '23514';
+  END IF;
+  IF OLD.released_at IS NOT NULL
+     OR NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+     OR NEW.support_case_id IS DISTINCT FROM OLD.support_case_id
+     OR NEW.placed_at IS DISTINCT FROM OLD.placed_at
+     OR NEW.placed_by IS DISTINCT FROM OLD.placed_by THEN
+    RAISE EXCEPTION 'a legal hold only changes when it is released, once' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.organization_legal_holds_release_is_final() FROM PUBLIC;--> statement-breakpoint
+CREATE TRIGGER organization_legal_holds_release_is_final
+  BEFORE UPDATE OR DELETE ON public.organization_legal_holds
+  FOR EACH ROW EXECUTE FUNCTION public.organization_legal_holds_release_is_final();--> statement-breakpoint
+CREATE TRIGGER organization_legal_holds_no_truncate
+  BEFORE TRUNCATE ON public.organization_legal_holds
+  FOR EACH STATEMENT EXECUTE FUNCTION public.organization_legal_holds_release_is_final();--> statement-breakpoint
 REVOKE ALL ON TABLE public.organization_purges FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_privacy_owner;--> statement-breakpoint
 GRANT SELECT ON TABLE public.organization_purges TO polaris_purge_owner;--> statement-breakpoint
 GRANT UPDATE (attempts, locked_until, last_error_code, purged_at, swept_at, storage_touched_at) ON TABLE public.organization_purges TO polaris_purge_owner;--> statement-breakpoint
@@ -94,7 +160,7 @@ DECLARE
     'expense_recurring_rules', 'expense_categories', 'payment_profile_rules', 'payment_profiles',
     'sync_commands', 'sync_changes', 'sync_cursors', 'offline_grants', 'data_export_files',
     'data_exports', 'public_catalog_profiles', 'tenant_audit_event', 'event_outbox', 'queue_processing',
-    'organization_closures', 'memberships'
+    'queue_dead_letters', 'organization_closures', 'memberships'
   ];
   cascaded_tables text[] := ARRAY['product_variants', 'product_options', 'product_option_values', 'variant_option_values'];
   target text;
@@ -115,6 +181,48 @@ BEGIN
   END LOOP;
 END
 $grants$;--> statement-breakpoint
+-- The decisions of 18/10/2026 (ADR 0081). The billing events of the organization stay (fiscal period) with
+-- their fact reduced to the keys the lifecycle writes: the purge owner reads and rewrites only `fact`, only
+-- while the organization's purge is scheduled.
+GRANT SELECT (id, organization_id, fact) ON TABLE public.billing_events TO polaris_purge_owner;--> statement-breakpoint
+GRANT UPDATE (fact) ON TABLE public.billing_events TO polaris_purge_owner;--> statement-breakpoint
+CREATE POLICY billing_events_purge_owner_select ON public.billing_events
+  AS PERMISSIVE FOR SELECT TO polaris_purge_owner USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = billing_events.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+CREATE POLICY billing_events_purge_owner_update ON public.billing_events
+  AS PERMISSIVE FOR UPDATE TO polaris_purge_owner
+  USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = billing_events.organization_id AND purge_scope.status = 'purge_pending'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = billing_events.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+-- the support and privacy cases (and the purge cancellations) stay as the record of the case; their free text
+-- is removed: the purge owner reads and rewrites only those text columns, only for an organization being purged
+GRANT SELECT (id, organization_id, reason, context, resolution) ON TABLE public.support_cases TO polaris_purge_owner;--> statement-breakpoint
+GRANT UPDATE (reason, context, resolution) ON TABLE public.support_cases TO polaris_purge_owner;--> statement-breakpoint
+CREATE POLICY support_cases_purge_owner_select ON public.support_cases
+  AS PERMISSIVE FOR SELECT TO polaris_purge_owner USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = support_cases.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+CREATE POLICY support_cases_purge_owner_update ON public.support_cases
+  AS PERMISSIVE FOR UPDATE TO polaris_purge_owner
+  USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = support_cases.organization_id AND purge_scope.status = 'purge_pending'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = support_cases.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+GRANT SELECT (support_case_id, note, decision_note) ON TABLE public.privacy_cases TO polaris_purge_owner;--> statement-breakpoint
+GRANT UPDATE (note, decision_note) ON TABLE public.privacy_cases TO polaris_purge_owner;--> statement-breakpoint
+CREATE POLICY privacy_cases_purge_owner_select ON public.privacy_cases
+  AS PERMISSIVE FOR SELECT TO polaris_purge_owner USING (EXISTS (SELECT 1 FROM public.support_cases AS purge_case JOIN public.organizations AS purge_scope ON purge_scope.id = purge_case.organization_id WHERE purge_case.id = privacy_cases.support_case_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+CREATE POLICY privacy_cases_purge_owner_update ON public.privacy_cases
+  AS PERMISSIVE FOR UPDATE TO polaris_purge_owner
+  USING (EXISTS (SELECT 1 FROM public.support_cases AS purge_case JOIN public.organizations AS purge_scope ON purge_scope.id = purge_case.organization_id WHERE purge_case.id = privacy_cases.support_case_id AND purge_scope.status = 'purge_pending'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.support_cases AS purge_case JOIN public.organizations AS purge_scope ON purge_scope.id = purge_case.organization_id WHERE purge_case.id = privacy_cases.support_case_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+GRANT SELECT (organization_id, reason) ON TABLE public.organization_purge_cancellations TO polaris_purge_owner;--> statement-breakpoint
+GRANT UPDATE (reason) ON TABLE public.organization_purge_cancellations TO polaris_purge_owner;--> statement-breakpoint
+CREATE POLICY organization_purge_cancellations_purge_owner_select ON public.organization_purge_cancellations
+  AS PERMISSIVE FOR SELECT TO polaris_purge_owner USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = organization_purge_cancellations.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+CREATE POLICY organization_purge_cancellations_purge_owner_update ON public.organization_purge_cancellations
+  AS PERMISSIVE FOR UPDATE TO polaris_purge_owner
+  USING (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = organization_purge_cancellations.organization_id AND purge_scope.status = 'purge_pending'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = organization_purge_cancellations.organization_id AND purge_scope.status = 'purge_pending'));--> statement-breakpoint
+-- a purge reapplied after a restore (runbook) finds its own tombstone: the purge owner reads only the purge
+-- tombstones, to know the organization was already purged once after its closure period
+GRANT SELECT (organization_id, entity_type, entity_id, operation) ON TABLE public.deletion_ledger TO polaris_purge_owner;--> statement-breakpoint
+CREATE POLICY deletion_ledger_organization_purge_select ON public.deletion_ledger
+  AS PERMISSIVE FOR SELECT TO polaris_purge_owner USING (entity_type = 'organization' AND operation = 'purge');--> statement-breakpoint
 -- the tombstone of the purge (ADR 0080): only the organization itself, only while its purge runs
 GRANT INSERT (organization_id, entity_type, entity_id, operation, privacy_case_id) ON TABLE public.deletion_ledger TO polaris_purge_owner;--> statement-breakpoint
 CREATE POLICY deletion_ledger_organization_purge_insert ON public.deletion_ledger
@@ -130,14 +238,8 @@ CREATE POLICY deletion_ledger_organization_purge_insert ON public.deletion_ledge
 -- the completion of the purge, the one audit event the purge writes itself: the principal is the operator
 -- who scheduled it (a job has none), there is no detail, and it is written once the organization is `purged`
 GRANT INSERT (principal_id, event_type, organization_id, support_case_id, entity_type, entity_id, detail) ON TABLE public.platform_audit_events TO polaris_purge_owner;--> statement-breakpoint
-CREATE POLICY "platform_audit_events_purge_owner_insert" ON "platform_audit_events" AS PERMISSIVE FOR INSERT TO "polaris_purge_owner" WITH CHECK (event_type = 'organization.purge_completed'
-        AND entity_type = 'organization'
-        AND entity_id = organization_id
-        AND detail IS NULL
-        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
-        AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id AND purge_plan.scheduled_by = platform_audit_events.principal_id AND purge_plan.support_case_id = platform_audit_events.support_case_id));--> statement-breakpoint
--- the Admin reads the end of the recovery window before scheduling
-GRANT SELECT (organization_id, recover_until) ON TABLE public.organization_closures TO polaris_admin_owner;--> statement-breakpoint
+-- the Admin reads the recovery window and when the closure was asked for before scheduling
+GRANT SELECT (organization_id, recover_until, requested_at, closed_at) ON TABLE public.organization_closures TO polaris_admin_owner;--> statement-breakpoint
 CREATE POLICY organization_closures_admin_owner_select ON public.organization_closures
   AS PERMISSIVE FOR SELECT TO polaris_admin_owner USING (true);--> statement-breakpoint
 -- Stock movements stay append-only for everyone; the one exception is the purge owner deleting the
@@ -225,6 +327,81 @@ BEGIN
   RETURN NEW;
 END;
 $$;--> statement-breakpoint
+-- A closed support case stays closed for everyone (the body is otherwise unchanged); the one exception is the
+-- purge owner taking the free text out of the cases of an organization whose purge was scheduled (decision of
+-- 18/10/2026, ADR 0081): the reason becomes the fixed text, the context and the resolution go, nothing else moves.
+CREATE OR REPLACE FUNCTION public.support_cases_closed_is_final()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF current_user = 'polaris_purge_owner'
+     AND NEW.reason = 'Texto removido pelo purge da organização.' AND NEW.context IS NULL AND NEW.resolution IS NULL
+     AND (pg_catalog.to_jsonb(NEW) - ARRAY['reason', 'context', 'resolution'])
+       = (pg_catalog.to_jsonb(OLD) - ARRAY['reason', 'context', 'resolution'])
+     AND EXISTS (
+       SELECT 1 FROM public.organizations AS purge_scope
+        WHERE purge_scope.id = OLD.organization_id AND purge_scope.status = 'purge_pending'
+     ) THEN
+    RETURN NEW;
+  END IF;
+  IF OLD.status = 'closed' THEN
+    RAISE EXCEPTION 'a closed support case cannot change'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
+-- A privacy case moves forward one step at a time and a resolved one is final (the body is otherwise
+-- unchanged); the one exception is the purge owner removing the note and the decision note of the cases of an
+-- organization whose purge was scheduled, and nothing else (decision of 18/10/2026, ADR 0081).
+CREATE OR REPLACE FUNCTION public.privacy_cases_forward_only()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  stages text[] := ARRAY['requested', 'identity_checked', 'role_determined', 'scoped', 'decided', 'executed', 'resolved'];
+BEGIN
+  IF current_user = 'polaris_purge_owner'
+     AND NEW.note IS NULL AND NEW.decision_note IS NULL
+     AND (pg_catalog.to_jsonb(NEW) - ARRAY['note', 'decision_note'])
+       = (pg_catalog.to_jsonb(OLD) - ARRAY['note', 'decision_note'])
+     AND EXISTS (
+       SELECT 1 FROM public.support_cases AS purge_case
+         JOIN public.organizations AS purge_scope ON purge_scope.id = purge_case.organization_id
+        WHERE purge_case.id = OLD.support_case_id AND purge_scope.status = 'purge_pending'
+     ) THEN
+    RETURN NEW;
+  END IF;
+  IF OLD.stage = 'resolved' THEN
+    RAISE EXCEPTION 'a resolved privacy case cannot change' USING ERRCODE = '23514';
+  END IF;
+  -- one step at a time: the next stage; an action keeps the case at executed; a refusal or a redirect goes
+  -- straight to resolved (it has nothing to carry out)
+  IF NOT (
+    pg_catalog.array_position(stages, NEW.stage) = pg_catalog.array_position(stages, OLD.stage) + 1
+    OR (OLD.stage = 'executed' AND NEW.stage = 'executed')
+    OR (OLD.stage = 'decided' AND NEW.stage = 'resolved' AND OLD.decision IN ('reject', 'redirect_to_controller'))
+  ) THEN
+    RAISE EXCEPTION 'a privacy case moves one step at a time' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.request_type IS DISTINCT FROM OLD.request_type
+     OR NEW.requester_kind IS DISTINCT FROM OLD.requester_kind
+     OR NEW.channel IS DISTINCT FROM OLD.channel
+     OR NEW.received_at IS DISTINCT FROM OLD.received_at
+     OR NEW.due_at IS DISTINCT FROM OLD.due_at
+     OR NEW.note IS DISTINCT FROM OLD.note
+     OR (OLD.identity_status IS NOT NULL AND (NEW.identity_status IS DISTINCT FROM OLD.identity_status OR NEW.identity_method IS DISTINCT FROM OLD.identity_method))
+     OR (OLD.polaris_role IS NOT NULL AND NEW.polaris_role IS DISTINCT FROM OLD.polaris_role)
+     OR (OLD.scope_categories IS NOT NULL AND (NEW.scope_categories IS DISTINCT FROM OLD.scope_categories OR NEW.subject_reference IS DISTINCT FROM OLD.subject_reference))
+     OR (OLD.decision IS NOT NULL AND (NEW.decision IS DISTINCT FROM OLD.decision OR NEW.decision_reason IS DISTINCT FROM OLD.decision_reason OR NEW.decision_note IS DISTINCT FROM OLD.decision_note)) THEN
+    RAISE EXCEPTION 'a step of a privacy case is recorded once' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
 -- An export file is recorded only for an active organization (ADR 0078 and 0081): a run that read before
 -- the closure, or a claim of an export whose organization is no longer active, cannot leave a copy on
 -- record. The job writes the object before recording it and removes the export's objects when it fails.
@@ -267,6 +444,7 @@ DECLARE
   target text;
   current_status text;
   window_end timestamptz;
+  closure_requested timestamptz;
   privacy_case uuid;
   privacy_type text;
   privacy_requester text;
@@ -317,13 +495,25 @@ BEGIN
   IF current_status IS DISTINCT FROM 'closed' THEN
     RAISE EXCEPTION 'organization_not_closed' USING ERRCODE = '55000';
   END IF;
-  SELECT closure.recover_until INTO window_end
-    FROM public.organization_closures AS closure WHERE closure.organization_id = target;
+  SELECT closure.recover_until, closure.requested_at INTO window_end, closure_requested
+    FROM public.organization_closures AS closure
+   WHERE closure.organization_id = target AND closure.closed_at IS NOT NULL;
   IF window_end IS NULL THEN
     RAISE EXCEPTION 'organization_not_closed' USING ERRCODE = '55000';
   END IF;
   IF window_end > pg_catalog.now() THEN
     RAISE EXCEPTION 'recovery_window_open' USING ERRCODE = '55000';
+  END IF;
+  -- the closure period of 30 days (decision of 18/10/2026, ADR 0081), whatever window the closure had: the owner
+  -- could export (by recovering) during it, and the purge never starts before it is over
+  IF closure_requested + interval '30 days' > pg_catalog.now() THEN
+    RAISE EXCEPTION 'closure_period_not_elapsed' USING ERRCODE = '55000';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.organization_legal_holds AS hold
+     WHERE hold.organization_id = target AND hold.released_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'legal_hold_active' USING ERRCODE = '55000';
   END IF;
   IF EXISTS (
     SELECT 1 FROM public.tenant_access_grants AS access_grant
@@ -339,7 +529,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'paid_access_running' USING ERRCODE = '55000';
   END IF;
-  due := window_end + p_delay_seconds * interval '1 second';
+  due := GREATEST(window_end, closure_requested + interval '30 days') + p_delay_seconds * interval '1 second';
   UPDATE public.organizations SET status = 'purge_pending', updated_at = pg_catalog.now()
    WHERE id = target AND status = 'closed';
   -- a purge scheduled again (after a cancellation, or a restore that brought the organization back) starts from
@@ -418,14 +608,98 @@ BEGIN
   RETURN pg_catalog.jsonb_build_object('changed', true, 'status', 'closed');
 END;
 $function$;--> statement-breakpoint
+-- A legal hold (decision of 18/10/2026, ADR 0081): while one is in force, the purge of the organization is
+-- neither scheduled nor run. An operator with the capability places it under an open case of the organization
+-- named (a confirmation, as in the purge), on any organization not yet purged; placing it again changes nothing.
+-- It takes the organization's lock, the one the purge's database step takes first, so either the hold comes
+-- first and the purge refuses, or the purge comes first and the hold is refused (`purge_already_done`). It has
+-- no free text: why it exists is the case.
+CREATE FUNCTION public.admin_place_organization_legal_hold(p_principal uuid, p_case uuid, p_organization text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  target text;
+  current_status text;
+  created uuid;
+BEGIN
+  PERFORM public.admin_require_principal(p_principal);
+  target := public.admin_require_open_case(p_case);
+  IF p_organization IS DISTINCT FROM target THEN
+    RAISE EXCEPTION 'organization_mismatch' USING ERRCODE = '55000';
+  END IF;
+  SELECT organization.status INTO current_status
+    FROM public.organizations AS organization WHERE organization.id = target FOR UPDATE;
+  IF current_status = 'purged' THEN
+    RAISE EXCEPTION 'purge_already_done' USING ERRCODE = '55000';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.organization_legal_holds AS hold
+     WHERE hold.organization_id = target AND hold.released_at IS NULL
+  ) THEN
+    RETURN pg_catalog.jsonb_build_object('changed', false, 'held', true);
+  END IF;
+  INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by)
+  VALUES (target, p_case, p_principal)
+  RETURNING id INTO created;
+  PERFORM public.admin_record_audit(
+    p_principal, 'organization.legal_hold_placed', target, p_case, 'organization_legal_hold', created::text, NULL
+  );
+  RETURN pg_catalog.jsonb_build_object('changed', true, 'held', true);
+END;
+$function$;--> statement-breakpoint
+-- Ends the legal hold in force (the row stays, released); with none in force it changes nothing. A purge that was
+-- scheduled runs again from the next run on.
+CREATE FUNCTION public.admin_release_organization_legal_hold(p_principal uuid, p_case uuid, p_organization text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  target text;
+  released uuid;
+BEGIN
+  PERFORM public.admin_require_principal(p_principal);
+  target := public.admin_require_open_case(p_case);
+  IF p_organization IS DISTINCT FROM target THEN
+    RAISE EXCEPTION 'organization_mismatch' USING ERRCODE = '55000';
+  END IF;
+  PERFORM 1 FROM public.organizations AS organization WHERE organization.id = target FOR UPDATE;
+  UPDATE public.organization_legal_holds AS hold
+     SET released_at = pg_catalog.now(), released_by = p_principal
+   WHERE hold.organization_id = target AND hold.released_at IS NULL
+  RETURNING hold.id INTO released;
+  IF released IS NULL THEN
+    RETURN pg_catalog.jsonb_build_object('changed', false, 'held', false);
+  END IF;
+  PERFORM public.admin_record_audit(
+    p_principal, 'organization.legal_hold_released', target, p_case, 'organization_legal_hold', released::text, NULL
+  );
+  RETURN pg_catalog.jsonb_build_object('changed', true, 'held', false);
+END;
+$function$;--> statement-breakpoint
 -- the history of cancellations is append-only for everyone, the table's owner included: no UPDATE, DELETE or
--- TRUNCATE, the same rule the platform audit has (the grants already give the Admin no more than INSERT and SELECT)
+-- TRUNCATE, the same rule the platform audit has (the grants already give the Admin no more than INSERT and SELECT).
+-- The one exception is the purge owner taking the free text out (decision of 18/10/2026, ADR 0081): only the
+-- reason, only to the fixed text, only while the organization's purge runs.
 CREATE FUNCTION public.organization_purge_cancellations_immutable()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $function$
 BEGIN
+  IF TG_OP = 'UPDATE' AND current_user = 'polaris_purge_owner'
+     AND NEW.reason = 'Texto removido pelo purge da organização.'
+     AND (pg_catalog.to_jsonb(NEW) - 'reason') = (pg_catalog.to_jsonb(OLD) - 'reason')
+     AND EXISTS (
+       SELECT 1 FROM public.organizations AS purge_scope
+        WHERE purge_scope.id = OLD.organization_id AND purge_scope.status = 'purge_pending'
+     ) THEN
+    RETURN NEW;
+  END IF;
   RAISE EXCEPTION 'organization purge cancellations are append-only'
     USING ERRCODE = '23514';
 END;
@@ -437,8 +711,45 @@ CREATE TRIGGER organization_purge_cancellations_no_change
 CREATE TRIGGER organization_purge_cancellations_no_truncate
   BEFORE TRUNCATE ON public.organization_purge_cancellations
   FOR EACH STATEMENT EXECUTE FUNCTION public.organization_purge_cancellations_immutable();--> statement-breakpoint
+-- What stops a scheduled purge from running now, as a code, or null (decisions of 18/10/2026, ADR 0081): a
+-- legal hold in force, or a closure that is not 30 days old (or whose window is not over). A purge reapplied
+-- after a restore (runbook) finds its own tombstone in the deletion ledger, which proves the period was over
+-- when it first ran: the restored organization may not even have its closure back. Internal to the purge
+-- functions; nobody else executes it.
+CREATE FUNCTION public.organization_purge_blocker(p_organization text)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.organization_legal_holds AS hold
+     WHERE hold.organization_id = p_organization AND hold.released_at IS NULL
+  ) THEN
+    RETURN 'legal_hold_active';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.deletion_ledger AS tombstone
+     WHERE tombstone.organization_id = p_organization AND tombstone.entity_type = 'organization'
+       AND tombstone.entity_id = p_organization AND tombstone.operation = 'purge'
+  ) THEN
+    RETURN NULL;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.organization_closures AS closure
+     WHERE closure.organization_id = p_organization AND closure.closed_at IS NOT NULL
+       AND closure.recover_until <= pg_catalog.now()
+       AND closure.requested_at + interval '30 days' <= pg_catalog.now()
+  ) THEN
+    RETURN 'closure_period_not_elapsed';
+  END IF;
+  RETURN NULL;
+END;
+$function$;--> statement-breakpoint
 -- a run takes the oldest due purge (or a purged organization whose second sweep did not finish) and holds
--- it for a while; an organization with an export run still holding its lease waits for the next run
+-- it for a while; an organization with an export run still holding its lease waits for the next run, and
+-- one that a legal hold or the closure period still stops is not taken at all
 CREATE FUNCTION public.claim_organization_purge(p_lease_seconds integer)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -462,7 +773,8 @@ BEGIN
            SELECT 1 FROM public.data_exports AS export_row
             WHERE export_row.organization_id = purge.organization_id
               AND export_row.status = 'running' AND export_row.locked_until > pg_catalog.now()
-         ))
+         )
+         AND public.organization_purge_blocker(purge.organization_id) IS NULL)
        OR (organization.status = 'purged' AND purge.purged_at IS NOT NULL AND purge.swept_at IS NULL)
      )
    ORDER BY purge.scheduled_at, purge.organization_id
@@ -532,11 +844,20 @@ DECLARE
     'expense_recurring_rules', 'expense_categories', 'payment_profile_rules', 'payment_profiles',
     'sync_commands', 'sync_changes', 'sync_cursors', 'offline_grants', 'data_export_files',
     'data_exports', 'public_catalog_profiles', 'tenant_audit_event', 'event_outbox', 'queue_processing',
-    'organization_closures', 'memberships'
+    'queue_dead_letters', 'organization_closures', 'memberships'
   ];
   target text;
   removed bigint;
   total bigint := 0;
+  blocker text;
+  anonymized bigint;
+  scrubbed bigint := 0;
+  -- the keys the billing lifecycle writes in a fact (`serializeBillingFact` and the ledger's commands): values,
+  -- dates, types and opaque references. Anything else (a payer's name, document, e-mail, phone, address or ID
+  -- at the provider) is taken out; `PURGE_BILLING_FACT_KEYS` in `purge-datasets.ts` holds the same list
+  kept_fact_keys text[] := ARRAY[
+    'type', 'occurredAt', 'cycleMonths', 'periodEndsAt', 'transition', 'grantId', 'key', 'startsAt', 'expiresAt', 'actor'
+  ];
 BEGIN
   -- the lock comes first: a run that waited behind another one sees the organization it left (this role
   -- locks only `purge_pending` rows, so a purged one is not found and is read again without the lock)
@@ -546,7 +867,9 @@ BEGIN
     SELECT organization.status INTO current_status
       FROM public.organizations AS organization WHERE organization.id = p_organization;
     IF current_status = 'purged' THEN
-      RETURN pg_catalog.jsonb_build_object('alreadyPurged', true, 'deletedRows', 0);
+      RETURN pg_catalog.jsonb_build_object(
+        'alreadyPurged', true, 'deletedRows', 0, 'anonymizedBillingEvents', 0, 'scrubbedTexts', 0
+      );
     END IF;
     RAISE EXCEPTION 'organization_not_purge_pending' USING ERRCODE = '55000';
   END IF;
@@ -557,6 +880,11 @@ BEGIN
   END IF;
   IF plan.not_before > pg_catalog.now() THEN
     RAISE EXCEPTION 'purge_not_due' USING ERRCODE = '55000';
+  END IF;
+  -- a legal hold, or a closure younger than 30 days: nothing is removed
+  blocker := public.organization_purge_blocker(p_organization);
+  IF blocker IS NOT NULL THEN
+    RAISE EXCEPTION '%', blocker USING ERRCODE = '55000';
   END IF;
   IF EXISTS (
     SELECT 1 FROM public.data_exports AS export_row
@@ -574,6 +902,42 @@ BEGIN
     GET DIAGNOSTICS removed = ROW_COUNT;
     total := total + removed;
   END LOOP;
+  -- the billing events stay for the fiscal period, without the payer: values, dates, types and opaque references
+  UPDATE public.billing_events AS billing
+     SET fact = (
+       SELECT COALESCE(pg_catalog.jsonb_object_agg(entry.key, entry.value), '{}'::jsonb)
+         FROM pg_catalog.jsonb_each(billing.fact) AS entry
+        WHERE entry.key = ANY (kept_fact_keys)
+     )
+   WHERE billing.organization_id = p_organization
+     AND EXISTS (
+       SELECT 1 FROM pg_catalog.jsonb_object_keys(billing.fact) AS fact_key
+        WHERE fact_key <> ALL (kept_fact_keys)
+     );
+  GET DIAGNOSTICS anonymized = ROW_COUNT;
+  -- the cases stay as the record of the case (dates, kind, decision, opaque IDs); the free text goes
+  UPDATE public.support_cases AS support_case
+     SET reason = 'Texto removido pelo purge da organização.', context = NULL, resolution = NULL
+   WHERE support_case.organization_id = p_organization
+     AND (support_case.reason <> 'Texto removido pelo purge da organização.'
+          OR support_case.context IS NOT NULL OR support_case.resolution IS NOT NULL);
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  scrubbed := scrubbed + removed;
+  UPDATE public.privacy_cases AS privacy
+     SET note = NULL, decision_note = NULL
+   WHERE privacy.support_case_id IN (
+           SELECT support_case.id FROM public.support_cases AS support_case
+            WHERE support_case.organization_id = p_organization
+         )
+     AND (privacy.note IS NOT NULL OR privacy.decision_note IS NOT NULL);
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  scrubbed := scrubbed + removed;
+  UPDATE public.organization_purge_cancellations AS cancellation
+     SET reason = 'Texto removido pelo purge da organização.'
+   WHERE cancellation.organization_id = p_organization
+     AND cancellation.reason <> 'Texto removido pelo purge da organização.';
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  scrubbed := scrubbed + removed;
   -- the deferred checks of the variants run here, while the rows are still visible to this role
   SET CONSTRAINTS ALL IMMEDIATE;
   UPDATE public.organizations
@@ -588,7 +952,9 @@ BEGIN
   VALUES
     (plan.scheduled_by, 'organization.purge_completed', p_organization, plan.support_case_id,
      'organization', p_organization, NULL);
-  RETURN pg_catalog.jsonb_build_object('alreadyPurged', false, 'deletedRows', total);
+  RETURN pg_catalog.jsonb_build_object(
+    'alreadyPurged', false, 'deletedRows', total, 'anonymizedBillingEvents', anonymized, 'scrubbedTexts', scrubbed
+  );
 END;
 $function$;--> statement-breakpoint
 -- the purge is about to remove its first object from the storage: from now on it cannot be cancelled. The run
@@ -602,7 +968,14 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $function$
+DECLARE
+  blocker text;
 BEGIN
+  -- a legal hold, or a closure younger than 30 days: the storage is not touched either
+  blocker := public.organization_purge_blocker(p_organization);
+  IF blocker IS NOT NULL THEN
+    RAISE EXCEPTION '%', blocker USING ERRCODE = '55000';
+  END IF;
   UPDATE public.organization_purges AS purge
      SET storage_touched_at = COALESCE(purge.storage_touched_at, pg_catalog.now())
    WHERE purge.organization_id = p_organization AND purge.locked_until > pg_catalog.now()
@@ -649,16 +1022,23 @@ GRANT polaris_admin_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FA
 GRANT CREATE ON SCHEMA public TO polaris_admin_owner;--> statement-breakpoint
 ALTER FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) OWNER TO polaris_admin_owner;--> statement-breakpoint
 ALTER FUNCTION public.admin_cancel_organization_purge(uuid, uuid, text, text) OWNER TO polaris_admin_owner;--> statement-breakpoint
+ALTER FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text) OWNER TO polaris_admin_owner;--> statement-breakpoint
+ALTER FUNCTION public.admin_release_organization_legal_hold(uuid, uuid, text) OWNER TO polaris_admin_owner;--> statement-breakpoint
 SET ROLE polaris_admin_owner;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) TO polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.admin_cancel_organization_purge(uuid, uuid, text, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.admin_cancel_organization_purge(uuid, uuid, text, text) TO polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.admin_place_organization_legal_hold(uuid, uuid, text) TO polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_release_organization_legal_hold(uuid, uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.admin_release_organization_legal_hold(uuid, uuid, text) TO polaris_admin_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_admin_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_admin_owner;--> statement-breakpoint
 GRANT polaris_purge_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 GRANT CREATE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
+ALTER FUNCTION public.organization_purge_blocker(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.claim_organization_purge(integer) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.list_organization_purge_media(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.mark_organization_purge_storage_touched(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
@@ -666,6 +1046,7 @@ ALTER FUNCTION public.purge_organization_data(text) OWNER TO polaris_purge_owner
 ALTER FUNCTION public.record_organization_purge_failure(text, text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.complete_organization_purge_sweep(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 SET ROLE polaris_purge_owner;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.organization_purge_blocker(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.claim_organization_purge(integer) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.list_organization_purge_media(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.mark_organization_purge_storage_touched(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint

@@ -246,9 +246,37 @@ async function run() {
         "organization_id",
         "phone",
       ],
-      // the end of the recovery window, read before a purge is scheduled (ADR 0081)
-      organization_closures: ["organization_id", "recover_until"],
+      // the closure, read before a purge is scheduled: the recovery window and the 30 days (ADR 0081)
+      organization_closures: [
+        "closed_at",
+        "organization_id",
+        "recover_until",
+        "requested_at",
+      ],
       platform_principals: ["id", "status"],
+      // the dead-letter queue the Admin's incident functions read, and only read (ADR 0085)
+      operational_incidents: [
+        "cause",
+        "first_seen_at",
+        "id",
+        "kind",
+        "last_reference",
+        "last_seen_at",
+        "occurrence_count",
+        "subject",
+      ],
+      queue_dead_letters: [
+        "event_id",
+        "event_type",
+        "first_seen_at",
+        "incident_id",
+        "last_seen_at",
+        "occurrences",
+        "organization_id",
+        "retried_at",
+        "retry_count",
+        "state",
+      ],
     });
     const platformTables = {
       // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081)
@@ -265,6 +293,8 @@ async function run() {
         "support_case_id",
         "swept_at",
       ],
+      // the legal holds: placed by the Admin, and only released afterwards (ADR 0081)
+      organization_legal_holds: ["released_at", "released_by"],
       // every cancellation of a purge with its reason: the cancel function appends, nothing changes a row
       organization_purge_cancellations: [] as string[],
       platform_audit_events: [] as string[],
@@ -332,6 +362,9 @@ async function run() {
     assert.deepEqual(
       tableLevel.rows.map((row) => row.privilege),
       [
+        "operational_incidents:SELECT",
+        "organization_legal_holds:INSERT",
+        "organization_legal_holds:SELECT",
         "organization_purge_cancellations:INSERT",
         "organization_purge_cancellations:SELECT",
         "organization_purges:INSERT",
@@ -342,12 +375,13 @@ async function run() {
         "privacy_case_actions:SELECT",
         "privacy_cases:INSERT",
         "privacy_cases:SELECT",
+        "queue_dead_letters:SELECT",
         "support_cases:INSERT",
         "support_cases:SELECT",
         "tenant_access_grants:INSERT",
         "tenant_access_grants:SELECT",
       ],
-      "table-level privileges only on the Admin's own tables, and never to change or delete"
+      "table-level privileges only on the Admin's own tables (and read on the dead-letter queue), and never to change or delete"
     );
     const memberships = await owner.pool.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM pg_auth_members WHERE member = 'polaris_admin_owner'::regrole OR (roleid = 'polaris_admin_owner'::regrole AND (set_option OR inherit_option))"
@@ -379,6 +413,7 @@ async function run() {
       ),
       memberships: ["SELECT", "UPDATE"],
       offline_grants: ["SELECT", "UPDATE"],
+      organization_legal_holds: ["INSERT", "SELECT", "UPDATE"],
       organization_purge_cancellations: ["INSERT", "SELECT"],
       organization_purges: ["INSERT", "SELECT", "UPDATE"],
       organizations: ["SELECT", "UPDATE"],
@@ -399,12 +434,14 @@ async function run() {
         "admin_cancel_organization_purge",
         "admin_close_support_case",
         "admin_grant_tenant_access",
+        "admin_list_operational_incidents",
         "admin_list_privacy_cases",
         "admin_list_support_cases",
         "admin_open_privacy_case",
         "admin_open_support_case",
         "admin_organization_diagnostics",
         "admin_organizations_overview",
+        "admin_place_organization_legal_hold",
         "admin_privacy_case_detail",
         "admin_privacy_record_action",
         "admin_privacy_record_decision",
@@ -413,6 +450,9 @@ async function run() {
         "admin_privacy_record_scope",
         "admin_privacy_resolve",
         "admin_reactivate_organization",
+        "admin_read_operational_incident",
+        "admin_release_organization_legal_hold",
+        "admin_retry_dead_letter",
         "admin_reveal_customer_field",
         "admin_revoke_tenant_access",
         "admin_schedule_organization_purge",

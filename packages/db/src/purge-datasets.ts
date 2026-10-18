@@ -43,6 +43,7 @@ export const PURGE_DELETE_ORDER = Object.freeze([
   "tenant_audit_event",
   "event_outbox",
   "queue_processing",
+  "queue_dead_letters",
   "organization_closures",
   "memberships",
 ] as const);
@@ -55,27 +56,70 @@ export const PURGE_CASCADED_TABLES = Object.freeze([
   "variant_option_values",
 ] as const);
 
-/** Tables with an organization that the purge keeps, and why. */
+/**
+ * Tables with an organization that the purge keeps, and why. Since the decisions of 18/10/2026 (ADR 0081) the
+ * purge also rewrites three of them in the same transaction: the facts of `billing_events` lose every key but
+ * `PURGE_BILLING_FACT_KEYS`, and the free text of `support_cases`, `privacy_cases` (no organization column: it
+ * hangs from the support case) and `organization_purge_cancellations` is removed.
+ */
 export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
   Object.freeze({
     billing_events:
-      "Registro financeiro da plataforma (controladora): prazo fiscal e contábil proposto, a confirmar pelo responsável (ADR 0079).",
+      "Registro financeiro da plataforma, mantido pelo prazo fiscal: o purge anonimiza o fato (fica só valores, datas, tipos e referências opacas; sai qualquer dado do pagador) e mantém a linha (ADR 0081, decisão de 18/10/2026).",
     deletion_ledger:
       "Tombstones para o restore: sobrevivem à organização, sem expiração (ADR 0080).",
     entitlement_grants:
-      "Concessões da plataforma, parte do registro de cobrança, com o motivo e o autor escritos pelo operador (ADR 0067 e 0079).",
+      "Concessões da plataforma, parte do registro de cobrança, com o motivo e o autor escritos pelo operador (ADR 0067 e 0079); sem dado do pagador.",
     organization_billing:
-      "Estado da assinatura e referência do cliente no provedor, registro da plataforma; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
+      "Estado da assinatura e referência opaca da assinatura no provedor, registro da plataforma sem dado do pagador; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
+    organization_legal_holds:
+      "Registro das travas legais (quem, sob qual caso, quando entrou e saiu), sem texto livre: é a prova de que o purge esperou a trava (ADR 0081).",
     organization_purge_cancellations:
-      "Histórico append-only dos cancelamentos de purge (quem, sob qual caso, qual agendamento e o motivo curto que o operador escreveu): o motivo sobrevive ao reagendamento e é o único texto livre do registro do purge.",
+      "Histórico append-only dos cancelamentos de purge (quem, sob qual caso, qual agendamento); o motivo escrito pelo operador é trocado por um texto fixo no purge (ADR 0081, decisão de 18/10/2026).",
     organization_purges:
       "O registro do próprio purge (quem agendou, até onde foi, quando começou a mexer no armazenamento e quando terminou), sem dado pessoal.",
     platform_audit_events:
-      "Auditoria do Admin, imutável: sobrevive à organização (ADR 0070 e 0079).",
+      "Auditoria do Admin, imutável e sem texto livre: sobrevive à organização (ADR 0070 e 0079).",
     rls_poc_operations:
       "Tabela da prova de RLS da Fase 1, sem chave estrangeira para organizations e sem dado de tenant real.",
     support_cases:
-      "Casos de suporte e de privacidade: evidência do atendimento, sobrevivem à organização (ADR 0077 e 0081).",
+      "Casos de suporte e de privacidade: o registro do caso (datas, tipo, decisão, IDs opacos) sobrevive como evidência do atendimento; o texto livre é apagado no purge (ADR 0077 e 0081, decisão de 18/10/2026).",
     tenant_access_grants:
-      "Acessos temporários do Admin: registro de acesso privilegiado, sobrevive à organização (ADR 0072).",
+      "Acessos temporários do Admin: registro de acesso privilegiado, sem texto livre, sobrevive à organização (ADR 0072).",
   });
+
+/**
+ * Tables that came with the queues and the scheduler and have no organization column: nothing of a tenant to
+ * remove (ADR 0081). The purge gate proves they still have none; a column of an organization moves the table
+ * to one of the lists above.
+ */
+export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
+  Record<string, string>
+> = Object.freeze({
+  operational_incidents:
+    "Uma linha por causa (contagem, datas e uma referência opaca, o ID de um evento), sem organização (ADR 0085 e 0087).",
+  scheduled_job_state:
+    "Estado do agendador por job (janelas, lease, falhas), sem organização nem dado pessoal (ADR 0086).",
+});
+
+/**
+ * The keys a billing fact keeps after the purge (ADR 0081, decision of 18/10/2026): what the lifecycle writes
+ * (`serializeBillingFact` and the ledger's commands), that is values, dates, types and opaque references.
+ * `purge_organization_data` holds the same list (`kept_fact_keys`); any other key, such as a payer's name,
+ * document, e-mail, phone, address or ID at the provider, is removed.
+ */
+export const PURGE_BILLING_FACT_KEYS = Object.freeze([
+  "type",
+  "occurredAt",
+  "cycleMonths",
+  "periodEndsAt",
+  "transition",
+  "grantId",
+  "key",
+  "startsAt",
+  "expiresAt",
+  "actor",
+] as const);
+
+/** What the purge writes in place of the free text it removes from the cases and the purge cancellations. */
+export const PURGE_REMOVED_TEXT = "Texto removido pelo purge da organização.";

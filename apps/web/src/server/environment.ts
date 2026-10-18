@@ -97,6 +97,8 @@ export interface WorkerBindings {
   /** The queues of the plan (ADR 0083), by how much a late message costs. */
   QUEUE_CRITICAL?: QueueProducerBinding;
   QUEUE_DEFAULT?: QueueProducerBinding;
+  /** The dead-letter queue (ADR 0085). */
+  QUEUE_DLQ?: QueueProducerBinding;
   QUEUE_MEDIA?: QueueProducerBinding;
   RESEND_API_KEY?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;

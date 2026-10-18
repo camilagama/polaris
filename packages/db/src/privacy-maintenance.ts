@@ -73,10 +73,17 @@ export interface PrivacyMaintenanceClient {
   markOrganizationPurgeStorageTouched: (
     organizationId: string
   ) => Promise<void>;
-  /** Writes the tombstone and deletes every row of the tenant, in one transaction. */
-  purgeOrganizationData: (
-    organizationId: string
-  ) => Promise<{ alreadyPurged: boolean; deletedRows: number }>;
+  /**
+   * Writes the tombstone, deletes every row of the tenant, takes the payer out of the billing events and the
+   * free text out of the cases, in one transaction. Refused (`legal_hold_active`, `closure_period_not_elapsed`)
+   * with nothing removed while a legal hold is in force or the closure is younger than 30 days.
+   */
+  purgeOrganizationData: (organizationId: string) => Promise<{
+    alreadyPurged: boolean;
+    anonymizedBillingEvents: number;
+    deletedRows: number;
+    scrubbedTexts: number;
+  }>;
   /**
    * Sends back to pending the export events dispatched at least `minAgeSeconds` ago whose export is
    * still owed and may be taken now; returns how many.
@@ -223,7 +230,12 @@ export function createPrivacyMaintenanceClient(
     },
     async purgeOrganizationData(organizationId) {
       const result = await pool.query<{
-        purged: { alreadyPurged: boolean; deletedRows: number | string };
+        purged: {
+          alreadyPurged: boolean;
+          anonymizedBillingEvents: number | string;
+          deletedRows: number | string;
+          scrubbedTexts: number | string;
+        };
       }>("SELECT public.purge_organization_data($1::text) AS purged", [
         organizationId,
       ]);
@@ -233,7 +245,9 @@ export function createPrivacyMaintenanceClient(
       }
       return {
         alreadyPurged: purged.alreadyPurged === true,
+        anonymizedBillingEvents: Number(purged.anonymizedBillingEvents),
         deletedRows: Number(purged.deletedRows),
+        scrubbedTexts: Number(purged.scrubbedTexts),
       };
     },
     async rearmDataExportEvents(minAgeSeconds, limit) {

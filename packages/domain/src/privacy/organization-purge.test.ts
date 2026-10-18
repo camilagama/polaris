@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { PRIVACY_DATA_CATEGORIES } from "../admin/privacy-case";
+import { CLOSURE_RECOVERY_WINDOW_DAYS } from "../organization/closure";
 import {
   automaticPurgeSchedulingAllowed,
+  ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS,
   ORGANIZATION_PURGE_LEASE_SECONDS,
   ORGANIZATION_PURGE_REFUSALS,
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
@@ -122,10 +124,33 @@ describe("refusals to schedule or cancel a purge", () => {
       "purge_in_progress",
       "purge_storage_touched",
       "purge_already_done",
+      "closure_period_not_elapsed",
+      "legal_hold_active",
     ]) {
       expect(ORGANIZATION_PURGE_REFUSALS).toContain(code);
       expect(organizationPurgeRefusalFromMessage(code)).toBe(code);
     }
+  });
+});
+
+describe("the closure period before a purge", () => {
+  it("is 30 days, the recovery window of a closure (decision of 18/10/2026)", () => {
+    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(30);
+    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(
+      CLOSURE_RECOVERY_WINDOW_DAYS
+    );
+  });
+
+  it("is told to the operator with the period and the export, and so is a legal hold", () => {
+    expect(
+      organizationPurgeRefusalMessage("closure_period_not_elapsed")
+    ).toContain("30 dias");
+    expect(
+      organizationPurgeRefusalMessage("closure_period_not_elapsed")
+    ).toContain("exportar");
+    expect(organizationPurgeRefusalMessage("legal_hold_active")).toContain(
+      "trava legal"
+    );
   });
 });
 

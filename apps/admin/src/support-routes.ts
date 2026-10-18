@@ -1,3 +1,4 @@
+import { describeError } from "@polaris/observability/wide-event";
 import type {
   MaskedCustomerPage,
   SupportCaseDetail,
@@ -52,6 +53,14 @@ export interface SupportDependencies {
     organizationId: string;
     outcomeRecorded: boolean;
   }>;
+  /** Places or releases the legal hold on the case's organization: while one is in force, no purge. */
+  legalHold: (
+    principalId: string,
+    caseId: string,
+    organizationId: string,
+    action: "place" | "release",
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; held: boolean } | null>;
   /** Schedules the purge of the case's organization (it must be closed, its recovery window over). */
   purge: (
     principalId: string,
@@ -231,7 +240,7 @@ export function supportRoutes(
     if (error instanceof OrganizationPurgeRefusedError) {
       // the organization is not in a state that allows it yet; nothing was changed, and the answer says why.
       // The refused attempt leaves no row (the transaction is undone), so it is at least in the operator's log
-      report("organization_purge_refused", { code: error.code });
+      report("organization_purge_refused", { errorCode: error.code });
       return context.json(
         {
           error: error.code,
@@ -263,7 +272,7 @@ export function supportRoutes(
         NOT_FOUND_CODES.has(error.code) ? 404 : 400
       );
     }
-    report("admin_error", { name: error.name });
+    report("admin_error", describeError(error));
     return context.json({ error: "internal_error" }, 500);
   });
 
@@ -521,6 +530,39 @@ export function supportRoutes(
       );
     }
   );
+
+  for (const action of ["place", "release"] as const) {
+    routes.post(
+      `/support-cases/:caseId/legal-hold${action === "place" ? "" : "/release"}`,
+      requireCapability("organization:legal_hold"),
+      async (context) => {
+        const caseId = idParam(context, "caseId");
+        if (!caseId) {
+          return notFound(context);
+        }
+        // the operator names the organization, as for the purge: a hold on the wrong case is refused (409)
+        const body = await readBody(context);
+        const organizationId = body?.organizationId;
+        if (
+          typeof organizationId !== "string" ||
+          organizationId.length === 0 ||
+          organizationId.length > MAX_ID_LENGTH ||
+          controlCharacter(organizationId)
+        ) {
+          return invalid(context);
+        }
+        return context.json(
+          await dependencies.legalHold(
+            principalOf(context),
+            caseId,
+            organizationId,
+            action,
+            context.env
+          )
+        );
+      }
+    );
+  }
 
   routes.post(
     "/support-cases/:caseId/entitlement-grants",

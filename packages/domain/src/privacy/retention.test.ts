@@ -105,14 +105,34 @@ describe("approved periods", () => {
     expect(() => approvedRetention("sync_commands")).toThrow(
       RetentionNotApprovedError
     );
-    expect(() => approvedRetention("sales_records")).toThrow(
+    expect(() => approvedRetention("auth_sessions")).toThrow(
       "retention_not_approved"
     );
   });
 
-  it("treat the tenant audit as proposed while its legal period is open", () => {
-    expect(retentionPolicy("tenant_audit_events").status).toBe("proposta");
-    expect(() => approvedRetention("tenant_audit_events")).toThrow(
+  it("keep the tenant's operational data until the purge, which no job expires", () => {
+    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after 30 days
+    for (const retentionClass of [
+      "tenant_audit_events",
+      "sales_records",
+      "inventory_ledger",
+      "expenses_and_goals",
+      "product_media",
+    ] as const) {
+      const policy = retentionPolicy(retentionClass);
+      expect(policy.status, retentionClass).toBe("aprovada");
+      expect(policy.period.kind, retentionClass).toBe(
+        "until_organization_purge"
+      );
+      expect(() => approvedRetention(retentionClass)).toThrow(
+        RetentionNotApprovedError
+      );
+    }
+  });
+
+  it("keep the billing events proposed until the fiscal period is decided", () => {
+    expect(retentionPolicy("billing_events").status).toBe("proposta");
+    expect(() => approvedRetention("billing_events")).toThrow(
       RetentionNotApprovedError
     );
   });

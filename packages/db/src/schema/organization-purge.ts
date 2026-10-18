@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./organization";
@@ -142,6 +143,66 @@ export const organizationPurgeCancellations = pgTable(
       for: "insert",
       to: adminOwnerRole,
       withCheck: sql`true`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * A legal hold on an organization (ADR 0081, decision of 18/10/2026): while one is in force, the purge is
+ * neither scheduled nor run, and nothing of the organization is removed. One row per hold; released holds
+ * stay as the record of it. It carries no free text: why the hold exists is the case it hangs from. The
+ * Admin places and releases it through `admin_place_organization_legal_hold` and
+ * `admin_release_organization_legal_hold`; the purge functions only read it. Nobody deletes a row.
+ */
+export const organizationLegalHolds = pgTable(
+  "organization_legal_holds",
+  {
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    placedAt: timestamp("placed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    placedBy: uuid("placed_by")
+      .notNull()
+      .references(() => platformPrincipals.id),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releasedBy: uuid("released_by").references(() => platformPrincipals.id),
+    supportCaseId: uuid("support_case_id")
+      .notNull()
+      .references(() => supportCases.id, { onDelete: "restrict" }),
+  },
+  (table) => [
+    // one hold in force per organization
+    uniqueIndex("organization_legal_holds_active_unique")
+      .on(table.organizationId)
+      .where(sql`${table.releasedAt} IS NULL`),
+    check(
+      "organization_legal_holds_release_coherent",
+      sql`(${table.releasedAt} IS NULL) = (${table.releasedBy} IS NULL)
+        AND (${table.releasedAt} IS NULL OR ${table.releasedAt} >= ${table.placedAt})`
+    ),
+    pgPolicy("organization_legal_holds_admin_owner_select", {
+      for: "select",
+      to: adminOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("organization_legal_holds_admin_owner_insert", {
+      for: "insert",
+      to: adminOwnerRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("organization_legal_holds_admin_owner_update", {
+      for: "update",
+      to: adminOwnerRole,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("organization_legal_holds_purge_owner_select", {
+      for: "select",
+      to: purgeOwnerRole,
+      using: sql`true`,
     }),
   ]
 ).enableRLS();

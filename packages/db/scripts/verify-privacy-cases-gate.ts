@@ -1051,6 +1051,9 @@ async function run() {
         "privacy_cases_admin_owner_insert",
         "privacy_cases_admin_owner_select",
         "privacy_cases_admin_owner_update",
+        // the purge takes the notes out of the cases of an organization being purged, nothing else (ADR 0081)
+        "privacy_cases_purge_owner_select",
+        "privacy_cases_purge_owner_update",
       ]
     );
     const forced = await owner.pool.query<{

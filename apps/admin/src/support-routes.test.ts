@@ -60,6 +60,9 @@ function support(
         outcomeRecorded: true,
       })
     ),
+    legalHold: vi.fn((_principal, _case, _organization, action) =>
+      Promise.resolve({ changed: true, held: action === "place" })
+    ),
     list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
     open: vi.fn(() => Promise.resolve({ id: caseId })),
     purge: vi.fn(() =>
@@ -101,6 +104,7 @@ function setup(
         subject: "subject-1",
       })
     ),
+    incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
       diagnostics: vi.fn(() => Promise.resolve(null)),
       list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
@@ -688,8 +692,114 @@ describe("suspension and billing commands", () => {
       // the refused attempt leaves no row, so it is in the log: the code only, nothing of the request
       expect(dependencies.report).toHaveBeenCalledWith(
         "organization_purge_refused",
-        { code }
+        { errorCode: code }
       );
+    }
+  });
+
+  it("places and releases a legal hold on the case's organization, with the operator from the login", async () => {
+    const { send, support: calls } = setup();
+    const placed = await send(
+      "POST",
+      `/api/support-cases/${caseId}/legal-hold`,
+      {
+        organizationId: "org_1",
+        principalId: "forged",
+      }
+    );
+    expect(placed.status).toBe(200);
+    expect(await placed.json()).toEqual({ changed: true, held: true });
+    expect(calls.legalHold).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      "place",
+      bindings
+    );
+    const released = await send(
+      "POST",
+      `/api/support-cases/${caseId}/legal-hold/release`,
+      { organizationId: "org_1" }
+    );
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ changed: true, held: false });
+    expect(calls.legalHold).toHaveBeenLastCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      "release",
+      bindings
+    );
+  });
+
+  it("refuses a legal hold without the organization named, on an unknown case or without the capability", async () => {
+    const { send, support: calls } = setup();
+    for (const path of ["legal-hold", "legal-hold/release"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: two paths, answered in turn.
+      const refused = await Promise.all(
+        [{}, { organizationId: "" }, { organizationId: "org\n1" }].map((body) =>
+          send("POST", `/api/support-cases/${caseId}/${path}`, body)
+        )
+      );
+      expect(refused.map((response) => response.status)).toEqual([
+        400, 400, 400,
+      ]);
+      expect(
+        (
+          await send("POST", `/api/support-cases/not-a-uuid/${path}`, {
+            organizationId: "org_1",
+          })
+        ).status
+      ).toBe(404);
+      const other = setup({}, "somebody_else");
+      expect(
+        (
+          await other.send("POST", `/api/support-cases/${caseId}/${path}`, {
+            organizationId: "org_1",
+          })
+        ).status
+      ).toBe(403);
+      expect(other.support.legalHold).not.toHaveBeenCalled();
+    }
+    expect(calls.legalHold).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when a legal hold or a purge is refused for the hold or the closure period", async () => {
+    const hold = setup({
+      legalHold: vi.fn(() =>
+        Promise.reject(new OrganizationPurgeRefusedError("purge_already_done"))
+      ),
+    });
+    const refusedHold = await hold.send(
+      "POST",
+      `/api/support-cases/${caseId}/legal-hold`,
+      { organizationId: "org_1" }
+    );
+    expect(refusedHold.status).toBe(409);
+    expect(await refusedHold.json()).toEqual({
+      error: "purge_already_done",
+      message: organizationPurgeRefusalMessage("purge_already_done"),
+    });
+    for (const code of [
+      "legal_hold_active",
+      "closure_period_not_elapsed",
+    ] as const) {
+      const { send } = setup({
+        purge: vi.fn(() =>
+          Promise.reject(new OrganizationPurgeRefusedError(code))
+        ),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: each code has its own app, answered in turn.
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/purge`,
+        { organizationId: "org_1" }
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: code,
+        message: organizationPurgeRefusalMessage(code),
+      });
     }
   });
 

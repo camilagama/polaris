@@ -84,7 +84,7 @@
       "simple": { "limit": 20, "period": 60 }
     }
   ],
-  // The three queues of the plan (ADR 0083, runbook docs/runbooks/queues.md). Declaring them here
+  // The three queues of the plan and the dead-letter queue (ADR 0083, ADR 0085, runbook docs/runbooks/queues.md). Declaring them here
   // creates nothing in the account: `wrangler dev` and the Vite plugin simulate them locally, and a
   // deploy needs the queues to exist first (`wrangler queues create`, a step of the responsible).
   // The outbox dispatcher (ADR 0084) sends from its own cron; the consumer builds the data exports. The Workers Free
@@ -94,14 +94,18 @@
     "producers": [
       { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical" },
       { "binding": "QUEUE_DEFAULT", "queue": "polaris-default" },
-      { "binding": "QUEUE_MEDIA", "queue": "polaris-media" }
+      { "binding": "QUEUE_MEDIA", "queue": "polaris-media" },
+      // the dead-letter queue (ADR 0085): the consumer sends a notice here for a message it refuses for good
+      { "binding": "QUEUE_DLQ", "queue": "polaris-dlq" }
     ],
     // One message per invocation and one invocation at a time: the handlers are heavy (a data export builds
-    // archives) and a dead invocation then repeats one message, not ten. No dead-letter queue yet (PR111):
-    // a message that fails max_retries times is dropped by the platform.
+    // archives) and a dead invocation then repeats one message, not ten. A message that fails max_retries
+    // times is moved by the platform to polaris-dlq (ADR 0085), whose consumer turns it into an operational
+    // incident; the dead-letter queue itself has no dead-letter queue, so its consumer retries for a long time.
     "consumers": [
       {
         "queue": "polaris-critical",
+        "dead_letter_queue": "polaris-dlq",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -110,6 +114,7 @@
       },
       {
         "queue": "polaris-default",
+        "dead_letter_queue": "polaris-dlq",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -118,16 +123,27 @@
       },
       {
         "queue": "polaris-media",
+        "dead_letter_queue": "polaris-dlq",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
         "max_retries": 3,
         "retry_delay": 60
+      },
+      {
+        "queue": "polaris-dlq",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 10,
+        "retry_delay": 60
       }
     ]
   },
-  // "17 * * * *": media, billing and privacy maintenance; "19 * * * *": the outbox dispatcher (ADR 0084),
-  // in an invocation of its own (the Free plan gives each cron invocation 10 ms of CPU).
+  // One Cron Trigger per scheduler lane, not per job (ADR 0086; the Free plan allows five per account):
+  // "17 * * * *" is the maintenance lane (media, billing and privacy) and "19 * * * *" the outbox lane
+  // (the dispatcher, ADR 0084), an invocation of its own because the Free plan gives each one 10 ms of
+  // CPU. A test keeps this list equal to the lanes of @polaris/domain/scheduling/scheduled-jobs.
   "triggers": {
     "crons": ["17 * * * *", "19 * * * *"]
   },

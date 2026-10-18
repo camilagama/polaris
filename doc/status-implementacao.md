@@ -688,7 +688,7 @@ A revisão completa ([`doc/revisao-checkpoint-gate4.md`](revisao-checkpoint-gate
 
 ### Borda e segurança (frente 2)
 
-Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS em `public/_headers`, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
+Verificação de `Origin`, limites de taxa para mutações RPC e upload (bindings `RPC_MUTATION_RATE_LIMIT`, `MEDIA_UPLOAD_RATE_LIMIT`), CSP/HSTS e demais headers de segurança montados pelo pacote `@polaris/http-security` (ADR 0090) e aplicados no `public/_headers` (gerado), no Worker do web, no Admin e no catálogo, sessão com teto absoluto de 30 dias, logs estruturados sem dados pessoais, validação de UUID nas rotas de mídia, `cf-connecting-ip` como única fonte de IP, `X-Request-Id` somente UUID, e-mail via `waitUntil`, no máximo 20 mídias por produto, pool de autenticação separado (`AUTH_HYPERDRIVE`) e PoCs movidos para `apps/web/poc/` sem flags de runtime.
 
 ### Produto e interface (frente 3)
 
@@ -1182,11 +1182,11 @@ Quem sai do Pro com mais variantes do que o Free permite mantém todas; só as v
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Base | Concluída | Branch `codex/operational-selection` sobre a `main` (PR #94). |
-| Decisões | Tomadas pelo projeto | [ADR 0064](../docs/adr/0064-free-acima-do-limite-variantes-operacionais.md): escolha em tabela própria (nada de `plan_locked` na variante); venda e entrada de estoque bloqueadas, correções e cancelamentos não; sete dias de adequação com tudo operacional, depois a escolha só cresce (anti-rotação); padrão gravado uma vez, por vendas até o fim da janela; início da janela é o fim do acesso Pro, mantido durante um checkout de trial abandonado; sem início, congelada. |
+| Decisões | Tomadas pelo projeto | [ADR 0064](../docs/adr/0064-free-acima-do-limite-variantes-operacionais.md): escolha em tabela própria (nada de `plan_locked` na variante); venda e entrada de estoque bloqueadas, correções e cancelamentos não; sete dias de adequação com tudo operacional, depois a escolha só cresce (anti-rotação); padrão gravado uma vez, por vendas até o fim da janela; início da janela é o fim do acesso Pro, mantido durante um checkout de trial abandonado; sem início gravado, a varredura data o registro pelo fim da concessão ([ADR 0067](../docs/adr/0067-concessoes-temporarias-de-entitlement.md)). |
 | Domínio | Concluído | `billing/operational-selection.ts` (fases, início do episódio, plano de mudança da escolha, escolha padrão, erros), 18 testes. |
 | Banco | Concluído | Migration 0054: `organization_billing.over_limit_since` (grant de UPDATE só ao papel de billing, check de coerência) e `operational_variant_selections` (RLS com FORCE, sem UPDATE para o tenant, FK para a variante). |
 | Servidor | Concluído | `operational-selection-repository.ts` (`assertVariantsOperational`, `readOperationalSelection`, `selectOperationalVariants`); aplicada em `confirmSale` e na entrada de estoque; `billing-store.ts` grava/mantém/limpa `over_limit_since`; recusa vira `entitlement_changed` no comando offline; RPC `plan.operationalSelection` e `plan.selectOperationalVariants` (9 testes de roteador). |
-| Gate PostgreSQL 18 | Concluído | `operational-selection` (suítes `gate7`, `ci` e `all`): Pro nunca restrito; janela aberta deixa tudo operacional; escolha validada, trocada e auditada; venda com uma variante de fora recusada inteira sem escrever; entrada recusada; replay, contagem, baixa e cancelamento permitidos; congelada não troca nem remove e cresce só dentro do limite; excluir libera a vaga; voltar ao limite libera tudo; padrão por vendas gravado uma vez sob concorrência; episódio anterior substituído; sem início, congelada; início datado pelo fim do acesso (igual antes e depois da varredura), mantido no checkout de trial e limpo ao voltar o Pro; privilégios e RLS. |
+| Gate PostgreSQL 18 | Concluído | `operational-selection` (suítes `gate7`, `ci` e `all`): Pro nunca restrito; janela aberta deixa tudo operacional; escolha validada, trocada e auditada; venda com uma variante de fora recusada inteira sem escrever; entrada recusada; replay, contagem, baixa e cancelamento permitidos; congelada não troca nem remove e cresce só dentro do limite; excluir libera a vaga; voltar ao limite libera tudo; padrão por vendas gravado uma vez sob concorrência; episódio anterior substituído; sem início gravado, a varredura data pelo fim da concessão (a janela não é tratada como aberta até lá); início datado pelo fim do acesso (igual antes e depois da varredura), mantido no checkout de trial e limpo ao voltar o Pro; privilégios e RLS. |
 | Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura. O achado alto foi corrigido: abandonar um checkout de trial apagava o episódio e a escolha (o limite só era recalculado a partir de estados Pro; agora é recalculado em todo estado e o episódio é mantido). Também corrigidos: registro sem início que ganhava janela nova ao abrir um trial; escolha acima do limite depois de uma concessão expirar (agora limitada, preservando as primeiras escolhidas); custo da checagem para Free comum (agora uma consulta); variantes de produto arquivado no fim do padrão; violação de chave estrangeira numa corrida com a reconfiguração de variantes (agora `variant_unavailable`). Aceitos e documentados no ADR: Free comum acima do limite sem episódio (PR85), gravação do padrão desfeita por uma recusa e leitura que escreve, regra "só cresce" só no comando, carência que substitui o episódio. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1683 testes), `build` e `db:generate` sem drift; gates `operational-selection`, `entitlements`, `sync-push`, `offline-sale`, `inventory`, `gate2-runtime`, `billing-catalog` e `billing-lifecycle` em branch Neon descartável (apagada depois). |
 | Limites | Registrados | Sem tela de escolha nem convite ao Pro (PR80); efeitos do downgrade sobre catálogo público, lease offline, imagens e metas são o PR83; o catálogo público ainda não existe; sem exportação específica do excedente. |
@@ -1221,7 +1221,7 @@ Fecha o ciclo de vida do billing no que não depende de um provedor: dinheiro de
 | Gate PostgreSQL 18 | Concluído | `billing-lifecycle` (seção 12): reembolso integral remove o acesso na hora e fica no razão; redelivery é um efeito; repetição não se aplica; a confirmação tardia do pagamento reembolsado é ignorada e um pagamento novo revive e esquece; reembolso de período anterior não muda nada; reembolso entregue atrás de fato mais novo ainda vale; chargeback imediato, em carência também; reversão restaura fim e ciclo e o tempo corre depois; reversão depois do fim do período só esquece; reversão sem chargeback é `not_applicable`; reembolso antes da confirmação da cobrança (em registro Free e em trial) é lembrado e a confirmação não concede; reversão antes do chargeback faz o chargeback não mudar nada; reembolso depois de chargeback impede a restauração; nova referência de assinatura começa limpa. |
 | Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura achou três altos e cinco médios, todos tratados: reembolso ou chargeback entregue antes da confirmação da cobrança era descartado e a confirmação concedia Pro (agora o pagamento é lembrado, em registro Free e em trial); um pagamento tirado de um plano anual bloqueava uma nova assinatura mensal (agora o registro é apagado quando a referência da assinatura muda); reembolso depois de chargeback deixava a reversão restaurar (agora o reembolso vence); fim de período sem limite (agora até 400 dias); reversão antes do chargeback tirava o Pro para sempre (agora é lembrada); igualdade exata do fim do período (agora a tolerância de um dia); renovação paga antes do fim do período reembolsada derrubava o período em vigor (agora só conta o período que bate); restauração perdia o cancelamento (agora é guardado). Documentados no ADR: renovação reembolsada antes da confirmação com o registro ainda num período pago, carência restaurada, nova janela de adequação a cada retirada. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1709 testes), `build` e `db:generate` sem drift; gates `billing-lifecycle`, `billing-catalog`, `gate2-runtime`, `operational-selection` e `sync-push` em branch Neon descartável criada do zero com a migration 0055 (apagada depois). |
-| Limites | Registrados | Nenhum adaptador reporta esses fatos ainda (PR77 e PR78, sandbox); reembolso parcial não é fato; sem tela; os fatos precisam trazer a referência da assinatura (responsabilidade do adaptador).
+| Limites | Registrados | Nenhum adaptador reporta esses fatos ainda (PR77 e PR78, sandbox); reembolso parcial não é fato; sem tela; os fatos trazem a referência da assinatura (o adaptador a informa) e o armazenamento a confere: sem ela, ou com a de outra assinatura, o fato não tem efeito (`reference_mismatch`; todos os fatos, não só estes: ver a seção "Referência do provedor em todos os fatos de cobrança").
 
 ### Revisão pós-merge do PR #98 (reembolso e chargeback): reversão antes do chargeback e ciclo desconhecido
 
@@ -1290,6 +1290,18 @@ Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e tr
 Cumpre o item "promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde" (linha de pendências do Gate 4), só para o `database`: o job "PostgreSQL 18 gates" perdeu o `continue-on-error` (emenda ao [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md)). A auditoria de dependências segue consultiva. A proteção de branch que torna o check obrigatório para o merge é do responsável.
 
 Mesclado no [PR #105](https://github.com/camilagama/polaris/pull/105) (merge `f988872`).
+
+### Referência do provedor em todos os fatos de cobrança (POL-21, parte 2; implementação, gate e verificações locais concluídos; publicação: ver PR)
+
+Segue o PR #133: a conferência que o reembolso, o chargeback e a reversão já tinham passa a valer para todos os fatos do provedor, e o `reference_mismatch` deixa de ser silencioso ([ADR 0087](../docs/adr/0087-referencia-do-provedor-em-todos-os-fatos-de-cobranca.md); o número pode mudar).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `fix/billing-provider-ref-all-facts` sobre a `main` (migration 0074, só aditiva; o PR #126 ainda usa 0072, e quem entrar depois renumera). |
+| Servidor | Concluído | `billing-store.ts`: todo fato exige `provider` e `provider_ref` iguais aos do registro; só `attachProvider` liga a referência (o fato deixa de ligá-la); o fato com referência para um registro sem assinatura ligada falha com `unknown_organization` e espera o reprocessamento; o que ainda não achou assinatura na última tentativa é incidente (`reference_unresolved`). |
+| Banco | Concluído | `operational_incidents` aceita `billing_reference_mismatch` (causas `reference_mismatch` e `reference_unresolved`, assunto `billing.<tipo do fato>`); função `record_billing_reference_incident` (dono do outbox; o login do billing só a executa), chamada na mesma transação do desfecho; só causa, tipo do fato e ID opaco do evento. |
+| Gate PostgreSQL 18 | Local e CI | `billing-lifecycle` (seção 13): para cada um dos oito fatos, sem referência, referência de outra assinatura, de outro provedor, antes da ligação e o caso válido; a referência ligada a outra organização; a ordem entre webhook e ligação (nos dois sentidos); o fato que nenhuma assinatura reivindica virando incidente na última tentativa; privilégios da função e da tabela. |
+| Limites | Registrados | O fato que espera a ligação é tentado cinco vezes (cerca de duas horas e meia); o incidente conta por tipo de fato e não se encerra; nenhum adaptador chama `attachProvider` ainda (PR77 e PR78). |
 
 ### Fase 8A — catálogo público: dados, comandos e leitura por funções (PR87 e PR88; implementação, gate, revisão independente e verificações locais concluídos; mesclada no PR #106)
 
@@ -1537,14 +1549,14 @@ Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organiza
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Base | Concluída | Branch `feat/full-purge` sobre a `main` depois do PR #130 (despachante do outbox): a migration do purge é a 0072 (a 0071 é a do despachante) e `event_outbox` e `queue_processing` estão nas listas do purge. |
+| Base | Concluída | Branch `feat/full-purge` sobre a `main` depois do PR #130 (despachante do outbox): a migration do purge é a 0075 (`0075_organization_purge.sql`, antes 0072), depois da 0074 da `main`, e `event_outbox` e `queue_processing` estão nas listas do purge. |
 | Domínio | Concluído | `@polaris/domain/privacy/organization-purge`; registro `ADMIN_TRIGGERED_REMOVALS` (separado de `RETENTION_PURGE_JOBS`); teste que falha se uma classe proposta tiver job. |
-| Banco | Concluído | Migration 0072 (renumerada depois do despachante do outbox, PR #130; snapshot e journal regenerados sobre a 0071 da `main`): `organization_purges` (com `storage_touched_at`), `organization_purge_cancellations` (histórico só de inserção dos motivos), papel `polaris_purge_owner` (sem login), seis funções (inclui `mark_organization_purge_storage_touched`), `admin_schedule_organization_purge` (só o caso de exclusão do dono, aceito em integral e com escopo exato da organização inteira: categoria mantida é recusada), `admin_cancel_organization_purge` (recusa depois da primeira exclusão no R2), evento de auditoria da conclusão, exceção estreita em dois gatilhos (`CREATE OR REPLACE`), gatilho de `data_export_files` que recusa organização inativa. |
-| Admin | Concluído | `POST /support-cases/{caso}/purge` e `POST /support-cases/{caso}/purge/cancel` (motivo obrigatório), capacidade `organization:purge`. |
+| Banco | Concluído | Migration 0075 (refeita sobre a `main`, antes 0072; snapshot e journal regenerados): `organization_purges` (com `storage_touched_at`), `organization_purge_cancellations` (histórico só de inserção dos motivos), `organization_legal_holds` (trava legal, sem texto livre, nunca apagada), papel `polaris_purge_owner` (sem login), seis funções do purge (inclui `mark_organization_purge_storage_touched`) e as duas da trava legal (`admin_place_organization_legal_hold`, `admin_release_organization_legal_hold`), `admin_schedule_organization_purge` (só o caso de exclusão do dono, aceito em integral e com escopo exato da organização inteira: categoria mantida é recusada), `admin_cancel_organization_purge` (recusa depois da primeira exclusão no R2), evento de auditoria da conclusão, exceção estreita nos quatro gatilhos de estoque, mídia e casos, só para o papel de purge (`CREATE OR REPLACE`), CHECK de `platform_audit_events_type_allowed` unida aos tipos da `main` e do purge, apagamento de `queue_dead_letters`, gatilho de `data_export_files` que recusa organização inativa. |
+| Admin | Concluído | `POST /support-cases/{caso}/purge` e `POST /support-cases/{caso}/purge/cancel` (motivo obrigatório), capacidade `organization:purge`; trava legal em `POST /support-cases/{caso}/legal-hold` e `/legal-hold/release` (corpo `{ organizationId }`), capacidade `organization:legal_hold`. |
 | Worker | Concluído | `runOrganizationPurges` no job horário de privacidade; `deleteObjectsUnderPrefix` em `apps/web/src/server/privacy/storage-prefix.ts`. |
-| Gate PostgreSQL 18 | Passou localmente (PostgreSQL 18.4); roda no CI | `organization-purge`: escopo exato, `storage_touched_at` (inclusive a corrida entre a marca e o cancelamento), histórico de cancelamentos append-only e o restore reaplicado. |
-| Verificação local | Concluída | `bun run check` e `bun run build` passaram; a suíte `ci` de gates (41, com `organization-purge`) passou num PostgreSQL 18.4 local descartável (binário do pacote `@embedded-postgres`, aarch64, fora do repositório). `gates:gate3` (gate2-runtime) e `poc:tenant:verify` exigem hostname Neon nos próprios scripts e não rodaram. Nada rodou contra Neon ou Cloudflare. |
-| Decisões do responsável | Pendentes | Ver ADR 0081: classes com base legal apagadas, cobrança mantida, substituição das duas funções de gatilho. |
+| Gate PostgreSQL 18 | Cobertura ampliada; a reexecutar (local e CI) | `organization-purge`: escopo exato, `storage_touched_at` (inclusive a corrida entre a marca e o cancelamento), histórico de cancelamentos append-only, recusa antes de 30 dias e com legal hold (agendamento, tomada e execução), anonimização de `billing_events` (só chaves de `PURGE_BILLING_FACT_KEYS`), texto livre de casos e cancelamentos trocado pelo texto fixo, tabelas novas (`queue_dead_letters` apagada; `operational_incidents` e `scheduled_job_state` sem organização) e o restore reaplicado. |
+| Verificação local | Da versão anterior à refação; refazer | `bun run check` e `bun run build` passaram (antes da refação); a suíte `ci` de gates (41, com `organization-purge`) passou num PostgreSQL 18.4 local descartável (binário do pacote `@embedded-postgres`, aarch64, fora do repositório). `gates:gate3` (gate2-runtime) e `poc:tenant:verify` exigem hostname Neon nos próprios scripts e não rodaram. Nada rodou contra Neon ou Cloudflare. |
+| Decisões do responsável (18/10/2026) | Implementadas | ADR 0081, seção "Decisões do responsável": 30 dias do encerramento antes do purge (`closure_period_not_elapsed`); trava legal (`legal_hold_active`); cobrança com o pagador anonimizado (`PURGE_BILLING_FACT_KEYS`); texto livre dos casos e dos cancelamentos trocado pelo texto fixo; exceções estreitas nos gatilhos só para o papel de purge; cancelamento mantido; `queue_dead_letters` apagada. |
 | Publicação | PR aberto, aguardando revisão | Branch `feat/full-purge`. |
 
 ## Fase 11 — infraestrutura assíncrona
@@ -1592,3 +1604,87 @@ Terceiro passo da Fase 11 ([ADR 0084](../docs/adr/0084-despachante-e-varredor-do
 | Retenção | Classe aprovada | `queue_processing`: uma semana, job `outbox.processing_expiry` (execução do despachante). Despachados de `event_outbox` continuam `proposta` (PR112). |
 | Gate PostgreSQL 18 | Local e CI | `outbox-dispatcher` (suítes `ci` e `gate11`), novo; `event-outbox` e `data-export` ajustados. `gates:ci` completo passou num PostgreSQL 18.4 local. |
 | Limites | Registrados | Nada criado nem medido em nuvem (filas, Hyperdrive, CPU); latência de até uma hora (cadência é do PR112 e decisão de custo); sem DLQ; o purge (PR #126) apaga `queue_processing` (classificada em `PURGE_DELETE_ORDER`). |
+
+### Fase 11D — DLQ, incidente operacional e retry no Admin (PR111; implementação e gates locais concluídos; nada criado na conta Cloudflare)
+
+Quarto passo da Fase 11 ([ADR 0085](../docs/adr/0085-dlq-incidente-operacional-e-retry-no-admin.md); o número pode mudar): a mensagem que esgota as tentativas ou que o consumidor recusa de vez vai para a DLQ e vira incidente operacional; o evento do outbox que passa de 1000 tentativas também; o Admin reenvia um evento morto, com motivo e auditoria.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/dlq` sobre a `main` (migration 0072, só aditiva; a do PR #126 também é 0072, e o segundo a entrar renumera a migration e o snapshot). |
+| Filas | Declarado | `polaris-dlq` compartilhada: `dead_letter_queue` nos três consumidores, produtor `QUEUE_DLQ`, consumidor próprio (10 tentativas). O consumidor envia à DLQ um **aviso** (causa e IDs, nunca o corpo) para envelope inválido, tipo ou versão desconhecidos e fila errada. Nada criado na conta: o runbook ganha o passo de criar a DLQ. |
+| Banco | Concluído | `operational_incidents` (uma linha por causa, contagem e datas) e `queue_dead_letters` (um evento morto por linha, só IDs); funções `record_dead_letter`, `record_exhausted_outbox_events`, `retry_dead_letter` (dono do outbox) e `admin_list_operational_incidents`, `admin_read_operational_incident`, `admin_retry_dead_letter` (dono do Admin); o evento `operational_incident.retry` na auditoria. Ninguém apaga linha. |
+| Domínio | Concluído | `@polaris/domain/events/dead-letter` (aviso e classificação) e `@polaris/domain/admin/operational-incident` (motivo do retry); capacidades `operational_incident:read` e `operational_incident:retry`. |
+| Worker e Admin | Concluído | Consumidor da DLQ (`handleDeadLetterBatch`), passo do cron do despachante que registra os eventos no teto; rotas `/api/operational-incidents` (lista, detalhe, retry). |
+| Retenção | Proposta | Classe `operational_incident` (sem prazo e sem job; PR112). |
+| Gate PostgreSQL 18 | Local e CI | `dead-letter` (suítes `ci` e `gate11`), novo. |
+| Limites | Registrados | Nada criado nem medido em nuvem; a DLQ não tem DLQ (retenção de 24 horas no Free); falha permanente do handler continua `ack`; o retry espera o cron do despachante; incidente não se encerra; o PR do purge (#126, a refazer) precisa apagar `queue_dead_letters` explicitamente (política e DELETE do papel do purge, com a prova no gate dele), porque a linha da organização fica e a cascata não dispara, e unir `platform_audit_events_type_allowed` aos tipos do purge; `operational_incidents` não tem organização. Feito no PR #126 (migration 0075): o purge apaga `queue_dead_letters` explicitamente, com política e `DELETE` do seu papel, e a CHECK já une os tipos. |
+
+### Fase 11E — Framework de jobs agendados (PR112; implementação e gates locais concluídos; nada criado na conta Cloudflare)
+
+Quinto passo da Fase 11 ([ADR 0086](../docs/adr/0086-framework-de-jobs-agendados.md); o número pode mudar): um tick por pista de cron despacha os jobs vencidos, cada um sob *lease* e com janelas fixas, catch-up por nível.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/scheduled-jobs` sobre a `main` (migration 0073, só aditiva, depois da 0072 da DLQ (PR #131, já na `main`); o PR #126 ainda usa 0072, e quem entrar depois renumera a migration e o snapshot; refeita sobre a `main` com o #131: o job `outbox.dispatch` também registra os eventos no teto de tentativas). |
+| Registro | Concluído | `@polaris/domain/scheduling/scheduled-jobs`: seis jobs (quatro ligados, dois desligados com a pendência), duas pistas (`17 * * * *` e `19 * * * *`), cadência, *lease*, por que repetir é seguro, expurgos que executa; `windowIndex` e `windowsMissed`. Dois dos cinco Cron Triggers do Free em uso; um teste confere o `wrangler.jsonc` contra as pistas. |
+| Banco | Concluído | `scheduled_job_state` (RLS forçado, sem organização nem dado pessoal) e `claim_`, `complete_` e `release_scheduled_job`, do papel do outbox (mesmo login e `OUTBOX_HYPERDRIVE`); `OutboxClient` ganha os três métodos. |
+| Worker | Concluído | `runLane` (`apps/web/src/server/scheduler/runner.ts`): *lease*, janela, falha isolada por job, métrica `scheduled_job_run` sem dado pessoal; `scheduled` do Worker vira o tick (`17` e `19` migrados sem mudar o comportamento; sem o binding, tudo roda a cada disparo, como antes). |
+| grace/trial | Já existia | A regra e a varredura existem (billing-and-entitlements): são o job `billing.maintenance`. |
+| recurring expenses | Registrado desligado | A geração ao ler (ADR 0052) já cobre o catch-up; um job exige papel que escreve em todas as organizações: decisão de segurança do responsável. |
+| provider reconcile | Registrado desligado | Depende do Gate 7 (Asaas e Woovi, sandbox); sem código de provedor. |
+| Cleanup | Só o aprovado | Os quatro expurgos existentes rodam pelo agendador; nenhum job para classe em `proposta` (o teste da retenção e o do registro garantem); expurgo dos `dispatched` e dos incidentes espera o prazo do responsável. |
+| Gate PostgreSQL 18 | Local e CI | `scheduled-jobs` (suítes `ci` e `gate11`), novo. |
+| Limites | Registrados | Nada criado nem medido em nuvem (CPU dos ticks, em especial a pista `maintenance`, que abre uma conexão a mais); cadência horária (decisão de custo); sem tela de estado no Admin. |
+
+### Fase 11F — Workflows (PR113; decisão sem Workflow; nada criado na conta Cloudflare)
+
+Sexto passo da Fase 11 ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md); o número pode mudar): nenhum Cloudflare Workflow por ora.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Limites | Conferidos | Documentação da Cloudflare de 18/10/2026: Workflows existe no Free, com 10 ms de CPU por step, 3.000 steps por dia e 100 MB de estado por instância; o consumidor da fila tem 30 s de CPU por padrão pela página do Queues (ambígua para o Free, como o ADR 0084 registrou; não medido). Um step nunca tem mais CPU que o consumidor. Nenhum custo criado. |
+| Exportação | Sem Workflow | Continua no consumidor da fila (ADR 0084): montar o ZIP não cabe em 10 ms, e a retomada, a idempotência e o recuo já são do banco. |
+| Purge | Sem Workflow | Aceito pelo responsável em 18/10/2026; em revisão (PR #126). Roda no job `privacy.maintenance` do agendador; CPU do tick não medido; se não couber no cron, a fila; o estado fica em `organization_purges`. |
+| Cobrança | Fora | O estado canônico continua no banco. |
+| Guarda | Concluída | Teste em `apps/web/worker/index.test.ts`: nenhum `wrangler.jsonc` declara `workflows` sem um ADR que emende o 0088. |
+| Limites | Registrados | Números da documentação, não medidos na conta; não está documentado se o Hyperdrive conta como subrequisição externa no Free. |
+
+## Fase 12 — observabilidade e segurança
+
+### Fase 12A — evlog e logger tipado (PR114; implementação local concluída; nada criado na conta Cloudflare)
+
+Primeiro passo da Fase 12 ([ADR 0089](../docs/adr/0089-evlog-e-logger-tipado-no-backend.md); o número pode mudar): o evlog entra no backend atrás de um wrapper tipado, sem destino externo.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Pacote | Concluído | `@polaris/observability/logger` (`logger`, `configureLogging`), único importador do `evlog` (2.33.0, MIT, compatível com Workers); testes do wrapper. |
+| Fronteira | Concluída | Biome recusa `evlog` e o wrapper em `packages/domain` e no código do navegador; `bun run boundaries` tem fixtures para os dois. |
+| Migração | Parcial | `server-log`, agendador, entrada do Worker web e relatório do Admin; o resto dos `console.*` migra no PR que tocar cada um. |
+| Limites | Registrados | Sem *drain*; a redação embutida do evlog fica ligada e a política própria é do PR116; o esquema de campos é da Fase 12C; o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
+
+### Fase 12B — Headers de segurança e CSP centralizados (PR120; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
+
+Pacote `@polaris/http-security` e [ADR 0090](../docs/adr/0090-headers-de-seguranca-centralizados.md) (o número pode mudar). A Fase 12A é o PR114 (evlog), independente deste.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Módulo | Concluído | `packages/http-security`: perfis `app-shell`, `api`, `admin`, `public-document` e `public-media`; nonce por resposta; origens extras só por `connectSources`/`imgSources`, exatas e em https. |
+| Web | Concluído | `public/_headers` gerado pelo módulo (teste de igualdade); o Worker aplica o perfil `api` a toda resposta e `no-store` quando o handler não escolheu outro `Cache-Control`. |
+| Admin | Concluído | Perfil `admin` (CSP fechada, HSTS, COOP/CORP, sem referrer, `no-store`) em toda resposta, inclusive 401, 403 e 404. |
+| Catálogo | Concluído | Entrada `src/server.ts` (o `main` do Worker) com nonce por requisição e CSP sem `'unsafe-inline'`; páginas nunca em cache compartilhado; imagem pública com `sandbox` e `Cross-Origin-Resource-Policy: cross-origin`. |
+| Testes | Concluídos | Unitários do módulo (nenhum curinga, `unsafe-inline` ou esquema solto em nenhum perfil) e de integração nas respostas dos três apps. |
+| Gate de navegador | Ver o PR | CSP do shell inalterada na parte de script, estilo e conexão; o resultado de `test:offline-poc` e `test:pwa` está na seção "Verificação" do PR. |
+| Limites | Registrados | Catálogo com nonce não aberto em navegador contra o Worker rodando (ADR 0090); sem `report-uri`; Sentry ainda não ligado (nenhuma origem aberta). |
+
+### Fase 12C — esquema canônico de eventos largos (PR115; implementação local concluída; nada criado na conta Cloudflare)
+
+Terceiro passo da Fase 12 ([ADR 0091](../docs/adr/0091-esquema-canonico-de-eventos-largos.md); o número pode mudar): nomes, unidades e valores de campo fixos, aliases proibidos e um evento largo por requisição, comando ou job.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Esquema | Concluído | `fields.ts`: campos canônicos tipados, `outcome` (`success`, `partial`, `rejected`, `skipped`, `failure`), `durationMs` em ms, IDs opacos (`organizationId`, `actorId`, `deviceId` e afins) conferidos pelo formato. |
+| Aliases | Concluído | `LogFields` recusa os aliases no tipo; o logger os descarta e lista em `ignoredFields`; `call-sites.test.ts` falha se uma chamada de log do backend usar um. |
+| Evento largo | Concluído | `startWideEvent`, `withWideEvent` e `describeError` (`@polaris/observability/wide-event`); o agendador emite `scheduled_job_run` por eles. |
+| Migração | Parcial | Todos os pontos que já chamavam o logger, só nos nomes dos campos (`errorName` → `errorClass`, `status` → `httpStatus`, `outcome` do agendador → `success\|failure\|skipped`); os `console.*` restantes migram no PR que tocar cada um. |
+| Limites | Registrados | Nenhum evento por requisição HTTP ainda (volume e amostragem: PR117); a política de redação é do PR116. |

@@ -320,6 +320,38 @@ export function cancelOrganizationPurge(
   );
 }
 
+/**
+ * Places a legal hold on the case's organization (ADR 0081, decision of 18/10/2026): while it is in force the
+ * purge is neither scheduled nor run. The operator names the organization (a confirmation); placing it again
+ * changes nothing, and a purged organization is refused (`purge_already_done`).
+ */
+export function placeOrganizationLegalHold(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string
+) {
+  return call<{ changed: boolean; held: boolean }>(
+    client,
+    "public.admin_place_organization_legal_hold($1, $2, $3)",
+    [principalId, caseId, organizationId]
+  );
+}
+
+/** Releases the legal hold in force on the case's organization; with none in force it changes nothing. */
+export function releaseOrganizationLegalHold(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string
+) {
+  return call<{ changed: boolean; held: boolean }>(
+    client,
+    "public.admin_release_organization_legal_hold($1, $2, $3)",
+    [principalId, caseId, organizationId]
+  );
+}
+
 /** Undoes a suspension (a closed organization stays closed). */
 export function reactivateOrganization(
   client: AdminQueryable,

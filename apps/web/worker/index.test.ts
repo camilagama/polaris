@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -65,6 +66,20 @@ const configured = {
   },
 };
 
+/** The scheduler's state as the database gives it: every job due, every lease free. */
+function schedulerState() {
+  return {
+    claimScheduledJob: vi.fn().mockResolvedValue({
+      missedWindows: 0,
+      recovered: false,
+      result: "claimed",
+      token: "lease-token",
+    }),
+    completeScheduledJob: vi.fn().mockResolvedValue(true),
+    releaseScheduledJob: vi.fn().mockResolvedValue(true),
+  };
+}
+
 function runScheduled(env: Record<string, unknown>) {
   return worker.scheduled({} as ScheduledController, env as never);
 }
@@ -74,6 +89,10 @@ describe("the scheduled maintenance", () => {
     vi.resetAllMocks();
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mocks.createOutboxClient.mockReturnValue({
+      ...schedulerState(),
+      close: mocks.outboxClose.mockResolvedValue(undefined),
+    });
     mocks.createMediaCleanupClient.mockReturnValue({ close: mocks.mediaClose });
     mocks.mediaClose.mockResolvedValue(undefined);
     mocks.createBillingStore.mockReturnValue({ close: mocks.billingClose });
@@ -390,9 +409,10 @@ describe("the outbox cron", () => {
     ...outbox,
     PRIVACY_HYPERDRIVE: { connectionString: "postgresql://privacy.invalid/db" },
   };
-  let client: {
+  let client: ReturnType<typeof schedulerState> & {
     close: ReturnType<typeof vi.fn>;
     expireProcessing: ReturnType<typeof vi.fn>;
+    recordExhaustedOutboxEvents: ReturnType<typeof vi.fn>;
   };
 
   const runCron = (cron: string | undefined, env: Record<string, unknown>) =>
@@ -406,8 +426,10 @@ describe("the outbox cron", () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     client = {
+      ...schedulerState(),
       close: mocks.outboxClose.mockResolvedValue(undefined),
       expireProcessing: vi.fn().mockResolvedValue(0),
+      recordExhaustedOutboxEvents: vi.fn().mockResolvedValue(0),
     };
     mocks.createOutboxClient.mockReturnValue(client);
     mocks.dispatchOutbox.mockResolvedValue({ claimed: 0 });
@@ -466,7 +488,9 @@ describe("the outbox cron", () => {
   it("warns and finishes where the outbox role is not provisioned", async () => {
     await expect(runCron(OUTBOX_CRON, {})).resolves.toBeUndefined();
 
-    expect(console.warn).toHaveBeenCalledWith("outbox_dispatch_not_configured");
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "outbox_dispatch_not_configured" })
+    );
     expect(mocks.createOutboxClient).not.toHaveBeenCalled();
     expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
   });
@@ -480,6 +504,67 @@ describe("the outbox cron", () => {
 
     expect(client.expireProcessing).toHaveBeenCalledOnce();
     expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("records the events past the attempt cap after the dispatcher, 100 at a time, and warns only when some were new", async () => {
+    const order: string[] = [];
+    mocks.dispatchOutbox.mockImplementation(() => {
+      order.push("dispatch");
+      return Promise.resolve({ claimed: 0 });
+    });
+    client.recordExhaustedOutboxEvents.mockImplementation(() => {
+      order.push("exhausted");
+      return Promise.resolve(0);
+    });
+    client.expireProcessing.mockImplementation(() => {
+      order.push("expire");
+      return Promise.resolve(0);
+    });
+
+    await expect(runCron(OUTBOX_CRON, outbox)).resolves.toBeUndefined();
+
+    expect(client.recordExhaustedOutboxEvents).toHaveBeenCalledOnce();
+    expect(client.recordExhaustedOutboxEvents).toHaveBeenCalledWith(100);
+    expect(order).toEqual(["dispatch", "exhausted", "expire"]);
+    expect(console.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: "outbox_events_exhausted" })
+    );
+
+    client.recordExhaustedOutboxEvents.mockResolvedValue(3);
+    await runCron(OUTBOX_CRON, outbox);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "outbox_events_exhausted", recorded: 3 })
+    );
+  });
+
+  it("still expires the records, and closes, when recording the exhausted events fails, and throws that failure", async () => {
+    client.recordExhaustedOutboxEvents.mockRejectedValue(
+      new Error("exhausted_failed")
+    );
+
+    await expect(runCron(OUTBOX_CRON, outbox)).rejects.toThrow(
+      "exhausted_failed"
+    );
+
+    expect(client.expireProcessing).toHaveBeenCalledOnce();
+    expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("throws the dispatch and the exhausted-events failures together", async () => {
+    mocks.dispatchOutbox.mockRejectedValue(new Error("dispatch_failed"));
+    client.recordExhaustedOutboxEvents.mockRejectedValue(
+      new Error("exhausted_failed")
+    );
+
+    const error = await runCron(OUTBOX_CRON, outbox).catch(
+      (cause: unknown) => cause
+    );
+
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(
+      (error as AggregateError).errors.map((entry: Error) => entry.message)
+    ).toEqual(["dispatch_failed", "exhausted_failed"]);
+    expect(client.expireProcessing).toHaveBeenCalledOnce();
   });
 
   it("reports a connection that cannot be opened", async () => {
@@ -622,7 +707,9 @@ describe("the queue consumer", () => {
   it("warns when the ledger is only in memory", async () => {
     await runQueue({ ...configured, ...privacy }, message(exportEvent));
 
-    expect(console.warn).toHaveBeenCalledWith("queue_ledger_in_memory");
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "queue_ledger_in_memory" })
+    );
   });
 
   it("acks a body that is not an envelope and runs nothing", async () => {
@@ -631,6 +718,112 @@ describe("the queue consumer", () => {
 
     expect(mocks.runDataExports).not.toHaveBeenCalled();
     expect(sent.ack).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the dead-letter queue", () => {
+    const outbox = {
+      OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
+    };
+
+    function runDlq(env: Record<string, unknown>, ...sent: unknown[]) {
+      return worker.queue(
+        { messages: sent, queue: "polaris-dlq" } as never,
+        env as never
+      );
+    }
+
+    it("records the message through the outbox client, closes it, and never runs the normal consumer", async () => {
+      const recordDeadLetter = vi.fn().mockResolvedValue(undefined);
+      mocks.createOutboxClient.mockReturnValue({
+        close: mocks.outboxClose.mockResolvedValue(undefined),
+        recordDeadLetter,
+      });
+      const sent = message(exportEvent);
+
+      await runDlq({ ...configured, ...privacy, ...outbox }, sent);
+
+      expect(mocks.createOutboxClient).toHaveBeenCalledWith(
+        outbox.OUTBOX_HYPERDRIVE.connectionString
+      );
+      expect(recordDeadLetter).toHaveBeenCalledOnce();
+      expect(recordDeadLetter).toHaveBeenCalledWith({
+        cause: "retries_exhausted",
+        event: { id: exportEvent.eventId, organizationId: "org_1" },
+        reference: exportEvent.eventId,
+        subject: "data_export.requested",
+      });
+      expect(sent.ack).toHaveBeenCalledOnce();
+      expect(mocks.outboxClose).toHaveBeenCalledOnce();
+      // the consumer of the normal queues did not see it
+      expect(mocks.runDataExports).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "queue_ledger_in_memory" })
+      );
+    });
+
+    it("retries an hour later, and warns, without the outbox role", async () => {
+      const sent = message(exportEvent);
+
+      await runDlq({ ...configured, ...privacy }, sent);
+
+      expect(mocks.createOutboxClient).not.toHaveBeenCalled();
+      expect(sent.retry).toHaveBeenCalledOnce();
+      expect(sent.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+      expect(sent.ack).not.toHaveBeenCalled();
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "dead_letter_not_recorded_unconfigured",
+        })
+      );
+    });
+
+    it("also takes the queue of an environment suffix", async () => {
+      const sent = message(exportEvent);
+      await worker.queue(
+        { messages: [sent], queue: "polaris-dlq-staging" } as never,
+        {} as never
+      );
+      expect(sent.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+    });
+
+    it("gives the normal consumer the dead-letter producer only with the outbox role (the in-memory ledger could not record what lands there)", async () => {
+      const send = vi.fn().mockResolvedValue(undefined);
+      const QUEUE_DLQ = { send };
+      const refused = message({ junk: true });
+
+      // in-memory ledger: the message is dropped with a warning, nothing is sent
+      await runQueue({ QUEUE_DLQ }, refused);
+      expect(send).not.toHaveBeenCalled();
+      expect(refused.ack).toHaveBeenCalledOnce();
+      expect(console.warn).toHaveBeenCalledWith(
+        "queue_dead_letter_not_configured",
+        { messageId: "m" }
+      );
+
+      // durable ledger
+      mocks.createOutboxClient.mockReturnValue({
+        close: mocks.outboxClose.mockResolvedValue(undefined),
+      });
+      const again = message({ junk: true });
+      await runQueue({ ...outbox, QUEUE_DLQ }, again);
+      expect(send).toHaveBeenCalledOnce();
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ cause: "invalid_envelope" }),
+        { contentType: "json" }
+      );
+      expect(again.ack).toHaveBeenCalledOnce();
+      expect(mocks.outboxClose).toHaveBeenCalledOnce();
+    });
+
+    it("acks a refused message and warns where the dead-letter queue is not bound", async () => {
+      const refused = message({ junk: true });
+      await runQueue({}, refused);
+      expect(refused.ack).toHaveBeenCalledOnce();
+      expect(console.warn).toHaveBeenCalledWith(
+        "queue_dead_letter_not_configured",
+        { messageId: "m" }
+      );
+    });
   });
 
   describe("the processing ledger", () => {
@@ -711,12 +904,229 @@ describe("the queue consumer", () => {
   });
 });
 
+const CRONS_LIST = /"crons":\s*\[([^\]]*)\]/;
+const QUOTED = /"([^"]+)"/g;
+
 describe("the cron triggers", () => {
-  it("declare the dispatcher's own cron, the one the scheduled handler tells apart", () => {
+  const declaredCrons = () => {
     const config = readFileSync(
       new URL("../wrangler.jsonc", import.meta.url),
       "utf8"
     );
-    expect(config).toContain('"crons": ["17 * * * *", "19 * * * *"]');
+    const [, list] = CRONS_LIST.exec(config) ?? [];
+    return [...(list ?? "").matchAll(QUOTED)].map((match) => match[1]);
+  };
+
+  it("declare exactly the crons of the scheduler's lanes: one tick per lane, not one trigger per job", () => {
+    expect(declaredCrons().sort()).toEqual(
+      SCHEDULER_LANES.map((lane) => lane.cron).sort()
+    );
+  });
+
+  it("stay within the five Cron Triggers of the Workers Free plan, across every Worker of the account", () => {
+    const apps = new URL("../../", import.meta.url);
+    const others = readdirSync(apps)
+      .filter((name) => name !== "web")
+      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
+      .filter((name) =>
+        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
+          '"crons"'
+        )
+      );
+    expect(others).toEqual([]);
+    expect(declaredCrons().length).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("Cloudflare Workflows", () => {
+  it("are not bound by any Worker: on the Free plan a step gets 10 ms of CPU, less than the queue consumer (ADR 0088)", () => {
+    const apps = new URL("../../", import.meta.url);
+    const withWorkflows = readdirSync(apps)
+      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
+      .filter((name) =>
+        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
+          '"workflows"'
+        )
+      );
+    expect(withWorkflows).toEqual([]);
+  });
+});
+
+describe("the scheduler tick", () => {
+  const outbox = {
+    OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
+  };
+  const everything = {
+    ...configured,
+    ...outbox,
+    PRIVACY_HYPERDRIVE: { connectionString: "postgresql://privacy.invalid/db" },
+  };
+  let state: ReturnType<typeof schedulerState>;
+
+  const tick = (cron: string | undefined, env: Record<string, unknown>) =>
+    worker.scheduled(
+      (cron === undefined ? {} : { cron }) as ScheduledController,
+      env as never
+    );
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    state = schedulerState();
+    mocks.createOutboxClient.mockReturnValue({
+      ...state,
+      close: mocks.outboxClose.mockResolvedValue(undefined),
+      expireProcessing: vi.fn().mockResolvedValue(0),
+      recordExhaustedOutboxEvents: vi.fn().mockResolvedValue(0),
+    });
+    mocks.createMediaCleanupClient.mockReturnValue({ close: mocks.mediaClose });
+    mocks.mediaClose.mockResolvedValue(undefined);
+    mocks.createBillingStore.mockReturnValue({ close: mocks.billingClose });
+    mocks.billingClose.mockResolvedValue(undefined);
+    mocks.reconcileStagedMedia.mockResolvedValue({});
+    mocks.reconcileRemovedMedia.mockResolvedValue({});
+    mocks.runBillingMaintenance.mockResolvedValue({});
+    mocks.createPrivacyMaintenanceClient.mockReturnValue({
+      close: mocks.privacyClose,
+    });
+    mocks.privacyClose.mockResolvedValue(undefined);
+    mocks.runPrivacyMaintenance.mockResolvedValue({});
+    mocks.runDataExports.mockResolvedValue({});
+    mocks.dispatchOutbox.mockResolvedValue({ claimed: 0 });
+  });
+
+  it("takes the lease of each maintenance job with its cadence, runs it and records the success", async () => {
+    await tick("17 * * * *", everything);
+
+    expect(state.claimScheduledJob.mock.calls).toEqual([
+      ["media.maintenance", 3600, 960],
+      ["billing.maintenance", 3600, 960],
+      ["privacy.maintenance", 3600, 960],
+    ]);
+    expect(state.completeScheduledJob.mock.calls).toEqual([
+      ["media.maintenance", "lease-token"],
+      ["billing.maintenance", "lease-token"],
+      ["privacy.maintenance", "lease-token"],
+    ]);
+    expect(state.releaseScheduledJob).not.toHaveBeenCalled();
+    // one connection for the whole tick, closed once
+    expect(mocks.createOutboxClient).toHaveBeenCalledOnce();
+    expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("runs only the dispatcher on the dispatcher's cron, on the connection that holds the lease", async () => {
+    await tick("19 * * * *", everything);
+
+    expect(state.claimScheduledJob.mock.calls).toEqual([
+      ["outbox.dispatch", 3600, 960],
+    ]);
+    expect(mocks.createOutboxClient).toHaveBeenCalledOnce();
+    expect(mocks.dispatchOutbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        store: expect.objectContaining({
+          claimScheduledJob: state.claimScheduledJob,
+        }),
+      })
+    );
+    expect(state.completeScheduledJob).toHaveBeenCalledWith(
+      "outbox.dispatch",
+      "lease-token"
+    );
+    expect(mocks.reconcileStagedMedia).not.toHaveBeenCalled();
+  });
+
+  it("does not run a job that is not due or whose lease is held, and does not fail the cron", async () => {
+    state.claimScheduledJob
+      .mockResolvedValueOnce({ result: "not_due" })
+      .mockResolvedValueOnce({ result: "busy" });
+
+    await expect(tick("17 * * * *", everything)).resolves.toBeUndefined();
+
+    expect(mocks.reconcileStagedMedia).not.toHaveBeenCalled();
+    expect(mocks.runBillingMaintenance).not.toHaveBeenCalled();
+    expect(mocks.runPrivacyMaintenance).toHaveBeenCalledOnce();
+  });
+
+  it("gives the lease back as failed, leaves the window open and fails the cron when a job fails", async () => {
+    mocks.runBillingMaintenance.mockRejectedValue(
+      new Error("billing_maintenance_incomplete")
+    );
+
+    await expect(tick("17 * * * *", everything)).rejects.toThrow(
+      "billing_maintenance_incomplete"
+    );
+
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "billing.maintenance",
+      "lease-token",
+      "failed"
+    );
+    expect(state.completeScheduledJob).toHaveBeenCalledWith(
+      "media.maintenance",
+      "lease-token"
+    );
+    expect(state.completeScheduledJob).toHaveBeenCalledWith(
+      "privacy.maintenance",
+      "lease-token"
+    );
+  });
+
+  it("does not cover the window of a job whose role is not provisioned yet", async () => {
+    await tick("17 * * * *", {
+      ...outbox,
+      MEDIA_BUCKET: {},
+      MEDIA_CLEANUP_HYPERDRIVE: configured.MEDIA_CLEANUP_HYPERDRIVE,
+    });
+
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "billing.maintenance",
+      "lease-token",
+      "skipped"
+    );
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "privacy.maintenance",
+      "lease-token",
+      "skipped"
+    );
+    expect(state.completeScheduledJob).not.toHaveBeenCalledWith(
+      "billing.maintenance",
+      expect.anything()
+    );
+  });
+
+  it("runs nothing when the lease cannot be asked for, and fails the cron", async () => {
+    state.claimScheduledJob.mockRejectedValue(new Error("connection refused"));
+
+    await expect(tick("19 * * * *", everything)).rejects.toThrow(
+      "connection refused"
+    );
+    expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
+    expect(mocks.outboxClose).toHaveBeenCalledOnce();
+  });
+
+  it("runs the maintenance on an expression it does not declare, and says so", async () => {
+    await tick("*/5 * * * *", everything);
+
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "scheduler_unknown_cron" })
+    );
+    expect(mocks.runBillingMaintenance).toHaveBeenCalledOnce();
+    expect(mocks.dispatchOutbox).not.toHaveBeenCalled();
+  });
+
+  it("does without the scheduler's state where the outbox role is not provisioned: every job, every tick", async () => {
+    await tick("17 * * * *", { ...configured });
+    await tick("17 * * * *", { ...configured });
+
+    expect(mocks.createOutboxClient).not.toHaveBeenCalled();
+    expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(2);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "scheduler_state_unavailable",
+        lane: "maintenance",
+      })
+    );
   });
 });
