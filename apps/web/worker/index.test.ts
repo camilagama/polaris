@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   reconcileStagedMedia: vi.fn(),
   runBillingMaintenance: vi.fn(),
   runDataExports: vi.fn(),
+  runOrganizationPurges: vi.fn(),
   runPrivacyMaintenance: vi.fn(),
 }));
 
@@ -36,6 +37,9 @@ vi.mock("@polaris/db/privacy-maintenance", () => ({
 }));
 vi.mock("../src/server/privacy/data-export-job", () => ({
   runDataExports: mocks.runDataExports,
+}));
+vi.mock("../src/server/privacy/organization-purge-job", () => ({
+  runOrganizationPurges: mocks.runOrganizationPurges,
 }));
 vi.mock("../src/server/privacy/data-export-reader", () => ({
   createRequesterReader: vi.fn(),
@@ -106,6 +110,11 @@ describe("the scheduled maintenance", () => {
       expired: 0,
       failed: 0,
       ready: 0,
+    });
+    mocks.runOrganizationPurges.mockResolvedValue({
+      failed: 0,
+      purged: 0,
+      swept: 0,
     });
   });
 
@@ -243,7 +252,43 @@ describe("the scheduled maintenance", () => {
       ).rejects.toThrow("media_staging_reconciler_not_configured");
 
       expect(mocks.runDataExports).not.toHaveBeenCalled();
+      expect(mocks.runOrganizationPurges).not.toHaveBeenCalled();
       expect(mocks.runPrivacyMaintenance).toHaveBeenCalledTimes(1);
+    });
+
+    it("runs the scheduled purges on the same connection, after the exports, with the bucket", async () => {
+      await expect(
+        runScheduled({ ...configured, ...privacy })
+      ).resolves.toBeUndefined();
+
+      expect(mocks.runOrganizationPurges).toHaveBeenCalledTimes(1);
+      expect(mocks.runOrganizationPurges).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: configured.MEDIA_BUCKET,
+          client: expect.objectContaining({ close: mocks.privacyClose }),
+        })
+      );
+      expect(
+        mocks.runDataExports.mock.invocationCallOrder[0] ?? 0
+      ).toBeLessThan(
+        mocks.runOrganizationPurges.mock.invocationCallOrder[0] ?? 0
+      );
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("still runs the purges when the exports fail, and reports both failures", async () => {
+      mocks.runDataExports.mockRejectedValue(new Error("export_failed"));
+      mocks.runOrganizationPurges.mockRejectedValue(new Error("purge_failed"));
+
+      const error = await runScheduled({ ...configured, ...privacy }).catch(
+        (cause: unknown) => cause
+      );
+
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(
+        (error as AggregateError).errors.map((entry: Error) => entry.message)
+      ).toEqual(["export_failed", "purge_failed"]);
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
     });
 
     it("reports a data export failure without hiding the closures or stopping the rest", async () => {

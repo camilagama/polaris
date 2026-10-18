@@ -40,6 +40,7 @@
     "./privacy/csv": "./src/privacy/csv.ts",
     "./privacy/data-export": "./src/privacy/data-export.ts",
     "./privacy/deletion-ledger": "./src/privacy/deletion-ledger.ts",
+    "./privacy/organization-purge": "./src/privacy/organization-purge.ts",
     "./privacy/zip": "./src/privacy/zip.ts",
     "./privacy/retention": "./src/privacy/retention.ts",
     "./offline/offline-grant": "./src/offline/offline-grant.ts",

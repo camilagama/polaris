@@ -73,6 +73,7 @@ const ROLES = [
   "polaris_catalog_runtime",
   "polaris_privacy_runtime",
   "polaris_privacy_owner",
+  "polaris_purge_owner",
 ];
 const OUTBOX_SIDE = ["polaris_outbox_runtime", "polaris_outbox_owner"];
 const ADMIN_SIDE = ["polaris_admin_runtime", "polaris_admin_owner"];
@@ -612,6 +613,10 @@ async function run() {
           {
             polaris_admin_owner: ["SELECT"],
             polaris_outbox_owner: ["INSERT", "SELECT", "UPDATE"],
+            // the purge deletes the dead events of an organization being purged (ADR 0081)
+            ...(table === "queue_dead_letters"
+              ? { polaris_purge_owner: ["DELETE", "SELECT"] }
+              : {}),
           }[role] ?? [];
         for (const privilege of [
           "SELECT",
@@ -644,8 +649,11 @@ async function run() {
         [
           ["polaris_admin_owner", ["SELECT"]],
           ["polaris_outbox_owner", ["INSERT", "SELECT", "UPDATE"]],
+          ...(table === "queue_dead_letters"
+            ? [["polaris_purge_owner", ["DELETE", "SELECT"]]]
+            : []),
         ],
-        `the whole ACL of ${table}: nobody else, no DELETE for anybody, PUBLIC nothing`
+        `the whole ACL of ${table}: nobody else, DELETE only for the purge (ADR 0081), PUBLIC nothing`
       );
       assert.equal(
         await countOf(
@@ -2109,8 +2117,8 @@ async function run() {
     const xAudits = await auditsOf(x.id);
     assert.equal(xAudits.length, 1, "exactly one audit row");
     assert.deepEqual(xAudits[0], {
-      detail:
-        "result=retried; reason=razão: reenvio após correção do consumidor",
+      // the operator's reason is checked and never written (decision of 18/10/2026, ADR 0085)
+      detail: "result=retried",
       entity_id: x.id,
       entity_type: "queue_dead_letter",
       event_type: "operational_incident.retry",
@@ -2118,7 +2126,11 @@ async function run() {
       principal_id: operator,
       support_case_id: null,
     });
-    assert.ok((xAudits[0]?.detail.length ?? 999) <= 200);
+    assert.equal(
+      JSON.stringify(xAudits).includes("razão"),
+      false,
+      "no word of the reason reaches the audit"
+    );
     assert.equal((await itemOf(x.id))?.state, "retried");
     // a repeat is audited too and changes nothing
     assert.equal(
@@ -2127,12 +2139,9 @@ async function run() {
     );
     const xAudits2 = await auditsOf(x.id);
     assert.equal(xAudits2.length, 2, "a repeat is audited");
-    assert.equal(
-      xAudits2[1]?.detail,
-      "result=already_pending; reason=segunda tentativa"
-    );
+    assert.equal(xAudits2[1]?.detail, "result=already_pending");
     assert.equal((await itemOf(x.id))?.retry_count, 1);
-    // the longest reason fits the audit detail
+    // the longest reason is accepted and, as any other, not written
     const longReason = "é".repeat(150);
     assert.equal(
       await adminRetry(y.incident, y.id, longReason),
@@ -2140,18 +2149,14 @@ async function run() {
       "a reason of 150 characters is accepted"
     );
     const [yAudit] = await auditsOf(y.id);
-    assert.equal(yAudit?.detail, `result=retried; reason=${longReason}`);
-    assert.ok((yAudit?.detail.length ?? 999) <= 200);
+    assert.equal(yAudit?.detail, "result=retried");
     // busy and event_gone are audited with their result, and change nothing
     const busy = await deadItem(orgB.organizationId, typeAdmin, {
       attempts: 3,
       lock: "live",
     });
     assert.equal(await adminRetry(busy.incident, busy.id, "tentativa"), "busy");
-    assert.equal(
-      (await auditsOf(busy.id))[0]?.detail,
-      "result=busy; reason=tentativa"
-    );
+    assert.equal((await auditsOf(busy.id))[0]?.detail, "result=busy");
     assert.equal(
       (await auditsOf(busy.id))[0]?.organization_id,
       orgB.organizationId
@@ -2168,10 +2173,7 @@ async function run() {
       await adminRetry(vanished.incident, vanished.id, "tentativa"),
       "event_gone"
     );
-    assert.equal(
-      (await auditsOf(vanished.id))[0]?.detail,
-      "result=event_gone; reason=tentativa"
-    );
+    assert.equal((await auditsOf(vanished.id))[0]?.detail, "result=event_gone");
     assert.equal(
       await countOf(
         "SELECT count(*)::text AS count FROM public.platform_audit_events WHERE event_type = 'operational_incident.retry'"
@@ -2180,7 +2182,7 @@ async function run() {
       "five audited retries in all: retried, repeat, retried, busy, event_gone"
     );
     tests.push(
-      "admin_retry_dead_letter, success: one audit row (event_type operational_incident.retry, entity_type queue_dead_letter, entity_id the event, the event's organization, no support case, the operator, detail 'result=retried; reason=<trimmed reason>' within 200 characters) in the same transaction as the retry; a repeat answers already_pending, audits too and changes no count; a 150-character reason fits the detail; busy and event_gone are audited with their result and change nothing"
+      "admin_retry_dead_letter, success: one audit row (event_type operational_incident.retry, entity_type queue_dead_letter, entity_id the event, the event's organization, no support case, the operator, detail 'result=retried', never the operator's reason) in the same transaction as the retry; a repeat answers already_pending, audits too and changes no count; a 150-character reason is accepted and not written; busy and event_gone are audited with their result and change nothing"
     );
 
     // the list

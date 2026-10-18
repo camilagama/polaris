@@ -59,8 +59,10 @@ function fixture(input: {
     ),
   };
   const bucket = {
-    delete: vi.fn((key: string) => {
-      objects.delete(key);
+    delete: vi.fn((keys: string | string[]) => {
+      for (const key of [keys].flat()) {
+        objects.delete(key);
+      }
       return Promise.resolve();
     }),
     get: vi.fn((key: string) => {

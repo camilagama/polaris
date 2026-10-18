@@ -29,7 +29,8 @@ const privacyOwnerRole = "polaris_privacy_owner";
  * through functions owned by `polaris_outbox_owner`, which claims the due events of every organization,
  * marks them dispatched or gives them back with a delay; the privacy owner may send a dispatched
  * `data_export.requested` back to pending while its export is still owed (the re-arm). The rows go
- * with the organization (`ON DELETE CASCADE`).
+ * with the organization (`ON DELETE CASCADE`), but the purge keeps the organization's row as a
+ * tombstone, so the cascade never fires and the purge deletes this table in a step of its own (ADR 0081).
  */
 export const eventOutbox = pgTable(
   "event_outbox",

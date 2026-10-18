@@ -26,6 +26,7 @@ export const MAX_CASE_RESOLUTION_LENGTH = 500;
 
 export type SupportRefusalCode =
   | "case_not_open"
+  | "invalid_cancel_reason"
   | "invalid_case_context"
   | "invalid_case_kind"
   | "invalid_case_reason"
@@ -35,6 +36,7 @@ export type SupportRefusalCode =
   | "invalid_privacy_request"
   | "invalid_privacy_step"
   | "invalid_request"
+  | "invalid_review_at"
   | "privacy_case_workflow_required"
   | "privacy_decision_not_allowed"
   | "privacy_stage_conflict"
@@ -64,6 +66,7 @@ export class TenantAccessDeniedError extends Error {
 
 const KNOWN_CODES: readonly SupportRefusalCode[] = [
   "case_not_open",
+  "invalid_cancel_reason",
   "invalid_case_context",
   "invalid_case_kind",
   "invalid_case_reason",
@@ -72,6 +75,7 @@ const KNOWN_CODES: readonly SupportRefusalCode[] = [
   "invalid_field",
   "invalid_privacy_request",
   "invalid_privacy_step",
+  "invalid_review_at",
   "privacy_case_workflow_required",
   "privacy_decision_not_allowed",
   "privacy_stage_conflict",
@@ -161,6 +165,52 @@ export function normalizeAccessMinutes(minutes: number | undefined): number {
     throw new InvalidSupportRequestError("invalid_duration");
   }
   return value;
+}
+
+/** A legal hold is reviewed at most this far from the day it is placed (the database holds the same limit). */
+export const MAX_LEGAL_HOLD_REVIEW_DAYS = 366;
+
+const ISO_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+
+/** Whether the numbers of an ISO instant are a real moment (30 February, hour 24 and minute 60 are not): `Date` would roll them over. */
+function isRealInstant(parts: readonly (string | undefined)[]): boolean {
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] =
+    parts.map((part) => (part === undefined ? 0 : Number(part)));
+  const probe = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 0));
+  return (
+    probe.getUTCMonth() === (month ?? 0) - 1 &&
+    probe.getUTCDate() === day &&
+    (hour ?? 0) <= 23 &&
+    (minute ?? 0) <= 59 &&
+    (second ?? 0) <= 59 &&
+    (offsetHour ?? 0) <= 23 &&
+    (offsetMinute ?? 0) <= 59
+  );
+}
+
+/**
+ * The review date of a legal hold (ADR 0081): an ISO 8601 instant with its offset, in the future and no more than
+ * `MAX_LEGAL_HOLD_REVIEW_DAYS` away. Returns it in UTC; the database checks the same bounds again.
+ */
+export function normalizeLegalHoldReviewAt(
+  value: unknown,
+  now: Date = new Date()
+): string {
+  const parts = typeof value === "string" ? ISO_INSTANT.exec(value) : null;
+  if (!parts || typeof value !== "string" || !isRealInstant(parts.slice(1))) {
+    throw new InvalidSupportRequestError("invalid_review_at");
+  }
+  const at = new Date(value);
+  const limit = now.getTime() + MAX_LEGAL_HOLD_REVIEW_DAYS * 86_400_000;
+  if (
+    Number.isNaN(at.getTime()) ||
+    at.getTime() <= now.getTime() ||
+    at.getTime() > limit
+  ) {
+    throw new InvalidSupportRequestError("invalid_review_at");
+  }
+  return at.toISOString();
 }
 
 export function isRevealableField(

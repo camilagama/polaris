@@ -4442,6 +4442,8 @@ Requisito herdado do PR104 ([ADR 0078](../docs/adr/0078-exportacao-de-dados-da-o
 
 Pendência herdada do PR103 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): os casos de privacidade (`privacy_cases`, `privacy_case_actions` e o caso de suporte) têm chave estrangeira restritiva para a organização e as tabelas forçam RLS sem política para o papel de purge. O caminho privilegiado do purge precisa tratá-las: são evidência do atendimento e devem sobreviver à organização (sem dado pessoal).
 
+Entregue no [ADR 0081](../docs/adr/0081-purge-completo-da-organizacao-encerrada.md) (proposto): o purge começa só por ato administrativo, com a capacidade `organization:purge` e a função `admin_schedule_organization_purge` (`POST /support-cases/{caso}/purge`), sobre uma organização `closed` cuja janela terminou, amparado no caso de privacidade de exclusão pedido pelo dono, decidido com `accept` integral e com o escopo da organização inteira (um caso de suporte comum não basta); um agendamento errado se cancela com `admin_cancel_organization_purge` (`POST /support-cases/{caso}/purge/cancel`, motivo obrigatório, só enquanto nenhuma execução segura o purge); enquanto `closed_organization` estiver proposta, nenhum job agenda o purge. O executor roda no job horário de privacidade: apaga o R2 (exportações, masters e derivados) antes das linhas e, numa transação única, grava primeiro o tombstone no ledger, apaga as tabelas do tenant marca a organização como `purged` e audita a conclusão (`organization.purge_completed`, só IDs); depois varre de novo os prefixos. A linha da organização fica como tombstone, e casos, auditoria do Admin, cobrança e ledger sobrevivem. `deleteExportObjects` virou `deleteObjectsUnderPrefix`, em `apps/web/src/server/privacy/storage-prefix.ts`; o gate `organization-purge` prova que nada sobra sob os prefixos, e as duas pendências herdadas (PR104 e PR103) ficam tratadas. Decisões do responsável de 18/10/2026 (POL-81): o purge só roda com a organização encerrada há 30 dias ou mais e sem legal hold vigente (capacidade `organization:legal_hold`); a cobrança fica pseudonimizada (o pagador sai do registro, as referências do provedor ficam pelo prazo fiscal); o texto livre dos casos e dos motivos das concessões sai, a trava legal tem prazo de revisão obrigatório e listagem no Admin, e a DLQ (`queue_dead_letters`) é apagada.
+
 
 
 ---
@@ -4636,7 +4638,7 @@ Adicionar Cloudflare Workflows somente para:
 Não mover billing canonical state para Workflow.
 
 
-> **Nota de escopo ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md)):** o PR113 não adiciona nenhum Workflow. No Workers Free um step de Workflow tem 10 ms de CPU (o consumidor da fila tem 30 s por padrão, a medir no Free), então a exportação continua no consumidor da fila, que já retoma pelo banco; o purge (PR107, à espera do aceite do responsável) segue o agendador e, se não couber no cron, a fila; cobrança fica no banco. Um teste impede binding de Workflow sem um ADR que emende o 0088.
+> **Nota de escopo ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md)):** o PR113 não adiciona nenhum Workflow. No Workers Free um step de Workflow tem 10 ms de CPU (o consumidor da fila tem 30 s por padrão, a medir no Free), então a exportação continua no consumidor da fila, que já retoma pelo banco; o purge (PR107, aceito pelo responsável em 18/10/2026 e em revisão) segue o agendador e, se não couber no cron, a fila; cobrança fica no banco. Um teste impede binding de Workflow sem um ADR que emende o 0088.
 
 
 

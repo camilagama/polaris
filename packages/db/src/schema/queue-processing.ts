@@ -22,7 +22,8 @@ const ownerRole = "polaris_outbox_owner";
  * than a consumer invocation can live, and a token, so only its holder gives it back.
  *
  * It holds opaque IDs only. Nobody reaches it but the functions of `polaris_outbox_owner`, which also
- * check that the event exists in the outbox with that key; a finished row is removed a week later
+ * check that the event exists in the outbox with that key, and the purge owner, which reads and deletes the
+ * rows of an organization being purged (ADR 0081); a finished row is removed a week later
  * (retention class `queue_processing`, ADR 0079).
  */
 export const queueProcessing = pgTable(

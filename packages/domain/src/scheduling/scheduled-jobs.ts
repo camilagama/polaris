@@ -107,10 +107,10 @@ export const SCHEDULED_JOBS: readonly ScheduledJob[] = Object.freeze([
   {
     cadenceSeconds: HOUR_SECONDS,
     description:
-      "Privacy: closes the organizations whose recovery window ended, sends back the data export events still owed and builds (without the queue path) or expires the data exports.",
+      "Privacy: closes the organizations whose recovery window ended, sends back the data export events still owed, builds (without the queue path) or expires the data exports, and carries out the purges an operator scheduled (ADR 0081: it never schedules one).",
     id: "privacy.maintenance",
     idempotentBy:
-      "closing and expiring act on what time already made due; the re-arm and the export claim are fenced by the database",
+      "closing and expiring act on what time already made due; the re-arm, the export claim and the purge claim are fenced by the database, and every purge step can run again without effect",
     lane: "maintenance",
     leaseSeconds: LEASE_SECONDS,
     purges: ["privacy.data_export_expiry"],

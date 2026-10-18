@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_TRIGGERED_REMOVALS,
+  activeRetentionBlocker,
   approvedRetention,
+  blockedPurgeJobs,
   isRetentionClass,
+  legalReviewDefects,
+  pendingLegalReviews,
   RETENTION_CLASSES,
   RETENTION_POLICIES,
   RETENTION_PURGE_JOBS,
+  type RetentionClass,
   RetentionNotApprovedError,
+  type RetentionPolicy,
   retentionExpiry,
   retentionPolicy,
 } from "./retention";
@@ -66,6 +73,109 @@ describe("the retention registry", () => {
   });
 });
 
+const withPolicy = (
+  retentionClass: RetentionClass,
+  change: Partial<RetentionPolicy>
+): readonly RetentionPolicy[] =>
+  RETENTION_POLICIES.map((policy) =>
+    policy.class === retentionClass
+      ? ({ ...policy, ...change } as RetentionPolicy)
+      : policy
+  );
+
+describe("legal review", () => {
+  it("is declared for every class whose basis is the law, pending until validated", () => {
+    expect(legalReviewDefects()).toEqual([]);
+    for (const policy of RETENTION_POLICIES) {
+      if (policy.basis === "lei") {
+        expect(policy.legalReview, policy.class).toBeDefined();
+      }
+    }
+    // a legal class is pending until a named reviewer validates it; none may be reviewed by default
+    const legal = RETENTION_POLICIES.filter(
+      (policy) => policy.basis === "lei"
+    ).map((policy) => policy.class);
+    expect(legal.length).toBeGreaterThan(0);
+    for (const policy of RETENTION_POLICIES) {
+      if (
+        policy.legalReview !== undefined &&
+        policy.legalReview !== "pending"
+      ) {
+        expect(policy.legalReview.reviewedBy.trim(), policy.class).not.toBe("");
+      }
+    }
+    expect(pendingLegalReviews()).toEqual(
+      expect.arrayContaining(
+        legal.filter(
+          (retentionClass) =>
+            retentionPolicy(retentionClass).legalReview === "pending"
+        )
+      )
+    );
+  });
+
+  it("fails a legal class marked reviewed without reviewedBy or reviewedAt", () => {
+    for (const review of [
+      { reviewedAt: "2026-11-01", reviewedBy: "" },
+      { reviewedAt: "", reviewedBy: "Contador" },
+      { reviewedAt: "01/11/2026", reviewedBy: "Contador" },
+      { reviewedAt: "2026-13-45", reviewedBy: "Contador" },
+      {},
+      true,
+    ]) {
+      expect(
+        legalReviewDefects(
+          withPolicy("auth_security_audit", {
+            legalReview: review as never,
+          })
+        ),
+        JSON.stringify(review)
+      ).toEqual(["auth_security_audit"]);
+    }
+  });
+
+  it("fails a legal class that says nothing about its review", () => {
+    expect(
+      legalReviewDefects(
+        withPolicy("billing_events", { legalReview: undefined as never })
+      )
+    ).toEqual(["billing_events"]);
+  });
+
+  it("accepts a review with who and when, and stops listing it as pending", () => {
+    const reviewed = withPolicy("auth_security_audit", {
+      legalReview: { reviewedAt: "2026-11-01", reviewedBy: "Contador" },
+    });
+    expect(legalReviewDefects(reviewed)).toEqual([]);
+    expect(pendingLegalReviews(reviewed)).not.toContain("auth_security_audit");
+  });
+});
+
+describe("purge blockers", () => {
+  it("keep the sessions without a purge job until the access record has its own table", () => {
+    const sessions = retentionPolicy("auth_sessions");
+    expect(sessions.blockedUntil).toBe("access_record_table");
+    expect(activeRetentionBlocker(sessions)).toBe("access_record_table");
+    expect(blockedPurgeJobs()).toEqual([]);
+  });
+
+  it("fail when a sessions purge job is registered while the block is active", () => {
+    const sessionsJob = [{ class: "auth_sessions" as const }];
+    expect(blockedPurgeJobs(sessionsJob)).toEqual(["auth_sessions"]);
+    expect(
+      blockedPurgeJobs([], withPolicy("auth_sessions", { job: "x" } as never))
+    ).toEqual(["auth_sessions"]);
+  });
+
+  it("let the job exist once the blocker is resolved", () => {
+    expect(
+      blockedPurgeJobs([{ class: "auth_sessions" }], RETENTION_POLICIES, [
+        "access_record_table",
+      ])
+    ).toEqual([]);
+  });
+});
+
 describe("purge jobs", () => {
   it("exist only for approved classes with a period", () => {
     for (const job of RETENTION_PURGE_JOBS) {
@@ -83,6 +193,30 @@ describe("purge jobs", () => {
   });
 });
 
+describe("proposed classes", () => {
+  it("have no job and no cron, so nothing expires them on its own", () => {
+    const scheduled = new Set(RETENTION_PURGE_JOBS.map((job) => job.class));
+    for (const policy of RETENTION_POLICIES) {
+      if (policy.status === "proposta") {
+        expect("job" in policy, policy.class).toBe(false);
+        expect(scheduled.has(policy.class), policy.class).toBe(false);
+      }
+    }
+  });
+
+  it("are removed only after an explicit administrative command, never by a job", () => {
+    const scheduledIds = new Set<string>(
+      RETENTION_PURGE_JOBS.map((job) => job.id)
+    );
+    for (const removal of ADMIN_TRIGGERED_REMOVALS) {
+      expect(scheduledIds.has(removal.id)).toBe(false);
+    }
+    expect(ADMIN_TRIGGERED_REMOVALS.map((removal) => removal.class)).toEqual([
+      "closed_organization",
+    ]);
+  });
+});
+
 describe("approved periods", () => {
   it("keep a staging marker 24 hours and a removed image one hour", () => {
     expect(approvedRetention("media_staging_marker")).toBe(24 * HOUR_MS);
@@ -97,7 +231,7 @@ describe("approved periods", () => {
     expect(() => approvedRetention("sync_change_log")).toThrow(
       RetentionNotApprovedError
     );
-    expect(() => approvedRetention("sales_records")).toThrow(
+    expect(() => approvedRetention("deletion_ledger")).toThrow(
       "retention_not_approved"
     );
   });
@@ -109,6 +243,18 @@ describe("approved periods", () => {
   it("keep sessions 30 days after they end and a verification token one day after it expires", () => {
     expect(approvedRetention("auth_sessions")).toBe(30 * DAY_MS);
     expect(approvedRetention("auth_verification")).toBe(DAY_MS);
+  });
+
+  it("count calendar months, moving a day that does not exist to the next month", () => {
+    const expiry = (from: string) =>
+      retentionExpiry("auth_security_audit", new Date(from)).toISOString();
+    // 31/08 + 6 months: February has no 31st, so it ends in March, never earlier than six months
+    expect(expiry("2026-08-31T10:00:00.000Z")).toBe("2027-03-03T10:00:00.000Z");
+    // in a leap year February has 29 days
+    expect(expiry("2027-08-31T10:00:00.000Z")).toBe("2028-03-02T10:00:00.000Z");
+    // an ordinary day keeps its day and its time; the year rolls over
+    expect(expiry("2026-10-18T23:59:59.000Z")).toBe("2027-04-18T23:59:59.000Z");
+    expect(expiry("2026-12-31T00:00:00.000Z")).toBe("2027-07-01T00:00:00.000Z");
   });
 
   it("keep the access record six calendar months, as the Marco Civil asks", () => {
@@ -153,9 +299,29 @@ describe("approved periods", () => {
     );
   });
 
-  it("treat the tenant audit as proposed while its legal period is open", () => {
-    expect(retentionPolicy("tenant_audit_events").status).toBe("proposta");
-    expect(() => approvedRetention("tenant_audit_events")).toThrow(
+  it("keep the tenant's operational data until the purge, which no job expires", () => {
+    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after 30 days
+    for (const retentionClass of [
+      "tenant_audit_events",
+      "sales_records",
+      "inventory_ledger",
+      "expenses_and_goals",
+      "product_media",
+    ] as const) {
+      const policy = retentionPolicy(retentionClass);
+      expect(policy.status, retentionClass).toBe("aprovada");
+      expect(policy.period.kind, retentionClass).toBe(
+        "until_organization_purge"
+      );
+      expect(() => approvedRetention(retentionClass)).toThrow(
+        RetentionNotApprovedError
+      );
+    }
+  });
+
+  it("keep the billing events proposed until the fiscal period is decided", () => {
+    expect(retentionPolicy("billing_events").status).toBe("proposta");
+    expect(() => approvedRetention("billing_events")).toThrow(
       RetentionNotApprovedError
     );
   });

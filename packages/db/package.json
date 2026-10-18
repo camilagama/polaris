@@ -54,6 +54,7 @@
     "./deletion-ledger": "./src/deletion-ledger.ts",
     "./event-outbox": "./src/event-outbox.ts",
     "./export-datasets": "./src/export-datasets.ts",
+    "./purge-datasets": "./src/purge-datasets.ts",
     "./export-reader": "./src/export-reader.ts",
     "./outbox-dispatch": "./src/outbox-dispatch.ts",
     "./privacy-maintenance": "./src/privacy-maintenance.ts",

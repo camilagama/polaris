@@ -31,6 +31,7 @@ const principal = {
 
 function noOperations() {
   return {
+    cancelPurge: vi.fn(() => Promise.resolve(null)),
     grantEntitlement: vi.fn(() =>
       Promise.resolve({
         created: true,
@@ -39,6 +40,8 @@ function noOperations() {
         outcomeRecorded: true,
       })
     ),
+    legalHold: vi.fn(() => Promise.resolve(null)),
+    purge: vi.fn(() => Promise.resolve(null)),
     reactivate: vi.fn(() => Promise.resolve(null)),
     revokeEntitlement: vi.fn(() =>
       Promise.resolve({ outcomeRecorded: true, revoked: false })
@@ -55,6 +58,9 @@ function noSupport() {
     detail: nothing,
     grant: nothing,
     list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    listLegalHolds: vi.fn(() =>
+      Promise.resolve({ dueForReview: 0, holds: [], next: null })
+    ),
     open: nothing,
     reveal: nothing,
     revoke: vi.fn(() => Promise.resolve(false)),

@@ -78,6 +78,11 @@ const gates: Gate[] = [
   ["organization-closure", "verify-organization-closure-gate.ts"],
   ["customer-anonymization", "verify-customer-anonymization-gate.ts"],
   ["deletion-ledger", "verify-deletion-ledger-gate.ts"],
+  // lives in apps/web: it runs the real purge job against the database, with an in-memory bucket
+  [
+    "organization-purge",
+    "../../../apps/web/scripts/verify-organization-purge-gate.ts",
+  ],
   ["event-outbox", "verify-event-outbox-gate.ts"],
   ["outbox-dispatcher", "verify-outbox-dispatcher-gate.ts"],
   ["dead-letter", "verify-dead-letter-gate.ts"],
@@ -176,6 +181,7 @@ const suites: Record<string, string[]> = {
     "organization-closure",
     "customer-anonymization",
     "deletion-ledger",
+    "organization-purge",
     "event-outbox",
     "outbox-dispatcher",
     "dead-letter",
@@ -249,6 +255,7 @@ const suites: Record<string, string[]> = {
     "deletion-ledger",
     "privacy-cases",
     "data-export",
+    "organization-purge",
   ],
   // Phase 11 (async infrastructure): grows with every gate of the phase.
   gate11: [
