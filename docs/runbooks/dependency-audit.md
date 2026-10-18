@@ -15,7 +15,7 @@ Procedimento e registro de exceções do job "Dependency audit" do CI, que roda 
 4. Se não existe versão corrigida e o pacote só roda em ferramenta de desenvolvimento ou build (nada no bundle dos Workers nem no navegador; conferir com `bun pm why <pacote>`, que deve mostrar só ancestrais `dev`, e com uma busca de import do pacote em `apps/`, `packages/` e `scripts/`), registrar a exceção na tabela abaixo. Se o pacote chega ao runtime, não há exceção: tratar como bloqueio e escalar ao responsável.
 5. Conferir com `bun audit --audit-level=high --ignore=<GHSA>` (repetível) que as exceções documentadas são os únicos avisos restantes.
 
-O `bun audit` não lê arquivo de exceções; o `--ignore` só vale na linha de comando. O workflow `.github/workflows/ci.yml` não passa `--ignore`, então enquanto houver uma exceção listada o job continua vermelho nesse item (e só nele). Passar `--ignore` no workflow é decisão do responsável pelo CI.
+O `bun audit` não lê arquivo de exceções; o `--ignore` só vale na linha de comando. Por isso o workflow `.github/workflows/ci.yml` passa um `--ignore` para cada exceção vigente da tabela abaixo, com a data de revisão em comentário, e o job volta a ficar vermelho só com aviso novo. Ao remover uma exceção, remover também o `--ignore` correspondente.
 
 ## Rollback ou forward-fix
 
@@ -33,7 +33,7 @@ O responsável pelo CI decide passar `--ignore` no workflow, aceitar uma exceç�
 
 Justificativa do risco: `braces` só expande os padrões de glob que o `ultracite` monta a partir de arquivos do próprio repositório, na máquina de quem desenvolve; não há entrada de rede ou de usuário, e o pacote não entra em nenhum Worker nem no navegador. O pior efeito é a ferramenta local travar.
 
-Na revisão: rodar `bun pm view braces versions`; se houver versão acima da 3.0.3, aplicar o passo 3 e remover a linha da tabela. Se o `ultracite` deixar de depender de `braces`, remover também.
+Na revisão: rodar `bun pm view braces versions`; reavaliar também o override do `sharp` (tabela seguinte); se houver versão acima da 3.0.3, aplicar o passo 3 e remover a linha da tabela. Se o `ultracite` deixar de depender de `braces`, remover também.
 
 ## Overrides vigentes
 
