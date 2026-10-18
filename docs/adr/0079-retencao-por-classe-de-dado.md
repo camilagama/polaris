@@ -42,6 +42,7 @@ Os prazos das classes propostas são propostas deste ADR; os legais estão marca
 | `auth_security_audit` | `auth_security_audit_event` | proposta | prazo de registro de segurança, a confirmar pelo responsável | Prazo de incidentes exige revisão jurídica. |
 | `platform_audit_and_support` | auditoria do Admin, casos e acessos de suporte | proposta | sobrevive à organização, sem dado pessoal; prazo a confirmar pelo responsável | Registro de acesso privilegiado. |
 | `privacy_cases` | casos de privacidade e ações | proposta | sobrevive à organização como evidência; prazo a confirmar pelo responsável | ADR 0077. |
+| `deletion_ledger` | tombstones de anonimização e de purge | proposta | sobrevive à organização, sem expiração automática e sem job; não expira antes da janela de restauração mais longa do provedor; prazo a confirmar pelo responsável | ADR 0080: enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir; nenhum papel o apaga hoje. |
 | `provider_backups` | backups e branches do provedor | proposta | a janela de restauração do provedor; restore reaplica o deletion ledger (a confirmar pelo responsável) | Anonimização e purge não alcançam backups. |
 
 ## Consequências

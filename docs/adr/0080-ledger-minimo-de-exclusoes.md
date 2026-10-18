@@ -22,11 +22,11 @@ A anonimização de cliente (ADR 0075) e o purge de organização (PR107) tiram 
 - Uma anonimização feita depois do último backup pode ser refeita num restore, sem guardar o dado que foi removido.
 - O purge terá onde deixar o ID da organização, para achar no R2 o que sobrar.
 - O ledger **não dá segurança contra perda do próprio banco**: ele mora no mesmo banco. Se o ambiente de origem não puder mais ser lido (perda total), os tombstones posteriores ao último backup se perdem junto. Uma cópia do ledger fora do banco (por exemplo, exportação periódica para o armazenamento) é decisão da Fase 16, junto da automação do restore.
-- A retenção do ledger precisa de uma classe própria (ver abaixo).
+- A retenção do ledger tem classe própria, `deletion_ledger`, proposta no ADR 0079 (ver abaixo).
 
-## Retenção: necessidade declarada para o ADR de retenção (PR105)
+## Retenção do ledger
 
-O ADR de retenção por classe de dado ([ADR 0079](0079-retencao-por-classe-de-dado.md), `proposto`; este ADR não depende dele) lista `provider_backups` ("restore reaplica o deletion ledger") mas **não tem uma classe para o próprio ledger** (o registro `@polaris/domain/privacy/retention` também não). A necessidade, para quem fechar o registro de retenção: uma classe `deletion_ledger` que (a) **sobrevive à organização** (não é apagada pelo purge); (b) **não expira antes da janela de restauração mais longa do provedor** (enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir); (c) não tem job de expurgo por enquanto, e qualquer remoção futura exige uma migration revisada (nenhum papel pode apagar hoje); (d) estado `proposta`, com o prazo a confirmar pelo responsável junto da janela de backup. Enquanto isso, o ledger não é apagado por ninguém.
+O ADR de retenção por classe de dado ([ADR 0079](0079-retencao-por-classe-de-dado.md), `proposto`; este ADR não depende dele) lista `provider_backups` ("restore reaplica o deletion ledger") e a classe própria do ledger, `deletion_ledger`, que também está no registro `@polaris/domain/privacy/retention` (estado `proposta`, sem job). A regra, escrita aqui e espelhada nos dois: a classe (a) **sobrevive à organização** (não é apagada pelo purge); (b) **não expira antes da janela de restauração mais longa do provedor** (enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir); (c) não tem job de expurgo por enquanto, e qualquer remoção futura exige uma migration revisada (nenhum papel pode apagar hoje); (d) estado `proposta`, com o prazo a confirmar pelo responsável junto da janela de backup. Enquanto o prazo não for confirmado, o ledger não é apagado por ninguém.
 
 ## Limites aceitos
 

@@ -30,6 +30,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "auth_security_audit",
   "platform_audit_and_support",
   "privacy_cases",
+  "deletion_ledger",
   "provider_backups",
 ] as const);
 
@@ -297,6 +298,16 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     proposed: `Sobrevive à organização como evidência do atendimento, sem dado pessoal (${TO_CONFIRM}).`,
     rule: "O caso guarda só códigos e referência opaca; o purge precisa tratá-lo (chave estrangeira restritiva).",
     sources: ["ADR 0077"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "deletion_ledger",
+    data: ["deletion_ledger (tombstones de anonimização e de purge)"],
+    period: { kind: "undecided" },
+    proposed: `Sobrevive à organização, sem expiração automática e sem job; não expira antes da janela de restauração mais longa do provedor (${TO_CONFIRM}, junto da janela de backup).`,
+    rule: "O purge da organização não apaga o ledger; enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir. Nenhum papel o apaga hoje, e uma remoção futura exige uma migration revisada.",
+    sources: ["ADR 0080", "docs/business-rules/privacy.md"],
     status: "proposta",
   },
   {

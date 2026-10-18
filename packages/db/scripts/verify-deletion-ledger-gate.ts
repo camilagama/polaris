@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { CustomerVersionConflictError } from "@polaris/domain/customers/customer";
 import { createDatabase } from "../src/client";
 import { recordDeletionLedgerEntry } from "../src/deletion-ledger";
@@ -52,6 +54,7 @@ const LEDGER_COLUMNS = [
 ];
 
 const ROLLED_BACK_ON_PURPOSE = /rolled back on purpose/;
+const BACKFILL_STATEMENT = /INSERT INTO "deletion_ledger"[^;]*;/;
 
 const RESTORE_QUERY = `SELECT entity_type, entity_id, operation, organization_id, privacy_case_id, recorded_at
    FROM public.deletion_ledger
@@ -705,6 +708,80 @@ async function run() {
     assert.equal((await ledgerRows()).length, 2);
     tests.push(
       "the completeness checks of the runbook (an anonymized customer without a tombstone; a tombstone for a customer that was not anonymized) are empty, and the verification query of the runbook is empty when every tombstone has taken effect and lists a customer that came back with data and an organization that came back"
+    );
+
+    // the backfill of the migration: a tombstone the owner removes comes back when the same INSERT ... SELECT runs again
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL("../drizzle/0069_deletion_ledger.sql", import.meta.url)
+      ),
+      "utf8"
+    );
+    const backfill = migration.match(BACKFILL_STATEMENT)?.[0];
+    assert.ok(backfill, "the migration has the backfill statement");
+    assert.ok(
+      backfill.includes("ON CONFLICT DO NOTHING"),
+      "the backfill statement is whole"
+    );
+    const [anonymized] = await ledgerRows(tenantA.organizationId);
+    assert.ok(anonymized);
+    const backfilled = await owner.pool.connect();
+    try {
+      await backfilled.query("BEGIN");
+      await backfilled.query(
+        "CREATE POLICY ledger_probe_delete ON public.deletion_ledger FOR DELETE TO CURRENT_USER USING (true)"
+      );
+      await backfilled.query(
+        "CREATE POLICY ledger_probe ON public.deletion_ledger FOR INSERT TO CURRENT_USER WITH CHECK (true)"
+      );
+      await backfilled.query(
+        "CREATE POLICY ledger_probe_select ON public.deletion_ledger FOR SELECT TO CURRENT_USER USING (true)"
+      );
+      const removed = await backfilled.query(
+        "DELETE FROM public.deletion_ledger WHERE organization_id = $1 AND entity_id = $2",
+        [tenantA.organizationId, anonymized.entity_id]
+      );
+      assert.equal(removed.rowCount, 1, "the owner removed the tombstone");
+      await backfilled.query(backfill);
+      const restored = await backfilled.query(
+        `SELECT entity_type, operation, privacy_case_id, recorded_at = c.anonymized_at AS same_time
+           FROM public.deletion_ledger AS l
+           JOIN public.customers AS c ON c.id::text = l.entity_id AND c.organization_id = l.organization_id
+          WHERE l.organization_id = $1 AND l.entity_id = $2`,
+        [tenantA.organizationId, anonymized.entity_id]
+      );
+      assert.equal(
+        restored.rowCount,
+        1,
+        "the backfill brought the tombstone back, once"
+      );
+      assert.deepEqual(restored.rows[0], {
+        entity_type: "customer",
+        operation: "anonymize",
+        privacy_case_id: null,
+        same_time: true,
+      });
+      await backfilled.query(backfill);
+      const total = await backfilled.query(
+        "SELECT count(*)::int AS count FROM public.deletion_ledger WHERE organization_id = $1",
+        [tenantA.organizationId]
+      );
+      assert.equal(
+        total.rows[0]?.count,
+        1,
+        "running the backfill again adds nothing"
+      );
+    } finally {
+      await backfilled.query("ROLLBACK");
+      backfilled.release();
+    }
+    assert.equal(
+      (await ledgerRows()).length,
+      2,
+      "the backfill check leaves the ledger as it was"
+    );
+    tests.push(
+      "the backfill of the migration (the same INSERT ... SELECT) recreates, with the anonymization time and no case, a tombstone the owner removed, and running it again adds nothing; the check is rolled back"
     );
 
     console.log(
