@@ -185,6 +185,24 @@ export function normalizeLegalHoldReviewAt(
     throw new InvalidSupportRequestError("invalid_review_at");
   }
   const at = new Date(value);
+  // an impossible calendar date (30 February, hour 24) is rolled over by `Date`, not refused: compare the day written
+  const written = /^(\d{4}-\d{2}-\d{2})T(\d{2})/.exec(value);
+  const offsetMinutes = /([+-])(\d{2}):(\d{2})$/.exec(value);
+  const local = offsetMinutes
+    ? new Date(
+        at.getTime() +
+          (offsetMinutes[1] === "-" ? -1 : 1) *
+            (Number(offsetMinutes[2]) * 60 + Number(offsetMinutes[3])) *
+            60_000
+      )
+    : at;
+  if (
+    Number.isNaN(at.getTime()) ||
+    local.toISOString().slice(0, 10) !== written?.[1] ||
+    Number(written?.[2]) > 23
+  ) {
+    throw new InvalidSupportRequestError("invalid_review_at");
+  }
   const limit = now.getTime() + MAX_LEGAL_HOLD_REVIEW_DAYS * 86_400_000;
   if (
     Number.isNaN(at.getTime()) ||
