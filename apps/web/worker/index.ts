@@ -1,6 +1,9 @@
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
-import { createOutboxClient } from "@polaris/db/outbox-dispatch";
+import {
+  createOutboxClient,
+  type OutboxClient,
+} from "@polaris/db/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import { app } from "../src/server/app";
 import {
@@ -20,18 +23,18 @@ import {
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { approvedRetention } from "@polaris/domain/privacy/retention";
+import { laneOfCron } from "@polaris/domain/scheduling/scheduled-jobs";
 import { dispatchOutbox } from "../src/server/queue/dispatcher";
 import {
   createDurableProcessingLedger,
   createInMemoryProcessingLedger,
 } from "../src/server/queue/processing-ledger";
+import {
+  type JobHandlers,
+  type JobResult,
+  runLane,
+} from "../src/server/scheduler/runner";
 
-/**
- * The outbox dispatcher's own cron (ADR 0084): an invocation of its own, so its 10 ms of CPU on the
- * Free plan are not shared with the maintenance jobs, two minutes after them (the database is still
- * awake). Its cadence is the scheduler's to change (plan PR112).
- */
-const OUTBOX_CRON = "19 * * * *";
 /** An export event dispatched this long ago whose export is still owed is sent again (the re-arm). */
 const REARM_MIN_AGE_SECONDS = 30 * 60;
 const REARM_BATCH = 100;
@@ -51,19 +54,32 @@ function queuePathLive(env: WorkerBindings): boolean {
 const quietly = (close: () => Promise<unknown>): Promise<unknown> =>
   close().catch(() => undefined);
 
+/** A job that finished: with the failures it found, or none. */
+function finished(failures: unknown[]): JobResult {
+  return failures.length > 0
+    ? { failures, status: "failed" }
+    : { status: "completed" };
+}
+
+/** A job with nothing to do in this environment: the window stays open, so it runs once it is provisioned. */
+const notConfigured: JobResult = {
+  reason: "not_configured",
+  status: "skipped",
+};
+
 /** Reclaims what media left behind: unfinished uploads and the objects of removed images. */
-async function runMediaMaintenance(env: WorkerBindings): Promise<unknown[]> {
+async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
   const mediaBucket = env.MEDIA_BUCKET;
   const connectionString = env.MEDIA_CLEANUP_HYPERDRIVE?.connectionString;
   if (!(mediaBucket && connectionString)) {
-    return [new Error("media_staging_reconciler_not_configured")];
+    return finished([new Error("media_staging_reconciler_not_configured")]);
   }
   const failures: unknown[] = [];
   let cleanupClient: ReturnType<typeof createMediaCleanupClient>;
   try {
     cleanupClient = createMediaCleanupClient(connectionString);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   }
   try {
     // The two reconcilers are independent: one failing never hides the other.
@@ -85,29 +101,29 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<unknown[]> {
   } finally {
     await quietly(() => cleanupClient.close());
   }
-  return failures;
+  return finished(failures);
 }
 
 /** Applies the events that were received but not processed, then what time itself causes. */
-async function runBillingJobs(env: WorkerBindings): Promise<unknown[]> {
+async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // billing is not provisioned in this environment yet: nothing to do
     console.warn("billing_maintenance_not_configured");
-    return [];
+    return notConfigured;
   }
   let store: ReturnType<typeof createBillingStore>;
   try {
     store = createBillingStore(connectionString);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   }
   try {
     const report = await runBillingMaintenance(store);
     console.info("billing_maintenance_complete", report);
-    return [];
+    return finished([]);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   } finally {
     await quietly(() => store.close());
   }
@@ -143,18 +159,18 @@ function runDataExportsWith(
  * closed (ADR 0074), then builds the data exports that were asked for and removes the ones whose time
  * is up (ADR 0078). One connection serves both, and one failing never hides the other.
  */
-async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
+async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // the privacy role is not provisioned in this environment yet: nothing to do
     console.warn("privacy_maintenance_not_configured");
-    return [];
+    return notConfigured;
   }
   let client: ReturnType<typeof createPrivacyMaintenanceClient>;
   try {
     client = createPrivacyMaintenanceClient(connectionString);
   } catch (error: unknown) {
-    return [error];
+    return finished([error]);
   }
   const failures: unknown[] = [];
   try {
@@ -197,72 +213,86 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
   } finally {
     await quietly(() => client.close());
   }
-  return failures;
+  return finished(failures);
 }
 
 /**
  * The outbox dispatcher and sweeper (ADR 0084): sends the due events (and those whose claim ran out)
- * to their queues and marks them dispatched, then removes the consumer's old processing records.
+ * to their queues and marks them dispatched, then removes the consumer's old processing records. It
+ * uses the connection of the tick (the outbox role also keeps the scheduler's state), which the tick
+ * closes; there is none where the outbox role is not provisioned.
  */
-async function runOutboxJobs(env: WorkerBindings): Promise<unknown[]> {
-  const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
-  if (!connectionString) {
+async function runOutboxJobs(
+  env: WorkerBindings,
+  client: OutboxClient | null
+): Promise<JobResult> {
+  if (client === null) {
     // the outbox role is not provisioned in this environment yet: the events wait, pending
     console.warn("outbox_dispatch_not_configured");
-    return [];
-  }
-  let client: ReturnType<typeof createOutboxClient>;
-  try {
-    client = createOutboxClient(connectionString);
-  } catch (error: unknown) {
-    return [error];
+    return notConfigured;
   }
   const failures: unknown[] = [];
   try {
-    try {
-      const report = await dispatchOutbox({
-        queues: {
-          critical: env.QUEUE_CRITICAL,
-          default: env.QUEUE_DEFAULT,
-          media: env.QUEUE_MEDIA,
-        },
-        store: client,
-      });
-      console.info("outbox_dispatch_complete", report);
-    } catch (error: unknown) {
-      failures.push(error);
-    }
-    try {
-      const removed = await client.expireProcessing(
-        PROCESSING_KEEP_HOURS,
-        PROCESSING_EXPIRY_BATCH
-      );
-      console.info("queue_processing_expired", { removed });
-    } catch (error: unknown) {
-      failures.push(error);
-    }
-  } finally {
-    await quietly(() => client.close());
-  }
-  return failures;
-}
-
-/** Throws what the jobs found: one failure as itself, several together. */
-function throwFailures(failures: unknown[], message: string): void {
-  if (failures.length === 1) {
-    throw failures[0];
-  }
-  if (failures.length > 1) {
-    throw new AggregateError(failures, message);
-  }
-}
-
-/** Runs a job so that whatever it throws becomes its failure, never another job's. */
-async function isolated(job: () => Promise<unknown[]>): Promise<unknown[]> {
-  try {
-    return await job();
+    const report = await dispatchOutbox({
+      queues: {
+        critical: env.QUEUE_CRITICAL,
+        default: env.QUEUE_DEFAULT,
+        media: env.QUEUE_MEDIA,
+      },
+      store: client,
+    });
+    console.info("outbox_dispatch_complete", report);
   } catch (error: unknown) {
-    return [error];
+    failures.push(error);
+  }
+  try {
+    const removed = await client.expireProcessing(
+      PROCESSING_KEEP_HOURS,
+      PROCESSING_EXPIRY_BATCH
+    );
+    console.info("queue_processing_expired", { removed });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  return finished(failures);
+}
+
+/** The jobs of the registry that are enabled, each tied to the code that runs it. */
+function jobHandlers(
+  env: WorkerBindings,
+  outbox: OutboxClient | null
+): JobHandlers {
+  return {
+    "billing.maintenance": () => runBillingJobs(env),
+    "media.maintenance": () => runMediaMaintenance(env),
+    "outbox.dispatch": () => runOutboxJobs(env, outbox),
+    "privacy.maintenance": () => runPrivacyJobs(env),
+  };
+}
+
+/**
+ * One tick of the scheduler (ADR 0086) for the lane of the cron that fired: the lane's due jobs run, each
+ * under its lease. The connection of the outbox role serves the scheduler's state and the dispatcher
+ * alike; without it every job of the lane runs on every tick, as the crons did before the scheduler.
+ */
+async function runScheduledTick(
+  cron: string | undefined,
+  env: WorkerBindings
+): Promise<void> {
+  const known = laneOfCron(cron);
+  if (!known) {
+    // an expression this Worker does not declare (a manual trigger): the maintenance, as it always was
+    console.warn("scheduler_unknown_cron");
+  }
+  const lane = known?.id ?? "maintenance";
+  const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
+  const outbox = connectionString ? createOutboxClient(connectionString) : null;
+  try {
+    await runLane({ handlers: jobHandlers(env, outbox), lane, store: outbox });
+  } finally {
+    if (outbox) {
+      await quietly(() => outbox.close());
+    }
   }
 }
 
@@ -334,22 +364,5 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
 export default {
   fetch: app.fetch,
   queue: (batch: QueueBatch, env) => consumeQueue(batch, env),
-  scheduled: async (controller, env) => {
-    if (controller.cron === OUTBOX_CRON) {
-      throwFailures(
-        await isolated(() => runOutboxJobs(env)),
-        "outbox_jobs_failed"
-      );
-      return;
-    }
-    // media, billing and privacy are independent jobs: one failing never hides another
-    throwFailures(
-      [
-        ...(await isolated(() => runMediaMaintenance(env))),
-        ...(await isolated(() => runBillingJobs(env))),
-        ...(await isolated(() => runPrivacyJobs(env))),
-      ],
-      "scheduled_maintenance_failed"
-    );
-  },
+  scheduled: (controller, env) => runScheduledTick(controller.cron, env),
 } satisfies ExportedHandler<WorkerBindings>;

@@ -505,6 +505,13 @@
       "when": 1792320395444,
       "tag": "0071_outbox_dispatcher",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792328804651,
+      "tag": "0072_scheduled_jobs",
+      "breakpoints": true
     }
   ]
 }
