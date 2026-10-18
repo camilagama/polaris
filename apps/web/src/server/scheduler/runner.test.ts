@@ -300,8 +300,10 @@ describe("a scheduler tick", () => {
         tick("outbox", handlersFor("outbox"), store)
       ).resolves.toBeUndefined();
       expect(console.warn).toHaveBeenCalledWith(
-        "scheduled_job_lease_lost",
-        expect.objectContaining({ job: "outbox.dispatch" })
+        expect.objectContaining({
+          event: "scheduled_job_lease_lost",
+          job: "outbox.dispatch",
+        })
       );
     });
   });
@@ -315,8 +317,10 @@ describe("a scheduler tick", () => {
         expect(handlers[id]).toHaveBeenCalledTimes(2);
       }
       expect(console.warn).toHaveBeenCalledWith(
-        "scheduler_state_unavailable",
-        expect.objectContaining({ lane: "maintenance" })
+        expect.objectContaining({
+          event: "scheduler_state_unavailable",
+          lane: "maintenance",
+        })
       );
     });
 
@@ -368,14 +372,17 @@ describe("a scheduler tick", () => {
         return Promise.resolve({ status: "completed" });
       });
       await tick("outbox", handlers, store);
-      expect(console.info).toHaveBeenCalledWith("scheduled_job_run", {
-        durationMs: 250,
-        job: "outbox.dispatch",
-        lane: "outbox",
-        missedWindows: 0,
-        outcome: "completed",
-        recovered: false,
-      });
+      expect(console.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          durationMs: 250,
+          event: "scheduled_job_run",
+          job: "outbox.dispatch",
+          lane: "outbox",
+          missedWindows: 0,
+          outcome: "completed",
+          recovered: false,
+        })
+      );
     });
 
     it("names a failure by its class and code only, never its message", async () => {
@@ -396,10 +403,10 @@ describe("a scheduler tick", () => {
       expect(logged).not.toContain("Maria");
       expect(logged).not.toContain("99999");
       expect(console.error).toHaveBeenCalledWith(
-        "scheduled_job_run",
         expect.objectContaining({
           errorCode: "23505",
           errorName: "Error",
+          event: "scheduled_job_run",
           job: "outbox.dispatch",
           outcome: "failed",
         })

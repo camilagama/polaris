@@ -35,6 +35,28 @@ const cases = [
   ["cloudflare:workers", ["packages", "domain", "src"], domainMessage],
   ["better-auth", ["packages", "domain", "src"], domainMessage],
   ["@polaris/db/client", ["packages", "domain", "src"], domainMessage],
+  ["evlog", ["packages", "domain", "src"], domainMessage],
+  ["evlog/workers", ["packages", "domain", "src"], domainMessage],
+  [
+    "@polaris/observability/logger",
+    ["packages", "domain", "src"],
+    domainMessage,
+  ],
+  [
+    "../../observability/src/logger",
+    ["packages", "domain", "src"],
+    domainMessage,
+  ],
+  [
+    "../../../observability/src/logger",
+    ["packages", "domain", "src", "events"],
+    domainMessage,
+  ],
+  [
+    "../../../../packages/observability/src/logger",
+    ["packages", "domain", "src", "events"],
+    domainMessage,
+  ],
   ["@polaris/db", ["packages", "contracts", "src"], contractsMessage],
   ["drizzle-orm", ["packages", "contracts", "src"], contractsMessage],
   ["pg", ["packages", "contracts", "src"], contractsMessage],
@@ -45,6 +67,12 @@ const cases = [
   ["drizzle-orm", ["apps", "web", "src", "sales"], browserMessage],
   ["better-auth", ["apps", "web", "src", "catalog"], browserMessage],
   ["../server/app", ["apps", "web", "src", "lib"], browserMessage],
+  ["evlog", ["apps", "web", "src", "lib"], browserMessage],
+  [
+    "@polaris/observability/logger",
+    ["apps", "web", "src", "lib"],
+    browserMessage,
+  ],
   ["@polaris/db/client", ["apps", "catalog", "src"], catalogMessage],
   [
     "@polaris/db/tenant-transaction",
