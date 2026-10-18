@@ -1,4 +1,4 @@
-import type { Outcome } from "./fields";
+import { type Outcome, outcomes } from "./fields";
 import {
   emit as write,
   type LogFields,
@@ -95,8 +95,9 @@ export function startWideEvent(
         return;
       }
       emitted = true;
-      const final: Outcome =
-        outcome ?? (fields.outcome as Outcome | undefined) ?? "success";
+      const wanted = outcome ?? fields.outcome ?? "success";
+      // a value forged by a cast must not break the `finally` of `withWideEvent`
+      const final = outcomes.find((known) => known === wanted) ?? "failure";
       write(levelOf[final], event, {
         ...fields,
         durationMs: Math.max(0, Math.round(now() - startedAt)),
@@ -104,6 +105,8 @@ export function startWideEvent(
       });
     },
     fail: (error) => {
+      // a code left by an earlier failure must not describe this one
+      fields.errorCode = undefined;
       set({ ...describeError(error), outcome: "failure" });
     },
     set,

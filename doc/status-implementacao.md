@@ -1670,5 +1670,5 @@ Terceiro passo da Fase 12 ([ADR 0091](../docs/adr/0091-esquema-canonico-de-event
 | Esquema | Concluído | `fields.ts`: campos canônicos tipados, `outcome` (`success`, `partial`, `rejected`, `skipped`, `failure`), `durationMs` em ms, IDs opacos (`organizationId`, `actorId`, `deviceId` e afins) conferidos pelo formato. |
 | Aliases | Concluído | `LogFields` recusa os aliases no tipo; o logger os descarta e lista em `ignoredFields`; `call-sites.test.ts` falha se uma chamada de log do backend usar um. |
 | Evento largo | Concluído | `startWideEvent`, `withWideEvent` e `describeError` (`@polaris/observability/wide-event`); o agendador emite `scheduled_job_run` por eles. |
-| Migração | Parcial | Todos os pontos que já chamavam o logger (`errorName` → `errorClass`, `status` → `httpStatus`, `outcome` do agendador → `success\|failure\|skipped`); os `console.*` restantes migram no PR que tocar cada um. |
+| Migração | Parcial | Todos os pontos que já chamavam o logger, só nos nomes dos campos (`errorName` → `errorClass`, `status` → `httpStatus`, `outcome` do agendador → `success\|failure\|skipped`); os `console.*` restantes migram no PR que tocar cada um. |
 | Limites | Registrados | Nenhum evento por requisição HTTP ainda (volume e amostragem: PR117); a política de redação é do PR116. |

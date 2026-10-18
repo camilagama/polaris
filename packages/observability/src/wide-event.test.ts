@@ -63,6 +63,14 @@ describe("wide events", () => {
     ]);
   });
 
+  it("treats an outcome forged by a cast as a failure instead of throwing", () => {
+    const wide = startWideEvent("forged");
+    wide.set({ outcome: "ok" } as never);
+    wide.emit();
+
+    expect(events(error)[0]).toMatchObject({ outcome: "failure" });
+  });
+
   it("writes it only once", () => {
     const wide = startWideEvent("once");
     wide.emit();
@@ -126,6 +134,17 @@ describe("wide events", () => {
       outcome: "failure",
     });
     expect(JSON.stringify(event)).not.toContain("Maria");
+  });
+
+  it("does not keep the code of an earlier failure when a later one has none", () => {
+    const wide = startWideEvent("retrying");
+    wide.fail(Object.assign(new Error("x"), { code: "23505" }));
+    wide.fail(new Error("y"));
+    wide.emit();
+
+    const [event] = events(error);
+    expect(event).toMatchObject({ errorClass: "Error" });
+    expect("errorCode" in (event ?? {})).toBe(false);
   });
 
   it("ignores an undefined value instead of erasing a field", () => {

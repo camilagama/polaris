@@ -32,8 +32,10 @@ export type Outcome = (typeof outcomes)[number];
 /**
  * Opaque identifiers. The value is an id the system minted (UUID, ULID, a
  * provider id), never an e-mail, a name or a phone number: it identifies a row
- * without telling who the person is. The logger drops a value that does not
- * look like an id (see `isOpaqueId`).
+ * without telling who the person is. The caller passes that id; the logger
+ * only checks the shape (see `isOpaqueId`): it drops an e-mail or a text with
+ * spaces, but a bare name or a digits-only phone still has the shape of an id,
+ * so the shape is a safety net, not proof of anonymity.
  */
 export const opaqueIdFields = [
   "actorId",
@@ -48,7 +50,7 @@ export const opaqueIdFields = [
 
 const opaqueIdPattern = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 
-/** True for an id-shaped value: no `@`, no spaces, no `+`, at most 128 characters. */
+/** True for an id-shaped value (shape only): no `@`, no spaces, no `+`, at most 128 characters. */
 export function isOpaqueId(value: unknown): value is string {
   return typeof value === "string" && opaqueIdPattern.test(value);
 }
@@ -238,20 +240,29 @@ const canonicalBySquashed: ReadonlyMap<string, CanonicalFieldName> = new Map(
   ])
 );
 
-const aliasMap: ReadonlyMap<string, CanonicalFieldName> = new Map(
-  Object.entries(forbiddenAliases)
+/** Keyed by the squashed spelling, so `orgid` and `ORG_ID` meet `orgId`. */
+const aliasBySquashed: ReadonlyMap<string, CanonicalFieldName> = new Map(
+  Object.entries(forbiddenAliases).map(([alias, canonical]) => [
+    squash(alias),
+    canonical,
+  ])
 );
 
 /**
  * The canonical name a key should have used, or `undefined` when the key is
  * canonical or is a free metric. Catches the listed aliases and any other
- * casing/underscore spelling of a canonical name (`request_id`, `RequestId`).
+ * casing/underscore spelling of a canonical name or of a listed alias
+ * (`request_id`, `RequestId`, `orgid`).
  */
 export function canonicalNameFor(key: string): CanonicalFieldName | undefined {
-  const listed = aliasMap.get(key);
+  if (Object.hasOwn(canonicalNameSet, key)) {
+    return undefined;
+  }
+  const squashed = squash(key);
+  const listed = aliasBySquashed.get(squashed);
   if (listed !== undefined) {
     return listed;
   }
-  const spelled = canonicalBySquashed.get(squash(key));
+  const spelled = canonicalBySquashed.get(squashed);
   return spelled !== undefined && spelled !== key ? spelled : undefined;
 }

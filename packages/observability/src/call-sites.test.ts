@@ -82,7 +82,7 @@ function argumentsText(source: string, open: number): string {
 function keysIn(text: string): string[] {
   const keys: string[] = [];
   for (const match of text.matchAll(
-    /[{,]\s*(?:"(\w+)"|'(\w+)'|(\w+))\s*(?=[:,}])/g
+    /[{,]\s*(?:"([\w-]+)"|'([\w-]+)'|(\w+))\s*(?=[:,}])/g
   )) {
     const key = match[1] ?? match[2] ?? match[3];
     if (key !== undefined) {
@@ -120,7 +120,7 @@ describe("call sites", () => {
   it("find the forbidden aliases in a snippet (the scanner is not vacuous)", () => {
     const snippet = [
       'logger.info("a", { orgId: id, durationMs: 1 });',
-      'logger.error("b", { ...x, errorName, "user_id": 1 });',
+      'logger.error("b", { ...x, errorName, "user_id": 1, "user-id": 2 });',
       'report("c", { name: error.name, request_id: "x" });',
       'logger.info("fine", { organizationId, requestId, outcome: "success" });',
     ].join("\n");
@@ -129,6 +129,7 @@ describe("call sites", () => {
       "orgId",
       "errorName",
       "user_id",
+      "user-id",
       "request_id",
     ]);
   });
@@ -153,7 +154,7 @@ describe("call sites", () => {
       }
     }
 
-    expect(scanned).toBeGreaterThan(10);
+    expect(scanned).toBeGreaterThan(30);
     expect(violations).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
+import { describeError } from "@polaris/observability/wide-event";
 import type {
   PrivacyCaseDetail,
   PrivacyCasePage,
@@ -158,7 +159,7 @@ export function privacyRoutes(
       report("admin_not_configured");
       return context.json({ error: "admin_not_configured" }, 503);
     }
-    report("admin_error", { errorClass: error.name });
+    report("admin_error", describeError(error));
     return context.json({ error: "internal_error" }, 500);
   });
 

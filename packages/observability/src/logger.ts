@@ -46,6 +46,7 @@ type ReservedKey =
   | "commitHash"
   | "environment"
   | "event"
+  | "ignoredFields"
   | "level"
   | "region"
   | "service"
@@ -85,6 +86,7 @@ const reservedKeys: ReadonlySet<string> = new Set<ReservedKey>([
   "commitHash",
   "environment",
   "event",
+  "ignoredFields",
   "level",
   "region",
   "service",
@@ -155,6 +157,7 @@ function applySchema(fields: LogFields | undefined): {
   return { ignored, safe };
 }
 
+/** Writes one event; the logger and `wide-event` use it, callers use `logger.*`. */
 export function emit(level: LogLevel, event: string, fields?: LogFields): void {
   if (!configured) {
     applyConfig({ service: "polaris" });

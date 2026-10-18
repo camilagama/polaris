@@ -23,6 +23,8 @@ describe("field schema", () => {
     expect(canonicalNameFor("organization_id")).toBe("organizationId");
     expect(canonicalNameFor("Request_Id")).toBe("requestId");
     expect(canonicalNameFor("DURATIONMS")).toBe("durationMs");
+    expect(canonicalNameFor("orgid")).toBe("organizationId");
+    expect(canonicalNameFor("USERID")).toBe("actorId");
   });
 
   it("leaves canonical names and free metrics alone", () => {

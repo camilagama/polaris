@@ -1,3 +1,4 @@
+import { describeError } from "@polaris/observability/wide-event";
 import type { AdminOrganizationPage } from "@polaris/db/admin-diagnostics-repository";
 import type {
   PlatformIdentity,
@@ -301,7 +302,7 @@ export function createAdminApp(dependencies: AdminDependencies) {
 
   app.notFound((context) => context.json({ error: "not_found" }, 404));
   app.onError((error, context) => {
-    dependencies.report("admin_error", { errorClass: error.name });
+    dependencies.report("admin_error", describeError(error));
     return context.json({ error: "internal_error" }, 500);
   });
   return app;

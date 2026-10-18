@@ -201,7 +201,11 @@ export async function runLane(options: RunLaneOptions): Promise<void> {
   for (const jobId of jobsOfLane(lane)) {
     const handler = handlers[jobId];
     if (!handler) {
-      logger.error("scheduled_job_handler_missing", { job: jobId, lane });
+      logger.error("scheduled_job_handler_missing", {
+        job: jobId,
+        lane,
+        outcome: "failure",
+      });
       failures.push(new Error("scheduled_job_handler_missing"));
       continue;
     }
