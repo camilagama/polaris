@@ -18,6 +18,7 @@ import {
   resolvePrivacyCase,
   revealCustomerField,
   revokeTenantAccess,
+  scheduleOrganizationPurge,
   suspendOrganization,
 } from "@polaris/db/admin-support-repository";
 import { createBillingStore } from "@polaris/db/billing-store";
@@ -205,6 +206,10 @@ const dependencies: AdminDependencies = {
     list: (input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         listSupportCases(client, input)
+      ),
+    purge: (principalId, caseId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        scheduleOrganizationPurge(client, principalId, caseId)
       ),
     reactivate: (principalId, caseId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>

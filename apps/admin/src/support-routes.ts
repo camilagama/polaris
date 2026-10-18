@@ -15,6 +15,7 @@ import {
   type RevealableCustomerField,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
 import type { GrantCommand } from "./billing-commands";
@@ -39,6 +40,12 @@ export interface SupportDependencies {
     organizationId: string;
     outcomeRecorded: boolean;
   }>;
+  /** Schedules the purge of the case's organization (it must be closed, its recovery window over). */
+  purge: (
+    principalId: string,
+    caseId: string,
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; notBefore?: string; status: string } | null>;
   reactivate: (
     principalId: string,
     caseId: string,
@@ -207,6 +214,10 @@ export function supportRoutes(
         route: context.req.path.replaceAll(UUID_IN_PATH, ":id"),
       });
       return context.json({ error: "tenant_access_denied" }, 403);
+    }
+    if (error instanceof OrganizationPurgeRefusedError) {
+      // the organization is not in a state that allows it yet; nothing was changed
+      return context.json({ error: error.code }, 409);
     }
     if (error instanceof InvalidEntitlementGrantError) {
       return context.json({ error: error.code }, 400);
@@ -419,6 +430,20 @@ export function supportRoutes(
       }
       return context.json(
         await dependencies.reactivate(principalOf(context), caseId, context.env)
+      );
+    }
+  );
+
+  routes.post(
+    "/support-cases/:caseId/purge",
+    requireCapability("organization:purge"),
+    async (context) => {
+      const caseId = idParam(context, "caseId");
+      if (!caseId) {
+        return notFound(context);
+      }
+      return context.json(
+        await dependencies.purge(principalOf(context), caseId, context.env)
       );
     }
   );

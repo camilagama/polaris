@@ -243,8 +243,8 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: ["todos os dados de uma organização closed"],
     period: { kind: "undecided" },
     proposed: `Purge depois do fim da janela de recuperação de 30 dias, respeitando as classes com prazo legal (${TO_CONFIRM}).`,
-    rule: "Nada é apagado na janela de recuperação; dados elegíveis saem depois, pelo purge, respeitando retenção e deletion ledger.",
-    sources: ["ADR 0074", "docs/business-rules/privacy.md"],
+    rule: "Nada é apagado na janela de recuperação; dados elegíveis saem depois, pelo purge, respeitando retenção e deletion ledger. Sem prazo aprovado, o purge só começa por comando administrativo explícito sobre uma organização closed; nenhum job o agenda.",
+    sources: ["ADR 0074", "ADR 0081", "docs/business-rules/privacy.md"],
     status: "proposta",
   },
   {
@@ -296,8 +296,8 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: ["privacy_cases", "privacy_case_actions"],
     period: { kind: "undecided" },
     proposed: `Sobrevive à organização como evidência do atendimento, sem dado pessoal (${TO_CONFIRM}).`,
-    rule: "O caso guarda só códigos e referência opaca; o purge precisa tratá-lo (chave estrangeira restritiva).",
-    sources: ["ADR 0077"],
+    rule: "O caso guarda só códigos e referência opaca; sobrevive ao purge porque a linha da organização fica como tombstone (chave estrangeira restritiva preservada).",
+    sources: ["ADR 0077", "ADR 0081"],
     status: "proposta",
   },
   {
@@ -335,6 +335,18 @@ export const RETENTION_PURGE_JOBS: readonly {
   { class: "data_exports", id: "privacy.data_export_expiry" },
 ]);
 
+/**
+ * Removals that are not jobs: nothing schedules them. Each one runs only after an explicit
+ * administrative command names what to remove (the purge of a closed organization, ADR 0081), so it
+ * can exist for a class that is only proposed. A job of `RETENTION_PURGE_JOBS` never can.
+ */
+export const ADMIN_TRIGGERED_REMOVALS: readonly {
+  class: RetentionClass;
+  id: "privacy.organization_purge";
+}[] = Object.freeze([
+  { class: "closed_organization", id: "privacy.organization_purge" },
+]);
+
 /** A period was asked for a class that has no approved period. */
 export class RetentionNotApprovedError extends Error {
   readonly code = "retention_not_approved";
@@ -351,16 +363,24 @@ export function isRetentionClass(value: string): value is RetentionClass {
   return RETENTION_CLASSES.some((candidate) => candidate === value);
 }
 
-export function retentionPolicy(
+/** The policy of a class in a given registry (the real one, or a changed copy in a test). */
+export function retentionPolicyIn(
+  policies: readonly RetentionPolicy[],
   retentionClass: RetentionClass
 ): RetentionPolicy {
-  const policy = RETENTION_POLICIES.find(
+  const policy = policies.find(
     (candidate) => candidate.class === retentionClass
   );
   if (!policy) {
     throw new RetentionNotApprovedError(retentionClass);
   }
   return policy;
+}
+
+export function retentionPolicy(
+  retentionClass: RetentionClass
+): RetentionPolicy {
+  return retentionPolicyIn(RETENTION_POLICIES, retentionClass);
 }
 
 /**

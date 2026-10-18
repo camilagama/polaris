@@ -1,8 +1,9 @@
-import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
+import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
 import { describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
@@ -45,12 +46,6 @@ function support(
         startsAt: "2026-10-16T12:00:00.000Z",
       })
     ),
-    list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
-    open: vi.fn(() => Promise.resolve({ id: caseId })),
-    reveal: vi.fn(() =>
-      Promise.resolve({ customerId, field: "email", value: "ana@exemplo.com" })
-    ),
-    revoke: vi.fn(() => Promise.resolve(true)),
     grantEntitlement: vi.fn(() =>
       Promise.resolve({
         created: true,
@@ -59,9 +54,22 @@ function support(
         outcomeRecorded: true,
       })
     ),
+    list: vi.fn(() => Promise.resolve({ cases: [], next: null })),
+    open: vi.fn(() => Promise.resolve({ id: caseId })),
+    purge: vi.fn(() =>
+      Promise.resolve({
+        changed: true,
+        notBefore: "2026-11-01T12:00:00.000Z",
+        status: "purge_pending",
+      })
+    ),
     reactivate: vi.fn(() =>
       Promise.resolve({ changed: true, status: "active" })
     ),
+    reveal: vi.fn(() =>
+      Promise.resolve({ customerId, field: "email", value: "ana@exemplo.com" })
+    ),
+    revoke: vi.fn(() => Promise.resolve(true)),
     revokeEntitlement: vi.fn(() =>
       Promise.resolve({ outcomeRecorded: true, revoked: true })
     ),
@@ -178,7 +186,7 @@ describe("opening and listing cases", () => {
       { kind: "support", organizationId: "a\u0000b", reason: "x" },
       { kind: "audit", organizationId: "org-1", reason: "x" },
       { kind: "support", organizationId: "org-1", reason: "   " },
-      { kind: "support", organizationId: "org-1", reason: "x", context: 7 },
+      { context: 7, kind: "support", organizationId: "org-1", reason: "x" },
     ].map((body) => send("POST", "/api/support-cases", body));
     for (const response of await Promise.all(refused)) {
       expect(response.status).toBe(400);
@@ -523,6 +531,46 @@ describe("suspension and billing commands", () => {
         .status
     ).toBe(403);
     expect(other.support.suspend).not.toHaveBeenCalled();
+  });
+
+  it("schedules the purge of a case's organization, with the operator from the login", async () => {
+    const { send, support: calls } = setup();
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      principalId: "forged",
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      changed: true,
+      notBefore: "2026-11-01T12:00:00.000Z",
+      status: "purge_pending",
+    });
+    expect(calls.purge).toHaveBeenCalledWith(principal.id, caseId, bindings);
+    expect(
+      (await send("POST", "/api/support-cases/not-a-uuid/purge", {})).status
+    ).toBe(404);
+    const other = setup({}, "somebody_else");
+    expect(
+      (await other.send("POST", `/api/support-cases/${caseId}/purge`, {}))
+        .status
+    ).toBe(403);
+    expect(other.support.purge).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when the organization cannot be purged yet", async () => {
+    const { send } = setup({
+      purge: vi.fn(() =>
+        Promise.reject(
+          new OrganizationPurgeRefusedError("recovery_window_open")
+        )
+      ),
+    });
+    const response = await send(
+      "POST",
+      `/api/support-cases/${caseId}/purge`,
+      {}
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "recovery_window_open" });
   });
 
   it("gives and ends an entitlement through the case, with the operator from the login", async () => {

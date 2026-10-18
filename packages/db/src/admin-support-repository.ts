@@ -4,6 +4,11 @@ import {
   supportRefusalFromMessage,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import {
+  OrganizationPurgeRefusedError,
+  organizationPurgeRefusalFromMessage,
+  purgeDelayAfterWindowMs,
+} from "@polaris/domain/privacy/organization-purge";
 import type { AdminQueryable } from "./platform-principal-repository";
 
 /**
@@ -80,6 +85,7 @@ export interface MaskedCustomerPage {
 
 const ACCESS_DENIED = "42501";
 const INVALID_PARAMETER = "22023";
+const OBJECT_NOT_IN_STATE = "55000";
 
 function sqlState(error: unknown): string | undefined {
   const visited = new Set<object>();
@@ -115,6 +121,14 @@ async function call<T>(
     if (state === ACCESS_DENIED) {
       // biome-ignore lint/style/useErrorCause: TenantAccessDeniedError forwards this cause to Error.
       throw new TenantAccessDeniedError({ cause: error });
+    }
+    const refusal =
+      state === OBJECT_NOT_IN_STATE && error instanceof Error
+        ? organizationPurgeRefusalFromMessage(error.message)
+        : null;
+    if (refusal) {
+      // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks its code.
+      throw new OrganizationPurgeRefusedError(refusal);
     }
     if (state === INVALID_PARAMETER) {
       // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks its code.
@@ -262,6 +276,23 @@ export function suspendOrganization(
     client,
     "public.admin_suspend_organization($1, $2)",
     [principalId, caseId]
+  );
+}
+
+/**
+ * Schedules the purge of the case's organization (plan PR107, ADR 0081): only a `closed` one whose
+ * recovery window is over. The delay after the window comes from the retention registry (none while
+ * the retention of a closed organization is proposed). Scheduling again is not a change.
+ */
+export function scheduleOrganizationPurge(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string
+) {
+  return call<{ changed: boolean; notBefore?: string; status: string }>(
+    client,
+    "public.admin_schedule_organization_purge($1, $2, $3::bigint)",
+    [principalId, caseId, Math.ceil(purgeDelayAfterWindowMs() / 1000)]
   );
 }
 

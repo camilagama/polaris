@@ -245,7 +245,7 @@ async function run() {
           AND p.proname NOT IN (
             'admin_audit_billing_command', 'admin_close_support_case', 'admin_grant_tenant_access', 'admin_list_support_cases', 'admin_open_support_case',
             'admin_organization_diagnostics', 'admin_organizations_overview', 'admin_reactivate_organization', 'admin_reveal_customer_field',
-            'admin_revoke_tenant_access', 'admin_support_case_detail', 'admin_suspend_organization', 'admin_tenant_customers',
+            'admin_revoke_tenant_access', 'admin_schedule_organization_purge', 'admin_support_case_detail', 'admin_suspend_organization', 'admin_tenant_customers',
             'admin_list_privacy_cases', 'admin_open_privacy_case', 'admin_privacy_case_detail', 'admin_privacy_record_action', 'admin_privacy_record_decision',
             'admin_privacy_record_identity', 'admin_privacy_record_role', 'admin_privacy_record_scope', 'admin_privacy_resolve'
           )

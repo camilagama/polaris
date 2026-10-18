@@ -464,12 +464,14 @@ async function run() {
       ["entity_id", "entity_type", "operation", "organization_id"]
     );
     const policies = await owner.pool.query<{ cmd: string; roles: string[] }>(
-      "SELECT cmd, roles::text[] AS roles FROM pg_policies WHERE schemaname = 'public' AND tablename = 'deletion_ledger' ORDER BY cmd"
+      "SELECT cmd, roles::text[] AS roles FROM pg_policies WHERE schemaname = 'public' AND tablename = 'deletion_ledger' ORDER BY cmd, roles::text"
     );
+    // the purge owner inserts only the tombstone of a purge it runs (ADR 0081)
     assert.deepEqual(
       policies.rows.map((row) => [row.cmd, row.roles]),
       [
         ["INSERT", [runtimeRole]],
+        ["INSERT", ["polaris_purge_owner"]],
         ["SELECT", ["polaris_privacy_owner"]],
       ],
       "no policy allows an update or a delete to any role"
@@ -661,7 +663,8 @@ async function run() {
      SELECT l.entity_id, l.organization_id
        FROM public.deletion_ledger AS l
        JOIN public.organizations AS o ON o.id = l.entity_id
-      WHERE l.entity_type = 'organization' AND l.operation = 'purge'`;
+      WHERE l.entity_type = 'organization' AND l.operation = 'purge'
+        AND o.status <> 'purged'`;
     const ours = [tenantA.organizationId, tenantB.organizationId];
     const pending = async (client: {
       query: (sql: string) => Promise<{

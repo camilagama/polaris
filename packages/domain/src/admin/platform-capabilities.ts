@@ -15,6 +15,7 @@ export const PLATFORM_CAPABILITIES = Object.freeze([
   "billing:operate",
   "organization:suspend",
   "privacy_case:manage",
+  "organization:purge",
 ] as const);
 
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];

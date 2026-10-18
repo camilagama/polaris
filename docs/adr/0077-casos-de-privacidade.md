@@ -45,3 +45,7 @@ Pessoas (e donos de organização) pedem acesso, correção, exclusão, portabil
 - **Guardar os dados do solicitante para contato:** cria um novo repositório de dado pessoal só para atender o pedido sobre dado pessoal.
 - **Deixar o Admin executar a anonimização ou o encerramento direto:** abriria uma segunda via de alterar dado de tenant sem a autoridade do dono; hoje o Admin só lê com acesso temporário e registra.
 - **Manter o caso de privacidade aberto e fechado pelas funções genéricas:** um caso poderia ser fechado sem decisão nem trilha.
+
+## Emenda (ADR 0081)
+
+O risco para o purge, apontado nos limites acima, foi tratado mantendo a linha da organização como tombstone: a chave estrangeira restritiva continua válida, e casos, ações e o caso de suporte sobrevivem sem dado pessoal. Os casos não são tocados pelo purge, e o papel de purge (`polaris_purge_owner`) não tem acesso a eles.

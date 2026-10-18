@@ -52,6 +52,7 @@
     "./data-export-repository": "./src/data-export-repository.ts",
     "./deletion-ledger": "./src/deletion-ledger.ts",
     "./export-datasets": "./src/export-datasets.ts",
+    "./purge-datasets": "./src/purge-datasets.ts",
     "./export-reader": "./src/export-reader.ts",
     "./privacy-maintenance": "./src/privacy-maintenance.ts",
     "./inventory-repository": "./src/inventory-repository.ts",

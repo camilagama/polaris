@@ -1530,3 +1530,19 @@ Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.m
 | Gate PostgreSQL 18 | No CI | `deletion-ledger` (suítes `ci` e `gate10`); não rodado localmente (sem PostgreSQL 18 no ambiente). |
 | Retenção | Classe proposta | A classe `deletion_ledger` está no ADR 0079 e no registro de retenção (`proposta`, sem job); a regra vem do ADR 0080 e o prazo final é a confirmar pelo responsável. |
 | Limites | Registrados | O ledger mora no mesmo banco: perda total do banco perde os tombstones posteriores ao último backup (cópia fora do banco: Fase 16); reaplicar é manual; o caso de privacidade ainda não é preenchido pelo comando; o ID opaco é pseudônimo enquanto houver backup antigo. |
+
+### Fase 10G — Privacidade: purge completo da organização encerrada (PR107; ADR 0081)
+
+Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organizacao-encerrada.md), proposto; o número pode mudar). Um ato administrativo agenda o purge de uma organização encerrada; o job horário apaga o armazenamento, depois as linhas do tenant, e deixa a organização como tombstone `purged`.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/full-purge` sobre a `main` depois do PR #125. |
+| Domínio | Concluído | `@polaris/domain/privacy/organization-purge`; registro `ADMIN_TRIGGERED_REMOVALS` (separado de `RETENTION_PURGE_JOBS`); teste que falha se uma classe proposta tiver job. |
+| Banco | Concluído | Migration 0070: `organization_purges`, papel `polaris_purge_owner` (sem login), cinco funções, `admin_schedule_organization_purge`, exceção estreita em dois gatilhos (`CREATE OR REPLACE`), gatilho de `data_export_files` que recusa organização inativa. |
+| Admin | Concluído | `POST /support-cases/{caso}/purge`, capacidade `organization:purge`. |
+| Worker | Concluído | `runOrganizationPurges` no job horário de privacidade; `deleteObjectsUnderPrefix` em `apps/web/src/server/privacy/storage-prefix.ts`. |
+| Gate PostgreSQL 18 | Passou localmente (PostgreSQL 18.1); roda no CI | `organization-purge`. |
+| Verificação local | Ver o PR | Ver o PR |
+| Decisões do responsável | Pendentes | Ver ADR 0081: classes com base legal apagadas, cobrança mantida, substituição das duas funções de gatilho. |
+| Publicação | PR aberto, aguardando revisão | Branch `feat/full-purge`. |

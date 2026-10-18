@@ -80,7 +80,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
      ```
 
      O CHECK `customers_anonymized_scrubbed` recusa um resultado incompleto, e o gatilho de sincronização grava a mudança no log que os aparelhos puxam (como no comando). Este `UPDATE` **não** grava `tenant_audit_event` (a auditoria do tenant é escrita pelo comando, com o ator): registre a reaplicação no registro do incidente. Se o cliente não existe, não há o que fazer.
-   - `organization` / `purge`: se a organização existe no ambiente restaurado, ela precisa ser purgada de novo, pelo processo de purge (PR107; idempotente, inclui o R2 em `exports/v1/{organização}/`, mídia e derivados). Até o PR107 existir, um tombstone desse tipo não é gravado por nada, então não aparece.
+   - `organization` / `purge`: se a organização existe no ambiente restaurado, ela precisa ser purgada de novo, com o procedimento da seção [Reaplicar um purge de organização](#reaplicar-um-purge-de-organização). O purge é idempotente e inclui o R2 em `exports/v1/{organização}/`, mídia e derivados.
 5. **Conferir.** Esta consulta, no ambiente restaurado, deve voltar **vazia** antes de reabri-lo:
 
    ```sql
@@ -94,11 +94,47 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
    SELECT l.entity_id, l.organization_id
      FROM public.deletion_ledger AS l
      JOIN public.organizations AS o ON o.id = l.entity_id
-    WHERE l.entity_type = 'organization' AND l.operation = 'purge';
+    WHERE l.entity_type = 'organization' AND l.operation = 'purge'
+      AND o.status <> 'purged';
    ```
 
-   Vazia significa: nenhum cliente com tombstone continua com dado pessoal e nenhuma organização purgada continua existindo. **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Registre o resultado (sem IDs) e o instante.
+   Vazia significa: nenhum cliente com tombstone continua com dado pessoal, e nenhuma organização com tombstone de purge está fora de `purged` (a linha da organização fica como marca de remoção, então a consulta confere o estado, não a existência). **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Registre o resultado (sem IDs) e o instante.
 6. **Só então** reabrir o ambiente (Workers, cron, sincronização). Aparelhos que sincronizaram com o ambiente anterior podem estar à frente do restaurado: é um limite geral do restore, tratado na Fase 16.
+
+### Reaplicar um purge de organização
+
+Para cada tombstone `organization` / `purge` cuja organização reapareceu no ambiente restaurado (com qualquer status diferente de `purged`), o dono do banco, à mão e antes de reabrir o ambiente, faz as duas instruções numa única transação, trocando os `<…>` pelos valores do tombstone:
+
+```sql
+BEGIN;
+
+UPDATE public.organizations
+   SET status = 'purge_pending'
+ WHERE id = '<ID da organização>' AND status <> 'purged';
+
+INSERT INTO public.organization_purges (organization_id, scheduled_by, support_case_id, privacy_case_id, not_before)
+VALUES ('<ID da organização>', '<quem agendou>', '<caso de suporte>', '<caso de privacidade, ou NULL>', now())
+ON CONFLICT (organization_id) DO UPDATE
+   SET not_before = now(), attempts = 0, locked_until = NULL,
+       last_error_code = NULL, purged_at = NULL, swept_at = NULL;
+
+COMMIT;
+```
+
+- `scheduled_by` e `support_case_id` são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e esses dois valores vêm de um caso de suporte aberto para o restore.
+- Se o agendamento veio de um caso de privacidade, `privacy_case_id` é o mesmo ID do caso de suporte (a tabela recusa outro valor).
+- Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
+
+Depois do `COMMIT`, espere a execução horária do job de privacidade (ou rode o gatilho manual do cron) e confira. Uma organização com exportação em andamento vigente fica para a execução seguinte, como qualquer purge. Confira:
+
+```sql
+SELECT o.status, p.swept_at IS NOT NULL AS varrida
+  FROM public.organization_purges AS p
+  JOIN public.organizations AS o ON o.id = p.organization_id
+ WHERE p.organization_id = '<ID da organização>';
+```
+
+O resultado esperado é `purged` e `varrida` verdadeiro. Além disso, a organização não pode ter linha em nenhuma tabela listada em `PURGE_DELETE_ORDER` (`packages/db/src/purge-datasets.ts`). O R2 não volta com o backup do banco, mas a varredura dos prefixos `exports/v1/{organização}/` e `media/v2/{organização}/` roda mesmo assim, antes e depois de apagar as linhas. Registre o resultado sem IDs.
 
 ## Verificação do procedimento
 

@@ -102,5 +102,6 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0078](adr/0078-exportacao-de-dados-da-organizacao.md) | Exportação de dados da organização: uma cópia a pedido do dono, feita em segundo plano | aceito |
 | [0079](adr/0079-retencao-por-classe-de-dado.md) | Retenção por classe de dado | proposto |
 | [0080](adr/0080-ledger-minimo-de-exclusoes.md) | Ledger mínimo de exclusões para restore | aceito |
+| [0081](adr/0081-purge-completo-da-organizacao-encerrada.md) | Purge completo da organização encerrada | proposto |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

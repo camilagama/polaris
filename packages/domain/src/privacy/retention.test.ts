@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_TRIGGERED_REMOVALS,
   approvedRetention,
   isRetentionClass,
   RETENTION_CLASSES,
@@ -63,6 +64,30 @@ describe("purge jobs", () => {
       "job" in policy && policy.job ? [policy.job] : []
     ).sort();
     expect(RETENTION_PURGE_JOBS.map((job) => job.id).sort()).toEqual(pointed);
+  });
+});
+
+describe("proposed classes", () => {
+  it("have no job and no cron, so nothing expires them on its own", () => {
+    const scheduled = new Set(RETENTION_PURGE_JOBS.map((job) => job.class));
+    for (const policy of RETENTION_POLICIES) {
+      if (policy.status === "proposta") {
+        expect("job" in policy, policy.class).toBe(false);
+        expect(scheduled.has(policy.class), policy.class).toBe(false);
+      }
+    }
+  });
+
+  it("are removed only after an explicit administrative command, never by a job", () => {
+    const scheduledIds = new Set<string>(
+      RETENTION_PURGE_JOBS.map((job) => job.id)
+    );
+    for (const removal of ADMIN_TRIGGERED_REMOVALS) {
+      expect(scheduledIds.has(removal.id)).toBe(false);
+    }
+    expect(ADMIN_TRIGGERED_REMOVALS.map((removal) => removal.class)).toEqual([
+      "closed_organization",
+    ]);
   });
 });
 

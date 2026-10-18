@@ -78,6 +78,11 @@ const gates: Gate[] = [
   ["organization-closure", "verify-organization-closure-gate.ts"],
   ["customer-anonymization", "verify-customer-anonymization-gate.ts"],
   ["deletion-ledger", "verify-deletion-ledger-gate.ts"],
+  // lives in apps/web: it runs the real purge job against the database, with an in-memory bucket
+  [
+    "organization-purge",
+    "../../../apps/web/scripts/verify-organization-purge-gate.ts",
+  ],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -172,6 +177,7 @@ const suites: Record<string, string[]> = {
     "organization-closure",
     "customer-anonymization",
     "deletion-ledger",
+    "organization-purge",
     "media-commands",
     "offline-devices",
     "offline-lease",
@@ -241,6 +247,7 @@ const suites: Record<string, string[]> = {
     "deletion-ledger",
     "privacy-cases",
     "data-export",
+    "organization-purge",
   ],
 };
 

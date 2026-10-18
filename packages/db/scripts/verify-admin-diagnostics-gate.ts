@@ -246,9 +246,24 @@ async function run() {
         "organization_id",
         "phone",
       ],
+      // the end of the recovery window, read before a purge is scheduled (ADR 0081)
+      organization_closures: ["organization_id", "recover_until"],
       platform_principals: ["id", "status"],
     });
     const platformTables = {
+      // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081)
+      organization_purges: [
+        "attempts",
+        "last_error_code",
+        "locked_until",
+        "not_before",
+        "privacy_case_id",
+        "purged_at",
+        "scheduled_at",
+        "scheduled_by",
+        "support_case_id",
+        "swept_at",
+      ],
       platform_audit_events: [] as string[],
       privacy_case_actions: [] as string[],
       privacy_cases: [
@@ -314,6 +329,8 @@ async function run() {
     assert.deepEqual(
       tableLevel.rows.map((row) => row.privilege),
       [
+        "organization_purges:INSERT",
+        "organization_purges:SELECT",
         "platform_audit_events:INSERT",
         "platform_audit_events:SELECT",
         "privacy_case_actions:INSERT",
@@ -357,6 +374,7 @@ async function run() {
       ),
       memberships: ["SELECT", "UPDATE"],
       offline_grants: ["SELECT", "UPDATE"],
+      organization_purges: ["INSERT", "SELECT", "UPDATE"],
       organizations: ["SELECT", "UPDATE"],
       platform_audit_events: ["INSERT", "SELECT"],
       privacy_case_actions: ["INSERT", "SELECT"],
@@ -390,6 +408,7 @@ async function run() {
         "admin_reactivate_organization",
         "admin_reveal_customer_field",
         "admin_revoke_tenant_access",
+        "admin_schedule_organization_purge",
         "admin_support_case_detail",
         "admin_suspend_organization",
         "admin_tenant_customers",

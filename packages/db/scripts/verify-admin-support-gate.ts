@@ -65,6 +65,7 @@ const ADMIN_FUNCTIONS = [
   "admin_reactivate_organization",
   "admin_reveal_customer_field",
   "admin_revoke_tenant_access",
+  "admin_schedule_organization_purge",
   "admin_support_case_detail",
   "admin_suspend_organization",
   "admin_tenant_customers",
