@@ -339,6 +339,12 @@ const ignoredCode: Record<IgnoredFactReason, string> = {
   stale: "stale",
 };
 
+const referenceRequiredFacts: ReadonlySet<BillingFact["type"]> = new Set([
+  "charge_refunded",
+  "charge_disputed",
+  "dispute_reversed",
+]);
+
 async function resolveOrganization(
   client: PoolClient,
   row: EventRow
@@ -419,11 +425,20 @@ async function processInTransaction(
   const row = await lockRecord(client, organizationId);
   const before = toRecord(row);
   // A fact from another subscription than the one attached (an old checkout, a
-  // subscription since replaced) must not change this record.
+  // subscription since replaced) must not change this record. A refund, a
+  // chargeback or the reversal of one takes access away or gives it back, so it
+  // must name the attached subscription (ADR 0066): without a reference, or with
+  // a record that has no subscription attached, it has no effect.
+  const takesMoney = referenceRequiredFacts.has(fact.type);
   if (
-    event.provider_ref &&
-    row.provider !== null &&
-    (row.provider !== event.provider || row.provider_ref !== event.provider_ref)
+    (takesMoney &&
+      (!event.provider_ref ||
+        row.provider !== event.provider ||
+        row.provider_ref !== event.provider_ref)) ||
+    (event.provider_ref &&
+      row.provider !== null &&
+      (row.provider !== event.provider ||
+        row.provider_ref !== event.provider_ref))
   ) {
     await finishEvent(
       client,

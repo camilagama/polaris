@@ -894,6 +894,84 @@ async function run() {
       "a full refund of the current period ends the paid access at once and is remembered, a redelivery is one effect, a repeat is not applicable, the refunded payment's own late confirmation never revives the access, and a later payment does and forgets it"
     );
 
+    // a refund, a chargeback or a reversal must name the attached subscription
+    const referenced = await subscribed(
+      "lifecycle reference",
+      "sub_REF1",
+      succeeded(at(0), at(30), 6)
+    );
+    const other = await subscribed(
+      "lifecycle reference other",
+      "sub_REF2",
+      succeeded(at(0), at(30), 6)
+    );
+    const unattached = await newTenant("lifecycle reference unattached");
+    for (const type of [
+      "charge_refunded",
+      "charge_disputed",
+      "dispute_reversed",
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: Facts, in order, on one record.
+      const withoutReference = await apply(
+        "fake",
+        `evt-REF1-${type}-none`,
+        taken(type, at(2), at(30)),
+        { organizationId: referenced.organizationId },
+        at(2)
+      );
+      assert.equal(withoutReference.status, "ignored", type);
+      assert.equal(withoutReference.outcomeCode, "reference_mismatch", type);
+      const otherReference = await apply(
+        "fake",
+        `evt-REF1-${type}-other`,
+        taken(type, at(2), at(30)),
+        { organizationId: referenced.organizationId, providerRef: "sub_REF2" },
+        at(2)
+      );
+      assert.equal(otherReference.status, "ignored", type);
+      assert.equal(otherReference.outcomeCode, "reference_mismatch", type);
+      const noSubscription = await apply(
+        "fake",
+        `evt-REF1-${type}-unattached`,
+        taken(type, at(2), at(30)),
+        { organizationId: unattached.organizationId, providerRef: "sub_REF1" },
+        at(2)
+      );
+      assert.equal(noSubscription.status, "ignored", type);
+      assert.equal(noSubscription.outcomeCode, "reference_mismatch", type);
+    }
+    for (const tenant of [referenced, other]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Two reads, in order.
+      const untouched = await billing.readRecord(tenant.organizationId);
+      assert.equal(untouched?.state, "active");
+      assert.equal(untouched?.revoked, null);
+    }
+    const unattachedRecord = await billing.readRecord(
+      unattached.organizationId
+    );
+    assert.equal(unattachedRecord?.revoked ?? null, null);
+    assert.equal(unattachedRecord?.state ?? "free", "free");
+    // the matching reference still takes the access back
+    const matching = await apply(
+      "fake",
+      "evt-REF1-refund-ok",
+      taken("charge_refunded", at(3), at(30)),
+      { organizationId: referenced.organizationId, providerRef: "sub_REF1" },
+      at(3)
+    );
+    assert.equal(matching.status, "applied");
+    assert.equal(
+      (await billing.readRecord(referenced.organizationId))?.state,
+      "free"
+    );
+    assert.equal(
+      (await billing.readRecord(other.organizationId))?.state,
+      "active"
+    );
+    tests.push(
+      "a refund, a chargeback or a reversal without a subscription reference, with another subscription's reference, or for a record with no subscription attached changes nothing, and the matching reference still applies"
+    );
+
     // an earlier period's refund changes nothing; money facts are never stale
     const renewal = await subscribed(
       "lifecycle refund old",
