@@ -1502,3 +1502,16 @@ Quarto passo da Fase 10 ([ADR 0078](../docs/adr/0078-exportacao-de-dados-da-orga
 | Revisão independente | Concluída | Sem vazamento entre organizações nem injeção. Achados tratados: o teto de memória contava só o JSON e guardava as linhas como objetos (agora só texto, teto de 16 MiB e os dados soltos antes das imagens), pedir só imagens ou só CSV lia e media tudo em JSON (agora só o pedido), teto de 400 imagens por causa das chamadas externas por execução, a segunda exportação só começa com folga de tempo, falha ao registrar falha não derruba o laço, as datas saíam no texto cru do banco (agora ISO 8601 em UTC), `HEAD` não roda o download. Registrados nos limites do ADR: execução morta vira abandono sem evento de auditoria, funções sem conferir a tentativa, pedido `requested` parado, contagem de chamadas a medir na conta. |
 | Suíte completa em Neon | Parcial | O gate novo e os afetados rodaram (`data-export`, `organization-closure`, `customer-anonymization`, `privacy-cases`, `platform-principals`, `admin-diagnostics`, `admin-support`, `admin-suspension`, `review-hardening`; política do ADR 0025); a suíte completa da Fase 10 roda ao entregar o último PR da fase. |
 | Limites | Registrados | Não é imediata (job horário); sem aviso por e-mail nem tela; a trilha de auditoria, cobrança, sincronização e membros não entram; organizações com mais de 16 MiB de dados ou 400 imagens falham (`export_too_large`); miniaturas derivadas não entram; o arquivo baixado fica com quem baixou. |
+
+### Fase 10E — Privacidade: retenção por classe (PR105; implementação e verificações locais concluídas; gates de banco no CI)
+
+Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md), proposto; o número pode mudar).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 19 classes com origem, regra, fontes e estado; só as duas de mídia estão aprovadas, com prazo e job (o cron existente); as constantes do reconciliador vêm do registro. |
+| Jobs de expurgo | Nenhum novo | As classes aprovadas com prazo já tinham job; as demais ficam propostas, sem job, até a decisão do responsável. |
+| HMAC do `payload_hash` | Concluído | `SYNC_PAYLOAD_HASH_SECRET` (503 sem ele); reenvio compara também o SHA-256 legado e o segredo anterior. Sem migration. O segredo não foi criado em nenhum ambiente. |
+| Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
+| Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
+| Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até a retenção do log ser aprovada; prazos legais a confirmar pelo responsável. |

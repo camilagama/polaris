@@ -4371,6 +4371,8 @@ Não hardcode “5 anos em tudo”.
 
 Criar jobs somente onde política estiver aprovada.
 
+Feito no [ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md) (proposto): registro `@polaris/domain/privacy/retention`; nenhum job novo (as classes aprovadas com prazo, de mídia, já têm o cron); as demais classes ficam propostas até o responsável decidir os prazos. As duas pendências abaixo foram tratadas ali: HMAC com `SYNC_PAYLOAD_HASH_SECRET` (linhas antigas mantêm o SHA-256 até existir a retenção do log) e descarte no aparelho da edição recusada com `customer_anonymized`.
+
 
 
 Pendências herdadas do PR102 (anonimização de cliente, [ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)), a tratar aqui ou ao definir a retenção do log de comandos offline:

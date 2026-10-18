@@ -5,6 +5,7 @@ import type {
 } from "@polaris/db/sync-command-repository";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it, vi } from "vitest";
+import { canonicalJson, sha256Hex } from "../../lib/canonical-json";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import {
   InvalidSyncPayloadError,
@@ -17,6 +18,7 @@ const lastCharacter = /.$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const key = { id: "k1", secret: "s".repeat(40) };
 const keys = { signing: key, verification: [key] };
+const hashKeys = { current: "h".repeat(32), previous: [] };
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
 const issuedAt = new Date("2026-10-14T12:00:00.000Z");
 const expiresAt = new Date(issuedAt.getTime() + 72 * 3_600_000);
@@ -128,6 +130,7 @@ function dependencies(
 ) {
   return {
     handlers,
+    hashKeys,
     keys,
     now: () => now,
     runSyncCommand: run,
@@ -305,6 +308,11 @@ describe("pushCommands", () => {
     expect(execute).not.toHaveBeenCalled();
     // identified by its length, not by canonicalizing 300 KB
     expect(calls[0]?.input.payloadHash).toMatch(sha256Pattern);
+    const sentinel = await sha256Hex(
+      `oversized:customer.create:${JSON.stringify(huge).length}`
+    );
+    expect(calls[0]?.input.payloadHash).not.toBe(sentinel);
+    expect(calls[0]?.input.equivalentPayloadHashes).toEqual([sentinel]);
     const small = await pushCommands(
       [await command(2, { payload: { name: "y".repeat(1000) } })],
       dependencies(frame(() => accepted).run, [value])
@@ -334,6 +342,23 @@ describe("pushCommands", () => {
     expect(hashes[1]).toBe(hashes[0]);
     expect(hashes[2]).not.toBe(hashes[0]);
     expect(hashes[3]).not.toBe(hashes[0]);
+  });
+
+  it("stores a keyed hash and hands the older forms of the same content for comparison", async () => {
+    const { value } = handler();
+    const { calls, run } = frame(() => accepted);
+    const sent = await command(1, { payload: { name: "Ana" } });
+    await pushCommands([sent], dependencies(run, [value]));
+    const plain = await sha256Hex(
+      canonicalJson({
+        baseVersion: sent.baseVersion,
+        payload: sent.payload,
+        type: sent.type,
+      })
+    );
+    expect(calls[0]?.input.payloadHash).toMatch(sha256Pattern);
+    expect(calls[0]?.input.payloadHash).not.toBe(plain);
+    expect(calls[0]?.input.equivalentPayloadHashes).toEqual([plain]);
   });
 
   it("hands expected domain failures to the handler's classifier", async () => {

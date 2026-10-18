@@ -22,6 +22,11 @@ import type { Outbox } from "./outbox/outbox";
  * 3. if anything was accepted, the local collections are caught up from the
  *    change log, which replaces optimistic rows with the server's.
  *
+ * One refusal is not kept for the person: an edit of a customer the owner
+ * removed from the register for privacy (`customer_anonymized`). Nothing can be
+ * done with it, and keeping it would keep the typed name, phone and email on
+ * the device, so it is dropped and the queue goes on (ADR 0079).
+ *
  * A request that fails (no network, server down) puts the batch back to waiting
  * and throws: the same commands, with the same IDs, go out next time, and the
  * server replays what it already did. Sending twice is always safe.
@@ -63,6 +68,8 @@ export interface SyncOutboxSummary {
   acceptedCommands: AcceptedCommand[];
   /** The command that now blocks the queue, if a rejection did. */
   blockedBy: OutboxCommand | null;
+  /** Commands dropped because their content may no longer be kept (an anonymized customer). */
+  discarded: number;
   notProcessed: number;
   rejected: number;
   replayed: number;
@@ -96,6 +103,29 @@ async function waitingHead(
   return batch;
 }
 
+/** A refusal after which the command's content must not stay on the device. */
+function dropsContent(command: OutboxCommand, code: string | null): boolean {
+  return command.type === "customer.update" && code === "customer_anonymized";
+}
+
+/** Drops what an earlier version kept refused for the same reason. */
+async function dropStaleRefusals(
+  outbox: Outbox,
+  summary: SyncOutboxSummary
+): Promise<void> {
+  const { commands } = await outbox.snapshot();
+  for (const command of commands) {
+    if (
+      command.status === "rejected" &&
+      dropsContent(command, command.rejection?.code ?? null)
+    ) {
+      // biome-ignore lint/performance/noAwaitInLoops: each removal is its own transaction
+      await outbox.discard(command.commandId);
+      summary.discarded += 1;
+    }
+  }
+}
+
 async function putBack(outbox: Outbox, batch: OutboxCommand[]): Promise<void> {
   for (const command of batch) {
     // biome-ignore lint/performance/noAwaitInLoops: each command is restored in order
@@ -111,6 +141,9 @@ async function applyResults(
   summary: SyncOutboxSummary
 ): Promise<boolean> {
   let stop = false;
+  // After a dropped command the server stopped the batch, but nothing is left
+  // to block it: the rest goes back to waiting and is sent next.
+  let dropped = false;
   for (const command of batch) {
     const result = byId.get(command.commandId);
     if (result?.status === "accepted") {
@@ -123,6 +156,13 @@ async function applyResults(
         type: command.type,
       });
       summary.replayed += result.replayed ? 1 : 0;
+    } else if (
+      result?.status === "rejected" &&
+      dropsContent(command, result.code)
+    ) {
+      await outbox.discard(command.commandId);
+      summary.discarded += 1;
+      dropped = true;
     } else if (result?.status === "rejected") {
       await outbox.reject(command.commandId, result.code ?? "rejected");
       summary.rejected += 1;
@@ -130,7 +170,7 @@ async function applyResults(
     } else {
       await outbox.retry(command.commandId);
       summary.notProcessed += 1;
-      stop = true;
+      stop = stop || !dropped;
     }
   }
   return stop;
@@ -163,11 +203,13 @@ export async function syncOutbox(
     accepted: 0,
     acceptedCommands: [],
     blockedBy: null,
+    discarded: 0,
     notProcessed: 0,
     rejected: 0,
     replayed: 0,
     requests: 0,
   };
+  await dropStaleRefusals(outbox, summary);
 
   for (;;) {
     // biome-ignore lint/performance/noAwaitInLoops: batches are sent strictly in order
@@ -198,7 +240,8 @@ export async function syncOutbox(
   }
 
   summary.blockedBy = (await outbox.snapshot()).blockedBy;
-  if (summary.accepted > 0 && request.pull) {
+  // A dropped edit leaves the local customer row behind the server's anonymized one.
+  if ((summary.accepted > 0 || summary.discarded > 0) && request.pull) {
     await catchUp(request.pull, request.now);
   }
   return summary;

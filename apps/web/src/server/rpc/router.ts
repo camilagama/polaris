@@ -270,6 +270,7 @@ import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
 import type { PublicCatalogRepository } from "./public-catalog-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
+import { SyncPayloadHashUnavailableError } from "../sync/payload-hash";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -609,7 +610,10 @@ function toRpcError(error: unknown): never {
     throw new ORPCError("FORBIDDEN", { cause: error });
   }
 
-  if (error instanceof OfflineLeaseUnavailableError) {
+  if (
+    error instanceof OfflineLeaseUnavailableError ||
+    error instanceof SyncPayloadHashUnavailableError
+  ) {
     throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
   }
 

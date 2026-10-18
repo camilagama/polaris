@@ -34,6 +34,7 @@
     "./privacy/csv": "./src/privacy/csv.ts",
     "./privacy/data-export": "./src/privacy/data-export.ts",
     "./privacy/zip": "./src/privacy/zip.ts",
+    "./privacy/retention": "./src/privacy/retention.ts",
     "./offline/offline-grant": "./src/offline/offline-grant.ts",
     "./offline/offline-lease": "./src/offline/offline-lease.ts",
     "./sales/confirm-sale": "./src/sales/confirm-sale.ts",

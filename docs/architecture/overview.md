@@ -37,7 +37,7 @@ Better Auth é responsável por identidade, credenciais e sessões; organizaçã
 
 ## Auditoria
 
-Mutações tenant críticas escrevem `tenant_audit_event` na mesma transação da mutação, usando a identidade já autorizada ([ADR 0006](../adr/0006-audit-events-tenant.md)). O runtime só pode inserir eventos e não pode consultá-los ou alterá-los nesta etapa; payload livre e snapshots não são armazenados. A política de retenção continua pendente para go-live, e a purga física da organização remove seus eventos.
+Mutações tenant críticas escrevem `tenant_audit_event` na mesma transação da mutação, usando a identidade já autorizada ([ADR 0006](../adr/0006-audit-events-tenant.md)). O runtime só pode inserir eventos e não pode consultá-los ou alterá-los nesta etapa; payload livre e snapshots não são armazenados. Não há expiração automática; o prazo legal da retenção continua pendente para go-live ([ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)), e a purga física da organização remove seus eventos.
 
 ## Estoque e vendas
 
@@ -48,6 +48,10 @@ Despesas são lançamentos por competência com categoria da organização, anul
 ## Operação offline
 
 Mutations offline usam commands idempotentes e versionados. O servidor valida cada command e permanece autoritativo; command pendente local ainda não é venda aceita ([ADR 0003](../adr/0003-offline-command-protocol.md)). A persistência local escolhida é TanStack DB com SQLite WASM em OPFS para as coleções e IndexedDB para o outbox, com Dexie como fallback; a escolha, os riscos e as condições estão no [ADR 0015](../adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md). O protocolo de sync não depende da escolha de storage. A Fase 5 do plano ainda não foi iniciada.
+
+## Retenção
+
+Cada classe de dado tem uma política declarada num registro único e tipado, `@polaris/domain/privacy/retention`: o que cobre, a origem (lei, contrato ou decisão), a regra, as fontes e o estado (`aprovada` ou `proposta`). Por convenção, só uma política aprovada com prazo tem job de expurgo, e o código que expira dado lê o prazo do registro (`approvedRetention`, que recusa classe não aprovada), nunca de uma constante própria. Hoje as classes aprovadas com prazo são as de mídia (markers de envio e imagens removidas), atendidas pelo cron horário; as demais estão propostas, sem job. O `payload_hash` do log de comandos offline é um HMAC com segredo do Worker; as linhas gravadas antes guardam o SHA-256 sem sal até existir a retenção do log ([ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)).
 
 ## Infraestrutura posterior
 
