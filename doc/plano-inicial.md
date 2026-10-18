@@ -4636,6 +4636,9 @@ Adicionar Cloudflare Workflows somente para:
 Não mover billing canonical state para Workflow.
 
 
+> **Nota de escopo ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md)):** o PR113 não adiciona nenhum Workflow. No Workers Free um step de Workflow tem 10 ms de CPU (o consumidor da fila tem 30 s por padrão, a medir no Free), então a exportação continua no consumidor da fila, que já retoma pelo banco; o purge (PR107, à espera do aceite do responsável) segue o agendador e, se não couber no cron, a fila; cobrança fica no banco. Um teste impede binding de Workflow sem um ADR que emende o 0088.
+
+
 
 ---
 

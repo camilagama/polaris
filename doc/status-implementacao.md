@@ -1620,3 +1620,16 @@ Quinto passo da Fase 11 ([ADR 0086](../docs/adr/0086-framework-de-jobs-agendados
 | Cleanup | Só o aprovado | Os quatro expurgos existentes rodam pelo agendador; nenhum job para classe em `proposta` (o teste da retenção e o do registro garantem); expurgo dos `dispatched` e dos incidentes espera o prazo do responsável. |
 | Gate PostgreSQL 18 | Local e CI | `scheduled-jobs` (suítes `ci` e `gate11`), novo. |
 | Limites | Registrados | Nada criado nem medido em nuvem (CPU dos ticks, em especial a pista `maintenance`, que abre uma conexão a mais); cadência horária (decisão de custo); sem tela de estado no Admin. |
+
+### Fase 11F — Workflows (PR113; decisão sem Workflow; nada criado na conta Cloudflare)
+
+Sexto passo da Fase 11 ([ADR 0088](../docs/adr/0088-workflows-so-quando-necessario.md); o número pode mudar): nenhum Cloudflare Workflow por ora.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Limites | Conferidos | Documentação da Cloudflare de 18/10/2026: Workflows existe no Free, com 10 ms de CPU por step, 3.000 steps por dia e 100 MB de estado por instância; o consumidor da fila tem 30 s de CPU por padrão pela página do Queues (ambígua para o Free, como o ADR 0084 registrou; não medido). Um step nunca tem mais CPU que o consumidor. Nenhum custo criado. |
+| Exportação | Sem Workflow | Continua no consumidor da fila (ADR 0084): montar o ZIP não cabe em 10 ms, e a retomada, a idempotência e o recuo já são do banco. |
+| Purge | Sem Workflow | Não tocado (PR #126, à espera do POL-81). Quando entrar: job do agendador e, se não couber no cron, a fila; o estado fica em `organization_purges`. |
+| Cobrança | Fora | O estado canônico continua no banco. |
+| Guarda | Concluída | Teste em `apps/web/worker/index.test.ts`: nenhum `wrangler.jsonc` declara `workflows` sem um ADR que emende o 0088. |
+| Limites | Registrados | Números da documentação, não medidos na conta; não está documentado se o Hyperdrive conta como subrequisição externa no Free. |
