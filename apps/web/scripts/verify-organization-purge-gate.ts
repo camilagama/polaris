@@ -7,11 +7,13 @@ import {
   openPrivacyCase,
   openSupportCase,
   placeOrganizationLegalHold,
+  recordPrivacyAction,
   recordPrivacyDecision,
   recordPrivacyIdentity,
   recordPrivacyRole,
   recordPrivacyScope,
   releaseOrganizationLegalHold,
+  resolvePrivacyCase,
   revokeTenantAccess,
   scheduleOrganizationPurge,
 } from "@polaris/db/admin-support-repository";
@@ -151,8 +153,10 @@ function expectBillingAnonymized(before: BillingRow[], after: BillingRow[]) {
     assert.equal(row.fact_type, earlier.fact_type);
     assert.equal(row.occurred_at, earlier.occurred_at);
     const kept = Object.fromEntries(
-      Object.entries(earlier.fact).filter(([key]) =>
-        (PURGE_BILLING_FACT_KEYS as readonly string[]).includes(key)
+      Object.entries(earlier.fact).filter(
+        ([key, value]) =>
+          (PURGE_BILLING_FACT_KEYS as readonly string[]).includes(key) &&
+          ["boolean", "number", "string"].includes(typeof value)
       )
     );
     assert.deepEqual(row.fact, kept, "the fact keeps what the lifecycle wrote");
@@ -596,6 +600,8 @@ async function run() {
       // a charge whose fact carries the payer (a provider adapter that let it through), and a command without
       const billingFact = {
         ...PAYER_FACT,
+        // a kept key whose value is not a plain value goes too (a nested payer)
+        transition: { payer: PAYER_FACT.customerName },
         cycleMonths: 1,
         occurredAt: "2026-09-01T12:00:00.000Z",
         periodEndsAt: "2026-10-01T12:00:00.000Z",
@@ -949,10 +955,12 @@ async function run() {
     assert.deepEqual(await legalHold("place", target.organizationId), {
       changed: true,
       held: true,
+      storageTouched: false,
     });
     assert.deepEqual(await legalHold("place", target.organizationId), {
       changed: false,
       held: true,
+      storageTouched: false,
     });
     await expectRefusal(
       privacyCase.id,
@@ -2104,6 +2112,49 @@ async function run() {
     );
     tests.push(
       "after a restore brings the organization back, the runbook's check shows it and its reapplication purges it again, with one tombstone (the closure went with the first purge: the tombstone proves the 30 days were over)"
+    );
+
+    // after the purge, what the Admin writes in a case of the organization keeps no free text either: the
+    // deletion case is carried out and resolved with a resolution, and a new case is opened and closed
+    await recordPrivacyAction(admin, principal, privacyCase.id, {
+      action: "purge_scheduled",
+      entityId: null,
+    });
+    await resolvePrivacyCase(admin, principal, privacyCase.id, CASE_TEXT);
+    const lateCase = await openSupportCase(admin, principal, {
+      context: CASE_TEXT,
+      kind: "support",
+      organizationId: target.organizationId,
+      reason: `Retorno de ${CASE_TEXT}`,
+    });
+    assert.ok(lateCase);
+    await closeSupportCase(admin, principal, lateCase.id, CASE_TEXT);
+    const lateTexts = await owner.pool.query<{
+      context: string | null;
+      reason: string;
+      resolution: string | null;
+    }>(
+      "SELECT DISTINCT reason, context, resolution FROM public.support_cases WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    assert.deepEqual(lateTexts.rows, [
+      { context: null, reason: PURGE_REMOVED_TEXT, resolution: null },
+    ]);
+    const latePrivacy = await owner.pool.query<{
+      decision_note: string | null;
+      note: string | null;
+      stage: string;
+    }>(
+      "SELECT stage, note, decision_note FROM public.privacy_cases WHERE support_case_id = $1",
+      [privacyCase.id]
+    );
+    assert.deepEqual(latePrivacy.rows[0], {
+      decision_note: null,
+      note: null,
+      stage: "resolved",
+    });
+    tests.push(
+      "after the purge, a case of the organization that is resolved, opened or closed keeps no free text: the reason is the fixed text, the context, the resolution and the notes are empty"
     );
 
     // the append-only rules hold for everyone else

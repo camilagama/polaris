@@ -63,6 +63,3 @@ Os prazos das classes propostas são propostas deste ADR; os legais estão marca
 - **Apagar o log de comandos já agora:** o prazo não está aprovado e, sem a recusa de comando antigo, um reenvio rodaria duas vezes.
 - **Marcar a edição recusada como indisponível (como antes):** deixava o dado pessoal no aparelho sem que houvesse algo a fazer com ele.
 
-## Nota sobre a comparação do HMAC
-
-A comparação do `payload_hash` em `isSameContent` (`packages/db/src/sync-command-repository.ts`) usa igualdade comum, não comparação de tempo constante, e isso é intencional. O hash não autentica nada nem é uma credencial: os dois lados comparados são calculados no servidor, o HMAC do payload que o próprio aparelho autenticado enviou e o valor guardado na linha. O resultado da comparação já é devolvido explicitamente ao chamador (`replayed` ou `command_id_reused`), então um canal de tempo não revelaria nada além do que a resposta já diz. Além disso, o segredo não participa da comparação, e por isso não há como extrair o segredo pelo tempo. Tempo constante só seria necessário se um valor secreto fosse verificado contra uma entrada controlada pelo atacante sem que o resultado fosse revelado.

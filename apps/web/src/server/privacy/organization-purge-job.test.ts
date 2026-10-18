@@ -150,9 +150,13 @@ describe("runOrganizationPurges", () => {
 
     await ctx.run();
 
+    // once before the exports, then before the images and before the sweep of their prefix (no asset here)
     expect(
       ctx.client.markOrganizationPurgeStorageTouched
-    ).toHaveBeenCalledExactlyOnceWith(orgA);
+    ).toHaveBeenCalledTimes(3);
+    expect(ctx.client.markOrganizationPurgeStorageTouched).toHaveBeenCalledWith(
+      orgA
+    );
     expect(
       ctx.client.markOrganizationPurgeStorageTouched.mock.invocationCallOrder[0]
     ).toBeLessThan(ctx.bucket.list.mock.invocationCallOrder[0] ?? 0);
@@ -179,6 +183,37 @@ describe("runOrganizationPurges", () => {
     expect(ctx.client.recordOrganizationPurgeFailure).toHaveBeenCalledWith(
       orgA,
       "purge_mark_storage_failed"
+    );
+  });
+
+  it("asks again before every removal of images, and stops when a legal hold came in meanwhile", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let marks = 0;
+    const ctx = fixture({
+      markTouched: () => {
+        marks += 1;
+        // the first mark passes; then the operator places a legal hold
+        return marks === 1
+          ? Promise.resolve()
+          : Promise.reject(new Error("legal_hold_active"));
+      },
+      media: {
+        [orgA]: [{ id: assetA, storageKey: `${mediaA}${assetA}.jpg` }],
+      },
+    });
+    seed(ctx.objects, [`${exportsA}e1/data.json`, `${mediaA}${assetA}.jpg`]);
+
+    const report = await ctx.run();
+
+    expect(report).toEqual({ failed: 1, purged: 0, swept: 0 });
+    // the exports went before the hold; no image did, and the rows stay
+    expect(ctx.objects.has(`${mediaA}${assetA}.jpg`)).toBe(true);
+    expect(ctx.objects.has(`${exportsA}e1/data.json`)).toBe(false);
+    expect(ctx.client.purgeOrganizationData).not.toHaveBeenCalled();
+    // the refusal is written by its name, so the operator reads why the purge waits
+    expect(ctx.client.recordOrganizationPurgeFailure).toHaveBeenCalledWith(
+      orgA,
+      "legal_hold_active"
     );
   });
 

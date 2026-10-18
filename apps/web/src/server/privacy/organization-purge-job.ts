@@ -51,11 +51,13 @@ const DELETE_BATCH = 1000;
  * Every image of the organization: the master, its derivatives (whose keys carry only the asset) and
  * the masters' prefix. Keys go in batches, so a few thousand images are a handful of calls. A master
  * key outside the organization's prefix stops the step: the purge never removes another
- * organization's object.
+ * organization's object. Before each batch the run asks the database again whether it may go on
+ * (`stillAllowed`): a legal hold placed meanwhile, or a lease lost, stops it before the next removal.
  */
 async function removeMedia(
   organizationId: string,
-  { bucket, client }: OrganizationPurgeJobDependencies
+  { bucket, client }: OrganizationPurgeJobDependencies,
+  stillAllowed: () => Promise<void>
 ): Promise<void> {
   const prefix = organizationMediaPrefix(organizationId);
   const assets = await client.listOrganizationPurgeMedia(organizationId);
@@ -73,9 +75,11 @@ async function removeMedia(
   }
   for (let start = 0; start < keys.length; start += DELETE_BATCH) {
     // biome-ignore lint/performance/noAwaitInLoops: one batch at a time keeps the run's external calls bounded.
+    await stillAllowed();
     await bucket.delete(keys.slice(start, start + DELETE_BATCH));
   }
   // a master whose asset row was never written (an upload that stopped) is found by its prefix
+  await stillAllowed();
   await deleteObjectsUnderPrefix(bucket, prefix);
 }
 
@@ -96,6 +100,19 @@ async function sweep(
   if (late > 0) {
     console.warn("organization_purge_sweep_removed", { objects: late });
   }
+}
+
+/** The refusals the database names, written as they are: the operator reads why the purge waits. */
+const NAMED_REFUSALS = new Set([
+  "closure_period_not_elapsed",
+  "legal_hold_active",
+]);
+
+/** The code written for a failed step: a named refusal, or the step (never the error's message). */
+function failureCode(step: PurgeStep, error: unknown): string {
+  return error instanceof Error && NAMED_REFUSALS.has(error.message)
+    ? error.message
+    : `purge_${step}_failed`;
 }
 
 /**
@@ -124,7 +141,12 @@ async function purgeOne(
         organizationExportPrefix(organizationId)
       );
       step = "media_storage";
-      await removeMedia(organizationId, dependencies);
+      // the mark is idempotent and checks the legal hold, the closure period and the lease again: asked
+      // before every removal, a hold placed while the run deletes stops it at the next batch
+      const stillAllowed = () =>
+        client.markOrganizationPurgeStorageTouched(organizationId);
+      await stillAllowed();
+      await removeMedia(organizationId, dependencies, stillAllowed);
       step = "database";
       await client.purgeOrganizationData(organizationId);
       report.purged += 1;
@@ -134,7 +156,7 @@ async function purgeOne(
     if (await client.completeOrganizationPurgeSweep(organizationId)) {
       report.swept += 1;
     }
-  } catch {
+  } catch (error: unknown) {
     report.failed += 1;
     // the organization's ID is opaque; nothing of the error (which may quote a key) is logged
     console.warn("organization_purge_step_failed", {
@@ -144,7 +166,7 @@ async function purgeOne(
     });
     // the purge stays held until its lease ends, so this run does not take it again; recording can fail too
     await client
-      .recordOrganizationPurgeFailure(organizationId, `purge_${step}_failed`)
+      .recordOrganizationPurgeFailure(organizationId, failureCode(step, error))
       .catch(() => {
         console.warn("organization_purge_failure_not_recorded", {
           organizationId,

@@ -103,6 +103,8 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
 ### Reaplicar um purge de organização
 
+**Antes, as travas legais.** As travas legais (`organization_legal_holds`) também não voltam com o backup: uma trava posta depois do instante do backup some no ambiente restaurado, e o purge reaplicado rodaria sob ela. Junto da leitura do passo 1, leia no ambiente **que será substituído** as travas vigentes (`SELECT organization_id, support_case_id, placed_by, placed_at FROM public.organization_legal_holds WHERE released_at IS NULL`) e, no restaurado, antes de reaplicar qualquer purge, recoloque pelo Admin (`POST /support-cases/{caso}/legal-hold`) cada trava que não estiver lá. Na conferência, nenhuma organização com trava vigente na origem pode estar em `purge_pending` sem trava no restaurado. Registre o resultado sem IDs.
+
 Para cada tombstone `organization` / `purge` cuja organização reapareceu no ambiente restaurado (com qualquer status diferente de `purged`), o dono do banco, à mão e antes de reabrir o ambiente, faz as duas instruções numa única transação, trocando os `<…>` pelos valores do tombstone:
 
 ```sql
@@ -123,7 +125,7 @@ COMMIT;
 
 - `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger` (todo purge nasce de um caso de privacidade de exclusão, ADR 0081).
 - `storage_touched_at` vai preenchido de propósito: o tombstone só existe porque o purge original já apagou o R2, então o purge reaplicado não pode ser cancelado (a função de cancelamento recusa com `purge_storage_touched`) e deixar a organização `closed` com mídia e exportações que apontam para objetos que não existem mais.
-- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois.
+- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois. Se o caso de privacidade foi aberto depois do instante do backup, ele não existe no ambiente restaurado e o `INSERT` falha pela chave estrangeira: pare, não reabra o ambiente e acione o responsável (recriar o caso é decisão dele, com o registro do atendimento original).
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
 - O purge reaplicado também refaz a anonimização da cobrança (o `fact` de `billing_events`, só com as chaves de `PURGE_BILLING_FACT_KEYS`) e a troca do texto livre dos casos de suporte e de privacidade e dos cancelamentos. Isso acontece no job de privacidade, na mesma transação das linhas; não há passo SQL à parte para isso.
 - A trava dos 30 dias não impede a reaplicação. O tombstone `organization`/`purge` já está no ledger (o passo 3 o recoloca), e o purge confere o prazo por ele, não pela data de encerramento do backup, que pode não ter voltado.

@@ -346,6 +346,9 @@ BEGIN
      ) THEN
     RETURN NEW;
   END IF;
+  IF current_user = 'polaris_purge_owner' THEN
+    RAISE EXCEPTION 'the purge only takes the free text out of a case' USING ERRCODE = '23514';
+  END IF;
   IF OLD.status = 'closed' THEN
     RAISE EXCEPTION 'a closed support case cannot change'
       USING ERRCODE = '23514';
@@ -375,6 +378,9 @@ BEGIN
      ) THEN
     RETURN NEW;
   END IF;
+  IF current_user = 'polaris_purge_owner' THEN
+    RAISE EXCEPTION 'the purge only takes the free text out of a case' USING ERRCODE = '23514';
+  END IF;
   IF OLD.stage = 'resolved' THEN
     RAISE EXCEPTION 'a resolved privacy case cannot change' USING ERRCODE = '23514';
   END IF;
@@ -402,6 +408,53 @@ BEGIN
   RETURN NEW;
 END;
 $function$;--> statement-breakpoint
+-- After the purge, free text written in a case of the organization is not kept either (decision of 18/10/2026,
+-- ADR 0081): the privacy case that started the purge is resolved after it, with a resolution, and a case can be
+-- opened or closed on a purged organization. Whatever the Admin writes there, the row keeps only the record of
+-- the case: the reason becomes the fixed text, the context, the resolution and the notes go. These run after the
+-- guards (by name), as the role that writes the case.
+CREATE FUNCTION public.support_cases_no_text_after_purge()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.organizations AS purged_scope
+     WHERE purged_scope.id = NEW.organization_id AND purged_scope.status = 'purged'
+  ) THEN
+    NEW.reason := 'Texto removido pelo purge da organização.';
+    NEW.context := NULL;
+    NEW.resolution := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.support_cases_no_text_after_purge() FROM PUBLIC;--> statement-breakpoint
+CREATE TRIGGER support_cases_no_text_after_purge
+  BEFORE INSERT OR UPDATE ON public.support_cases
+  FOR EACH ROW EXECUTE FUNCTION public.support_cases_no_text_after_purge();--> statement-breakpoint
+CREATE FUNCTION public.privacy_cases_no_text_after_purge()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.support_cases AS purged_case
+      JOIN public.organizations AS purged_scope ON purged_scope.id = purged_case.organization_id
+     WHERE purged_case.id = NEW.support_case_id AND purged_scope.status = 'purged'
+  ) THEN
+    NEW.note := NULL;
+    NEW.decision_note := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.privacy_cases_no_text_after_purge() FROM PUBLIC;--> statement-breakpoint
+CREATE TRIGGER privacy_cases_no_text_after_purge
+  BEFORE INSERT OR UPDATE ON public.privacy_cases
+  FOR EACH ROW EXECUTE FUNCTION public.privacy_cases_no_text_after_purge();--> statement-breakpoint
 -- An export file is recorded only for an active organization (ADR 0078 and 0081): a run that read before
 -- the closure, or a claim of an export whose organization is no longer active, cannot leave a copy on
 -- record. The job writes the object before recording it and removes the export's objects when it fails.
@@ -624,6 +677,7 @@ DECLARE
   target text;
   current_status text;
   created uuid;
+  storage_touched boolean;
 BEGIN
   PERFORM public.admin_require_principal(p_principal);
   target := public.admin_require_open_case(p_case);
@@ -635,11 +689,15 @@ BEGIN
   IF current_status = 'purged' THEN
     RAISE EXCEPTION 'purge_already_done' USING ERRCODE = '55000';
   END IF;
+  storage_touched := EXISTS (
+    SELECT 1 FROM public.organization_purges AS purge
+     WHERE purge.organization_id = target AND purge.storage_touched_at IS NOT NULL AND purge.purged_at IS NULL
+  );
   IF EXISTS (
     SELECT 1 FROM public.organization_legal_holds AS hold
      WHERE hold.organization_id = target AND hold.released_at IS NULL
   ) THEN
-    RETURN pg_catalog.jsonb_build_object('changed', false, 'held', true);
+    RETURN pg_catalog.jsonb_build_object('changed', false, 'held', true, 'storageTouched', storage_touched);
   END IF;
   INSERT INTO public.organization_legal_holds (organization_id, support_case_id, placed_by)
   VALUES (target, p_case, p_principal)
@@ -647,7 +705,8 @@ BEGIN
   PERFORM public.admin_record_audit(
     p_principal, 'organization.legal_hold_placed', target, p_case, 'organization_legal_hold', created::text, NULL
   );
-  RETURN pg_catalog.jsonb_build_object('changed', true, 'held', true);
+  -- the operator learns whether a purge already removed objects from the storage: those do not come back
+  RETURN pg_catalog.jsonb_build_object('changed', true, 'held', true, 'storageTouched', storage_touched);
 END;
 $function$;--> statement-breakpoint
 -- Ends the legal hold in force (the row stays, released); with none in force it changes nothing. A purge that was
@@ -853,8 +912,9 @@ DECLARE
   anonymized bigint;
   scrubbed bigint := 0;
   -- the keys the billing lifecycle writes in a fact (`serializeBillingFact` and the ledger's commands): values,
-  -- dates, types and opaque references. Anything else (a payer's name, document, e-mail, phone, address or ID
-  -- at the provider) is taken out; `PURGE_BILLING_FACT_KEYS` in `purge-datasets.ts` holds the same list
+  -- dates, types and opaque references, and only as plain values (a nested object or list goes too). Anything
+  -- else (a payer's name, document, e-mail, phone, address or ID at the provider) is taken out;
+  -- `PURGE_BILLING_FACT_KEYS` in `purge-datasets.ts` holds the same list
   kept_fact_keys text[] := ARRAY[
     'type', 'occurredAt', 'cycleMonths', 'periodEndsAt', 'transition', 'grantId', 'key', 'startsAt', 'expiresAt', 'actor'
   ];
@@ -908,11 +968,13 @@ BEGIN
        SELECT COALESCE(pg_catalog.jsonb_object_agg(entry.key, entry.value), '{}'::jsonb)
          FROM pg_catalog.jsonb_each(billing.fact) AS entry
         WHERE entry.key = ANY (kept_fact_keys)
+          AND pg_catalog.jsonb_typeof(entry.value) IN ('string', 'number', 'boolean')
      )
    WHERE billing.organization_id = p_organization
      AND EXISTS (
-       SELECT 1 FROM pg_catalog.jsonb_object_keys(billing.fact) AS fact_key
-        WHERE fact_key <> ALL (kept_fact_keys)
+       SELECT 1 FROM pg_catalog.jsonb_each(billing.fact) AS fact_entry
+        WHERE fact_entry.key <> ALL (kept_fact_keys)
+           OR pg_catalog.jsonb_typeof(fact_entry.value) NOT IN ('string', 'number', 'boolean')
      );
   GET DIAGNOSTICS anonymized = ROW_COUNT;
   -- the cases stay as the record of the case (dates, kind, decision, opaque IDs); the free text goes
@@ -971,6 +1033,11 @@ AS $function$
 DECLARE
   blocker text;
 BEGIN
+  -- the organization's lock first, the one a legal hold takes: the hold and this check are ordered, so a hold
+  -- that committed is seen here and one placed after waits for this run's check to end
+  PERFORM 1 FROM public.organizations AS organization
+   WHERE organization.id = p_organization AND organization.status = 'purge_pending'
+     FOR UPDATE;
   -- a legal hold, or a closure younger than 30 days: the storage is not touched either
   blocker := public.organization_purge_blocker(p_organization);
   IF blocker IS NOT NULL THEN

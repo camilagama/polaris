@@ -60,7 +60,11 @@ export interface SupportDependencies {
     organizationId: string,
     action: "place" | "release",
     bindings: AdminBindings
-  ) => Promise<{ changed: boolean; held: boolean } | null>;
+  ) => Promise<{
+    changed: boolean;
+    held: boolean;
+    storageTouched?: boolean;
+  } | null>;
   /** Schedules the purge of the case's organization (it must be closed, its recovery window over). */
   purge: (
     principalId: string,

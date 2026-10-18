@@ -69,7 +69,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     deletion_ledger:
       "Tombstones para o restore: sobrevivem à organização, sem expiração (ADR 0080).",
     entitlement_grants:
-      "Concessões da plataforma, parte do registro de cobrança, com o motivo e o autor escritos pelo operador (ADR 0067 e 0079); sem dado do pagador.",
+      "Concessões da plataforma, parte do registro de cobrança, com o motivo e o autor escritos pelo operador (ADR 0067 e 0079); sem dado do pagador. O motivo é texto livre que o purge não reescreve: fora das decisões de 18/10/2026, a decidir (ADR 0081).",
     organization_billing:
       "Estado da assinatura e referência opaca da assinatura no provedor, registro da plataforma sem dado do pagador; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
     organization_legal_holds:
@@ -79,7 +79,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     organization_purges:
       "O registro do próprio purge (quem agendou, até onde foi, quando começou a mexer no armazenamento e quando terminou), sem dado pessoal.",
     platform_audit_events:
-      "Auditoria do Admin, imutável e sem texto livre: sobrevive à organização (ADR 0070 e 0079).",
+      "Auditoria do Admin, imutável: sobrevive à organização (ADR 0070 e 0079). O detalhe é curto e quase sempre um código; a exceção é o motivo do reenvio de um evento morto (ADR 0085), que o purge não reescreve (limite no ADR 0081).",
     rls_poc_operations:
       "Tabela da prova de RLS da Fase 1, sem chave estrangeira para organizations e sem dado de tenant real.",
     support_cases:

@@ -322,7 +322,8 @@ export function cancelOrganizationPurge(
 
 /**
  * Places a legal hold on the case's organization (ADR 0081, decision of 18/10/2026): while it is in force the
- * purge is neither scheduled nor run. The operator names the organization (a confirmation); placing it again
+ * purge is neither scheduled nor run. `storageTouched` tells that a scheduled purge already removed objects from
+ * the storage (they do not come back). The operator names the organization (a confirmation); placing it again
  * changes nothing, and a purged organization is refused (`purge_already_done`).
  */
 export function placeOrganizationLegalHold(
@@ -331,7 +332,7 @@ export function placeOrganizationLegalHold(
   caseId: string,
   organizationId: string
 ) {
-  return call<{ changed: boolean; held: boolean }>(
+  return call<{ changed: boolean; held: boolean; storageTouched: boolean }>(
     client,
     "public.admin_place_organization_legal_hold($1, $2, $3)",
     [principalId, caseId, organizationId]
