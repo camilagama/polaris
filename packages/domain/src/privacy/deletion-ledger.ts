@@ -40,8 +40,9 @@ export class InvalidDeletionLedgerEntryError extends Error {
 }
 
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** Lowercase, as `uuid::text` writes it: an uppercase ID would never match the record it names. */
 const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ENTRY_FIELDS = new Set([
   "entityId",
   "entityType",

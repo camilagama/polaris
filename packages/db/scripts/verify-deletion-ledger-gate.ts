@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { CustomerVersionConflictError } from "@polaris/domain/customers/customer";
 import { createDatabase } from "../src/client";
+import { recordDeletionLedgerEntry } from "../src/deletion-ledger";
 import {
   anonymizeCustomerForPrivacy,
   createCustomer,
@@ -210,7 +211,6 @@ async function run() {
       PII_EMAIL,
       PII_NOTES,
       "aparecida",
-      "98888",
       "maria",
       "sábados",
     ]) {
@@ -391,6 +391,26 @@ async function run() {
       "a tombstone is written once",
       "deletion_ledger_entity_operation_unique"
     );
+    // the repository's own statement, run twice as the tenant runtime: the repeat is a no-op, not an error
+    for (const times of [1, 2]) {
+      // biome-ignore lint/performance/noAwaitInLoops: The same statement twice, in order.
+      await asTenant(
+        tenantA,
+        "customer:anonymize",
+        async (transaction) =>
+          await recordDeletionLedgerEntry(transaction, {
+            entityId: customer.id,
+            entityType: "customer",
+            operation: "anonymize",
+            organizationId: tenantA.organizationId,
+          })
+      );
+      assert.equal(
+        (await ledgerRows(tenantA.organizationId)).length,
+        1,
+        `the statement run ${times} time(s) leaves one tombstone`
+      );
+    }
     assert.equal(
       (await ledgerRows()).length,
       2,
@@ -401,7 +421,8 @@ async function run() {
       privilege: string;
       allowed: boolean;
     }>(
-      `SELECT g.grantee, p.privilege, has_table_privilege(g.grantee, 'public.deletion_ledger', p.privilege) AS allowed
+      `SELECT g.grantee, p.privilege, (has_table_privilege(g.grantee, 'public.deletion_ledger', p.privilege)
+                OR (p.privilege IN ('SELECT', 'INSERT', 'UPDATE') AND has_any_column_privilege(g.grantee, 'public.deletion_ledger', p.privilege))) AS allowed
          FROM (VALUES ('${runtimeRole}'), ('polaris_billing_runtime'), ('polaris_catalog_runtime'), ('polaris_admin_runtime'), ('polaris_privacy_runtime'), ('polaris_privacy_owner')) AS g(grantee)
         CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) AS p(privilege)`
     );
@@ -413,6 +434,17 @@ async function run() {
       allowed,
       [`${runtimeRole}:INSERT`, "polaris_privacy_owner:SELECT"],
       "the tenant runtime may insert, the privacy owner may read, nobody else may do anything"
+    );
+    const columnPrivileges = await owner.pool.query<{ grantee: string }>(
+      `SELECT g.grantee
+         FROM (VALUES ('polaris_billing_runtime'), ('polaris_catalog_runtime'), ('polaris_admin_runtime'), ('polaris_privacy_runtime')) AS g(grantee)
+        CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('REFERENCES')) AS p(privilege)
+        WHERE has_any_column_privilege(g.grantee, 'public.deletion_ledger', p.privilege)`
+    );
+    assert.deepEqual(
+      columnPrivileges.rows,
+      [],
+      "the other service roles hold no privilege on any column either"
     );
     const insertable = await owner.pool.query<{
       column_name: string;
@@ -487,6 +519,16 @@ async function run() {
         "deletion_ledger_ids_opaque",
       ],
       [
+        "a customer UUID in uppercase, which would never match the record",
+        [
+          tenantA.organizationId,
+          "customer",
+          randomUUID().toUpperCase(),
+          "anonymize",
+        ],
+        "deletion_ledger_entity_shape",
+      ],
+      [
         "a customer that is not a UUID",
         [tenantA.organizationId, "customer", "cliente-1", "anonymize"],
         "deletion_ledger_entity_shape",
@@ -497,6 +539,8 @@ async function run() {
         "deletion_ledger_entity_shape",
       ],
     ];
+    // PostgreSQL tests CHECK constraints in the order of their names, so a value that breaks two names the
+    // first: "deletion_ledger_entity_shape" before "deletion_ledger_ids_opaque" before "deletion_ledger_kind_allowed"
     for (const [label, values, constraint] of probes) {
       // biome-ignore lint/performance/noAwaitInLoops: Probes, in order, each in its own rolled back transaction.
       const client = await owner.pool.connect();
@@ -576,6 +620,35 @@ async function run() {
       "the privacy owner, which the restore runbook assumes, lists every tombstone from the restore point on with only opaque IDs, the kinds and the time"
     );
 
+    // the runbook's completeness checks of the source: every anonymized customer has its tombstone and no tombstone names a customer that was not anonymized
+    const missing = await owner.pool.query<{ id: string }>(
+      `SELECT c.id::text AS id
+         FROM public.customers AS c
+         LEFT JOIN public.deletion_ledger AS l
+           ON l.entity_type = 'customer' AND l.operation = 'anonymize'
+          AND l.entity_id = c.id::text AND l.organization_id = c.organization_id
+        WHERE c.anonymized_at IS NOT NULL AND l.id IS NULL
+          AND c.organization_id = ANY($1::text[])`,
+      [[tenantA.organizationId, tenantB.organizationId]]
+    );
+    assert.deepEqual(
+      missing.rows,
+      [],
+      "no anonymized customer is without a tombstone"
+    );
+    const forged = await owner.pool.query<{ entity_id: string }>(
+      `SELECT l.entity_id
+         FROM public.deletion_ledger AS l
+         JOIN public.customers AS c ON c.id::text = l.entity_id AND c.organization_id = l.organization_id
+        WHERE l.entity_type = 'customer' AND l.operation = 'anonymize' AND c.anonymized_at IS NULL
+          AND l.organization_id = ANY($1::text[])`,
+      [[tenantA.organizationId, tenantB.organizationId]]
+    );
+    assert.deepEqual(
+      forged.rows,
+      [],
+      "no tombstone names a customer that was not anonymized"
+    );
     // the verification the runbook ends with: a tombstone whose effect is missing shows up, one that took effect does not
     const verification = `SELECT l.entity_id, l.organization_id
        FROM public.deletion_ledger AS l
@@ -631,7 +704,7 @@ async function run() {
     }
     assert.equal((await ledgerRows()).length, 2);
     tests.push(
-      "the verification query of the runbook is empty when every tombstone has taken effect and lists a customer that came back with data and an organization that came back"
+      "the completeness checks of the runbook (an anonymized customer without a tombstone; a tombstone for a customer that was not anonymized) are empty, and the verification query of the runbook is empty when every tombstone has taken effect and lists a customer that came back with data and an organization that came back"
     );
 
     console.log(

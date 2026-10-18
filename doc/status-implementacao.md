@@ -1528,5 +1528,5 @@ Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.m
 | Quem grava | Concluído | `anonymizeCustomerForPrivacy` grava na mesma transação do comando (`recordDeletionLedgerEntry`); o comportamento do comando não muda. O purge (PR107) grava o tombstone da organização antes de apagar, em migration própria. |
 | Restore | Concluído (procedimento) | [Runbook](../docs/runbooks/deletion-ledger-restore.md): ler o ledger do ambiente que será substituído, reaplicar, conferir por consulta vazia. Sem automação (Fase 16); item novo no checklist de go-live. |
 | Gate PostgreSQL 18 | No CI | `deletion-ledger` (suítes `ci` e `gate10`); não rodado localmente (sem PostgreSQL 18 no ambiente). |
-| Retenção | Necessidade declarada | O ADR 0079 (PR105, em revisão) não tem classe para o ledger; as condições estão no ADR 0080. |
+| Retenção | Necessidade declarada | O ADR 0079 (PR105, proposto) e o registro de retenção não têm classe para o ledger; as condições estão no ADR 0080. |
 | Limites | Registrados | O ledger mora no mesmo banco: perda total do banco perde os tombstones posteriores ao último backup (cópia fora do banco: Fase 16); reaplicar é manual; o caso de privacidade ainda não é preenchido pelo comando; o ID opaco é pseudônimo enquanto houver backup antigo. |

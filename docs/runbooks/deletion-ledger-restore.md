@@ -8,7 +8,8 @@
 
 ## Pré-requisitos de acesso
 
-- A conexão do **dono do banco** (a tabela força RLS e não há política para ele; funciona com o papel dono da Neon, que ignora RLS). Alternativa só para ler o ledger: `SET ROLE polaris_privacy_owner` (papel sem login, com `SELECT` no ledger; a sessão do dono precisa de `GRANT polaris_privacy_owner TO CURRENT_USER WITH SET TRUE` e o desfaz depois, como as migrations fazem).
+- A conexão do **dono do banco** (a tabela força RLS e não há política para ele; funciona com o papel dono da Neon, que ignora RLS). **Confirme antes**, nas duas pontas (origem e restaurado), que a conexão ignora RLS: `SELECT rolbypassrls OR rolsuper FROM pg_roles WHERE rolname = current_user;` deve dar `true`. Com um login que não ignora RLS, as consultas abaixo **voltam zero linhas sem erro** e o procedimento pareceria concluído sem ter feito nada. Registre também o `count(*)` do ledger de cada ponta.
+- Alternativa só para ler o ledger: `SET ROLE polaris_privacy_owner` (papel sem login, com `SELECT` no ledger): a sessão do dono roda `GRANT polaris_privacy_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;` antes (pode exigir superusuário ou o papel que criou `polaris_privacy_owner`), `SET ROLE polaris_privacy_owner;` para ler e, ao terminar, `RESET ROLE;` e `REVOKE polaris_privacy_owner FROM CURRENT_USER;`, como as migrations fazem. Para o passo 5 (que lê `customers` e `organizations`) esse papel não serve: use o dono.
 - Nenhum papel de aplicação (tenant, Admin, privacidade, billing, catálogo) lê o ledger.
 
 ## O ponto que decide tudo: de onde ler o ledger
@@ -23,19 +24,62 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
 ## Passos
 
+0. **Conferir o ledger no ambiente de origem.** Nenhum cliente anonimizado pode estar sem tombstone (a migration 0069 grava os que já existiam, mas só o código garante os seguintes); esta consulta deve voltar **vazia** (se não, grave os tombstones que faltam antes de seguir, `INSERT ... ON CONFLICT DO NOTHING` pelo dono do banco):
+
+   ```sql
+   SELECT c.id, c.organization_id
+     FROM public.customers AS c
+     LEFT JOIN public.deletion_ledger AS l
+       ON l.entity_type = 'customer' AND l.operation = 'anonymize'
+      AND l.entity_id = c.id::text AND l.organization_id = c.organization_id
+    WHERE c.anonymized_at IS NOT NULL AND l.id IS NULL;
+   ```
+
+   Confira também o contrário, que um tombstone nunca aponta para quem **não** foi anonimizado na origem (um tombstone falso anonimizaria uma pessoa real no restaurado); deve voltar **vazia**:
+
+   ```sql
+   SELECT l.entity_id, l.organization_id
+     FROM public.deletion_ledger AS l
+     JOIN public.customers AS c
+       ON c.id::text = l.entity_id AND c.organization_id = l.organization_id
+    WHERE l.entity_type = 'customer' AND l.operation = 'anonymize'
+      AND c.anonymized_at IS NULL;
+   ```
+
 1. **Listar o ledger no ambiente de origem**, a partir do instante do backup menos uma margem (a lista é idempotente, a margem só evita perder um tombstone por diferença de relógio; sem filtro, lista tudo):
 
    ```sql
    SELECT entity_type, entity_id, operation, organization_id, privacy_case_id, recorded_at
      FROM public.deletion_ledger
-    WHERE recorded_at >= $1   -- instante do backup, menos 1 hora
+    WHERE recorded_at >= TIMESTAMPTZ '2026-10-17 11:00:00+00'   -- instante do backup, menos 1 hora (troque pelo literal)
     ORDER BY recorded_at, id;
    ```
 
+   Guarde a lista **e o número de linhas**: o passo 5 confere a contagem.
+
 2. **Restaurar** o backup para o novo ambiente (não abra o ambiente restaurado a usuários, a aparelhos nem ao cron enquanto os passos 3 a 5 não terminarem: nem o Worker, nem a sincronização, nem a varredura horária).
-3. **Carregar os tombstones da lista** no ambiente restaurado que ainda não existirem (`INSERT` pelo dono do banco; o índice único recusa repetição, então `ON CONFLICT DO NOTHING` é seguro). Os tombstones até o instante do backup já vieram nele.
+3. **Aplicar as migrations pendentes** no ambiente restaurado, se o backup for anterior à tabela ou a alguma migration (sem `public.deletion_ledger` os passos seguintes falham). **Carregar os tombstones da lista** que ainda não existirem (`INSERT` pelo dono do banco, **com lista de colunas**, copiando da lista, linha a linha, `organization_id`, `entity_type`, `entity_id`, `operation`, `privacy_case_id` e o `recorded_at` original, senão o instante vira o do ambiente restaurado; o índice único recusa repetição, então `ON CONFLICT DO NOTHING` é seguro):
+
+   ```sql
+   INSERT INTO public.deletion_ledger (organization_id, entity_type, entity_id, operation, privacy_case_id, recorded_at)
+   VALUES ('<organização>', '<tipo>', '<ID>', '<operação>', NULL, TIMESTAMPTZ '<instante original>')
+   ON CONFLICT DO NOTHING;
+   ```
+
+    Os tombstones até o instante do backup já vieram nele.
 4. **Reaplicar cada tombstone**, conforme o tipo:
-   - `customer` / `anonymize`: se o cliente existe no ambiente restaurado e `anonymized_at IS NULL`, repetir o efeito do comando `customer.anonymizeForPrivacy` ([ADR 0075](../adr/0075-anonimizacao-de-cliente-por-privacidade.md)): nome `Cliente anonimizado`, telefone, email e observações nulos, `archived_at` preenchido (se ainda não estava), `anonymized_at` marcado e `version` +1, num `UPDATE` do dono do banco, **uma linha por vez, conferindo o ID e a organização do tombstone**. Se o cliente não existe, não há o que fazer.
+   - `customer` / `anonymize`: se o cliente existe no ambiente restaurado e `anonymized_at IS NULL`, repetir o efeito do comando `customer.anonymizeForPrivacy` ([ADR 0075](../adr/0075-anonimizacao-de-cliente-por-privacidade.md)), num `UPDATE` do dono do banco, **uma linha por vez, com o ID e a organização do tombstone**, e conferir que o resultado foi `UPDATE 1` (zero é um tombstone que não casou: investigue, não repita com outro filtro):
+
+     ```sql
+     UPDATE public.customers
+        SET name = 'Cliente anonimizado', phone = NULL, email = NULL, notes = NULL,
+            archived_at = COALESCE(archived_at, now()), anonymized_at = now(),
+            updated_at = now(), version = version + 1
+      WHERE id = '<ID do tombstone>' AND organization_id = '<organização do tombstone>'
+        AND anonymized_at IS NULL;
+     ```
+
+     O CHECK `customers_anonymized_scrubbed` recusa um resultado incompleto, e o gatilho de sincronização grava a mudança no log que os aparelhos puxam (como no comando). Este `UPDATE` **não** grava `tenant_audit_event` (a auditoria do tenant é escrita pelo comando, com o ator): registre a reaplicação no registro do incidente. Se o cliente não existe, não há o que fazer.
    - `organization` / `purge`: se a organização existe no ambiente restaurado, ela precisa ser purgada de novo, pelo processo de purge (PR107; idempotente, inclui o R2 em `exports/v1/{organização}/`, mídia e derivados). Até o PR107 existir, um tombstone desse tipo não é gravado por nada, então não aparece.
 5. **Conferir.** Esta consulta, no ambiente restaurado, deve voltar **vazia** antes de reabri-lo:
 
@@ -53,16 +97,16 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
     WHERE l.entity_type = 'organization' AND l.operation = 'purge';
    ```
 
-   Vazia significa: nenhum cliente com tombstone continua com dado pessoal e nenhuma organização purgada continua existindo. Registre o resultado (sem IDs) e o instante.
+   Vazia significa: nenhum cliente com tombstone continua com dado pessoal e nenhuma organização purgada continua existindo. **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Registre o resultado (sem IDs) e o instante.
 6. **Só então** reabrir o ambiente (Workers, cron, sincronização). Aparelhos que sincronizaram com o ambiente anterior podem estar à frente do restaurado: é um limite geral do restore, tratado na Fase 16.
 
 ## Verificação do procedimento
 
-O gate `deletion-ledger` (suítes `ci` e `gate10`) roda a consulta do passo 1 como o dono de privacidade e a do passo 5 sobre tombstones de cliente anonimizado e de cliente que não foi, num banco descartável.
+O gate `deletion-ledger` (suítes `ci` e `gate10`) roda a consulta do passo 1 como o dono de privacidade e as dos passos 0 e 5 sobre tombstones de cliente anonimizado e de cliente que não foi, num banco descartável.
 
 ## Rollback ou forward-fix
 
-Reaplicar não tem volta (a anonimização é final, ADR 0075). Antes de reaplicar em produção, confira a linha por ID e organização no ambiente restaurado; se um tombstone estiver errado, **pare** e escale: um tombstone forjado anonimizaria uma pessoa real (o runtime do tenant só consegue gravar o de um cliente já anonimizado na própria organização).
+Reaplicar não tem volta (a anonimização é final, ADR 0075). Antes de reaplicar em produção, confira a linha por ID e organização no ambiente restaurado; se um tombstone estiver errado (a consulta inversa do passo 0 não voltou vazia), **pare** e escale: um tombstone forjado anonimizaria uma pessoa real (o runtime do tenant só consegue gravar o de um cliente já anonimizado na própria organização, mas o `INSERT` do dono do passo 3 não tem essa proteção).
 
 ## Escalonamento
 

@@ -90,6 +90,15 @@ describe("deletionLedgerEntry", () => {
     ).toThrow(InvalidDeletionLedgerEntryError);
   });
 
+  it("refuses an uppercase UUID, which would never match the record it names", () => {
+    expect(() =>
+      deletionLedgerEntry({
+        ...customerEntry,
+        entityId: CUSTOMER.toUpperCase(),
+      })
+    ).toThrow(InvalidDeletionLedgerEntryError);
+  });
+
   it("refuses a case that is not a UUID", () => {
     expect(() =>
       deletionLedgerEntry({ ...customerEntry, privacyCaseId: "caso 1" })

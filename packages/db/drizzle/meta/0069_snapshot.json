@@ -1,5 +1,5 @@
 {
-  "id": "9cf8cf03-ebd9-40d0-b394-76302c6cd50f",
+  "id": "979b9123-6d83-45ed-9742-28502159cf3d",
   "prevId": "7d61209c-6fc3-46db-aa83-e4530291a57a",
   "version": "7",
   "dialect": "postgresql",
@@ -2200,7 +2200,7 @@
         },
         "deletion_ledger_entity_shape": {
           "name": "deletion_ledger_entity_shape",
-          "value": "(\"deletion_ledger\".\"entity_type\" <> 'customer'\n          OR \"deletion_ledger\".\"entity_id\" ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')\n        AND (\"deletion_ledger\".\"entity_type\" <> 'organization' OR \"deletion_ledger\".\"entity_id\" = \"deletion_ledger\".\"organization_id\")"
+          "value": "(\"deletion_ledger\".\"entity_type\" <> 'customer'\n          OR \"deletion_ledger\".\"entity_id\" ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')\n        AND (\"deletion_ledger\".\"entity_type\" <> 'organization' OR \"deletion_ledger\".\"entity_id\" = \"deletion_ledger\".\"organization_id\")"
         }
       },
       "isRLSEnabled": true

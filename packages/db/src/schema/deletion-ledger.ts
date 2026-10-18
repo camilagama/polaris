@@ -58,10 +58,11 @@ export const deletionLedger = pgTable(
     check(
       "deletion_ledger_entity_shape",
       sql`(${table.entityType} <> 'customer'
-          OR ${table.entityId} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+          OR ${table.entityId} ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
         AND (${table.entityType} <> 'organization' OR ${table.entityId} = ${table.organizationId})`
     ),
-    // the tenant runtime writes the tombstone of a customer anonymized in this very transaction
+    // the tenant runtime writes the tombstone of a customer already anonymized in its own organization
+    // (the command does it right after the UPDATE, in the same transaction)
     pgPolicy("deletion_ledger_customer_anonymization_insert", {
       for: "insert",
       to: runtimeRole,
