@@ -121,6 +121,7 @@
     "poc:deletion-ledger:verify": "bun scripts/verify-deletion-ledger-gate.ts",
     "poc:event-outbox:verify": "bun scripts/verify-event-outbox-gate.ts",
     "poc:outbox-dispatcher:verify": "bun scripts/verify-outbox-dispatcher-gate.ts",
+    "poc:scheduled-jobs:verify": "bun scripts/verify-scheduled-jobs-gate.ts",
     "poc:privacy-cases:verify": "bun scripts/verify-privacy-cases-gate.ts",
     "poc:read-models:verify": "bun scripts/verify-read-models-gate.ts",
     "poc:review-hardening:verify": "bun scripts/verify-review-hardening-gate.ts",

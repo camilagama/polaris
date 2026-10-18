@@ -1591,3 +1591,20 @@ Quarto passo da Fase 11 ([ADR 0085](../docs/adr/0085-dlq-incidente-operacional-e
 | Retenção | Proposta | Classe `operational_incident` (sem prazo e sem job; PR112). |
 | Gate PostgreSQL 18 | Local e CI | `dead-letter` (suítes `ci` e `gate11`), novo. |
 | Limites | Registrados | Nada criado nem medido em nuvem; a DLQ não tem DLQ (retenção de 24 horas no Free); falha permanente do handler continua `ack`; o retry espera o cron do despachante; incidente não se encerra; o PR do purge (#126, a refazer) precisa apagar `queue_dead_letters` explicitamente (política e DELETE do papel do purge, com a prova no gate dele), porque a linha da organização fica e a cascata não dispara, e unir `platform_audit_events_type_allowed` aos tipos do purge; `operational_incidents` não tem organização. |
+
+### Fase 11E — Framework de jobs agendados (PR112; implementação e gates locais concluídos; nada criado na conta Cloudflare)
+
+Quinto passo da Fase 11 ([ADR 0086](../docs/adr/0086-framework-de-jobs-agendados.md); o número pode mudar): um tick por pista de cron despacha os jobs vencidos, cada um sob *lease* e com janelas fixas, catch-up por nível.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/scheduled-jobs` sobre a `main` (migration 0073, só aditiva, depois da 0072 da DLQ (PR #131, já na `main`); o PR #126 ainda usa 0072, e quem entrar depois renumera a migration e o snapshot; refeita sobre a `main` com o #131: o job `outbox.dispatch` também registra os eventos no teto de tentativas). |
+| Registro | Concluído | `@polaris/domain/scheduling/scheduled-jobs`: seis jobs (quatro ligados, dois desligados com a pendência), duas pistas (`17 * * * *` e `19 * * * *`), cadência, *lease*, por que repetir é seguro, expurgos que executa; `windowIndex` e `windowsMissed`. Dois dos cinco Cron Triggers do Free em uso; um teste confere o `wrangler.jsonc` contra as pistas. |
+| Banco | Concluído | `scheduled_job_state` (RLS forçado, sem organização nem dado pessoal) e `claim_`, `complete_` e `release_scheduled_job`, do papel do outbox (mesmo login e `OUTBOX_HYPERDRIVE`); `OutboxClient` ganha os três métodos. |
+| Worker | Concluído | `runLane` (`apps/web/src/server/scheduler/runner.ts`): *lease*, janela, falha isolada por job, métrica `scheduled_job_run` sem dado pessoal; `scheduled` do Worker vira o tick (`17` e `19` migrados sem mudar o comportamento; sem o binding, tudo roda a cada disparo, como antes). |
+| grace/trial | Já existia | A regra e a varredura existem (billing-and-entitlements): são o job `billing.maintenance`. |
+| recurring expenses | Registrado desligado | A geração ao ler (ADR 0052) já cobre o catch-up; um job exige papel que escreve em todas as organizações: decisão de segurança do responsável. |
+| provider reconcile | Registrado desligado | Depende do Gate 7 (Asaas e Woovi, sandbox); sem código de provedor. |
+| Cleanup | Só o aprovado | Os quatro expurgos existentes rodam pelo agendador; nenhum job para classe em `proposta` (o teste da retenção e o do registro garantem); expurgo dos `dispatched` e dos incidentes espera o prazo do responsável. |
+| Gate PostgreSQL 18 | Local e CI | `scheduled-jobs` (suítes `ci` e `gate11`), novo. |
+| Limites | Registrados | Nada criado nem medido em nuvem (CPU dos ticks, em especial a pista `maintenance`, que abre uma conexão a mais); cadência horária (decisão de custo); sem tela de estado no Admin. |

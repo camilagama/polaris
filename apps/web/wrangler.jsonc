@@ -140,8 +140,10 @@
       }
     ]
   },
-  // "17 * * * *": media, billing and privacy maintenance; "19 * * * *": the outbox dispatcher (ADR 0084),
-  // in an invocation of its own (the Free plan gives each cron invocation 10 ms of CPU).
+  // One Cron Trigger per scheduler lane, not per job (ADR 0086; the Free plan allows five per account):
+  // "17 * * * *" is the maintenance lane (media, billing and privacy) and "19 * * * *" the outbox lane
+  // (the dispatcher, ADR 0084), an invocation of its own because the Free plan gives each one 10 ms of
+  // CPU. A test keeps this list equal to the lanes of @polaris/domain/scheduling/scheduled-jobs.
   "triggers": {
     "crons": ["17 * * * *", "19 * * * *"]
   },

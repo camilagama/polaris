@@ -36,6 +36,7 @@
     "./events/outbox": "./src/events/outbox.ts",
     "./events/outbox-dispatch": "./src/events/outbox-dispatch.ts",
     "./events/queue-envelope": "./src/events/queue-envelope.ts",
+    "./scheduling/scheduled-jobs": "./src/scheduling/scheduled-jobs.ts",
     "./privacy/csv": "./src/privacy/csv.ts",
     "./privacy/data-export": "./src/privacy/data-export.ts",
     "./privacy/deletion-ledger": "./src/privacy/deletion-ledger.ts",

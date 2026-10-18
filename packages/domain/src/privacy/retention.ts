@@ -320,7 +320,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: ["event_outbox (eventos a despachar, só IDs opacos)"],
     period: { kind: "undecided" },
     proposed: `Apagar os eventos despachados depois de um prazo curto, definido com o despachante (${TO_CONFIRM}); os pendentes saem com o purge da organização.`,
-    rule: "O corpo do evento só tem IDs opacos, inteiros e booleanos (nunca dado pessoal). Nenhum papel apaga hoje; o expurgo dos despachados é do despachante (PR110) ou do job agendado (PR112), e o purge da organização apaga os eventos dela.",
+    rule: "O corpo do evento só tem IDs opacos, inteiros e booleanos (nunca dado pessoal). Nenhum papel apaga hoje; o expurgo dos despachados não existe até o responsável aprovar o prazo (nem o despachante nem o agendador o fazem), e o purge da organização apaga os eventos dela.",
     sources: ["ADR 0082"],
     status: "proposta",
   },

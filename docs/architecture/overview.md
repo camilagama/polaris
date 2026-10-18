@@ -19,6 +19,8 @@ Os workspaces billing e ui são, por enquanto, apenas estrutura prevista; o admi
 
 O Worker de Web responde por autenticação, procedures, mídia, health, sincronização, acesso ao banco e bindings assíncronos. A V1 não tem um deployment apps/api separado. A casca da SPA é servida pelos Static Assets sem passar pelo Worker, então seus headers de segurança são configurados à parte ([ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)).
 
+Os jobs por relógio rodam num **agendador** de um tick por pista de cron (hoje duas, de cinco Cron Triggers do plano Free): o registro tipado `@polaris/domain/scheduling/scheduled-jobs` declara cada job, e o Worker toma o *lease* de cada um no banco (papel do outbox), roda os vencidos uma vez por janela e cobre as janelas perdidas numa execução só; trabalho pesado vai para a fila ([ADR 0086](../adr/0086-framework-de-jobs-agendados.md)).
+
 ## Acesso a dados e isolamento por organização
 
 PostgreSQL 18 no Neon é o baseline ([ADR 0002](../adr/0002-neon-postgresql18-hyperdrive-rls.md)). Hyperdrive fornece connection pooling com SQL query caching desabilitado para caminhos tenant e Admin.
@@ -51,7 +53,7 @@ Mutations offline usam commands idempotentes e versionados. O servidor valida ca
 
 ## Retenção
 
-Cada classe de dado tem uma política declarada num registro único e tipado, `@polaris/domain/privacy/retention`: o que cobre, a origem (lei, contrato ou decisão), a regra, as fontes e o estado (`aprovada` ou `proposta`). Por convenção, só uma política aprovada com prazo tem job de expurgo, e o código que expira dado lê o prazo do registro (`approvedRetention`, que recusa classe não aprovada), nunca de uma constante própria. Hoje as classes aprovadas com prazo são as de mídia (markers de envio e imagens removidas) e a exportação de dados, atendidas pelos jobs horários existentes; as demais estão propostas, sem job. Na sincronização, o aparelho descarta sozinho a edição de um cliente que o servidor recusou por anonimização (com o texto digitado) e segue a fila. O `payload_hash` do log de comandos offline é um HMAC com segredo do Worker; as linhas gravadas antes guardam o SHA-256 sem sal até existir a retenção do log ([ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)).
+Cada classe de dado tem uma política declarada num registro único e tipado, `@polaris/domain/privacy/retention`: o que cobre, a origem (lei, contrato ou decisão), a regra, as fontes e o estado (`aprovada` ou `proposta`). Por convenção, só uma política aprovada com prazo tem job de expurgo, e o código que expira dado lê o prazo do registro (`approvedRetention`, que recusa classe não aprovada), nunca de uma constante própria. Hoje as classes aprovadas com prazo são as de mídia (markers de envio e imagens removidas) e a exportação de dados, atendidas pelos jobs horários existentes, que o agendador de jobs ([ADR 0086](../adr/0086-framework-de-jobs-agendados.md)) roda; as demais estão propostas, sem job. Na sincronização, o aparelho descarta sozinho a edição de um cliente que o servidor recusou por anonimização (com o texto digitado) e segue a fila. O `payload_hash` do log de comandos offline é um HMAC com segredo do Worker; as linhas gravadas antes guardam o SHA-256 sem sal até existir a retenção do log ([ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)).
 
 ## Infraestrutura posterior
 

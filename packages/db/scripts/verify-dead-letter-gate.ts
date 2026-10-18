@@ -563,15 +563,18 @@ async function run() {
       [
         "claim_outbox_events",
         "claim_queue_processing",
+        "claim_scheduled_job",
         "complete_queue_processing",
+        "complete_scheduled_job",
         "expire_queue_processing",
         "mark_outbox_events_dispatched",
         "record_dead_letter",
         "record_exhausted_outbox_events",
         "release_outbox_events",
         "release_queue_processing",
+        "release_scheduled_job",
       ],
-      "the outbox runtime executes exactly its nine functions, no retry and no admin_*"
+      "the outbox runtime executes exactly its eleven functions (the scheduler's three included), no retry and no admin_*"
     );
     const adminRuntimeFunctions = await owner.pool.query<{ proname: string }>(
       `SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace

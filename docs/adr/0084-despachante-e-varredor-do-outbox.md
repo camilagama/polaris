@@ -8,6 +8,8 @@ status: accepted
 
 > **Emenda ([ADR 0085](0085-dlq-incidente-operacional-e-retry-no-admin.md)):** o evento que chega ao teto de 1000 tentativas passa a ser registrado como incidente operacional e como evento morto pelo cron do despachante (`record_exhausted_outbox_events`), e o Admin pode reenviá-lo (`retry_dead_letter`: tentativas recomeçam e o registro de processamento da chave é apagado). Onde este texto diz "à espera da DLQ" ou "sem DLQ", vale o ADR 0085.
 
+> **Emenda ([ADR 0086](0086-framework-de-jobs-agendados.md)):** o despachante e a expiração do registro do consumidor são o job `outbox.dispatch` do agendador, na pista do cron `19 * * * *`: o tick abre a conexão do papel do outbox uma vez e a divide com o estado do agendador; a cadência continua horária (decisão de custo do responsável). O texto abaixo é o da decisão original.
+
 ## Contexto
 
 O outbox transacional ([ADR 0082](0082-outbox-transacional.md)) guarda o evento junto do comando; as filas, o envelope e o consumidor idempotente existem ([ADR 0083](0083-filas-cloudflare-e-consumidor-idempotente.md)), mas nada leva um ao outro. O plano (Fase 11, PR110) pede o elo: evento `pending` no banco → fila → marcado `dispatched`, à prova de queda, com duplicata aceitável. Os PRs anteriores deixaram condições para este: limitar as **chaves** do corpo por tipo (política e domínio), um registro de processamento **durável** do consumidor (tabela e papel), o handler agir pelo ID com autoridade própria, conferir chave de idempotência contra ID do evento, prazo da tomada coerente com os 15 minutos de parede, e impedir que uma falha de exportação disparada por mensagem gaste as três tentativas em segundos. A DLQ é do PR111, a cadência e o framework de agendamento do PR112, os workflows do PR113.
