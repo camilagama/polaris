@@ -1,6 +1,6 @@
 ﻿# Polaris — acompanhamento da implementação
 
-Atualizado em 14 de outubro de 2026.
+Atualizado em 18 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -1236,7 +1236,9 @@ Uma revisão feita depois do merge achou duas falhas (nenhum adaptador está reg
 | Revisão independente da correção | Concluída sem Critical nem alto | Uma segunda leitura, somente de leitura, conferiu o desenho e achou dois pontos, corrigidos: uma reversão para um período já terminado empurrava para fora a de um período ainda à frente (agora uma vitória nunca desloca outra de período posterior, e período terminado só importa a quem está em carência) e os testes de propriedade nunca partiam de um registro com memória (agora partem de todos os tipos, com períodos tirados de um conjunto pequeno para que reembolso, chargeback e reversão se encontrem). Também: aprender o ciclo de uma confirmação recusada não move mais o relógio dos fatos; a vitória guardada não carrega ciclo nem cancelamento (coerência); sondas diretas no gate provam que o banco ainda recusa reembolso ou chargeback lembrado sobre um período pago. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (148 arquivos, 1714 testes), `build` e `db:generate` sem drift; gates `billing-lifecycle`, `billing-catalog`, `gate2-runtime` e `sync-push` em branch Neon criada do zero com a migration 0056 (apagada depois). |
 
-### PR85 — Concessões temporárias de entitlement (implementação, gate, revisão independente e verificações locais concluídos; publicação: ver PR)
+Mesclado no [PR #99](https://github.com/camilagama/polaris/pull/99) (merge `ae3c729`).
+
+### PR85 — Concessões temporárias de entitlement (implementação, gate, revisão independente e verificações locais concluídos; mesclado no PR #102)
 
 Dá a Polaris (e, na Fase 9, ao Admin) uma forma de conceder mais do que o plano por um tempo, sem assinatura falsa, e fecha a lacuna do PR82 para quem passa do limite do Free quando a concessão termina.
 
@@ -1251,6 +1253,7 @@ Dá a Polaris (e, na Fase 9, ao Admin) uma forma de conceder mais do que o plano
 | Revisão independente | Concluída sem Critical | Uma leitura independente e somente de leitura achou um alto e seis médios, todos tratados: a varredura podia deixar sem exame o fim mais novo atrás de candidatos que não precisavam de nada (agora vem do mais novo para o mais antigo e já exclui quem paga, quem monta um trial e quem já passou daquele fim); "só encurta" não era garantido pelo banco (agora um gatilho: o fim nunca avança e uma concessão encerrada não volta, para qualquer papel); encerrar uma concessão podia estendê-la ou deixá-la valendo um segundo (agora o encerramento nunca avança o fim e uma concessão encerrada antes de começar nunca vale); o teste de "ainda em vigor" ignorava a chave (agora é por limite, com a função `organization_free_limit_excess`); o mesmo ID com valores diferentes era descartado em silêncio (agora é recusado). Também: mínimo de um minuto, início até um ano à frente, autor sem e-mail, motivo sem caractere nulo, códigos de erro corretos e organização inexistente. Documentados no ADR: janela nova não carrega a escolha anterior, intervalo até a varredura, Pro com concessão acima do plano. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (149 arquivos, 1721 testes), `build` e `db:generate` sem drift; gates `entitlement-grants`, `billing-lifecycle`, `billing-catalog`, `entitlements`, `goals`, `operational-selection` e `gate2-runtime` em branches Neon criadas do zero com a migration 0057 (apagadas depois). |
 | Limites | Registrados | Sem tela de Admin (Fase 9): os comandos são a interface; a varredura olha 90 dias para trás; a checagem de excedente ignora outras concessões ainda não iniciadas. |
+| Publicação | Concluída | [GitHub PR #102](https://github.com/camilagama/polaris/pull/102) mesclado na `main` (merge `da50b20`). |
 
 ### Ajustes da revisão pós-merge do #99 (issue #101): ADR 0066, comentários e uma CHECK
 
@@ -1268,6 +1271,8 @@ A revisão pós-merge do PR #99 (aprovada com ajustes; nada bloqueava) pediu cin
 | Nenhum DTO devolve `revoked_*`? (não verificado pelo bot) | Verificado | Nenhum contrato nem rota lê essas colunas (`billing-repository` e `operational-selection-repository` selecionam só estado, fim do acesso e início do episódio; `billing-store` só roda no papel de billing). O SELECT por coluna do PR seguinte torna isso uma garantia do banco. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, testes, `build` e `db:generate` sem drift; gates `billing-lifecycle`, `review-hardening` e `gate2-runtime` em branch Neon criada do zero com a migration 0058 (apagada depois). |
 
+Mesclado no [PR #103](https://github.com/camilagama/polaris/pull/103) (merge `f32cfed`).
+
 ### SELECT por coluna do registro de billing e das concessões (ponto em aberto da revisão do #99)
 
 Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e transforma a verificação de que nenhum DTO devolve essas colunas numa garantia do banco.
@@ -1278,12 +1283,15 @@ Fecha o ponto "restringir o SELECT de `revoked_*` por coluna" da issue #101 e tr
 | Banco | Concluído | Migration 0059: `REVOKE SELECT` da tabela e `GRANT SELECT` por coluna ao papel do tenant em `organization_billing` e `entitlement_grants`. |
 | Código | Sem mudança | Os repositórios já selecionavam colunas nomeadas. |
 | Gate PostgreSQL 18 | Concluído | `entitlement-grants`: o tenant é recusado (`42501`) ao ler cada coluna interna e com `SELECT *`, e ainda lê as colunas que o produto usa; os gates de entitlements, metas, variantes operacionais, catálogo, lifecycle, runtime, auditoria e sync passaram na mesma branch descartável. |
+| Publicação | Concluída | [GitHub PR #104](https://github.com/camilagama/polaris/pull/104) mesclado na `main` (merge `71ba4f5`). |
 
 ### CI: o job de banco deixa de ser consultivo
 
 Cumpre o item "promover os jobs consultivos `database` e `audit` a checks obrigatórios depois de um histórico verde" (linha de pendências do Gate 4), só para o `database`: o job "PostgreSQL 18 gates" perdeu o `continue-on-error` (emenda ao [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md)). A auditoria de dependências segue consultiva. A proteção de branch que torna o check obrigatório para o merge é do responsável.
 
-### Fase 8A — catálogo público: dados, comandos e leitura por funções (PR87 e PR88; implementação, gate, revisão independente e verificações locais concluídos; publicação: ver PR)
+Mesclado no [PR #105](https://github.com/camilagama/polaris/pull/105) (merge `f988872`).
+
+### Fase 8A — catálogo público: dados, comandos e leitura por funções (PR87 e PR88; implementação, gate, revisão independente e verificações locais concluídos; mesclada no PR #106)
 
 A Fase 8 passa a ser implementada antes do Gate 7 ([ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md)), que segue pendente das contas sandbox. Este pull request é só a camada de dados e de comandos; a aplicação `apps/catalog` (8B), a rota pública de mídia e a despublicação (8C) e as telas do ERP (8D) vêm depois.
 
@@ -1298,8 +1306,9 @@ A Fase 8 passa a ser implementada antes do Gate 7 ([ADR 0068](../docs/adr/0068-f
 | Revisão independente | Concluída sem Critical | Achou um alto e três médios, tratados: os gates `gate2-runtime` e `tenant-context` fixavam a lista exata de políticas (agora ignoram as do dono das funções); `storageKey` contém o prefixo da organização (documentado: só o servidor a vê, nunca o navegador); dois primeiros salvamentos simultâneos viravam erro cru (agora conflito de versão); a auditoria não dizia qual produto (agora um evento por produto). Também tratados: leitura da tela sem trava, ID de produto inválido, relógio ao despublicar, caracteres ocultos, auditoria de repetição e lacunas do gate. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (150 arquivos, 1728 testes), `build` e `db:generate` sem drift. O gate `poc:tenant:verify` (que não está no runner) recebeu só o filtro das políticas e não foi executado. |
 | Limites | Registrados | Endereço antigo liberado na troca; ordem pelo ID do produto (UUIDv7); sem tela (8D) nem aplicação pública (8B); o teste de propriedade de `facts.test.ts` foi ajustado por uma falha intermitente sem relação (um pagamento que só aprende o ciclo não tem transição). |
+| Publicação | Concluída | [GitHub PR #106](https://github.com/camilagama/polaris/pull/106) mesclado na `main` (merge `766f2b7`). |
 
-### Fase 8B — aplicação do catálogo público e SEO (PR86 e PR90; implementação, verificação no navegador e verificações locais concluídos; publicação: ver PR)
+### Fase 8B — aplicação do catálogo público e SEO (PR86 e PR90; implementação, verificação no navegador e verificações locais concluídos; mesclada no PR #107)
 
 Segunda etapa da Fase 8 ([ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md) e [0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)): a primeira aplicação aberta a quem não tem conta.
 
@@ -1313,8 +1322,9 @@ Segunda etapa da Fase 8 ([ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md) 
 | Verificação no navegador | Concluída | Servidor local contra uma branch Neon descartável, com o login do papel público: loja, produto com variantes e preços, endereço em maiúsculas, 404 de loja inexistente, de ID e de cursor inválidos, `robots.txt`, título e metas no HTML, tela de 375 px. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build` (inclui `vite build` do app) e o gate `public-catalog` de novo em Neon. |
 | Limites | Registrados | Sem imagens (8C), sem cache de borda (8C decide o TTL), sem `sitemap.xml` (não há função que liste lojas; um sitemap por loja pode vir depois), páginas com `?after=` repetem o canonical da primeira (e um cursor que já não existe mostra "sem produtos"); o script de ciclos ignora o arquivo gerado `routeTree.gen.ts`; `CATALOG_ORIGIN` precisa ser definida por ambiente (sem ela o Worker falha em vez de publicar um endereço de desenvolvimento); Hyperdrive real e login do papel público são do go-live (runbook). Sem teste automatizado de navegador do app (a verificação foi manual). |
+| Publicação | Concluída | [GitHub PR #107](https://github.com/camilagama/polaris/pull/107) mesclado na `main` (merge `cf78d79`). |
 
-### Fase 8C — rota pública de imagens e despublicação (PR89 e PR91; implementação, verificação no navegador e verificações locais concluídos; publicação: ver PR)
+### Fase 8C — rota pública de imagens e despublicação (PR89 e PR91; implementação, verificação no navegador e verificações locais concluídos; mesclada no PR #108)
 
 Terceira etapa da Fase 8: as imagens do catálogo público, sem abrir o bucket.
 
@@ -1328,12 +1338,15 @@ Terceira etapa da Fase 8: as imagens do catálogo público, sem abrir o bucket.
 | Verificação no navegador | Concluída | Servidor local contra Neon descartável e R2 local: original e derivado ausente, `304`, tamanho inválido, imagem de outro produto (`404`), metas `og:image` no HTML. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build` e `bun install --frozen-lockfile`. |
 | Limites | Registrados | O binding R2 do Worker público não pode ser somente leitura (só `get` é usado); o Worker não gera derivados e os derivados passam a ser gerados no envio pelo ERP (ver a seção abaixo); um teste de navegador automatizado do app continua pendente. |
+| Publicação | Concluída | [GitHub PR #108](https://github.com/camilagama/polaris/pull/108) mesclado na `main` (merge `42a4427`). |
 
 ### Derivados de imagem gerados no envio (fecha o limite da 8C)
 
 A revisão da 8C notou que nada gerava os derivados de 320 e 640 px, então o catálogo público serviria o original de até 1200 px nos cartões e no `og:image`. O ERP agora gera os dois derivados quando a imagem é enviada (`storeUploadDerivatives`, em `apps/web/src/server/routes/media.ts`): depois de o envio ser confirmado e só se não for um reenvio idempotente, um tamanho de cada vez, com a mesma chave e a mesma função do pedido sob demanda. Uma falha é registrada (`media_derivative_deferred`) e **não** falha o envio: o derivado nasce no primeiro pedido do ERP, como antes. A limpeza horária já apagava os derivados junto da imagem. Testes: o envio escreve a marca, o original e os dois derivados (chaves conferidas), um derivado que falha não derruba o envio, o reenvio não gera nada. Imagens enviadas antes (só ambientes de teste) seguem servidas em tamanho original. Regras em [media.md](../docs/business-rules/media.md), decisão no [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md).
 
-### Fase 8D — o catálogo público no ERP: perfil, interruptor e produtos (PR87 e PR88, lado da organização; implementação e verificações locais concluídas; publicação: ver PR)
+Mesclado no [PR #109](https://github.com/camilagama/polaris/pull/109) (merge `2f1c545`).
+
+### Fase 8D — o catálogo público no ERP: perfil, interruptor e produtos (PR87 e PR88, lado da organização; implementação e verificações locais concluídas; mesclada no PR #110)
 
 Última etapa da Fase 8: a organização passa a gerir o catálogo pela interface, sem comandos manuais.
 
@@ -1344,10 +1357,11 @@ A revisão da 8C notou que nada gerava os derivados de 320 e 640 px, então o ca
 | Tela | Concluída | `/public-catalog` ("Catálogo público" no menu): perfil, interruptor e produtos, com o endereço sugerido pelo nome, contador da descrição, estados "No ar", "Fora do ar" e "Ligado, mas fora do ar" (plano), lotes de até 200 produtos, mensagens em português ([DESIGN.md](../DESIGN.md)). Modelo, mensagens de erro e os três painéis têm testes (`public-catalog-model`, `-errors`, `-panels`). |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (156 arquivos, 1782 testes), `build`. |
 | Limites | Registrados | A tela não foi aberta no navegador (o login do ERP exige conta; foi coberta por testes de renderização dos painéis e de roteador); sem teste de navegador automatizado; sem pré-visualização do catálogo dentro do ERP (há o link). |
+| Publicação | Concluída | [GitHub PR #110](https://github.com/camilagama/polaris/pull/110) mesclado na `main` (merge `94740f3`). |
 
 Com isso a Fase 8 está completa no código. Pendências da fase: o Gate 7 (billing com sandboxes reais) segue como gate de saída do billing, e o go-live exige o login do papel público, o Hyperdrive sem query cache e as variáveis por ambiente (runbook).
 
-### Fase 9A — Admin: acesso pelo Cloudflare Access, principal de plataforma e capacidades (PR92, PR93 e PR94; implementação, gate, revisão e verificações locais concluídos; publicação: ver PR)
+### Fase 9A — Admin: acesso pelo Cloudflare Access, principal de plataforma e capacidades (PR92, PR93 e PR94; implementação, gate, revisão e verificações locais concluídos; mesclada no PR #111)
 
 Primeira etapa da Fase 9 ([ADR 0070](../docs/adr/0070-admin-acesso-identidade-e-capacidades.md)): a pergunta "quem opera o Polaris e o que pode" passa a ter uma resposta verificada.
 
@@ -1362,8 +1376,9 @@ Primeira etapa da Fase 9 ([ADR 0070](../docs/adr/0070-admin-acesso-identidade-e-
 | Fronteiras | Concluídas | Biome e 6 fixtures novas: o Admin só importa o repositório de principais (nada de tenant, cobrança, auth, `pg` nem Drizzle); Knip configurado. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
 | Limites | Registrados | MFA e duração da sessão são política do Access (runbook), não do Worker; sem tela do Admin (só `/api/whoami`); o fluxo contra um Access real não foi exercitado (precisa da conta do responsável): coberto por testes com chaves e tokens gerados; casos de suporte, acesso temporário, revelação de dados pessoais, cobrança e suspensão são as próximas etapas. |
+| Publicação | Concluída | [GitHub PR #111](https://github.com/camilagama/polaris/pull/111) mesclado na `main` (merge `c593c63`). |
 
-### Fase 9B — Admin: diagnóstico de organização sem acesso ao tenant (PR95; implementação, gate e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+### Fase 9B — Admin: diagnóstico de organização sem acesso ao tenant (PR95; implementação, gate e verificações locais concluídos; mesclada no PR #112; revisão independente não registrada nesta seção)
 
 Segunda etapa da Fase 9 ([ADR 0071](../docs/adr/0071-admin-diagnostico-sem-acesso-ao-tenant.md)): o operador enxerga o estado de uma organização sem ler nenhum dado do tenant.
 
@@ -1376,8 +1391,9 @@ Segunda etapa da Fase 9 ([ADR 0071](../docs/adr/0071-admin-diagnostico-sem-acess
 | Gate PostgreSQL 18 | Concluído | `admin-diagnostics` (suítes `gate9`, `ci` e `all`): só o papel do Admin executa as funções (tenant, cobrança, catálogo e PUBLIC não), o Admin segue sem alcançar nenhuma tabela além dos principais, as contagens batem numa organização com produtos, imagens, metas, concessão, aparelho, comandos e eventos de cobrança, nenhum texto digitado (produto, e-mail, rótulo, motivo de concessão, caminho de arquivo) aparece, o plano é o do motor (concessão em vigor, período vencido é Free, sem cobrança é Free), busca, páginas e entradas inválidas. Também passaram `platform-principals`, `review-hardening` e `gate2-runtime` (os gates que fixam a lista de políticas passaram a ignorar as do dono das funções do Admin). |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
 | Limites | Registrados | Sem tela do Admin (só API); o nome da organização aparece ao operador; a leitura não é auditada (não é dado sensível); os pontos de atenção são heurísticas fixas. |
+| Publicação | Concluída | [GitHub PR #112](https://github.com/camilagama/polaris/pull/112) mesclado na `main` (merge `600db43`). |
 
-### Fase 9C — Admin: casos de suporte, acesso temporário, leitura mascarada e revelação auditada (PR96, PR97 e PR98; implementação, gate e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+### Fase 9C — Admin: casos de suporte, acesso temporário, leitura mascarada e revelação auditada (PR96, PR97 e PR98; implementação, gate e verificações locais concluídos; mesclada no PR #113; revisão independente não registrada nesta seção)
 
 Terceira etapa da Fase 9 ([ADR 0072](../docs/adr/0072-admin-casos-acesso-temporario-e-revelacao.md)): ver dados de um cliente passa a exigir motivo, tempo limitado, mascaramento e registro.
 
@@ -1390,6 +1406,7 @@ Terceira etapa da Fase 9 ([ADR 0072](../docs/adr/0072-admin-casos-acesso-tempora
 | Gate PostgreSQL 18 | Concluído | `admin-support` (suítes `gate9`, `ci` e `all`): sem acesso nada se lê nem revela; as funções certas são as únicas executáveis pelo Admin; casos só para organização real, tipo conhecido e operador ativo; acesso de 5 a 240 minutos (uma hora por padrão), de um operador e um caso; clientes mascarados no formato combinado, sem nenhum valor real, só da organização do caso; revelação só de campo permitido, de cliente da organização, só com acesso, registrada **sem o valor**; auditoria que nem o dono do banco altera; acesso termina por tempo, revogação e fechamento do caso. Os gates `admin-diagnostics` e `platform-principals` passaram a provar também os novos privilégios do dono, por coluna, por tabela e por política. Também `review-hardening` e `gate2-runtime`. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
 | Limites | Registrados | Sem tela do Admin (só API); só clientes são legíveis; o banco confia no ID do operador que o Worker passa (um Worker comprometido age como operador, mas não lê sem acesso nem deixa de auditar); sem aviso ao cliente de que seus dados foram vistos. |
+| Publicação | Concluída | [GitHub PR #113](https://github.com/camilagama/polaris/pull/113) mesclado na `main` (merge `12a240f`). |
 
 ### Fase 9D — Admin: suspensão de organização e comandos de cobrança (PR99 parcial e PR100; mesclada no PR #114)
 
@@ -1404,8 +1421,9 @@ Terceira etapa da Fase 9 ([ADR 0072](../docs/adr/0072-admin-casos-acesso-tempora
 | Gate PostgreSQL 18 | Concluído | `admin-suspension` (suítes `gate9`, `ci` e `all`): exige operador ativo e caso aberto; suspender muda status, época e concessões, deixa a cobrança e outra organização exatamente como estavam, a organização deixa de abrir para os usuários, repetir é uma vez, a suspensão espera uma concessão sendo emitida (mesma chave por usuário) e a revoga, um usuário em duas organizações só perde a suspensa, concessões e livro de cobrança intactos, a auditoria registra o número de concessões; reativar não ressuscita o revogado nem reabre encerrada; passos de cobrança só dos quatro tipos, de caso aberto e operador ativo; o comando de billing recusa encerrar concessão de outra organização. Os gates `admin-support`, `admin-diagnostics` e `platform-principals` provam também os novos privilégios do dono (colunas atualizáveis, políticas) e o conjunto exato de funções do Admin. |
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test`, `build`, `db:generate` sem drift. |
 | Limites | Registrados | Reconciliar, cancelar renovação e reembolsar só existem com provedor (Gate 7); a auditoria dos comandos de cobrança não é atômica com a ação (pedido antes, resultado depois); sem aprovação de uma segunda pessoa; sem aviso ao cliente. Com isto a Fase 9 está completa no código; resta o Gate H do plano (Admin/RLS), cuja parte de banco está nos gates `admin-*`, e a prova com um Cloudflare Access real, que depende da conta do responsável. |
+| Publicação | Concluída | [GitHub PR #114](https://github.com/camilagama/polaris/pull/114) mesclado na `main` (merge `70b835c`). |
 
-### Fase 10A — Privacidade: encerramento de organização (PR101; implementação, gate e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+### Fase 10A — Privacidade: encerramento de organização (PR101; implementação, gate e verificações locais concluídos; mesclada no PR #116)
 
 Primeiro passo da Fase 10 ([ADR 0074](../docs/adr/0074-encerramento-de-organizacao.md)): o dono encerra a organização, o acesso acaba na hora e ele pode desfazer por 30 dias. A purga, a anonimização, os casos de privacidade, o export, a retenção e o deletion ledger são os PR seguintes (PR102 a PR107).
 
@@ -1420,8 +1438,9 @@ Primeiro passo da Fase 10 ([ADR 0074](../docs/adr/0074-encerramento-de-organizac
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (167 arquivos, 1883 testes), `build` e `db:generate` sem drift. |
 | Revisão independente | Concluída | Sem defeito de segurança; achados tratados: janela em horas (independente do fuso), recusas casadas por SQLSTATE e mensagem (uma permissão faltando não vira recusa educada), cenários novos no gate (concessão depois do pedido, pedidos simultâneos); decisão de produto registrada no ADR: quem encerra a única organização não abre outra até o purge. |
 | Limites | Registrados | Sem tela, sem e-mail ao dono, sem export automático, cancelamento da renovação no provedor só no Gate 7 (ver ADR 0074). |
+| Publicação | Concluída | [GitHub PR #116](https://github.com/camilagama/polaris/pull/116) mesclado na `main` (merge `29733cd`). |
 
-### Fase 10B — Privacidade: anonimização de cliente (PR102; implementação, gate e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
+### Fase 10B — Privacidade: anonimização de cliente (PR102; implementação, gate e verificações locais concluídos; mesclada no PR #117)
 
 Segundo passo da Fase 10 ([ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)): `customer.anonymizeForPrivacy` remove a pessoa do cadastro e preserva os fatos econômicos das vendas.
 
@@ -1436,6 +1455,7 @@ Segundo passo da Fase 10 ([ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-po
 | Verificação local | Concluída | `format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (167 arquivos, 1892 testes), `build` e `db:generate` sem drift. |
 | Revisão independente | Concluída | Sem falha de integridade no banco; achados tratados: as vendas recentes guardadas no aparelho (com o nome do cliente) são atualizadas quando um cliente muda, a tela do aparelho reconhece o anonimizado pelo formato que só ele pode ter, arquivar de novo com versão velha é no-op; limites registrados no ADR (hash do log de comandos é pseudonimização, fila de edições offline). |
 | Limites | Registrados | Cópias fora do banco ativo (backups, branches, exportações, aparelhos que não sincronizaram) e texto livre em outros registros ficam para retenção e purge; sem motivo registrado até o PR103; o modelo local não guarda a marca (o servidor recusa). |
+| Publicação | Concluída | [GitHub PR #117](https://github.com/camilagama/polaris/pull/117) mesclado na `main` (merge `8188579`). |
 
 ### Correções das revisões pós-merge do bot (PR #114 e PR #116)
 
@@ -1448,7 +1468,9 @@ O bot revisor ([comentário no #114](https://github.com/camilagama/polaris/pull/
 | #116: a confirmação digitada vale só no TypeScript | Registrado nos limites do ADR 0074. |
 | #116 e #114: número de ADR que colide com o rascunho #96 | Não é deste PR: o #96 precisa ir para 0076 ou mais (0074 e 0075 estão em uso). |
 
-### Fase 10C — Privacidade: casos de privacidade (PR103; implementação, gate e verificações locais concluídos; revisão e publicação: ver linhas abaixo)
+Mesclado no [PR #119](https://github.com/camilagama/polaris/pull/119) (merge `12243a9`).
+
+### Fase 10C — Privacidade: casos de privacidade (PR103; implementação, gate e verificações locais concluídos; mesclada no PR #120)
 
 Terceiro passo da Fase 10 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): o fluxo interno de um pedido sobre dado pessoal, no Admin.
 
@@ -1462,4 +1484,5 @@ Terceiro passo da Fase 10 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md))
 | Revisão independente | Concluída | Achados tratados: `partially_accept` sem motivo (a função deixava passar e o CHECK recusava: virava 500), o motivo de identidade só para identidade que falhou em qualquer decisão, o gatilho só aceitando o passo seguinte (antes a adjacência estava só na função), a ação registrada combinando com a decisão, caso inexistente respondendo 404 (não 409), `admin_not_configured` respondendo 503, a resolução travando o caso de suporte (como o fechamento genérico), a referência ao titular só como identificador, e um teste de paridade no gate entre o banco e o domínio em todas as combinações. Limites no ADR: o papel é declarado pelo operador; o purge (PR107) precisa tratar essas tabelas. |
 | Suíte completa em Neon | Parcial | PR101 e PR102 rodaram a suíte `ci` inteira e o `gate2-runtime`; este PR rodou só os afetados (política do ADR 0025). A suíte completa da Fase 10 roda ao entregar o último PR da fase. |
 | Limites | Registrados | Sem tela do Admin; sem aviso nem contato do titular; prazo provisório, sem lembrete; um caso é sempre de uma organização; a execução é só registrada (os comandos de anonimizar e encerrar seguem do dono). |
+| Publicação | Concluída | [GitHub PR #120](https://github.com/camilagama/polaris/pull/120) mesclado na `main` (merge `ff9343c`). |
 
