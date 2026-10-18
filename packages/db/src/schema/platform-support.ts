@@ -209,7 +209,8 @@ export const platformAuditEvents = pgTable(
         AND entity_type = 'organization'
         AND entity_id = organization_id
         AND detail IS NULL
-        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')`,
+        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
+        AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id AND purge_plan.scheduled_by = platform_audit_events.principal_id AND purge_plan.support_case_id = platform_audit_events.support_case_id)`,
     }),
   ]
 ).enableRLS();

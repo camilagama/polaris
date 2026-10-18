@@ -10,6 +10,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'polaris_purge_owner') THEN
     EXECUTE 'CREATE ROLE polaris_purge_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
   END IF;
+  -- a role that already existed gets the same attributes: this one deletes tenant data and is never a login
+  EXECUTE 'ALTER ROLE polaris_purge_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
 END
 $roles$;--> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
@@ -117,7 +119,8 @@ CREATE POLICY "platform_audit_events_purge_owner_insert" ON "platform_audit_even
         AND entity_type = 'organization'
         AND entity_id = organization_id
         AND detail IS NULL
-        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged'));--> statement-breakpoint
+        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
+        AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id AND purge_plan.scheduled_by = platform_audit_events.principal_id AND purge_plan.support_case_id = platform_audit_events.support_case_id));--> statement-breakpoint
 -- the Admin reads the end of the recovery window before scheduling
 GRANT SELECT (organization_id, recover_until) ON TABLE public.organization_closures TO polaris_admin_owner;--> statement-breakpoint
 CREATE POLICY organization_closures_admin_owner_select ON public.organization_closures
@@ -425,6 +428,11 @@ BEGIN
   END IF;
   SELECT organization.status INTO picked_status
     FROM public.organizations AS organization WHERE organization.id = picked.organization_id;
+  -- a cancellation that committed between the scan and the row lock leaves the organization `closed`
+  -- again (and invisible to this role): nothing is claimed, and the storage is not touched
+  IF picked_status IS NULL OR picked_status NOT IN ('purge_pending', 'purged') THEN
+    RETURN NULL;
+  END IF;
   UPDATE public.organization_purges
      SET attempts = picked.attempts + 1,
          locked_until = pg_catalog.now() + p_lease_seconds * interval '1 second'

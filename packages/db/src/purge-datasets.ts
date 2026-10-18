@@ -66,7 +66,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     organization_billing:
       "Estado da assinatura e referência do cliente no provedor, registro da plataforma; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
     organization_purges:
-      "O registro do próprio purge (quem agendou, quando terminou), sem dado pessoal.",
+      "O registro do próprio purge (quem agendou, quando terminou e, se cancelado, o motivo curto que o operador escreveu), sem dado pessoal além desse texto livre.",
     platform_audit_events:
       "Auditoria do Admin, imutável: sobrevive à organização (ADR 0070 e 0079).",
     rls_poc_operations:

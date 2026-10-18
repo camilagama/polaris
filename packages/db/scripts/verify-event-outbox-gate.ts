@@ -492,12 +492,13 @@ async function run() {
     assert.deepEqual(
       privileges.rows
         .filter((row) => row.allowed)
-        .map((row) => `${row.grantee}:${row.privilege}`),
+        .map((row) => `${row.grantee}:${row.privilege}`)
+        .sort(),
       [
-        `${runtimeRole}:INSERT`,
-        "polaris_purge_owner:SELECT",
         "polaris_purge_owner:DELETE",
-      ],
+        "polaris_purge_owner:SELECT",
+        `${runtimeRole}:INSERT`,
+      ].sort(),
       "only the tenant runtime holds a privilege, and it is INSERT; the purge owner reads and deletes, for the organization it purges (ADR 0081)"
     );
     const insertable = await owner.pool.query<{

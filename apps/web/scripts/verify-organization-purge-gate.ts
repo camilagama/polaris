@@ -232,14 +232,16 @@ async function run() {
          CROSS JOIN LATERAL aclexplode(p.proacl) AS acl
          JOIN pg_catalog.pg_roles AS r ON r.oid = acl.grantee
         WHERE p.proname IN ('claim_organization_purge', 'list_organization_purge_media', 'purge_organization_data',
-                            'record_organization_purge_failure', 'complete_organization_purge_sweep', 'admin_schedule_organization_purge')
+                            'record_organization_purge_failure', 'complete_organization_purge_sweep', 'admin_schedule_organization_purge',
+                            'admin_cancel_organization_purge')
           AND acl.privilege_type = 'EXECUTE' AND r.rolname NOT IN ('polaris_purge_owner', 'polaris_admin_owner')
         ORDER BY 1, 2`
     );
     for (const row of executors.rows) {
       assert.equal(
         row.grantee,
-        row.fn === "admin_schedule_organization_purge"
+        row.fn === "admin_schedule_organization_purge" ||
+          row.fn === "admin_cancel_organization_purge"
           ? "polaris_admin_runtime"
           : "polaris_privacy_runtime",
         `${row.fn} is executed only by its runtime`
@@ -917,6 +919,24 @@ async function run() {
       "a scheduled purge is cancelled only with a reason and while no run holds it: the organization goes back to closed, the audit records it without the reason, nothing is deleted, and it can be scheduled again"
     );
 
+    // the purge owner deletes tenant data: it is never a login, bypasses nothing and has no member that could become it
+    const purgeOwnerRole = await owner.pool.query<{
+      members: string;
+      rolbypassrls: boolean;
+      rolcanlogin: boolean;
+      rolsuper: boolean;
+    }>(
+      `SELECT r.rolcanlogin, r.rolsuper, r.rolbypassrls,
+              (SELECT count(*)::text FROM pg_auth_members AS m WHERE m.roleid = r.oid AND (m.set_option OR m.inherit_option)) AS members
+         FROM pg_roles AS r WHERE r.rolname = 'polaris_purge_owner'`
+    );
+    assert.deepEqual(purgeOwnerRole.rows[0], {
+      members: "0",
+      rolbypassrls: false,
+      rolcanlogin: false,
+      rolsuper: false,
+    });
+
     // the purge owner writes one audit event only: the completion, once the organization is purged
     const asPurgeOwner = async (statement: string, values: unknown[] = []) => {
       const client = await owner.pool.connect();
@@ -1071,6 +1091,34 @@ async function run() {
         support_case_id: privacyCase.id,
       },
     ]);
+    // and the policy ties the event to the purge's own record: another principal or case is refused
+    const otherPrincipal = (
+      await owner.pool.query<{ id: string }>(
+        "INSERT INTO public.platform_principals (issuer, subject, role, status) VALUES ($1, $2, 'platform_owner', 'active') RETURNING id",
+        ["https://purge-gate.example", `purge-other-${randomUUID()}`]
+      )
+    ).rows[0]?.id;
+    assert.ok(otherPrincipal);
+    await expectSqlState(
+      () =>
+        asPurgeOwner(
+          `INSERT INTO public.platform_audit_events (principal_id, event_type, organization_id, support_case_id, entity_type, entity_id)
+           VALUES ($1, 'organization.purge_completed', $2, $3, 'organization', $2)`,
+          [otherPrincipal, target.organizationId, privacyCase.id]
+        ),
+      "42501",
+      "the completion names the operator who scheduled the purge, not another"
+    );
+    await expectSqlState(
+      () =>
+        asPurgeOwner(
+          `INSERT INTO public.platform_audit_events (principal_id, event_type, organization_id, support_case_id, entity_type, entity_id)
+           VALUES ($1, 'organization.purge_completed', $2, $3, 'organization', $2)`,
+          [principal, target.organizationId, supportCase.id]
+        ),
+      "42501",
+      "nor another case"
+    );
     // a purge that was carried out cannot be cancelled
     await assert.rejects(
       () => cancel(privacyCase.id, "Tarde demais"),
