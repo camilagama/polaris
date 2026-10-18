@@ -304,3 +304,216 @@ export function auditBillingCommand(
     [principalId, caseId, event, entityId, detail]
   );
 }
+
+/**
+ * The workflow of a privacy request (plan PR103, ADR 0077). Each call moves one step and
+ * writes the audit in the same transaction; a step out of order, or a decision the case
+ * does not allow, is refused by the database with a named code.
+ */
+export interface PrivacyCaseSummary {
+  dueAt: string;
+  id: string;
+  openedAt: string;
+  organizationId: string;
+  organizationName: string;
+  overdue: boolean;
+  requesterKind: string;
+  requestType: string;
+  stage: string;
+  status: string;
+}
+
+export interface PrivacyCasePage {
+  cases: PrivacyCaseSummary[];
+  next: string | null;
+}
+
+export interface PrivacyCaseDetail {
+  actions: {
+    action: string;
+    entityId: string | null;
+    id: string;
+    recordedAt: string;
+    recordedBy: string;
+  }[];
+  audit: {
+    at: string;
+    detail: string | null;
+    entityType: string | null;
+    eventType: string;
+    principalId: string;
+  }[];
+  case: {
+    closedAt: string | null;
+    id: string;
+    openedAt: string;
+    organizationId: string;
+    organizationName: string;
+    resolution: string | null;
+    status: string;
+  };
+  privacy: {
+    channel: string;
+    decision: string | null;
+    decisionNote: string | null;
+    decisionReason: string | null;
+    dueAt: string;
+    identityMethod: string | null;
+    identityStatus: string | null;
+    note: string | null;
+    overdue: boolean;
+    polarisRole: string | null;
+    receivedAt: string;
+    requesterKind: string;
+    requestType: string;
+    resolvedAt: string | null;
+    scopeCategories: string[] | null;
+    stage: string;
+    subjectReference: string | null;
+  };
+}
+
+export interface PrivacyStepResult {
+  id: string;
+  stage: string;
+}
+
+export function openPrivacyCase(
+  client: AdminQueryable,
+  principalId: string,
+  input: {
+    channel: string;
+    dueDays: number;
+    note: string | null;
+    organizationId: string;
+    reason: string;
+    receivedAt: Date | null;
+    requesterKind: string;
+    requestType: string;
+  }
+) {
+  return call<{
+    dueAt: string;
+    id: string;
+    openedAt: string;
+    organizationId: string;
+    stage: string;
+  }>(
+    client,
+    "public.admin_open_privacy_case($1, $2, $3, $4, $5, $6, $7::timestamptz, $8, $9::integer)",
+    [
+      principalId,
+      input.organizationId,
+      input.reason,
+      input.requestType,
+      input.requesterKind,
+      input.channel,
+      input.receivedAt,
+      input.note,
+      input.dueDays,
+    ]
+  );
+}
+
+export function recordPrivacyIdentity(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  input: { method: string; status: string }
+) {
+  return call<PrivacyStepResult>(
+    client,
+    "public.admin_privacy_record_identity($1, $2, $3, $4)",
+    [principalId, caseId, input.status, input.method]
+  );
+}
+
+export function recordPrivacyRole(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  role: string
+) {
+  return call<PrivacyStepResult>(
+    client,
+    "public.admin_privacy_record_role($1, $2, $3)",
+    [principalId, caseId, role]
+  );
+}
+
+export function recordPrivacyScope(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  input: { categories: string[]; subjectReference: string | null }
+) {
+  return call<PrivacyStepResult>(
+    client,
+    "public.admin_privacy_record_scope($1, $2, $3::text[], $4)",
+    [principalId, caseId, input.categories, input.subjectReference]
+  );
+}
+
+export function recordPrivacyDecision(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  input: { decision: string; note: string | null; reason: string | null }
+) {
+  return call<PrivacyStepResult>(
+    client,
+    "public.admin_privacy_record_decision($1, $2, $3, $4, $5)",
+    [principalId, caseId, input.decision, input.reason, input.note]
+  );
+}
+
+export function recordPrivacyAction(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  input: { action: string; entityId: string | null }
+) {
+  return call<PrivacyStepResult & { actionId: string }>(
+    client,
+    "public.admin_privacy_record_action($1, $2, $3, $4)",
+    [principalId, caseId, input.action, input.entityId]
+  );
+}
+
+export function resolvePrivacyCase(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  resolution: string | null
+) {
+  return call<PrivacyStepResult & { revokedGrants: number }>(
+    client,
+    "public.admin_privacy_resolve($1, $2, $3)",
+    [principalId, caseId, resolution]
+  );
+}
+
+/** Null when there is no such privacy case. */
+export function readPrivacyCase(client: AdminQueryable, caseId: string) {
+  return call<PrivacyCaseDetail>(
+    client,
+    "public.admin_privacy_case_detail($1)",
+    [caseId]
+  );
+}
+
+export async function listPrivacyCases(
+  client: AdminQueryable,
+  input: {
+    after: string | null;
+    filter: "closed" | "open" | "overdue" | null;
+    limit: number;
+  }
+): Promise<PrivacyCasePage> {
+  const page = await call<PrivacyCasePage>(
+    client,
+    "public.admin_list_privacy_cases($1, $2, $3)",
+    [input.filter, input.limit, input.after]
+  );
+  return page ?? { cases: [], next: null };
+}

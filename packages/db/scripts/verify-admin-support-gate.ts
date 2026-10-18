@@ -9,6 +9,7 @@ import {
   closeSupportCase,
   grantTenantAccess,
   listSupportCases,
+  openPrivacyCase,
   listTenantCustomers,
   openSupportCase,
   readSupportCase,
@@ -48,10 +49,19 @@ const ADMIN_FUNCTIONS = [
   "admin_audit_billing_command",
   "admin_close_support_case",
   "admin_grant_tenant_access",
+  "admin_list_privacy_cases",
   "admin_list_support_cases",
+  "admin_open_privacy_case",
   "admin_open_support_case",
   "admin_organization_diagnostics",
   "admin_organizations_overview",
+  "admin_privacy_case_detail",
+  "admin_privacy_record_action",
+  "admin_privacy_record_decision",
+  "admin_privacy_record_identity",
+  "admin_privacy_record_role",
+  "admin_privacy_record_scope",
+  "admin_privacy_resolve",
   "admin_reactivate_organization",
   "admin_reveal_customer_field",
   "admin_revoke_tenant_access",
@@ -366,11 +376,23 @@ async function run() {
       () => open(p1, "no-such-organization"),
       "unknown_organization"
     );
-    const privacyCase = await open(
-      p2,
-      orgB.organizationId,
-      "privacy",
-      "Pedido de acesso do titular"
+    // a privacy case is opened through its own workflow (the generic opening refuses it)
+    await refused(
+      () =>
+        open(p2, orgB.organizationId, "privacy", "Pedido de acesso do titular"),
+      "privacy_case_workflow_required"
+    );
+    const privacyCase = await asAdmin((client) =>
+      openPrivacyCase(client, p2, {
+        channel: "email",
+        dueDays: 15,
+        note: null,
+        organizationId: orgB.organizationId,
+        reason: "Pedido de acesso do titular",
+        receivedAt: null,
+        requesterKind: "data_subject",
+        requestType: "access",
+      })
     );
     const open2 = await asAdmin((client) =>
       listSupportCases(client, {

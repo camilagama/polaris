@@ -4,10 +4,7 @@ import type {
   SupportCasePage,
   TenantAccessGrantRecord,
 } from "@polaris/db/admin-support-repository";
-import {
-  hasPlatformCapability,
-  type PlatformCapability,
-} from "@polaris/domain/admin/platform-capabilities";
+import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
 import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
   InvalidSupportRequestError,
@@ -122,7 +119,7 @@ export interface SupportDependencies {
   ) => Promise<boolean>;
 }
 
-const UUID =
+export const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID_IN_PATH =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
@@ -145,7 +142,9 @@ function controlCharacter(text: string): boolean {
 }
 
 /** A JSON object body of reasonable size, or null when the request does not carry one. */
-async function readBody(context: Context<AdminEnv>): Promise<Json | null> {
+export async function readBody(
+  context: Context<AdminEnv>
+): Promise<Json | null> {
   const type = context.req.header("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/json")) {
     return null;
@@ -175,7 +174,10 @@ function optionalString(value: unknown): string | null | undefined {
  * A change that comes from a browser must come from this origin: the login is a
  * cookie, so a page elsewhere could otherwise make the operator's browser act.
  */
-const sameOrigin: MiddlewareHandler<AdminEnv> = async (context, next) => {
+export const sameOrigin: MiddlewareHandler<AdminEnv> = async (
+  context,
+  next
+) => {
   const origin = context.req.header("origin");
   if (
     context.req.method !== "GET" &&
@@ -280,15 +282,9 @@ export function supportRoutes(
         kind: body.kind,
         reason: body.reason,
       });
-      // a privacy case is its own responsibility, on top of managing cases
-      if (
-        normalized.kind === "privacy" &&
-        !hasPlatformCapability(
-          context.get("principal").role,
-          "privacy_case:manage"
-        )
-      ) {
-        return context.json({ error: "forbidden" }, 403);
+      // a privacy case has its own workflow (and its own capability): it is opened there, not here
+      if (normalized.kind === "privacy") {
+        return context.json({ error: "privacy_case_workflow_required" }, 400);
       }
       const created = await dependencies.open(
         principalOf(context),

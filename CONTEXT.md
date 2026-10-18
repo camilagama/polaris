@@ -14,6 +14,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Anonimização de cliente (customer anonymization):** a pessoa sai do cadastro (nome fixo, sem telefone, email nem observações) e o registro fica, para que as vendas ligadas a ele mantenham seus fatos econômicos. Irreversível; distinta de arquivar.<br>
 
+**Caso de privacidade (privacy case):** o fluxo interno de um pedido sobre dado pessoal, do pedido à resolução, com o papel do Polaris (controlador ou operador) determinado antes da decisão. Guarda só códigos, uma referência opaca e uma nota curta; nunca o dado pessoal. É um caso de suporte de um tipo próprio.<br>
+
 **Membership (vínculo):** relação de acesso entre um usuário e uma organização.
 
 **Owner:** papel inicial do membro responsável pela organização.

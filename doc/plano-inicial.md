@@ -4430,6 +4430,10 @@ Idempotente.
 
 
 
+Pendência herdada do PR103 ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md)): os casos de privacidade (`privacy_cases`, `privacy_case_actions` e o caso de suporte) têm chave estrangeira restritiva para a organização e as tabelas forçam RLS sem política para o papel de purge. O caminho privilegiado do purge precisa tratá-las: são evidência do atendimento e devem sobreviver à organização (sem dado pessoal).
+
+
+
 ---
 
 

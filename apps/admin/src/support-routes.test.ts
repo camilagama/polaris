@@ -91,6 +91,17 @@ function setup(
       diagnostics: vi.fn(() => Promise.resolve(null)),
       list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
     },
+    privacy: {
+      action: vi.fn(),
+      decision: vi.fn(),
+      detail: vi.fn(),
+      identity: vi.fn(),
+      list: vi.fn(),
+      open: vi.fn(),
+      resolve: vi.fn(),
+      role: vi.fn(),
+      scope: vi.fn(),
+    },
     report: vi.fn(),
     resolvePrincipal: vi.fn(() => Promise.resolve({ ...principal, role })),
     support: supportDependencies,
@@ -142,6 +153,20 @@ describe("opening and listing cases", () => {
       },
       bindings
     );
+  });
+
+  it("sends a privacy case to its own workflow instead of opening it here", async () => {
+    const { send, support: calls } = setup();
+    const response = await send("POST", "/api/support-cases", {
+      kind: "privacy",
+      organizationId: "org-1",
+      reason: "Pedido de acesso",
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "privacy_case_workflow_required",
+    });
+    expect(calls.open).not.toHaveBeenCalled();
   });
 
   it("refuses a request that is not a case before asking the database", async () => {
