@@ -42,7 +42,7 @@ I/O (esperar o banco, a fila, o R2) não conta como CPU. Além disso: 50 subrequ
 - O caminho assíncrono da exportação é: pedido → evento (mesma transação) → despachante (cron `:19`) → `polaris-default` → consumidor → job da exportação daquele pedido. O job horário só varre e re-arma.
 - Antes do deploy: a migration aplicada (o Worker chama funções novas, e o pedido de exportação já depende do outbox desde o PR108), o papel de login do outbox e o Hyperdrive sem query caching criados pelo responsável, as filas criadas; o binding `OUTBOX_HYPERDRIVE` só entra no deploy por último, depois das conferências e medições. Ordem no [runbook das filas](../runbooks/queues.md).
 - Quem adiciona um tipo de evento declara também as suas chaves no domínio e na política, e decide se precisa de um re-arm próprio.
-- O purge (PR #126) apaga os eventos da organização; um evento tomado e apagado no meio do envio não é marcado (sem erro), e a mensagem já enviada é recusada pelo registro (`unknown`). O PR do purge, se entrar depois, precisa incluir `queue_processing` nas tabelas que apaga ou que mantém com razão (expira em uma semana, só IDs opacos).
+- O purge (PR #126) apaga os eventos da organização; um evento tomado e apagado no meio do envio não é marcado (sem erro), e a mensagem já enviada é recusada pelo registro (`unknown`). O purge (ADR 0081) apaga `queue_processing` junto com o resto do tenant: a tabela está em `PURGE_DELETE_ORDER`, e o papel do purge a lê e apaga só para organização `purge_pending`.
 
 ## Limites aceitos
 
