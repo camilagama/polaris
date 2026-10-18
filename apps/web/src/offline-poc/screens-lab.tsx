@@ -45,6 +45,10 @@ const ORGANIZATION = {
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
+const labUser = () => window.localStorage.getItem("screens-lab-user") ?? "u";
+const deviceOwnerKey = (deviceId: string) =>
+  `screens-lab-device-owner.${deviceId}`;
+
 type LabScreen =
   | "customers"
   | "dashboard"
@@ -102,7 +106,12 @@ export function ScreensLab() {
     () =>
       new OfflineRuntime({
         api: {
-          deviceIsMine: () => Promise.resolve(true),
+          // like the real server: a device belongs to the user who registered it
+          deviceIsMine: (deviceId) =>
+            Promise.resolve(
+              window.localStorage.getItem(deviceOwnerKey(deviceId)) ===
+                labUser()
+            ),
           issueLease: async (deviceId, organizationId) => {
             const issuedAt = new Date();
             const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
@@ -121,14 +130,18 @@ export function ScreensLab() {
                 grantId: uuid(9000),
                 issuedAt,
                 organizationId,
-                userId: window.localStorage.getItem("screens-lab-user") ?? "u",
+                userId: labUser(),
               }),
               LAB_KEY
             );
             return { expiresAt: expiresAt.toISOString(), lease };
           },
           push: () => (input) => server.push(input),
-          registerDevice: () => Promise.resolve(uuid(7001)),
+          registerDevice: () => {
+            const deviceId = uuid(7001);
+            window.localStorage.setItem(deviceOwnerKey(deviceId), labUser());
+            return Promise.resolve(deviceId);
+          },
           source: () => server,
         },
         isOnline: () => network.online,

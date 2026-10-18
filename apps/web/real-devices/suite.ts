@@ -209,15 +209,34 @@ async function goOnline(browser: Browser, sessionId: string) {
   await waitForNetwork(browser, true);
 }
 
-/** Aparelho "recém-instalado": apaga IndexedDB, OPFS e localStorage da origem do laboratório. */
+/**
+ * Aparelho "recém-instalado": apaga IndexedDB, OPFS e localStorage da origem do laboratório.
+ * Só vale com a página recém-aberta, antes de "Iniciar" (nenhuma conexão com o banco aberta):
+ * espera cada `deleteDatabase` terminar e falha se ele ficar bloqueado.
+ */
 async function clearSiteData(browser: Browser) {
   await browser.execute(async () => {
     const databases = (await indexedDB.databases?.()) ?? [];
-    for (const database of databases) {
-      if (database.name) {
-        indexedDB.deleteDatabase(database.name);
-      }
-    }
+    const names = databases.flatMap((database) =>
+      database.name ? [database.name] : []
+    );
+    await Promise.all(
+      names.map(
+        (name) =>
+          new Promise<void>((resolve, reject) => {
+            const request = indexedDB.deleteDatabase(name);
+            request.onsuccess = () => resolve();
+            request.onerror = () =>
+              reject(new Error(`não apagou o banco ${name}: ${request.error}`));
+            request.onblocked = () =>
+              reject(
+                new Error(
+                  `o banco ${name} continua aberto e não pôde ser apagado`
+                )
+              );
+          })
+      )
+    );
     const root = await navigator.storage.getDirectory();
     // biome-ignore lint/suspicious/noExplicitAny: a lib DOM do TypeScript não declara `entries()` do OPFS
     for await (const [name] of (root as any).entries()) {
@@ -357,7 +376,7 @@ async function customersFlow(
   );
 
   await recorder.step(
-    "Ficar offline: a rede do aparelho cai de verdade (no-network)",
+    'Ficar offline: rede do aparelho derrubada (no-network) e "Rede disponível" desmarcada (é esta caixa que o runtime lê)',
     async () => {
       await goOffline(browser, sessionId);
       await setChecked(browser, "Rede disponível", false);
@@ -422,7 +441,8 @@ async function saleFlow(
   const shirt = "Camiseta do laboratório — Azul";
 
   await recorder.step("Abrir a tela de venda e iniciar o runtime", async () => {
-    await openScreensLab(browser, "sale", `real-${crypto.randomUUID()}`);
+    // sem limpar os dados: o mesmo aparelho, outro usuário, na mesma origem
+    await openScreensLab(browser, "sale", `real-${crypto.randomUUID()}`, false);
     await startRuntime(browser, "Nova venda");
     await waitForText(browser, "Confirmar venda");
     // carregar dados: o aparelho só vende sem rede o que já baixou (variantes e estoque)

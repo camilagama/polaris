@@ -328,6 +328,26 @@ async function fillShirtSale(page: Page, quantity: number) {
 const keepSale = (page: Page) =>
   page.getByRole("button", { name: "Guardar venda neste aparelho" });
 
+test("na mesma aba, sem limpar dados, o usuário b inicia a venda e acha a variante depois do usuário a", async ({
+  page,
+}) => {
+  // regression of the real-device run: no cleared site data between the two flows
+  await openLab(page, `user-a-${crypto.randomUUID()}`);
+  await start(page);
+  await register(page, { name: "Ana Lima", phone: "11900000001" });
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+
+  await openSaleLab(page, `user-b-${crypto.randomUUID()}`);
+  // the variants come from this device: the bootstrap of the sale server must have run
+  await page.getByLabel("Rede disponível").uncheck();
+  await page.getByLabel("Produto ou variante").fill("camiseta azul");
+  await expect(page.getByRole("button", { name: SHIRT_OPTION })).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
 test.describe("venda", () => {
   test("sem rede, guarda a venda no aparelho, desconta do estoque local e o servidor confirma ao voltar a rede", async ({
     page,

@@ -52,6 +52,16 @@ function buildEnvironment() {
   return environment;
 }
 
+function localBinary() {
+  const binaryPath = process.env.BROWSERSTACK_LOCAL_BINARY;
+  if (!binaryPath) {
+    throw new Error(
+      "BROWSERSTACK_LOCAL_BINARY ausente: rode pelo scripts/gate5-real-devices.sh, que confere o sha256 do binário."
+    );
+  }
+  return binaryPath;
+}
+
 function build() {
   const run = (command: string, args: string[]) =>
     execFileSync(command, args, {
@@ -82,9 +92,12 @@ function startTunnel(
   localIdentifier: string,
   logFile: string
 ) {
+  // scripts/gate5-real-devices.sh confere o sha256 deste binário; com `binarypath` o pacote não baixa outro
+  const binaryPath = localBinary();
   return new Promise<void>((resolve, reject) => {
     binary.start(
       {
+        binarypath: binaryPath,
         key: accessKey,
         localIdentifier,
         logFile,
@@ -153,6 +166,8 @@ async function runDevice(
       error instanceof Error ? error.message : String(error)
     );
   } finally {
+    // uma exceção fora da suíte pode deixar o aparelho sem rede: religa antes de encerrar a sessão
+    await restoreNetwork(browser.sessionId).catch(() => undefined);
     const passed = deviceStatus(report) === "passed";
     const marked = await markSession(
       browser.sessionId,
@@ -173,6 +188,7 @@ async function runDevice(
 }
 
 const { key } = credentials();
+localBinary(); // falha antes de construir e servir se o script não conferiu o binário
 const identifier = `polaris-gate5-${crypto.randomUUID()}`;
 const certificate = selfSignedCertificate();
 const logDirectory = mkdtempSync(join(tmpdir(), "polaris-gate5-local-"));

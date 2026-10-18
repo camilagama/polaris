@@ -26,5 +26,22 @@ if [[ -z "${BROWSERSTACK_USERNAME:-}" || -z "${BROWSERSTACK_ACCESS_KEY:-}" ]]; t
   fi
 fi
 
+# O binário do BrowserStack Local recebe a chave do projeto: só roda se bater com o sha256 fixado
+# (versão 8.9, linux-arm64; o hash é o do binário que o pacote baixou na primeira vez, registrado
+# aqui como referência). Em outra plataforma ou versão, baixe o binário do site oficial do
+# BrowserStack, confira a origem e atualize BROWSERSTACK_LOCAL_SHA256 no mesmo commit.
+BROWSERSTACK_LOCAL_SHA256="51dfcda89d9cbe9842957b82df3de29a28c25e1894c38264d54b0c035eb8654c"
+binary="${BROWSERSTACK_LOCAL_BINARY:-$HOME/.browserstack/BrowserStackLocal}"
+if [[ ! -x "$binary" ]]; then
+  echo "Binário do BrowserStack Local não encontrado em $binary." >&2
+  exit 2
+fi
+actual="$(sha256sum "$binary" | cut -d' ' -f1)"
+if [[ "$actual" != "$BROWSERSTACK_LOCAL_SHA256" ]]; then
+  echo "O binário do BrowserStack Local não confere com o sha256 fixado (obtido $actual)." >&2
+  exit 2
+fi
+export BROWSERSTACK_LOCAL_BINARY="$binary"
+
 cd "$root/apps/web"
 exec bun real-devices/run.ts "$@"
