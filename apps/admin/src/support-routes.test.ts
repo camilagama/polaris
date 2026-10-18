@@ -536,6 +536,7 @@ describe("suspension and billing commands", () => {
   it("schedules the purge of a case's organization, with the operator from the login", async () => {
     const { send, support: calls } = setup();
     const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_1",
       principalId: "forged",
     });
     expect(response.status).toBe(200);
@@ -544,14 +545,30 @@ describe("suspension and billing commands", () => {
       notBefore: "2026-11-01T12:00:00.000Z",
       status: "purge_pending",
     });
-    expect(calls.purge).toHaveBeenCalledWith(principal.id, caseId, bindings);
+    expect(calls.purge).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      bindings
+    );
     expect(
-      (await send("POST", "/api/support-cases/not-a-uuid/purge", {})).status
+      (await send("POST", `/api/support-cases/${caseId}/purge`, {})).status
+    ).toBe(400);
+    expect(calls.purge).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        await send("POST", "/api/support-cases/not-a-uuid/purge", {
+          organizationId: "org_1",
+        })
+      ).status
     ).toBe(404);
     const other = setup({}, "somebody_else");
     expect(
-      (await other.send("POST", `/api/support-cases/${caseId}/purge`, {}))
-        .status
+      (
+        await other.send("POST", `/api/support-cases/${caseId}/purge`, {
+          organizationId: "org_1",
+        })
+      ).status
     ).toBe(403);
     expect(other.support.purge).not.toHaveBeenCalled();
   });
@@ -560,17 +577,15 @@ describe("suspension and billing commands", () => {
     const { send } = setup({
       purge: vi.fn(() =>
         Promise.reject(
-          new OrganizationPurgeRefusedError("recovery_window_open")
+          new OrganizationPurgeRefusedError("organization_mismatch")
         )
       ),
     });
-    const response = await send(
-      "POST",
-      `/api/support-cases/${caseId}/purge`,
-      {}
-    );
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_other",
+    });
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "recovery_window_open" });
+    expect(await response.json()).toEqual({ error: "organization_mismatch" });
   });
 
   it("gives and ends an entitlement through the case, with the operator from the login", async () => {

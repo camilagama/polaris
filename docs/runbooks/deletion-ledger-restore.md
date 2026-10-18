@@ -125,7 +125,7 @@ COMMIT;
 - Se o agendamento veio de um caso de privacidade, `privacy_case_id` é o mesmo ID do caso de suporte (a tabela recusa outro valor).
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
 
-Depois do `COMMIT`, espere a execução horária do job de privacidade (ou rode o gatilho manual do cron) e confira. Uma organização com exportação em andamento vigente fica para a execução seguinte, como qualquer purge. Confira:
+Depois do `COMMIT`, o purge precisa do job de privacidade, que roda no `scheduled` do Worker. Esse gatilho só faz manutenção (mídia, cobrança, privacidade) e não abre rota nem sincronização a usuários: com o ambiente ainda fechado (antes do passo 6), deixe só o cron ativo, ou dispare-o à mão uma vez, seguindo a [política de perfis da CLI](cli-profile-policy.md). Uma organização com exportação em andamento vigente fica para a execução seguinte, como qualquer purge. Confira:
 
 ```sql
 SELECT o.status, p.swept_at IS NOT NULL AS varrida

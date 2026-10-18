@@ -8,7 +8,6 @@ import {
   organizationMediaPrefix,
   organizationPurgeRefusalFromMessage,
   purgeDelayAfterWindowMs,
-  purgeNotBefore,
 } from "./organization-purge";
 import { RETENTION_POLICIES, type RetentionPolicy } from "./retention";
 
@@ -42,19 +41,6 @@ describe("the delay between the end of the recovery window and the purge", () =>
         withClosedOrganization(approvedClosedOrganization)
       )
     ).toBe(15 * DAY_MS);
-  });
-
-  it("never lets the purge start before the recovery window ends", () => {
-    const recoverUntil = new Date("2026-11-01T12:00:00.000Z");
-    expect(purgeNotBefore(recoverUntil).toISOString()).toBe(
-      "2026-11-01T12:00:00.000Z"
-    );
-    expect(
-      purgeNotBefore(
-        recoverUntil,
-        withClosedOrganization(approvedClosedOrganization)
-      ).toISOString()
-    ).toBe("2026-11-16T12:00:00.000Z");
   });
 });
 

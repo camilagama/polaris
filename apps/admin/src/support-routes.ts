@@ -44,6 +44,7 @@ export interface SupportDependencies {
   purge: (
     principalId: string,
     caseId: string,
+    organizationId: string,
     bindings: AdminBindings
   ) => Promise<{ changed: boolean; notBefore?: string; status: string } | null>;
   reactivate: (
@@ -442,8 +443,24 @@ export function supportRoutes(
       if (!caseId) {
         return notFound(context);
       }
+      // the operator names the organization: an irreversible action on the wrong case is refused (409)
+      const body = await readBody(context);
+      const organizationId = body?.organizationId;
+      if (
+        typeof organizationId !== "string" ||
+        organizationId.length === 0 ||
+        organizationId.length > MAX_ID_LENGTH ||
+        controlCharacter(organizationId)
+      ) {
+        return invalid(context);
+      }
       return context.json(
-        await dependencies.purge(principalOf(context), caseId, context.env)
+        await dependencies.purge(
+          principalOf(context),
+          caseId,
+          organizationId,
+          context.env
+        )
       );
     }
   );

@@ -22,8 +22,10 @@ function fakeBucket(keys: string[], pageSize = 1000) {
       ...(truncated ? { cursor: page.at(-1) } : {}),
     });
   });
-  const remove = vi.fn((key: string) => {
-    objects.delete(key);
+  const remove = vi.fn((removed: string | string[]) => {
+    for (const key of [removed].flat()) {
+      objects.delete(key);
+    }
     return Promise.resolve();
   });
   return { bucket: { delete: remove, list } as never, list, objects, remove };

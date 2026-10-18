@@ -70,14 +70,6 @@ export function purgeDelayAfterWindowMs(
     : 0;
 }
 
-/** The earliest moment a purge can start for a closure whose window ends at `recoverUntil`. */
-export function purgeNotBefore(
-  recoverUntil: Date,
-  policies: readonly RetentionPolicy[] = RETENTION_POLICIES
-): Date {
-  return new Date(recoverUntil.getTime() + purgeDelayAfterWindowMs(policies));
-}
-
 /**
  * Whether a job may put a closed organization into the purge on its own. Only an approved class with
  * a period allows it; until then (today) the purge starts only by the administrative command, and no
@@ -92,7 +84,9 @@ export function automaticPurgeSchedulingAllowed(
 
 /** Why the database refused to schedule a purge; each one is a state to change first, not an input error. */
 export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
+  "organization_mismatch",
   "organization_not_closed",
+  "privacy_case_not_accepted",
   "recovery_window_open",
   "tenant_access_active",
   "paid_access_running",

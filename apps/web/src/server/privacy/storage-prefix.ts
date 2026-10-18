@@ -21,10 +21,10 @@ export async function deleteObjectsUnderPrefix(
       limit: LIST_PAGE,
       prefix,
     });
-    for (const object of page.objects) {
-      // biome-ignore lint/performance/noAwaitInLoops: one object at a time keeps the run's external calls bounded.
-      await bucket.delete(object.key);
-      removed += 1;
+    if (page.objects.length > 0) {
+      // one call per page (R2 removes up to 1000 keys at once): a run's external calls stay bounded
+      await bucket.delete(page.objects.map((object) => object.key));
+      removed += page.objects.length;
     }
     if (!(page.truncated && page.cursor)) {
       return removed;

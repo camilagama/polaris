@@ -207,9 +207,9 @@ const dependencies: AdminDependencies = {
       withAdminDatabase(connectionOf(bindings), (client) =>
         listSupportCases(client, input)
       ),
-    purge: (principalId, caseId, bindings) =>
+    purge: (principalId, caseId, organizationId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
-        scheduleOrganizationPurge(client, principalId, caseId)
+        scheduleOrganizationPurge(client, principalId, caseId, organizationId)
       ),
     reactivate: (principalId, caseId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>

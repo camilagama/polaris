@@ -24,7 +24,8 @@ interface MediaBucketListResult {
 }
 
 export interface MediaBucketBinding {
-  delete: (key: string) => Promise<void>;
+  /** One key, or up to 1000 keys in one call (R2 `delete` accepts both). */
+  delete: (keys: string | string[]) => Promise<void>;
   get: (key: string) => Promise<MediaBucketObject | null>;
   list: (options: {
     cursor?: string;

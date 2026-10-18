@@ -61,9 +61,9 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     deletion_ledger:
       "Tombstones para o restore: sobrevivem à organização, sem expiração (ADR 0080).",
     entitlement_grants:
-      "Concessões da plataforma, parte do registro de cobrança (ADR 0067 e 0079).",
+      "Concessões da plataforma, parte do registro de cobrança, com o motivo e o autor escritos pelo operador (ADR 0067 e 0079).",
     organization_billing:
-      "Estado da assinatura, registro da plataforma; o purge exige que o acesso pago tenha terminado (ADR 0081).",
+      "Estado da assinatura e referência do cliente no provedor, registro da plataforma; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
     organization_purges:
       "O registro do próprio purge (quem agendou, quando terminou), sem dado pessoal.",
     platform_audit_events:

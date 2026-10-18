@@ -1543,6 +1543,6 @@ Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organiza
 | Admin | Concluído | `POST /support-cases/{caso}/purge`, capacidade `organization:purge`. |
 | Worker | Concluído | `runOrganizationPurges` no job horário de privacidade; `deleteObjectsUnderPrefix` em `apps/web/src/server/privacy/storage-prefix.ts`. |
 | Gate PostgreSQL 18 | Passou localmente (PostgreSQL 18.1); roda no CI | `organization-purge`. |
-| Verificação local | Ver o PR | Ver o PR |
+| Verificação local | Concluída | `bun run check` e `bun run build` passaram; a suíte `ci` de gates (40, com `organization-purge`) passou num PostgreSQL 18.1 local descartável. Nada rodou contra Neon ou Cloudflare. |
 | Decisões do responsável | Pendentes | Ver ADR 0081: classes com base legal apagadas, cobrança mantida, substituição das duas funções de gatilho. |
 | Publicação | PR aberto, aguardando revisão | Branch `feat/full-purge`. |

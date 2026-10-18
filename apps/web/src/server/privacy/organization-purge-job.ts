@@ -43,25 +43,39 @@ export interface OrganizationPurgeJobDependencies {
   now: () => Date;
 }
 
-/** Every image of the organization: the master, its derivatives (whose keys carry only the asset) and the masters' prefix. */
+/** R2 removes at most this many keys in one call. */
+const DELETE_BATCH = 1000;
+
+/**
+ * Every image of the organization: the master, its derivatives (whose keys carry only the asset) and
+ * the masters' prefix. Keys go in batches, so a few thousand images are a handful of calls. A master
+ * key outside the organization's prefix stops the step: the purge never removes another
+ * organization's object.
+ */
 async function removeMedia(
   organizationId: string,
   { bucket, client }: OrganizationPurgeJobDependencies
 ): Promise<void> {
+  const prefix = organizationMediaPrefix(organizationId);
   const assets = await client.listOrganizationPurgeMedia(organizationId);
+  const keys: string[] = [];
   for (const asset of assets) {
-    // biome-ignore lint/performance/noAwaitInLoops: one image at a time keeps the run's external calls bounded.
-    await bucket.delete(asset.storageKey);
-    for (const size of MEDIA_DERIVATIVE_SIZES) {
-      // biome-ignore lint/performance/noAwaitInLoops: same bound as above.
-      await bucket.delete(mediaDerivativeKey(asset.id, size));
+    if (!asset.storageKey.startsWith(prefix)) {
+      throw new Error("purge_media_key_outside_organization");
     }
+    keys.push(
+      asset.storageKey,
+      ...MEDIA_DERIVATIVE_SIZES.map((size) =>
+        mediaDerivativeKey(asset.id, size)
+      )
+    );
+  }
+  for (let start = 0; start < keys.length; start += DELETE_BATCH) {
+    // biome-ignore lint/performance/noAwaitInLoops: one batch at a time keeps the run's external calls bounded.
+    await bucket.delete(keys.slice(start, start + DELETE_BATCH));
   }
   // a master whose asset row was never written (an upload that stopped) is found by its prefix
-  await deleteObjectsUnderPrefix(
-    bucket,
-    organizationMediaPrefix(organizationId)
-  );
+  await deleteObjectsUnderPrefix(bucket, prefix);
 }
 
 /** Looks at both prefixes again; anything found is removed and reported (an export that wrote late). */

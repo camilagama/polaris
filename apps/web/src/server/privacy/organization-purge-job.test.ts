@@ -36,8 +36,10 @@ function fixture(
   const objects = new Map<string, Uint8Array>();
   const claims = [...(input.claims ?? [claim(orgA), null])];
   const bucket = {
-    delete: vi.fn((key: string) => {
-      objects.delete(key);
+    delete: vi.fn((keys: string | string[]) => {
+      for (const key of [keys].flat()) {
+        objects.delete(key);
+      }
       return Promise.resolve();
     }),
     list: vi.fn((options: { prefix: string }) =>
@@ -142,8 +144,8 @@ describe("runOrganizationPurges", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const ctx = fixture();
     seed(ctx.objects, [`${exportsA}e1/data.json`]);
-    ctx.bucket.delete.mockImplementation((key: string) =>
-      key.startsWith("exports/")
+    ctx.bucket.delete.mockImplementation((keys: string | string[]) =>
+      [keys].flat().some((key) => key.startsWith("exports/"))
         ? Promise.reject(new Error("r2 down"))
         : Promise.resolve()
     );
@@ -304,5 +306,43 @@ describe("runOrganizationPurges", () => {
 
     expect(warn).toHaveBeenCalled();
     expect(JSON.stringify(warn.mock.calls)).not.toContain("segredo-xyz");
+  });
+
+  it("stops before the database when a listed master is outside the organization's prefix", async () => {
+    const ctx = fixture({
+      media: {
+        [orgA]: [{ id: assetA, storageKey: `media/v2/${orgB}/${assetA}.jpg` }],
+      },
+    });
+    seed(ctx.objects, [`media/v2/${orgB}/${assetA}.jpg`]);
+
+    const report = await ctx.run();
+
+    expect(report).toEqual({ failed: 1, purged: 0, swept: 0 });
+    expect(ctx.objects.has(`media/v2/${orgB}/${assetA}.jpg`)).toBe(true);
+    expect(ctx.client.purgeOrganizationData).not.toHaveBeenCalled();
+    expect(ctx.client.recordOrganizationPurgeFailure).toHaveBeenCalledWith(
+      orgA,
+      "purge_media_storage_failed"
+    );
+  });
+
+  it("removes the images' keys in batches, a few calls for thousands of images", async () => {
+    const assets = Array.from({ length: 700 }, (_, index) => ({
+      id: `0199c2d0-0000-7000-8000-${index.toString(16).padStart(12, "0")}`,
+      storageKey: `${mediaA}${index}.webp`,
+    }));
+    const ctx = fixture({ media: { [orgA]: assets } });
+
+    await ctx.run();
+
+    // 2100 keys (master and two derivatives each) go in three calls of at most 1000
+    const batches = ctx.bucket.delete.mock.calls
+      .map(([keys]) => keys)
+      .filter(
+        (keys): keys is string[] => Array.isArray(keys) && keys.length > 0
+      );
+    expect(batches.map((keys) => keys.length)).toEqual([1000, 1000, 100]);
+    expect(ctx.client.purgeOrganizationData).toHaveBeenCalledWith(orgA);
   });
 });

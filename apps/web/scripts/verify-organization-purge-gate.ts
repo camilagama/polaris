@@ -4,6 +4,10 @@ import {
   grantTenantAccess,
   openPrivacyCase,
   openSupportCase,
+  recordPrivacyDecision,
+  recordPrivacyIdentity,
+  recordPrivacyRole,
+  recordPrivacyScope,
   revokeTenantAccess,
   scheduleOrganizationPurge,
 } from "@polaris/db/admin-support-repository";
@@ -61,8 +65,10 @@ const REMOVED_NAME = "Organização removida";
 function memoryBucket() {
   const objects = new Map<string, Uint8Array>();
   const bucket: Pick<MediaBucketBinding, "delete" | "get" | "list" | "put"> = {
-    delete: (key) => {
-      objects.delete(key);
+    delete: (keys) => {
+      for (const key of [keys].flat()) {
+        objects.delete(key);
+      }
       return Promise.resolve();
     },
     get: () => Promise.resolve(null),
@@ -360,8 +366,10 @@ async function run() {
         requestDataExport(transaction, identity, { formats: ["json"] })
     );
 
-    const schedule = (caseId: string) =>
-      scheduleOrganizationPurge(admin, principal, caseId);
+    const schedule = (
+      caseId: string,
+      organizationId: string = target.organizationId
+    ) => scheduleOrganizationPurge(admin, principal, caseId, organizationId);
     const expectRefusal = async (
       caseId: string,
       code: string,
@@ -486,7 +494,16 @@ async function run() {
       "paid access still running"
     );
     await owner.pool.query(
-      "UPDATE public.organization_billing SET access_ends_at = now() - interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_billing SET state = 'trialing', trial_started_at = now() - interval '1 day', access_ends_at = now() + interval '6 days' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    await expectRefusal(
+      privacyCase.id,
+      "paid_access_running",
+      "a trial still running (it could turn into a charge)"
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET state = 'active', access_ends_at = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     const grant = await grantTenantAccess(admin, principal, supportCase.id, 15);
@@ -504,6 +521,73 @@ async function run() {
     );
     tests.push(
       "the schedule refuses an active or closing organization, an open window, paid access running, a live temporary access and an unknown case"
+    );
+
+    // the operator names the organization of the case, or nothing happens
+    await assert.rejects(
+      () => schedule(privacyCase.id, witness.organizationId),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "organization_mismatch",
+      "the organization named by the operator must be the case's"
+    );
+    // a privacy case that did not accept the request never deletes tenant data (ADR 0077)
+    await expectRefusal(
+      privacyCase.id,
+      "privacy_case_not_accepted",
+      "a privacy case still waiting for its decision"
+    );
+    await recordPrivacyIdentity(admin, principal, privacyCase.id, {
+      method: "owner_confirmation",
+      status: "verified",
+    });
+    await recordPrivacyRole(admin, principal, privacyCase.id, "controller");
+    await recordPrivacyScope(admin, principal, privacyCase.id, {
+      categories: ["organization_profile", "customers", "sales"],
+      subjectReference: null,
+    });
+    await expectRefusal(
+      privacyCase.id,
+      "privacy_case_not_accepted",
+      "a privacy case scoped but not decided"
+    );
+    const refusedCase = await openPrivacyCase(admin, principal, {
+      channel: "email",
+      dueDays: 15,
+      note: null,
+      organizationId: target.organizationId,
+      reason: "Pedido sem identidade",
+      receivedAt: null,
+      requesterKind: "data_subject",
+      requestType: "deletion",
+    });
+    assert.ok(refusedCase);
+    await recordPrivacyIdentity(admin, principal, refusedCase.id, {
+      method: "other",
+      status: "failed",
+    });
+    await recordPrivacyRole(admin, principal, refusedCase.id, "processor");
+    await recordPrivacyScope(admin, principal, refusedCase.id, {
+      categories: ["customers"],
+      subjectReference: null,
+    });
+    await recordPrivacyDecision(admin, principal, refusedCase.id, {
+      decision: "reject",
+      note: null,
+      reason: "identity_not_verified",
+    });
+    await expectRefusal(
+      refusedCase.id,
+      "privacy_case_not_accepted",
+      "a refused privacy case"
+    );
+    await recordPrivacyDecision(admin, principal, privacyCase.id, {
+      decision: "accept",
+      note: null,
+      reason: null,
+    });
+    tests.push(
+      "the schedule refuses an organization other than the case's, and a privacy case that is undecided or refused"
     );
 
     // a running export holding its lease keeps the purge waiting
@@ -544,6 +628,23 @@ async function run() {
     );
     const blocked = await maintenance.claimOrganizationPurge(900);
     assert.equal(blocked, null, "an export holding its lease delays the purge");
+    await owner.pool.query(
+      "UPDATE public.data_exports SET status = 'failed', error_code = 'gate_cleanup', locked_until = NULL WHERE id = $1",
+      [pendingExport.id]
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET not_before = now() + interval '1 day' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    assert.equal(
+      await maintenance.claimOrganizationPurge(900),
+      null,
+      "a purge is not taken before its time"
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET not_before = now() WHERE organization_id = $1",
+      [target.organizationId]
+    );
     await owner.pool.query(
       "UPDATE public.data_exports SET status = 'failed', error_code = 'gate_cleanup', locked_until = NULL WHERE id = $1",
       [pendingExport.id]
@@ -659,7 +760,7 @@ async function run() {
       [target.organizationId, privacyCase.id]
     );
     const [survivor] = survivors.rows;
-    assert.equal(survivor?.cases, "2");
+    assert.equal(survivor?.cases, "3");
     assert.equal(survivor?.privacy, "1");
     assert.ok(Number(survivor?.audit) >= 4);
     assert.equal(survivor?.billing, "1");

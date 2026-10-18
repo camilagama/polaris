@@ -214,10 +214,13 @@ CREATE TRIGGER data_export_files_require_active_organization
   BEFORE INSERT ON public.data_export_files
   FOR EACH ROW EXECUTE FUNCTION public.data_export_files_require_active_organization();--> statement-breakpoint
 -- The explicit trigger of the purge (no job schedules one while the retention of a closed organization
--- is only proposed, ADR 0079): an open case of the organization, the organization `closed` with its
--- recovery window over, no live temporary access to it and no paid access running. The delay after the
--- window is an argument because the retention registry owns it (zero while the class is proposed).
-CREATE FUNCTION public.admin_schedule_organization_purge(p_principal uuid, p_case uuid, p_delay_seconds bigint)
+-- is only proposed, ADR 0079): an open case of the organization the operator names (a confirmation, not
+-- the authority: the case decides the organization), the organization `closed` with its recovery window
+-- over, no live temporary access, no trial or paid access running and, when the case is a privacy case,
+-- a decision that accepted the request (a refused or undecided request never deletes tenant data, ADR
+-- 0077). The delay after the window is an argument because the retention registry owns it (zero while
+-- the class is proposed).
+CREATE FUNCTION public.admin_schedule_organization_purge(p_principal uuid, p_case uuid, p_organization text, p_delay_seconds bigint)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -228,10 +231,15 @@ DECLARE
   current_status text;
   window_end timestamptz;
   privacy_case uuid;
+  privacy_stage text;
+  privacy_decision text;
   due timestamptz;
 BEGIN
   PERFORM public.admin_require_principal(p_principal);
   target := public.admin_require_open_case(p_case);
+  IF p_organization IS DISTINCT FROM target THEN
+    RAISE EXCEPTION 'organization_mismatch' USING ERRCODE = '55000';
+  END IF;
   IF p_delay_seconds IS NULL OR p_delay_seconds < 0 OR p_delay_seconds > 315360000 THEN
     RAISE EXCEPTION 'invalid_purge_delay' USING ERRCODE = '22023';
   END IF;
@@ -245,7 +253,10 @@ BEGIN
   END IF;
   SELECT closure.recover_until INTO window_end
     FROM public.organization_closures AS closure WHERE closure.organization_id = target;
-  IF window_end IS NULL OR window_end > pg_catalog.now() THEN
+  IF window_end IS NULL THEN
+    RAISE EXCEPTION 'organization_not_closed' USING ERRCODE = '55000';
+  END IF;
+  IF window_end > pg_catalog.now() THEN
     RAISE EXCEPTION 'recovery_window_open' USING ERRCODE = '55000';
   END IF;
   IF EXISTS (
@@ -257,13 +268,19 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM public.organization_billing AS billing
-     WHERE billing.organization_id = target AND billing.state IN ('active', 'grace')
+     WHERE billing.organization_id = target AND billing.state IN ('trialing', 'active', 'grace')
        AND billing.access_ends_at > pg_catalog.now()
   ) THEN
     RAISE EXCEPTION 'paid_access_running' USING ERRCODE = '55000';
   END IF;
-  SELECT privacy.support_case_id INTO privacy_case
+  SELECT privacy.support_case_id, privacy.stage, privacy.decision
+    INTO privacy_case, privacy_stage, privacy_decision
     FROM public.privacy_cases AS privacy WHERE privacy.support_case_id = p_case;
+  IF privacy_case IS NOT NULL AND NOT (
+    privacy_stage IN ('decided', 'executed') AND privacy_decision IN ('accept', 'partially_accept')
+  ) THEN
+    RAISE EXCEPTION 'privacy_case_not_accepted' USING ERRCODE = '55000';
+  END IF;
   due := window_end + p_delay_seconds * interval '1 second';
   UPDATE public.organizations SET status = 'purge_pending', updated_at = pg_catalog.now()
    WHERE id = target AND status = 'closed';
@@ -378,15 +395,18 @@ DECLARE
   removed bigint;
   total bigint := 0;
 BEGIN
+  -- the lock comes first: a run that waited behind another one sees the organization it left (this role
+  -- locks only `purge_pending` rows, so a purged one is not found and is read again without the lock)
   SELECT organization.status INTO current_status
-    FROM public.organizations AS organization WHERE organization.id = p_organization;
-  IF current_status = 'purged' THEN
-    RETURN pg_catalog.jsonb_build_object('alreadyPurged', true, 'deletedRows', 0);
-  END IF;
-  IF current_status IS DISTINCT FROM 'purge_pending' THEN
+    FROM public.organizations AS organization WHERE organization.id = p_organization FOR UPDATE;
+  IF NOT FOUND THEN
+    SELECT organization.status INTO current_status
+      FROM public.organizations AS organization WHERE organization.id = p_organization;
+    IF current_status = 'purged' THEN
+      RETURN pg_catalog.jsonb_build_object('alreadyPurged', true, 'deletedRows', 0);
+    END IF;
     RAISE EXCEPTION 'organization_not_purge_pending' USING ERRCODE = '55000';
   END IF;
-  PERFORM 1 FROM public.organizations AS organization WHERE organization.id = p_organization FOR UPDATE;
   SELECT purge.* INTO plan FROM public.organization_purges AS purge
    WHERE purge.organization_id = p_organization FOR UPDATE;
   IF NOT FOUND OR plan.locked_until IS NULL OR plan.locked_until <= pg_catalog.now() THEN
@@ -447,16 +467,17 @@ SET search_path = pg_catalog, public
 AS $function$
 BEGIN
   UPDATE public.organization_purges SET swept_at = pg_catalog.now(), locked_until = NULL, last_error_code = NULL
-   WHERE organization_id = p_organization AND purged_at IS NOT NULL AND swept_at IS NULL;
+   WHERE organization_id = p_organization AND purged_at IS NOT NULL AND swept_at IS NULL
+     AND locked_until > pg_catalog.now();
   RETURN FOUND;
 END;
 $function$;--> statement-breakpoint
 GRANT polaris_admin_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 GRANT CREATE ON SCHEMA public TO polaris_admin_owner;--> statement-breakpoint
-ALTER FUNCTION public.admin_schedule_organization_purge(uuid, uuid, bigint) OWNER TO polaris_admin_owner;--> statement-breakpoint
+ALTER FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) OWNER TO polaris_admin_owner;--> statement-breakpoint
 SET ROLE polaris_admin_owner;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, bigint) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, bigint) TO polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.admin_schedule_organization_purge(uuid, uuid, text, bigint) TO polaris_admin_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_admin_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_admin_owner;--> statement-breakpoint

@@ -281,18 +281,24 @@ export function suspendOrganization(
 
 /**
  * Schedules the purge of the case's organization (plan PR107, ADR 0081): only a `closed` one whose
- * recovery window is over. The delay after the window comes from the retention registry (none while
+ * recovery window is over, and only when the operator names that same organization (a confirmation). The delay after the window comes from the retention registry (none while
  * the retention of a closed organization is proposed). Scheduling again is not a change.
  */
 export function scheduleOrganizationPurge(
   client: AdminQueryable,
   principalId: string,
-  caseId: string
+  caseId: string,
+  organizationId: string
 ) {
   return call<{ changed: boolean; notBefore?: string; status: string }>(
     client,
-    "public.admin_schedule_organization_purge($1, $2, $3::bigint)",
-    [principalId, caseId, Math.ceil(purgeDelayAfterWindowMs() / 1000)]
+    "public.admin_schedule_organization_purge($1, $2, $3, $4::bigint)",
+    [
+      principalId,
+      caseId,
+      organizationId,
+      Math.ceil(purgeDelayAfterWindowMs() / 1000),
+    ]
   );
 }
 
