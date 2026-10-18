@@ -32,11 +32,13 @@
         "e2e/**/*.e2e.ts",
         "e2e-pwa/**/*.e2e.ts"
       ],
+      "ignoreBinaries": ["openssl"],
       "project": [
         "src/**/*.{ts,tsx}",
         "worker/**/*.ts",
         "poc/**/*.ts",
-        "e2e/**/*.ts"
+        "e2e/**/*.ts",
+        "real-devices/**/*.ts"
       ]
     },
     "apps/catalog": {

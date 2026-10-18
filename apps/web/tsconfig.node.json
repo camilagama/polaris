@@ -12,6 +12,7 @@
     "vite.pwa.config.ts",
     "e2e-pwa/**/*.ts",
     "e2e/**/*.ts",
+    "real-devices/**/*.ts",
     "scripts/**/*.ts",
     "pwa/**/*.ts"
   ]
