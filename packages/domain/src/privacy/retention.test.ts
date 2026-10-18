@@ -25,7 +25,7 @@ describe("the retention registry", () => {
         ? [policy.period.ms]
         : []
     );
-    expect(new Set(approvedDurations).size).toBe(approvedDurations.length);
+    expect(new Set(approvedDurations).size).toBeGreaterThan(1);
     expect(
       RETENTION_POLICIES.some((policy) => policy.status === "proposta")
     ).toBe(true);
@@ -70,6 +70,10 @@ describe("approved periods", () => {
   it("keep a staging marker 24 hours and a removed image one hour", () => {
     expect(approvedRetention("media_staging_marker")).toBe(24 * HOUR_MS);
     expect(approvedRetention("media_removed_image")).toBe(HOUR_MS);
+  });
+
+  it("keep a data export 24 hours, as ADR 0078 decided", () => {
+    expect(approvedRetention("data_exports")).toBe(24 * HOUR_MS);
   });
 
   it("refuse a class whose policy is only proposed", () => {

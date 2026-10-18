@@ -41,7 +41,8 @@ export type RetentionBasis = "contrato" | "decisao" | "lei";
 /** The purge jobs that already exist; each one serves exactly one approved class. */
 export type RetentionPurgeJobId =
   | "media.removed_cleanup"
-  | "media.staging_reconcile";
+  | "media.staging_reconcile"
+  | "privacy.data_export_expiry";
 
 interface RetentionPolicyBase {
   basis: RetentionBasis;
@@ -207,7 +208,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     period: { kind: "undecided" },
     proposed:
       "90 dias depois de received_at, e só depois que o servidor recusar um comando criado há mais que o prazo (sem o registro, um reenvio antigo rodaria de novo).",
-    rule: "O registro é a idempotência do sync.push; precisa durar mais que o maior lease (72 horas) somado à espera de sincronização.",
+    rule: "O registro é a idempotência do sync.push. O comando só precisa ter sido criado dentro do lease; o intervalo até o envio não tem limite.",
     sources: ["ADR 0033", "ADR 0044", "ADR 0075"],
     status: "proposta",
   },
@@ -225,13 +226,15 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
   {
     basis: "decisao",
     class: "data_exports",
-    data: ["arquivo de exportação no R2 e seu registro"],
-    period: { kind: "undecided" },
-    proposed:
-      "Artefato privado temporário com validade curta; o prazo vem do ADR da exportação, que ainda não está na main.",
-    rule: "Exportação ocorre mediante pedido autorizado, em artefato privado temporário com validade curta.",
-    sources: ["docs/business-rules/privacy.md"],
-    status: "proposta",
+    data: [
+      "data_exports e data_export_files",
+      "R2 exports/v1/ (arquivos da exportação)",
+    ],
+    job: "privacy.data_export_expiry",
+    period: { kind: "duration", ms: 24 * HOUR_MS },
+    rule: "A exportação pronta pode ser baixada por 24 horas; a que falhou fica 24 horas. Depois o job horário a expira e apaga os objetos no R2 antes de marcar os arquivos como apagados. Prazo provisório de produto, a rever com o jurídico no go-live.",
+    sources: ["ADR 0078", "docs/business-rules/privacy.md"],
+    status: "aprovada",
   },
   {
     basis: "decisao",
@@ -318,6 +321,7 @@ export const RETENTION_PURGE_JOBS: readonly {
 }[] = Object.freeze([
   { class: "media_staging_marker", id: "media.staging_reconcile" },
   { class: "media_removed_image", id: "media.removed_cleanup" },
+  { class: "data_exports", id: "privacy.data_export_expiry" },
 ]);
 
 /** A period was asked for a class that has no approved period. */

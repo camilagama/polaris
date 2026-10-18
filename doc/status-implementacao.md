@@ -1509,8 +1509,8 @@ Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 19 classes com origem, regra, fontes e estado; só as duas de mídia estão aprovadas, com prazo e job (o cron existente); as constantes do reconciliador vêm do registro. |
-| Jobs de expurgo | Nenhum novo | As classes aprovadas com prazo já tinham job; as demais ficam propostas, sem job, até a decisão do responsável. |
+| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 19 classes com origem, regra, fontes e estado; só as duas de mídia e a de exportação estão aprovadas, com prazo e job (os jobs horários existentes); as constantes do reconciliador e da exportação vêm do registro. |
+| Jobs de expurgo | Nenhum novo | As classes aprovadas com prazo (mídia e exportação) já tinham job; as demais ficam propostas, sem job, até a decisão do responsável. |
 | HMAC do `payload_hash` | Concluído | `SYNC_PAYLOAD_HASH_SECRET` (503 sem ele); reenvio compara também o SHA-256 legado e o segredo anterior. Sem migration. O segredo não foi criado em nenhum ambiente. |
 | Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
 | Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
