@@ -22,11 +22,14 @@ export interface ProcessingKey {
   type: string;
 }
 
+/** Why a message is refused, for the log of the drop (no data of the message). */
+type UnknownReason = "event_not_held" | "key_of_another_event";
+
 type ClaimResult =
   | { result: "busy" }
   | { result: "done" }
   /** Not an event the record accepts: another event under the same key, or (durable) one the outbox does not hold. */
-  | { result: "unknown" }
+  | { reason: UnknownReason; result: "unknown" }
   /** The token proves who holds the claim: only the holder gives it back. */
   | { result: "claimed"; token: string };
 
@@ -78,7 +81,10 @@ export function createInMemoryProcessingLedger(
       const id = keyOf(key);
       const current = entries.get(id);
       if (current && current.eventId !== key.eventId) {
-        return Promise.resolve({ result: "unknown" });
+        return Promise.resolve({
+          reason: "key_of_another_event",
+          result: "unknown",
+        });
       }
       if (current?.state === "done" && current.attempt >= key.attempt) {
         return Promise.resolve({ result: "done" });

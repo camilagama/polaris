@@ -68,6 +68,12 @@ export function retryDelaySeconds(deliveries: number): number {
   );
 }
 
+/** The SQLSTATE of a database error (five characters, no message): tells a contended claim from a database that is down. */
+function sqlState(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.length === 5 ? code : undefined;
+}
+
 function errorClass(error: unknown): string {
   return error instanceof Error ? error.name : "non_error_thrown";
 }
@@ -126,6 +132,7 @@ async function processMessage(
     console.error("queue_ledger_unavailable", {
       errorName: errorClass(error),
       messageId: message.id,
+      sqlState: sqlState(error),
     });
     message.retry({ delaySeconds: delay });
     return;
@@ -144,6 +151,7 @@ async function processMessage(
     console.warn("queue_message_unknown_event", {
       eventId: envelope.eventId,
       messageId: message.id,
+      reason: claim.reason,
       type: envelope.type,
     });
     message.ack();

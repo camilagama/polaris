@@ -166,7 +166,11 @@ END;
 $function$;--> statement-breakpoint
 -- the consumer takes an event's key before it runs the handler: only for an event the outbox holds with
 -- that organization, key and type, sent at most that many times (anything else is a forged, misrouted or
--- purged message); a delivery of an attempt already done is a duplicate; a later attempt runs again
+-- purged message); a delivery of an attempt already done is a duplicate; a later attempt runs again.
+-- "unknown" carries the reason (no personal data), so a message dropped for it can be told from another.
+-- The record of the key can vanish between the insert and the lock (a release or the expiry running at
+-- the same time): that is no "unknown", so the take starts again, a few times, and then fails loudly
+-- (the consumer retries the message) instead of letting it be dropped without running its handler
 CREATE FUNCTION public.claim_queue_processing(p_organization text, p_key text, p_type text, p_event uuid, p_attempt integer, p_lease_seconds integer)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -176,6 +180,7 @@ AS $function$
 DECLARE
   current_row public.queue_processing;
   new_token uuid := pg_catalog.gen_random_uuid();
+  locked boolean := false;
 BEGIN
   IF p_attempt IS NULL OR p_attempt < 1 OR p_attempt > 1000 OR p_lease_seconds IS NULL OR p_lease_seconds < 60 OR p_lease_seconds > 3600 THEN
     RAISE EXCEPTION 'invalid_claim' USING ERRCODE = '22023';
@@ -186,19 +191,28 @@ BEGIN
        AND outbox_row.idempotency_key = p_key AND outbox_row.type = p_type
        AND outbox_row.attempts >= p_attempt
   ) THEN
-    RETURN pg_catalog.jsonb_build_object('result', 'unknown');
+    RETURN pg_catalog.jsonb_build_object('result', 'unknown', 'reason', 'event_not_held');
   END IF;
-  INSERT INTO public.queue_processing (organization_id, idempotency_key, event_id, attempt, state, token, lease_until)
-  VALUES (p_organization, p_key, p_event, p_attempt, 'claimed', new_token, pg_catalog.now() + p_lease_seconds * interval '1 second')
-  ON CONFLICT (organization_id, idempotency_key) DO NOTHING;
-  IF FOUND THEN
-    RETURN pg_catalog.jsonb_build_object('result', 'claimed', 'token', new_token);
+  FOR try_number IN 1..5 LOOP
+    INSERT INTO public.queue_processing (organization_id, idempotency_key, event_id, attempt, state, token, lease_until)
+    VALUES (p_organization, p_key, p_event, p_attempt, 'claimed', new_token, pg_catalog.now() + p_lease_seconds * interval '1 second')
+    ON CONFLICT (organization_id, idempotency_key) DO NOTHING;
+    IF FOUND THEN
+      RETURN pg_catalog.jsonb_build_object('result', 'claimed', 'token', new_token);
+    END IF;
+    SELECT processing_row.* INTO current_row FROM public.queue_processing AS processing_row
+     WHERE processing_row.organization_id = p_organization AND processing_row.idempotency_key = p_key
+       FOR UPDATE;
+    IF FOUND THEN
+      locked := true;
+      EXIT;
+    END IF;
+  END LOOP;
+  IF NOT locked THEN
+    RAISE EXCEPTION 'claim_contended' USING ERRCODE = '40001';
   END IF;
-  SELECT processing_row.* INTO current_row FROM public.queue_processing AS processing_row
-   WHERE processing_row.organization_id = p_organization AND processing_row.idempotency_key = p_key
-     FOR UPDATE;
-  IF NOT FOUND OR current_row.event_id <> p_event THEN
-    RETURN pg_catalog.jsonb_build_object('result', 'unknown');
+  IF current_row.event_id <> p_event THEN
+    RETURN pg_catalog.jsonb_build_object('result', 'unknown', 'reason', 'key_of_another_event');
   END IF;
   IF current_row.state = 'done' AND current_row.attempt >= p_attempt THEN
     RETURN pg_catalog.jsonb_build_object('result', 'done');

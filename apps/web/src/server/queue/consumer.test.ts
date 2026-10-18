@@ -195,7 +195,8 @@ describe("handleQueueBatch", () => {
 
   it("acks without running when the ledger does not know the event, and logs no content", async () => {
     const unknown: ProcessingLedger = {
-      claim: () => Promise.resolve({ result: "unknown" }),
+      claim: () =>
+        Promise.resolve({ reason: "event_not_held", result: "unknown" }),
       complete: vi.fn(() => Promise.resolve()),
       release: vi.fn(() => Promise.resolve()),
     };
@@ -210,7 +211,11 @@ describe("handleQueueBatch", () => {
     expect(unknown.complete).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(
       "queue_message_unknown_event",
-      expect.objectContaining({ messageId: "msg-1" })
+      expect.objectContaining({
+        eventId: envelope().eventId,
+        messageId: "msg-1",
+        reason: "event_not_held",
+      })
     );
     // only the IDs and the type are logged, never the body of the message
     const logged = JSON.stringify(vi.mocked(console.warn).mock.calls);
@@ -293,6 +298,32 @@ describe("handleQueueBatch", () => {
     );
     expect(handler).not.toHaveBeenCalled();
     expect(sent.retry).toHaveBeenCalledOnce();
+  });
+
+  it("retries a contended claim instead of dropping it, and logs the SQLSTATE and nothing of the error text", async () => {
+    const contended: ProcessingLedger = {
+      claim: () =>
+        Promise.reject(
+          Object.assign(new Error("secret@example.com"), { code: "40001" })
+        ),
+      complete: () => Promise.resolve(),
+      release: () => Promise.resolve(),
+    };
+    const sent = message(envelope());
+    await handleQueueBatch(
+      { messages: [sent], queue: "polaris-default" },
+      { handlers: { "data_export.requested": handler }, ledger: contended }
+    );
+    expect(handler).not.toHaveBeenCalled();
+    expect(sent.retry).toHaveBeenCalledOnce();
+    expect(sent.ack).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "queue_ledger_unavailable",
+      expect.objectContaining({ sqlState: "40001" })
+    );
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+      "secret@example.com"
+    );
   });
 
   it("retries when the work is done but the ledger cannot record it", async () => {

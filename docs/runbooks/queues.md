@@ -18,15 +18,17 @@ Quem envia é o **despachante do outbox** (ADR 0084), num cron próprio (`19 * *
 
 ## Checklist de go-live do despachante (responsável)
 
-Nada disto foi executado. Em ordem:
+Nada disto foi executado. **Siga a ordem:** cada passo depende do anterior, e o passo 7 (ligar o `OUTBOX_HYPERDRIVE`) é o último, depois das medições.
 
-1. **Migration antes do Worker.** Aplicar as migrations (inclusive a do despachante, 0071 ou o número que tiver na `main`) no banco do ambiente **antes** do deploy: o Worker chama funções novas (`claim_outbox_events`, `claim_queue_processing`, `claim_data_export_by_id`, `rearm_data_export_events`) e o pedido de exportação já grava no outbox desde o PR108. Um Worker novo sobre um banco antigo falha nessas chamadas.
-2. **Papel de login do outbox.** Criar um login que herde `polaris_outbox_runtime` (como os outros papéis de runtime, pela [política de perfis de CLI](./cli-profile-policy.md)) e um Hyperdrive para ele **sem query caching**; ligar ao Worker como `OUTBOX_HYPERDRIVE` (o id `local-only` do `wrangler.jsonc` é só para desenvolvimento). Sem esse binding o despachante só avisa (`outbox_dispatch_not_configured`), os eventos ficam `pending` e o job horário continua montando as exportações como antes.
-3. **Filas criadas** (seção abaixo).
-4. **Cron Triggers:** o Worker passa a ter dois (`17 * * * *` e `19 * * * *`); o plano Free permite cinco por conta.
-5. **Nenhuma exportação órfã.** Antes de ligar `OUTBOX_HYPERDRIVE`, conferir que não há pedido em andamento sem evento (com o caminho ligado, o cron não monta mais e o re-arm só olha eventos despachados): `SELECT e.id FROM data_exports e WHERE e.status IN ('requested', 'running') AND NOT EXISTS (SELECT 1 FROM event_outbox o WHERE o.type = 'data_export.requested' AND o.event ->> 'exportId' = e.id::text)` deve voltar vazio. Se não voltar, deixe o caminho desligado até esses pedidos terminarem pelo cron.
-6. **Medir CPU do consumidor**: numa prévia, pedir uma exportação com dados e imagens próximos do teto e conferir no `wrangler tail` do consumidor que a montagem fica abaixo dos 30 s de CPU. Se não ficar, não ligue o caminho da fila (sem `OUTBOX_HYPERDRIVE` o cron continua montando) e leve ao responsável a decisão de plano.
-7. **Medir CPU do despachante** numa prévia: `wrangler tail` no cron `19 * * * *` com eventos pendentes; o `cpuTime` precisa ficar abaixo de 10 ms no plano Free. Se não ficar, reduzir o lote ou levar ao responsável a decisão do plano pago.
+1. **Migration antes do Worker.** Aplicar as migrations (inclusive a do despachante, 0071 ou o número que tiver na `main`) no banco do ambiente **antes** de qualquer deploy do Worker: ele chama funções novas (`claim_outbox_events`, `claim_queue_processing`, `claim_data_export_by_id`, `rearm_data_export_events`) e o pedido de exportação já grava no outbox desde o PR108. Um Worker novo sobre um banco antigo falha nessas chamadas.
+2. **Papel de login do outbox e Hyperdrive, ainda sem ligar.** Criar um login que herde `polaris_outbox_runtime` (como os outros papéis de runtime, pela [política de perfis de CLI](./cli-profile-policy.md)) e um Hyperdrive para ele **sem query caching**. Só criar: o id do Hyperdrive vai para o `wrangler.jsonc` no passo 7, e não antes. Sem esse binding o despachante só avisa (`outbox_dispatch_not_configured`), os eventos ficam `pending` e o job horário continua montando as exportações como antes.
+3. **Filas criadas** (seção "Criar as filas", abaixo). O deploy do passo 4 falha sem elas.
+4. **Deploy do Worker sem o caminho da fila ligado** (a configuração de deploy do responsável **não traz** o bloco `OUTBOX_HYPERDRIVE`; o repositório só tem o id `local-only`, de desenvolvimento, e os ids reais dos outros Hyperdrives entram só na configuração de deploy, como pede o [checklist de runbooks](./README.md)), com as filas e os dois Cron Triggers (`17 * * * *` e `19 * * * *`; o plano Free permite cinco por conta). O consumidor já existe, o despachante só avisa, e o cron `:17` segue montando as exportações.
+5. **Nenhuma exportação órfã.** Antes de ligar o `OUTBOX_HYPERDRIVE` (passo 7), conferir que não há pedido em andamento sem evento (com o caminho ligado, o cron não monta mais e o re-arm só olha eventos despachados): `SELECT e.id FROM data_exports e WHERE e.status IN ('requested', 'running') AND NOT EXISTS (SELECT 1 FROM event_outbox o WHERE o.type = 'data_export.requested' AND o.event ->> 'exportId' = e.id::text)` deve voltar vazio. Se não voltar, deixe o caminho desligado até esses pedidos terminarem pelo cron.
+6. **Medir, numa prévia com o caminho ligado.** A prévia é um deploy **separado** do passo 4, com banco descartável (branch Neon descartável, com dados sintéticos, nunca o banco de produção), login do outbox, Hyperdrive e filas **próprios** (nomes com sufixo de ambiente, como `polaris-default-staging`), criados só para isso e apagados depois pelo responsável. A produção continua desligada até o passo 7:
+   - **CPU do consumidor:** pedir uma exportação com dados e imagens próximos do teto e conferir no `wrangler tail` do consumidor que a montagem fica abaixo dos 30 s de CPU. Se não ficar, não ligue o caminho da fila e leve ao responsável a decisão de plano.
+   - **CPU do despachante:** `wrangler tail` no cron `19 * * * *` com eventos pendentes; o `cpuTime` precisa ficar abaixo de 10 ms no plano Free. Se não ficar, reduzir o lote ou levar ao responsável a decisão do plano pago.
+7. **Ligar o caminho da fila em produção:** só com os passos 1 a 6 concluídos, pôr o id real do Hyperdrive do passo 2 como `OUTBOX_HYPERDRIVE` e fazer o deploy. O id `local-only` do `wrangler.jsonc` é só para desenvolvimento.
 
 ## Desenvolvimento local
 
@@ -51,12 +53,12 @@ wrangler queues list
 
 A retenção padrão do Free é de 24 horas e não se altera; no plano pago o `--message-retention-period-secs` pode ser definido na criação.
 
-Só depois de criar as três filas, e com o resto do checklist de go-live, faça o deploy do Worker. **Um deploy com consumidor de fila inexistente falha**, de propósito: ele impede subir sem este passo.
+Só depois de criar as três filas (passo 3 do checklist de go-live), faça o deploy do Worker (passo 4). **Um deploy com consumidor de fila inexistente falha**, de propósito: ele impede subir sem este passo.
 
 ## Verificação
 
 1. `wrangler queues list` mostra as três filas, e o painel do Worker lista `polaris-*` como consumidor.
-2. Uma exportação pedida gera um evento `pending`; no cron `:19` seguinte, o log mostra `outbox_dispatch_complete` com `sent: 1`, o evento fica `dispatched` e o consumidor monta a exportação (log `data_export_complete`). Uma mensagem enviada à mão (pelo painel ou `wrangler queues`) com um evento que o outbox não tem é descartada com `queue_message_unknown_event`: o registro de processamento confere o evento no banco.
+2. Uma exportação pedida gera um evento `pending`; no cron `:19` seguinte, o log mostra `outbox_dispatch_complete` com `sent: 1`, o evento fica `dispatched` e o consumidor monta a exportação (log `data_export_complete`). Uma mensagem enviada à mão (pelo painel ou `wrangler queues`) com um evento que o outbox não tem é descartada com `queue_message_unknown_event`: o registro de processamento confere o evento no banco. O aviso traz o ID do evento, o tipo e o motivo (`reason`: `event_not_held`, o outbox não tem o evento com aquela organização, chave, tipo e tentativa, ou `key_of_another_event`), sem conteúdo da mensagem; um pico desse aviso fora de teste manual é sinal de mensagem forjada ou de evento purgado, e o responsável investiga. Falha transitória do registro (`claim_contended` ou banco fora) **não** vira descarte: o consumidor registra `queue_ledger_unavailable` (com o `sqlState`: `40001` é `claim_contended`) e a mensagem é reentregue.
 3. Acompanhar o uso diário de operações no painel; ao passar de 60% das 10.000 (6.000 operações), o responsável decide entre reduzir o volume, ajustar lote e tentativas ou contratar o plano pago.
 
 ## Rollback ou forward-fix

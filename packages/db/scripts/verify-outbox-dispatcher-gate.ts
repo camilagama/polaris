@@ -557,13 +557,113 @@ async function run() {
         { ...keyA, eventId: eventB.id },
       ],
     ] as const) {
-      assert.equal(
-        // biome-ignore lint/performance/noAwaitInLoops: refusals, in order.
-        (await dispatcher.claimProcessing(wrong, LEASE)).result,
-        "unknown",
-        `the record refuses ${label}`
+      // biome-ignore lint/performance/noAwaitInLoops: refusals, in order.
+      const refused = await dispatcher.claimProcessing(wrong, LEASE);
+      assert.deepEqual(
+        refused,
+        { reason: "event_not_held", result: "unknown" },
+        `the record refuses ${label}, and says why`
       );
     }
+    // the record of a key vanishes between the insert and the lock (a release or the expiry at the same
+    // time): the take starts again and gets the key, instead of answering "unknown" for an event it holds
+    const racing = await syntheticEvent(orgA.organizationId);
+    await owner.pool.query(
+      "UPDATE public.event_outbox SET attempts = 1 WHERE id = $1",
+      [racing]
+    );
+    const racingKey: ProcessingKey = {
+      attempt: 1,
+      eventId: racing,
+      idempotencyKey: (
+        await owner.pool.query<{ idempotency_key: string }>(
+          "SELECT idempotency_key FROM public.event_outbox WHERE id = $1",
+          [racing]
+        )
+      ).rows[0]?.idempotency_key as string,
+      organizationId: orgA.organizationId,
+      type: "data_export.requested",
+    };
+    assert.ok(racingKey.idempotencyKey);
+    const outboxLogin = decodeURIComponent(new URL(outboxUrl).username);
+    const waitsOnALock = async () => {
+      for (let tries = 0; tries < 200; tries += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: polling until the claim waits.
+        const waiting = await owner.pool.query(
+          "SELECT 1 FROM pg_stat_activity WHERE usename = $1 AND wait_event_type = 'Lock'",
+          [outboxLogin]
+        );
+        if (waiting.rowCount) {
+          return;
+        }
+        // biome-ignore lint/performance/noAwaitInLoops: polling until the claim waits.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail("the claim never waited for the lock of the record");
+    };
+    // the record is removed by a raw DELETE under a lock the claim waits for, which is what a release or the
+    // expiry does to it at the wrong moment: the claimed and the done record, each
+    const vanish =
+      "DELETE FROM public.queue_processing WHERE organization_id = $1 AND idempotency_key = $2";
+    for (const label of ["a claimed record", "a done record"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one race at a time.
+      const taken = await dispatcher.claimProcessing(racingKey, LEASE);
+      assert.equal(taken.result, "claimed");
+      if (label === "a done record") {
+        // what the expiry removes
+        await dispatcher.completeProcessing(racingKey);
+      }
+      const holder = await owner.pool.connect();
+      try {
+        await holder.query("BEGIN");
+        await holder.query(
+          "SELECT 1 FROM public.queue_processing WHERE organization_id = $1 AND idempotency_key = $2 FOR UPDATE",
+          [racingKey.organizationId, racingKey.idempotencyKey]
+        );
+        // the insert finds the record and skips; the lock then waits behind the holder
+        const racer = rival.claimProcessing(racingKey, LEASE);
+        racer.catch(() => undefined);
+        await waitsOnALock();
+        await holder.query(vanish, [
+          racingKey.organizationId,
+          racingKey.idempotencyKey,
+        ]);
+        await holder.query("COMMIT");
+        assert.equal(
+          (await racer).result,
+          "claimed",
+          `${label} that vanishes before the lock is taken again, not refused as unknown`
+        );
+      } finally {
+        // a failed assertion must not return a connection that still holds the lock
+        await holder.query("ROLLBACK").catch(() => undefined);
+        holder.release();
+      }
+      await owner.pool.query(vanish, [
+        racingKey.organizationId,
+        racingKey.idempotencyKey,
+      ]);
+    }
+    // the key is held under another event ID while the outbox holds this event with that key (the record
+    // was written for an event the outbox has since replaced): refused, and the reason says so
+    await owner.pool.query(
+      "INSERT INTO public.queue_processing (organization_id, idempotency_key, event_id, attempt, state, token, lease_until) VALUES ($1, $2, $3, 1, 'claimed', $4, now() + interval '1 hour')",
+      [
+        racingKey.organizationId,
+        racingKey.idempotencyKey,
+        randomUUID(),
+        randomUUID(),
+      ]
+    );
+    assert.deepEqual(
+      await dispatcher.claimProcessing(racingKey, LEASE),
+      { reason: "key_of_another_event", result: "unknown" },
+      "a key held under another event is refused, with its reason"
+    );
+    await owner.pool.query(
+      "DELETE FROM public.queue_processing WHERE organization_id = $1 AND idempotency_key = $2",
+      [racingKey.organizationId, racingKey.idempotencyKey]
+    );
     await expectSqlState(
       () => dispatcher.claimProcessing({ ...keyA, attempt: 0 }, LEASE),
       "22023",
@@ -575,7 +675,7 @@ async function run() {
       "the lease is bounded"
     );
     tests.push(
-      "the durable record takes a key once (busy for another consumer), gives it back only to the holder's token, lets another take it when the lease runs out (the late holder frees nothing) and says done for a duplicate of a done attempt; it refuses an event ID, organization, key or type the outbox does not hold together, and an attempt the dispatcher has not made"
+      "the durable record takes a key once (busy for another consumer), gives it back only to the holder's token, lets another take it when the lease runs out (the late holder frees nothing) and says done for a duplicate of a done attempt; it refuses an event ID, organization, key or type the outbox does not hold together, and an attempt the dispatcher has not made, saying why; a record that vanishes between the insert and the lock (a release, the expiry) is taken again instead of refused as unknown"
     );
 
     // ------------------------------------------------- 5. the export side: by ID, the delay, the re-arm
@@ -717,20 +817,18 @@ async function run() {
       0,
       "the mark of a removed event is no error and marks nothing"
     );
-    assert.equal(
-      (
-        await dispatcher.claimProcessing(
-          {
-            attempt: heldDoomed.attempts,
-            eventId: doomed,
-            idempotencyKey: heldDoomed.idempotencyKey,
-            organizationId: orgB.organizationId,
-            type: "data_export.requested",
-          },
-          LEASE
-        )
-      ).result,
-      "unknown",
+    assert.deepEqual(
+      await dispatcher.claimProcessing(
+        {
+          attempt: heldDoomed.attempts,
+          eventId: doomed,
+          idempotencyKey: heldDoomed.idempotencyKey,
+          organizationId: orgB.organizationId,
+          type: "data_export.requested",
+        },
+        LEASE
+      ),
+      { reason: "event_not_held", result: "unknown" },
       "a message for a removed event runs nothing"
     );
     await owner.pool.query(

@@ -33,10 +33,13 @@ export interface ProcessingKey {
   type: string;
 }
 
+/** Why the record refuses a message: the outbox does not hold that event, or the key is another event's. */
+export type UnknownReason = "event_not_held" | "key_of_another_event";
+
 export type ProcessingClaim =
   | { result: "busy" }
   | { result: "done" }
-  | { result: "unknown" }
+  | { reason: UnknownReason; result: "unknown" }
   | { result: "claimed"; token: string };
 
 export interface OutboxClient {
@@ -62,7 +65,10 @@ export interface OutboxClient {
   releaseProcessing: (key: ProcessingKey, token: string) => Promise<void>;
 }
 
-const CLAIM_RESULTS = new Set(["busy", "done", "unknown"]);
+const UNKNOWN_REASONS = new Set<string>([
+  "event_not_held",
+  "key_of_another_event",
+]);
 
 export function createOutboxClient(connectionString: string): OutboxClient {
   const pool = new Pool({
@@ -99,7 +105,7 @@ export function createOutboxClient(connectionString: string): OutboxClient {
     },
     async claimProcessing(key, leaseSeconds) {
       const result = await pool.query<{
-        claimed: { result: string; token?: string };
+        claimed: { reason?: string; result: string; token?: string };
       }>(
         "SELECT public.claim_queue_processing($1::text, $2::text, $3::text, $4::uuid, $5::integer, $6::integer) AS claimed",
         [
@@ -115,8 +121,15 @@ export function createOutboxClient(connectionString: string): OutboxClient {
       if (claimed?.result === "claimed" && typeof claimed.token === "string") {
         return { result: "claimed", token: claimed.token };
       }
-      if (claimed && CLAIM_RESULTS.has(claimed.result)) {
-        return { result: claimed.result as "busy" | "done" | "unknown" };
+      if (claimed?.result === "busy" || claimed?.result === "done") {
+        return { result: claimed.result };
+      }
+      if (
+        claimed?.result === "unknown" &&
+        typeof claimed.reason === "string" &&
+        UNKNOWN_REASONS.has(claimed.reason)
+      ) {
+        return { reason: claimed.reason as UnknownReason, result: "unknown" };
       }
       throw new Error("processing_claim_unreadable");
     },

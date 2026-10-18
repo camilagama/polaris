@@ -117,12 +117,18 @@ describe("the in-memory processing ledger", () => {
       eventId: "0199a1b2-c3d4-7e5f-9a6b-000000000001",
     });
     await ledger.claim(keyOf("k"), 60);
-    expect(await ledger.claim(other, 60)).toEqual({ result: "unknown" });
+    expect(await ledger.claim(other, 60)).toEqual({
+      reason: "key_of_another_event",
+      result: "unknown",
+    });
     await ledger.complete(other);
     // the original event still holds its claim: the other one's complete did not mark it done
     expect(await ledger.claim(keyOf("k"), 60)).toEqual({ result: "busy" });
     await ledger.complete(keyOf("k"));
-    expect(await ledger.claim(other, 60)).toEqual({ result: "unknown" });
+    expect(await ledger.claim(other, 60)).toEqual({
+      reason: "key_of_another_event",
+      result: "unknown",
+    });
     expect(await ledger.claim(keyOf("k"), 60)).toEqual({ result: "done" });
   });
 
@@ -194,8 +200,14 @@ describe("the durable processing ledger", () => {
     });
     expect(store.claimProcessing).toHaveBeenCalledWith(key, 960);
 
-    store.claimProcessing.mockResolvedValueOnce({ result: "unknown" });
-    expect(await ledger.claim(key, 960)).toEqual({ result: "unknown" });
+    store.claimProcessing.mockResolvedValueOnce({
+      reason: "event_not_held",
+      result: "unknown",
+    });
+    expect(await ledger.claim(key, 960)).toEqual({
+      reason: "event_not_held",
+      result: "unknown",
+    });
   });
 
   it("completes and releases through the store with the key and the token", async () => {
