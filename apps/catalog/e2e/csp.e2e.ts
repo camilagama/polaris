@@ -1,4 +1,6 @@
 /// <reference lib="dom" />
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 
 /**
@@ -11,9 +13,6 @@ const NONCE_IN_POLICY = /script-src 'self' 'nonce-([^']+)'/;
 const TAG = /<script\b([^>]*)>/gi;
 const NONCE_ATTRIBUTE = /\bnonce="([^"]*)"/i;
 const SRC_ATTRIBUTE = /\bsrc=/i;
-const SCRIPT_ELEMENT = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
-const STYLE_ATTRIBUTE = /\sstyle\s*=/i;
-const STYLE_ELEMENT = /<style\b/i;
 
 declare global {
   interface Window {
@@ -74,21 +73,24 @@ for (const path of PAGES) {
     });
 
     test("não há style= nem <style> inline (style-src 'self')", async ({
+      browser,
       page,
-      request,
     }) => {
-      const policy =
-        (await request.get(path)).headers()["content-security-policy"] ?? "";
-      expect(policy).toContain("style-src 'self';");
+      // The HTML as the Worker served it, parsed by the browser with scripts off: the state serialized
+      // in the inline scripts is text there, so only real markup can match.
+      const served = await browser.newContext({ javaScriptEnabled: false });
+      try {
+        const bare = await served.newPage();
+        const response = await bare.goto(path);
+        const policy = response?.headers()["content-security-policy"] ?? "";
+        expect(policy).toContain("style-src 'self';");
+        await expect(bare.locator("main.page")).toBeVisible();
+        expect(await bare.locator("[style], style").count()).toBe(0);
+      } finally {
+        await served.close();
+      }
 
-      // the serialized state in the inline scripts is data, not markup
-      const html = (await (await request.get(path)).text()).replace(
-        SCRIPT_ELEMENT,
-        ""
-      );
-      expect(html).not.toMatch(STYLE_ATTRIBUTE);
-      expect(html).not.toMatch(STYLE_ELEMENT);
-
+      // and the DOM after hydration
       await page.goto(path);
       await expect(page.locator("main.page")).toBeVisible();
       expect(await page.locator("[style], style").count()).toBe(0);
@@ -145,4 +147,22 @@ test("catalog_nonce_missing: sem a entrada do servidor a página não é renderi
 
   // the same page, through the real entry, is served
   expect((await request.get("/")).status()).toBe(200);
+});
+
+test("o redirect de deploy do wrangler aponta para o build real, nunca dist-bare", () => {
+  const redirect = JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, "../.wrangler/deploy/config.json"),
+      "utf8"
+    )
+  ) as { configPath: string };
+  const target = resolve(
+    import.meta.dirname,
+    "../.wrangler/deploy",
+    redirect.configPath
+  );
+  expect(target).toBe(
+    resolve(import.meta.dirname, "../dist/server/wrangler.json")
+  );
+  expect(redirect.configPath).not.toContain("dist-bare");
 });

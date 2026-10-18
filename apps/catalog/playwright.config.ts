@@ -21,7 +21,7 @@ export default defineConfig({
     },
   ],
   reporter: "list",
-  retries: inCI ? 1 : 0,
+  retries: 0,
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
   timeout: 45_000,
@@ -29,11 +29,14 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
   },
-  // Servers start in order, and every build points .wrangler/deploy/config.json at its own output: the
-  // bare-entry build goes first so that the last build left behind is the real one, never the test-only Worker.
+  // Servers start in order. The bare-entry build puts .wrangler/deploy/config.json back as it found it as
+  // soon as its preview is up (see vite.config.ts) and the real build runs last, so a deploy after the
+  // run follows the real Worker, even when a server is reused. e2e/csp.e2e.ts fails if the file points
+  // at dist-bare. The Cloudflare Worker runtime needs Node 24 (.node-version): under Bun requests hang.
   webServer: [
     {
       command: `bunx vite build --mode bare-entry --outDir dist-bare && bunx vite preview --mode bare-entry --outDir dist-bare --host 127.0.0.1 --port ${BARE_PORT} --strictPort`,
+      env: { POLARIS_CATALOG_E2E: "1" },
       reuseExistingServer: !inCI,
       timeout: 180_000,
       // /__debug is served by the Cloudflare plugin itself, outside the router that refuses the page
