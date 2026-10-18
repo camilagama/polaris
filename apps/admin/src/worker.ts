@@ -1,4 +1,9 @@
 import {
+  listOperationalIncidents,
+  readOperationalIncident,
+  retryDeadLetter,
+} from "@polaris/db/admin-incident-repository";
+import {
   auditBillingCommand,
   closeSupportCase,
   grantTenantAccess,
@@ -139,6 +144,20 @@ const dependencies: AdminDependencies = {
     list: (input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         listOrganizations(client, input)
+      ),
+  },
+  incidents: {
+    detail: (incidentId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readOperationalIncident(client, incidentId, input)
+      ),
+    list: (input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listOperationalIncidents(client, input)
+      ),
+    retry: (principalId, incidentId, eventId, reason, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        retryDeadLetter(client, principalId, incidentId, eventId, reason)
       ),
   },
   privacy: {

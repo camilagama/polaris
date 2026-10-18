@@ -33,6 +33,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "deletion_ledger",
   "event_outbox",
   "queue_processing",
+  "operational_incident",
   "provider_backups",
 ] as const);
 
@@ -332,6 +333,19 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     rule: "O registro de uma mensagem processada fica uma semana (mais que as 24 horas de retenção da fila e as novas tentativas) e sai na execução horária do despachante; uma tomada cujo consumidor morreu sai uma semana depois do fim do prazo dela.",
     sources: ["ADR 0084"],
     status: "aprovada",
+  },
+  {
+    basis: "decisao",
+    class: "operational_incident",
+    data: [
+      "operational_incidents (uma linha por causa: contagem, datas e referência opaca)",
+      "queue_dead_letters (eventos mortos do outbox, só IDs opacos)",
+    ],
+    period: { kind: "undecided" },
+    proposed: `Apagar o incidente e os itens já reenviados depois de um prazo de operação, definido com o job agendado (${TO_CONFIRM}); os itens de uma organização saem com o purge dela.`,
+    rule: "O incidente guarda só código, contagem, datas e uma referência opaca; o item guarda só o ID do evento e da organização. Nenhum papel apaga hoje; o expurgo é do job agendado (PR112), e o purge da organização apaga os itens dela (chave estrangeira em cascata).",
+    sources: ["ADR 0085"],
+    status: "proposta",
   },
   {
     basis: "contrato",

@@ -78,6 +78,7 @@ function setup(overrides: Partial<AdminDependencies> = {}) {
   const dependencies: AdminDependencies = {
     authenticate: vi.fn(() => Promise.resolve(claims)),
     report: vi.fn(),
+    incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
       diagnostics: vi.fn(() => Promise.resolve(null)),
       list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
