@@ -133,6 +133,8 @@ export function isLimitKey(key: EntitlementKey): key is LimitKey {
 export interface EntitlementGrant {
   expiresAt: Date;
   key: EntitlementKey;
+  /** From when it counts; a grant that has not started yet changes nothing. */
+  startsAt?: Date;
   /** A limit for a limit key, true for a flag. */
   value: boolean | number;
 }
@@ -211,7 +213,11 @@ export function resolveEntitlements(
   };
   const raised: EntitlementKey[] = [];
   for (const grant of input.grants ?? []) {
-    if (input.now.getTime() >= grant.expiresAt.getTime()) {
+    if (
+      input.now.getTime() >= grant.expiresAt.getTime() ||
+      (grant.startsAt !== undefined &&
+        input.now.getTime() < grant.startsAt.getTime())
+    ) {
       continue;
     }
     const current = values[grant.key];

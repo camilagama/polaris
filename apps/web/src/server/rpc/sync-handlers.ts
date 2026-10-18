@@ -8,6 +8,7 @@ import type {
 } from "@polaris/db/sync-repository";
 import type { WorkerBindings } from "../environment";
 import { offlineLeaseKeys } from "../offline-lease-service";
+import { syncPayloadHashKeys } from "../sync/payload-hash";
 import { pushCommands, type SyncCommandHandler } from "../sync/push";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
@@ -108,10 +109,13 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
   const push = implementContract.sync.push.handler(
     async ({ context, input }) => {
       try {
-        // Fails closed (503) before touching anything when no lease secret exists.
+        // Fails closed (503) before touching anything when no lease secret or
+        // no content-hash secret exists.
         const keys = offlineLeaseKeys(context.bindings);
+        const hashKeys = syncPayloadHashKeys(context.bindings);
         const results = await pushCommands(input.commands, {
           handlers: dependencies.commandHandlers,
+          hashKeys,
           keys,
           now: dependencies.now,
           runSyncCommand: runCommand,

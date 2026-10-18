@@ -159,12 +159,14 @@ export const organizationBilling = pgTable(
     provider: text("provider"),
     providerRef: text("provider_ref"),
     /**
-     * The newest payment taken back by a refund or a chargeback (PR84), while
-     * the record is not on a paid period: the end of the period that was paid
-     * for, why it was taken back (`won`: a chargeback reversed before it was
-     * applied) and what the subscription was. It keeps that payment's late
-     * confirmation from reviving the access and lets a reversed chargeback
-     * restore it. Cleared when the record is paid again.
+     * What is remembered of a payment taken back (PR84): the end of the period
+     * that was paid for, why (`refund`, `chargeback`, or `won`: a chargeback
+     * reversed before it was applied) and what the subscription was. A refund or
+     * a chargeback is never held on a paid period (active, grace): it keeps that
+     * payment's late confirmation from reviving the access and lets a reversed
+     * chargeback restore it, and is cleared when the record is paid again. A
+     * `won` may be held on a paid period (it changes nothing there), carries no
+     * cycle and no cancellation, and stays until another memory replaces it.
      */
     revokedCancelAtPeriodEnd: boolean("revoked_cancel_at_period_end")
       .default(false)
@@ -208,6 +210,7 @@ export const organizationBilling = pgTable(
           AND ${table.revokedReason} IN ('refund', 'chargeback', 'won')
           AND (${table.state} NOT IN ('active', 'grace') OR ${table.revokedReason} = 'won')
           AND (${table.revokedCycleMonths} IS NULL OR ${table.revokedCycleMonths} IN (1, 6, 12))
+          AND (${table.revokedReason} <> 'won' OR (${table.revokedCycleMonths} IS NULL AND NOT ${table.revokedCancelAtPeriodEnd}))
         )
       `
     ),
@@ -267,6 +270,8 @@ export const entitlementGrants = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     flagValue: boolean("flag_value"),
+    /** Who gave it (plan PR85): an admin or a system job, a stable identifier. */
+    grantedBy: text("granted_by").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     key: text("key").notNull(),
     limitValue: integer("limit_value"),
@@ -274,6 +279,13 @@ export const entitlementGrants = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     reason: text("reason").notNull(),
+    /** Who ended it early, and when; the end is then the moment it was revoked. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: text("revoked_by"),
+    /** From when it counts. */
+    startsAt: timestamp("starts_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     check(
@@ -289,6 +301,21 @@ export const entitlementGrants = pgTable(
       "entitlement_grants_reason_allowed",
       sql`char_length(btrim(${table.reason})) BETWEEN 1 AND 300`
     ),
+    check(
+      "entitlement_grants_actor_allowed",
+      sql`char_length(${table.grantedBy}) BETWEEN 1 AND 128 AND (${table.revokedBy} IS NULL OR char_length(${table.revokedBy}) BETWEEN 1 AND 128)`
+    ),
+    // always starts before it ends, and always ends: a permanent change is a plan change
+    check(
+      "entitlement_grants_period_allowed",
+      sql`${table.startsAt} < ${table.expiresAt} AND ${table.expiresAt} - ${table.startsAt} <= interval '366 days'`
+    ),
+    check(
+      "entitlement_grants_revocation_coherent",
+      sql`(${table.revokedAt} IS NULL AND ${table.revokedBy} IS NULL) OR (${table.revokedAt} IS NOT NULL AND ${table.revokedBy} IS NOT NULL)`
+    ),
+    // the sweep of expired limits reads this
+    index("entitlement_grants_expiry_idx").on(table.expiresAt),
     index("entitlement_grants_organization_idx").on(
       table.organizationId,
       table.expiresAt

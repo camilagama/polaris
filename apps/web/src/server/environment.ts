@@ -5,6 +5,24 @@ export interface HyperdriveBinding {
   connectionString: string;
 }
 
+/**
+ * A Cloudflare Queue as a producer (ADR 0083): the outbox dispatcher (ADR 0084) sends with
+ * `sendBatch`. The body is an envelope from `@polaris/domain/events/queue-envelope`.
+ */
+interface QueueProducerBinding {
+  send: (
+    body: unknown,
+    options?: { contentType?: "json"; delaySeconds?: number }
+  ) => Promise<void>;
+  sendBatch: (
+    messages: Iterable<{
+      body: unknown;
+      contentType?: "json";
+      delaySeconds?: number;
+    }>
+  ) => Promise<unknown>;
+}
+
 export interface RateLimitBinding {
   limit: (options: { key: string }) => Promise<{ success: boolean }>;
 }
@@ -52,6 +70,8 @@ export interface WorkerBindings {
   BETTER_AUTH_BASE_URL?: string;
   /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
   BILLING_HYPERDRIVE?: HyperdriveBinding;
+  /** The origin the public catalog is served from (used only to show the organization its link). */
+  CATALOG_ORIGIN?: string;
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -66,8 +86,25 @@ export interface WorkerBindings {
   OFFLINE_LEASE_PREVIOUS_SECRET?: string;
   OFFLINE_LEASE_SECRET?: string;
   ONBOARDING_HYPERDRIVE?: HyperdriveBinding;
+  /**
+   * The outbox role (ADR 0084): the dispatcher claims, marks and gives back events and the queue
+   * consumer keeps its processing record, only through functions; it reads nothing directly.
+   */
+  OUTBOX_HYPERDRIVE?: HyperdriveBinding;
+  /** The privacy role (marks expired closure windows as closed): it executes one function and reads nothing. */
+  PRIVACY_HYPERDRIVE?: HyperdriveBinding;
+  /** The queues of the plan (ADR 0083), by how much a late message costs. */
+  QUEUE_CRITICAL?: QueueProducerBinding;
+  QUEUE_DEFAULT?: QueueProducerBinding;
+  /** The dead-letter queue (ADR 0085). */
+  QUEUE_DLQ?: QueueProducerBinding;
+  QUEUE_MEDIA?: QueueProducerBinding;
   RESEND_API_KEY?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
+  /** A secret of a rotation, still accepted when comparing a retried offline command (ADR 0079). */
+  SYNC_PAYLOAD_HASH_PREVIOUS_SECRET?: string;
+  /** The key of the HMAC that identifies an offline command's content (ADR 0079); at least 32 bytes. */
+  SYNC_PAYLOAD_HASH_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
 }
 

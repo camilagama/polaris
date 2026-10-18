@@ -32,3 +32,7 @@ A Fase 7 (PR72, PR73 e PR76) cria a base de billing sem integrar nenhum provedor
 - **Deixar o runtime escrever o estado de billing:** o acesso pago passaria a depender de um endpoint do próprio tenant.
 - **Duas linhas de preço ativas por intervalo:** o índice único parcial impede.
 - **Concessão que também reduz:** um engano de suporte poderia tirar de uma organização o que o plano lhe dá.
+
+## Emenda: o que o tenant lê do registro de billing e das concessões
+
+O papel do tenant lê o registro de assinatura (`organization_billing`) e as concessões (`entitlement_grants`) só por **colunas**: as que o produto mostra ou de que deriva os entitlements (estado, fim do acesso, ciclo e ciclo pendente, cancelamento ao fim do período, início do trial e da janela de adequação, o nome do provedor, versão e datas; das concessões, a chave, o valor, o início, o fim e o encerramento). Não lê o que o ciclo de vida de billing guarda para si: a referência da assinatura no provedor, o relógio dos fatos, a memória dos pagamentos tirados (`revoked_*`), e, nas concessões, o motivo (uma nota interna) e quem deu ou encerrou. Uma coluna nova nasce invisível ao tenant até ser concedida explicitamente, então a próxima não vaza por omissão. Os repositórios já selecionavam colunas nomeadas; `SELECT *` do tenant nessas tabelas passa a ser recusado. A migration 0059 aplica a regra e o gate `entitlement-grants` a prova.

@@ -48,6 +48,12 @@ export interface RunSyncCommandInput {
   createdAt: Date;
   deviceId: string;
   /**
+   * Other hashes of this same content that an older row may hold (the HMAC under
+   * a rotated key, the unkeyed SHA-256 written before the HMAC). They are only
+   * compared, never stored.
+   */
+  equivalentPayloadHashes?: readonly string[];
+  /**
    * An additional recheck of the organization's entitlement. The plan's
    * `offline.write` flag is always checked after the lease checks; this runs
    * after it, and `false` refuses the command with `entitlement_changed`.
@@ -56,6 +62,7 @@ export interface RunSyncCommandInput {
   /** The verified lease claims, or null with `precheckFailure` set. */
   leaseClaims: OfflineLeaseClaims | null;
   now?: Date;
+  /** The keyed hash of the command's content (ADR 0079): what a new row stores. */
   payloadHash: string;
   /** A deterministic reason to refuse before running anything (bad lease, bad payload). */
   precheckFailure?: string | null;
@@ -142,6 +149,14 @@ const notStored = (code: string): SyncCommandOutcome => ({
   replayed: false,
 });
 
+/** The stored hash is this content's, under the current key or an older form. */
+function isSameContent(stored: string, input: RunSyncCommandInput): boolean {
+  return (
+    stored === input.payloadHash ||
+    (input.equivalentPayloadHashes ?? []).includes(stored)
+  );
+}
+
 /** The creation time must sit inside the lease window (device clock, with skew). */
 function creationTimeInsideLease(
   input: RunSyncCommandInput,
@@ -198,7 +213,7 @@ export async function runSyncCommand(
     .limit(1);
   if (existing) {
     if (
-      existing.payloadHash !== input.payloadHash ||
+      !isSameContent(existing.payloadHash, input) ||
       existing.commandType !== input.commandType
     ) {
       return {

@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "polaris-catalog",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": ["nodejs_compat"],
+  // CATALOG_ORIGIN (the public origin canonical links point to) is a per-environment variable:
+  // a deploy without it fails closed instead of publishing a development address.
+  "main": "@tanstack/react-start/server-entry",
+  "observability": { "enabled": true },
+  // The private media bucket. The Worker only calls get: what is served is
+  // authorized by the database first (ADR 0069).
+  "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media" }],
+  // The id below only serves local development. A deployed Worker needs a real
+  // Hyperdrive configuration with query caching disabled, using the login of the
+  // public catalog role (a member of polaris_catalog_runtime): the role reads no
+  // table and only runs the four public_catalog_* functions (ADR 0069).
+  "hyperdrive": [
+    {
+      "binding": "CATALOG_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    }
+  ]
+}

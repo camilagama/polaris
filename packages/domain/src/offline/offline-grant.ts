@@ -16,6 +16,7 @@ export const OFFLINE_GRANT_REVOKE_REASONS = Object.freeze([
   "user_revoked",
   "security_event",
   "organization_suspended",
+  "organization_closed",
 ] as const);
 
 export type OfflineGrantRevokeReason =

@@ -59,6 +59,35 @@ const product = z.object({
 
 export type ProductReadModel = z.infer<typeof product>;
 
+const publicCatalogProfile = z.object({
+  description: z.string().nullable(),
+  /** The Instagram name without the @. */
+  instagram: z.string().nullable(),
+  publicName: z.string().min(1),
+  /** The organization's own switch (what is shown also depends on the plan). */
+  published: z.boolean(),
+  slug: z.string().min(1),
+  version: z.number().int().positive(),
+  /** Digits only, country code included. */
+  whatsapp: z.string().nullable(),
+});
+
+export type PublicCatalogProfileReadModel = z.infer<
+  typeof publicCatalogProfile
+>;
+
+const publicCatalogSetup = z.object({
+  /** The plan in force includes the public catalog right now. */
+  enabled: z.boolean(),
+  profile: publicCatalogProfile.nullable(),
+  /** The origin the public catalog is served from, when known. */
+  publicOrigin: z.string().nullable(),
+  /** The products chosen to be shown (the plan and each product's own state still decide). */
+  publishedProductIds: z.array(z.string().uuid()),
+});
+
+export type PublicCatalogSetupReadModel = z.infer<typeof publicCatalogSetup>;
+
 const customerProfileFields = z.object({
   email: z
     .union([z.string().trim().email().max(254), z.string().trim().length(0)])
@@ -85,6 +114,8 @@ function requireCustomerContact(
 }
 
 const customer = z.object({
+  // Set once the customer was anonymized for privacy: the record holds no personal data and cannot change.
+  anonymizedAt: z.string().datetime().nullable(),
   archivedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   email: z.string().nullable(),
@@ -903,7 +934,14 @@ const organization = z.object({
   currency: z.literal("BRL"),
   id: z.string().uuid(),
   name: z.string().min(1),
-  status: z.enum(["active", "suspended", "closed"]),
+  status: z.enum([
+    "active",
+    "suspended",
+    "closing",
+    "closed",
+    "purge_pending",
+    "purged",
+  ]),
   timezone: z.string().min(1),
 });
 
@@ -1113,6 +1151,16 @@ export const polarisContract = {
       .output(z.object({ category, changed: z.boolean() })),
   },
   customer: {
+    // Irreversible: replaces the name and removes phone, e-mail and notes; sales keep their economic facts.
+    anonymizeForPrivacy: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          id: z.string().uuid(),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ changed: z.boolean(), customer })),
     archive: oc
       .input(
         z.object({
@@ -1322,6 +1370,54 @@ export const polarisContract = {
       )
       .output(z.object({ changed: z.boolean(), goal })),
   },
+  publicCatalog: {
+    // Choose which products the public catalog shows. Needs the plan to include it.
+    publishProducts: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          productIds: z.array(z.string().uuid()).min(1).max(200),
+        })
+      )
+      .output(z.object({ published: z.number().int().nonnegative() })),
+    // Create or edit the public profile. The address is unique across every
+    // organization; an edit names the version it started from.
+    saveProfile: oc
+      .input(
+        z.object({
+          description: z.string().max(2000).nullable().optional(),
+          expectedVersion: z.number().int().positive().optional(),
+          instagram: z.string().max(100).nullable().optional(),
+          organizationId: z.string().trim().min(1),
+          publicName: z.string().max(500),
+          slug: z.string().max(200),
+          whatsapp: z.string().max(100).nullable().optional(),
+        })
+      )
+      .output(publicCatalogProfile),
+    // The organization's own switch; turning it off never needs the plan.
+    setPublished: oc
+      .input(
+        z.object({
+          expectedVersion: z.number().int().positive(),
+          organizationId: z.string().trim().min(1),
+          published: z.boolean(),
+        })
+      )
+      .output(publicCatalogProfile),
+    setup: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(publicCatalogSetup),
+    // Taking products out is always allowed.
+    unpublishProducts: oc
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1),
+          productIds: z.array(z.string().uuid()).min(1).max(200),
+        })
+      )
+      .output(z.object({ unpublished: z.number().int().nonnegative() })),
+  },
   plan: {
     // Where the organization stands against the Free variant limit and which
     // variants it keeps operational (Free Over Limit, ADR 0064).
@@ -1351,6 +1447,53 @@ export const polarisContract = {
         })
       )
       .output(periodSummary),
+  },
+  // A copy of the organization's data, built in the background and kept for a short time
+  // (ADR 0078). Asking is a tenant operation of the owner; the file itself is downloaded from
+  // /api/data-exports/{id}/files/{ordinal}, not through RPC.
+  dataExport: {
+    list: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(
+        z.object({
+          exports: z.array(
+            z.object({
+              errorCode: z.string().nullable(),
+              expiresAt: z.string().datetime().nullable(),
+              files: z.array(
+                z.object({
+                  name: z.string().min(1),
+                  ordinal: z.number().int().positive(),
+                  sizeBytes: z.number().int().positive(),
+                })
+              ),
+              formats: z.array(z.enum(["json", "csv", "images"])),
+              id: z.string().uuid(),
+              readyAt: z.string().datetime().nullable(),
+              requestedAt: z.string().datetime(),
+              status: z.enum([
+                "requested",
+                "running",
+                "ready",
+                "failed",
+                "expired",
+              ]),
+              totalBytes: z.number().int().nonnegative().nullable(),
+            })
+          ),
+        })
+      ),
+    request: oc
+      .input(
+        z.object({
+          formats: z
+            .array(z.enum(["json", "csv", "images"]))
+            .min(1)
+            .max(3),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ id: z.string().uuid() })),
   },
   device: {
     // Devices belong to the signed-in user, never to an organization: no
@@ -1515,6 +1658,37 @@ export const polarisContract = {
     listMine: oc.output(
       z.object({ organizations: z.array(organizationMembership) })
     ),
+    // The owner's own organizations whose closure can still be undone. Not tenant-scoped:
+    // an organization in closure no longer opens as a tenant.
+    listClosing: oc.output(
+      z.object({
+        organizations: z.array(
+          z.object({
+            id: z.string().uuid(),
+            name: z.string().min(1),
+            recoverUntil: z.string().datetime(),
+          })
+        ),
+      })
+    ),
+    // Undo a closure while its recovery window is open. The leases revoked at the request stay revoked.
+    recoverClosure: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(z.object({ recovered: z.literal(true) })),
+    // Closing revokes access at once. The owner types the organization's name to confirm.
+    requestClosure: oc
+      .input(
+        z.object({
+          confirmation: z.string().min(1).max(256),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(
+        z.object({
+          recoverUntil: z.string().datetime(),
+          revokedLeases: z.number().int().nonnegative(),
+        })
+      ),
   },
   paymentProfile: {
     archive: oc

@@ -453,7 +453,8 @@ describe("properties of any sequence of facts", () => {
           return;
         }
         const result = reconcileFact(initial, fact, ctx(base));
-        if (result.outcome === "ignored") {
+        // a refused confirmation that only teaches the cycle of a chargeback moves no access
+        if (result.outcome === "ignored" || result.transition === null) {
           return;
         }
         expect(result.record.accessEndsAt?.getTime()).toBeGreaterThan(

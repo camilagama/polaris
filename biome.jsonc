@@ -155,6 +155,88 @@
           }
         }
       }
+    },
+    {
+      // The public catalog reads only through the four public functions (ADR 0069).
+      "includes": ["apps/catalog/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/db",
+                      "@polaris/db/*",
+                      "!@polaris/db/public-catalog-reader",
+                      "@polaris/billing",
+                      "@polaris/billing/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "better-auth",
+                      "better-auth/**"
+                    ],
+                    "message": "The public catalog must not import tenant data, billing, auth or a database driver: it reads only through the public catalog reader."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // The Admin app reaches the database only through its own modules (ADR 0070):
+      // never tenant data, billing, auth or a driver. Each Admin PR that adds a module lists it here.
+      "includes": ["apps/admin/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/db",
+                      "@polaris/db/*",
+                      "!@polaris/db/platform-principal-repository",
+                      "!@polaris/db/admin-diagnostics-repository",
+                      "!@polaris/db/admin-support-repository",
+                      "!@polaris/db/admin-incident-repository",
+                      "!@polaris/db/billing-store",
+                      "@polaris/billing",
+                      "@polaris/billing/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "better-auth",
+                      "better-auth/**"
+                    ],
+                    "message": "The Admin app must not import tenant data, billing, auth or a database driver: it reaches the database only through its own repositories."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // TanStack Start derives the URL from the file name ($param, [.] escapes)
+      "includes": ["apps/catalog/src/routes/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": "off"
+          }
+        }
+      }
     }
   ]
 }

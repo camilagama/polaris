@@ -1,0 +1,41 @@
+---
+status: accepted
+---
+
+# A referência do provedor em todos os fatos de cobrança
+
+> O número deste ADR (0087) é o próximo livre na `main` e nos PRs abertos no momento da escrita; pode mudar se outro entrar antes. A migration deste PR (0074, `0074_billing_reference_incident.sql`) vem depois da 0073 do agendador; o PR do purge (#126) ainda usa 0072, e quem entrar depois renumera a migration e o snapshot.
+
+## Contexto
+
+O [ADR 0066](0066-reembolso-e-chargeback.md) definiu a conferência da referência da assinatura no provedor para reembolso, chargeback e reversão. Este ADR estende essa conferência a todos os fatos do provedor, define a ordem entre o primeiro webhook e a ligação da referência (`attachProvider`) e torna visível o desfecho `reference_mismatch`, para que um adaptador com o campo mapeado errado seja percebido.
+
+## Decisão
+
+- **Todo fato do provedor exige a referência, e o registro precisa ter a mesma.** Para qualquer dos oito fatos, o processamento confere `provider` e `provider_ref` do evento com os do registro da organização. Evento sem referência, ou com a de outra assinatura (ou de outro provedor), fica `ignored` com `reference_mismatch` e não muda nada. Não há fato que dispense a conferência: a regra é uma só, e vale também quando o chamador informa a organização.
+- **Nenhum fato liga a referência.** O desenho mais simples coerente com o [ADR 0062](0062-ciclo-de-vida-do-billing-e-caixa-de-entrada.md): só `attachProvider` grava `provider` e `provider_ref` (quem cria a assinatura no provedor, antes de o provedor falar de volta). O armazenamento não grava a referência ao aplicar um fato. Um fato com referência que chega **antes da ligação**, para um registro sem assinatura ligada, não é uma troca de assinatura: ele **falha** com `unknown_organization`, como já falha o evento que só traz uma referência ainda sem organização (o caso da rota de webhook, que não informa a organização), e o passe de reprocessamento o aplica depois da ligação (até cinco tentativas, com a espera que cresce a cada falha, ADR 0062; os que esperam são tentados na ordem de chegada). Nenhum fato tem efeito antes da ligação. Se a referência já está ligada a **outra** organização, não é espera: é `reference_mismatch`.
+- **A ordem não faz um pagamento tirado voltar.** Se o reembolso é aplicado logo depois da ligação e a confirmação do mesmo pagamento ainda espera o reprocessamento, a confirmação tardia não revive o acesso: o pagamento tirado fica registrado e a confirmação de período igual ou anterior nunca o reabre (ADR 0066). O gate prova a ordem nos dois sentidos.
+- **O que não confere vira incidente operacional, nos dois caminhos.** Pela rota de webhook a organização só sai da referência do evento, então um adaptador que informe o campo errado (ou nenhum) não chega ao `reference_mismatch`: o evento não acha organização e esgotaria as tentativas em silêncio. Por isso há duas causas: `reference_mismatch` (o fato ignorado, na transação que registra o desfecho) e `reference_unresolved` (o fato que **na última tentativa** ainda não achou assinatura, no máximo uma vez por evento). Ambas chamam `record_billing_reference_incident(causa, tipo do fato, ID do evento)`, função `SECURITY DEFINER` do dono do outbox (dono de `operational_incidents`, ADR 0085) que o login do billing só executa. O incidente é de `kind = billing_reference_mismatch`, `cause` uma das duas e `subject = billing.<tipo do fato>`: **uma linha por causa e tipo de fato**, que soma à contagem e move a última ocorrência (`last_reference` é o ID do evento no histórico de billing, para achá-lo). Não guarda a referência do provedor, a organização nem texto livre. Aparece na mesma lista do Admin (`GET /api/operational-incidents`) com `deadEvents` zero: não há o que reenviar, o evento ignorado continua no histórico. As CHECKs de `operational_incidents` ganham o tipo e as causas novas.
+- **Verificação.** O gate `billing-lifecycle` cobre, para cada um dos oito fatos: sem referência, com a referência de outra assinatura, com a de outro provedor (nada muda e o incidente soma), antes da ligação (falha, sem efeito) e o caso válido (aplica); a referência ligada a outra organização (`reference_mismatch`); a ordem entre webhook e ligação (as duas ordens, com o estado antes e depois de cada evento); o fato que nenhuma assinatura reivindica (com referência desconhecida e sem referência) virando incidente só na última tentativa e uma vez; a função aceitando todos os tipos de fato do domínio e recusando outro tipo e outra causa; e os privilégios (o login do billing executa a função e não lê nem escreve a tabela; o tenant não executa a função).
+
+## Consequências
+
+- Antes do deploy: migration 0074 aplicada antes do Worker (o processamento chama a função nova).
+- Um adaptador (PR77 e PR78) deve chamar `attachProvider` ao criar a assinatura, antes de o cliente concluir o fluxo no provedor, e informar a referência da assinatura em todo fato. O incidente `billing_reference_mismatch` (`reference_mismatch` ou `reference_unresolved`) é o sinal de que o campo está mapeado errado.
+- `attachProvider` continua sendo o único jeito de trocar a referência de uma assinatura que não está viva; os fatos da referência antiga passam a falhar com `unknown_organization` (a organização deles já não é achada), como antes.
+
+## Limites aceitos
+
+- **Um fato que espera a ligação é tentado cinco vezes** (no passe de reprocessamento, com espera de 15 minutos vezes o número de tentativas: cerca de duas horas e meia no total; a reentrega do mesmo evento pela rota também conta uma tentativa, sem a espera, e cinco reentregas antes da ligação esgotam as tentativas). Se a ligação demorar mais, o evento fica `failed` com `unknown_organization` no histórico, sem efeito, e o incidente `reference_unresolved` avisa; reabri-lo é decisão operacional futura.
+- **O incidente `reference_unresolved` também aparece para o fato legítimo de uma assinatura já substituída** (um checkout antigo cuja referência `attachProvider` trocou): o evento não acha organização e esgota as tentativas. Quem atende o incidente confere se a referência é de uma assinatura antiga antes de procurar um campo mapeado errado. A contagem é de no máximo uma vez por evento: uma exceção do processamento também consome tentativa e pode pular a última.
+- **Fatos que esperaram a ligação podem chegar depois de um posterior.** Um evento que chegou depois da ligação é aplicado na hora, e um anterior que ainda espera o reprocessamento é aplicado depois: o pagamento nunca é obsoleto e uma confirmação tardia não desfaz um reembolso (ADR 0062 e 0066), mas um cancelamento, uma troca de ciclo ou o método pronto atrasados podem ser descartados como obsoletos pela regra de ordem de sempre. A janela só existe se o webhook chegar antes da ligação, e o adaptador liga a referência ao criar a assinatura, antes de o cliente concluir o fluxo.
+- **O incidente conta por tipo de fato, não por provedor nem por organização:** diz que há um campo mapeado errado, e o histórico de billing (`billing_events`, pelo ID da `last_reference`) diz qual evento. Como os outros incidentes, não se encerra (ADR 0085).
+- **Contenção numa linha:** todos os incidentes da mesma causa e tipo de fato somam na mesma linha de `operational_incidents`, dentro da transação do evento; a conta é uma por evento ignorado ou esgotado, sem risco de deadlock (a ordem dos locks é a mesma) e com volume baixo.
+- **A lista de tipos de fato está repetida na função SQL.** Um tipo novo de fato exige uma migration que a atualize; o gate chama a função com cada tipo do domínio e quebra se faltar um.
+- **O login do billing pode somar a contagem dessas causas** (só ele executa a função, e só com o tipo de fato e um UUID): uma contagem a mais é um aviso a mais, nada além disso.
+
+## Alternativas rejeitadas
+
+- **Ligar a referência por fato.** Rejeitada: ligar só por `attachProvider` dá um único ponto de decisão sobre a assinatura da organização.
+- **Contador na própria tabela do histórico de billing:** o Admin precisaria de uma rota nova; a tabela de incidentes já tem leitura, capacidade e página.
+- **Tratar o fato antes da ligação como `reference_mismatch`:** perderia o evento de vez (e abriria um incidente por uma ordem normal de chegada); a espera com reprocessamento já existe.

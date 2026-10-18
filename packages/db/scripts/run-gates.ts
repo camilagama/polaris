@@ -67,6 +67,21 @@ const gates: Gate[] = [
   ["entitlements", "verify-entitlements-gate.ts"],
   ["billing-lifecycle", "verify-billing-lifecycle-gate.ts"],
   ["operational-selection", "verify-operational-selection-gate.ts"],
+  ["entitlement-grants", "verify-entitlement-grants-gate.ts"],
+  ["public-catalog", "verify-public-catalog-gate.ts"],
+  ["platform-principals", "verify-platform-principals-gate.ts"],
+  ["admin-diagnostics", "verify-admin-diagnostics-gate.ts"],
+  ["admin-support", "verify-admin-support-gate.ts"],
+  ["admin-suspension", "verify-admin-suspension-gate.ts"],
+  ["privacy-cases", "verify-privacy-cases-gate.ts"],
+  ["data-export", "verify-data-export-gate.ts"],
+  ["organization-closure", "verify-organization-closure-gate.ts"],
+  ["customer-anonymization", "verify-customer-anonymization-gate.ts"],
+  ["deletion-ledger", "verify-deletion-ledger-gate.ts"],
+  ["event-outbox", "verify-event-outbox-gate.ts"],
+  ["outbox-dispatcher", "verify-outbox-dispatcher-gate.ts"],
+  ["dead-letter", "verify-dead-letter-gate.ts"],
+  ["scheduled-jobs", "verify-scheduled-jobs-gate.ts"],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -150,6 +165,21 @@ const suites: Record<string, string[]> = {
     "entitlements",
     "billing-lifecycle",
     "operational-selection",
+    "entitlement-grants",
+    "public-catalog",
+    "platform-principals",
+    "admin-diagnostics",
+    "admin-support",
+    "admin-suspension",
+    "privacy-cases",
+    "data-export",
+    "organization-closure",
+    "customer-anonymization",
+    "deletion-ledger",
+    "event-outbox",
+    "outbox-dispatcher",
+    "dead-letter",
+    "scheduled-jobs",
     "media-commands",
     "offline-devices",
     "offline-lease",
@@ -180,15 +210,6 @@ const suites: Record<string, string[]> = {
     "customers",
     "read-models",
   ],
-  // Phase 6 (expenses and analytics): grows with every gate of the phase.
-  gate6: ["expenses", "expense-recurrence", "economics", "goals"],
-  // Phase 7 (billing and entitlements): grows with every gate of the phase.
-  gate7: [
-    "billing-catalog",
-    "entitlements",
-    "billing-lifecycle",
-    "operational-selection",
-  ],
   // Phase 5 (offline): grows with every offline gate.
   gate5: [
     "offline-devices",
@@ -201,6 +222,40 @@ const suites: Record<string, string[]> = {
     "offline-stock",
     "offline-sale",
     "offline-e2e",
+  ],
+  // Phase 6 (expenses and analytics): grows with every gate of the phase.
+  gate6: ["expenses", "expense-recurrence", "economics", "goals"],
+  // Phase 7 (billing and entitlements): grows with every gate of the phase.
+  gate7: [
+    "billing-catalog",
+    "entitlements",
+    "billing-lifecycle",
+    "operational-selection",
+    "entitlement-grants",
+  ],
+  // Phase 8 (public catalog): grows with every gate of the phase.
+  gate8: ["public-catalog"],
+  // Phase 9 (admin): grows with every gate of the phase.
+  gate9: [
+    "platform-principals",
+    "admin-diagnostics",
+    "admin-support",
+    "admin-suspension",
+  ],
+  // Phase 10 (privacy): grows with every gate of the phase.
+  gate10: [
+    "organization-closure",
+    "customer-anonymization",
+    "deletion-ledger",
+    "privacy-cases",
+    "data-export",
+  ],
+  // Phase 11 (async infrastructure): grows with every gate of the phase.
+  gate11: [
+    "event-outbox",
+    "outbox-dispatcher",
+    "dead-letter",
+    "scheduled-jobs",
   ],
 };
 

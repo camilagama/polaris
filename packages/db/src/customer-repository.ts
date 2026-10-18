@@ -1,4 +1,6 @@
 import {
+  anonymizedCustomerProfile,
+  CustomerAnonymizedError,
   type CustomerDuplicateSearchInput,
   type CustomerLifecycleAction,
   CustomerNotFoundError,
@@ -10,11 +12,13 @@ import {
   transitionCustomerLifecycle,
 } from "@polaris/domain/customers/customer";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { recordDeletionLedgerEntry } from "./deletion-ledger";
 import { customers } from "./schema/customer";
 import { recordTenantAuditEvent } from "./tenant-audit";
-import type {
-  TenantRequestIdentity,
-  TenantRequestTransaction,
+import {
+  TenantAuthorizationError,
+  type TenantRequestIdentity,
+  type TenantRequestTransaction,
 } from "./tenant-transaction";
 
 export interface CustomerListOptions {
@@ -76,6 +80,7 @@ export interface UpdateCustomerInput
     CustomerProfileInput {}
 
 const customerColumns = {
+  anonymizedAt: customers.anonymizedAt,
   archivedAt: customers.archivedAt,
   createdAt: customers.createdAt,
   email: customers.email,
@@ -223,6 +228,9 @@ export async function updateCustomer(
   if (!existing) {
     throw new CustomerNotFoundError();
   }
+  if (existing.anonymizedAt !== null) {
+    throw new CustomerAnonymizedError();
+  }
   if (existing.version !== input.expectedVersion) {
     throw new CustomerVersionConflictError();
   }
@@ -285,6 +293,13 @@ async function changeCustomerLifecycle(
   if (!existing) {
     throw new CustomerNotFoundError();
   }
+  if (existing.anonymizedAt !== null) {
+    if (action === "restore") {
+      throw new CustomerAnonymizedError();
+    }
+    // archiving what is anonymized (and so archived) changes nothing, whatever version was named
+    return { changed: false, customer: existing };
+  }
   if (existing.version !== input.expectedVersion) {
     throw new CustomerVersionConflictError();
   }
@@ -338,4 +353,80 @@ export async function restoreCustomer(
   input: CustomerMutationInput
 ) {
   return await changeCustomerLifecycle(transaction, identity, input, "restore");
+}
+
+/**
+ * Anonymizes a customer for privacy (plan PR102, ADR 0075): the name, phone, e-mail
+ * and notes are replaced and the record is archived, in one transaction with the
+ * audit event. The record keeps its ID, so every sale that points to it keeps its
+ * economic facts. It cannot be undone, which the database enforces. Doing it to an
+ * already anonymized customer changes nothing.
+ */
+export async function anonymizeCustomerForPrivacy(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: CustomerMutationInput
+) {
+  if (identity.capability !== "customer:anonymize") {
+    throw new TenantAuthorizationError("capability_denied");
+  }
+  const [existing] = await transaction
+    .select(customerColumns)
+    .from(customers)
+    .where(
+      and(
+        eq(customers.id, input.id),
+        eq(customers.organizationId, identity.organizationId)
+      )
+    )
+    .limit(1)
+    .for("update");
+
+  if (!existing) {
+    throw new CustomerNotFoundError();
+  }
+  if (existing.anonymizedAt !== null) {
+    return { changed: false, customer: existing };
+  }
+  if (existing.version !== input.expectedVersion) {
+    throw new CustomerVersionConflictError();
+  }
+
+  const now = new Date();
+  const [customer] = await transaction
+    .update(customers)
+    .set({
+      ...anonymizedCustomerProfile(),
+      anonymizedAt: now,
+      archivedAt: existing.archivedAt ?? now,
+      updatedAt: now,
+      version: existing.version + 1,
+    })
+    .where(
+      and(
+        eq(customers.id, input.id),
+        eq(customers.organizationId, identity.organizationId),
+        eq(customers.version, input.expectedVersion)
+      )
+    )
+    .returning(customerColumns);
+
+  if (!customer) {
+    throw new CustomerVersionConflictError();
+  }
+
+  await recordTenantAuditEvent(transaction, identity, {
+    entityId: customer.id,
+    entityType: "customer",
+    eventType: "customer.anonymized",
+    requestId: input.requestId ?? null,
+  });
+  await recordDeletionLedgerEntry(transaction, {
+    entityId: customer.id,
+    entityType: "customer",
+    operation: "anonymize",
+    organizationId: identity.organizationId,
+  });
+
+  return { changed: true, customer };
 }

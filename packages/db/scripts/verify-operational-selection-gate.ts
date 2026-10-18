@@ -702,11 +702,13 @@ async function run() {
     ).rows;
     assert.ok(o5Before?.since);
     await billing.startTrial(o5.organizationId, new Date());
+    await billing.attachProvider(o5.organizationId, "gate", "sub_gate_o5");
     const cancelled = await billing.recordEvent({
       fact: { occurredAt: new Date(), type: "subscription_cancelled" },
       organizationId: o5.organizationId,
       provider: "gate",
       providerEventId: `cancel-${randomUUID()}`,
+      providerRef: "sub_gate_o5",
     });
     const abandoned = await billing.processEvent(cancelled.id, new Date());
     assert.equal(abandoned.status, "applied");
@@ -754,7 +756,7 @@ async function run() {
       [o6.organizationId]
     );
     await admin.pool.query(
-      "INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, expires_at) VALUES ($1, 'variants.active.max', 53, 'gate', now() + interval '1 day')",
+      "INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, expires_at) VALUES ($1, 'variants.active.max', 53, 'gate', 'gate', now() + interval '1 day')",
       [o6.organizationId]
     );
     await downgrade(o6, 8);
@@ -763,7 +765,7 @@ async function run() {
     assert.equal(raised.limit, 53);
     assert.equal(raised.selectedVariantIds.length, 53);
     await admin.pool.query(
-      "UPDATE public.entitlement_grants SET expires_at = now() - interval '1 minute' WHERE organization_id = $1",
+      "UPDATE public.entitlement_grants SET starts_at = now() - interval '2 days', expires_at = now() - interval '1 minute' WHERE organization_id = $1",
       [o6.organizationId]
     );
     const lapsed = await model(o6);
@@ -853,6 +855,7 @@ async function run() {
       "the episode survives a trial checkout"
     );
     // Pro access again clears it
+    await billing.attachProvider(o4.organizationId, "gate", "sub_gate_o4");
     const ready = await billing.recordEvent({
       fact: {
         cycleMonths: 1,
@@ -862,6 +865,7 @@ async function run() {
       organizationId: o4.organizationId,
       provider: "gate",
       providerEventId: `ready-${randomUUID()}`,
+      providerRef: "sub_gate_o4",
     });
     const processed = await billing.processEvent(ready.id, new Date());
     assert.equal(processed.status, "applied");
