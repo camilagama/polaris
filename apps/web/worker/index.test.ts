@@ -886,6 +886,20 @@ describe("the cron triggers", () => {
   });
 });
 
+describe("Cloudflare Workflows", () => {
+  it("are not bound by any Worker: on the Free plan a step gets 10 ms of CPU, less than the queue consumer (ADR 0088)", () => {
+    const apps = new URL("../../", import.meta.url);
+    const withWorkflows = readdirSync(apps)
+      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
+      .filter((name) =>
+        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
+          '"workflows"'
+        )
+      );
+    expect(withWorkflows).toEqual([]);
+  });
+});
+
 describe("the scheduler tick", () => {
   const outbox = {
     OUTBOX_HYPERDRIVE: { connectionString: "postgresql://outbox.invalid/db" },
