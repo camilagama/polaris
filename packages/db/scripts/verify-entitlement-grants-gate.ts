@@ -610,6 +610,64 @@ async function run() {
     tests.push(
       "a free_over_limit record without a start is still picked by the sweep and dated by the end of the grant, while one whose window began after that end is left alone"
     );
+    // an organization with no billing row when the grant ends: no excess leaves no over-limit record, an excess is dated by the end of the grant
+    const noRow = async (org: TenantFixture) => {
+      await admin.pool.query(
+        "DELETE FROM public.organization_billing WHERE organization_id = $1",
+        [org.organizationId]
+      );
+    };
+    const rowCount = async (org: TenantFixture) =>
+      Number(
+        (
+          await admin.pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.organization_billing WHERE organization_id = $1",
+            [org.organizationId]
+          )
+        ).rows[0]?.count
+      );
+    const noExcess = await free("grants no row, no excess");
+    await endGrant(noExcess, 2);
+    await noRow(noExcess);
+    const noRowOver = await overLimit("grants no row, excess");
+    await endGrant(noRowOver, 4);
+    await noRow(noRowOver);
+    assert.equal(await rowCount(noExcess), 0);
+    assert.equal(await rowCount(noRowOver), 0);
+    const noRowSweep = await billing.sweepDue(new Date());
+    assert.equal(noRowSweep.failed, 0);
+    // the sweep locks the record (which creates a plain one), but no excess leaves it plain
+    assert.equal(await rowCount(noExcess), 1);
+    const afterNoExcess = await stateOf(noExcess);
+    assert.notEqual(
+      afterNoExcess.state,
+      "free_over_limit",
+      "no excess at the end of the grant: no over-limit record"
+    );
+    assert.equal(afterNoExcess.since, null);
+    const noExcessLedger = await admin.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.billing_events WHERE organization_id = $1 AND fact->>'transition' = 'grant_expired'",
+      [noExcess.organizationId]
+    );
+    assert.equal(
+      Number(noExcessLedger.rows[0]?.count),
+      0,
+      "and nothing on the ledger"
+    );
+    const noRowOverState = await stateOf(noRowOver);
+    const [noRowOverGrant] = await grantRows(noRowOver);
+    assert.equal(noRowOverState.state, "free_over_limit");
+    assert.ok(
+      noRowOverState.since &&
+        noRowOverGrant &&
+        Math.abs(
+          noRowOverState.since.getTime() - noRowOverGrant.expires_at.getTime()
+        ) < 1000,
+      "an excess with no billing row is dated by the end of the grant"
+    );
+    tests.push(
+      "an organization with no billing row when its grant ends gets no over-limit record without an excess, and with one is dated by the end of the grant"
+    );
     // limit by limit: a grant for another limit that still runs does not hide the one that ended
     const mixed = await overLimit("grants mixed keys");
     await endGrant(mixed, 2);
