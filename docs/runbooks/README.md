@@ -25,6 +25,8 @@ Dependências: [Auditoria de dependências](./dependency-audit.md), com o proced
 
 A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md). O CI é desenhado para gastar poucos minutos do GitHub Actions (repositório privado; cada job é cobrado arredondado ao minuto): os checks leves são um job só, o gate de navegador roda só quando algo que ele exercita mudou e não se repete na `main`, e a auditoria só quando uma dependência mudou. Uma execução completa sob demanda existe (`workflow_dispatch`). Racional e números no [ADR 0060](../adr/0060-ci-economico-em-minutos.md). Se os jobs não iniciarem com a mensagem "pagamentos recentes falharam ou o limite de gastos precisa aumentar", é a cobrança da conta **dona do repositório** (não de quem faz o push): conferir plano, minutos usados, limite de gastos e forma de pagamento nessa conta.
 
+Promoção de um SHA para produção: [Checklist de release](./release-checklist.md), com itens BLOCK e WARN e veredito fechado.
+
 ## Checklist de go-live (Cloudflare e Neon)
 
 > **Nada deste checklist foi executado.** Ele registra o que só o responsável pode fazer nos consoles e CLIs de Cloudflare e Neon, e o que as decisões da revisão do checkpoint Gate 4 (13/10/2026) exigem antes de qualquer exposição pública. Cada item é uma verificação a executar e registrar com evidência (sem connection strings nem segredos), seguindo a [política de perfis de CLI](./cli-profile-policy.md). Itens de código dependem das mudanças implementadas por outros agentes e devem ser conferidos no código antes.
