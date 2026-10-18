@@ -895,7 +895,7 @@ async function run() {
       "a purge that is not scheduled has nothing to cancel"
     );
     const stillThere = await counts(target);
-    assert.ok(stillThere.sales > 0, "cancelling deletes nothing");
+    assert.ok(Number(stillThere.sales) > 0, "cancelling deletes nothing");
     // an organization still active has no purge to cancel either
     await assert.rejects(
       () => cancel(privacyCase.id, "Motivo", witness.organizationId),
