@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import type { BillingFact } from "@polaris/domain/billing/facts";
+import {
+  BILLING_FACT_TYPES,
+  type BillingFact,
+} from "@polaris/domain/billing/facts";
 import {
   InvalidBillingTransitionError,
   RejectedBillingEventError,
@@ -179,6 +182,10 @@ async function run() {
         "SELECT 1 FROM public.product_media",
         "SELECT 1 FROM public.organizations",
         "SELECT 1 FROM public.memberships",
+        "SELECT 1 FROM public.operational_incidents",
+        "INSERT INTO public.operational_incidents (kind, cause, subject) VALUES ('billing_reference_mismatch', 'reference_mismatch', 'billing.charge_failed')",
+        "UPDATE public.operational_incidents SET occurrence_count = 1",
+        "DELETE FROM public.operational_incidents",
       ].map((statement) =>
         expectSqlState(
           () => asBillingClient((client) => client.query(statement)),
@@ -193,6 +200,8 @@ async function run() {
         `INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ('${tenantA.organizationId}', 'active', now() + interval '30 days')`,
         "UPDATE public.organization_billing SET state = 'active'",
         "SELECT public.organization_exceeds_free_limits('x')",
+        "SELECT public.record_billing_reference_incident('reference_mismatch', 'charge_failed', gen_random_uuid())",
+        "SELECT 1 FROM public.operational_incidents",
       ].map((statement) =>
         expectSqlState(
           () =>
@@ -969,7 +978,7 @@ async function run() {
       "active"
     );
     tests.push(
-      "a refund, a chargeback or a reversal without a subscription reference, with another subscription's reference, or for a record with no subscription attached changes nothing, and the matching reference still applies"
+      "a refund, a chargeback or a reversal without a subscription reference, with another subscription's reference, or for a record with no subscription attached (the reference being another organization's) changes nothing, and the matching reference still applies"
     );
 
     // an earlier period's refund changes nothing; money facts are never stale
@@ -1431,6 +1440,394 @@ async function run() {
 
     tests.push(
       "a refund that arrives before its charge is confirmed is remembered (on a free record and on a running trial), so the confirmation cannot grant it while a payment for a later period does; a reversal that overtakes its chargeback makes the chargeback change nothing; a refund after a chargeback means the reversal restores nothing; and a new checkout does not inherit a payment taken back on the old subscription"
+    );
+
+    // ------------- 13. every fact names the attached subscription (POL-21)
+    const incidentCount = async (
+      cause: "reference_mismatch" | "reference_unresolved",
+      type: string
+    ) =>
+      Number(
+        (
+          await admin.pool.query<{ total: string }>(
+            "SELECT coalesce(sum(occurrence_count), 0)::text AS total FROM public.operational_incidents WHERE kind = 'billing_reference_mismatch' AND cause = $1 AND subject = $2",
+            [cause, `billing.${type}`]
+          )
+        ).rows[0]?.total
+      );
+    const mismatchCount = (type: string) =>
+      incidentCount("reference_mismatch", type);
+    const rowOf = async (tenant: TenantFixture) =>
+      (
+        await admin.pool.query<{
+          provider: string | null;
+          provider_ref: string | null;
+          version: number;
+        }>(
+          "SELECT provider, provider_ref, version FROM public.organization_billing WHERE organization_id = $1",
+          [tenant.organizationId]
+        )
+      ).rows[0];
+    const paid = async (label: string, ref: string) => {
+      const tenant = await newTenant(label);
+      await billing.attachProvider(tenant.organizationId, "fake", ref);
+      await apply(
+        "fake",
+        `evt-${ref}-seed`,
+        succeeded(at(0), at(30)),
+        { providerRef: ref },
+        at(0)
+      );
+      return tenant;
+    };
+    const everyFact: {
+      expected: (
+        record: Awaited<ReturnType<typeof billing.readRecord>>
+      ) => void;
+      fact: BillingFact;
+      prepare: (label: string, ref: string) => Promise<TenantFixture>;
+    }[] = [
+      {
+        expected: (record) => assert.equal(record?.state, "trialing"),
+        fact: { cycleMonths: 1, occurredAt: at(1), type: "trial_method_ready" },
+        prepare: async (label, ref) => {
+          const tenant = await newTenant(label);
+          await billing.startTrial(tenant.organizationId, at(0));
+          await billing.attachProvider(tenant.organizationId, "fake", ref);
+          return tenant;
+        },
+      },
+      {
+        expected: (record) => {
+          assert.equal(record?.state, "active");
+          assert.equal(record?.accessEndsAt?.getTime(), at(31).getTime());
+        },
+        fact: succeeded(at(1), at(31)),
+        prepare: async (label, ref) => {
+          const tenant = await newTenant(label);
+          await billing.attachProvider(tenant.organizationId, "fake", ref);
+          return tenant;
+        },
+      },
+      {
+        expected: (record) => assert.equal(record?.state, "grace"),
+        fact: { occurredAt: at(2), type: "charge_failed" },
+        prepare: paid,
+      },
+      {
+        expected: (record) => assert.equal(record?.cancelAtPeriodEnd, true),
+        fact: { occurredAt: at(2), type: "subscription_cancelled" },
+        prepare: paid,
+      },
+      {
+        expected: (record) => assert.equal(record?.pendingCycleMonths, 6),
+        fact: {
+          cycleMonths: 6,
+          occurredAt: at(2),
+          type: "cycle_change_scheduled",
+        },
+        prepare: paid,
+      },
+      {
+        expected: (record) => assert.equal(record?.state, "free"),
+        fact: taken("charge_refunded", at(2), at(30)),
+        prepare: paid,
+      },
+      {
+        expected: (record) => assert.equal(record?.state, "free"),
+        fact: taken("charge_disputed", at(2), at(30)),
+        prepare: paid,
+      },
+      {
+        expected: (record) => assert.equal(record?.state, "active"),
+        fact: taken("dispute_reversed", at(3), at(30)),
+        prepare: async (label, ref) => {
+          const tenant = await paid(label, ref);
+          await apply(
+            "fake",
+            `evt-${ref}-dispute`,
+            taken("charge_disputed", at(2), at(30)),
+            { providerRef: ref },
+            at(2)
+          );
+          return tenant;
+        },
+      },
+    ];
+    for (const [index, scenario] of everyFact.entries()) {
+      const { type } = scenario.fact;
+      const ref = `sub_FACT${index}`;
+      // biome-ignore lint/performance/noAwaitInLoops: One fact type at a time, on its own record.
+      const tenant = await scenario.prepare(`lifecycle fact ${type}`, ref);
+      const untouched = await rowOf(tenant);
+      const incidentsBefore = await mismatchCount(type);
+      const stateBefore = await billing.readRecord(tenant.organizationId);
+      let n = 0;
+      for (const [label, reference, provider] of [
+        ["no reference", {}, "fake"],
+        ["another subscription", { providerRef: `${ref}_other` }, "fake"],
+        ["another provider", { providerRef: ref }, "other_provider"],
+      ] as const) {
+        n += 1;
+        // biome-ignore lint/performance/noAwaitInLoops: Three probes, in order, on one record.
+        const outcome = await apply(
+          provider,
+          `evt-${ref}-bad-${n}`,
+          scenario.fact,
+          { organizationId: tenant.organizationId, ...reference },
+          at(5)
+        );
+        assert.equal(outcome.status, "ignored", `${type}: ${label}`);
+        assert.equal(
+          outcome.outcomeCode,
+          "reference_mismatch",
+          `${type}: ${label}`
+        );
+      }
+      assert.deepEqual(
+        await rowOf(tenant),
+        untouched,
+        `${type}: the record is untouched by a fact of another subscription`
+      );
+      assert.deepEqual(
+        await billing.readRecord(tenant.organizationId),
+        stateBefore
+      );
+      assert.equal(
+        await mismatchCount(type),
+        incidentsBefore + 3,
+        `${type}: each mismatch is counted as an operational incident`
+      );
+      // a record with no subscription attached yet is not a mismatch: the fact waits for the link
+      const unlinked = await newTenant(`lifecycle fact early ${type}`);
+      const beforeTheLink = await apply(
+        "fake",
+        `evt-${ref}-early`,
+        scenario.fact,
+        {
+          organizationId: unlinked.organizationId,
+          providerRef: `${ref}_not_linked`,
+        },
+        at(5)
+      );
+      assert.equal(beforeTheLink.status, "failed", `${type}: before the link`);
+      assert.equal(beforeTheLink.outcomeCode, "unknown_organization", type);
+      assert.equal((await rowOf(unlinked))?.provider, null);
+      assert.equal(await mismatchCount(type), incidentsBefore + 3);
+      // the matching reference applies
+      const valid = await apply(
+        "fake",
+        `evt-${ref}-ok`,
+        scenario.fact,
+        { providerRef: ref },
+        at(5)
+      );
+      assert.equal(valid.status, "applied", `${type}: the matching reference`);
+      scenario.expected(await billing.readRecord(tenant.organizationId));
+      assert.equal(await mismatchCount(type), incidentsBefore + 3);
+    }
+    tests.push(
+      "every fact type (trial method ready, charge succeeded, charge failed, cancellation, cycle change, refund, chargeback and its reversal) without a subscription reference, with another subscription's, or with another provider's changes nothing and is counted as an operational incident (a code and a count, no reference of the provider); one for a record with no subscription attached yet fails and waits for the link; the matching reference applies"
+    );
+
+    // a fact that reaches us before the subscription is linked waits and is applied, in order, once it is
+    const arrival = await newTenant("lifecycle before the link");
+    const beforeLink = async (id: string, fact: BillingFact) => {
+      const recorded = await billing.recordEvent({
+        fact,
+        provider: "fake",
+        providerEventId: id,
+        providerRef: "sub_EARLY",
+      });
+      return {
+        ...(await billing.processEvent(recorded.id, at(2))),
+        id: recorded.id,
+      };
+    };
+    const chargeEvent = await beforeLink(
+      "evt-EARLY-1",
+      succeeded(at(0), at(30))
+    );
+    const refundEvent = await beforeLink(
+      "evt-EARLY-2",
+      taken("charge_refunded", at(1), at(30))
+    );
+    assert.equal(chargeEvent.outcomeCode, "unknown_organization");
+    assert.equal(refundEvent.outcomeCode, "unknown_organization");
+    await billing.attachProvider(arrival.organizationId, "fake", "sub_EARLY");
+    await billing.retryPending(at(3));
+    const arrived = await billing.readRecord(arrival.organizationId);
+    assert.equal(arrived?.state, "free", "a refunded payment grants nothing");
+    assert.equal(arrived?.accessEndsAt, null);
+    assert.deepEqual(
+      (
+        await admin.pool.query<{
+          state_after: string;
+          state_before: string;
+          status: string;
+        }>(
+          "SELECT status, state_before, state_after FROM public.billing_events WHERE id = ANY($1::uuid[]) ORDER BY received_at, id",
+          [[chargeEvent.id, refundEvent.id]]
+        )
+      ).rows.map((row) => [row.status, row.state_before, row.state_after]),
+      [
+        ["applied", "free", "active"],
+        ["applied", "active", "free"],
+      ],
+      "the retry pass applies both, in the order they arrived: the charge first, then the refund"
+    );
+
+    // the refund is applied right after the link, before the retry of the confirmation that came first
+    const overtaken = await newTenant("lifecycle refund overtakes");
+    const confirmation = await (async () => {
+      const recorded = await billing.recordEvent({
+        fact: succeeded(at(0), at(30)),
+        provider: "fake",
+        providerEventId: "evt-OVERTAKEN-1",
+        providerRef: "sub_OVERTAKEN",
+      });
+      await billing.processEvent(recorded.id, at(2));
+      return recorded.id;
+    })();
+    await billing.attachProvider(
+      overtaken.organizationId,
+      "fake",
+      "sub_OVERTAKEN"
+    );
+    const overtaking = await apply(
+      "fake",
+      "evt-OVERTAKEN-2",
+      taken("charge_refunded", at(1), at(30)),
+      { providerRef: "sub_OVERTAKEN" },
+      at(2)
+    );
+    assert.equal(overtaking.status, "applied");
+    const waitedConfirmation = await billing.processEvent(confirmation, at(3));
+    assert.equal(waitedConfirmation.outcomeCode, "not_applicable");
+    const overtakenRecord = await billing.readRecord(overtaken.organizationId);
+    assert.equal(
+      overtakenRecord?.state,
+      "free",
+      "a confirmation that waited for the link does not give back a payment that was refunded"
+    );
+    assert.equal(overtakenRecord?.accessEndsAt, null);
+    // a fact that never finds its subscription is an incident at its last attempt, not a silent loss
+    const unresolvedBefore = await incidentCount(
+      "reference_unresolved",
+      "subscription_cancelled"
+    );
+    const unresolvedNoRefBefore = await incidentCount(
+      "reference_unresolved",
+      "cycle_change_scheduled"
+    );
+    const lost = await billing.recordEvent({
+      fact: { occurredAt: at(0), type: "subscription_cancelled" },
+      provider: "fake",
+      providerEventId: "evt-LOST-1",
+      providerRef: "sub_NEVER_LINKED",
+    });
+    const noReference = await billing.recordEvent({
+      fact: {
+        cycleMonths: 6,
+        occurredAt: at(0),
+        type: "cycle_change_scheduled",
+      },
+      provider: "fake",
+      providerEventId: "evt-LOST-2",
+    });
+    for (const id of [lost.id, noReference.id]) {
+      // biome-ignore lint/performance/noAwaitInLoops: One event at a time.
+      await billing.processEvent(id, at(2));
+    }
+    for (const day of [3, 4, 5]) {
+      // biome-ignore lint/performance/noAwaitInLoops: The attempts are sequential on purpose.
+      await billing.retryPending(at(day));
+      assert.equal(
+        await incidentCount("reference_unresolved", "subscription_cancelled"),
+        unresolvedBefore,
+        "while it can still wait for the link it is not an incident"
+      );
+    }
+    await billing.retryPending(at(6));
+    assert.equal(
+      await incidentCount("reference_unresolved", "subscription_cancelled"),
+      unresolvedBefore + 1,
+      "at its last attempt a fact no subscription claims is an operational incident"
+    );
+    assert.equal(
+      await incidentCount("reference_unresolved", "cycle_change_scheduled"),
+      unresolvedNoRefBefore + 1,
+      "so is one that names no subscription at all"
+    );
+    await billing.retryPending(at(7));
+    assert.equal(
+      await incidentCount("reference_unresolved", "subscription_cancelled"),
+      unresolvedBefore + 1,
+      "and it is counted once"
+    );
+    assert.deepEqual(
+      (
+        await admin.pool.query<{ outcome_code: string; status: string }>(
+          "SELECT status, outcome_code FROM public.billing_events WHERE id = $1",
+          [lost.id]
+        )
+      ).rows[0],
+      { outcome_code: "unknown_organization", status: "failed" }
+    );
+
+    // a reference linked to another organization is not a wait for the link
+    const claimed = await subscribed(
+      "lifecycle claimed",
+      "sub_CLAIMED",
+      succeeded(at(0), at(30))
+    );
+    const unclaimed = await newTenant("lifecycle not claimed");
+    const crossed = await apply(
+      "fake",
+      "evt-CROSSED-1",
+      { occurredAt: at(2), type: "subscription_cancelled" },
+      { organizationId: unclaimed.organizationId, providerRef: "sub_CLAIMED" },
+      at(2)
+    );
+    assert.equal(crossed.status, "ignored");
+    assert.equal(crossed.outcomeCode, "reference_mismatch");
+    assert.equal(
+      (await billing.readRecord(claimed.organizationId))?.cancelAtPeriodEnd,
+      false
+    );
+
+    // the incident function takes every fact type the domain has, and only those
+    for (const type of BILLING_FACT_TYPES) {
+      // biome-ignore lint/performance/noAwaitInLoops: One probe per type.
+      await asBillingClient((client) =>
+        client.query(
+          "SELECT public.record_billing_reference_incident('reference_mismatch', $1, gen_random_uuid())",
+          [type]
+        )
+      );
+    }
+    await expectSqlState(
+      () =>
+        asBillingClient((client) =>
+          client.query(
+            "SELECT public.record_billing_reference_incident('reference_mismatch', 'charge_made_up', gen_random_uuid())"
+          )
+        ),
+      "22023",
+      "the incident function refuses a fact type the domain does not have"
+    );
+    await expectSqlState(
+      () =>
+        asBillingClient((client) =>
+          client.query(
+            "SELECT public.record_billing_reference_incident('made_up', 'charge_failed', gen_random_uuid())"
+          )
+        ),
+      "22023",
+      "the incident function refuses a cause it does not know"
+    );
+    tests.push(
+      "facts that arrive before the subscription is linked fail without effect and are applied, in the order they arrived, by the retry pass once it is; a refund applied right after the link is not undone by the confirmation that waited; a fact that no subscription claims by its last attempt (or that names none) is an operational incident, once; a reference linked to another organization is a mismatch, not a wait; the incident function takes every fact type of the domain and refuses any other"
     );
 
     // ------------------------------------- 11. what a tenant sees

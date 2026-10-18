@@ -702,11 +702,13 @@ async function run() {
     ).rows;
     assert.ok(o5Before?.since);
     await billing.startTrial(o5.organizationId, new Date());
+    await billing.attachProvider(o5.organizationId, "gate", "sub_gate_o5");
     const cancelled = await billing.recordEvent({
       fact: { occurredAt: new Date(), type: "subscription_cancelled" },
       organizationId: o5.organizationId,
       provider: "gate",
       providerEventId: `cancel-${randomUUID()}`,
+      providerRef: "sub_gate_o5",
     });
     const abandoned = await billing.processEvent(cancelled.id, new Date());
     assert.equal(abandoned.status, "applied");
@@ -853,6 +855,7 @@ async function run() {
       "the episode survives a trial checkout"
     );
     // Pro access again clears it
+    await billing.attachProvider(o4.organizationId, "gate", "sub_gate_o4");
     const ready = await billing.recordEvent({
       fact: {
         cycleMonths: 1,
@@ -862,6 +865,7 @@ async function run() {
       organizationId: o4.organizationId,
       provider: "gate",
       providerEventId: `ready-${randomUUID()}`,
+      providerRef: "sub_gate_o4",
     });
     const processed = await billing.processEvent(ready.id, new Date());
     assert.equal(processed.status, "applied");
