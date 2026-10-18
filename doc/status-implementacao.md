@@ -1530,3 +1530,18 @@ Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.m
 | Gate PostgreSQL 18 | No CI | `deletion-ledger` (suítes `ci` e `gate10`); não rodado localmente (sem PostgreSQL 18 no ambiente). |
 | Retenção | Classe proposta | A classe `deletion_ledger` está no ADR 0079 e no registro de retenção (`proposta`, sem job); a regra vem do ADR 0080 e o prazo final é a confirmar pelo responsável. |
 | Limites | Registrados | O ledger mora no mesmo banco: perda total do banco perde os tombstones posteriores ao último backup (cópia fora do banco: Fase 16); reaplicar é manual; o caso de privacidade ainda não é preenchido pelo comando; o ID opaco é pseudônimo enquanto houver backup antigo. |
+
+## Fase 11 — infraestrutura assíncrona
+
+### Fase 11A — Outbox transacional (PR108; implementação e verificações locais concluídas; gate de banco no CI)
+
+Primeiro passo da Fase 11 ([ADR 0082](../docs/adr/0082-outbox-transacional.md); o número pode mudar): o evento nasce na mesma transação do comando, sem despachante (PR110), sem filas (PR109).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/transactional-outbox` sobre a `main` (migration 0070, só aditiva; a do PR #126 também é 0070, e o segundo a entrar renumera a migration e o snapshot; o número do ADR também pode mudar). |
+| Domínio | Concluído | `@polaris/domain/events/outbox`: tipos permitidos, corpo só de IDs opacos, inteiros e booleanos (texto livre recusado), chave de idempotência e correlação. |
+| Banco | Concluído | `event_outbox` (RLS forçado; `event`, `type`, `status` `pending`/`dispatched`, `available_at`, `attempts`, `idempotency_key`, `correlation_id`; índice único por organização e chave; CHECK do corpo; `ON DELETE CASCADE` na organização). O runtime do tenant só insere cinco colunas, na própria organização e nos tipos que a política lista (cada evento amarrado a uma exportação pedida pelo mesmo usuário); ninguém lê, atualiza ou apaga; nenhum outro papel tem privilégio (o do despachante nasce no PR110). |
+| Quem grava | Concluído | `recordOutboxEvent` (`@polaris/db/event-outbox`) na transação do comando. Integração: `requestDataExport` grava `data_export.requested` com o ID do pedido; o comportamento não muda (o job continua achando o pedido pela tabela) e nada consome o evento ainda. |
+| Gate PostgreSQL 18 | No CI | `event-outbox` (suítes `ci` e `gate11`); não rodado localmente (sem PostgreSQL 18 no ambiente). O CHECK do corpo e a política foram provados num PostgreSQL 18.6 em memória (PGlite), fora do repositório. |
+| Limites | Registrados | Sem despacho, tentativa, recuo, DLQ nem retenção dos despachados (PR110 a PR112); o purge (PR107) não apaga a linha da organização, então o cascade não dispara e `event_outbox` precisa entrar nas listas do purge de quem entrar depois; evento de plataforma (sem organização) fica para quando um comando exigir; o banco confere a forma do corpo, não o sentido; a exportação tem dois mecanismos por ora (a varredura vale, o evento não). |
