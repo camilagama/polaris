@@ -254,9 +254,6 @@ async function run() {
       // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081)
       organization_purges: [
         "attempts",
-        "cancel_reason",
-        "cancelled_at",
-        "cancelled_by",
         "last_error_code",
         "locked_until",
         "not_before",
@@ -264,9 +261,12 @@ async function run() {
         "purged_at",
         "scheduled_at",
         "scheduled_by",
+        "storage_touched_at",
         "support_case_id",
         "swept_at",
       ],
+      // every cancellation of a purge with its reason: the cancel function appends, nothing changes a row
+      organization_purge_cancellations: [] as string[],
       platform_audit_events: [] as string[],
       privacy_case_actions: [] as string[],
       privacy_cases: [
@@ -332,6 +332,8 @@ async function run() {
     assert.deepEqual(
       tableLevel.rows.map((row) => row.privilege),
       [
+        "organization_purge_cancellations:INSERT",
+        "organization_purge_cancellations:SELECT",
         "organization_purges:INSERT",
         "organization_purges:SELECT",
         "platform_audit_events:INSERT",
@@ -377,6 +379,7 @@ async function run() {
       ),
       memberships: ["SELECT", "UPDATE"],
       offline_grants: ["SELECT", "UPDATE"],
+      organization_purge_cancellations: ["INSERT", "SELECT"],
       organization_purges: ["INSERT", "SELECT", "UPDATE"],
       organizations: ["SELECT", "UPDATE"],
       platform_audit_events: ["INSERT", "SELECT"],

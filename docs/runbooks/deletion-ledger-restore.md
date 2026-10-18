@@ -112,17 +112,17 @@ UPDATE public.organizations
    SET status = 'purge_pending'
  WHERE id = '<ID da organização>' AND status <> 'purged';
 
-INSERT INTO public.organization_purges (organization_id, scheduled_by, support_case_id, privacy_case_id, not_before)
-VALUES ('<ID da organização>', '<quem agendou>', '<caso de privacidade>', '<caso de privacidade>', now())
+INSERT INTO public.organization_purges (organization_id, scheduled_by, support_case_id, privacy_case_id, not_before, storage_touched_at)
+VALUES ('<ID da organização>', '<quem agendou>', '<caso de privacidade>', '<caso de privacidade>', now(), now())
 ON CONFLICT (organization_id) DO UPDATE
    SET not_before = now(), attempts = 0, locked_until = NULL,
-       last_error_code = NULL, purged_at = NULL, swept_at = NULL,
-       cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL;
+       last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = now();
 
 COMMIT;
 ```
 
 - `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger` (todo purge nasce de um caso de privacidade de exclusão, ADR 0081).
+- `storage_touched_at` vai preenchido de propósito: o tombstone só existe porque o purge original já apagou o R2, então o purge reaplicado não pode ser cancelado (a função de cancelamento recusa com `purge_storage_touched`) e deixar a organização `closed` com mídia e exportações que apontam para objetos que não existem mais.
 - A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois.
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
 

@@ -16,7 +16,10 @@ import {
   type RevealableCustomerField,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
-import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
+import {
+  OrganizationPurgeRefusedError,
+  organizationPurgeRefusalMessage,
+} from "@polaris/domain/privacy/organization-purge";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
 import type { GrantCommand } from "./billing-commands";
@@ -226,8 +229,16 @@ export function supportRoutes(
       return context.json({ error: "tenant_access_denied" }, 403);
     }
     if (error instanceof OrganizationPurgeRefusedError) {
-      // the organization is not in a state that allows it yet; nothing was changed
-      return context.json({ error: error.code }, 409);
+      // the organization is not in a state that allows it yet; nothing was changed, and the answer says why.
+      // The refused attempt leaves no row (the transaction is undone), so it is at least in the operator's log
+      report("organization_purge_refused", { code: error.code });
+      return context.json(
+        {
+          error: error.code,
+          message: organizationPurgeRefusalMessage(error.code),
+        },
+        409
+      );
     }
     if (error instanceof InvalidEntitlementGrantError) {
       return context.json({ error: error.code }, 400);

@@ -3,7 +3,10 @@ import {
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
 import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
-import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
+import {
+  OrganizationPurgeRefusedError,
+  organizationPurgeRefusalMessage,
+} from "@polaris/domain/privacy/organization-purge";
 import { describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
@@ -588,7 +591,10 @@ describe("suspension and billing commands", () => {
       organizationId: "org_other",
     });
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "organization_mismatch" });
+    expect(await response.json()).toEqual({
+      error: "organization_mismatch",
+      message: organizationPurgeRefusalMessage("organization_mismatch"),
+    });
   });
 
   it("cancels a scheduled purge with a reason, the operator from the login and the organization named", async () => {
@@ -654,10 +660,11 @@ describe("suspension and billing commands", () => {
   it("answers 409 with the reason when the purge cannot be cancelled", async () => {
     for (const code of [
       "purge_in_progress",
+      "purge_storage_touched",
       "purge_already_done",
       "purge_not_scheduled",
     ] as const) {
-      const { send } = setup({
+      const { dependencies, send } = setup({
         cancelPurge: vi.fn(() =>
           Promise.reject(new OrganizationPurgeRefusedError(code))
         ),
@@ -669,7 +676,20 @@ describe("suspension and billing commands", () => {
         { organizationId: "org_1", reason: "motivo" }
       );
       expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ error: code });
+      const body = (await response.json()) as {
+        error: string;
+        message: string;
+      };
+      expect(body).toEqual({
+        error: code,
+        message: organizationPurgeRefusalMessage(code),
+      });
+      expect(body.message.length).toBeGreaterThan(10);
+      // the refused attempt leaves no row, so it is in the log: the code only, nothing of the request
+      expect(dependencies.report).toHaveBeenCalledWith(
+        "organization_purge_refused",
+        { code }
+      );
     }
   });
 

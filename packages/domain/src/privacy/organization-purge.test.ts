@@ -10,6 +10,7 @@ import {
   organizationExportPrefix,
   organizationMediaPrefix,
   organizationPurgeRefusalFromMessage,
+  organizationPurgeRefusalMessage,
   purgeDelayAfterWindowMs,
 } from "./organization-purge";
 import { RETENTION_POLICIES, type RetentionPolicy } from "./retention";
@@ -82,6 +83,7 @@ describe("the storage prefixes of an organization", () => {
 describe("the purge workflow", () => {
   it("removes the storage before the rows and sweeps it again after", () => {
     expect(ORGANIZATION_PURGE_STEPS).toEqual([
+      "mark_storage",
       "exports_storage",
       "media_storage",
       "database",
@@ -115,8 +117,10 @@ describe("refusals to schedule or cancel a purge", () => {
       "privacy_requester_not_owner",
       "privacy_case_not_accepted",
       "privacy_scope_incomplete",
+      "privacy_scope_covers_kept_data",
       "purge_not_scheduled",
       "purge_in_progress",
+      "purge_storage_touched",
       "purge_already_done",
     ]) {
       expect(ORGANIZATION_PURGE_REFUSALS).toContain(code);
@@ -139,5 +143,21 @@ describe("the scope a privacy case needs to start a purge", () => {
       expect(ORGANIZATION_PURGE_REQUIRED_SCOPE).not.toContain(kept);
       expect(PRIVACY_DATA_CATEGORIES).toContain(kept);
     }
+  });
+});
+
+describe("what an operator reads for a refusal", () => {
+  it("is a sentence for every refusal, and the ones about the scope and the cancellation say what to do or why", () => {
+    for (const code of ORGANIZATION_PURGE_REFUSALS) {
+      const message = organizationPurgeRefusalMessage(code);
+      expect(message.length, code).toBeGreaterThan(20);
+      expect(message, code).not.toContain(code);
+    }
+    expect(
+      organizationPurgeRefusalMessage("privacy_scope_covers_kept_data")
+    ).toContain("conta, autenticação ou cobrança");
+    expect(organizationPurgeRefusalMessage("purge_storage_touched")).toContain(
+      "armazenamento"
+    );
   });
 });

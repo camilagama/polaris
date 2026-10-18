@@ -25,6 +25,7 @@ import {
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
+import { PRIVACY_DATA_CATEGORIES } from "@polaris/domain/admin/privacy-case";
 import {
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
   OrganizationPurgeRefusedError,
@@ -91,6 +92,101 @@ function memoryBucket() {
     },
   };
   return { bucket, objects };
+}
+
+/**
+ * The history of cancellations is append-only: the owner of the Admin functions has no grant to change or
+ * delete a row, and a trigger refuses it for everyone else, the table's owner included.
+ */
+async function expectCancellationsAppendOnly(pool: {
+  connect: () => Promise<{
+    query: (statement: string) => Promise<unknown>;
+    release: () => void;
+  }>;
+  query: (statement: string) => Promise<unknown>;
+}) {
+  for (const statement of [
+    "UPDATE public.organization_purge_cancellations SET reason = 'outro'",
+    "DELETE FROM public.organization_purge_cancellations",
+    "TRUNCATE public.organization_purge_cancellations",
+  ]) {
+    // biome-ignore lint/performance/noAwaitInLoops: three probes, in order.
+    await expectSqlState(
+      () => pool.query(statement),
+      "23514",
+      `the trigger keeps the history append-only for the table's owner: ${statement}`
+    );
+  }
+  for (const statement of [
+    "UPDATE public.organization_purge_cancellations SET reason = 'outro'",
+    "DELETE FROM public.organization_purge_cancellations",
+  ]) {
+    // biome-ignore lint/performance/noAwaitInLoops: two probes, in order.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL ROLE polaris_admin_owner");
+      await expectSqlState(
+        () => client.query(statement),
+        "42501",
+        `the history is append-only: ${statement}`
+      );
+    } finally {
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release();
+    }
+  }
+}
+
+/**
+ * A run marks the storage as touched in a transaction that is still open while a cancellation, started after
+ * the lease ended, waits for the purge row the mark holds. Returns how the cancellation ended once the mark
+ * committed; it has not ended before.
+ */
+async function raceCancellationAgainstMark(
+  pool: {
+    connect: () => Promise<{
+      query: (statement: string, values?: unknown[]) => Promise<unknown>;
+      release: () => void;
+    }>;
+  },
+  organizationId: string,
+  cancel: () => Promise<unknown>
+): Promise<unknown> {
+  const marker = await pool.connect();
+  let settled = false;
+  let outcome: Promise<unknown>;
+  try {
+    await marker.query("BEGIN");
+    await marker.query(
+      "SELECT public.mark_organization_purge_storage_touched($1)",
+      [organizationId]
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    outcome = cancel().then(
+      () => {
+        settled = true;
+        return "cancelled";
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(
+      settled,
+      false,
+      "the cancellation waits for the row the mark holds"
+    );
+    await marker.query("COMMIT");
+  } catch (error) {
+    await marker.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    marker.release();
+  }
+  return await outcome;
 }
 
 async function run() {
@@ -223,6 +319,33 @@ async function run() {
       "SELECT has_table_privilege('polaris_purge_owner', 'public.deletion_ledger', 'SELECT') OR has_table_privilege('polaris_purge_owner', 'public.deletion_ledger', 'DELETE') AS allowed"
     );
     assert.equal(ledgerRead.rows[0]?.allowed, false);
+    // the history of cancellations is the Admin owner's alone: it reads and appends, and nobody else touches it
+    const historyAccess = await owner.pool.query<{
+      grantee: string;
+      privilege: string;
+    }>(
+      `SELECT r.rolname AS grantee, p.privilege
+         FROM unnest($1::text[]) AS r(rolname)
+         CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS p(privilege)
+        WHERE has_table_privilege(r.rolname, 'public.organization_purge_cancellations', p.privilege)
+        ORDER BY 1, 2`,
+      [
+        [
+          "polaris_admin_owner",
+          "polaris_admin_runtime",
+          "polaris_billing_runtime",
+          "polaris_catalog_runtime",
+          "polaris_pr11_runtime",
+          "polaris_privacy_owner",
+          "polaris_privacy_runtime",
+          "polaris_purge_owner",
+        ],
+      ]
+    );
+    assert.deepEqual(historyAccess.rows, [
+      { grantee: "polaris_admin_owner", privilege: "INSERT" },
+      { grantee: "polaris_admin_owner", privilege: "SELECT" },
+    ]);
     const executors = await owner.pool.query<{
       fn: string;
       grantee: string;
@@ -233,7 +356,7 @@ async function run() {
          JOIN pg_catalog.pg_roles AS r ON r.oid = acl.grantee
         WHERE p.proname IN ('claim_organization_purge', 'list_organization_purge_media', 'purge_organization_data',
                             'record_organization_purge_failure', 'complete_organization_purge_sweep', 'admin_schedule_organization_purge',
-                            'admin_cancel_organization_purge')
+                            'admin_cancel_organization_purge', 'mark_organization_purge_storage_touched')
           AND acl.privilege_type = 'EXECUTE' AND r.rolname NOT IN ('polaris_purge_owner', 'polaris_admin_owner')
         ORDER BY 1, 2`
     );
@@ -343,6 +466,9 @@ async function run() {
         key.includes(witnessMedia.assetId)
     );
 
+    // every case this gate opens is a support case of the organization (a privacy case is one too): they all
+    // survive the purge, and the count at the end is the number opened, not a number written by hand
+    let casesOpened = 0;
     // a privacy case asks for it; a support case is opened too (both must survive)
     const privacyCase = await openPrivacyCase(admin, principal, {
       channel: "email",
@@ -355,6 +481,7 @@ async function run() {
       requestType: "deletion",
     });
     assert.ok(privacyCase);
+    casesOpened += 1;
     const supportCase = await openSupportCase(admin, principal, {
       context: null,
       kind: "support",
@@ -362,6 +489,7 @@ async function run() {
       reason: "Acompanhar o purge",
     });
     assert.ok(supportCase);
+    casesOpened += 1;
 
     // the deletion cases the schedule is tried with: the owner's request, whole scope, accepted in full
     // (the one that starts the purge), and every way a case can fall short of that
@@ -382,6 +510,7 @@ async function run() {
         requestType: options.requestType ?? "deletion",
       });
       assert.ok(opened);
+      casesOpened += 1;
       return opened.id;
     };
     const driveCase = async (
@@ -647,17 +776,13 @@ async function run() {
       "a deletion accepted only in part"
     );
     for (const missing of ORGANIZATION_PURGE_REQUIRED_SCOPE) {
-      // an accepted deletion whose scope leaves one tenant category out (and adds data the purge keeps)
+      // an accepted deletion whose scope leaves one tenant category out
       // biome-ignore lint/performance/noAwaitInLoops: each case is opened and refused in turn.
       const narrow = await openDeletion();
       await driveCase(narrow, {
-        categories: [
-          ...ORGANIZATION_PURGE_REQUIRED_SCOPE.filter(
-            (category) => category !== missing
-          ),
-          "account",
-          "billing",
-        ],
+        categories: ORGANIZATION_PURGE_REQUIRED_SCOPE.filter(
+          (category) => category !== missing
+        ),
         decision: "accept",
       });
       await expectRefusal(
@@ -666,8 +791,58 @@ async function run() {
         `an accepted deletion without ${missing} in its scope`
       );
     }
+    // the scope is exactly what the purge removes: a case that also claims data the purge keeps would record
+    // a decision the purge does not carry out, so it is refused with its own reason (never scheduled)
+    const keptCategories = PRIVACY_DATA_CATEGORIES.filter(
+      (category) =>
+        !(ORGANIZATION_PURGE_REQUIRED_SCOPE as readonly string[]).includes(
+          category
+        )
+    );
+    assert.deepEqual([...keptCategories].sort(), [
+      "account",
+      "authentication",
+      "billing",
+    ]);
+    for (const kept of [
+      ...keptCategories.map((category) => [category]),
+      [...keptCategories],
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case is opened and refused in turn.
+      const wide = await openDeletion();
+      await driveCase(wide, {
+        categories: [...ORGANIZATION_PURGE_REQUIRED_SCOPE, ...kept],
+        decision: "accept",
+      });
+      await expectRefusal(
+        wide,
+        "privacy_scope_covers_kept_data",
+        `an accepted deletion whose scope also claims ${kept.join(" and ")}, which the purge keeps`
+      );
+    }
+    // missing one category is the first thing said, even when the scope also claims data the purge keeps
+    const both = await openDeletion();
+    await driveCase(both, {
+      categories: [...ORGANIZATION_PURGE_REQUIRED_SCOPE.slice(1), "billing"],
+      decision: "accept",
+    });
+    await expectRefusal(
+      both,
+      "privacy_scope_incomplete",
+      "a scope that misses a tenant category and claims billing"
+    );
+    assert.equal(
+      (
+        await owner.pool.query(
+          "SELECT 1 FROM public.organization_purges WHERE organization_id = $1",
+          [target.organizationId]
+        )
+      ).rowCount,
+      0,
+      "no refused case left a purge behind"
+    );
     tests.push(
-      "the schedule refuses a plain support case, a privacy case that is not a deletion or not the owner's, a deletion that is undecided, refused or accepted only in part, and one whose scope misses any single tenant category"
+      "the schedule refuses a plain support case, a privacy case that is not a deletion or not the owner's, a deletion that is undecided, refused or accepted only in part, one whose scope misses any single tenant category, and one whose scope also claims account, authentication or billing, which the purge keeps"
     );
 
     // a running export holding its lease keeps the purge waiting
@@ -705,6 +880,18 @@ async function run() {
       () => maintenance.listOrganizationPurgeMedia(witness.organizationId),
       "55000",
       "nor its images listed"
+    );
+    await expectSqlState(
+      () =>
+        maintenance.markOrganizationPurgeStorageTouched(target.organizationId),
+      "55000",
+      "the storage is not marked as touched by a run that holds nothing"
+    );
+    await expectSqlState(
+      () =>
+        maintenance.markOrganizationPurgeStorageTouched(witness.organizationId),
+      "55000",
+      "nor for an active organization"
     );
     const blocked = await maintenance.claimOrganizationPurge(900);
     assert.equal(blocked, null, "an export holding its lease delays the purge");
@@ -777,16 +964,28 @@ async function run() {
     const purgeState = async () =>
       (
         await owner.pool.query<{
-          cancelled: boolean;
-          reason: string | null;
+          attempts: number;
           status: string;
+          storage_touched: boolean;
         }>(
-          `SELECT o.status, p.cancelled_at IS NOT NULL AS cancelled, p.cancel_reason AS reason
+          `SELECT o.status, p.attempts, p.storage_touched_at IS NOT NULL AS storage_touched
              FROM public.organizations AS o JOIN public.organization_purges AS p ON p.organization_id = o.id
             WHERE o.id = $1`,
           [target.organizationId]
         )
       ).rows[0];
+    // the history of cancellations: it keeps every reason, and a purge scheduled again does not touch it
+    const cancellations = async () =>
+      (
+        await owner.pool.query<{
+          cancelled_by: string;
+          reason: string;
+          support_case_id: string;
+        }>(
+          "SELECT reason, support_case_id, cancelled_by FROM public.organization_purge_cancellations WHERE organization_id = $1 ORDER BY cancelled_at, id",
+          [target.organizationId]
+        )
+      ).rows;
     const auditCount = async (eventType: string) =>
       (
         await owner.pool.query<{ count: string }>(
@@ -837,12 +1036,14 @@ async function run() {
       "a purge held by a run cannot be cancelled"
     );
     assert.deepEqual(await purgeState(), {
-      cancelled: false,
-      reason: null,
+      attempts: 1,
       status: "purge_pending",
+      storage_touched: false,
     });
     assert.equal(await auditCount("organization.purge_cancelled"), "0");
-    // the lease ends (the run died): any open case of the organization can cancel, a plain support case too
+    assert.deepEqual(await cancellations(), []);
+    // the lease ends (the run died) before it reached the storage: the attempt alone does not stop the
+    // cancellation, and any open case of the organization can cancel, a plain support case too
     await owner.pool.query(
       "UPDATE public.organization_purges SET locked_until = now() - interval '1 second' WHERE organization_id = $1",
       [target.organizationId]
@@ -855,10 +1056,17 @@ async function run() {
       }
     );
     assert.deepEqual(await purgeState(), {
-      cancelled: true,
-      reason: "Pedido retirado pelo dono",
+      attempts: 1,
       status: "closed",
+      storage_touched: false,
     });
+    assert.deepEqual(await cancellations(), [
+      {
+        cancelled_by: principal,
+        reason: "Pedido retirado pelo dono",
+        support_case_id: supportCase.id,
+      },
+    ]);
     const cancelAudit = await owner.pool.query<{
       detail: string | null;
       principal_id: string;
@@ -903,20 +1111,119 @@ async function run() {
       () => cancel(privacyCase.id, "Motivo", witness.organizationId),
       OrganizationPurgeRefusedError
     );
-    // scheduled again under the deletion case: the record starts from nothing and the audit shows both
+    // scheduled again under the deletion case: the purge record starts from nothing, the reason of the
+    // cancellation stays in the history, and the audit shows both
     assert.deepEqual(
       { changed: (await schedule(privacyCase.id))?.changed },
       { changed: true }
     );
     assert.deepEqual(await purgeState(), {
-      cancelled: false,
-      reason: null,
+      attempts: 0,
       status: "purge_pending",
+      storage_touched: false,
     });
     assert.equal(await auditCount("organization.purge_scheduled"), "2");
     assert.equal(await auditCount("organization.purge_cancelled"), "1");
+    assert.equal(
+      (await cancellations())[0]?.reason,
+      "Pedido retirado pelo dono",
+      "scheduling again does not erase the reason"
+    );
+    // cancelled and scheduled once more: the history grows, in order, and the first reason is still there
+    assert.deepEqual(await cancel(privacyCase.id, "Dono pediu mais um prazo"), {
+      changed: true,
+      status: "closed",
+    });
+    assert.deepEqual(
+      (await cancellations()).map((row) => row.reason),
+      ["Pedido retirado pelo dono", "Dono pediu mais um prazo"]
+    );
+    assert.deepEqual(
+      { changed: (await schedule(privacyCase.id))?.changed },
+      { changed: true }
+    );
+    assert.deepEqual(
+      (await cancellations()).map((row) => row.reason),
+      ["Pedido retirado pelo dono", "Dono pediu mais um prazo"]
+    );
+    assert.equal(await auditCount("organization.purge_scheduled"), "3");
+    assert.equal(await auditCount("organization.purge_cancelled"), "2");
+    // nobody rewrites the history: the owner of the Admin functions only reads and appends
+    await expectCancellationsAppendOnly(owner.pool);
+    // a run reaches the storage: written down before the first object goes, and from then on no cancellation
+    const reached = await maintenance.claimOrganizationPurge(900);
+    assert.equal(reached?.organizationId, target.organizationId);
+    assert.deepEqual(await purgeState(), {
+      attempts: 1,
+      status: "purge_pending",
+      storage_touched: false,
+    });
+    // the race: the run marks the storage while a cancellation, started after the lease ended, waits for the
+    // purge row. The mark wins the row, so the cancellation reads it again and is refused
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '2 seconds' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    const racedOutcome = await raceCancellationAgainstMark(
+      owner.pool,
+      target.organizationId,
+      () => cancel(privacyCase.id, "Corrida com a marca")
+    );
+    assert.ok(
+      racedOutcome instanceof OrganizationPurgeRefusedError &&
+        racedOutcome.code === "purge_storage_touched",
+      "the cancellation that waited for the mark is refused"
+    );
+    assert.equal((await purgeState())?.storage_touched, true);
+    const touchedAt = async () =>
+      (
+        await owner.pool.query<{ touched: string }>(
+          "SELECT storage_touched_at::text AS touched FROM public.organization_purges WHERE organization_id = $1",
+          [target.organizationId]
+        )
+      ).rows[0]?.touched;
+    const firstTouch = await touchedAt();
+    assert.ok(firstTouch);
+    // the lease is held again: a second mark changes nothing
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '15 minutes' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    await maintenance.markOrganizationPurgeStorageTouched(
+      target.organizationId
+    );
+    assert.equal(
+      await touchedAt(),
+      firstTouch,
+      "the first touch is the one that counts"
+    );
+    // the lease ends (the run died after touching the storage)
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET locked_until = now() - interval '1 second' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    await expectSqlState(
+      () =>
+        maintenance.markOrganizationPurgeStorageTouched(target.organizationId),
+      "55000",
+      "a run whose lease ended cannot touch the storage of the purge"
+    );
+    await assert.rejects(
+      () => cancel(privacyCase.id, "Tarde demais para este"),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "purge_storage_touched",
+      "a purge that reached the storage cannot be cancelled, even with no run holding it"
+    );
+    assert.deepEqual(await purgeState(), {
+      attempts: 1,
+      status: "purge_pending",
+      storage_touched: true,
+    });
+    assert.equal(await auditCount("organization.purge_cancelled"), "2");
+    assert.equal((await cancellations()).length, 2);
     tests.push(
-      "a scheduled purge is cancelled only with a reason and while no run holds it: the organization goes back to closed, the audit records it without the reason, nothing is deleted, and it can be scheduled again"
+      "a scheduled purge is cancelled only with a reason, while no run holds it and before the first object left the storage (an attempt that never reached it does not stop it): the organization goes back to closed, the audit records it without the reason, the reason goes to an append-only history that scheduling again does not erase, nothing is deleted, and it can be scheduled again"
     );
 
     // the purge owner deletes tenant data: it is never a login, bypasses nothing and has no member that could become it
@@ -1050,22 +1357,25 @@ async function run() {
     const survivors = await owner.pool.query<{
       audit: string;
       billing: string;
+      cancellations: string;
       cases: string;
       privacy: string;
     }>(
-      `SELECT (SELECT count(*)::text FROM public.support_cases WHERE organization_id = $1) AS cases,
+      `SELECT (SELECT count(*)::text FROM public.organization_purge_cancellations WHERE organization_id = $1) AS cancellations,
+              (SELECT count(*)::text FROM public.support_cases WHERE organization_id = $1) AS cases,
               (SELECT count(*)::text FROM public.privacy_cases WHERE support_case_id = $2) AS privacy,
               (SELECT count(*)::text FROM public.platform_audit_events WHERE organization_id = $1) AS audit,
               (SELECT count(*)::text FROM public.organization_billing WHERE organization_id = $1) AS billing`,
       [target.organizationId, privacyCase.id]
     );
     const [survivor] = survivors.rows;
-    assert.equal(survivor?.cases, "3");
+    assert.equal(survivor?.cases, String(casesOpened));
     assert.equal(survivor?.privacy, "1");
     assert.ok(Number(survivor?.audit) >= 4);
     assert.equal(survivor?.billing, "1");
+    assert.equal(survivor?.cancellations, "2");
     tests.push(
-      "the support and privacy cases, the Admin audit and the billing record survive the organization"
+      "the support and privacy cases, the Admin audit, the billing record and the history of cancellations survive the organization"
     );
 
     // the completion is audited in the same transaction, with the IDs only
@@ -1186,12 +1496,11 @@ async function run() {
         [target.organizationId]
       );
       await restoreClient.query(
-        `INSERT INTO public.organization_purges (organization_id, scheduled_by, support_case_id, privacy_case_id, not_before)
-       VALUES ($1, $2, $3, $3, now())
+        `INSERT INTO public.organization_purges (organization_id, scheduled_by, support_case_id, privacy_case_id, not_before, storage_touched_at)
+       VALUES ($1, $2, $3, $3, now(), now())
        ON CONFLICT (organization_id) DO UPDATE
           SET not_before = now(), attempts = 0, locked_until = NULL,
-              last_error_code = NULL, purged_at = NULL, swept_at = NULL,
-              cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL`,
+              last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = now()`,
         [target.organizationId, principal, privacyCase.id]
       );
       await restoreClient.query("COMMIT");
@@ -1201,6 +1510,14 @@ async function run() {
     } finally {
       restoreClient.release();
     }
+    // the storage went with the purge that left the tombstone: the reapplied one cannot be cancelled either
+    await assert.rejects(
+      () => cancel(privacyCase.id, "Depois do restore"),
+      (error: unknown) =>
+        error instanceof OrganizationPurgeRefusedError &&
+        error.code === "purge_storage_touched",
+      "a purge reapplied after a restore cannot be cancelled"
+    );
     assert.deepEqual(
       await runOrganizationPurges({
         bucket,

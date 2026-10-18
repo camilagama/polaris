@@ -27,11 +27,6 @@ export const organizationPurges = pgTable(
   "organization_purges",
   {
     attempts: integer("attempts").default(0).notNull(),
-    /** Set only by `admin_cancel_organization_purge`, while no run holds the purge (ADR 0081). */
-    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
-    cancelledBy: uuid("cancelled_by").references(() => platformPrincipals.id),
-    /** Why the operator cancelled it: short free text, kept here and never in the audit event. */
-    cancelReason: text("cancel_reason"),
     /** A short code of the last failed step; never a message, a key or tenant data. */
     lastErrorCode: text("last_error_code"),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
@@ -49,6 +44,11 @@ export const organizationPurges = pgTable(
     scheduledBy: uuid("scheduled_by")
       .notNull()
       .references(() => platformPrincipals.id),
+    /**
+     * Set by `mark_organization_purge_storage_touched` before the first object is removed from the
+     * storage, and never undone: from then on the purge cannot be cancelled (ADR 0081).
+     */
+    storageTouchedAt: timestamp("storage_touched_at", { withTimezone: true }),
     supportCaseId: uuid("support_case_id")
       .notNull()
       .references(() => supportCases.id, { onDelete: "restrict" }),
@@ -65,13 +65,6 @@ export const organizationPurges = pgTable(
       "organization_purges_progress_coherent",
       sql`(${table.sweptAt} IS NULL OR ${table.purgedAt} IS NOT NULL)
         AND ${table.privacyCaseId} = ${table.supportCaseId}`
-    ),
-    check(
-      "organization_purges_cancellation_coherent",
-      sql`((${table.cancelledAt} IS NULL) = (${table.cancelledBy} IS NULL))
-        AND ((${table.cancelledAt} IS NULL) = (${table.cancelReason} IS NULL))
-        AND (${table.cancelledAt} IS NULL OR ${table.purgedAt} IS NULL)
-        AND (${table.cancelReason} IS NULL OR (char_length(${table.cancelReason}) BETWEEN 1 AND 500 AND ${table.cancelReason} = btrim(${table.cancelReason}) AND ${table.cancelReason} !~ '[[:cntrl:]]'))`
     ),
     pgPolicy("organization_purges_purge_owner_select", {
       for: "select",
@@ -98,6 +91,56 @@ export const organizationPurges = pgTable(
       for: "update",
       to: adminOwnerRole,
       using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * Every cancellation of a purge (plan PR107, ADR 0081), append-only: who cancelled it, under which case,
+ * which purge it was and the short reason the operator wrote. A purge scheduled again starts its own row
+ * from nothing, so the reason lives here and survives that. The Admin writes it through
+ * `admin_cancel_organization_purge`; no runtime role reads or writes it directly, and nobody updates or
+ * deletes a row.
+ */
+export const organizationPurgeCancellations = pgTable(
+  "organization_purge_cancellations",
+  {
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    cancelledBy: uuid("cancelled_by")
+      .notNull()
+      .references(() => platformPrincipals.id),
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    /** Short free text written by the operator; never copied to the audit event. */
+    reason: text("reason").notNull(),
+    /** When the cancelled purge had been scheduled. */
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    supportCaseId: uuid("support_case_id")
+      .notNull()
+      .references(() => supportCases.id, { onDelete: "restrict" }),
+  },
+  (table) => [
+    index("organization_purge_cancellations_organization_idx").on(
+      table.organizationId,
+      table.cancelledAt
+    ),
+    check(
+      "organization_purge_cancellations_reason_format",
+      sql`char_length(${table.reason}) BETWEEN 1 AND 500 AND ${table.reason} = btrim(${table.reason}) AND ${table.reason} !~ '[[:cntrl:]]'`
+    ),
+    pgPolicy("organization_purge_cancellations_admin_owner_select", {
+      for: "select",
+      to: adminOwnerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("organization_purge_cancellations_admin_owner_insert", {
+      for: "insert",
+      to: adminOwnerRole,
       withCheck: sql`true`,
     }),
   ]

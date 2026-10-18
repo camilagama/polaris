@@ -33,6 +33,7 @@ type PurgeClient = Pick<
   | "claimOrganizationPurge"
   | "completeOrganizationPurgeSweep"
   | "listOrganizationPurgeMedia"
+  | "markOrganizationPurgeStorageTouched"
   | "purgeOrganizationData"
   | "recordOrganizationPurgeFailure"
 >;
@@ -111,9 +112,13 @@ async function purgeOne(
 ): Promise<void> {
   const { bucket, client } = dependencies;
   const { organizationId } = claimed;
-  let step: PurgeStep = "exports_storage";
+  let step: PurgeStep = "mark_storage";
   try {
     if (claimed.phase === "purge") {
+      // the first removal from the storage is the point of no return: written down before it, so a purge
+      // that failed before this line can still be cancelled and one that got past it cannot (ADR 0081)
+      await client.markOrganizationPurgeStorageTouched(organizationId);
+      step = "exports_storage";
       await deleteObjectsUnderPrefix(
         bucket,
         organizationExportPrefix(organizationId)

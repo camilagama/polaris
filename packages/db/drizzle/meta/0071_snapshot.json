@@ -4787,6 +4787,133 @@
       },
       "isRLSEnabled": true
     },
+    "public.organization_purge_cancellations": {
+      "name": "organization_purge_cancellations",
+      "schema": "",
+      "columns": {
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_at": {
+          "name": "scheduled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "support_case_id": {
+          "name": "support_case_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "organization_purge_cancellations_organization_idx": {
+          "name": "organization_purge_cancellations_organization_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "cancelled_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "organization_purge_cancellations_cancelled_by_platform_principals_id_fk": {
+          "name": "organization_purge_cancellations_cancelled_by_platform_principals_id_fk",
+          "tableFrom": "organization_purge_cancellations",
+          "tableTo": "platform_principals",
+          "columnsFrom": ["cancelled_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "organization_purge_cancellations_organization_id_organizations_id_fk": {
+          "name": "organization_purge_cancellations_organization_id_organizations_id_fk",
+          "tableFrom": "organization_purge_cancellations",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "organization_purge_cancellations_support_case_id_support_cases_id_fk": {
+          "name": "organization_purge_cancellations_support_case_id_support_cases_id_fk",
+          "tableFrom": "organization_purge_cancellations",
+          "tableTo": "support_cases",
+          "columnsFrom": ["support_case_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "organization_purge_cancellations_admin_owner_select": {
+          "name": "organization_purge_cancellations_admin_owner_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_admin_owner"],
+          "using": "true"
+        },
+        "organization_purge_cancellations_admin_owner_insert": {
+          "name": "organization_purge_cancellations_admin_owner_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_admin_owner"],
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "organization_purge_cancellations_reason_format": {
+          "name": "organization_purge_cancellations_reason_format",
+          "value": "char_length(\"organization_purge_cancellations\".\"reason\") BETWEEN 1 AND 500 AND \"organization_purge_cancellations\".\"reason\" = btrim(\"organization_purge_cancellations\".\"reason\") AND \"organization_purge_cancellations\".\"reason\" !~ '[[:cntrl:]]'"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.organization_purges": {
       "name": "organization_purges",
       "schema": "",
@@ -4797,24 +4924,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "cancelled_at": {
-          "name": "cancelled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_by": {
-          "name": "cancelled_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_reason": {
-          "name": "cancel_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "last_error_code": {
           "name": "last_error_code",
@@ -4865,6 +4974,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "storage_touched_at": {
+          "name": "storage_touched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "support_case_id": {
           "name": "support_case_id",
           "type": "uuid",
@@ -4896,15 +5011,6 @@
         }
       },
       "foreignKeys": {
-        "organization_purges_cancelled_by_platform_principals_id_fk": {
-          "name": "organization_purges_cancelled_by_platform_principals_id_fk",
-          "tableFrom": "organization_purges",
-          "tableTo": "platform_principals",
-          "columnsFrom": ["cancelled_by"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "organization_purges_organization_id_organizations_id_fk": {
           "name": "organization_purges_organization_id_organizations_id_fk",
           "tableFrom": "organization_purges",
@@ -4986,10 +5092,6 @@
         "organization_purges_progress_coherent": {
           "name": "organization_purges_progress_coherent",
           "value": "(\"organization_purges\".\"swept_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NOT NULL)\n        AND \"organization_purges\".\"privacy_case_id\" = \"organization_purges\".\"support_case_id\""
-        },
-        "organization_purges_cancellation_coherent": {
-          "name": "organization_purges_cancellation_coherent",
-          "value": "((\"organization_purges\".\"cancelled_at\" IS NULL) = (\"organization_purges\".\"cancelled_by\" IS NULL))\n        AND ((\"organization_purges\".\"cancelled_at\" IS NULL) = (\"organization_purges\".\"cancel_reason\" IS NULL))\n        AND (\"organization_purges\".\"cancelled_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NULL)\n        AND (\"organization_purges\".\"cancel_reason\" IS NULL OR (char_length(\"organization_purges\".\"cancel_reason\") BETWEEN 1 AND 500 AND \"organization_purges\".\"cancel_reason\" = btrim(\"organization_purges\".\"cancel_reason\") AND \"organization_purges\".\"cancel_reason\" !~ '[[:cntrl:]]'))"
         }
       },
       "isRLSEnabled": true

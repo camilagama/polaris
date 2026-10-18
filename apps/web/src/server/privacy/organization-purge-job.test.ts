@@ -29,6 +29,7 @@ function fixture(
     claims?: (ClaimedOrganizationPurge | null)[];
     media?: Record<string, { id: string; storageKey: string }[]>;
     now?: () => Date;
+    markTouched?: () => Promise<void>;
     onPurge?: (organizationId: string) => Promise<void> | void;
     recordFailure?: () => Promise<void>;
   } = {}
@@ -60,6 +61,9 @@ function fixture(
     ),
     listOrganizationPurgeMedia: vi.fn((id: string) =>
       Promise.resolve(input.media?.[id] ?? [])
+    ),
+    markOrganizationPurgeStorageTouched: vi.fn((_id: string) =>
+      input.markTouched ? input.markTouched() : Promise.resolve()
     ),
     purgeOrganizationData: vi.fn(async (id: string) => {
       await input.onPurge?.(id);
@@ -140,6 +144,44 @@ describe("runOrganizationPurges", () => {
     );
   });
 
+  it("writes down that the storage is touched before the first object is removed", async () => {
+    const ctx = fixture();
+    seed(ctx.objects, [`${exportsA}e1/data.json`]);
+
+    await ctx.run();
+
+    expect(
+      ctx.client.markOrganizationPurgeStorageTouched
+    ).toHaveBeenCalledExactlyOnceWith(orgA);
+    expect(
+      ctx.client.markOrganizationPurgeStorageTouched.mock.invocationCallOrder[0]
+    ).toBeLessThan(ctx.bucket.list.mock.invocationCallOrder[0] ?? 0);
+    expect(
+      ctx.client.markOrganizationPurgeStorageTouched.mock.invocationCallOrder[0]
+    ).toBeLessThan(ctx.bucket.delete.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it("leaves the storage alone when the run no longer holds the purge", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ctx = fixture({
+      markTouched: () => Promise.reject(new Error("purge_not_claimed")),
+    });
+    seed(ctx.objects, [`${exportsA}e1/data.json`, `${mediaA}a.jpg`]);
+
+    const report = await ctx.run();
+
+    expect(report).toEqual({ failed: 1, purged: 0, swept: 0 });
+    expect(ctx.bucket.delete).not.toHaveBeenCalled();
+    expect(ctx.client.listOrganizationPurgeMedia).not.toHaveBeenCalled();
+    expect(ctx.client.purgeOrganizationData).not.toHaveBeenCalled();
+    expect(ctx.objects.size).toBe(2);
+    // the failure is the marker's, not the storage's: nothing was touched
+    expect(ctx.client.recordOrganizationPurgeFailure).toHaveBeenCalledWith(
+      orgA,
+      "purge_mark_storage_failed"
+    );
+  });
+
   it("stops before the media and the database when the exports cannot be removed", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const ctx = fixture();
@@ -204,6 +246,10 @@ describe("runOrganizationPurges", () => {
     expect(report).toEqual({ failed: 0, purged: 0, swept: 1 });
     expect(ctx.client.listOrganizationPurgeMedia).not.toHaveBeenCalled();
     expect(ctx.client.purgeOrganizationData).not.toHaveBeenCalled();
+    // the purge was already past the point of no return: the sweep marks nothing
+    expect(
+      ctx.client.markOrganizationPurgeStorageTouched
+    ).not.toHaveBeenCalled();
     expect(ctx.client.completeOrganizationPurgeSweep).toHaveBeenCalledWith(
       orgA
     );

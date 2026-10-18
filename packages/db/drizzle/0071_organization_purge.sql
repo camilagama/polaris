@@ -15,11 +15,20 @@ BEGIN
 END
 $roles$;--> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
+CREATE TABLE "organization_purge_cancellations" (
+	"cancelled_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"cancelled_by" uuid NOT NULL,
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"organization_id" text NOT NULL,
+	"reason" text NOT NULL,
+	"scheduled_at" timestamp with time zone NOT NULL,
+	"support_case_id" uuid NOT NULL,
+	CONSTRAINT "organization_purge_cancellations_reason_format" CHECK (char_length("organization_purge_cancellations"."reason") BETWEEN 1 AND 500 AND "organization_purge_cancellations"."reason" = btrim("organization_purge_cancellations"."reason") AND "organization_purge_cancellations"."reason" !~ '[[:cntrl:]]')
+);
+--> statement-breakpoint
+ALTER TABLE "organization_purge_cancellations" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "organization_purges" (
 	"attempts" integer DEFAULT 0 NOT NULL,
-	"cancel_reason" text,
-	"cancelled_at" timestamp with time zone,
-	"cancelled_by" uuid,
 	"last_error_code" text,
 	"locked_until" timestamp with time zone,
 	"not_before" timestamp with time zone NOT NULL,
@@ -28,13 +37,10 @@ CREATE TABLE "organization_purges" (
 	"purged_at" timestamp with time zone,
 	"scheduled_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"scheduled_by" uuid NOT NULL,
+	"storage_touched_at" timestamp with time zone,
 	"support_case_id" uuid NOT NULL,
 	"swept_at" timestamp with time zone,
 	CONSTRAINT "organization_purges_attempts_allowed" CHECK ("organization_purges"."attempts" >= 0),
-	CONSTRAINT "organization_purges_cancellation_coherent" CHECK ((("organization_purges"."cancelled_at" IS NULL) = ("organization_purges"."cancelled_by" IS NULL))
-        AND (("organization_purges"."cancelled_at" IS NULL) = ("organization_purges"."cancel_reason" IS NULL))
-        AND ("organization_purges"."cancelled_at" IS NULL OR "organization_purges"."purged_at" IS NULL)
-        AND ("organization_purges"."cancel_reason" IS NULL OR (char_length("organization_purges"."cancel_reason") BETWEEN 1 AND 500 AND "organization_purges"."cancel_reason" = btrim("organization_purges"."cancel_reason") AND "organization_purges"."cancel_reason" !~ '[[:cntrl:]]'))),
 	CONSTRAINT "organization_purges_error_code_format" CHECK ("organization_purges"."last_error_code" IS NULL OR "organization_purges"."last_error_code" ~ '^[a-z][a-z0-9_]{0,63}$'),
 	CONSTRAINT "organization_purges_progress_coherent" CHECK (("organization_purges"."swept_at" IS NULL OR "organization_purges"."purged_at" IS NOT NULL)
         AND "organization_purges"."privacy_case_id" = "organization_purges"."support_case_id")
@@ -42,23 +48,32 @@ CREATE TABLE "organization_purges" (
 --> statement-breakpoint
 ALTER TABLE "organization_purges" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "platform_audit_events" DROP CONSTRAINT "platform_audit_events_type_allowed";--> statement-breakpoint
-ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_cancelled_by_platform_principals_id_fk" FOREIGN KEY ("cancelled_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_purge_cancellations" ADD CONSTRAINT "organization_purge_cancellations_cancelled_by_platform_principals_id_fk" FOREIGN KEY ("cancelled_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_purge_cancellations" ADD CONSTRAINT "organization_purge_cancellations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_purge_cancellations" ADD CONSTRAINT "organization_purge_cancellations_support_case_id_support_cases_id_fk" FOREIGN KEY ("support_case_id") REFERENCES "public"."support_cases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_scheduled_by_platform_principals_id_fk" FOREIGN KEY ("scheduled_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_purges" ADD CONSTRAINT "organization_purges_support_case_id_support_cases_id_fk" FOREIGN KEY ("support_case_id") REFERENCES "public"."support_cases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "organization_purge_cancellations_organization_idx" ON "organization_purge_cancellations" USING btree ("organization_id","cancelled_at");--> statement-breakpoint
 CREATE INDEX "organization_purges_due_idx" ON "organization_purges" USING btree ("not_before");--> statement-breakpoint
 ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed'));--> statement-breakpoint
+CREATE POLICY "organization_purge_cancellations_admin_owner_select" ON "organization_purge_cancellations" AS PERMISSIVE FOR SELECT TO "polaris_admin_owner" USING (true);--> statement-breakpoint
+CREATE POLICY "organization_purge_cancellations_admin_owner_insert" ON "organization_purge_cancellations" AS PERMISSIVE FOR INSERT TO "polaris_admin_owner" WITH CHECK (true);--> statement-breakpoint
 CREATE POLICY "organization_purges_purge_owner_select" ON "organization_purges" AS PERMISSIVE FOR SELECT TO "polaris_purge_owner" USING (true);--> statement-breakpoint
 CREATE POLICY "organization_purges_purge_owner_update" ON "organization_purges" AS PERMISSIVE FOR UPDATE TO "polaris_purge_owner" USING (true) WITH CHECK (true);--> statement-breakpoint
 CREATE POLICY "organization_purges_admin_owner_select" ON "organization_purges" AS PERMISSIVE FOR SELECT TO "polaris_admin_owner" USING (true);--> statement-breakpoint
 CREATE POLICY "organization_purges_admin_owner_insert" ON "organization_purges" AS PERMISSIVE FOR INSERT TO "polaris_admin_owner" WITH CHECK (true);--> statement-breakpoint
 CREATE POLICY "organization_purges_admin_owner_update" ON "organization_purges" AS PERMISSIVE FOR UPDATE TO "polaris_admin_owner" USING (true) WITH CHECK (true);--> statement-breakpoint
+ALTER TABLE "organization_purge_cancellations" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "organization_purges" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 REVOKE ALL ON TABLE public.organization_purges FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_privacy_owner;--> statement-breakpoint
 GRANT SELECT ON TABLE public.organization_purges TO polaris_purge_owner;--> statement-breakpoint
-GRANT UPDATE (attempts, locked_until, last_error_code, purged_at, swept_at) ON TABLE public.organization_purges TO polaris_purge_owner;--> statement-breakpoint
+GRANT UPDATE (attempts, locked_until, last_error_code, purged_at, swept_at, storage_touched_at) ON TABLE public.organization_purges TO polaris_purge_owner;--> statement-breakpoint
 GRANT SELECT, INSERT ON TABLE public.organization_purges TO polaris_admin_owner;--> statement-breakpoint
-GRANT UPDATE (scheduled_at, scheduled_by, support_case_id, privacy_case_id, not_before, attempts, locked_until, last_error_code, purged_at, swept_at, cancelled_at, cancelled_by, cancel_reason) ON TABLE public.organization_purges TO polaris_admin_owner;--> statement-breakpoint
+GRANT UPDATE (scheduled_at, scheduled_by, support_case_id, privacy_case_id, not_before, attempts, locked_until, last_error_code, purged_at, swept_at, storage_touched_at) ON TABLE public.organization_purges TO polaris_admin_owner;--> statement-breakpoint
+-- the cancellations are append-only: the owner of the Admin functions writes and reads them, never changes or deletes
+REVOKE ALL ON TABLE public.organization_purge_cancellations FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_privacy_owner, polaris_purge_owner;--> statement-breakpoint
+GRANT SELECT, INSERT ON TABLE public.organization_purge_cancellations TO polaris_admin_owner;--> statement-breakpoint
 -- what the purge owner may see and delete: the rows of an organization whose purge was scheduled, and
 -- nothing else. The tables it deletes from get SELECT and DELETE; the variant tables, which go with
 -- their product through the foreign key cascade, get SELECT only (the deferred variant checks read
@@ -236,7 +251,8 @@ CREATE TRIGGER data_export_files_require_active_organization
 -- is only proposed, ADR 0079). It needs an open case of the organization the operator names (a
 -- confirmation, not the authority: the case decides the organization) and that case must be the privacy
 -- case of a deletion: requested by the organization's owner, decided `accept` in full (never
--- `partially_accept`), with a scope that covers the whole tenant (every category the purge removes). A
+-- `partially_accept`), with a scope that is exactly the whole tenant: every category the purge removes
+-- and none it keeps (account, authentication and billing stay, so a case that claims them is refused). A
 -- plain support case never starts a purge, and neither does a refused, undecided or partial request (ADR
 -- 0077 and 0081). Besides, the organization must be `closed` with its recovery window over, with no live
 -- temporary access and no trial or paid access running. The delay after the window is an argument because
@@ -288,6 +304,11 @@ BEGIN
   IF privacy_scope IS NULL OR NOT (privacy_scope @> whole_organization) THEN
     RAISE EXCEPTION 'privacy_scope_incomplete' USING ERRCODE = '55000';
   END IF;
+  -- exactly what the purge removes: a case that also covers data the purge keeps (account, authentication,
+  -- billing) would record a decision the purge does not carry out
+  IF NOT (privacy_scope <@ whole_organization) THEN
+    RAISE EXCEPTION 'privacy_scope_covers_kept_data' USING ERRCODE = '55000';
+  END IF;
   SELECT organization.status INTO current_status
     FROM public.organizations AS organization WHERE organization.id = target FOR UPDATE;
   IF current_status IN ('purge_pending', 'purged') THEN
@@ -321,7 +342,8 @@ BEGIN
   due := window_end + p_delay_seconds * interval '1 second';
   UPDATE public.organizations SET status = 'purge_pending', updated_at = pg_catalog.now()
    WHERE id = target AND status = 'closed';
-  -- a purge scheduled again (after a cancellation, or a restore that brought the organization back) starts from nothing
+  -- a purge scheduled again (after a cancellation, or a restore that brought the organization back) starts from
+  -- nothing; the reason of an earlier cancellation stays in organization_purge_cancellations
   INSERT INTO public.organization_purges
     (organization_id, scheduled_at, scheduled_by, support_case_id, privacy_case_id, not_before)
   VALUES (target, pg_catalog.now(), p_principal, p_case, privacy_case, due)
@@ -329,8 +351,7 @@ BEGIN
     SET scheduled_at = EXCLUDED.scheduled_at, scheduled_by = EXCLUDED.scheduled_by,
         support_case_id = EXCLUDED.support_case_id, privacy_case_id = EXCLUDED.privacy_case_id,
         not_before = EXCLUDED.not_before, attempts = 0, locked_until = NULL,
-        last_error_code = NULL, purged_at = NULL, swept_at = NULL,
-        cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL;
+        last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = NULL;
   PERFORM public.admin_record_audit(
     p_principal, 'organization.purge_scheduled', target, p_case, 'organization', target, NULL
   );
@@ -338,11 +359,13 @@ BEGIN
 END;
 $function$;--> statement-breakpoint
 -- The way back from `purge_pending`, for an operator who scheduled it by mistake or whose request was
--- withdrawn: the same capability, an open case of the organization named, and a reason that stays on the
--- purge row (never in the audit event, which carries no free text). It works only while no run holds the
--- purge: a lease still running means the storage may already be going, and then nothing is undone. It takes
--- the organization lock first, like the purge, and the purge row after it, so a run that claims at the same
--- moment either gets the row first (and the cancel is refused) or finds the organization `closed` again.
+-- withdrawn: the same capability, an open case of the organization named, and a reason that goes to the
+-- append-only history of cancellations (never in the audit event, which carries no free text). It works
+-- only while no run holds the purge and before the first object left the storage: a lease still running
+-- means the storage may be going, and `storage_touched_at` means it started going, and then nothing is
+-- undone (a failed attempt that never reached the storage does not stop it). It takes the organization
+-- lock first, like the purge, and the purge row after it, so a run that claims at the same moment either
+-- gets the row first (and the cancel is refused) or finds the organization `closed` again.
 CREATE FUNCTION public.admin_cancel_organization_purge(p_principal uuid, p_case uuid, p_organization text, p_reason text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -380,18 +403,40 @@ BEGIN
   IF plan.locked_until IS NOT NULL AND plan.locked_until > pg_catalog.now() THEN
     RAISE EXCEPTION 'purge_in_progress' USING ERRCODE = '55000';
   END IF;
+  IF plan.storage_touched_at IS NOT NULL THEN
+    RAISE EXCEPTION 'purge_storage_touched' USING ERRCODE = '55000';
+  END IF;
   UPDATE public.organizations SET status = 'closed', updated_at = pg_catalog.now()
    WHERE id = target AND status = 'purge_pending';
-  UPDATE public.organization_purges
-     SET cancelled_at = pg_catalog.now(), cancelled_by = p_principal, cancel_reason = clean_reason,
-         locked_until = NULL
-   WHERE organization_id = target;
+  UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = target;
+  INSERT INTO public.organization_purge_cancellations
+    (organization_id, support_case_id, cancelled_by, reason, scheduled_at)
+  VALUES (target, p_case, p_principal, clean_reason, plan.scheduled_at);
   PERFORM public.admin_record_audit(
     p_principal, 'organization.purge_cancelled', target, p_case, 'organization', target, NULL
   );
   RETURN pg_catalog.jsonb_build_object('changed', true, 'status', 'closed');
 END;
 $function$;--> statement-breakpoint
+-- the history of cancellations is append-only for everyone, the table's owner included: no UPDATE, DELETE or
+-- TRUNCATE, the same rule the platform audit has (the grants already give the Admin no more than INSERT and SELECT)
+CREATE FUNCTION public.organization_purge_cancellations_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'organization purge cancellations are append-only'
+    USING ERRCODE = '23514';
+END;
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.organization_purge_cancellations_immutable() FROM PUBLIC;--> statement-breakpoint
+CREATE TRIGGER organization_purge_cancellations_no_change
+  BEFORE UPDATE OR DELETE ON public.organization_purge_cancellations
+  FOR EACH ROW EXECUTE FUNCTION public.organization_purge_cancellations_immutable();--> statement-breakpoint
+CREATE TRIGGER organization_purge_cancellations_no_truncate
+  BEFORE TRUNCATE ON public.organization_purge_cancellations
+  FOR EACH STATEMENT EXECUTE FUNCTION public.organization_purge_cancellations_immutable();--> statement-breakpoint
 -- a run takes the oldest due purge (or a purged organization whose second sweep did not finish) and holds
 -- it for a while; an organization with an export run still holding its lease waits for the next run
 CREATE FUNCTION public.claim_organization_purge(p_lease_seconds integer)
@@ -546,6 +591,30 @@ BEGIN
   RETURN pg_catalog.jsonb_build_object('alreadyPurged', false, 'deletedRows', total);
 END;
 $function$;--> statement-breakpoint
+-- the purge is about to remove its first object from the storage: from now on it cannot be cancelled. The run
+-- that holds the lease calls it once, before its first storage step, and the first call (of any run) is the one
+-- that counts. A run whose lease ended, or whose purge was cancelled, is refused and goes no further: the cancel
+-- waits for this row lock, or this update finds the lease gone. The function does not tell two runs apart, so a
+-- run that lost its lease to a newer one can still pass; the mark is idempotent and so are the removals.
+CREATE FUNCTION public.mark_organization_purge_storage_touched(p_organization text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  UPDATE public.organization_purges AS purge
+     SET storage_touched_at = COALESCE(purge.storage_touched_at, pg_catalog.now())
+   WHERE purge.organization_id = p_organization AND purge.locked_until > pg_catalog.now()
+     AND EXISTS (
+       SELECT 1 FROM public.organizations AS organization
+        WHERE organization.id = purge.organization_id AND organization.status = 'purge_pending'
+     );
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'purge_not_claimed' USING ERRCODE = '55000';
+  END IF;
+END;
+$function$;--> statement-breakpoint
 -- a step that failed is written down; the purge stays held until its lease ends, so the same run does not
 -- take it again, and a later run tries again from the start
 CREATE FUNCTION public.record_organization_purge_failure(p_organization text, p_code text)
@@ -592,17 +661,20 @@ GRANT polaris_purge_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FA
 GRANT CREATE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.claim_organization_purge(integer) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.list_organization_purge_media(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
+ALTER FUNCTION public.mark_organization_purge_storage_touched(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.purge_organization_data(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.record_organization_purge_failure(text, text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 ALTER FUNCTION public.complete_organization_purge_sweep(text) OWNER TO polaris_purge_owner;--> statement-breakpoint
 SET ROLE polaris_purge_owner;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.claim_organization_purge(integer) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.list_organization_purge_media(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.mark_organization_purge_storage_touched(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.purge_organization_data(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.record_organization_purge_failure(text, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.complete_organization_purge_sweep(text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.claim_organization_purge(integer) TO polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.list_organization_purge_media(text) TO polaris_privacy_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.mark_organization_purge_storage_touched(text) TO polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.purge_organization_data(text) TO polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.record_organization_purge_failure(text, text) TO polaris_privacy_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.complete_organization_purge_sweep(text) TO polaris_privacy_runtime;--> statement-breakpoint

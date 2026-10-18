@@ -70,6 +70,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
     offline_grants: "autorização offline: mecanismo interno",
     organization_billing: "cobrança: lida só pelo papel de billing",
     organization_closures: "processo interno de encerramento",
+    organization_purge_cancellations:
+      "histórico interno do purge, da plataforma",
     organization_purges: "processo interno do purge, da plataforma",
     platform_audit_events: "da plataforma, não do tenant",
     rls_poc_operations: "tabela de prova técnica",

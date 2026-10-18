@@ -14,6 +14,7 @@ import {
 
 /** The order of the workflow; each step can be run again without effect once it is done. */
 export const ORGANIZATION_PURGE_STEPS = Object.freeze([
+  "mark_storage",
   "exports_storage",
   "media_storage",
   "database",
@@ -85,9 +86,10 @@ export function automaticPurgeSchedulingAllowed(
 
 /**
  * The categories a privacy case must cover for its accepted deletion to start a purge: every tenant
- * category the purge removes (ADR 0081). Account, authentication and billing are not here: the purge
- * keeps them. The migration holds the same list (`whole_organization` in `admin_schedule_organization_purge`),
- * and the gate proves each category is required.
+ * category the purge removes (ADR 0081), and exactly those. Account, authentication and billing are not
+ * here: the purge keeps them, so a case that claims them is refused instead of recording a decision the
+ * purge does not carry out. The migration holds the same list (`whole_organization` in
+ * `admin_schedule_organization_purge`), and the gate proves each category is required and each kept one refused.
  */
 export const ORGANIZATION_PURGE_REQUIRED_SCOPE = Object.freeze([
   "organization_profile",
@@ -97,6 +99,9 @@ export const ORGANIZATION_PURGE_REQUIRED_SCOPE = Object.freeze([
   "media",
   "audit_logs",
 ] as const satisfies readonly PrivacyDataCategory[]);
+
+const ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL =
+  ORGANIZATION_PURGE_REQUIRED_SCOPE.join(", ");
 
 /**
  * Why the database refused to schedule or cancel a purge; each one is a state to change first, not an
@@ -110,16 +115,54 @@ export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "privacy_requester_not_owner",
   "privacy_case_not_accepted",
   "privacy_scope_incomplete",
+  "privacy_scope_covers_kept_data",
   "recovery_window_open",
   "tenant_access_active",
   "paid_access_running",
   "purge_not_scheduled",
   "purge_in_progress",
+  "purge_storage_touched",
   "purge_already_done",
 ] as const);
 
 export type OrganizationPurgeRefusalCode =
   (typeof ORGANIZATION_PURGE_REFUSALS)[number];
+
+/** What an operator reads for each refusal: the state to change first, never a database message. */
+const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
+  Record<OrganizationPurgeRefusalCode, string>
+> = Object.freeze({
+  organization_mismatch: "A organização informada não é a do caso.",
+  organization_not_closed:
+    "A organização não está encerrada (ativa, suspensa ou ainda em encerramento).",
+  paid_access_running:
+    "A organização ainda tem período de teste ou acesso pago em andamento.",
+  privacy_case_not_accepted:
+    "O pedido de exclusão ainda não foi decidido ou não foi aceito por inteiro.",
+  privacy_case_not_deletion:
+    "O caso de privacidade não é um pedido de exclusão.",
+  privacy_case_required:
+    "Um caso de suporte comum não inicia o purge: use o caso de privacidade do pedido de exclusão.",
+  privacy_requester_not_owner:
+    "O pedido de exclusão não foi feito pelo dono da organização.",
+  privacy_scope_covers_kept_data: `O escopo do caso inclui dados que o purge mantém (conta, autenticação ou cobrança). Registre o escopo exato do que o purge apaga: ${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}.`,
+  privacy_scope_incomplete: `O escopo do caso não cobre tudo o que o purge apaga (${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}).`,
+  purge_already_done: "O purge já foi concluído e não pode ser desfeito.",
+  purge_in_progress:
+    "Uma execução está segurando o purge agora. Espere a concessão terminar (até 15 minutos): se ela já tiver começado a apagar arquivos no armazenamento, o cancelamento continuará recusado.",
+  purge_not_scheduled: "Não há purge agendado para esta organização.",
+  purge_storage_touched:
+    "O purge já começou a apagar arquivos no armazenamento e não pode mais ser cancelado.",
+  recovery_window_open: "A janela de recuperação da organização não acabou.",
+  tenant_access_active:
+    "Há acesso temporário do Admin vigente à organização: revogue-o antes.",
+});
+
+export function organizationPurgeRefusalMessage(
+  code: OrganizationPurgeRefusalCode
+): string {
+  return ORGANIZATION_PURGE_REFUSAL_MESSAGES[code];
+}
 
 export class OrganizationPurgeRefusedError extends Error {
   readonly code: OrganizationPurgeRefusalCode;

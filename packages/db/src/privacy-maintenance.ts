@@ -56,6 +56,13 @@ export interface PrivacyMaintenanceClient {
     organizationId: string
   ) => Promise<{ id: string; storageKey: string }[]>;
   markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
+  /**
+   * The purge is about to remove its first object from the storage; from now on it cannot be cancelled.
+   * Refused (`purge_not_claimed`) when this run no longer holds the purge.
+   */
+  markOrganizationPurgeStorageTouched: (
+    organizationId: string
+  ) => Promise<void>;
   /** Writes the tombstone and deletes every row of the tenant, in one transaction. */
   purgeOrganizationData: (
     organizationId: string
@@ -182,6 +189,12 @@ export function createPrivacyMaintenanceClient(
         [exportId]
       );
       return result.rows[0]?.marked === true;
+    },
+    async markOrganizationPurgeStorageTouched(organizationId) {
+      await pool.query(
+        "SELECT public.mark_organization_purge_storage_touched($1::text)",
+        [organizationId]
+      );
     },
     async purgeOrganizationData(organizationId) {
       const result = await pool.query<{
