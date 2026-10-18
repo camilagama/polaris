@@ -8,7 +8,7 @@ status: accepted
 
 ## Contexto
 
-O [ADR 0066](0066-reembolso-e-chargeback.md) passou a exigir que reembolso, chargeback e reversão tragam a referência da assinatura e que o armazenamento a confira com a do registro. Os outros fatos (`trial_method_ready`, `charge_succeeded`, `charge_failed`, `subscription_cancelled` e `cycle_change_scheduled`) continuavam aplicados ao registro da organização quando o evento não trazia referência, e alguns deles concedem ou estendem acesso. Duas outras coisas ficaram abertas: o `reference_mismatch` era um desfecho definitivo e silencioso (um adaptador que informasse o campo errado perderia os eventos sem aviso), e a ordem entre o primeiro webhook e a ligação da referência (`attachProvider`) não estava definida para esses fatos.
+O [ADR 0066](0066-reembolso-e-chargeback.md) definiu a conferência da referência da assinatura no provedor para reembolso, chargeback e reversão. Este ADR estende essa conferência a todos os fatos do provedor, define a ordem entre o primeiro webhook e a ligação da referência (`attachProvider`) e torna visível o desfecho `reference_mismatch`, para que um adaptador com o campo mapeado errado seja percebido.
 
 ## Decisão
 
