@@ -301,7 +301,7 @@ export function createAdminApp(dependencies: AdminDependencies) {
 
   app.notFound((context) => context.json({ error: "not_found" }, 404));
   app.onError((error, context) => {
-    dependencies.report("admin_error", { name: error.name });
+    dependencies.report("admin_error", { errorClass: error.name });
     return context.json({ error: "internal_error" }, 500);
   });
   return app;

@@ -30,10 +30,10 @@ O tempo é cortado em janelas da cadência do job (a hora cheia, em UTC). O job 
 
 ## Verificação
 
-1. No `wrangler tail`, cada tick mostra uma linha `scheduled_job_run` por job (`job`, `lane`, `outcome`, `durationMs`, `missedWindows`, `recovered`) ou `scheduled_job_skipped` (`not_due` ou `busy`). A linha não traz dado de cliente; em falha, só a classe do erro e um código (SQLSTATE ou do provedor). `durationMs` é tempo de parede, não de CPU.
+1. No `wrangler tail`, cada tick mostra uma linha `scheduled_job_run` por job (`job`, `lane`, `outcome`, `durationMs`, `missedWindows`, `recovered`) ou `scheduled_job_skipped` (`outcome: "skipped"` e `reason`: `not_due` ou `busy`). `outcome` segue o esquema canônico do [ADR 0091](../adr/0091-esquema-canonico-de-eventos-largos.md): `success`, `skipped` ou `failure` (antes eram `completed`, `skipped` e `failed`; filtro ou alerta que dependa dos valores antigos muda). A linha não traz dado de cliente; em falha, só a classe do erro (`errorClass`, antes `errorName`) e um código (`errorCode`: SQLSTATE ou do provedor). `durationMs` é tempo de parede, não de CPU.
 2. Dois disparos na mesma hora: o segundo mostra `scheduled_job_skipped` com `reason: "not_due"` e nada roda duas vezes.
 3. Estado de um job (somente leitura, como dono do banco): `SELECT job_id, covered_at, last_success_at, lease_until, consecutive_failures, last_failure_at FROM scheduled_job_state ORDER BY job_id`. Um job com `consecutive_failures` crescente está falhando a cada tick; o log do cron traz a classe do erro.
-4. `scheduled_job_lease_lost` quer dizer que uma execução passou do *lease* (960 s) e outra a retomou; investigue o job lento.
+4. `scheduled_job_lease_lost` (com `runOutcome`, o resultado da execução que perdeu o *lease*) quer dizer que uma execução passou do *lease* (960 s) e outra a retomou; investigue o job lento.
 
 ## Forçar, mudar ou desligar
 

@@ -231,7 +231,7 @@ export function supportRoutes(
         NOT_FOUND_CODES.has(error.code) ? 404 : 400
       );
     }
-    report("admin_error", { name: error.name });
+    report("admin_error", { errorClass: error.name });
     return context.json({ error: "internal_error" }, 500);
   });
 

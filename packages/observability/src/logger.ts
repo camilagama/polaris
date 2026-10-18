@@ -1,4 +1,11 @@
 import { initLogger, log } from "evlog";
+import {
+  type CanonicalFields,
+  canonicalNameFor,
+  type ForbiddenAlias,
+  isOpaqueId,
+  opaqueIdFields,
+} from "./fields";
 
 /**
  * Typed logger for the backend (Workers, Hono, Queue consumers, jobs, billing
@@ -6,10 +13,18 @@ import { initLogger, log } from "evlog";
  * Cloudflare Observability stays the destination (stdout, no external drain).
  *
  * Never import this from `packages/domain` or from browser code: the domain
- * stays free of logging and the V1 has no client logging (see ADR 0089). The wide-event field schema (PR115) and
- * the centralised redaction (PR116) build on this wrapper; until then callers
- * keep emitting only allow-listed, non-personal fields.
+ * stays free of logging and the V1 has no client logging (see ADR 0089). The
+ * field names are the canonical schema of `./fields` (ADR 0091): the type
+ * refuses the forbidden aliases and the call drops them. The centralised
+ * redaction (PR116) builds on this wrapper; until then callers keep emitting
+ * only allow-listed, non-personal fields.
  */
+
+export type {
+  CanonicalFields,
+  ForbiddenAlias,
+  Outcome,
+} from "./fields";
 
 export type LogScalar = boolean | null | number | string | undefined;
 
@@ -37,9 +52,16 @@ type ReservedKey =
   | "timestamp"
   | "version";
 
+/**
+ * Canonical fields keep their type (an `outcome` is one of the known values, a
+ * `durationMs` a number); any other key is a free metric. The reserved keys and
+ * the forbidden aliases are `never`, so a call that uses one does not compile.
+ */
 export type LogFields = {
   readonly [key: string]: LogValue;
-} & { readonly [key in ReservedKey]?: never };
+} & CanonicalFields & {
+    readonly [key in ForbiddenAlias | ReservedKey]?: never;
+  };
 
 export type LogLevel = "debug" | "error" | "info" | "warn";
 
@@ -100,22 +122,50 @@ export function configureLogging(config: LoggingConfig): void {
   applyConfig(config);
 }
 
-function emit(level: LogLevel, event: string, fields?: LogFields): void {
+const opaqueIds: ReadonlySet<string> = new Set(opaqueIdFields);
+
+/**
+ * What the event carries: the fields that passed the schema and the names of
+ * the ones that did not. A dropped name is listed in `ignoredFields` (names
+ * only, never the values) so a wrong call is visible instead of silent.
+ */
+function applySchema(fields: LogFields | undefined): {
+  ignored: string[];
+  safe: Record<string, LogValue>;
+} {
+  const safe: Record<string, LogValue> = {};
+  const ignored: string[] = [];
+  for (const [key, value] of Object.entries(fields ?? {})) {
+    if (value === undefined) {
+      continue;
+    }
+    // The type already forbids these; this keeps a cast from forging them.
+    if (reservedKeys.has(key)) {
+      continue;
+    }
+    if (
+      canonicalNameFor(key) !== undefined ||
+      (opaqueIds.has(key) && !isOpaqueId(value))
+    ) {
+      ignored.push(key);
+      continue;
+    }
+    safe[key] = value;
+  }
+  return { ignored, safe };
+}
+
+export function emit(level: LogLevel, event: string, fields?: LogFields): void {
   if (!configured) {
     applyConfig({ service: "polaris" });
   }
 
-  const safe: Record<string, LogValue> = {};
-  if (fields !== undefined) {
-    for (const [key, value] of Object.entries(fields)) {
-      // The type already forbids these; this keeps a cast from forging them.
-      if (!(reservedKeys.has(key) || value === undefined)) {
-        safe[key] = value;
-      }
-    }
-  }
-
-  log[level]({ ...safe, event });
+  const { ignored, safe } = applySchema(fields);
+  log[level]({
+    ...safe,
+    ...(ignored.length > 0 ? { ignoredFields: ignored } : {}),
+    event,
+  });
 }
 
 export const logger: Logger = {

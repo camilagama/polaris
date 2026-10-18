@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./logger": "./src/logger.ts"
+    "./logger": "./src/logger.ts",
+    "./wide-event": "./src/wide-event.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

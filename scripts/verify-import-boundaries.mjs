@@ -43,6 +43,11 @@ const cases = [
     domainMessage,
   ],
   [
+    "@polaris/observability/wide-event",
+    ["packages", "domain", "src"],
+    domainMessage,
+  ],
+  [
     "../../observability/src/logger",
     ["packages", "domain", "src"],
     domainMessage,

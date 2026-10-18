@@ -379,8 +379,52 @@ describe("a scheduler tick", () => {
           job: "outbox.dispatch",
           lane: "outbox",
           missedWindows: 0,
-          outcome: "completed",
+          outcome: "success",
           recovered: false,
+        })
+      );
+    });
+
+    it("closes a skipped run with the skipped outcome and its reason", async () => {
+      const { store } = memoryStore(clock);
+      const handlers = handlersFor("outbox", () =>
+        Promise.resolve({ reason: "not_configured", status: "skipped" })
+      );
+      await tick("outbox", handlers, store);
+      expect(console.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          durationMs: 0,
+          event: "scheduled_job_run",
+          outcome: "skipped",
+          reason: "not_configured",
+        })
+      );
+    });
+
+    it("tags the lines of a lease that was not taken with the canonical outcome", async () => {
+      const { store } = memoryStore(clock);
+      vi.spyOn(store, "claimScheduledJob").mockRejectedValueOnce(
+        Object.assign(new Error("connection refused"), { code: "ECONNREFUSED" })
+      );
+      await expect(
+        tick("outbox", handlersFor("outbox"), store)
+      ).rejects.toThrow("connection refused");
+      expect(console.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errorClass: "Error",
+          errorCode: "ECONNREFUSED",
+          event: "scheduled_job_claim_failed",
+          outcome: "failure",
+        })
+      );
+
+      await tick("outbox", handlersFor("outbox"), store);
+      await tick("outbox", handlersFor("outbox"), store);
+      expect(console.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "scheduled_job_skipped",
+          outcome: "skipped",
+          reason: "not_due",
         })
       );
     });
@@ -405,10 +449,10 @@ describe("a scheduler tick", () => {
       expect(console.error).toHaveBeenCalledWith(
         expect.objectContaining({
           errorCode: "23505",
-          errorName: "Error",
+          errorClass: "Error",
           event: "scheduled_job_run",
           job: "outbox.dispatch",
-          outcome: "failed",
+          outcome: "failure",
         })
       );
     });

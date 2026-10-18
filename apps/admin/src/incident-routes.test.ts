@@ -350,7 +350,7 @@ describe("retrying a dead event", () => {
     const text = await response.text();
     expect(JSON.parse(text)).toEqual({ error: "internal_error" });
     expect(text).not.toContain("secret@example.com");
-    expect(report).toHaveBeenCalledWith("admin_error", { name: "Error" });
+    expect(report).toHaveBeenCalledWith("admin_error", { errorClass: "Error" });
     expect(JSON.stringify(report.mock.calls)).not.toContain(
       "secret@example.com"
     );
