@@ -32,6 +32,7 @@
     "./money/money": "./src/money/money.ts",
     "./organization/closure": "./src/organization/closure.ts",
     "./events/outbox": "./src/events/outbox.ts",
+    "./events/queue-envelope": "./src/events/queue-envelope.ts",
     "./privacy/csv": "./src/privacy/csv.ts",
     "./privacy/data-export": "./src/privacy/data-export.ts",
     "./privacy/deletion-ledger": "./src/privacy/deletion-ledger.ts",

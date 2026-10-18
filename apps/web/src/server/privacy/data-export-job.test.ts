@@ -134,6 +134,23 @@ describe("the data export job", () => {
     ]);
   });
 
+  it("takes only the requests it is allowed, and skips the sweep when asked (the queue consumer)", async () => {
+    const f = fixture({
+      claims: [claimed, claimed, null],
+      deletable: [{ id: exportId, organizationId }],
+    });
+    const report = await runDataExports({
+      ...(f.deps as object),
+      maxExports: 1,
+      sweep: false,
+    } as never);
+    expect(report).toEqual({ deleted: 0, expired: 0, failed: 0, ready: 1 });
+    expect(f.client.claimDataExport).toHaveBeenCalledTimes(1);
+    expect(f.client.expireDataExports).not.toHaveBeenCalled();
+    expect(f.client.listDataExportsToDelete).not.toHaveBeenCalled();
+    expect(f.client.markDataExportFilesDeleted).not.toHaveBeenCalled();
+  });
+
   it("stores the images in parts after the data archive", async () => {
     const f = fixture({
       images: [{ assetId: "a1", byteSize: 3, storageKey: "media/a1.webp" }],

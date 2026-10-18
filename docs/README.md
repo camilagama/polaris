@@ -103,5 +103,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0079](adr/0079-retencao-por-classe-de-dado.md) | Retenção por classe de dado | proposto |
 | [0080](adr/0080-ledger-minimo-de-exclusoes.md) | Ledger mínimo de exclusões para restore | aceito |
 | [0081](adr/0081-purge-completo-da-organizacao-encerrada.md) | Purge completo da organização encerrada | proposto |
+| [0082](adr/0082-outbox-transacional.md) | Outbox transacional | aceito |
+| [0083](adr/0083-filas-cloudflare-e-consumidor-idempotente.md) | Filas Cloudflare e consumidor idempotente | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

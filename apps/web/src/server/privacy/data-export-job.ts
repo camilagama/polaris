@@ -51,6 +51,17 @@ type ExportClient = Pick<
 export interface DataExportJobDependencies {
   bucket: Pick<MediaBucketBinding, "delete" | "get" | "list" | "put">;
   client: ExportClient;
+  /**
+   * How many requests one run may take (default: the run's own limit). The queue consumer takes one,
+   * so a message costs one export, never a pair.
+   */
+  maxExports?: number;
+  /**
+   * Whether the run also expires the exports whose time is up and removes their files (default
+   * true: the hourly run). The queue consumer leaves it to the hourly run, so a message does not
+   * repeat the sweep.
+   */
+  sweep?: boolean;
   /** Reads and turns the tables into files; tests replace it. */
   collect?: typeof collectExport;
   now: () => Date;
@@ -155,11 +166,17 @@ export async function runDataExports(
     ready: 0,
   };
 
-  report.expired = await client.expireDataExports(
-    FAILED_EXPORT_KEEP_HOURS,
-    EXPIRY_BATCH
-  );
-  for (const item of await client.listDataExportsToDelete(DELETE_BATCH)) {
+  const sweep = dependencies.sweep ?? true;
+  if (sweep) {
+    report.expired = await client.expireDataExports(
+      FAILED_EXPORT_KEEP_HOURS,
+      EXPIRY_BATCH
+    );
+  }
+  const toDelete = sweep
+    ? await client.listDataExportsToDelete(DELETE_BATCH)
+    : [];
+  for (const item of toDelete) {
     // biome-ignore lint/performance/noAwaitInLoops: one export at a time; the objects go before the record says they are gone.
     await deleteObjectsUnderPrefix(
       bucket,
@@ -170,7 +187,11 @@ export async function runDataExports(
     }
   }
 
-  for (let run = 0; run < EXPORTS_PER_RUN; run += 1) {
+  for (
+    let run = 0;
+    run < (dependencies.maxExports ?? EXPORTS_PER_RUN);
+    run += 1
+  ) {
     if (
       run > 0 &&
       dependencies.now().getTime() - startedAt > SECOND_EXPORT_BUDGET_MS

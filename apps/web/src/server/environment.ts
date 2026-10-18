@@ -5,6 +5,17 @@ export interface HyperdriveBinding {
   connectionString: string;
 }
 
+/**
+ * A Cloudflare Queue as a producer (ADR 0083). Declared for the dispatcher of PR110; nothing sends
+ * through it yet. The body is an envelope from `@polaris/domain/events/queue-envelope`.
+ */
+interface QueueProducerBinding {
+  send: (
+    body: unknown,
+    options?: { contentType?: "json"; delaySeconds?: number }
+  ) => Promise<void>;
+}
+
 export interface RateLimitBinding {
   limit: (options: { key: string }) => Promise<{ success: boolean }>;
 }
@@ -71,6 +82,10 @@ export interface WorkerBindings {
   ONBOARDING_HYPERDRIVE?: HyperdriveBinding;
   /** The privacy role (marks expired closure windows as closed): it executes one function and reads nothing. */
   PRIVACY_HYPERDRIVE?: HyperdriveBinding;
+  /** The queues of the plan (ADR 0083), by how much a late message costs. */
+  QUEUE_CRITICAL?: QueueProducerBinding;
+  QUEUE_DEFAULT?: QueueProducerBinding;
+  QUEUE_MEDIA?: QueueProducerBinding;
   RESEND_API_KEY?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
   /** A secret of a rotation, still accepted when comparing a retried offline command (ADR 0079). */

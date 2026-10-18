@@ -1561,3 +1561,19 @@ Primeiro passo da Fase 11 ([ADR 0082](../docs/adr/0082-outbox-transacional.md); 
 | Quem grava | Concluído | `recordOutboxEvent` (`@polaris/db/event-outbox`) na transação do comando. Integração: `requestDataExport` grava `data_export.requested` com o ID do pedido; o comportamento não muda (o job continua achando o pedido pela tabela) e nada consome o evento ainda. |
 | Gate PostgreSQL 18 | No CI | `event-outbox` (suítes `ci` e `gate11`); não rodado localmente (sem PostgreSQL 18 no ambiente). O CHECK do corpo e a política foram provados num PostgreSQL 18.6 em memória (PGlite), fora do repositório. |
 | Limites | Registrados | Sem despacho, tentativa, recuo, DLQ nem retenção dos despachados (PR110 a PR112); o purge (PR107) não apaga a linha da organização, então o cascade não dispara: `event_outbox` entrou nas listas do purge no PR #126 (`PURGE_DELETE_ORDER`, o `DELETE` e a política do papel do purge); evento de plataforma (sem organização) fica para quando um comando exigir; o banco confere a forma do corpo, não o sentido; a exportação tem dois mecanismos por ora (a varredura vale, o evento não). |
+
+### Fase 11B — Infraestrutura de filas (PR109; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
+
+Segundo passo da Fase 11 ([ADR 0083](../docs/adr/0083-filas-cloudflare-e-consumidor-idempotente.md); o número pode mudar): três filas, envelope tipado e consumidor idempotente, sem despachante (PR110) nem DLQ (PR111).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/queue-infrastructure` sobre a `main`; sem migration. |
+| Plano e custo | Sem decisão pendente de custo | Queues está no Workers Free (10.000 operações por dia, retenção de 24 horas; changelog de 04/02/2026), cerca de 3.300 mensagens por dia; o plano pago continua não contratado. O responsável só precisa aprovar a criação das filas (runbook). |
+| Declaração | Concluída | `apps/web/wrangler.jsonc`: produtores `QUEUE_CRITICAL`, `QUEUE_DEFAULT`, `QUEUE_MEDIA` e consumidores de `polaris-critical`, `polaris-default` e `polaris-media`. Nada criado na conta; `bun run build` aceita a configuração. |
+| Domínio | Concluído | `@polaris/domain/events/queue-envelope`: versão, tipo, ID do evento do outbox, chave, correlação, organização, tentativa e corpo do outbox (sem texto livre), validado na borda; `queueForEventType`. |
+| Consumidor | Concluído | `handleQueueBatch` (`apps/web/src/server/queue`): envelope inválido (inclui tipo ou versão desconhecidos) ou mensagem na fila de outro tipo dá `ack`; chave de idempotência no registro de processamento; `ack` ao concluir; `retry` com recuo; falha permanente dá `ack`; nada do corpo vai ao log. Uma mensagem e uma invocação por vez no `wrangler.jsonc`. Exportado como `queue` do Worker `polaris-web`. |
+| Registro de processamento | Em memória | Interface `ProcessingLedger` com adaptador em memória por isolate; o durável (tabela e papel) vem com o despachante (PR110). A idempotência real hoje é a do handler. |
+| Handler | Concluído | `data_export.requested` acorda o job de exportação existente (`runDataExports`) para um pedido, sem a varredura de expiração (fica com o job horário); o job horário continua valendo e o comportamento observável não muda (nada envia o evento ainda). |
+| Gate PostgreSQL 18 | Não se aplica | Sem migration nem tabela neste PR. |
+| Limites | Registrados | Sem despachante, varredor, DLQ nem registro durável; filas não testadas em nuvem; mensagem que expira em 24 horas ou esgota as tentativas se perde (a varredura horária cobre a exportação). |
