@@ -13,6 +13,9 @@ describe("the server entry of the public catalog", () => {
     expect(main).toBe("./src/server.ts");
     expect(existsSync(new URL(main ?? "", root))).toBe(true);
     const entry = readFileSync(new URL("src/server.ts", root), "utf8");
+    // the supported way: delegate to the handler Start embeds, never build a second one
+    expect(entry).toContain("@tanstack/react-start/server-entry");
+    expect(entry).not.toContain("createStartHandler");
     expect(entry).toContain("secureResponse");
     expect(entry).toContain("requestWithNonce");
   });
