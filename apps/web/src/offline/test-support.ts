@@ -108,6 +108,8 @@ export class FakeWriter implements LocalWriter {
  */
 export class FakeCustomerServer implements BootstrapSource {
   readonly customers = new Map<string, LocalCustomerReadModel>();
+  /** Customers removed from the register for privacy: an edit of them is refused. */
+  readonly anonymized = new Set<string>();
   readonly outcomes = new Map<string, PushResultReadModel>();
   readonly changes: SyncChangeReadModel[] = [];
   executions = 0;
@@ -135,6 +137,9 @@ export class FakeCustomerServer implements BootstrapSource {
     });
     if (!current) {
       return refuse("customer_not_found");
+    }
+    if (this.anonymized.has(payload.customerId)) {
+      return refuse("customer_anonymized");
     }
     if (current.version !== command.baseVersion) {
       return refuse("customer_version_conflict");

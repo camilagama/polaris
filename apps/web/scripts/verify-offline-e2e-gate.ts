@@ -189,6 +189,7 @@ async function run() {
     const key = { id: "gate", secret: randomBytes(32).toString("hex") };
     const pushDependencies = {
       handlers: syncCommandHandlers,
+      hashKeys: { current: randomBytes(32).toString("hex"), previous: [] },
       keys: { signing: key, verification: [key] },
       now: () => new Date(),
       runSyncCommand,

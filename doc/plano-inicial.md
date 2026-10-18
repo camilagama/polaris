@@ -4371,12 +4371,14 @@ Não hardcode “5 anos em tudo”.
 
 Criar jobs somente onde política estiver aprovada.
 
+Feito no [ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md) (proposto): registro `@polaris/domain/privacy/retention`; nenhum job novo (as classes aprovadas com prazo, de mídia e de exportação, já têm job); as demais classes ficam propostas até o responsável decidir os prazos. As duas pendências abaixo foram tratadas ali: HMAC com `SYNC_PAYLOAD_HASH_SECRET` (linhas antigas mantêm o SHA-256 até existir a retenção do log) e descarte no aparelho da edição recusada com `customer_anonymized`.
+
 
 
 Pendências herdadas do PR102 (anonimização de cliente, [ADR 0075](../docs/adr/0075-anonimizacao-de-cliente-por-privacidade.md)), a tratar aqui ou ao definir a retenção do log de comandos offline:
 
-- `sync_commands.payload_hash` é um SHA-256 sem sal sobre o payload canônico de `customer.create` e `customer.update` (nome, telefone, email e observações). Telefone e email têm pouca entropia, então o hash permite confirmar um valor suspeito por tentativa: é pseudonimização. Trocar por um HMAC com segredo do servidor, ou definir um prazo de retenção do log que acabe com a exposição.
-- Quando o servidor devolver `customer_anonymized` a um `customer.update` offline, o aparelho deveria descartar o corpo do comando (hoje só marca como indisponível e o texto digitado fica na fila até o dono descartar).
+- [x] `sync_commands.payload_hash` é um SHA-256 sem sal sobre o payload canônico de `customer.create` e `customer.update` (nome, telefone, email e observações). Telefone e email têm pouca entropia, então o hash permite confirmar um valor suspeito por tentativa: é pseudonimização. Trocar por um HMAC com segredo do servidor, ou definir um prazo de retenção do log que acabe com a exposição.
+- [x] Quando o servidor devolver `customer_anonymized` a um `customer.update` offline, o aparelho deveria descartar o corpo do comando (hoje só marca como indisponível e o texto digitado fica na fila até o dono descartar).
 
 
 

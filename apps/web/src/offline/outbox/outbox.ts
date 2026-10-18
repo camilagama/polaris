@@ -271,7 +271,10 @@ export class Outbox {
     });
   }
 
-  /** The explicit "discard this command" action; never called implicitly. */
+  /**
+   * The explicit "discard this command" action. The only implicit caller is the
+   * sync, for an edit of a customer anonymized for privacy (ADR 0079).
+   */
   discard(commandId: string): Promise<void> {
     return this.context.storage.transaction(async (tx) => {
       if (!(await tx.get(commandId))) {

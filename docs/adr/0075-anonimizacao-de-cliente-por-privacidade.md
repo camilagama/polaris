@@ -38,3 +38,7 @@ Nome, telefone, email e observações de um cliente são dado pessoal fornecido 
 - **Apagar a linha do cliente:** as vendas e os vínculos apontam para ela, e apagar quebraria o histórico ou exigiria soltar os vínculos, mudando fatos que devem ficar.
 - **Substituir os campos por valores aleatórios:** deixa de ser reconhecível como anonimizado e permite confundir com um cadastro real; o texto fixo é verificável pelo banco.
 - **Só convenção do código (sem CHECK e sem gatilho):** um erro ou um acesso direto poderia recolocar o dado ou deixar a anonimização pela metade.
+
+## Atualização
+
+O [ADR 0079](0079-retencao-por-classe-de-dado.md) tratou as duas pendências deste ADR: o `payload_hash` passou a ser um HMAC com segredo do Worker (as linhas gravadas antes mantêm o SHA-256 até existir a retenção do log), e o aparelho descarta a edição recusada com `customer_anonymized` em vez de guardá-la como indisponível.

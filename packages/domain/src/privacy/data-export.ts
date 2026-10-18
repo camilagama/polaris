@@ -4,6 +4,9 @@
  * file, and it can be downloaded for a short time. It is never offered as a step of closing
  * an organization (AGENTS.md and the privacy rules): it is on request.
  */
+import { approvedRetention } from "./retention";
+
+const HOUR_MS = 3_600_000;
 
 export const EXPORT_FORMATS = Object.freeze(["json", "csv", "images"] as const);
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -17,16 +20,18 @@ export const EXPORT_STATUSES = Object.freeze([
 ] as const);
 export type ExportStatus = (typeof EXPORT_STATUSES)[number];
 
-/** How long a finished export can be downloaded. */
-export const EXPORT_VALIDITY_HOURS = 24;
+/** How long a finished export can be downloaded (retention class `data_exports`, ADR 0079). */
+export const EXPORT_VALIDITY_HOURS =
+  approvedRetention("data_exports") / HOUR_MS;
 /** At most this many exports are asked for in 24 hours: an export reads everything the organization has. */
 export const MAX_EXPORTS_PER_DAY = 3;
 /** A run that dies is tried again, up to this many times, and then the export fails. */
 export const MAX_EXPORT_ATTEMPTS = 3;
 /** How long one run holds an export before another may take it (the Worker has stopped by then). */
 export const EXPORT_LEASE_SECONDS = 600;
-/** What a failed export is kept for before it is removed. */
-export const FAILED_EXPORT_KEEP_HOURS = 24;
+/** What a failed export is kept for before it is removed (the same retention class). */
+export const FAILED_EXPORT_KEEP_HOURS =
+  approvedRetention("data_exports") / HOUR_MS;
 
 const MiB = 1024 * 1024;
 /** The data files (JSON and CSV) are built in memory: past this, the export fails instead of half-working. */

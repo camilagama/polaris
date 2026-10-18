@@ -25,6 +25,7 @@ const bindings = {
   ONBOARDING_HYPERDRIVE: {
     connectionString: "postgresql://onboarding.invalid/neondb",
   },
+  SYNC_PAYLOAD_HASH_SECRET: "h".repeat(32),
 } satisfies WorkerBindings;
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
@@ -214,6 +215,21 @@ describe("sync.push", () => {
     const runSyncCommand = vi.fn();
     const withTenantRequestContext = tenantContext();
     const { OFFLINE_LEASE_SECRET: _omitted, ...withoutSecret } = bindings;
+    const client = createClient(
+      { runSyncCommand, withTenantRequestContext },
+      withoutSecret
+    );
+    await expect(
+      client.sync.push({ commands: [await pushCommand(1)], organizationId })
+    ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(runSyncCommand).not.toHaveBeenCalled();
+    expect(withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 503, running nothing, when no content-hash secret is configured", async () => {
+    const runSyncCommand = vi.fn();
+    const withTenantRequestContext = tenantContext();
+    const { SYNC_PAYLOAD_HASH_SECRET: _omitted, ...withoutSecret } = bindings;
     const client = createClient(
       { runSyncCommand, withTenantRequestContext },
       withoutSecret

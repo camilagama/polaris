@@ -72,6 +72,10 @@ export interface WorkerBindings {
   PRIVACY_HYPERDRIVE?: HyperdriveBinding;
   RESEND_API_KEY?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
+  /** A secret of a rotation, still accepted when comparing a retried offline command (ADR 0079). */
+  SYNC_PAYLOAD_HASH_PREVIOUS_SECRET?: string;
+  /** The key of the HMAC that identifies an offline command's content (ADR 0079); at least 32 bytes. */
+  SYNC_PAYLOAD_HASH_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
 }
 
