@@ -1561,3 +1561,18 @@ Segundo passo da Fase 11 ([ADR 0083](../docs/adr/0083-filas-cloudflare-e-consumi
 | Handler | Concluído | `data_export.requested` acorda o job de exportação existente (`runDataExports`) para um pedido, sem a varredura de expiração (fica com o job horário); o job horário continua valendo e o comportamento observável não muda (nada envia o evento ainda). |
 | Gate PostgreSQL 18 | Não se aplica | Sem migration nem tabela neste PR. |
 | Limites | Registrados | Sem despachante, varredor, DLQ nem registro durável; filas não testadas em nuvem; mensagem que expira em 24 horas ou esgota as tentativas se perde (a varredura horária cobre a exportação). |
+
+### Fase 11C — Despachante e varredor do outbox (PR110; implementação e gates locais concluídos; nada criado na conta Cloudflare)
+
+Terceiro passo da Fase 11 ([ADR 0084](../docs/adr/0084-despachante-e-varredor-do-outbox.md); o número pode mudar): evento `pending` → fila → `dispatched`, à prova de queda, duplicata aceita; sem DLQ (PR111).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/outbox-dispatcher` sobre a `main` (migration 0071, só aditiva; a do PR #126 também é 0071, e o segundo a entrar renumera a migration e o snapshot). |
+| Onde roda | Decidido | Workers Free: cron e HTTP com 10 ms de CPU, consumidor de fila com 30 s (documentação da Cloudflare conferida em 18/10/2026). O despachante tem cron próprio (`19 * * * *`); a montagem da exportação sai do cron e vai para o consumidor quando `OUTBOX_HYPERDRIVE` e `QUEUE_DEFAULT` existem. CPU real não medido. |
+| Banco | Concluído | Papéis `polaris_outbox_owner` e `polaris_outbox_runtime`; `event_outbox` ganha `locked_until` e `dispatched_at`; funções de tomada (com varredura das tomadas vencidas e teto de 1000 tentativas), marcação e devolução com a cerca das tentativas; tabela `queue_processing` (registro durável do consumidor, RLS forçado); a política do tenant limita as chaves do corpo por tipo; exportação: tomada por ID, recuo na tomada depois de falha (15 min, 1 h) e re-arm do evento enquanto a exportação for devida. |
+| Domínio | Concluído | `@polaris/domain/events/outbox` (chaves exatas por tipo) e `@polaris/domain/events/outbox-dispatch` (lote, prazo, recuo, teto). Prazo da exportação: 960 s. |
+| Worker | Concluído | `dispatchOutbox` (`apps/web/src/server/queue/dispatcher.ts`); registro durável (`createDurableProcessingLedger`) com conferência chave × ID do evento no banco (o `unknown` traz o motivo, e a linha que some entre o insert e o lock é tomada de novo, esgotadas as tentativas vira `claim_contended` e o consumidor reentrega); handler da exportação por ID; `scheduled` escolhe o trabalho por `controller.cron`; binding `OUTBOX_HYPERDRIVE` (só `local-only` no `wrangler.jsonc`). |
+| Retenção | Classe aprovada | `queue_processing`: uma semana, job `outbox.processing_expiry` (execução do despachante). Despachados de `event_outbox` continuam `proposta` (PR112). |
+| Gate PostgreSQL 18 | Local e CI | `outbox-dispatcher` (suítes `ci` e `gate11`), novo; `event-outbox` e `data-export` ajustados. `gates:ci` completo passou num PostgreSQL 18.4 local. |
+| Limites | Registrados | Nada criado nem medido em nuvem (filas, Hyperdrive, CPU); latência de até uma hora (cadência é do PR112 e decisão de custo); sem DLQ; o PR do purge precisa classificar `queue_processing` se entrar depois. |

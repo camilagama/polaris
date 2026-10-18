@@ -776,6 +776,9 @@ async function run() {
         "data_exports_privacy_owner_select",
         "data_exports_privacy_owner_update",
         "deletion_ledger_privacy_owner_select",
+        // the re-arm of an export event still owed (ADR 0084)
+        "event_outbox_privacy_owner_rearm",
+        "event_outbox_privacy_owner_select",
         "memberships_privacy_owner_select",
         "memberships_privacy_owner_update",
         "offline_grants_privacy_owner_select",

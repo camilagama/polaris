@@ -6,6 +6,8 @@ status: accepted
 
 > O número deste ADR (0083) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes.
 
+> **Emenda ([ADR 0084](0084-despachante-e-varredor-do-outbox.md)):** o registro de processamento passou a ser durável (`queue_processing`, papel do outbox), a interface `ProcessingLedger` recebe organização, tipo, ID do evento e tentativa, o handler da exportação toma o pedido por ID, a falha da exportação tem recuo na tomada, o prazo da tomada do consumidor é 960 s e o despachante existe. O texto abaixo é o da decisão original.
+
 ## Contexto
 
 O outbox transacional ([ADR 0082](0082-outbox-transacional.md)) guarda o evento junto do comando que o causa. O plano (Fase 11, PR109) pede o passo seguinte, só a infraestrutura: três filas, `critical`, `default` e `media`, um envelope tipado e consumidores idempotentes. O despachante que leva o evento do outbox para a fila e o varredor são do PR110, a fila de mensagens mortas (DLQ) do PR111, os jobs agendados do PR112 e os workflows do PR113; este PR não os cria. O teto de custo do projeto (ADR 0076, no PR #96 ainda aberto) mantém tudo no free tier e não contratou o Workers Paid, então a primeira pergunta é se Cloudflare Queues existe no plano Free.
