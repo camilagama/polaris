@@ -86,6 +86,15 @@ for (const path of PAGES) {
         expect(policy).toContain("style-src 'self';");
         await expect(bare.locator("main.page")).toBeVisible();
         expect(await bare.locator("[style], style").count()).toBe(0);
+        // streamed Suspense blocks sit inside <template>, which locators do not enter
+        expect(
+          await bare.evaluate(
+            () =>
+              [...document.querySelectorAll("template")].filter((template) =>
+                template.content.querySelector("[style], style")
+              ).length
+          )
+        ).toBe(0);
       } finally {
         await served.close();
       }
@@ -150,6 +159,10 @@ test("catalog_nonce_missing: sem a entrada do servidor a página não é renderi
 });
 
 test("o redirect de deploy do wrangler aponta para o build real, nunca dist-bare", () => {
+  test.skip(
+    test.info().project.name !== "chromium-desktop",
+    "o estado do disco é o mesmo em todos os projetos"
+  );
   const redirect = JSON.parse(
     readFileSync(
       resolve(import.meta.dirname, "../.wrangler/deploy/config.json"),

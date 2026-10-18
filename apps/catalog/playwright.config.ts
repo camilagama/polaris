@@ -21,6 +21,7 @@ export default defineConfig({
     },
   ],
   reporter: "list",
+  // no retry on purpose: a retry would hide flakiness in the hydration test (CSP violations are timing-free)
   retries: 0,
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
