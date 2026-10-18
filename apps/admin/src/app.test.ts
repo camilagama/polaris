@@ -1,3 +1,4 @@
+import { securityHeaders } from "@polaris/http-security";
 import { describe, expect, it, vi } from "vitest";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
 import {
@@ -5,6 +6,8 @@ import {
   type AdminDependencies,
   createAdminApp,
 } from "./app";
+
+const UNSAFE_OR_WILDCARD = /unsafe-|\*/;
 
 const bindings: AdminBindings = {
   ACCESS_AUDIENCE: "a".repeat(64),
@@ -153,7 +156,13 @@ describe("the Admin API", () => {
     ];
     for (const response of answers) {
       expect(response.headers.get("cache-control")).toBe("no-store");
-      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      for (const [name, value] of Object.entries(securityHeaders("admin"))) {
+        expect(response.headers.get(name), name).toBe(value);
+      }
+      const policy = response.headers.get("content-security-policy") ?? "";
+      expect(policy).toContain("default-src 'none'");
+      expect(policy).toContain("frame-ancestors 'none'");
+      expect(policy).not.toMatch(UNSAFE_OR_WILDCARD);
       expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     }
   });

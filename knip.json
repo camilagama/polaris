@@ -21,6 +21,10 @@
       "entry": [],
       "project": ["src/**/*.ts"]
     },
+    "packages/http-security": {
+      "entry": [],
+      "project": ["src/**/*.ts"]
+    },
     "apps/web": {
       "entry": [
         "poc/pr11.ts",

@@ -1,0 +1,13 @@
+{
+  "name": "@polaris/http-security",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

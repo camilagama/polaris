@@ -3,6 +3,7 @@ import {
   type MediaDerivativeSize,
   mediaDerivativeKey,
 } from "@polaris/domain/catalog/media";
+import { securityHeaders } from "@polaris/http-security";
 import { parseSlug, parseUuid } from "./input";
 
 /**
@@ -55,10 +56,8 @@ const MISSING_MAX_AGE_SECONDS = 15;
 
 const WEAK_PREFIX = /^W\//;
 
-const sharedHeaders = {
-  "Cross-Origin-Resource-Policy": "cross-origin",
-  "X-Content-Type-Options": "nosniff",
-};
+// image bytes: embeddable by other origins, inert as a document (ADR 0090)
+const sharedHeaders = securityHeaders("public-media");
 
 function notFound(): Response {
   return new Response("Not found", {

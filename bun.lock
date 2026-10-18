@@ -19,6 +19,7 @@
       "dependencies": {
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/http-security": "workspace:*",
         "@polaris/observability": "workspace:*",
         "hono": "^4.13.0",
       },
@@ -32,6 +33,7 @@
       "dependencies": {
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/http-security": "workspace:*",
         "@tanstack/react-router": "^1.170.45",
         "@tanstack/react-start": "^1.169.3",
         "react": "^19.3.0",
@@ -56,6 +58,7 @@
         "@polaris/contracts": "workspace:*",
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/http-security": "workspace:*",
         "@polaris/observability": "workspace:*",
         "@tanstack/browser-db-sqlite-persistence": "^0.2.30",
         "@tanstack/db": "^0.12.1",
@@ -106,6 +109,9 @@
       "devDependencies": {
         "fast-check": "^4.10.2",
       },
+    },
+    "packages/http-security": {
+      "name": "@polaris/http-security",
     },
     "packages/observability": {
       "name": "@polaris/observability",
@@ -478,6 +484,8 @@
     "@polaris/db": ["@polaris/db@workspace:packages/db"],
 
     "@polaris/domain": ["@polaris/domain@workspace:packages/domain"],
+
+    "@polaris/http-security": ["@polaris/http-security@workspace:packages/http-security"],
 
     "@polaris/observability": ["@polaris/observability@workspace:packages/observability"],
 
