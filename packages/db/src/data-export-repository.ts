@@ -1,3 +1,4 @@
+import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import {
   DataExportUnavailableError,
   type ExportFormat,
@@ -6,6 +7,7 @@ import {
   normalizeExportFormats,
 } from "@polaris/domain/privacy/data-export";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { recordOutboxEvent } from "./event-outbox";
 import { dataExportFiles, dataExports } from "./schema/data-export";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import {
@@ -24,6 +26,7 @@ const CAPABILITY = "organization:export";
 const LISTED_EXPORTS = 10;
 const ONE_IN_FLIGHT = "data_exports_one_in_flight_unique";
 const DAILY_LIMIT = "data_exports_daily_limit";
+const DATA_EXPORT_REQUESTED = "data_export.requested";
 
 export interface DataExportFileView {
   name: string;
@@ -94,6 +97,15 @@ export async function requestDataExport(
       entityType: "data_export",
       eventType: "data_export.requested",
       requestId: input.requestId ?? null,
+    });
+    // the job still finds the request by polling the table (ADR 0078); the event is the same fact,
+    // written in the same transaction, for the dispatcher to carry once it exists (ADR 0082)
+    await recordOutboxEvent(transaction, {
+      correlationId: input.requestId ?? null,
+      event: { exportId: created.id },
+      idempotencyKey: outboxIdempotencyKey(DATA_EXPORT_REQUESTED, created.id),
+      organizationId: identity.organizationId,
+      type: DATA_EXPORT_REQUESTED,
     });
     return { id: created.id };
   } catch (error: unknown) {

@@ -31,6 +31,7 @@
     "./inventory/write-off-stock": "./src/inventory/write-off-stock.ts",
     "./money/money": "./src/money/money.ts",
     "./organization/closure": "./src/organization/closure.ts",
+    "./events/outbox": "./src/events/outbox.ts",
     "./privacy/csv": "./src/privacy/csv.ts",
     "./privacy/data-export": "./src/privacy/data-export.ts",
     "./privacy/deletion-ledger": "./src/privacy/deletion-ledger.ts",
