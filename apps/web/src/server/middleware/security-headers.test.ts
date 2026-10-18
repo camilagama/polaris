@@ -1,76 +1,122 @@
+import {
+  renderStaticHeadersFile,
+  securityHeaders,
+} from "@polaris/http-security";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import staticHeadersFile from "../../../public/_headers?raw";
-import { securityHeadersMiddleware } from "./security-headers";
-import { SECURITY_HEADERS } from "./security-policy";
+import { createServerApp } from "../app";
+import type { WorkerBindings } from "../environment";
+import {
+  APP_SHELL_SECURITY_OPTIONS,
+  securityHeadersMiddleware,
+} from "./security-headers";
 
-const lineBreakPattern = /\r?\n/;
+const UNSAFE_OR_WILDCARD = /unsafe-|\*/;
 
-function parseStaticHeaders(
-  source: string
-): Record<string, Record<string, string>> {
-  const rules: Record<string, Record<string, string>> = {};
-  let rule: string | undefined;
+const HTTP_URL = /https?:\/\//;
+const baseURL = "https://polaris.example.invalid";
+const bindings = {
+  BETTER_AUTH_BASE_URL: baseURL,
+  BETTER_AUTH_SECRET: "a".repeat(32),
+  HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
+} satisfies WorkerBindings;
 
-  for (const line of source.split(lineBreakPattern)) {
-    if (line.trim() === "" || line.startsWith("#")) {
-      continue;
-    }
-    if (!line.startsWith(" ")) {
-      rule = line.trim();
-      continue;
-    }
-    if (rule === undefined || !["/*", "/sw.js"].includes(rule)) {
-      throw new Error(`Unexpected _headers rule: ${rule}`);
-    }
-    const separator = line.indexOf(":");
-    const headers = rules[rule] ?? {};
-    headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-    rules[rule] = headers;
+const API_HEADERS = securityHeaders("api");
+
+function expectApiHeaders(response: Response) {
+  for (const [name, value] of Object.entries(API_HEADERS)) {
+    expect(response.headers.get(name), name).toBe(value);
   }
-
-  return rules;
 }
 
-describe("security headers", () => {
-  it("keeps public/_headers identical to the Worker policy", () => {
-    expect(parseStaticHeaders(staticHeadersFile)["/*"]).toEqual(
-      SECURITY_HEADERS
+describe("the headers of the app shell (public/_headers)", () => {
+  it("is exactly what the shared module renders, so the two cannot drift", () => {
+    expect(staticHeadersFile).toBe(
+      renderStaticHeadersFile(APP_SHELL_SECURITY_OPTIONS)
     );
   });
 
-  it("always revalidates the service worker script", () => {
-    expect(parseStaticHeaders(staticHeadersFile)["/sw.js"]).toEqual({
-      "Cache-Control": "no-cache",
-    });
+  it("opens no origin beyond the app's own", () => {
+    expect(APP_SHELL_SECURITY_OPTIONS).toEqual({});
+    expect(staticHeadersFile).not.toMatch(HTTP_URL);
   });
+});
 
-  it("applies the shared policy to Worker responses", async () => {
-    const app = new Hono();
-    app.use("*", securityHeadersMiddleware);
-    app.get("/health", (context) => context.json({ status: "ok" }));
+describe("the headers of the Worker's answers", () => {
+  const app = createServerApp();
 
-    const response = await app.request("/health");
+  it("covers a health check, an unknown route and a refused request alike", async () => {
+    const answers = [
+      await app.request("/health", {}, bindings),
+      await app.request("/ready", {}, bindings),
+      await app.request("/api/does-not-exist", {}, bindings),
+      await app.request("/rpc/category/create", { method: "POST" }, bindings),
+      await app.request(
+        "/api/auth/get-session",
+        { headers: { origin: "https://evil.example" } },
+        { ...bindings, BETTER_AUTH_SECRET: "short" }
+      ),
+    ];
 
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-      expect(response.headers.get(name)).toBe(value);
+    for (const response of answers) {
+      expectApiHeaders(response);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
     }
+    expect(answers.map((response) => response.status)).toContain(404);
   });
 
-  it("forbids framing, plugins, foreign scripts and foreign connections", () => {
-    const policy = SECURITY_HEADERS["Content-Security-Policy"] as string;
+  it("never lets a response be framed, sniffed or loaded by another origin", async () => {
+    const response = await app.request("/health", {}, bindings);
+    const policy = response.headers.get("Content-Security-Policy") ?? "";
 
-    expect(policy).toContain("default-src 'self'");
+    expect(policy).toContain("default-src 'none'");
     expect(policy).toContain("frame-ancestors 'none'");
-    expect(policy).toContain("object-src 'none'");
-    expect(policy).toContain("connect-src 'self'");
-    expect(policy).toContain("base-uri 'self'");
-    expect(policy).toContain("form-action 'self'");
-    expect(policy).not.toContain("unsafe-inline");
-    // JavaScript eval stays blocked; only WebAssembly compilation is allowed
-    expect(policy).not.toContain("'unsafe-eval'");
-    expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval';");
-    expect(policy).toContain("connect-src 'self' data:;");
-    expect(SECURITY_HEADERS["X-Frame-Options"]).toBe("DENY");
+    expect(policy).not.toMatch(UNSAFE_OR_WILDCARD);
+    expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe(
+      "same-origin"
+    );
+    expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe(
+      "same-origin"
+    );
+    expect(response.headers.get("Strict-Transport-Security")).toContain(
+      "max-age=31536000"
+    );
+  });
+
+  it("keeps the Cache-Control a handler chose and replaces a security header it set", async () => {
+    const probe = new Hono();
+    probe.use("*", securityHeadersMiddleware);
+    probe.get("/file", (context) =>
+      context.body("x", 200, {
+        "Cache-Control": "private, no-store",
+        "Content-Security-Policy": "default-src *",
+      })
+    );
+    probe.get("/cached", (context) =>
+      context.body("x", 200, { "Cache-Control": "private, max-age=30" })
+    );
+    probe.get("/redirect", () =>
+      Response.redirect("https://example.com/", 302)
+    );
+    probe.get("/boom", () => {
+      throw new Error("boom");
+    });
+
+    const file = await probe.request("/file");
+    expect(file.headers.get("Cache-Control")).toBe("private, no-store");
+    expectApiHeaders(file);
+    expect((await probe.request("/cached")).headers.get("Cache-Control")).toBe(
+      "private, max-age=30"
+    );
+    // a redirect from Response.redirect has immutable headers; the policy still lands on it
+    const redirect = await probe.request("/redirect");
+    expect(redirect.status).toBe(302);
+    expectApiHeaders(redirect);
+    const failed = await probe.request("/boom");
+    expect(failed.status).toBe(500);
+    expectApiHeaders(failed);
   });
 });

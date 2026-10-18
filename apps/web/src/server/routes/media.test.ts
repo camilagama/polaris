@@ -485,11 +485,11 @@ describe("media upload route", () => {
     const [entry] = logger.mock.calls[0] ?? [];
     expect(entry).toMatchObject({
       errorCode: "23505",
-      errorName: "DatabaseError",
+      errorClass: "DatabaseError",
       event: "server_error",
       method: "GET",
       route: "/api/products/:productId/media",
-      status: 500,
+      httpStatus: 500,
     });
     const serialized = JSON.stringify(entry);
     expect(serialized).not.toContain("ana@example.com");

@@ -18,6 +18,9 @@
     "test": "vitest run",
     "typecheck": "turbo run typecheck"
   },
+  "overrides": {
+    "sharp": "0.35.5"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/node": "24",

@@ -1,17 +1,26 @@
+import {
+  type DeadLetterNotice,
+  deadLetterNotice,
+  refusalCauseOf,
+} from "@polaris/domain/events/dead-letter";
 import type { OutboxEventType } from "@polaris/domain/events/outbox";
 import {
   parseQueueEnvelope,
   type QueueEnvelope,
   queueForEventType,
 } from "@polaris/domain/events/queue-envelope";
-import type { ProcessingLedger } from "./processing-ledger";
+import type { ProcessingKey, ProcessingLedger } from "./processing-ledger";
 
 /**
- * The generic consumer of the queues (plan PR109, ADR 0083). For each message: validate the envelope
- * at the edge, take its idempotency key in the ledger, run the handler of its type, record it done and
- * ack; on a failure give the key back and retry with a delay. It knows no event type: the handlers
- * are given to it. The queue's own limit of retries ends a message that keeps failing (no dead-letter
- * queue yet: PR111).
+ * The generic consumer of the queues (plans PR109 and PR110, ADRs 0083 and 0084). For each message:
+ * validate the envelope at the edge, take its idempotency key in the ledger (which refuses the key under
+ * another event ID and, when durable, an event the outbox does not hold), run the handler of its type,
+ * record it done and ack; on a failure give the key back and retry with a delay. A handler reads the
+ * state it acts on by the IDs of the event, with its own authority, and never acts on the envelope alone. It knows no event type: the handlers
+ * are given to it. The queue's own limit of retries ends a message that keeps failing: the platform moves
+ * it to the dead-letter queue (PR111, ADR 0085). A message it refuses for good (an envelope that does not
+ * validate, a type or version it does not know, a queue that is not the type's own) it sends there itself,
+ * as a notice that names the cause and the message and carries none of its body.
  *
  * Nothing it logs comes from the body of a message, which could carry anything: a message is named by
  * its ID, and an error by its class, never its text.
@@ -28,9 +37,9 @@ export interface QueueMessage {
 }
 
 export interface QueueBatch {
+  messages: readonly QueueMessage[];
   /** The name of the queue it came from: `polaris-<critical|default|media>`, with an optional environment suffix. */
   queue: string;
-  messages: readonly QueueMessage[];
 }
 
 export type QueueHandler = (envelope: QueueEnvelope) => Promise<void>;
@@ -46,14 +55,24 @@ export class PermanentHandlerError extends Error {
   }
 }
 
-export interface QueueConsumerDependencies {
-  handlers: Readonly<Partial<Record<OutboxEventType, QueueHandler>>>;
-  ledger: ProcessingLedger;
-  /** How long a claim holds the key while its handler runs (default: ten minutes, longer than a Worker invocation). */
-  leaseSeconds?: number;
+/** What the consumer needs of the producer of the dead-letter queue. */
+export interface DeadLetterProducer {
+  send: (
+    notice: DeadLetterNotice,
+    options?: { contentType?: "json" }
+  ) => Promise<unknown>;
 }
 
-const DEFAULT_LEASE_SECONDS = 600;
+export interface QueueConsumerDependencies {
+  /** Where a message refused for good goes; without it (local development) the message is only dropped, with a warning. */
+  deadLetters?: DeadLetterProducer | undefined;
+  handlers: Readonly<Partial<Record<OutboxEventType, QueueHandler>>>;
+  /** How long a claim holds the key while its handler runs (default: longer than the 15 minutes a consumer invocation can live). */
+  leaseSeconds?: number;
+  ledger: ProcessingLedger;
+}
+
+const DEFAULT_LEASE_SECONDS = 960;
 const BASE_RETRY_DELAY_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 3600;
 
@@ -66,8 +85,47 @@ export function retryDelaySeconds(deliveries: number): number {
   );
 }
 
+/** The SQLSTATE of a database error (five characters, no message): tells a contended claim from a database that is down. */
+function sqlState(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.length === 5 ? code : undefined;
+}
+
 function errorClass(error: unknown): string {
   return error instanceof Error ? error.name : "non_error_thrown";
+}
+
+/**
+ * A message refused for good goes to the dead-letter queue as a notice (never its body) and is
+ * acknowledged only after the queue took the notice: if sending fails the message is retried (and, past
+ * the platform's retries, the platform moves it there itself). Without the producer it is dropped.
+ */
+async function refuse(
+  message: QueueMessage,
+  dependencies: QueueConsumerDependencies,
+  delay: number,
+  input: Parameters<typeof deadLetterNotice>[0]
+): Promise<void> {
+  const { deadLetters } = dependencies;
+  if (!deadLetters) {
+    console.warn("queue_dead_letter_not_configured", {
+      messageId: message.id,
+    });
+    message.ack();
+    return;
+  }
+  try {
+    await deadLetters.send(deadLetterNotice(input), { contentType: "json" });
+  } catch (error: unknown) {
+    console.error("queue_dead_letter_send_failed", {
+      cause: input.cause,
+      errorName: errorClass(error),
+      messageId: message.id,
+    });
+    message.retry({ delaySeconds: delay });
+    return;
+  }
+  message.ack();
 }
 
 const QUEUE_NAME = /^polaris-(critical|default|media)(?:-[a-z0-9-]+)?$/;
@@ -83,8 +141,12 @@ async function processMessage(
     envelope = parseQueueEnvelope(message.body);
   } catch {
     // it will not become valid: a retry would only repeat the refusal
-    console.warn("queue_message_invalid", { messageId: message.id });
-    message.ack();
+    const cause = refusalCauseOf(message.body);
+    console.warn("queue_message_invalid", { cause, messageId: message.id });
+    await refuse(message, dependencies, delay, {
+      cause,
+      messageId: message.id,
+    });
     return;
   }
   if (QUEUE_NAME.exec(queue)?.[1] !== queueForEventType(envelope.type)) {
@@ -93,12 +155,18 @@ async function processMessage(
       messageId: message.id,
       type: envelope.type,
     });
-    message.ack();
+    await refuse(message, dependencies, delay, {
+      cause: "wrong_queue",
+      eventId: envelope.eventId,
+      messageId: message.id,
+      organizationId: envelope.organizationId,
+      type: envelope.type,
+    });
     return;
   }
   const handler = dependencies.handlers[envelope.type];
   if (!handler) {
-    // a valid type this deploy has no handler for: retried while the retries last (no dead-letter queue yet)
+    // a valid type this deploy has no handler for: retried while the retries last, then the platform moves it to the dead-letter queue
     console.warn("queue_handler_missing", {
       messageId: message.id,
       type: envelope.type,
@@ -106,7 +174,13 @@ async function processMessage(
     message.retry({ delaySeconds: delay });
     return;
   }
-  const key = `${envelope.organizationId}:${envelope.idempotencyKey}`;
+  const key: ProcessingKey = {
+    attempt: envelope.attempt,
+    eventId: envelope.eventId,
+    idempotencyKey: envelope.idempotencyKey,
+    organizationId: envelope.organizationId,
+    type: envelope.type,
+  };
   const { ledger } = dependencies;
   let claim: Awaited<ReturnType<ProcessingLedger["claim"]>>;
   try {
@@ -118,6 +192,7 @@ async function processMessage(
     console.error("queue_ledger_unavailable", {
       errorName: errorClass(error),
       messageId: message.id,
+      sqlState: sqlState(error),
     });
     message.retry({ delaySeconds: delay });
     return;
@@ -126,6 +201,18 @@ async function processMessage(
     console.info("queue_message_duplicate", {
       eventId: envelope.eventId,
       messageId: message.id,
+    });
+    message.ack();
+    return;
+  }
+  if (claim.result === "unknown") {
+    // the key belongs to another event, or the outbox does not hold this one (forged, or purged since):
+    // it will not become known, and nothing runs on the envelope alone
+    console.warn("queue_message_unknown_event", {
+      eventId: envelope.eventId,
+      messageId: message.id,
+      reason: claim.reason,
+      type: envelope.type,
     });
     message.ack();
     return;

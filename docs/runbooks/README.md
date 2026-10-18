@@ -19,9 +19,13 @@ Gates e provas por fase:
 - Clientes e vendas (Fase 4): [Gate 4 — núcleo de vendas](./gate-4-sales-core.md).
 - Offline (Fase 5): [Gate 5 — offline](./gate-5-offline.md), com o checklist manual em aparelho físico (iPhone e Android) que bloqueia ligar a escrita offline.
 - Privacidade (Fase 10): [Restore de backup e deletion ledger](./deletion-ledger-restore.md), com o que ler antes de substituir um ambiente e como reaplicar as exclusões.
-- Infraestrutura assíncrona (Fase 11): [Filas Cloudflare](./queues.md), com o que está declarado, o plano Free e o comando de criação para o responsável.
+- Infraestrutura assíncrona (Fase 11): [Filas Cloudflare](./queues.md), com o que está declarado, o plano Free e o comando de criação para o responsável, e [Jobs agendados](./scheduled-jobs.md), com os crons, o estado de cada job, o log e como forçar ou desligar uma execução.
+
+Dependências: [Auditoria de dependências](./dependency-audit.md), com o procedimento do job "Dependency audit", as exceções vigentes e seus prazos de revisão.
 
 A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md). O CI é desenhado para gastar poucos minutos do GitHub Actions (repositório privado; cada job é cobrado arredondado ao minuto): os checks leves são um job só, o gate de navegador roda só quando algo que ele exercita mudou e não se repete na `main`, e a auditoria só quando uma dependência mudou. Uma execução completa sob demanda existe (`workflow_dispatch`). Racional e números no [ADR 0060](../adr/0060-ci-economico-em-minutos.md). Se os jobs não iniciarem com a mensagem "pagamentos recentes falharam ou o limite de gastos precisa aumentar", é a cobrança da conta **dona do repositório** (não de quem faz o push): conferir plano, minutos usados, limite de gastos e forma de pagamento nessa conta.
+
+Promoção de um SHA para produção: [Checklist de release](./release-checklist.md), com itens BLOCK e WARN e veredito fechado.
 
 ## Checklist de go-live (Cloudflare e Neon)
 
@@ -29,7 +33,7 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 
 ### Hyperdrive e banco
 
-- [ ] Todos os bindings Hyperdrive de produção e de staging existem de verdade (hoje o `wrangler.jsonc` usa `id: "local-only"`) e têm **query caching desabilitado**: `HYPERDRIVE` (tenant), `ONBOARDING_HYPERDRIVE`, o binding da role de auth (nome definido na implementação) e `MEDIA_CLEANUP_HYPERDRIVE`. Registrar a configuração lida de volta.
+- [ ] Todos os bindings Hyperdrive de produção e de staging existem de verdade (hoje o `wrangler.jsonc` usa `id: "local-only"`) e têm **query caching desabilitado**: `HYPERDRIVE` (tenant), `ONBOARDING_HYPERDRIVE`, o binding da role de auth (nome definido na implementação) e `MEDIA_CLEANUP_HYPERDRIVE`. O `OUTBOX_HYPERDRIVE` entra por último, no passo 7 do [checklist das filas](./queues.md), depois das medições. Registrar a configuração lida de volta.
 - [ ] As roles de aplicação (tenant, auth, onboarding, cleanup) são roles de login sem `SUPERUSER`, `CREATEROLE`, `CREATEDB` nem `BYPASSRLS`, **não são donas** das tabelas e **não são membros de `neon_superuser`**. O Neon CLI `roles create` gerou membros de `neon_superuser` no passado ([media-storage-reconciliation.md](./media-storage-reconciliation.md)); conferir `pg_roles` e a pertença de cada role.
 - [ ] A role de autenticação tem DML apenas nas tabelas `user`, `account`, `session` e `verification`, e a role de tenant não tem nenhum acesso a elas ([ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)). Provar a negação cruzada num gate.
 - [ ] `TimeZone` da sessão das roles de aplicação e do banco é UTC, e as colunas de instante são `timestamptz` ([ADR 0024](../adr/0024-colunas-de-instante-timestamptz.md)); provar com uma sessão em fuso diferente de UTC.

@@ -104,10 +104,10 @@ describe("RPC request guards", () => {
     const [entry] = logger.mock.calls[0] ?? [];
     expect(entry).toMatchObject({
       errorCode: "57014",
-      errorName: "DatabaseError",
+      errorClass: "DatabaseError",
       event: "server_error",
       route: "/rpc/category/create",
-      status: 500,
+      httpStatus: 500,
     });
     const serialized = JSON.stringify(entry);
     for (const secretValue of [
@@ -150,12 +150,12 @@ describe("RPC request guards", () => {
     expect(logger.mock.calls[0]?.[0]).toMatchObject({
       causes: [
         {
-          code: "authentication_unavailable",
-          name: "TenantRequestContextError",
+          errorClass: "TenantRequestContextError",
+          errorCode: "authentication_unavailable",
         },
       ],
       errorCode: "SERVICE_UNAVAILABLE",
-      status: 503,
+      httpStatus: 503,
     });
   });
 
@@ -183,11 +183,11 @@ describe("RPC request guards", () => {
     expect(logger).toHaveBeenCalledOnce();
     const serialized = JSON.stringify(logger.mock.calls[0]?.[0]);
     expect(logger.mock.calls[0]?.[0]).toMatchObject({
-      errorName: "Error",
+      errorClass: "Error",
       event: "server_error",
       method: "GET",
       route: "/api/auth/*",
-      status: 500,
+      httpStatus: 500,
     });
     for (const secretValue of ["abc123", "bob@example.com", "stack"]) {
       expect(serialized).not.toContain(secretValue);

@@ -16,6 +16,15 @@ export const OUTBOX_EVENT_TYPES = Object.freeze([
 ] as const);
 
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
+
+/**
+ * The keys the body of each type holds, exactly: a key the type does not declare is refused, even with
+ * a valid value, so nothing rides along a hint (the database policy repeats it per type).
+ */
+const OUTBOX_EVENT_KEYS: Readonly<Record<OutboxEventType, readonly string[]>> =
+  Object.freeze({
+    "data_export.requested": Object.freeze(["exportId"]),
+  });
 export type OutboxEventValue = string | number | boolean;
 export type OutboxEventBody = Readonly<Record<string, OutboxEventValue>>;
 
@@ -72,6 +81,17 @@ function isBodyValue(value: unknown): value is OutboxEventValue {
   );
 }
 
+function hasDeclaredKeys(
+  type: OutboxEventType,
+  body: readonly [string, unknown][]
+): boolean {
+  const declared = OUTBOX_EVENT_KEYS[type];
+  return (
+    body.length === declared.length &&
+    body.every(([key]) => declared.includes(key))
+  );
+}
+
 /** The key of an event about one thing: the type and the ID of the thing, so a repeated command repeats the key. */
 export function outboxIdempotencyKey(type: string, entityId: string): string {
   return `${type}:${entityId}`;
@@ -98,6 +118,7 @@ export function outboxEvent(input: OutboxEventInput): OutboxEvent {
       (correlationId === null || TOKEN.test(String(correlationId))) &&
       body.length <= OUTBOX_EVENT_MAX_KEYS &&
       body.every(([key, value]) => BODY_KEY.test(key) && isBodyValue(value)) &&
+      hasDeclaredKeys(type as OutboxEventType, body) &&
       JSON.stringify(event).length <= OUTBOX_EVENT_MAX_BYTES
     )
   ) {

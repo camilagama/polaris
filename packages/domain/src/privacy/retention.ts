@@ -32,6 +32,8 @@ export const RETENTION_CLASSES = Object.freeze([
   "privacy_cases",
   "deletion_ledger",
   "event_outbox",
+  "queue_processing",
+  "operational_incident",
   "provider_backups",
 ] as const);
 
@@ -44,6 +46,7 @@ export type RetentionBasis = "contrato" | "decisao" | "lei";
 export type RetentionPurgeJobId =
   | "media.removed_cleanup"
   | "media.staging_reconcile"
+  | "outbox.processing_expiry"
   | "privacy.data_export_expiry";
 
 interface RetentionPolicyBase {
@@ -317,8 +320,31 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     data: ["event_outbox (eventos a despachar, só IDs opacos)"],
     period: { kind: "undecided" },
     proposed: `Apagar os eventos despachados depois de um prazo curto, definido com o despachante (${TO_CONFIRM}); os pendentes saem com o purge da organização.`,
-    rule: "O corpo do evento só tem IDs opacos, inteiros e booleanos (nunca dado pessoal). Nenhum papel apaga hoje; o expurgo dos despachados é do despachante (PR110) ou do job agendado (PR112), e o purge da organização apaga os eventos dela.",
+    rule: "O corpo do evento só tem IDs opacos, inteiros e booleanos (nunca dado pessoal). Nenhum papel apaga hoje; o expurgo dos despachados não existe até o responsável aprovar o prazo (nem o despachante nem o agendador o fazem), e o purge da organização apaga os eventos dela.",
     sources: ["ADR 0082"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "queue_processing",
+    data: ["queue_processing (registro do consumidor de filas, só IDs opacos)"],
+    job: "outbox.processing_expiry",
+    period: { kind: "duration", ms: 7 * 24 * HOUR_MS },
+    rule: "O registro de uma mensagem processada fica uma semana (mais que as 24 horas de retenção da fila e as novas tentativas) e sai na execução horária do despachante; uma tomada cujo consumidor morreu sai uma semana depois do fim do prazo dela.",
+    sources: ["ADR 0084"],
+    status: "aprovada",
+  },
+  {
+    basis: "decisao",
+    class: "operational_incident",
+    data: [
+      "operational_incidents (uma linha por causa: contagem, datas e referência opaca)",
+      "queue_dead_letters (eventos mortos do outbox, só IDs opacos)",
+    ],
+    period: { kind: "undecided" },
+    proposed: `Apagar o incidente e os itens já reenviados depois de um prazo de operação, definido com o job agendado (${TO_CONFIRM}); os itens de uma organização saem no purge dela, que os apaga explicitamente (a linha da organização fica como tombstone, então a cascata não age).`,
+    rule: "O incidente guarda só código, contagem, datas e uma referência opaca; o item guarda só o ID do evento e da organização. Nenhum papel apaga hoje; o expurgo é do job agendado (PR112), e o purge da organização precisa apagar os itens dela explicitamente (política e DELETE do papel do purge, no PR do purge): a cascata da chave estrangeira não dispara, porque o purge mantém a linha da organização. O incidente não tem organização e não entra no purge.",
+    sources: ["ADR 0085"],
     status: "proposta",
   },
   {
@@ -344,6 +370,7 @@ export const RETENTION_PURGE_JOBS: readonly {
   { class: "media_staging_marker", id: "media.staging_reconcile" },
   { class: "media_removed_image", id: "media.removed_cleanup" },
   { class: "data_exports", id: "privacy.data_export_expiry" },
+  { class: "queue_processing", id: "outbox.processing_expiry" },
 ]);
 
 /** A period was asked for a class that has no approved period. */

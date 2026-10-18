@@ -5,7 +5,8 @@
   "compatibility_flags": ["nodejs_compat"],
   // CATALOG_ORIGIN (the public origin canonical links point to) is a per-environment variable:
   // a deploy without it fails closed instead of publishing a development address.
-  "main": "@tanstack/react-start/server-entry",
+  // Our own server entry (nonce and security headers, ADR 0090); the package's default entry would skip it.
+  "main": "./src/server.ts",
   "observability": { "enabled": true },
   // The private media bucket. The Worker only calls get: what is served is
   // authorized by the database first (ADR 0069).

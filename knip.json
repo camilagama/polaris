@@ -13,7 +13,15 @@
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },
+    "packages/observability": {
+      "entry": [],
+      "project": ["src/**/*.ts"]
+    },
     "packages/contracts": {
+      "entry": [],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/http-security": {
       "entry": [],
       "project": ["src/**/*.ts"]
     },

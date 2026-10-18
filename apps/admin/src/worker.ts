@@ -1,3 +1,9 @@
+import { configureLogging, logger } from "@polaris/observability/logger";
+import {
+  listOperationalIncidents,
+  readOperationalIncident,
+  retryDeadLetter,
+} from "@polaris/db/admin-incident-repository";
 import {
   auditBillingCommand,
   closeSupportCase,
@@ -141,6 +147,20 @@ const dependencies: AdminDependencies = {
         listOrganizations(client, input)
       ),
   },
+  incidents: {
+    detail: (incidentId, input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readOperationalIncident(client, incidentId, input)
+      ),
+    list: (input, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        listOperationalIncidents(client, input)
+      ),
+    retry: (principalId, incidentId, eventId, reason, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        retryDeadLetter(client, principalId, incidentId, eventId, reason)
+      ),
+  },
   privacy: {
     action: (principalId, caseId, input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
@@ -179,8 +199,7 @@ const dependencies: AdminDependencies = {
         recordPrivacyScope(client, principalId, caseId, input)
       ),
   },
-  report: (event, fields) =>
-    console.warn({ event: `admin.${event}`, ...fields }),
+  report: (event, fields) => logger.warn(`admin.${event}`, fields),
   support: {
     close: (principalId, caseId, resolution, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
@@ -236,6 +255,8 @@ const dependencies: AdminDependencies = {
       resolvePlatformPrincipal(client, identity)
     ),
 };
+
+configureLogging({ service: "polaris-admin" });
 
 const app = createAdminApp(dependencies);
 

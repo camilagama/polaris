@@ -4,7 +4,8 @@ import { Pool } from "pg";
  * What the privacy role does in the background (plan PR101 and PR104, ADRs 0074 and 0078).
  * It runs under its own database role, which can execute a few functions and read nothing:
  * closing organizations whose recovery window ended, and the data exports (claim a request,
- * record its files, finish or fail it, expire it).
+ * record its files, finish or fail it, expire it, and send its outbox event again while it is
+ * still owed, ADR 0084).
  */
 export interface ClaimedDataExport {
   attempt: number;
@@ -18,6 +19,15 @@ export interface PrivacyMaintenanceClient {
   close: () => Promise<void>;
   /** Takes the oldest export that is waiting (or whose run stopped); null when there is none. */
   claimDataExport: (leaseSeconds: number) => Promise<ClaimedDataExport | null>;
+  /**
+   * Takes the one export a queue event names, by ID and organization, under the same rules (not before
+   * the delay of a failed run, not past its attempts); null when it is not there to take.
+   */
+  claimDataExportById: (
+    exportId: string,
+    organizationId: string,
+    leaseSeconds: number
+  ) => Promise<ClaimedDataExport | null>;
   completeDataExport: (
     exportId: string,
     validityHours: number
@@ -39,6 +49,14 @@ export interface PrivacyMaintenanceClient {
     limit: number
   ) => Promise<{ id: string; organizationId: string }[]>;
   markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
+  /**
+   * Sends back to pending the export events dispatched at least `minAgeSeconds` ago whose export is
+   * still owed and may be taken now; returns how many.
+   */
+  rearmDataExportEvents: (
+    minAgeSeconds: number,
+    limit: number
+  ) => Promise<number>;
   recordDataExportFile: (file: {
     exportId: string;
     key: string;
@@ -74,6 +92,13 @@ export function createPrivacyMaintenanceClient(
         | null
         | undefined;
       return claimed ?? null;
+    },
+    async claimDataExportById(exportId, organizationId, leaseSeconds) {
+      const result = await pool.query<{ claimed: ClaimedDataExport | null }>(
+        "SELECT public.claim_data_export_by_id($1::uuid, $2::text, $3::integer) AS claimed",
+        [exportId, organizationId, leaseSeconds]
+      );
+      return result.rows[0]?.claimed ?? null;
     },
     async close() {
       await pool.end();
@@ -131,6 +156,13 @@ export function createPrivacyMaintenanceClient(
         [exportId]
       );
       return result.rows[0]?.marked === true;
+    },
+    async rearmDataExportEvents(minAgeSeconds, limit) {
+      const result = await pool.query<{ rearmed: number }>(
+        "SELECT public.rearm_data_export_events($1::integer, $2::integer) AS rearmed",
+        [minAgeSeconds, limit]
+      );
+      return Number(result.rows[0]?.rearmed ?? 0);
     },
     async recordDataExportFile(file) {
       await pool.query(
