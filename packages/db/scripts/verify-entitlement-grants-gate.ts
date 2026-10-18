@@ -563,6 +563,40 @@ async function run() {
         ) < 1000,
       "a fresh window from the end of the grant"
     );
+    // a `free_over_limit` record without a start is still a candidate (NULL must not drop it); one already dated after the end is not
+    const undated = await overLimit("grants undated window");
+    await admin.pool.query(
+      "UPDATE public.organization_billing SET state = 'free_over_limit', over_limit_since = NULL WHERE organization_id = $1",
+      [undated.organizationId]
+    );
+    await endGrant(undated, 3);
+    const dated = await overLimit("grants dated after the end");
+    await admin.pool.query(
+      "UPDATE public.organization_billing SET state = 'free_over_limit', over_limit_since = now() - interval '1 hour' WHERE organization_id = $1",
+      [dated.organizationId]
+    );
+    await endGrant(dated, 5);
+    const datedBefore = await stateOf(dated);
+    await billing.sweepDue(new Date());
+    const undatedState = await stateOf(undated);
+    const [undatedGrant] = await grantRows(undated);
+    assert.equal(undatedState.state, "free_over_limit");
+    assert.ok(
+      undatedState.since &&
+        undatedGrant &&
+        Math.abs(
+          undatedState.since.getTime() - undatedGrant.expires_at.getTime()
+        ) < 1000,
+      "a record over the limits without a start is dated by the end of the grant"
+    );
+    assert.deepEqual(
+      await stateOf(dated),
+      datedBefore,
+      "a window that began after the end of the grant is left as it is"
+    );
+    tests.push(
+      "a free_over_limit record without a start is still picked by the sweep and dated by the end of the grant, while one whose window began after that end is left alone"
+    );
     // limit by limit: a grant for another limit that still runs does not hide the one that ended
     const mixed = await overLimit("grants mixed keys");
     await endGrant(mixed, 2);

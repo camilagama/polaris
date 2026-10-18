@@ -654,7 +654,8 @@ async function sweepGrantOne(
 
 /**
  * The organizations whose limit grants ended recently and who could be affected:
- * not paying, not setting up a trial, and not already moved past that end. The
+ * not paying, not setting up a trial, and not already moved past that end (a
+ * `free_over_limit` record without a start is not past it: the sweep dates it). The
  * newest first, so a run that cannot look at them all never leaves the freshest
  * end unexamined behind older ones that were examined when they were new.
  */
@@ -673,7 +674,7 @@ async function sweepExpiredGrants(
         AND (g.revoked_at IS NULL OR g.revoked_at > g.starts_at)
         AND (b.organization_id IS NULL OR b.state NOT IN ('trialing', 'active', 'grace', 'trial_setup'))
       GROUP BY g.organization_id, b.state, b.over_limit_since
-     HAVING NOT (b.state = 'free_over_limit' AND b.over_limit_since >= max(g.expires_at))
+     HAVING NOT (b.state = 'free_over_limit' AND b.over_limit_since IS NOT NULL AND b.over_limit_since >= max(g.expires_at))
       ORDER BY max(g.expires_at) DESC, g.organization_id
       LIMIT $2`,
     [now, limit]
