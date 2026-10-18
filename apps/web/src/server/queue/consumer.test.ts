@@ -27,6 +27,16 @@ function envelope(exportId = EXPORT) {
   });
 }
 
+function keyOf(sent: ReturnType<typeof envelope>) {
+  return {
+    attempt: sent.attempt,
+    eventId: sent.eventId,
+    idempotencyKey: sent.idempotencyKey,
+    organizationId: sent.organizationId,
+    type: sent.type,
+  };
+}
+
 function message(body: unknown, attempts = 1) {
   const sent = {
     ack: vi.fn(),
@@ -175,12 +185,99 @@ describe("handleQueueBatch", () => {
   });
 
   it("asks again later when another delivery holds the key", async () => {
-    await ledger.claim(`org_1:data_export.requested:${EXPORT}`, 600);
+    await ledger.claim(keyOf(envelope()), 600);
     const sent = message(envelope());
     await run([sent]);
     expect(handler).not.toHaveBeenCalled();
     expect(sent.retry).toHaveBeenCalledOnce();
     expect(sent.ack).not.toHaveBeenCalled();
+  });
+
+  it("acks without running when the ledger does not know the event, and logs no content", async () => {
+    const unknown: ProcessingLedger = {
+      claim: () => Promise.resolve({ result: "unknown" }),
+      complete: vi.fn(() => Promise.resolve()),
+      release: vi.fn(() => Promise.resolve()),
+    };
+    const sent = message(envelope());
+    await handleQueueBatch(
+      { messages: [sent], queue: "polaris-default" },
+      { handlers: { "data_export.requested": handler }, ledger: unknown }
+    );
+    expect(handler).not.toHaveBeenCalled();
+    expect(sent.ack).toHaveBeenCalledOnce();
+    expect(sent.retry).not.toHaveBeenCalled();
+    expect(unknown.complete).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(
+      "queue_message_unknown_event",
+      expect.objectContaining({ messageId: "msg-1" })
+    );
+    // only the IDs and the type are logged, never the body of the message
+    const logged = JSON.stringify(vi.mocked(console.warn).mock.calls);
+    expect(logged).not.toContain("req-1");
+    expect(logged).not.toContain(EXPORT);
+  });
+
+  it("gives the ledger the key of the envelope and the default lease of 960 seconds", async () => {
+    const claim = vi.fn<ProcessingLedger["claim"]>(() =>
+      Promise.resolve({ result: "claimed", token: "t" })
+    );
+    const complete = vi.fn<ProcessingLedger["complete"]>(() =>
+      Promise.resolve()
+    );
+    const spy: ProcessingLedger = {
+      claim,
+      complete,
+      release: () => Promise.resolve(),
+    };
+    const sent = queueEnvelope({ ...envelope(), attempt: 3 });
+    await handleQueueBatch(
+      { messages: [message(sent)], queue: "polaris-default" },
+      { handlers: { "data_export.requested": handler }, ledger: spy }
+    );
+    const expected = {
+      attempt: 3,
+      eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a2c",
+      idempotencyKey: `data_export.requested:${EXPORT}`,
+      organizationId: "org_1",
+      type: "data_export.requested",
+    };
+    expect(claim).toHaveBeenCalledWith(expected, 960);
+    expect(complete).toHaveBeenCalledWith(expected);
+  });
+
+  it("uses the lease it is given instead of the default", async () => {
+    const claim = vi.fn<ProcessingLedger["claim"]>(() =>
+      Promise.resolve({ result: "claimed", token: "t" })
+    );
+    await handleQueueBatch(
+      { messages: [message(envelope())], queue: "polaris-default" },
+      {
+        handlers: { "data_export.requested": handler },
+        leaseSeconds: 120,
+        ledger: { ...ledger, claim },
+      }
+    );
+    expect(claim).toHaveBeenCalledWith(expect.anything(), 120);
+  });
+
+  it("runs a re-dispatched attempt again, but not a duplicate of an attempt already done", async () => {
+    await run([message(envelope())]);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    const duplicate = message(envelope());
+    await run([duplicate]);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(duplicate.ack).toHaveBeenCalledOnce();
+
+    const second = message(queueEnvelope({ ...envelope(), attempt: 2 }));
+    await run([second]);
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(second.ack).toHaveBeenCalledOnce();
+
+    // a late copy of the first attempt is still a duplicate
+    await run([message(envelope())]);
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it("retries without running the handler when the ledger is unavailable", async () => {

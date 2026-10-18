@@ -24,19 +24,28 @@ describe("outboxEvent", () => {
     expect(outboxEvent(valid)).toEqual(valid);
   });
 
-  it("fills in no correlation when there is none, and keeps numbers and booleans", () => {
+  it("fills in no correlation when there is none", () => {
     const { correlationId: _dropped, ...withoutCorrelation } = valid;
-    expect(
-      outboxEvent({
-        ...withoutCorrelation,
-        event: { exportId: EXPORT, files: 3, retry: false },
-      })
-    ).toEqual({
+    expect(outboxEvent(withoutCorrelation)).toEqual({
       ...withoutCorrelation,
       correlationId: null,
-      event: { exportId: EXPORT, files: 3, retry: false },
     });
   });
+
+  it.each([
+    ["an extra key with a valid ID", { exportId: EXPORT, saleId: EXPORT }],
+    ["an extra integer", { exportId: EXPORT, files: 3 }],
+    ["an extra boolean", { exportId: EXPORT, retry: false }],
+    ["no key at all", {}],
+    ["another key instead of the declared one", { saleId: EXPORT }],
+  ])(
+    "holds exactly the keys its type declares: refuses %s",
+    (_label, event) => {
+      expect(() => outboxEvent({ ...valid, event })).toThrow(
+        InvalidOutboxEventError
+      );
+    }
+  );
 
   it("builds one key from the type and the ID, the same every time", () => {
     expect(outboxIdempotencyKey("data_export.requested", EXPORT)).toBe(

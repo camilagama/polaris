@@ -60,6 +60,7 @@ const SERVICE_ROLES = [
   "polaris_catalog_runtime",
   "polaris_admin_runtime",
   "polaris_privacy_runtime",
+  "polaris_outbox_runtime",
 ];
 const EXPORT_FUNCTIONS = [
   "public.claim_data_export(integer)",
@@ -69,6 +70,8 @@ const EXPORT_FUNCTIONS = [
   "public.expire_data_exports(integer,integer)",
   "public.list_data_exports_to_delete(integer)",
   "public.mark_data_export_files_deleted(uuid)",
+  "public.claim_data_export_by_id(uuid,text,integer)",
+  "public.rearm_data_export_events(integer,integer)",
 ];
 
 async function run() {
@@ -375,7 +378,23 @@ async function run() {
     assert.equal(waiting.status, "requested");
     assert.equal(waiting.attempts, 2);
     assert.equal(waiting.error_code, "export_failed");
-    assert.equal(waiting.locked, false);
+    // it waits before it is tried again (an hour after the second failure, ADR 0084): no claim takes it
+    // meanwhile, so a burst of runs cannot use its attempts in seconds
+    assert.equal(waiting.locked, true);
+    const delay = await owner.pool.query<{ minutes: number }>(
+      "SELECT round(extract(epoch FROM locked_until - now()) / 60)::integer AS minutes FROM public.data_exports WHERE id = $1",
+      [forB.id]
+    );
+    assert.equal(delay.rows[0]?.minutes, 60);
+    assert.equal(
+      await maintenance.claimDataExport(600),
+      null,
+      "a failed run is not taken again before its delay"
+    );
+    await owner.pool.query(
+      "UPDATE public.data_exports SET locked_until = now() - interval '1 second' WHERE id = $1",
+      [forB.id]
+    );
     // a final failure, or one with no attempts left, ends it
     await claimThis(forB.id);
     assert.equal(

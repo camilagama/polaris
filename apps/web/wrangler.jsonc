@@ -14,6 +14,7 @@
   // Hyperdrive configurations with query caching disabled:
   // - HYPERDRIVE: tenant role (RLS, no access to the auth tables)
   // - AUTH_HYPERDRIVE: Better Auth role (DML only on user/account/session/verification)
+  // - OUTBOX_HYPERDRIVE: outbox role (dispatcher and queue processing record, functions only; ADR 0084)
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -42,6 +43,11 @@
     },
     {
       "binding": "BILLING_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "OUTBOX_HYPERDRIVE",
       "id": "local-only",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
     }
@@ -81,7 +87,7 @@
   // The three queues of the plan (ADR 0083, runbook docs/runbooks/queues.md). Declaring them here
   // creates nothing in the account: `wrangler dev` and the Vite plugin simulate them locally, and a
   // deploy needs the queues to exist first (`wrangler queues create`, a step of the responsible).
-  // Only the consumer is live today; nothing sends yet (the dispatcher is PR110). The Workers Free
+  // The outbox dispatcher (ADR 0084) sends from its own cron; the consumer builds the data exports. The Workers Free
   // plan has 10,000 queue operations a day and keeps a message for 24 hours; a message costs at
   // least three operations (write, read, delete), and every retry another read.
   "queues": {
@@ -120,8 +126,10 @@
       }
     ]
   },
+  // "17 * * * *": media, billing and privacy maintenance; "19 * * * *": the outbox dispatcher (ADR 0084),
+  // in an invocation of its own (the Free plan gives each cron invocation 10 ms of CPU).
   "triggers": {
-    "crons": ["17 * * * *"]
+    "crons": ["17 * * * *", "19 * * * *"]
   },
   "assets": {
     "not_found_handling": "single-page-application",

@@ -6,14 +6,21 @@ export interface HyperdriveBinding {
 }
 
 /**
- * A Cloudflare Queue as a producer (ADR 0083). Declared for the dispatcher of PR110; nothing sends
- * through it yet. The body is an envelope from `@polaris/domain/events/queue-envelope`.
+ * A Cloudflare Queue as a producer (ADR 0083): the outbox dispatcher (ADR 0084) sends with
+ * `sendBatch`. The body is an envelope from `@polaris/domain/events/queue-envelope`.
  */
 interface QueueProducerBinding {
   send: (
     body: unknown,
     options?: { contentType?: "json"; delaySeconds?: number }
   ) => Promise<void>;
+  sendBatch: (
+    messages: Iterable<{
+      body: unknown;
+      contentType?: "json";
+      delaySeconds?: number;
+    }>
+  ) => Promise<unknown>;
 }
 
 export interface RateLimitBinding {
@@ -79,6 +86,11 @@ export interface WorkerBindings {
   OFFLINE_LEASE_PREVIOUS_SECRET?: string;
   OFFLINE_LEASE_SECRET?: string;
   ONBOARDING_HYPERDRIVE?: HyperdriveBinding;
+  /**
+   * The outbox role (ADR 0084): the dispatcher claims, marks and gives back events and the queue
+   * consumer keeps its processing record, only through functions; it reads nothing directly.
+   */
+  OUTBOX_HYPERDRIVE?: HyperdriveBinding;
   /** The privacy role (marks expired closure windows as closed): it executes one function and reads nothing. */
   PRIVACY_HYPERDRIVE?: HyperdriveBinding;
   /** The queues of the plan (ADR 0083), by how much a late message costs. */
