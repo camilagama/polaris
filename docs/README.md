@@ -79,5 +79,25 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0054](adr/0054-painel-de-resultado-e-indicador-de-qualidade.md) | Painel de resultado e indicador de qualidade | aceito |
 | [0055](adr/0055-metas.md) | Metas: alvo por período, progresso derivado, conclusão que não reabre | aceito |
 | [0056](adr/0056-leitura-offline-do-painel.md) | Leitura offline do painel: o último retrato confirmado | aceito |
+| [0057](adr/0057-catalogo-de-planos-e-entitlements.md) | Catálogo de planos, entitlements e estado de assinatura | aceito |
+| [0058](adr/0058-cotas-do-plano-no-servidor.md) | Cotas do plano aplicadas no servidor | aceito |
+| [0059](adr/0059-remover-e-reordenar-imagens-de-produto.md) | Remover e reordenar imagens de produto | aceito |
+| [0060](adr/0060-ci-economico-em-minutos.md) | CI econômico em minutos do GitHub Actions | aceito |
+| [0061](adr/0061-limpeza-de-imagens-removidas.md) | Limpeza dos objetos de imagens removidas | aceito |
+| [0062](adr/0062-ciclo-de-vida-do-billing-e-caixa-de-entrada.md) | Ciclo de vida do billing e caixa de entrada de eventos | aceito |
+| [0063](adr/0063-rota-de-webhooks-de-billing.md) | Rota de webhooks de billing, porta de adaptador e manutenção horária | aceito |
+| [0064](adr/0064-free-acima-do-limite-variantes-operacionais.md) | Free acima do limite: variantes operacionais | aceito |
+| [0065](adr/0065-efeitos-do-downgrade-metas-pausadas.md) | Efeitos do downgrade sobre metas, imagens, lease offline e catálogo público | aceito |
+| [0066](adr/0066-reembolso-e-chargeback.md) | Reembolso e chargeback da assinatura | aceito |
+| [0067](adr/0067-concessoes-temporarias-de-entitlement.md) | Concessões temporárias de entitlement | aceito |
+| [0068](adr/0068-fase-8-antes-do-gate-7.md) | Fase 8 (catálogo público) antes do Gate 7 | aceito |
+| [0069](adr/0069-catalogo-publico-leitura-por-funcoes.md) | Catálogo público: leitura somente por funções, plano lido a cada pedido | aceito |
+| [0070](adr/0070-admin-acesso-identidade-e-capacidades.md) | Admin: login pelo Cloudflare Access, principal de plataforma e capacidades | aceito |
+| [0071](adr/0071-admin-diagnostico-sem-acesso-ao-tenant.md) | Admin: diagnóstico de organização sem acesso ao tenant | aceito |
+| [0072](adr/0072-admin-casos-acesso-temporario-e-revelacao.md) | Admin: casos de suporte, acesso temporário ao tenant e revelação de dados pessoais | aceito |
+| [0073](adr/0073-admin-suspensao-e-comandos-de-cobranca.md) | Admin: suspensão de organização e comandos de cobrança | aceito |
+| [0074](adr/0074-encerramento-de-organizacao.md) | Encerramento de organização e janela de recuperação | aceito |
+| [0075](adr/0075-anonimizacao-de-cliente-por-privacidade.md) | Anonimização de cliente por privacidade | aceito |
+| [0077](adr/0077-casos-de-privacidade.md) | Casos de privacidade: o fluxo interno de um pedido sobre dado pessoal | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.
