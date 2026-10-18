@@ -4402,6 +4402,10 @@ Sem business payload.
 
 
 
+Entregue no [ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.md): `deletion_ledger` (IDs opacos, tipo, operação, caso opcional, instante; append-only; sem chave estrangeira para a organização), gravada pela anonimização de cliente na mesma transação do comando e lida no restore pelo [runbook](../docs/runbooks/deletion-ledger-restore.md). O que o PR107 herda: gravar o tombstone `organization`/`purge` (ID da organização) **antes e na mesma transação** de apagar as linhas, o que exige o `INSERT` e a política do papel de privacidade na migration dele, e dizer como o ledger e os casos de privacidade sobrevivem à organização. A automação do restore e a cópia do ledger fora do banco ficam para a Fase 16.
+
+
+
 ---
 
 

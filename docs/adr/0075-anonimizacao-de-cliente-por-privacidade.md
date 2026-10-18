@@ -22,6 +22,7 @@ Nome, telefone, email e observações de um cliente são dado pessoal fornecido 
 
 - Atende um pedido de apagamento sem perder o histórico financeiro: o relatório de vendas, margens e estoque não muda.
 - Uma anonimização não tem volta, nem pelo suporte: não há como recolocar o dado, porque o sistema não o guarda.
+- O comando grava, na mesma transação, um tombstone mínimo no deletion ledger (IDs opacos, tipo e instante, sem dado pessoal), que um restore de backup usa para refazer a anonimização ([ADR 0080](0080-ledger-minimo-de-exclusoes.md)); o comportamento do comando não muda.
 
 ## Limites aceitos
 
