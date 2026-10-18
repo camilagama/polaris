@@ -14,6 +14,7 @@
     "test:offline-poc": "playwright test --config playwright.offline-poc.config.ts",
     "test:organization-onboarding-gate": "bun scripts/test-organization-onboarding-gate.ts",
     "test:pwa": "playwright test --config playwright.pwa.config.ts",
+    "test:real-devices": "bun real-devices/run.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
@@ -42,7 +43,9 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "browserstack-local": "1.5.16",
     "vite": "^8.3.3",
+    "webdriverio": "10.0.2",
     "wrangler": "^4.147.0"
   }
 }

@@ -15,3 +15,6 @@ test-results/
 
 # Worktrees locais de agentes
 .codex-worktrees/
+
+local.log
+browserstack.err

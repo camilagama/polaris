@@ -42,9 +42,73 @@ No CI, o job **Offline persistence browser gate** roda os cenários de navegador
 | App abre sem rede | Depois de uma visita online, o app real abre sem rede com a organização lembrada; sem visita anterior diz que não foi possível carregar; sessão encerrada apaga a cópia e ela não é oferecida nem offline depois; aberto da cópia, a lista verdadeira entra quando a rede volta. | `e2e/offline-entry.e2e.ts`, `lib/organizations-cache.test.ts` ([ADR 0047](../adr/0047-abrir-o-app-sem-rede.md)) |
 | Números e invariantes | Totais da venda conferidos em centavos contra um oráculo independente; razão × saldo; saldos nunca negativos; uma saída gravada por comando. | `offline-e2e` |
 
+## Suíte em aparelhos reais (BrowserStack)
+
+Roda o roteiro do Gate 5 em um iPhone e um Android **físicos** do BrowserStack (Automate Mobile, 1 sessão paralela), um aparelho por vez. É manual e local: não faz parte do CI e não usa IA.
+
+    scripts/gate5-real-devices.sh              # iPhone e Android, em sequência
+    GATE5_PLATFORMS=android scripts/gate5-real-devices.sh   # só um aparelho (ios ou android)
+    GATE5_FLOWS=2 scripts/gate5-real-devices.sh             # só um fluxo (1, 2 ou 3)
+
+Pré-requisitos: `bun install --frozen-lockfile`, `openssl` no PATH e as credenciais `BROWSERSTACK_USERNAME` e `BROWSERSTACK_ACCESS_KEY` no ambiente ou em `~/.secrets/browserstack.env` (o script exige modo 600 ou 400 e lê só essas duas variáveis, sem executar o arquivo; outro caminho em `BROWSERSTACK_ENV_FILE`). As credenciais nunca vão para o repositório, o relatório ou o log. Aparelhos padrão: iPhone 18 Pro Max (iOS 27, Safari) e Google Pixel 11 Pro (Android 17, Chrome); troque com `GATE5_IOS_DEVICE`, `GATE5_IOS_VERSION`, `GATE5_ANDROID_DEVICE` e `GATE5_ANDROID_VERSION` (nomes como na lista da API do BrowserStack, `GET https://api.browserstack.com/automate/browsers.json`, filtrando `device` e navegador `iphone` ou `android`). Use só dados sintéticos: os laboratórios têm servidor simulado dentro da página e não alcançam API, Neon nem pagamentos.
+
+### O que o script faz
+
+1. Constrói o laboratório offline (`build:offline-poc`) e o shell com service worker (`vite.pwa.config.ts`, modo `pwa-e2e`).
+2. Serve os dois em **HTTPS** com certificado autoassinado e descartável (diretório temporário, apagado ao final), em `https://bs-local.com:4443` (laboratório) e `:4444` (shell).
+3. Abre o BrowserStack Local (identificador aleatório por execução, `onlyAutomate` e `only` restrito às duas portas da suíte, para o aparelho remoto não alcançar o resto do `localhost`; o binário exige a chave na linha de comando, então ela fica visível em `ps` enquanto o túnel está de pé: rode numa máquina sem outros usuários). O script só roda com o binário em `~/.browserstack/BrowserStackLocal` (ou `BROWSERSTACK_LOCAL_BINARY`) cujo sha256 bata com o fixado no próprio script (versão 8.9, linux-arm64) e o repassa à biblioteca (`binarypath`), que então não baixa outro. O hash fixado é o do binário que a biblioteca baixou na primeira vez; em outra plataforma ou versão, baixe do site oficial do BrowserStack e atualize o hash no mesmo commit.
+4. Abre uma sessão WebDriver no aparelho (iPhone com Safari, Android com Chrome) e roda os três fluxos abaixo (o fluxo 1 apaga os dados do site no começo, como num aparelho recém-instalado, esperando o `deleteDatabase` terminar; o fluxo 2 não apaga) e um passo final que devolve a rede do aparelho ao normal.
+5. Grava `apps/web/test-results/real-devices/<instante>/report.json` e `report.md`, marca a sessão no BrowserStack como passou ou falhou, encerra a sessão, o servidor e o túnel e sai com código diferente de zero se algum passo falhar. Em Ctrl+C ou SIGTERM a sessão do aparelho (com a rede religada), o servidor e o túnel também são encerrados, mas nenhum relatório é gravado. Valores inválidos em `GATE5_PLATFORMS` ou `GATE5_FLOWS` abortam antes de construir o app.
+
+Fluxos (cada passo falho pula os seguintes do mesmo fluxo):
+
+| Fluxo | Passos |
+| --- | --- |
+| 1. Clientes | abrir o app em contexto seguro com OPFS, IndexedDB e service worker e pedir `storage.persist()`; iniciar o runtime e carregar dados (cliente cadastrado com rede é confirmado); **derrubar a rede do aparelho** (perfil `no-network`) e conferir de dentro da página que ela caiu; registrar um cliente sem rede (fica "Aguardando envio"); religar a rede e recarregar a página (a fila sobrevive ao reinício); voltar online, sincronizar e conferir o selo e a edição liberada |
+| 2. Venda | iniciar a tela de venda e esperar o carregamento; sem rede, guardar uma venda de 2 itens no aparelho; conferir que o estoque do aparelho desce de 5 para 3; religar a rede, sincronizar e ver o servidor simulado confirmar uma venda; conferir que o botão volta a ser "Confirmar venda" |
+| 3. Shell | instalar o service worker e deixá-lo controlar a página; sem rede, recarregar e abrir uma rota interna a partir do shell em cache; religar a rede |
+
+### Como ler o relatório
+
+`report.md` traz, por aparelho, o link da sessão no BrowserStack (vídeo, logs e capturas, com a conta do projeto) e uma tabela com fluxo, passo, resultado (✅ passou, ❌ falhou, ⏭️ pulado), tempo e detalhe. No primeiro passo o detalhe registra o navegador do aparelho e o resultado de `storage.persist()`. `report.json` tem os mesmos dados (`status` geral, `devices[].steps[]`, `sessionUrl`). Uma execução restrita por `GATE5_PLATFORMS` ou `GATE5_FLOWS` sai com `partial: true` (e um aviso no `report.md`) e não prova o Gate inteiro. Um passo falho traz a mensagem; abra o vídeo da sessão para ver a tela. Guarde o relatório (sem segredos) junto do registro do Gate; não aponte `GATE5_REPORT_DIR` para dentro do repositório. O log do binário do Local fica num diretório temporário e é apagado ao final.
+
+### Como a rede do aparelho é derrubada
+
+A sessão WebDriver não passa pela rede do aparelho, então o perfil de rede pode ser trocado no meio do teste pela API REST do BrowserStack (`PUT /automate/sessions/<id>/update_network.json` com `{"networkProfile":"no-network"}`). Observado em 18/10/2026 (Pixel 11 Pro): o perfil `reset` responde 200 mas **não** religa a rede; a rede é restaurada com o perfil documentado `4g-lte-advanced-good`. Depois de cada troca o script confere de dentro da página (um `fetch` para `/rpc/probe`, que o service worker nunca guarda) que a rede de fato caiu ou voltou.
+
+### Limites (o que a suíte não prova)
+
+- O servidor dos laboratórios é simulado na própria página: a suíte prova o **aparelho** (OPFS, IndexedDB, outbox, service worker, comportamento sem rede), não a API real, o Neon nem o RLS. O ciclo com servidor real continua sendo o do checklist manual em staging, com a chave ligada.
+- A flag de rede do laboratório ("Rede disponível") é o que o runtime usa para decidir que está offline; a rede do aparelho é derrubada de verdade ao mesmo tempo e conferida, mas o runtime não é forçado a ler `navigator.onLine`.
+- O iPhone redireciona `localhost` para `http://bs-local.com`, que não é contexto seguro (sem OPFS e sem service worker); por isso o app é servido em HTTPS com certificado autoassinado e a capacidade `acceptInsecureCerts` dentro de `bstack:options`. Fora desse atalho o Safari mostra "Esta conexão não é particular".
+- Não dá para automatizar: **instalar na tela inicial** (PWA instalado no iPhone), relógio do aparelho adiantado/atrasado, modo avião real, matar o app pelo seletor de apps e dias sem abrir (ITP). Continuam como itens do checklist manual abaixo.
+- Os fluxos 1 e 2 usam a mesma origem e o mesmo aparelho, com usuários diferentes. Em 18/10/2026 a busca da venda não achava a variante sem apagar os dados do site entre eles. Causa (defeito do laboratório, não do app): o lease fica no `localStorage` só por organização, `leaseIsUsable` não confere o usuário, o namespace do OPFS sai do usuário de dentro do lease e o laboratório respondia `deviceIsMine` sempre verdadeiro; o fluxo 2 reaproveitava o aparelho e o lease do usuário do fluxo 1 e não fazia o bootstrap do servidor simulado da venda. Correção: o laboratório passou a guardar o dono do aparelho e a responder `deviceIsMine` conforme o usuário, como o servidor real; coberto por um teste Playwright que roda os dois fluxos na mesma aba sem limpar dados (`e2e/offline-screens.e2e.ts`). O fluxo 1 ainda apaga os dados do site no começo (aparelho recém-instalado) e o fluxo 2 não apaga mais. Fora do escopo e pendente de análise de segurança própria: no app real, com rede, o servidor diz se o aparelho lembrado é do usuário (`stillMine`) e o runtime descarta aparelho e lease de outro usuário; **sem rede** `stillMine` confia no aparelho, o lease é guardado só por organização e `leaseIsUsable` não confere o usuário, então uma troca de usuário offline reaproveita aparelho, lease e namespace do usuário anterior.
+- Um aparelho por vez (o plano tem 1 sessão paralela); uma execução completa leva cerca de cinco minutos.
+
+### Registro da execução de 18/10/2026
+
+Execução completa (`partial: false`, de 22:01:06Z a 22:05:42Z nos dois aparelhos, 18 passos por aparelho, todos aprovados) com o código do PR #145 no head `d96af4f`. O `report.md` fica só na máquina de quem rodou (`test-results` está no `.gitignore`); este é o resumo, sem credenciais e sem links da conta do BrowserStack.
+
+| Aparelho | Navegador | Resultado |
+| --- | --- | --- |
+| iPhone 18 Pro Max, iOS 27 | Safari | 18/18 |
+| Google Pixel 11 Pro, Android 17 | Chrome 152 | 18/18 |
+
+Fatos a levar para a decisão do Gate:
+
+- `navigator.storage.persist()` respondeu **false** nos dois aparelhos: o armazenamento é "melhor esforço" e pode ser descartado pelo navegador; o item de dias sem abrir (ITP) segue no checklist manual.
+- O runtime decide que está offline pela caixa **"Rede disponível"** do laboratório, não pela rede real do aparelho. A rede foi derrubada de verdade (`no-network`, conferida de dentro da página), mas a prova de que o app reage à queda real da rede (`navigator.onLine` e falha de `fetch`) não vem desta suíte.
+- Essa execução ainda apagava os dados do site entre os fluxos 1 e 2 (ver Limites). Depois da correção do laboratório, o fluxo 2 não apaga mais, e isso ainda **não foi reexecutado em aparelho real**: rode `scripts/gate5-real-devices.sh` de novo antes de citar o 18/18 como prova final.
+
+### Como o BrowserStack foi escolhido (fontes consultadas em 18/10/2026)
+
+- [Playwright em iOS real](https://www.browserstack.com/docs/automate/playwright/playwright-ios/nodejs) existe (Safari, SDK Node.js, Playwright 1.50.1 ou mais novo), mas no Android real o Playwright só aparece até a versão 1.59 na [tabela de versões](https://www.browserstack.com/docs/automate/playwright/browsers-and-os) e o repositório usa 1.63. Por isso a suíte usa WebDriver (WebdriverIO), igual nas duas plataformas.
+- [Rede simulada em Automate](https://www.browserstack.com/docs/automate/selenium/simulate-network-conditions): `networkProfile` com `no-network` em Android e iPhone (iOS 11 ou 13 em diante, a página diverge), troca durante a sessão por `update_network.json`.
+- [BrowserStack Local com WebdriverIO](https://www.browserstack.com/docs/automate/selenium/getting-started/nodejs/webdriverio/local-testing): no Safari de aparelhos iOS reais as URLs com `localhost` são redirecionadas para `bs-local.com`. [Parâmetros do binário](https://www.browserstack.com/docs/local-testing/binary-params): `--key`, `--local-identifier`, `--only-automate`.
+
 ## Checklist manual em aparelho físico (adiado; bloqueia ligar a escrita offline)
 
-Nada desta lista foi executado. Registre o resultado de cada item com a versão do navegador e do sistema, sem dados reais de clientes.
+A suíte acima já exercita, em iPhone e Android reais e sem dados reais, o armazenamento (OPFS e IndexedDB), o outbox, a venda e o cadastro sem rede, o reinício da página e o shell offline; o que ela não cobre (instalação na tela inicial, servidor real em staging, relógio, ITP) segue abaixo. Nada desta lista foi marcado como executado. Registre o resultado de cada item com a versão do navegador e do sistema, sem dados reais de clientes.
 
 - [ ] **iPhone real (Safari, e instalado na tela inicial como PWA):** abrir o laboratório offline de persistência, o do outbox e o das coleções locais; confirmar que OPFS e IndexedDB funcionam, que `navigator.storage.persist()` responde e que o armazenamento não é descartado após dias sem uso (política do ITP do Safari para sites não instalados).
 - [ ] **Android real (Chrome):** os mesmos laboratórios, e o ciclo completo: criar cliente, produto com estoque, entrada, venda e contagem sem rede; religar a rede; conferir o resultado no servidor.
