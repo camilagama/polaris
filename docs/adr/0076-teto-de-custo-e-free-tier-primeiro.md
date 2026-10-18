@@ -1,8 +1,10 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Teto de custo e free tier primeiro
+
+Aceito pelo responsável em 18/10/2026.
 
 ## Contexto
 

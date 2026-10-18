@@ -37,7 +37,7 @@ Registro retroativo das decisões do PR33 ao PR35, confirmadas na revisão do ch
 
 ## Emenda (16/10/2026)
 
-Registro datado; a decisão original acima permanece como está.
+Registro datado; a decisão original acima permanece como está. Emenda aceita pelo responsável em 18/10/2026, junto com o [ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md).
 
 - **Images Hosted fica proibido.** O produto Images Hosted cobra armazenamento e entrega; a mídia continua no R2 privado, com o Images apenas para transformação.
 - **Fallback obrigatório acima da franquia de transformações.** Acima de 5.000 transformações únicas no mês, o Images Free retorna o erro 9422 e não cobra (fontes: [preços do Cloudflare Images](https://developers.cloudflare.com/images/pricing) e a descrição do 9422 no [troubleshooting do Images](https://developers.cloudflare.com/images/reference/troubleshooting/)).

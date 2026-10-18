@@ -98,7 +98,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0073](adr/0073-admin-suspensao-e-comandos-de-cobranca.md) | Admin: suspensão de organização e comandos de cobrança | aceito |
 | [0074](adr/0074-encerramento-de-organizacao.md) | Encerramento de organização e janela de recuperação | aceito |
 | [0075](adr/0075-anonimizacao-de-cliente-por-privacidade.md) | Anonimização de cliente por privacidade | aceito |
-| [0076](adr/0076-teto-de-custo-e-free-tier-primeiro.md) | Teto de custo e free tier primeiro | proposto |
+| [0076](adr/0076-teto-de-custo-e-free-tier-primeiro.md) | Teto de custo e free tier primeiro | aceito |
 | [0077](adr/0077-casos-de-privacidade.md) | Casos de privacidade: o fluxo interno de um pedido sobre dado pessoal | aceito |
 | [0078](adr/0078-exportacao-de-dados-da-organizacao.md) | Exportação de dados da organização: uma cópia a pedido do dono, feita em segundo plano | aceito |
 | [0079](adr/0079-retencao-por-classe-de-dado.md) | Retenção por classe de dado | proposto |
