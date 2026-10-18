@@ -237,8 +237,7 @@ async function saveRecord(
   organizationId: string,
   before: BillingRecord,
   next: BillingRecord,
-  now: Date,
-  provider: { provider: string; providerRef: string } | null
+  now: Date
 ): Promise<void> {
   // when the organization left Pro (the start of the Free Over Limit adaptation window, ADR 0064)
   const episode = episodeStartAfter({
@@ -255,13 +254,11 @@ async function saveRecord(
        pending_cycle_months = $6,
        last_fact_at = $7,
        trial_started_at = CASE WHEN $8::boolean THEN COALESCE(trial_started_at, $9::timestamptz) ELSE trial_started_at END,
-       provider = COALESCE(provider, $10),
-       provider_ref = COALESCE(provider_ref, $11),
-       over_limit_since = CASE WHEN $12::boolean THEN over_limit_since ELSE $13::timestamptz END,
-       revoked_through = $14::timestamptz,
-       revoked_reason = $15,
-       revoked_cycle_months = $16,
-       revoked_cancel_at_period_end = $17,
+       over_limit_since = CASE WHEN $10::boolean THEN over_limit_since ELSE $11::timestamptz END,
+       revoked_through = $12::timestamptz,
+       revoked_reason = $13,
+       revoked_cycle_months = $14,
+       revoked_cancel_at_period_end = $15,
        updated_at = $9::timestamptz,
        version = version + 1
      WHERE organization_id = $1`,
@@ -275,8 +272,6 @@ async function saveRecord(
       next.lastFactAt,
       next.trialConsumed,
       now,
-      provider?.provider ?? null,
-      provider?.providerRef ?? null,
       episode === "keep",
       // a kept episode keeps whatever the record says, including nothing (never a fresh window)
       episode === "keep" ? null : episode,
@@ -339,12 +334,6 @@ const ignoredCode: Record<IgnoredFactReason, string> = {
   stale: "stale",
 };
 
-const referenceRequiredFacts: ReadonlySet<BillingFact["type"]> = new Set([
-  "charge_refunded",
-  "charge_disputed",
-  "dispute_reversed",
-]);
-
 async function resolveOrganization(
   client: PoolClient,
   row: EventRow
@@ -360,6 +349,20 @@ async function resolveOrganization(
     [row.provider, row.provider_ref]
   );
   return result.rows[0]?.organization_id ?? null;
+}
+
+/** Whether the subscription reference is linked to an organization other than this one. */
+async function claimedByAnother(
+  client: PoolClient,
+  provider: string,
+  providerRef: string,
+  organizationId: string
+): Promise<boolean> {
+  const result = await client.query(
+    "SELECT 1 FROM public.organization_billing WHERE provider = $1 AND provider_ref = $2 AND organization_id <> $3",
+    [provider, providerRef, organizationId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 async function processInTransaction(
@@ -417,29 +420,57 @@ async function processInTransaction(
   if (!fact) {
     return await fail("error", event.organization_id);
   }
+  const recordIncident = async (
+    cause: "reference_mismatch" | "reference_unresolved"
+  ) => {
+    await client.query(
+      "SELECT public.record_billing_reference_incident($1, $2, $3)",
+      [cause, fact.type, eventId]
+    );
+  };
+  // A fact no subscription claims yet waits for the link (the retry pass); the one
+  // that is still unclaimed at its last attempt is an incident too: a provider
+  // reference that never matches is a field mapped wrong, not a delay (ADR 0087).
+  const failUnresolved = async () => {
+    if (attempts === MAX_BILLING_EVENT_ATTEMPTS) {
+      await recordIncident("reference_unresolved");
+    }
+    return await fail("unknown_organization", null);
+  };
   const organizationId = await resolveOrganization(client, event);
   if (!organizationId) {
-    return await fail("unknown_organization", null);
+    return await failUnresolved();
   }
 
   const row = await lockRecord(client, organizationId);
   const before = toRecord(row);
-  // A fact from another subscription than the one attached (an old checkout, a
-  // subscription since replaced) must not change this record. A refund, a
-  // chargeback or the reversal of one takes access away or gives it back, so it
-  // must name the attached subscription (ADR 0066): without a reference, or with
-  // a record that has no subscription attached, it has no effect.
-  const takesMoney = referenceRequiredFacts.has(fact.type);
+  // Every fact comes from the provider, so every fact names the subscription it is
+  // about and the record must have that very subscription attached (ADR 0087): a
+  // fact without a reference, or with another one (an old checkout, a subscription
+  // since replaced), changes nothing, and the mistake is an operational incident
+  // instead of a silent loss (as is a fact that never finds its subscription).
+  // `attachProvider` is the only way a reference is linked, so a fact that arrives
+  // before the link finds no subscription yet: it fails and the retry pass applies
+  // it once the link exists. A reference that is linked to another organization is
+  // not a wait: it is a mismatch.
+  const waitsForLink =
+    event.provider_ref !== null &&
+    row.provider === null &&
+    !(await claimedByAnother(
+      client,
+      event.provider,
+      event.provider_ref,
+      organizationId
+    ));
+  if (waitsForLink) {
+    return await failUnresolved();
+  }
   if (
-    (takesMoney &&
-      (!event.provider_ref ||
-        row.provider !== event.provider ||
-        row.provider_ref !== event.provider_ref)) ||
-    (event.provider_ref &&
-      row.provider !== null &&
-      (row.provider !== event.provider ||
-        row.provider_ref !== event.provider_ref))
+    !event.provider_ref ||
+    row.provider !== event.provider ||
+    row.provider_ref !== event.provider_ref
   ) {
+    await recordIncident("reference_mismatch");
     await finishEvent(
       client,
       eventId,
@@ -487,16 +518,7 @@ async function processInTransaction(
       status: "ignored",
     };
   }
-  await saveRecord(
-    client,
-    organizationId,
-    before,
-    result.record,
-    now,
-    event.provider_ref
-      ? { provider: event.provider, providerRef: event.provider_ref }
-      : null
-  );
+  await saveRecord(client, organizationId, before, result.record, now);
   await finishEvent(
     client,
     eventId,
@@ -561,7 +583,7 @@ async function sweepOne(
     if (!due) {
       return false;
     }
-    await saveRecord(client, organizationId, before, due.record, now, null);
+    await saveRecord(client, organizationId, before, due.record, now);
     await writeLedger(
       client,
       {
@@ -1035,7 +1057,7 @@ export function createBillingStore(connectionString: string): BillingStore {
           }
         );
         const record: BillingRecord = { ...before, ...next };
-        await saveRecord(client, organizationId, before, record, now, null);
+        await saveRecord(client, organizationId, before, record, now);
         await writeLedger(
           client,
           {
