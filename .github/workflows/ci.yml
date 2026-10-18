@@ -171,7 +171,8 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
-      - run: bun audit --audit-level=high
+      # braces has no fixed release; exception in docs/runbooks/dependency-audit.md, review on 2026-11-18
+      - run: bun audit --audit-level=high --ignore=GHSA-vfj7-8cjw-p6xm
 
   # The most expensive job (about nine minutes). It runs on pull requests that
   # change something it exercises (not on prose or database-only changes) and on
