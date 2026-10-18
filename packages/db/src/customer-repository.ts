@@ -12,6 +12,7 @@ import {
   transitionCustomerLifecycle,
 } from "@polaris/domain/customers/customer";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { recordDeletionLedgerEntry } from "./deletion-ledger";
 import { customers } from "./schema/customer";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import {
@@ -419,6 +420,12 @@ export async function anonymizeCustomerForPrivacy(
     entityType: "customer",
     eventType: "customer.anonymized",
     requestId: input.requestId ?? null,
+  });
+  await recordDeletionLedgerEntry(transaction, {
+    entityId: customer.id,
+    entityType: "customer",
+    operation: "anonymize",
+    organizationId: identity.organizationId,
   });
 
   return { changed: true, customer };

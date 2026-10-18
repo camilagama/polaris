@@ -775,6 +775,7 @@ async function run() {
         "data_export_files_privacy_owner_select",
         "data_exports_privacy_owner_select",
         "data_exports_privacy_owner_update",
+        "deletion_ledger_privacy_owner_select",
         "memberships_privacy_owner_select",
         "memberships_privacy_owner_update",
         "offline_grants_privacy_owner_select",

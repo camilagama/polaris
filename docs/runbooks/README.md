@@ -18,6 +18,7 @@ Gates e provas por fase:
 - Catálogo, estoque e mídia (Fase 3): [Gate 3 — catálogo, estoque e mídia privada](./gate-3-catalog-stock.md).
 - Clientes e vendas (Fase 4): [Gate 4 — núcleo de vendas](./gate-4-sales-core.md).
 - Offline (Fase 5): [Gate 5 — offline](./gate-5-offline.md), com o checklist manual em aparelho físico (iPhone e Android) que bloqueia ligar a escrita offline.
+- Privacidade (Fase 10): [Restore de backup e deletion ledger](./deletion-ledger-restore.md), com o que ler antes de substituir um ambiente e como reaplicar as exclusões.
 
 A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md). O CI é desenhado para gastar poucos minutos do GitHub Actions (repositório privado; cada job é cobrado arredondado ao minuto): os checks leves são um job só, o gate de navegador roda só quando algo que ele exercita mudou e não se repete na `main`, e a auditoria só quando uma dependência mudou. Uma execução completa sob demanda existe (`workflow_dispatch`). Racional e números no [ADR 0060](../adr/0060-ci-economico-em-minutos.md). Se os jobs não iniciarem com a mensagem "pagamentos recentes falharam ou o limite de gastos precisa aumentar", é a cobrança da conta **dona do repositório** (não de quem faz o push): conferir plano, minutos usados, limite de gastos e forma de pagamento nessa conta.
 
@@ -58,6 +59,8 @@ A política de provas de banco (Neon descartável e CI com PostgreSQL 18) está 
 
 - [ ] Turnstile (site key, secret e hostname), Resend (secret, domínio de envio verificado, remetente) e demais segredos configurados conforme [auth-abuse-protection.md](./auth-abuse-protection.md) e [email-auth.md](./email-auth.md); só então ligar e-mail/senha.
 - [ ] Política de privacidade atualizada com Resend, Turnstile, IP e user-agent de sessão e vínculo Google, e revisão de DPA e região dos providers ([privacy.md](../business-rules/privacy.md)). Retenção legal e legal hold da auditoria definidas.
+
+- [ ] **Restore e deletion ledger ([ADR 0080](../adr/0080-ledger-minimo-de-exclusoes.md)).** O procedimento de [restore e deletion ledger](./deletion-ledger-restore.md) foi ensaiado em ambiente descartável (listar o ledger da origem, restaurar, reaplicar, conferir a consulta vazia) antes do go-live; a branch ou o ambiente de origem de um restore nunca é apagado antes da conferência; decidida a cópia do ledger fora do banco (Fase 16), porque o ledger não sobrevive à perda do próprio banco.
 
 ### Billing
 

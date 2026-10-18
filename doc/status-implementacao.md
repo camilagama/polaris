@@ -1509,9 +1509,24 @@ Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 19 classes com origem, regra, fontes e estado; só as duas de mídia e a de exportação estão aprovadas, com prazo e job (os jobs horários existentes); as constantes do reconciliador e da exportação vêm do registro. |
+| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 20 classes com origem, regra, fontes e estado (a `deletion_ledger` entrou com o PR106, proposta e sem job); só as duas de mídia e a de exportação estão aprovadas, com prazo e job (os jobs horários existentes); as constantes do reconciliador e da exportação vêm do registro. |
 | Jobs de expurgo | Nenhum novo | As classes aprovadas com prazo (mídia e exportação) já tinham job; as demais ficam propostas, sem job, até a decisão do responsável. |
 | HMAC do `payload_hash` | Concluído | `SYNC_PAYLOAD_HASH_SECRET` (503 sem ele); reenvio compara também o SHA-256 legado e o segredo anterior. Sem migration. O segredo não foi criado em nenhum ambiente. |
 | Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
 | Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
 | Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até a retenção do log ser aprovada; prazos legais a confirmar pelo responsável. |
+
+### Fase 10F — Privacidade: deletion ledger (PR106; implementação e verificações locais concluídas; gate de banco no CI)
+
+Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.md); o número pode mudar): um tombstone mínimo de cada exclusão, para um restore de backup refazer o que a privacidade já tinha tirado.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/deletion-ledger` sobre a `main` (migration 0069, só aditiva). |
+| Domínio | Concluído | `@polaris/domain/privacy/deletion-ledger`: os dois pares permitidos (`customer`/`anonymize`, `organization`/`purge`), IDs opacos, recusa de qualquer campo além do contrato. |
+| Banco | Concluído | `deletion_ledger` (RLS forçado, CHECKs de vocabulário e de ID opaco, índice único por tipo, ID e operação, sem chave estrangeira para a organização). O runtime do tenant só insere as quatro colunas de um tombstone, só de cliente já anonimizado na própria organização, e não lê nada; nenhuma política permite `UPDATE` ou `DELETE`; o dono de privacidade só lê. |
+| Quem grava | Concluído | `anonymizeCustomerForPrivacy` grava na mesma transação do comando (`recordDeletionLedgerEntry`); o comportamento do comando não muda. O purge (PR107) grava o tombstone da organização antes de apagar, em migration própria. |
+| Restore | Concluído (procedimento) | [Runbook](../docs/runbooks/deletion-ledger-restore.md): ler o ledger do ambiente que será substituído, reaplicar, conferir por consulta vazia. Sem automação (Fase 16); item novo no checklist de go-live. |
+| Gate PostgreSQL 18 | No CI | `deletion-ledger` (suítes `ci` e `gate10`); não rodado localmente (sem PostgreSQL 18 no ambiente). |
+| Retenção | Classe proposta | A classe `deletion_ledger` está no ADR 0079 e no registro de retenção (`proposta`, sem job); a regra vem do ADR 0080 e o prazo final é a confirmar pelo responsável. |
+| Limites | Registrados | O ledger mora no mesmo banco: perda total do banco perde os tombstones posteriores ao último backup (cópia fora do banco: Fase 16); reaplicar é manual; o caso de privacidade ainda não é preenchido pelo comando; o ID opaco é pseudônimo enquanto houver backup antigo. |

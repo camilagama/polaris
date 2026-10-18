@@ -77,6 +77,7 @@ const gates: Gate[] = [
   ["data-export", "verify-data-export-gate.ts"],
   ["organization-closure", "verify-organization-closure-gate.ts"],
   ["customer-anonymization", "verify-customer-anonymization-gate.ts"],
+  ["deletion-ledger", "verify-deletion-ledger-gate.ts"],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -170,6 +171,7 @@ const suites: Record<string, string[]> = {
     "data-export",
     "organization-closure",
     "customer-anonymization",
+    "deletion-ledger",
     "media-commands",
     "offline-devices",
     "offline-lease",
@@ -236,6 +238,7 @@ const suites: Record<string, string[]> = {
   gate10: [
     "organization-closure",
     "customer-anonymization",
+    "deletion-ledger",
     "privacy-cases",
     "data-export",
   ],
