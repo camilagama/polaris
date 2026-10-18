@@ -757,6 +757,7 @@ async function run() {
       "memberships",
       "tenant_audit_event",
       "data_exports",
+      "event_outbox",
     ]) {
       assert.ok(
         (targetBefore[table] ?? 0) > 0,

@@ -1,5 +1,5 @@
 {
-  "id": "55ab46ba-218e-4482-9f96-ef61fb271030",
+  "id": "22f855ae-b288-44f0-8070-cb336025c75c",
   "prevId": "979b9123-6d83-45ed-9742-28502159cf3d",
   "version": "7",
   "dialect": "postgresql",
@@ -2526,6 +2526,167 @@
       },
       "isRLSEnabled": true
     },
+    "public.event_outbox": {
+      "name": "event_outbox",
+      "schema": "",
+      "columns": {
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "correlation_id": {
+          "name": "correlation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "event": {
+          "name": "event",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "event_outbox_idempotency_unique": {
+          "name": "event_outbox_idempotency_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "event_outbox_pending_idx": {
+          "name": "event_outbox_pending_idx",
+          "columns": [
+            {
+              "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"event_outbox\".\"status\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "event_outbox_organization_id_organizations_id_fk": {
+          "name": "event_outbox_organization_id_organizations_id_fk",
+          "tableFrom": "event_outbox",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "event_outbox_tenant_insert": {
+          "name": "event_outbox_tenant_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_pr11_runtime"],
+          "withCheck": "\n        \"event_outbox\".\"organization_id\" = NULLIF(current_setting('app.organization_id', true), '')\n        AND \"event_outbox\".\"type\" IN ('data_export.requested')\n        AND \"event_outbox\".\"status\" = 'pending'\n        AND \"event_outbox\".\"attempts\" = 0\n        AND \"event_outbox\".\"idempotency_key\" = \"event_outbox\".\"type\" || ':' || (\"event_outbox\".\"event\" ->> 'exportId')\n        AND EXISTS (\n          SELECT 1\n          FROM public.data_exports AS export_scope\n          WHERE export_scope.id::text = \"event_outbox\".\"event\" ->> 'exportId'\n            AND export_scope.organization_id = \"event_outbox\".\"organization_id\"\n            AND export_scope.requested_by_user_id = NULLIF(current_setting('app.user_id', true), '')\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.memberships AS membership_scope\n          WHERE membership_scope.organization_id = \"event_outbox\".\"organization_id\"\n            AND membership_scope.user_id = NULLIF(current_setting('app.user_id', true), '')\n            AND membership_scope.status = 'active'\n        )\n        AND EXISTS (\n          SELECT 1\n          FROM public.organizations AS organization_scope\n          WHERE organization_scope.id = \"event_outbox\".\"organization_id\"\n            AND organization_scope.status = 'active'\n        )"
+        }
+      },
+      "checkConstraints": {
+        "event_outbox_status_allowed": {
+          "name": "event_outbox_status_allowed",
+          "value": "\"event_outbox\".\"status\" IN ('pending', 'dispatched')"
+        },
+        "event_outbox_attempts_allowed": {
+          "name": "event_outbox_attempts_allowed",
+          "value": "\"event_outbox\".\"attempts\" >= 0"
+        },
+        "event_outbox_type_format": {
+          "name": "event_outbox_type_format",
+          "value": "\"event_outbox\".\"type\" ~ '^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$' AND char_length(\"event_outbox\".\"type\") <= 80"
+        },
+        "event_outbox_tokens_format": {
+          "name": "event_outbox_tokens_format",
+          "value": "\"event_outbox\".\"idempotency_key\" ~ '^[A-Za-z0-9._:-]{1,128}$' AND \"event_outbox\".\"correlation_id\" ~ '^[A-Za-z0-9._:-]{1,128}$'"
+        },
+        "event_outbox_event_shape": {
+          "name": "event_outbox_event_shape",
+          "value": "jsonb_typeof(\"event_outbox\".\"event\") = 'object'\n        AND octet_length(\"event_outbox\".\"event\"::text) <= 2048\n        AND NOT jsonb_path_exists(\"event_outbox\".\"event\", 'strict $.keyvalue() ? (!(@.key like_regex \"^[a-z][A-Za-z0-9]{0,31}$\"))')\n        AND NOT jsonb_path_exists(\"event_outbox\".\"event\", 'strict $.* ? (@.type() == \"object\" || @.type() == \"array\" || @.type() == \"null\")')\n        AND NOT jsonb_path_exists(\"event_outbox\".\"event\", 'strict $.* ? (@.type() == \"string\" && !(@ like_regex \"^[A-Za-z0-9_-]{1,64}$\"))')\n        AND NOT jsonb_path_exists(\"event_outbox\".\"event\", 'strict $.* ? (@.type() == \"number\" && (@ % 1 != 0 || @ < -9007199254740991 || @ > 9007199254740991))')"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.expense_categories": {
       "name": "expense_categories",
       "schema": "",
@@ -4626,213 +4787,6 @@
       },
       "isRLSEnabled": true
     },
-    "public.organization_purges": {
-      "name": "organization_purges",
-      "schema": "",
-      "columns": {
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cancel_reason": {
-          "name": "cancel_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_at": {
-          "name": "cancelled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_by": {
-          "name": "cancelled_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "locked_until": {
-          "name": "locked_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "not_before": {
-          "name": "not_before",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "privacy_case_id": {
-          "name": "privacy_case_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "purged_at": {
-          "name": "purged_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scheduled_at": {
-          "name": "scheduled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "scheduled_by": {
-          "name": "scheduled_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "support_case_id": {
-          "name": "support_case_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "swept_at": {
-          "name": "swept_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "organization_purges_due_idx": {
-          "name": "organization_purges_due_idx",
-          "columns": [
-            {
-              "expression": "not_before",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "organization_purges_cancelled_by_platform_principals_id_fk": {
-          "name": "organization_purges_cancelled_by_platform_principals_id_fk",
-          "tableFrom": "organization_purges",
-          "tableTo": "platform_principals",
-          "columnsFrom": ["cancelled_by"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "organization_purges_organization_id_organizations_id_fk": {
-          "name": "organization_purges_organization_id_organizations_id_fk",
-          "tableFrom": "organization_purges",
-          "tableTo": "organizations",
-          "columnsFrom": ["organization_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "organization_purges_scheduled_by_platform_principals_id_fk": {
-          "name": "organization_purges_scheduled_by_platform_principals_id_fk",
-          "tableFrom": "organization_purges",
-          "tableTo": "platform_principals",
-          "columnsFrom": ["scheduled_by"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "organization_purges_support_case_id_support_cases_id_fk": {
-          "name": "organization_purges_support_case_id_support_cases_id_fk",
-          "tableFrom": "organization_purges",
-          "tableTo": "support_cases",
-          "columnsFrom": ["support_case_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "organization_purges_purge_owner_select": {
-          "name": "organization_purges_purge_owner_select",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": ["polaris_purge_owner"],
-          "using": "true"
-        },
-        "organization_purges_purge_owner_update": {
-          "name": "organization_purges_purge_owner_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": ["polaris_purge_owner"],
-          "using": "true",
-          "withCheck": "true"
-        },
-        "organization_purges_admin_owner_select": {
-          "name": "organization_purges_admin_owner_select",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": ["polaris_admin_owner"],
-          "using": "true"
-        },
-        "organization_purges_admin_owner_insert": {
-          "name": "organization_purges_admin_owner_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": ["polaris_admin_owner"],
-          "withCheck": "true"
-        },
-        "organization_purges_admin_owner_update": {
-          "name": "organization_purges_admin_owner_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": ["polaris_admin_owner"],
-          "using": "true",
-          "withCheck": "true"
-        }
-      },
-      "checkConstraints": {
-        "organization_purges_attempts_allowed": {
-          "name": "organization_purges_attempts_allowed",
-          "value": "\"organization_purges\".\"attempts\" >= 0"
-        },
-        "organization_purges_error_code_format": {
-          "name": "organization_purges_error_code_format",
-          "value": "\"organization_purges\".\"last_error_code\" IS NULL OR \"organization_purges\".\"last_error_code\" ~ '^[a-z][a-z0-9_]{0,63}$'"
-        },
-        "organization_purges_progress_coherent": {
-          "name": "organization_purges_progress_coherent",
-          "value": "(\"organization_purges\".\"swept_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NOT NULL)\n        AND \"organization_purges\".\"privacy_case_id\" = \"organization_purges\".\"support_case_id\""
-        },
-        "organization_purges_cancellation_coherent": {
-          "name": "organization_purges_cancellation_coherent",
-          "value": "((\"organization_purges\".\"cancelled_at\" IS NULL) = (\"organization_purges\".\"cancelled_by\" IS NULL))\n        AND ((\"organization_purges\".\"cancelled_at\" IS NULL) = (\"organization_purges\".\"cancel_reason\" IS NULL))\n        AND (\"organization_purges\".\"cancelled_at\" IS NULL OR \"organization_purges\".\"purged_at\" IS NULL)\n        AND (\"organization_purges\".\"cancel_reason\" IS NULL OR (char_length(\"organization_purges\".\"cancel_reason\") BETWEEN 1 AND 500 AND \"organization_purges\".\"cancel_reason\" = btrim(\"organization_purges\".\"cancel_reason\") AND \"organization_purges\".\"cancel_reason\" !~ '[[:cntrl:]]'))"
-        }
-      },
-      "isRLSEnabled": true
-    },
     "public.memberships": {
       "name": "memberships",
       "schema": "",
@@ -5613,19 +5567,12 @@
           "for": "INSERT",
           "to": ["polaris_admin_owner"],
           "withCheck": "true"
-        },
-        "platform_audit_events_purge_owner_insert": {
-          "name": "platform_audit_events_purge_owner_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": ["polaris_purge_owner"],
-          "withCheck": "event_type = 'organization.purge_completed'\n        AND entity_type = 'organization'\n        AND entity_id = organization_id\n        AND detail IS NULL\n        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')"
         }
       },
       "checkConstraints": {
         "platform_audit_events_type_allowed": {
           "name": "platform_audit_events_type_allowed",
-          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed')"
+          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded')"
         },
         "platform_audit_events_detail_allowed": {
           "name": "platform_audit_events_detail_allowed",

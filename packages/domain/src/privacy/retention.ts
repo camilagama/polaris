@@ -31,6 +31,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "platform_audit_and_support",
   "privacy_cases",
   "deletion_ledger",
+  "event_outbox",
   "provider_backups",
 ] as const);
 
@@ -308,6 +309,16 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     proposed: `Sobrevive à organização, sem expiração automática e sem job; não expira antes da janela de restauração mais longa do provedor (${TO_CONFIRM}, junto da janela de backup).`,
     rule: "O purge da organização não apaga o ledger; enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir. Nenhum papel o apaga hoje, e uma remoção futura exige uma migration revisada.",
     sources: ["ADR 0080", "docs/business-rules/privacy.md"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "event_outbox",
+    data: ["event_outbox (eventos a despachar, só IDs opacos)"],
+    period: { kind: "undecided" },
+    proposed: `Apagar os eventos despachados depois de um prazo curto, definido com o despachante (${TO_CONFIRM}); os pendentes saem com o purge da organização.`,
+    rule: "O corpo do evento só tem IDs opacos, inteiros e booleanos (nunca dado pessoal). Nenhum papel apaga hoje; o expurgo dos despachados é do despachante (PR110) ou do job agendado (PR112), e o purge da organização apaga os eventos dela.",
+    sources: ["ADR 0082"],
     status: "proposta",
   },
   {

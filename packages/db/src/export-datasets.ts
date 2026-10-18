@@ -63,6 +63,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
     deletion_ledger:
       "tombstones de exclusão, só IDs opacos: o papel do tenant só grava, não lê",
     data_exports: "o próprio export",
+    event_outbox:
+      "eventos a despachar, só IDs opacos: o papel do tenant só grava, não lê",
     entitlement_grants: "cobrança: lida só pelo papel de billing",
     memberships: "conta: o pedido sobre os dados da conta é outro",
     offline_grants: "autorização offline: mecanismo interno",

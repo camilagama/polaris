@@ -83,6 +83,7 @@ const gates: Gate[] = [
     "organization-purge",
     "../../../apps/web/scripts/verify-organization-purge-gate.ts",
   ],
+  ["event-outbox", "verify-event-outbox-gate.ts"],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
@@ -178,6 +179,7 @@ const suites: Record<string, string[]> = {
     "customer-anonymization",
     "deletion-ledger",
     "organization-purge",
+    "event-outbox",
     "media-commands",
     "offline-devices",
     "offline-lease",
@@ -249,6 +251,8 @@ const suites: Record<string, string[]> = {
     "data-export",
     "organization-purge",
   ],
+  // Phase 11 (async infrastructure): grows with every gate of the phase.
+  gate11: ["event-outbox"],
 };
 
 function withVerifyFull(url: string): string {

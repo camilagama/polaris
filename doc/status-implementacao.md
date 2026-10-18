@@ -1537,12 +1537,27 @@ Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organiza
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Base | Concluída | Branch `feat/full-purge` sobre a `main` depois do PR #125. |
+| Base | Concluída | Branch `feat/full-purge` sobre a `main` depois do PR #127 (outbox): a migration do purge é a 0071 e `event_outbox` está nas listas do purge. |
 | Domínio | Concluído | `@polaris/domain/privacy/organization-purge`; registro `ADMIN_TRIGGERED_REMOVALS` (separado de `RETENTION_PURGE_JOBS`); teste que falha se uma classe proposta tiver job. |
-| Banco | Concluído | Migration 0070: `organization_purges`, papel `polaris_purge_owner` (sem login), cinco funções, `admin_schedule_organization_purge` (só o caso de exclusão do dono, aceito em integral e com escopo da organização inteira), `admin_cancel_organization_purge`, evento de auditoria da conclusão, exceção estreita em dois gatilhos (`CREATE OR REPLACE`), gatilho de `data_export_files` que recusa organização inativa. |
+| Banco | Concluído | Migration 0071 (renumerada depois do outbox, PR #127): `organization_purges`, papel `polaris_purge_owner` (sem login), cinco funções, `admin_schedule_organization_purge` (só o caso de exclusão do dono, aceito em integral e com escopo da organização inteira), `admin_cancel_organization_purge`, evento de auditoria da conclusão, exceção estreita em dois gatilhos (`CREATE OR REPLACE`), gatilho de `data_export_files` que recusa organização inativa. |
 | Admin | Concluído | `POST /support-cases/{caso}/purge` e `POST /support-cases/{caso}/purge/cancel` (motivo obrigatório), capacidade `organization:purge`. |
 | Worker | Concluído | `runOrganizationPurges` no job horário de privacidade; `deleteObjectsUnderPrefix` em `apps/web/src/server/privacy/storage-prefix.ts`. |
 | Gate PostgreSQL 18 | Passou localmente (PostgreSQL 18.1); roda no CI | `organization-purge`. |
 | Verificação local | Concluída | `bun run check` e `bun run build` passaram; a suíte `ci` de gates (40, com `organization-purge`) passou num PostgreSQL 18.1 local descartável. Nada rodou contra Neon ou Cloudflare. |
 | Decisões do responsável | Pendentes | Ver ADR 0081: classes com base legal apagadas, cobrança mantida, substituição das duas funções de gatilho. |
 | Publicação | PR aberto, aguardando revisão | Branch `feat/full-purge`. |
+
+## Fase 11 — infraestrutura assíncrona
+
+### Fase 11A — Outbox transacional (PR108; implementação e verificações locais concluídas; gate de banco no CI)
+
+Primeiro passo da Fase 11 ([ADR 0082](../docs/adr/0082-outbox-transacional.md); o número pode mudar): o evento nasce na mesma transação do comando, sem despachante (PR110), sem filas (PR109).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Base | Concluída | Branch `feat/transactional-outbox` sobre a `main` (migration 0070, só aditiva; a do purge, do PR #126, foi renumerada para 0071 depois que este entrou). |
+| Domínio | Concluído | `@polaris/domain/events/outbox`: tipos permitidos, corpo só de IDs opacos, inteiros e booleanos (texto livre recusado), chave de idempotência e correlação. |
+| Banco | Concluído | `event_outbox` (RLS forçado; `event`, `type`, `status` `pending`/`dispatched`, `available_at`, `attempts`, `idempotency_key`, `correlation_id`; índice único por organização e chave; CHECK do corpo; `ON DELETE CASCADE` na organização). O runtime do tenant só insere cinco colunas, na própria organização e nos tipos que a política lista (cada evento amarrado a uma exportação pedida pelo mesmo usuário); ninguém lê, atualiza ou apaga; nenhum outro papel tem privilégio (o do despachante nasce no PR110). |
+| Quem grava | Concluído | `recordOutboxEvent` (`@polaris/db/event-outbox`) na transação do comando. Integração: `requestDataExport` grava `data_export.requested` com o ID do pedido; o comportamento não muda (o job continua achando o pedido pela tabela) e nada consome o evento ainda. |
+| Gate PostgreSQL 18 | No CI | `event-outbox` (suítes `ci` e `gate11`); não rodado localmente (sem PostgreSQL 18 no ambiente). O CHECK do corpo e a política foram provados num PostgreSQL 18.6 em memória (PGlite), fora do repositório. |
+| Limites | Registrados | Sem despacho, tentativa, recuo, DLQ nem retenção dos despachados (PR110 a PR112); o purge (PR107) não apaga a linha da organização, então o cascade não dispara: `event_outbox` entrou nas listas do purge no PR #126 (`PURGE_DELETE_ORDER`, o `DELETE` e a política do papel do purge); evento de plataforma (sem organização) fica para quando um comando exigir; o banco confere a forma do corpo, não o sentido; a exportação tem dois mecanismos por ora (a varredura vale, o evento não). |
