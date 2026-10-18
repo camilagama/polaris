@@ -8,12 +8,12 @@ O plano define o Gate 5 assim: o offline só é considerado pronto quando (1) um
 
 - Siga a [política de perfis de CLI](./cli-profile-policy.md): Neon CLI com o perfil `junior-pessoal`. Não use o plugin ou conector Neon.
 - Nenhuma connection string, senha ou token é impressa, gravada ou colada em chat; a URL do gate vive só nas variáveis de ambiente do processo e é removida ao final.
-- Alvo seguro: uma **branch Neon nova e descartável** (filha de `production`, sem `--schema-only`, expiração de 24 h) com um banco novo, as migrations reaplicadas do zero e apenas dados sintéticos. Nunca copie dados de produção. O procedimento de criação da branch é o do [Gate 4](./gate-4-sales-core.md#prova-antes-de-liberação-em-neon).
+- Alvo seguro: uma **branch Neon nova e descartável** (filha da `production` do projeto Neon descartável dos gates, sem `--schema-only`, expiração de 24 h) com um banco novo, as migrations reaplicadas do zero e apenas dados sintéticos. Nunca use um projeto com dados reais de clientes. O procedimento de criação da branch é o do [Gate 4](./gate-4-sales-core.md#prova-antes-de-liberação-em-neon).
 - Não rode dois gates ao mesmo tempo no mesmo banco.
 
 ## Passos automáticos
 
-    bun run --filter @polaris/db gates:gate5   # suíte offline (Fase 5)
+    CI=true bun scripts/run-gates.ts gate5     # suíte offline (Fase 5), a partir de packages/db; também roda na suíte ci do CI
     bun run --filter @polaris/db gates:all     # tudo
 
 A suíte `gate5` roda, em sequência: `offline-devices`, `offline-lease`, `sync-log`, `bootstrap`, `sync-push`, `offline-product`, `offline-customer`, `offline-stock`, `offline-sale` e `offline-e2e`. Cada um termina com `"status": "passed"`.
