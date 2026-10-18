@@ -7,6 +7,8 @@ import {
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
 import { runBillingMaintenance } from "../src/server/billing/maintenance";
+import { runDataExports } from "../src/server/privacy/data-export-job";
+import { createRequesterReader } from "../src/server/privacy/data-export-reader";
 import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
 import type { WorkerBindings } from "../src/server/environment";
 
@@ -76,7 +78,11 @@ async function runBillingJobs(env: WorkerBindings): Promise<unknown[]> {
   }
 }
 
-/** Marks the closures whose recovery window ended as closed (ADR 0074). */
+/**
+ * What the privacy role does in the background: marks the closures whose recovery window ended as
+ * closed (ADR 0074), then builds the data exports that were asked for and removes the ones whose time
+ * is up (ADR 0078). One connection serves both, and one failing never hides the other.
+ */
 async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
   const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
   if (!connectionString) {
@@ -90,15 +96,39 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<unknown[]> {
   } catch (error: unknown) {
     return [error];
   }
+  const failures: unknown[] = [];
   try {
-    const report = await runPrivacyMaintenance(client);
-    console.info("privacy_maintenance_complete", report);
-    return [];
-  } catch (error: unknown) {
-    return [error];
+    try {
+      const report = await runPrivacyMaintenance(client);
+      console.info("privacy_maintenance_complete", report);
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+    const bucket = env.MEDIA_BUCKET;
+    if (bucket) {
+      try {
+        const report = await runDataExports({
+          bucket,
+          client,
+          now: () => new Date(),
+          // opened only when an export is claimed
+          readAsRequester: (claimed, operation) =>
+            createRequesterReader(env.HYPERDRIVE.connectionString)(
+              claimed,
+              operation
+            ),
+        });
+        console.info("data_export_complete", report);
+      } catch (error: unknown) {
+        failures.push(error);
+      }
+    } else {
+      console.warn("data_export_not_configured");
+    }
   } finally {
     await quietly(() => client.close());
   }
+  return failures;
 }
 
 /** Runs a job so that whatever it throws becomes its failure, never another job's. */

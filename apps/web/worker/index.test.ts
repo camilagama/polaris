@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createPrivacyMaintenanceClient: vi.fn(),
   mediaClose: vi.fn(),
   privacyClose: vi.fn(),
+  runDataExports: vi.fn(),
   runPrivacyMaintenance: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
@@ -21,6 +22,12 @@ vi.mock("@polaris/db/media-cleanup", () => ({
 }));
 vi.mock("@polaris/db/privacy-maintenance", () => ({
   createPrivacyMaintenanceClient: mocks.createPrivacyMaintenanceClient,
+}));
+vi.mock("../src/server/privacy/data-export-job", () => ({
+  runDataExports: mocks.runDataExports,
+}));
+vi.mock("../src/server/privacy/data-export-reader", () => ({
+  createRequesterReader: vi.fn(),
 }));
 vi.mock("../src/server/privacy/maintenance", () => ({
   runPrivacyMaintenance: mocks.runPrivacyMaintenance,
@@ -65,6 +72,12 @@ describe("the scheduled maintenance", () => {
     });
     mocks.privacyClose.mockResolvedValue(undefined);
     mocks.runPrivacyMaintenance.mockResolvedValue({ closedOrganizations: 0 });
+    mocks.runDataExports.mockResolvedValue({
+      deleted: 0,
+      expired: 0,
+      failed: 0,
+      ready: 0,
+    });
   });
 
   it("runs media and billing and finishes quietly when both succeed", async () => {
@@ -174,6 +187,60 @@ describe("the scheduled maintenance", () => {
 
       expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
       expect(mocks.reconcileStagedMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it("builds the data exports on the same connection, with the bucket and the current time", async () => {
+      await expect(
+        runScheduled({ ...configured, ...privacy })
+      ).resolves.toBeUndefined();
+
+      expect(mocks.runDataExports).toHaveBeenCalledTimes(1);
+      expect(mocks.runDataExports).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: configured.MEDIA_BUCKET,
+          client: expect.objectContaining({ close: mocks.privacyClose }),
+        })
+      );
+      expect(mocks.createPrivacyMaintenanceClient).toHaveBeenCalledTimes(1);
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips the data exports, without failing, where there is no bucket", async () => {
+      await expect(
+        runScheduled({
+          ...privacy,
+          BILLING_HYPERDRIVE: configured.BILLING_HYPERDRIVE,
+        })
+      ).rejects.toThrow("media_staging_reconciler_not_configured");
+
+      expect(mocks.runDataExports).not.toHaveBeenCalled();
+      expect(mocks.runPrivacyMaintenance).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports a data export failure without hiding the closures or stopping the rest", async () => {
+      mocks.runDataExports.mockRejectedValue(new Error("export_failed"));
+
+      await expect(runScheduled({ ...configured, ...privacy })).rejects.toThrow(
+        "export_failed"
+      );
+
+      expect(mocks.runPrivacyMaintenance).toHaveBeenCalledTimes(1);
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+      expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
+    });
+
+    it("still runs the data exports when the closure sweep fails, and reports both", async () => {
+      mocks.runPrivacyMaintenance.mockRejectedValue(new Error("sweep_failed"));
+      mocks.runDataExports.mockRejectedValue(new Error("export_failed"));
+
+      const error = await runScheduled({ ...configured, ...privacy }).catch(
+        (cause: unknown) => cause
+      );
+
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(
+        (error as AggregateError).errors.map((entry: Error) => entry.message)
+      ).toEqual(["sweep_failed", "export_failed"]);
     });
 
     it("reports a connection that cannot be opened", async () => {

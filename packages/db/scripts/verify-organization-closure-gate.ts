@@ -770,6 +770,11 @@ async function run() {
     assert.deepEqual(
       policies.rows.map((row) => row.policyname),
       [
+        "data_export_files_privacy_owner_delete",
+        "data_export_files_privacy_owner_insert",
+        "data_export_files_privacy_owner_select",
+        "data_exports_privacy_owner_select",
+        "data_exports_privacy_owner_update",
         "memberships_privacy_owner_select",
         "memberships_privacy_owner_update",
         "offline_grants_privacy_owner_select",
