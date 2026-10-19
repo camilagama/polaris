@@ -6,7 +6,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  new URL("../drizzle/0079_auditoria_sobrevive_ao_purge.sql", import.meta.url),
+  new URL("../drizzle/0080_auditoria_sobrevive_ao_purge.sql", import.meta.url),
   "utf8"
 );
 

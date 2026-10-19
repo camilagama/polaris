@@ -805,7 +805,7 @@ async function run() {
         })
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [orgE.organizationId]
     );
     await maintenance.finalizeExpiredClosures(1000);

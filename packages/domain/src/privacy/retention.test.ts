@@ -260,6 +260,28 @@ describe("approved periods", () => {
     expect(approvedRetention("auth_verification")).toBe(DAY_MS);
   });
 
+  it("keep a revoked device 90 days, on the LGPD, with the legal review still pending and no job", () => {
+    const policy = retentionPolicy("devices");
+    expect(approvedRetention("devices")).toBe(90 * DAY_MS);
+    expect(policy.basis).toBe("lei");
+    expect(policy.approvedOn).toBe("2026-10-19");
+    expect(policy.legalReview).toBe("pending");
+    expect(policy.legalSources).toEqual([
+      "LGPD (Lei 13.709/2018), art. 6º, III",
+      "LGPD (Lei 13.709/2018), art. 16",
+    ]);
+    expect("job" in policy).toBe(false);
+  });
+
+  it("keep billing events until 31/12 of the 5th year after the fact, held back by an inspection or a legal hold", () => {
+    const policy = retentionPolicy("billing_events");
+    expect(policy.status).toBe("proposta");
+    const proposed = "proposed" in policy ? policy.proposed : "";
+    expect(proposed).toContain("31/12 do 5º ano após o fato gerador");
+    expect(proposed).toContain("fiscalização ou legal hold");
+    expect(policy.rule).toContain("legal hold");
+  });
+
   it("count calendar months, moving a day that does not exist to the next month", () => {
     const expiry = (from: string) =>
       retentionExpiry("auth_security_audit", new Date(from)).toISOString();
@@ -334,7 +356,7 @@ describe("approved periods", () => {
   });
 
   it("keep the tenant's operational data until the purge, which no job expires", () => {
-    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after 30 days
+    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after the 90 days of the closure
     for (const retentionClass of [
       "sales_records",
       "inventory_ledger",

@@ -59,14 +59,15 @@ export function organizationMediaPrefix(organizationId: string): string {
 }
 
 /**
- * The closure period (decision of 18/10/2026, ADR 0081): the purge removes the tenant's operational data only
- * once the organization has been closed for this long, and refuses before it (`closure_period_not_elapsed`),
- * whatever recovery window the closure had. During it the owner can still export (by recovering). Polaris is
- * the processor of that data and the fiscal duty to keep it is the customer's, who has the export. The
- * migration holds the same period (`interval '30 days'` in `admin_schedule_organization_purge` and
- * `organization_purge_blocker`).
+ * The closure period (decision of 18/10/2026, changed from 30 to 90 days on 19/10/2026, ADR 0081): the purge
+ * removes the tenant's operational data only once the organization has been closed for this long, and refuses
+ * before it (`closure_period_not_elapsed`), whatever recovery window the closure had. Polaris is the processor
+ * of that data and the fiscal duty to keep it is the customer's, who has the export. The intent is that the
+ * owner only reads and exports during the period; the read-only mode after the recovery window is a requirement
+ * of ADR 0081, not built yet. The migration holds the same period (`interval '90 days'` in
+ * `admin_schedule_organization_purge` and `organization_purge_blocker`).
  */
-export const ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS = 30;
+export const ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS = 90;
 
 /**
  * The time between the end of the recovery window and the earliest purge, from the retention
@@ -143,7 +144,7 @@ export type OrganizationPurgeRefusalCode =
 const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   Record<OrganizationPurgeRefusalCode, string>
 > = Object.freeze({
-  closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, em que o dono pode exportar os dados.`,
+  closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, para o dono poder ler e exportar os dados.`,
   legal_hold_active:
     "Há uma trava legal vigente na organização: o purge não é agendado nem executado enquanto ela não for liberada.",
   organization_mismatch: "A organização informada não é a do caso.",

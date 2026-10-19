@@ -205,9 +205,9 @@ BEGIN
   IF window_end > pg_catalog.now() THEN
     RAISE EXCEPTION 'recovery_window_open' USING ERRCODE = '55000';
   END IF;
-  -- the closure period of 30 days (decision of 18/10/2026, ADR 0081), whatever window the closure had: the owner
-  -- could export (by recovering) during it, and the purge never starts before it is over
-  IF closure_requested + interval '30 days' > pg_catalog.now() THEN
+  -- the closure period of 90 days (decision of 19/10/2026, ADR 0081), whatever window the closure had: the owner
+  -- can recover it only while the window is open, and the purge never starts before the period is over
+  IF closure_requested + interval '90 days' > pg_catalog.now() THEN
     RAISE EXCEPTION 'closure_period_not_elapsed' USING ERRCODE = '55000';
   END IF;
   IF EXISTS (
@@ -230,7 +230,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'paid_access_running' USING ERRCODE = '55000';
   END IF;
-  due := GREATEST(window_end, closure_requested + interval '30 days') + p_delay_seconds * interval '1 second';
+  due := GREATEST(window_end, closure_requested + interval '90 days') + p_delay_seconds * interval '1 second';
   UPDATE public.organizations SET status = 'purge_pending', updated_at = pg_catalog.now()
    WHERE id = target AND status = 'closed';
   -- a purge scheduled again (after a cancellation, or a restore that brought the organization back) starts from
@@ -314,7 +314,7 @@ BEGIN
   IF plan.not_before > pg_catalog.now() THEN
     RAISE EXCEPTION 'purge_not_due' USING ERRCODE = '55000';
   END IF;
-  -- a legal hold, or a closure younger than 30 days: nothing is removed
+  -- a legal hold, or a closure younger than 90 days: nothing is removed
   blocker := public.organization_purge_blocker(p_organization);
   IF blocker IS NOT NULL THEN
     RAISE EXCEPTION '%', blocker USING ERRCODE = '55000';

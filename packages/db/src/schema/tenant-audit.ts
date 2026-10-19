@@ -18,7 +18,7 @@ const runtimeRole = "polaris_pr11_runtime";
 
 /**
  * The audit of the tenant survives the purge of the organization (ADR 0081, amended 19/10/2026): the foreign key
- * restricts, and the triggers of migration 0079 refuse UPDATE, DELETE and TRUNCATE (only the retention function
+ * restricts, and the triggers of migration 0080 refuse UPDATE, DELETE and TRUNCATE (only the retention function
  * removes an expired row). `event_type` is a registered type (a CHECK built from the domain registry).
  */
 export const tenantAuditEvents = pgTable(
