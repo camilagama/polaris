@@ -44,6 +44,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "auth_login_lock",
   "auth_security_audit",
   "auth_access_log",
+  "legal_acceptance",
   "platform_audit_and_support",
   "privacy_cases",
   "deletion_ledger",
@@ -97,6 +98,8 @@ export const RETENTION_BLOCKERS = Object.freeze({
     "Guarda cautelar do registro de acesso (Marco Civil art. 15, §2º): a autoridade policial, administrativa ou o Ministério Público pode pedir a guarda por prazo maior que 6 meses, e o expurgo precisa pular o usuário ou o IP sob guarda antes de existir. Sem a guarda, nenhum job de expurgo do registro pode ser registrado (ADR 0092).",
   access_record_table:
     "Tabela própria do registro de acesso a aplicação (data, hora e IP, 6 meses, Marco Civil art. 15); tarefa t039. Resolvido: a tabela `auth_access_log` existe (ADR 0092).",
+  account_deletion_event:
+    "Evento de exclusão de conta que grava o `blockedUntil` do aceite legal: a data da exclusão mais 10 anos, para as linhas daquele `user_id` (ADR 0100, decisão do Arrascaeta de 19/10/2026). Sem a rotina de exclusão de conta o prazo não tem de onde partir, e `legal_acceptance` só acrescenta (gatilho): quem entregar a rotina entrega também a função de expurgo (dono de retenção, pulando legal hold) e esse `blockedUntil`. Nenhum job de expurgo do aceite pode existir antes.",
 });
 
 export type RetentionBlocker = keyof typeof RETENTION_BLOCKERS;
@@ -483,6 +486,30 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
       "docs/business-rules/authentication.md",
       "ADR 0079",
       "ADR 0092",
+    ],
+    status: "aprovada",
+  },
+  {
+    approvedOn: "2026-10-19",
+    basis: "decisao",
+    blockedUntil: "account_deletion_event",
+    class: "legal_acceptance",
+    data: [
+      "legal_acceptance (aceite dos termos de uso e da política de privacidade: documento, versão, SHA-256 do texto, hora do servidor, origem e identificador da requisição, por usuário; sem IP nem navegador)",
+    ],
+    legalReview: "pending",
+    legalSources: [
+      "LGPD (Lei 13.709/2018), art. 7º, VI",
+      "LGPD (Lei 13.709/2018), art. 16",
+    ],
+    period: { kind: "calendar_months", months: 120 },
+    review: USER_APPROVED_REVIEW,
+    rule: 'O aceite legal fica 10 anos depois da exclusão da conta (decisão do usuário de 19/10/2026, ADR 0100; a validação do advogado é recomendada antes do go-live, sem bloquear). "Fim do contrato" é a data em que a conta é excluída, e quem a define é a rotina de exclusão de conta: é ela que grava o `blockedUntil` (essa data mais 10 anos) no evento de exclusão, para as linhas daquele `user_id`. Enquanto a conta existe nada vence. A linha não tem organização nem chave estrangeira para o usuário, então sobrevive ao purge da organização e à exclusão do usuário; é só de acrescentar (gatilho), por isso o expurgo é uma função própria, do dono de retenção e sem job, que entra com a rotina de exclusão de conta (`blockedUntil: account_deletion_event`). A tabela não guarda IP nem navegador.',
+    sources: [
+      "ADR 0100",
+      "ADR 0079",
+      "docs/business-rules/privacy.md",
+      "docs/business-rules/authentication.md",
     ],
     status: "aprovada",
   },

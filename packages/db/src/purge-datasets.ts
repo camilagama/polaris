@@ -92,7 +92,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
   });
 
 /**
- * Tables without an organization column (the access log, the sign-in lock, the queues, the scheduler and the link between a session
+ * Tables without an organization column (the access log, the sign-in lock, the record of legal acceptance, the queues, the scheduler and the link between a session
  * and a device): nothing of a tenant to remove (ADR 0081). The purge gate proves they still have none; a column of
  * an organization moves the table to one of the lists above.
  */
@@ -103,6 +103,8 @@ export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
     "Registro de acesso do Marco Civil (art. 15), por usuário e sem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo de 6 meses, com a guarda cautelar do §2º (ADR 0092 e 0081).",
   auth_login_lock:
     "Contador do bloqueio da entrada por senha, uma linha por e-mail digitado e sem organização: a chave é o HMAC do e-mail normalizado (nem e-mail, nem usuário, nem IP), e a linha dura no máximo 1 dia (classe `auth_login_lock`, ADR 0100).",
+  legal_acceptance:
+    "Aceite dos termos e da política de privacidade, por usuário e sem organização: a linha só acrescenta (gatilho), sobrevive ao purge da organização e à exclusão do usuário, e fica 10 anos depois da exclusão da conta (classe `legal_acceptance`, ADR 0100). Sem IP.",
   device_sessions:
     "Vínculo entre sessão e aparelho de um usuário, sem organização: some com a sessão ou com o aparelho (chave estrangeira em cascata), e a retenção é a da classe `auth_sessions`. A classe de retenção dos aparelhos (`devices`) ainda não foi decidida.",
   operational_incidents:
