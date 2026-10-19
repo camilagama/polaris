@@ -10,8 +10,8 @@ import { OFFLINE_RUNTIME_ENABLED } from "./enabled";
 import { OfflineRuntime } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 import { RuntimeContext } from "./runtime-context";
-import { isSessionOver } from "./session-ended";
 import { openRuntimeStores } from "./runtime-stores";
+import { isSessionOver } from "./session-ended";
 
 /**
  * Starts the offline runtime for the organization the person is working in and

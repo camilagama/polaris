@@ -1,5 +1,5 @@
-import { logger } from "@polaris/observability/logger";
 import { createDatabase } from "@polaris/db/client";
+import { logger } from "@polaris/observability/logger";
 import { createBetterAuth } from "../auth";
 import {
   PasswordPolicyError,

@@ -36,8 +36,8 @@ interface FeeDraft {
   percentage: string;
 }
 interface RuleDraft {
-  draftId: string;
   anticipationFee: FeeDraft;
+  draftId: string;
   expectedSettlementDays: string;
   installmentPlan: "merchant" | "issuer";
   installments: string;
@@ -51,8 +51,8 @@ interface ProfileDraft {
 interface FeeFieldsProps {
   id: string;
   label: string;
-  value: FeeDraft;
   onChange: (value: FeeDraft) => void;
+  value: FeeDraft;
 }
 interface RuleEditorProps {
   canRemove: boolean;

@@ -2,7 +2,9 @@ import type { DeviceReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../../lib/orpc";
 import { LogoutDialog } from "../logout-dialog";
+import { DeviceItem } from "./device-item";
 import {
+  type DeviceRow,
   deviceRows,
   devicesLoadError,
   EMPTY_TEXT,
@@ -19,11 +21,10 @@ import {
   type SignInAgainPanel,
   signInAgainPanel,
 } from "./devices-model";
-import { DeviceItem } from "./device-item";
 import "./devices-page.css";
 import { forgetSessionCaches, leaveTo, signInPath } from "./leave-browser";
 import { useLogout } from "./logout-control";
-import type { OfflineRuntime } from "./offline-runtime";
+import type { OfflineRuntime, RuntimeSnapshot } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 import {
   markSessionEndedHere,
@@ -131,6 +132,148 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
   );
 }
 
+type Recognition = "failed" | "waiting";
+
+/**
+ * Whether the screen is still waiting to know which row is this browser (null when it
+ * does not need to). It gives up when the runtime says it is unavailable, or after a while.
+ */
+function useRecognition(
+  online: boolean,
+  knowsThisDevice: boolean,
+  sessionOver: boolean,
+  snapshot: RuntimeSnapshot | null
+): Recognition | null {
+  const [slow, setSlow] = useState(false);
+  const waiting = online && !knowsThisDevice && !sessionOver;
+  useEffect(() => {
+    setSlow(false);
+    if (!waiting) {
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), RECOGNIZING_PATIENCE_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
+  if (!waiting) {
+    return null;
+  }
+  return slow || snapshot === null || snapshot.phase === "unavailable"
+    ? "failed"
+    : "waiting";
+}
+
+function RecognitionLine({ state }: { state: Recognition }) {
+  return state === "failed" ? (
+    <p className="categories-message is-error" role="status">
+      {RECOGNIZING_FAILED_TEXT}
+    </p>
+  ) : (
+    <p className="device-recognizing" role="status">
+      {RECOGNIZING_TEXT}
+    </p>
+  );
+}
+
+interface ListSectionProps {
+  actionError: string | null;
+  busy: boolean;
+  /** The id of the row whose confirmation is open. */
+  confirming: string | null;
+  devices: DeviceReadModel[] | null;
+  endOtherSessions: boolean;
+  loadFailed: string | null;
+  loading: boolean;
+  notice: string | null;
+  /** The buttons are off: no connection, or this browser's device is not known yet. */
+  offline: boolean;
+  onAsk: (id: string) => void;
+  onCancel: () => void;
+  onChoose: (endOtherSessions: boolean) => void;
+  onDismiss: () => void;
+  online: boolean;
+  onRetry: () => void;
+  onRevoke: (id: string) => void;
+  panel: SignInAgainPanel | null;
+  recognition: Recognition | null;
+  rows: DeviceRow[];
+}
+
+/** Everything under the heading while this browser's session is alive: messages, then the list. */
+function ListSection({
+  actionError,
+  confirming,
+  devices,
+  loadFailed,
+  loading,
+  notice,
+  offline,
+  onDismiss,
+  onRetry,
+  online,
+  panel,
+  recognition,
+  rows,
+  ...shared
+}: ListSectionProps) {
+  const sessionGone = panel?.kind === "session_gone";
+  // an unsure answer is said inside the open confirmation; if the row left the list meanwhile, it is said here
+  const errorInsideRow =
+    confirming !== null && rows.some((row) => row.id === confirming);
+  return (
+    <>
+      {panel ? <SignInAgain onDismiss={onDismiss} panel={panel} /> : null}
+      {loading ? (
+        <p aria-busy="true" className="device-loading" role="status">
+          {LOADING_TEXT}
+        </p>
+      ) : null}
+      {loadFailed && online && !panel ? (
+        <p className="categories-message is-error" role="alert">
+          {loadFailed}{" "}
+          <button className="quiet-button" onClick={onRetry} type="button">
+            Tentar novamente
+          </button>
+        </p>
+      ) : null}
+      {actionError && !errorInsideRow ? (
+        <p className="categories-message is-error" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="categories-message is-success" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {devices && rows.length === 0 && !loadFailed ? (
+        <p className="category-empty-state">{EMPTY_TEXT}</p>
+      ) : null}
+      {devices && recognition && !sessionGone ? (
+        <RecognitionLine state={recognition} />
+      ) : null}
+      {devices && sessionGone ? (
+        <p className="categories-message is-error" role="status">
+          {SESSION_GONE_LIST_TEXT}
+        </p>
+      ) : null}
+      {devices ? (
+        <ul aria-label="Aparelhos" className="device-list">
+          {rows.map((row) => (
+            <DeviceItem
+              actionError={confirming === row.id ? actionError : null}
+              confirming={confirming === row.id}
+              key={row.id}
+              offline={offline || sessionGone}
+              row={row}
+              {...shared}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
 /** Lists the user's devices and lets them revoke one (lost phone). Needs a connection. */
 export function DevicesPage() {
   const runtime = useOfflineRuntime();
@@ -152,24 +295,12 @@ export function DevicesPage() {
   // without the runtime we cannot tell which row is this browser: offer no action at all
   const knowsThisDevice = currentDeviceId !== null;
   const sessionOver = endedHere !== null;
-  // the runtime gave up on this browser's device, or it is taking too long: say so instead of leaving the buttons dead
-  const [recognitionSlow, setRecognitionSlow] = useState(false);
-  const waitingForDevice = online && !knowsThisDevice && !sessionOver;
-  useEffect(() => {
-    setRecognitionSlow(false);
-    if (!waitingForDevice) {
-      return;
-    }
-    const timer = setTimeout(
-      () => setRecognitionSlow(true),
-      RECOGNIZING_PATIENCE_MS
-    );
-    return () => clearTimeout(timer);
-  }, [waitingForDevice]);
-  const recognitionFailed =
-    waitingForDevice &&
-    (recognitionSlow || snapshot === null || snapshot.phase === "unavailable");
-
+  const recognition = useRecognition(
+    online,
+    knowsThisDevice,
+    sessionOver,
+    snapshot
+  );
   // the server says the session is over: forget the caches it left here now (the runtime
   // drops the lease and the collections when it sees the refusal, or when the person leaves)
   const handleSessionOver = useCallback(() => {
@@ -311,7 +442,6 @@ export function DevicesPage() {
   }, []);
   const handleDismiss = useCallback(() => setPanel(null), []);
 
-  const sessionGone = panel?.kind === "session_gone";
   const rows = devices ? deviceRows(devices, currentDeviceId) : [];
   const loading = devices === null && loadFailed === null && !sessionOver;
   return (
@@ -334,72 +464,31 @@ export function DevicesPage() {
           {OFFLINE_TEXT}
         </p>
       )}
-      {endedHere ? <BrowserLeft keptWork={endedHere.keptWork} /> : null}
-      {panel && !endedHere ? (
-        <SignInAgain onDismiss={handleDismiss} panel={panel} />
-      ) : null}
-      {loading ? (
-        <p aria-busy="true" className="device-loading" role="status">
-          {LOADING_TEXT}
-        </p>
-      ) : null}
-      {loadFailed && online && !panel && !endedHere ? (
-        <p className="categories-message is-error" role="alert">
-          {loadFailed}{" "}
-          <button className="quiet-button" onClick={handleRetry} type="button">
-            Tentar novamente
-          </button>
-        </p>
-      ) : null}
-      {actionError && confirming === null && !endedHere ? (
-        <p className="categories-message is-error" role="alert">
-          {actionError}
-        </p>
-      ) : null}
-      {notice && !endedHere ? (
-        <p className="categories-message is-success" role="status">
-          {notice}
-        </p>
-      ) : null}
-      {devices && rows.length === 0 && !loadFailed && !endedHere ? (
-        <p className="category-empty-state">{EMPTY_TEXT}</p>
-      ) : null}
-      {devices && waitingForDevice ? (
-        <p
-          className={
-            recognitionFailed
-              ? "categories-message is-error"
-              : "device-recognizing"
-          }
-          role="status"
-        >
-          {recognitionFailed ? RECOGNIZING_FAILED_TEXT : RECOGNIZING_TEXT}
-        </p>
-      ) : null}
-      {devices && sessionGone && !endedHere ? (
-        <p className="categories-message is-error" role="status">
-          {SESSION_GONE_LIST_TEXT}
-        </p>
-      ) : null}
-      {devices && !endedHere ? (
-        <ul aria-label="Aparelhos" className="device-list">
-          {rows.map((row) => (
-            <DeviceItem
-              actionError={confirming === row.id ? actionError : null}
-              busy={busy}
-              confirming={confirming === row.id}
-              endOtherSessions={endOtherSessions}
-              key={row.id}
-              offline={!(online && knowsThisDevice) || sessionGone}
-              onAsk={handleAsk}
-              onCancel={handleCancel}
-              onChoose={setEndOtherSessions}
-              onRevoke={handleRevokeEvent}
-              row={row}
-            />
-          ))}
-        </ul>
-      ) : null}
+      {endedHere ? (
+        <BrowserLeft keptWork={endedHere.keptWork} />
+      ) : (
+        <ListSection
+          actionError={actionError}
+          busy={busy}
+          confirming={confirming}
+          devices={devices}
+          endOtherSessions={endOtherSessions}
+          loadFailed={loadFailed}
+          loading={loading}
+          notice={notice}
+          offline={!(online && knowsThisDevice)}
+          onAsk={handleAsk}
+          onCancel={handleCancel}
+          onChoose={setEndOtherSessions}
+          onDismiss={handleDismiss}
+          online={online}
+          onRetry={handleRetry}
+          onRevoke={handleRevokeEvent}
+          panel={panel}
+          recognition={recognition}
+          rows={rows}
+        />
+      )}
     </div>
   );
 }

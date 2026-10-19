@@ -131,16 +131,16 @@ describe("the scheduled maintenance", () => {
   it("masks personal data and secrets in a job report that grew a field, through the real logger", async () => {
     // a report spread into the log (`{ ...report }`) carries whatever it grows
     mocks.reconcileStagedMedia.mockResolvedValue({
-      removed: 2,
+      cause: new Error("falhou para joao@example.com", {
+        cause: { password: "hunter2" },
+      }),
       customerEmail: "maria@example.com",
       detail: {
         lines: ["cliente 123.456.789-09", { note: "ligar 11 98888-7777" }],
       },
       note: "de 203.0.113.9 com Bearer abcdef0123456789",
+      removed: 2,
       sessionToken: "s3cr3t-value",
-      cause: new Error("falhou para joao@example.com", {
-        cause: { password: "hunter2" },
-      }),
     });
 
     await expect(runScheduled(configured)).resolves.toBeUndefined();

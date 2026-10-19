@@ -110,9 +110,9 @@ describe("a device row", () => {
     expect(html).not.toContain(">Sim, revogar este aparelho<");
   });
 
-  it("says where Sair is on the phone and on the computer", () => {
+  it("says where Sair is: in the Menu, or at the top on a wide screen", () => {
     const html = render({ row: row({ isCurrent: true }) });
     expect(html).toContain("abra o Menu");
-    expect(html).toContain("no computador");
+    expect(html).toContain("em tela larga");
   });
 });

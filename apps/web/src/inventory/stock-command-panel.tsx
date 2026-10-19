@@ -11,6 +11,8 @@ import {
 } from "react";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
+import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { queueOfflineStock } from "./queue-offline-stock";
 import {
   backToStockEditing,
   canCloseStock,
@@ -44,8 +46,6 @@ import {
   visibleStockIssues,
   WRITE_OFF_REASONS,
 } from "./stock-command-model";
-import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { queueOfflineStock } from "./queue-offline-stock";
 import {
   costText,
   type StockTarget,
@@ -59,16 +59,16 @@ interface StockCommandPanelProps {
   action: StockAction;
   /** Without a connection: the movement is kept on this device instead of sent. */
   local?: LocalWorkspace | undefined;
-  organizationId: string;
-  /** The panel was closed; the page restores focus to the row's button. */
-  onClose: () => void;
   /** The server answered with a newer balance for this variant. */
   onBalance: (
     balance: InventoryBalanceReadModel,
     updatedAt: string | null
   ) => void;
+  /** The panel was closed; the page restores focus to the row's button. */
+  onClose: () => void;
   /** The variant or its product changed under the screen. */
   onReloadList: () => void;
+  organizationId: string;
   target: StockTarget;
   today: string;
 }
@@ -514,6 +514,8 @@ function useFieldRefs() {
 }
 
 interface ActionsProps {
+  blocked: boolean;
+  closable: boolean;
   confirming: boolean;
   label: string;
   locked: boolean;
@@ -522,8 +524,6 @@ interface ActionsProps {
   onConfirm: () => void;
   onReview: () => void;
   submitting: boolean;
-  blocked: boolean;
-  closable: boolean;
 }
 
 function Actions({

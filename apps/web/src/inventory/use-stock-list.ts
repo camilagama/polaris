@@ -1,7 +1,7 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDebouncedValue } from "../lib/use-debounced-value";
 import { orpcClient } from "../lib/orpc";
+import { useDebouncedValue } from "../lib/use-debounced-value";
 import {
   filterLocalStockEntries,
   localStockEntries,
@@ -16,8 +16,8 @@ import {
   type StockListState,
   stockBalanceUpdated,
   stockListRequest,
-  stockLoadFailed,
   stockLoaded,
+  stockLoadFailed,
   stockLoading,
   stockMoreFailed,
   stockMoreLoaded,

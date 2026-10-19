@@ -1,6 +1,6 @@
+import { classifyDeadLetter } from "@polaris/domain/events/dead-letter";
 import { logger } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
-import { classifyDeadLetter } from "@polaris/domain/events/dead-letter";
 import { type QueueBatch, retryDelaySeconds } from "./consumer";
 
 /**

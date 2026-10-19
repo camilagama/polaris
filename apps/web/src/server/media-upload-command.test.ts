@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
+import { describe, expect, it } from "vitest";
 import {
   isMediaObjectKey,
   mediaObjectKey,

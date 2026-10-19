@@ -32,9 +32,9 @@ import {
   PURGE_TABLES_WITHOUT_TENANT_DATA,
 } from "@polaris/db/purge-datasets";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
-import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
 import { PRIVACY_DATA_CATEGORIES } from "@polaris/domain/admin/privacy-case";
+import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
+import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
 import {
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
   OrganizationPurgeRefusedError,
@@ -840,11 +840,11 @@ async function run() {
       // a charge whose fact carries the payer (a provider adapter that let it through), and a command without
       const billingFact = {
         ...PAYER_FACT,
-        // a kept key whose value is not a plain value goes too (a nested payer)
-        transition: { payer: PAYER_FACT.customerName },
         cycleMonths: 1,
         occurredAt: "2026-09-01T12:00:00.000Z",
         periodEndsAt: "2026-10-01T12:00:00.000Z",
+        // a kept key whose value is not a plain value goes too (a nested payer)
+        transition: { payer: PAYER_FACT.customerName },
         type: "charge_succeeded",
       };
       await owner.pool.query(
@@ -2524,8 +2524,8 @@ async function run() {
       await maintenance.purgeOrganizationData(target.organizationId),
       {
         alreadyPurged: true,
-        pseudonymizedBillingEvents: 0,
         deletedRows: 0,
+        pseudonymizedBillingEvents: 0,
         scrubbedTexts: 0,
       }
     );

@@ -16,11 +16,11 @@ interface InventoryRpcContext {
 }
 
 interface InventoryRpcDependencies {
-  getInventoryBalance: typeof getInventoryBalance | undefined;
   defaultGetInventoryBalance: typeof getInventoryBalance;
-  inventoryCount: typeof inventoryCount | undefined;
   defaultInventoryCount: typeof inventoryCount;
   defaultListInventoryBalances: typeof listInventoryBalances;
+  getInventoryBalance: typeof getInventoryBalance | undefined;
+  inventoryCount: typeof inventoryCount | undefined;
   listInventoryBalances: typeof listInventoryBalances | undefined;
   requestAuditId: (requestId: string) => string | null;
   toRpcError: (error: unknown) => never;

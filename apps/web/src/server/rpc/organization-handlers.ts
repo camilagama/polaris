@@ -6,8 +6,8 @@ import type {
   requestOrganizationClosure,
 } from "@polaris/db/organization-closure-repository";
 import type { listUserOrganizations } from "@polaris/db/organization-membership-query";
-import type { WorkerBindings } from "../environment";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
+import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
 interface OrganizationRpcContext {

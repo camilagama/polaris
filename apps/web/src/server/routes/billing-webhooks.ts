@@ -1,9 +1,9 @@
-import { logger } from "@polaris/observability/logger";
-import { describeError } from "@polaris/observability/wide-event";
 import {
   type BillingStore,
   createBillingStore,
 } from "@polaris/db/billing-store";
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import { type Context, Hono } from "hono";
 import { billingProviderAdapters } from "../billing/adapters";
 import {

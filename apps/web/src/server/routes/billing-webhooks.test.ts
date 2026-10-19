@@ -2,6 +2,7 @@ import type { BillingStore } from "@polaris/db/billing-store";
 import type { BillingFact } from "@polaris/domain/billing/facts";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import { createServerApp } from "../app";
 import {
   type BillingProviderAdapter,
   type ParsedBillingEvent,
@@ -10,7 +11,6 @@ import {
 } from "../billing/provider-adapter";
 import type { ServerEnv, WorkerBindings } from "../environment";
 import { requestIdMiddleware } from "../middleware/request-id";
-import { createServerApp } from "../app";
 import { createBillingWebhookRoutes } from "./billing-webhooks";
 
 const occurredAt = new Date("2026-10-14T12:00:00.000Z");

@@ -52,6 +52,7 @@ function setUp(pagesPerTable = 2) {
       served.set(dataset.table, count);
       const last = count >= pagesPerTable;
       return Promise.resolve({
+        after,
         next: last ? null : [`k${count}`],
         rows: [
           {
@@ -60,7 +61,6 @@ function setUp(pagesPerTable = 2) {
             segredo: "NUNCA",
           },
         ],
-        after,
       });
     }
   );

@@ -25,12 +25,12 @@ import {
 } from "../offline/local-stock-entries";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import "./sale-page.css";
-import { confirmOnServer } from "./confirm-on-server";
-import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import type {
   OfflineRuntime,
   RuntimeContext,
 } from "../offline/runtime/offline-runtime";
+import { confirmOnServer } from "./confirm-on-server";
+import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -90,7 +90,6 @@ import {
   rejectSubmission,
   removeAdjustment,
   removeItem,
-  saleModeIsOffline,
   requestDiscard,
   SALE_DATE_HINT,
   SALE_METHODS,
@@ -100,6 +99,7 @@ import {
   type SaleMethod,
   type SaleSummary,
   type SubmissionState,
+  saleModeIsOffline,
   selectPaymentMethod,
   selectProfileChoice,
   startSubmission,

@@ -185,14 +185,14 @@ function createWriter(
       const { id: _id, ...meta } = row;
       return Promise.resolve(meta);
     },
+    async recentSalesRows() {
+      return await collections.recentSales.toArrayWhenReady();
+    },
     async remove(collection, keys) {
       await removeFrom(
         collections[collection] as unknown as CollectionLike<object>,
         keys
       );
-    },
-    async recentSalesRows() {
-      return await collections.recentSales.toArrayWhenReady();
     },
     async replaceRecentSales(rows) {
       await upsertInto(collections.recentSales, (row) => row.id, rows);

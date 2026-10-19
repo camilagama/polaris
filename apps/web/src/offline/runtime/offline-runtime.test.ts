@@ -232,10 +232,10 @@ function world(options: { leaseHours?: number } = {}) {
     make,
     network,
     purged,
-    wiped,
     server,
     session,
     stores,
+    wiped,
   };
 }
 

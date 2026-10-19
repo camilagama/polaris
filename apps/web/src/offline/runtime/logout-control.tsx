@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
+import { type LeavePath, leaveTo } from "./leave-browser";
 import {
   discardAndLeave,
   type LogoutFlowDependencies,
   type LogoutFlowResult,
   startLogout,
 } from "./logout-flow";
-import { type LeavePath, leaveTo } from "./leave-browser";
 import { useOfflineRuntime } from "./runtime-context";
 
 /**

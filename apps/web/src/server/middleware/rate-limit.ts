@@ -13,10 +13,10 @@ const MAX_IDENTITY_LENGTH = 512;
 const READ_PROCEDURE_PATTERN = /^(?:list|get|find|search|ping)(?:[A-Z]|$)/;
 
 interface RateLimitOptions {
-  /** Cloudflare Workers Rate Limiting binding for this scope. */
-  binding: (bindings: WorkerBindings) => RateLimitBinding | undefined;
   /** Narrows the requests that count against the limit. */
   applies: (request: Request) => boolean;
+  /** Cloudflare Workers Rate Limiting binding for this scope. */
+  binding: (bindings: WorkerBindings) => RateLimitBinding | undefined;
   /** Stable scope name; namespaces the hashed limiter keys. */
   scope: string;
 }
