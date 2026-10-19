@@ -101,6 +101,18 @@ describe("the staging isolation check", () => {
     );
   });
 
+  it("refuses a staging environment without the queue consumers or a variable production lacks", () => {
+    const entries = filledEntries();
+    const web = entryOf(entries, "web").config;
+    web.env.staging.queues.consumers =
+      web.env.staging.queues.consumers.slice(1);
+    web.env.production.vars.CATALOG_ORIGIN = undefined;
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production lacks vars.CATALOG_ORIGIN, which env.staging sets",
+      "web: env.staging lacks consumer:polaris-critical (bindings are not inherited)",
+    ]);
+  });
+
   it("refuses a staging environment that lacks a binding of the top level", () => {
     const entries = filledEntries();
     const { staging } = entryOf(entries, "web").config.env;
@@ -145,11 +157,41 @@ describe("the staging isolation check", () => {
     staging.r2_buckets[0].bucket_name = "polaris-media";
     const problems = findIsolationProblems(entries);
     expect(problems).toContain(
-      "web: env.staging: queue polaris-critical must be a staging queue"
+      "web: env.staging: queue polaris-critical must be polaris-<lane>-staging"
     );
     expect(problems).toContain(
-      "web: env.staging: bucket of MEDIA_BUCKET must be a staging bucket"
+      "web: env.staging: bucket of MEDIA_BUCKET must be polaris-media-staging"
     );
+  });
+
+  it("refuses a binding kind staging does not use, a route and a non-staging URL", () => {
+    const entries = filledEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.services = [{ binding: "PROD", service: "polaris-web" }];
+    staging.kv_namespaces = [{ binding: "KV", id: "x" }];
+    staging.durable_objects = { bindings: [{ class_name: "X", name: "X" }] };
+    staging.routes = [{ custom_domain: true, pattern: "app.example.com" }];
+    staging.vars.BETTER_AUTH_BASE_URL = "https://app.example.com";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.staging: durable_objects is not used by staging",
+      "web: env.staging: kv_namespaces is not used by staging",
+      "web: env.staging: services is not used by staging",
+      "web: env.staging: staging has no routes, only workers.dev",
+      "web: env.staging: vars.BETTER_AUTH_BASE_URL must be the workers.dev URL of the staging Worker",
+    ]);
+  });
+
+  it("accepts the empty binding lists a generated wrangler.json writes", () => {
+    const entries = filledEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        durable_objects: { bindings: [] },
+        kv_namespaces: [],
+        targetEnvironment: "staging",
+      },
+    }));
+    expect(findIsolationProblems(entries)).toEqual([]);
   });
 
   it("refuses two staging roles on the same Hyperdrive configuration", () => {
@@ -185,8 +227,8 @@ describe("the staging isolation check", () => {
       { binding: "ADMIN_HYPERDRIVE", id: "abcdefabcdefabcdefabcdefabcdefab" },
     ];
     expect(findIsolationProblems(entries)).toEqual([
+      "admin: env.staging: staging has no routes, only workers.dev",
       "admin: env.staging: the Admin is not exposed in staging (workers_dev must be false)",
-      "admin: env.staging: the Admin is not exposed in staging (no routes)",
       "admin: env.staging: the Admin has no Access application in staging",
       "admin: env.staging: the Admin has no database binding in staging",
     ]);
@@ -222,6 +264,7 @@ describe("the staging isolation check", () => {
       expect(findIsolationProblems(entries)).toEqual([
         "web: no staging build found (run the build with CLOUDFLARE_ENV=staging first)",
         'catalog: built wrangler.json: name "polaris-catalog" must end in -staging, or the deploy would publish another Worker',
+        "catalog: built wrangler.json: bucket of MEDIA_BUCKET must be polaris-media-staging",
         'catalog: built wrangler.json targets "production", not staging',
         "catalog: built wrangler.json bindings differ from env.staging",
       ]);
@@ -258,9 +301,9 @@ describe("the remote Hyperdrive check", () => {
         "ep-staging.example.neon.tech"
       )
     ).toEqual([
-      "HYPERDRIVE: Hyperdrive points to another host than the staging database",
+      "HYPERDRIVE: Hyperdrive points to another host than the staging database, or to the pooler",
       "HYPERDRIVE: query caching must be disabled",
-      "HYPERDRIVE: Hyperdrive must log in as a runtime login, never as the database owner",
+      "HYPERDRIVE: Hyperdrive must log in as a staging runtime login, never as the database owner",
     ]);
   });
 

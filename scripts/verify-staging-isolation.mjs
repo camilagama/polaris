@@ -24,8 +24,38 @@ const PLACEHOLDER = /PLACEHOLDER/i;
 const CLOUDFLARE_ID = /^[0-9a-f]{32}$/;
 const LOCAL_SUFFIX = /-local$/;
 const STAGING_SUFFIX = /-staging$/;
-const STAGING_WORD = /staging/;
-const LOCAL_WORD = /-local(-|$)/;
+// exact names: the queue consumer and the dead-letter handler recognize `polaris-<lane>-<environment>`
+const STAGING_BUCKET = /^polaris-media-staging$/;
+const STAGING_QUEUE = /^polaris-(critical|default|media|dlq)-staging$/;
+const ENVIRONMENT_SUFFIX = /-(local|staging)$/;
+const POOLER = /pooler/i;
+const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
+const STAGING_URLS = {
+  BETTER_AUTH_BASE_URL:
+    /^https:\/\/polaris-web-staging\.[a-z0-9-]+\.workers\.dev$/,
+  CATALOG_ORIGIN:
+    /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/,
+};
+// binding kinds staging does not use: any of them in env.staging (or in the build) could reach another resource
+const UNUSED_BINDING_KINDS = [
+  "ai",
+  "analytics_engine_datasets",
+  "browser",
+  "d1_databases",
+  "dispatch_namespaces",
+  "durable_objects",
+  "kv_namespaces",
+  "mtls_certificates",
+  "pipelines",
+  "secrets_store_secrets",
+  "send_email",
+  "services",
+  "tail_consumers",
+  "vectorize",
+  "vpc_services",
+  "worker_loaders",
+  "workflows",
+];
 // a role whose configuration is shared on purpose: the Admin's billing commands log in as the billing role (ADR 0073)
 const SHARED_HYPERDRIVE = new Set([
   "BILLING_HYPERDRIVE",
@@ -111,7 +141,19 @@ export function bindingsOf(config) {
     ])
   );
   const images = config.images?.binding ? [config.images.binding] : [];
-  return { buckets, consumers, hyperdrive, images, producers, ratelimits };
+  // the lane, without the environment suffix: polaris-critical-staging and polaris-critical are the same consumer
+  const consumerLanes = (config.queues?.consumers ?? []).map((item) =>
+    item.queue.replace(ENVIRONMENT_SUFFIX, "")
+  );
+  return {
+    buckets,
+    consumerLanes,
+    consumers,
+    hyperdrive,
+    images,
+    producers,
+    ratelimits,
+  };
 }
 
 function bindingNames(config) {
@@ -122,6 +164,7 @@ function bindingNames(config) {
     ...[...b.producers.keys()].map((name) => `queue:${name}`),
     ...[...b.ratelimits.keys()].map((name) => `ratelimit:${name}`),
     ...b.images.map((name) => `images:${name}`),
+    ...b.consumerLanes.map((lane) => `consumer:${lane}`),
   ];
 }
 
@@ -172,7 +215,7 @@ function checkTopLevel(app, config, problems) {
     }
   }
   for (const queue of [...b.producers.values(), ...b.consumers]) {
-    if (!LOCAL_WORD.test(queue)) {
+    if (!LOCAL_QUEUE.test(queue)) {
       problems.push(`${where}: queue ${queue} must be a -local queue`);
     }
   }
@@ -247,15 +290,54 @@ function checkStagingResources(where, staging, problems) {
     }
   }
   for (const [binding, bucket] of b.buckets) {
-    if (!STAGING_WORD.test(bucket)) {
-      problems.push(`${where}: bucket of ${binding} must be a staging bucket`);
+    if (!STAGING_BUCKET.test(bucket)) {
+      problems.push(
+        `${where}: bucket of ${binding} must be polaris-media-staging`
+      );
     }
   }
   for (const queue of [...b.producers.values(), ...b.consumers]) {
-    if (!STAGING_WORD.test(queue)) {
-      problems.push(`${where}: queue ${queue} must be a staging queue`);
+    if (!STAGING_QUEUE.test(queue)) {
+      problems.push(`${where}: queue ${queue} must be polaris-<lane>-staging`);
     }
   }
+  for (const kind of UNUSED_BINDING_KINDS) {
+    if (!isEmptyBinding(staging[kind])) {
+      problems.push(`${where}: ${kind} is not used by staging`);
+    }
+  }
+  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
+    problems.push(`${where}: staging has no routes, only workers.dev`);
+  }
+  for (const [name, pattern] of Object.entries(STAGING_URLS)) {
+    const value = staging.vars?.[name];
+    if (
+      value !== undefined &&
+      !PLACEHOLDER.test(value) &&
+      !pattern.test(value)
+    ) {
+      problems.push(
+        `${where}: vars.${name} must be the workers.dev URL of the staging Worker`
+      );
+    }
+  }
+}
+
+function isEmptyBinding(value) {
+  if (value === undefined || value === null) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  if (typeof value === "object") {
+    const keys = Object.keys(value);
+    // the generated wrangler.json writes `{ bindings: [] }` for some kinds
+    return keys.every(
+      (key) => key === "bindings" && (value.bindings ?? []).length === 0
+    );
+  }
+  return false;
 }
 
 /** Not exposed: no public hostname, no Access (every API request is refused) and no database. */
@@ -264,9 +346,6 @@ function checkAdminNotExposed(where, staging, problems) {
     problems.push(
       `${where}: the Admin is not exposed in staging (workers_dev must be false)`
     );
-  }
-  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
-    problems.push(`${where}: the Admin is not exposed in staging (no routes)`);
   }
   if (staging.vars?.ACCESS_TEAM_DOMAIN || staging.vars?.ACCESS_AUDIENCE) {
     problems.push(`${where}: the Admin has no Access application in staging`);
@@ -359,7 +438,7 @@ export function findIsolationProblems(entries) {
       );
       continue;
     }
-    checkProductionBlock(app, production, problems);
+    checkProductionBlock(app, production, staging, problems);
     checkParity(app, config, staging, "staging", problems, {
       // the Admin is not exposed in staging: it keeps no database binding
       allowMissing:
@@ -379,7 +458,7 @@ export function findIsolationProblems(entries) {
   return problems;
 }
 
-function checkProductionBlock(app, production, problems) {
+function checkProductionBlock(app, production, staging, problems) {
   const name = production.name ?? "";
   if (!name || STAGING_SUFFIX.test(name) || LOCAL_SUFFIX.test(name)) {
     problems.push(
@@ -390,6 +469,16 @@ function checkProductionBlock(app, production, problems) {
     problems.push(
       `${app}: env.production vars.POLARIS_ENVIRONMENT must be "production"`
     );
+  }
+  for (const variable of Object.keys(staging.vars ?? {})) {
+    if (production.vars?.[variable] === undefined) {
+      problems.push(
+        `${app}: env.production lacks vars.${variable}, which env.staging sets`
+      );
+    }
+  }
+  if (production.workers_dev !== false) {
+    problems.push(`${app}: env.production workers_dev must be false`);
   }
   if (production.preview_urls !== false) {
     problems.push(`${app}: env.production preview_urls must be false`);
@@ -442,32 +531,46 @@ export function findHyperdriveProblems(binding, details, expectedHost) {
   const origin = details?.origin ?? {};
   if (!expectedHost) {
     problems.push("STAGING_DATABASE_HOST is not set");
-  } else if (origin.host !== expectedHost) {
+  } else if (origin.host !== expectedHost || POOLER.test(origin.host ?? "")) {
     problems.push(
-      `${binding}: Hyperdrive points to another host than the staging database`
+      `${binding}: Hyperdrive points to another host than the staging database, or to the pooler`
     );
   }
   if (details?.caching?.disabled !== true) {
     problems.push(`${binding}: query caching must be disabled`);
   }
-  if (!origin.user || OWNER_USER.test(origin.user)) {
+  if (
+    !origin.user ||
+    OWNER_USER.test(origin.user) ||
+    !origin.user.includes("staging")
+  ) {
     problems.push(
-      `${binding}: Hyperdrive must log in as a runtime login, never as the database owner`
+      `${binding}: Hyperdrive must log in as a staging runtime login, never as the database owner`
     );
   }
   return problems;
 }
 
-function hyperdriveDetails(id, cwd) {
-  const result = spawnSync("bunx", ["wrangler", "hyperdrive", "get", id], {
-    cwd,
-    encoding: "utf8",
-  });
+/** Pinned to the staging account, so a token that sees several accounts never reads another one. */
+function hyperdriveDetails(id, cwd, accountId) {
+  const result = spawnSync(
+    "bunx",
+    ["--no-install", "wrangler", "hyperdrive", "get", id],
+    {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: accountId },
+    }
+  );
   if (result.status !== 0) {
     return null;
   }
   const start = result.stdout.indexOf("{");
-  return start === -1 ? null : JSON.parse(result.stdout.slice(start));
+  try {
+    return start === -1 ? null : JSON.parse(result.stdout.slice(start));
+  } catch {
+    return null;
+  }
 }
 
 function readBuilt(appDir) {
@@ -484,7 +587,12 @@ function readBuilt(appDir) {
 function findRemoteProblems(entries) {
   return entries.flatMap(({ app, appDir, config }) =>
     [...bindingsOf(config.env.staging).hyperdrive].flatMap(([binding, id]) => {
-      const details = hyperdriveDetails(id, appDir);
+      // the static check already proved account_id is the 32-hex staging account
+      const details = hyperdriveDetails(
+        id,
+        appDir,
+        config.env.staging.account_id
+      );
       if (details === null) {
         return [`${app}: could not read Hyperdrive ${binding}`];
       }

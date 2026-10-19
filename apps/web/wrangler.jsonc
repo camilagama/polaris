@@ -112,11 +112,11 @@
   // least three operations (write, read, delete), and every retry another read.
   "queues": {
     "producers": [
-      { "binding": "QUEUE_CRITICAL", "queue": "polaris-local-critical" },
-      { "binding": "QUEUE_DEFAULT", "queue": "polaris-local-default" },
-      { "binding": "QUEUE_MEDIA", "queue": "polaris-local-media" },
+      { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical-local" },
+      { "binding": "QUEUE_DEFAULT", "queue": "polaris-default-local" },
+      { "binding": "QUEUE_MEDIA", "queue": "polaris-media-local" },
       // the dead-letter queue (ADR 0085): the consumer sends a notice here for a message it refuses for good
-      { "binding": "QUEUE_DLQ", "queue": "polaris-local-dlq" }
+      { "binding": "QUEUE_DLQ", "queue": "polaris-dlq-local" }
     ],
     // One message per invocation and one invocation at a time: the handlers are heavy (a data export builds
     // archives) and a dead invocation then repeats one message, not ten. A message that fails max_retries
@@ -125,8 +125,8 @@
     // The environments repeat these settings with their own queue names.
     "consumers": [
       {
-        "queue": "polaris-local-critical",
-        "dead_letter_queue": "polaris-local-dlq",
+        "queue": "polaris-critical-local",
+        "dead_letter_queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -134,8 +134,8 @@
         "retry_delay": 30
       },
       {
-        "queue": "polaris-local-default",
-        "dead_letter_queue": "polaris-local-dlq",
+        "queue": "polaris-default-local",
+        "dead_letter_queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -143,8 +143,8 @@
         "retry_delay": 30
       },
       {
-        "queue": "polaris-local-media",
-        "dead_letter_queue": "polaris-local-dlq",
+        "queue": "polaris-media-local",
+        "dead_letter_queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -152,7 +152,7 @@
         "retry_delay": 60
       },
       {
-        "queue": "polaris-local-dlq",
+        "queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -260,15 +260,15 @@
       ],
       "queues": {
         "producers": [
-          { "binding": "QUEUE_CRITICAL", "queue": "polaris-staging-critical" },
-          { "binding": "QUEUE_DEFAULT", "queue": "polaris-staging-default" },
-          { "binding": "QUEUE_MEDIA", "queue": "polaris-staging-media" },
-          { "binding": "QUEUE_DLQ", "queue": "polaris-staging-dlq" }
+          { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical-staging" },
+          { "binding": "QUEUE_DEFAULT", "queue": "polaris-default-staging" },
+          { "binding": "QUEUE_MEDIA", "queue": "polaris-media-staging" },
+          { "binding": "QUEUE_DLQ", "queue": "polaris-dlq-staging" }
         ],
         "consumers": [
           {
-            "queue": "polaris-staging-critical",
-            "dead_letter_queue": "polaris-staging-dlq",
+            "queue": "polaris-critical-staging",
+            "dead_letter_queue": "polaris-dlq-staging",
             "max_batch_size": 1,
             "max_batch_timeout": 1,
             "max_concurrency": 1,
@@ -276,8 +276,8 @@
             "retry_delay": 30
           },
           {
-            "queue": "polaris-staging-default",
-            "dead_letter_queue": "polaris-staging-dlq",
+            "queue": "polaris-default-staging",
+            "dead_letter_queue": "polaris-dlq-staging",
             "max_batch_size": 1,
             "max_batch_timeout": 1,
             "max_concurrency": 1,
@@ -285,8 +285,8 @@
             "retry_delay": 30
           },
           {
-            "queue": "polaris-staging-media",
-            "dead_letter_queue": "polaris-staging-dlq",
+            "queue": "polaris-media-staging",
+            "dead_letter_queue": "polaris-dlq-staging",
             "max_batch_size": 1,
             "max_batch_timeout": 1,
             "max_concurrency": 1,
@@ -294,7 +294,7 @@
             "retry_delay": 60
           },
           {
-            "queue": "polaris-staging-dlq",
+            "queue": "polaris-dlq-staging",
             "max_batch_size": 1,
             "max_batch_timeout": 1,
             "max_concurrency": 1,
@@ -314,7 +314,10 @@
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
-        "AUTH_ABUSE_PROTECTION_ENABLED": "false"
+        "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
+        "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
+        "OFFLINE_LEASE_KEY_ID": "production-1"
       },
       "observability": {
         "enabled": true,

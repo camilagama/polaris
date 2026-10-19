@@ -16,12 +16,12 @@ Os itens 3, 14, 15 e 16 do [release-checklist](../runbooks/release-checklist.md)
 
 - O **topo** de cada `wrangler.jsonc` serve só para uso local: nome `*-local`, `workers_dev: false`, Hyperdrive `local-only` e filas e bucket com sufixo `-local`. Um deploy que esqueça `--env` (ou `CLOUDFLARE_ENV` na build do Vite) falha, porque os recursos não existem, e nunca publica a produção.
 - `env.staging` e `env.production` são explícitos nos três Workers e repetem todos os bindings e `vars`, que não são herdados. Os nomes são `polaris-<app>-staging` e `polaris-<app>`. Os IDs reais ficam como `PLACEHOLDER-…` até o responsável criar os recursos.
-- O staging usa recursos próprios: filas `polaris-staging-*`, bucket `polaris-media-staging`, namespaces de rate limit `902016` a `902019` (os da produção são `901016` a `901019`, e os locais `900016` a `900019`) e uma configuração Hyperdrive por papel de banco, com query caching desligado. São 8 configurações: as 7 do web e a do catálogo. O Admin não tem nenhuma no staging (abaixo). Com a do PR11, a conta fica com 9 das 10 do plano Free.
+- O staging usa recursos próprios: filas `polaris-<fila>-staging` (o sufixo de ambiente vai no fim, que é o que o consumidor e a DLQ reconhecem, [ADR 0085](0085-dlq-incidente-operacional-e-retry-no-admin.md)), bucket `polaris-media-staging`, namespaces de rate limit `902016` a `902019` (os da produção são `901016` a `901019`, e os locais `900016` a `900019`) e uma configuração Hyperdrive por papel de banco, com query caching desligado. São 8 configurações: as 7 do web e a do catálogo. O Admin não tem nenhuma no staging (abaixo). Com a do PR11, a conta fica com 9 das 10 do plano Free.
 - **Verificação de isolamento** (`scripts/verify-staging-isolation.mjs`, com teste):
   - estática, sobre os `wrangler.jsonc` e, com `--built`, sobre o `wrangler.json` que a build de staging gera, que é o arquivo que o deploy usa;
-  - falha se algum valor do staging ainda for placeholder, se um ID, fila, bucket, namespace ou conta do staging for igual ao da produção ou do topo, se dois papéis dividirem uma configuração Hyperdrive, se o nome implantado não terminar em `-staging`, se as Previews estiverem ligadas, se o login por senha estiver ligado ou se o Admin estiver exposto;
+  - falha se algum valor do staging ainda for placeholder, se um ID, fila, bucket, namespace ou conta do staging for igual ao da produção ou do topo, se dois papéis dividirem uma configuração Hyperdrive, se faltar no staging um binding, consumidor de fila ou variável que a produção precisa, se aparecer um tipo de binding que o staging não usa ou uma rota, se o nome implantado não terminar em `-staging`, se as Previews estiverem ligadas, se o login por senha estiver ligado ou se o Admin estiver exposto;
   - com `--remote`, lê cada configuração Hyperdrive de staging e confere o host do banco de staging, o caching desligado e que o login não é o dono do banco.
-- **Marcador no banco:** o dono executa uma vez `ALTER DATABASE … SET polaris.environment = 'staging'`. O `staging:verify-database` (`packages/db/scripts/verify-staging-database.ts`), só de leitura, recusa qualquer banco sem esse marcador. A produção terá `production`.
+- **Marcador no banco:** o dono executa uma vez `ALTER DATABASE … SET polaris.environment = 'staging'`. O `staging:verify-database` (`packages/db/scripts/verify-staging-database.ts`), só de leitura, recusa qualquer banco sem esse marcador, lido do que o `ALTER DATABASE` gravou, e não de uma opção da conexão. A produção terá `production`.
 
 ### Login no staging (decisão)
 
@@ -29,7 +29,8 @@ Os itens 3, 14, 15 e 16 do [release-checklist](../runbooks/release-checklist.md)
 - Login por senha **desligado** (`EMAIL_PASSWORD_AUTH_ENABLED: "false"`, conferido pela verificação de isolamento).
 - **Sem Cloudflare Access**, para não exigir cartão no Zero Trust.
 - O **Admin não é exposto** no staging: sem `workers.dev`, sem rota, sem as variáveis `ACCESS_*` (sem elas, o Worker recusa toda requisição à API) e sem binding de banco. O workflow não o implanta. Ele falha fechado.
-- Web e catálogo de staging não aceitam cadastro aberto: sem senha, o único caminho de entrada é o Google em modo Testing, e o catálogo não tem cadastro.
+- Web e catálogo de staging não aceitam cadastro aberto: sem senha, o único caminho de entrada é o Google em modo Testing, e o catálogo não tem cadastro. **Limite:** essa allowlist vive no console do Google, fora do repositório, e nenhum teste prova que o modo Testing continua ligado. Uma allowlist também no código, que falhe fechada no staging, fica como acompanhamento proposto (mudança de auth, com revisão de segurança).
+- Os nomes e e-mails das pessoas de teste são dados pessoais de quem testa. Quando alguém deixa de testar, sai da lista do Google e tem conta e sessões apagadas do banco de staging (runbook).
 
 ### Banco (decisão)
 

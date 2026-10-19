@@ -5,6 +5,7 @@ import { Client } from "pg";
 import {
   assertClean,
   findViolations,
+  MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
 import {
@@ -36,7 +37,6 @@ const expectedDatabase =
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
 
-const MIN_DEFINER_FUNCTIONS = 87;
 const PROBE_ROLE = "polaris_catalog_runtime";
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear gate script, scenario by scenario

@@ -2,7 +2,7 @@
 
 Status: configuração no repositório, nada criado. Os recursos, os segredos e o primeiro deploy são do responsável (Arrascaeta ou o usuário). Decisões e motivos: [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md).
 
-O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15).
+O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A exceção são o nome e o e-mail das pessoas de teste que entram pelo Google: são dados pessoais de quem testa, e saem do banco quando a pessoa deixa de testar (seção 4). A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15).
 
 ## Gatilho
 
@@ -29,8 +29,16 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 2. Com o dono (`neondb_owner`) e a URL **direta**, sem pooler:
    - `ALTER DATABASE neondb SET polaris.environment = 'staging';`
    - `CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;` (o papel de tenant vive fora das migrations, como no CI).
-3. Aplicar as migrations do zero com a mesma URL: `bun run --filter @polaris/db db:migrate` com `DATABASE_URL` no ambiente do comando. Antes, `STAGING_MIGRATOR_DATABASE_URL=… bun run --filter @polaris/db staging:verify-database before-migrate`. Depois, o mesmo comando com `after-migrate`.
-4. Criar um login por binding, cada um membro de **um** grupo, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, fora de `neon_superuser`, com `statement_timeout` e `CONNECTION LIMIT`. A senha entra por variável do psql e nunca aparece no histórico:
+3. Aplicar as migrations do zero, sempre com **a mesma variável** no verify e no migrate, para que uma URL errada não passe no verify e migre outro banco. A URL não é escrita na linha de comando (iria para o histórico do shell): `read -rs STAGING_MIGRATOR_DATABASE_URL && export STAGING_MIGRATOR_DATABASE_URL`, e então:
+
+   ```sh
+   bun run --filter @polaris/db staging:verify-database before-migrate \
+     && DATABASE_URL="$STAGING_MIGRATOR_DATABASE_URL" bun run --filter @polaris/db db:migrate \
+     && bun run --filter @polaris/db staging:verify-database after-migrate
+   ```
+
+   O verify só aceita o banco cujo `ALTER DATABASE` gravou o marcador. Uma opção de conexão (`?options=`) é recusada.
+4. Criar um login por binding, cada um membro de **um** grupo, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, fora de `neon_superuser`, com `statement_timeout` e `CONNECTION LIMIT`. A senha não passa pela linha de comando nem pelo SQL:
 
    | Binding | Grupo | Limite de conexões |
    | --- | --- | --- |
@@ -43,13 +51,13 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
    | `OUTBOX_HYPERDRIVE` | `polaris_outbox_runtime` | 2 |
    | `CATALOG_HYPERDRIVE` (catálogo) | `polaris_catalog_runtime` | 2 |
 
-   Os nomes dos logins têm `staging` (por exemplo, `polaris_staging_tenant`). Modelo: `CREATE ROLE polaris_staging_tenant LOGIN PASSWORD :'senha' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 5 IN ROLE polaris_pr11_runtime;`, seguido de `ALTER ROLE … SET statement_timeout = '10s'` e de `REVOKE TEMPORARY ON DATABASE neondb FROM …` se o login tiver recebido `TEMPORARY`. Ao fim, `staging:verify-database after-migrate` lista cada login com o grupo e falha se algum ficar sem grupo.
+   Os nomes dos logins têm `staging` (por exemplo, `polaris_staging_tenant`). Modelo, no psql: `CREATE ROLE polaris_staging_tenant LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 5 IN ROLE polaris_pr11_runtime;`, depois `\password polaris_staging_tenant` (o psql pede a senha e manda só o hash; ela não vai para o histórico nem para o log do servidor), `ALTER ROLE polaris_staging_tenant SET statement_timeout = '10s';` e `REVOKE TEMPORARY ON DATABASE neondb FROM …` se o login tiver recebido `TEMPORARY`. A senha entra depois só na criação da configuração Hyperdrive. Ao fim, `staging:verify-database after-migrate` lista cada login com o grupo e falha se algum ficar sem grupo.
 
 ## 2. Recursos Cloudflare (responsável, conta atual)
 
-- Filas: `polaris-staging-critical`, `polaris-staging-default`, `polaris-staging-media` e `polaris-staging-dlq` (`wrangler queues create <nome>`).
+- Filas: `polaris-critical-staging`, `polaris-default-staging`, `polaris-media-staging` e `polaris-dlq-staging` (`wrangler queues create <nome>`). O sufixo de ambiente vai no fim: o consumidor e o tratamento da DLQ reconhecem a fila por `polaris-<fila>-<ambiente>` ([ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), e um teste confere os nomes do `wrangler.jsonc`.
 - R2: bucket privado `polaris-media-staging`. O `polaris-media` antigo da conta não é usado.
-- Hyperdrive: as 8 configurações da tabela acima, cada uma com `--caching-disabled` e `--origin-connection-limit` igual ao limite do login, apontando para o host do projeto `polaris-staging`. Antes, apagar a do PR11, item aberto do go-live, para sobrar folga: 8 de 10.
+- Hyperdrive: as 8 configurações da tabela acima, cada uma com `--caching-disabled` e `--origin-connection-limit` igual ao limite do login, apontando para o host direto do projeto `polaris-staging` (sem pooler). Com a do PR11, a conta fica com 9 das 10 do plano Free. Apagar a do PR11 é item do go-live, decidido pelo responsável.
 - Os namespaces de rate limit `902016` a `902019` já estão no `wrangler.jsonc`. São reservados no primeiro deploy.
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
@@ -65,11 +73,12 @@ Quem cria é o usuário ou o Arrascaeta, num projeto do Google Cloud só do stag
 3. Em **Audience**, escolher o tipo **External** e deixar o status de publicação em **Testing**. Não publicar o app.
 4. Ainda em **Audience**, em **Test users**, adicionar os e-mails de teste (a allowlist; o limite é de 100). Só esses e-mails conseguem entrar. Qualquer outro recebe o erro de acesso do Google.
 5. Em **Data Access**, deixar só os escopos `openid`, `email` e `profile`.
-6. Em **Clients → Create client**, escolher **Web application**, com:
-   - origem JavaScript autorizada: `https://polaris-web-staging.<subdomínio>.workers.dev`;
-   - URI de redirecionamento autorizado: `https://polaris-web-staging.<subdomínio>.workers.dev/api/auth/callback/google`.
+6. Em **Clients → Create client**, escolher **Web application**, só com o URI de redirecionamento autorizado `https://polaris-web-staging.<subdomínio>.workers.dev/api/auth/callback/google`. O fluxo é do servidor e não precisa de origem JavaScript.
 7. Gravar o ID e o segredo como segredos do Worker, sem passar pelo repositório: `wrangler secret put GOOGLE_CLIENT_ID --env staging` e `wrangler secret put GOOGLE_CLIENT_SECRET --env staging`, em `apps/web`.
-8. Registrar só a data e quem criou. Para tirar alguém, basta removê-lo de **Test users**.
+8. Registrar só a data e quem criou.
+9. Para tirar alguém, removê-lo de **Test users** não basta: a conta e as sessões continuam válidas no staging. É preciso também, com o dono no banco de staging, apagar as sessões dela (`DELETE FROM "session" WHERE user_id = '<id>';`) e tirá-la das organizações de teste pelos fluxos do app (membership ou encerramento da organização). Um lease offline já emitido vale até expirar (no máximo 72 horas).
+
+**O limite do controle.** A allowlist vive no Google, fora do repositório: nenhum teste prova que o modo Testing continua ligado. Se o app for publicado no Google, qualquer conta Google entra e cria organização no staging. Por isso o status de publicação não muda nunca, e uma allowlist também no código é um acompanhamento proposto (ADR 0097).
 
 O login por senha fica desligado (`EMAIL_PASSWORD_AUTH_ENABLED: "false"`), e a verificação de isolamento falha se ele for ligado. Sem Cloudflare Access. O Admin não é exposto.
 
@@ -79,7 +88,7 @@ O login por senha fica desligado (`EMAIL_PASSWORD_AUTH_ENABLED: "false"`), e a v
 
 ## 6. GitHub (responsável)
 
-- Environment `staging`, com os segredos `CLOUDFLARE_API_TOKEN` (só da conta atual, permissões mínimas: Workers Scripts Edit, Queues Edit, Hyperdrive Read e R2 Read; a lista final é conferida no primeiro deploy) e `STAGING_MIGRATOR_DATABASE_URL` (dono, URL direta).
+- Environment `staging`, com os segredos `CLOUDFLARE_API_TOKEN` (restrito à conta atual em "Account Resources", com validade curta e permissões mínimas: Workers Scripts Edit, Queues Edit e Hyperdrive Read, este só para a verificação `--remote`; sem R2; a lista final é conferida no primeiro deploy. O token alcança qualquer Worker e fila da conta, e por isso a conta atual não guarda nada de produção) e `STAGING_MIGRATOR_DATABASE_URL` (dono, URL direta).
 - Variáveis do Environment, que não são segredo: `CLOUDFLARE_ACCOUNT_ID`, `STAGING_DATABASE_HOST` (o host do projeto `polaris-staging`), `STAGING_WEB_URL` e `STAGING_CATALOG_URL`.
 - A restrição de branch do Environment **não** protege num `workflow_run`: o controle é o `if` do job do workflow.
 
@@ -92,7 +101,7 @@ O workflow `.github/workflows/deploy-staging.yml` só roda com a variável de re
 ## 8. Verificação
 
 - `bun run verify:staging-isolation` (estática) e, depois da build de staging, `node scripts/verify-staging-isolation.mjs --built`.
-- `node scripts/verify-staging-isolation.mjs --remote`, com o token de staging e `STAGING_DATABASE_HOST`: cada Hyperdrive aponta para o host de staging, com caching desligado e sem o login do dono.
+- `node scripts/verify-staging-isolation.mjs --remote`, com o token de staging e `STAGING_DATABASE_HOST`: cada Hyperdrive aponta para o host direto de staging, com caching desligado e com um login de staging que não é o dono. A leitura fica presa ao `account_id` de `env.staging` e só roda se a verificação estática passar.
 - `staging:verify-database after-migrate`: marcador, parte só de leitura do `definer-hardening`, `TEMPORARY` de `PUBLIC` e os logins com o grupo de cada um.
 - O smoke do workflow.
 

@@ -3,9 +3,10 @@ import { Client } from "pg";
 import {
   assertClean,
   findViolations,
+  MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
-import { poolerPattern, redactedFailure } from "./sales-gate-support";
+import { poolerPattern, sqlState } from "./sales-gate-support";
 
 /**
  * The staging database check (ADR 0097), read-only: it changes nothing. It runs with the owner's direct URL
@@ -26,13 +27,21 @@ const PLATFORM_ROLE = /^(cloud_admin|neon_superuser|neon_service|pg_.*)$/;
 
 type Phase = "after-migrate" | "before-migrate";
 
+// The marker is read from what ALTER DATABASE stored (role 0 = every role), not from current_setting():
+// a connection option or a role setting could fake that one.
 async function checkMarker(client: Client) {
-  const marker = await client.query<{ environment: string | null }>(
-    "SELECT current_setting('polaris.environment', true) AS environment"
+  const marker = await client.query<{ setting: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_db_role_setting s
+         JOIN pg_database d ON d.oid = s.setdatabase
+        WHERE d.datname = current_database() AND s.setrole = 0
+          AND $1 = ANY (s.setconfig)
+     ) AS setting`,
+    [`polaris.environment=${STAGING}`]
   );
   assert.equal(
-    marker.rows[0]?.environment,
-    STAGING,
+    marker.rows[0]?.setting,
+    true,
     "the database marker polaris.environment is not 'staging': refusing to touch this database"
   );
 }
@@ -67,6 +76,18 @@ async function checkOwner(client: Client) {
 }
 
 async function checkHardening(client: Client) {
+  // an empty or unmigrated database would have nothing to report: refuse it instead of passing
+  const counts = await client.query<{ definers: number; groups: number }>(
+    `SELECT (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE p.prosecdef AND n.nspname = 'public') AS definers,
+            (SELECT count(*)::int FROM pg_roles WHERE rolname ~ $1) AS groups`,
+    [RUNTIME_GROUP_PATTERN]
+  );
+  assert.ok(
+    (counts.rows[0]?.definers ?? 0) >= MIN_DEFINER_FUNCTIONS,
+    "fewer SECURITY DEFINER functions than the migrations create"
+  );
+  assert.ok((counts.rows[0]?.groups ?? 0) > 0, "no polaris_*_runtime group");
   assertClean(await findViolations(client));
   const temporary = await client.query<{ can_temp: boolean }>(
     "SELECT has_database_privilege('public', current_database(), 'TEMPORARY') AS can_temp"
@@ -75,7 +96,7 @@ async function checkHardening(client: Client) {
   // every login the app uses belongs to a runtime group: the gate sees only those as runtime roles
   const logins = await client.query<{ groups: string[]; login: string }>(
     `SELECT r.rolname AS login,
-            coalesce(array_agg(g.rolname ORDER BY g.rolname) FILTER (WHERE g.rolname ~ $1), '{}') AS groups
+            coalesce(array_agg(g.rolname::text ORDER BY g.rolname) FILTER (WHERE g.rolname ~ $1), '{}'::text[]) AS groups
        FROM pg_roles r
        LEFT JOIN pg_auth_members m ON m.member = r.oid
        LEFT JOIN pg_roles g ON g.oid = m.roleid
@@ -108,16 +129,23 @@ async function run() {
   );
   const url = process.env.STAGING_MIGRATOR_DATABASE_URL;
   assert.ok(url, "STAGING_MIGRATOR_DATABASE_URL is not set");
+  const parsed = new URL(url);
   assert.doesNotMatch(
-    new URL(url).hostname,
+    parsed.hostname,
     poolerPattern,
     "use the direct URL, not the pooler"
   );
-  const client = new Client({ connectionString: url });
+  assert.ok(
+    !parsed.searchParams.has("options"),
+    "the URL must not carry connection options"
+  );
+  // read-only from the start of the session: a stray write fails instead of changing staging
+  const client = new Client({
+    connectionString: url,
+    options: "-c default_transaction_read_only=on",
+  });
   await client.connect();
   try {
-    // read-only: a stray write here fails instead of changing staging
-    await client.query("SET default_transaction_read_only = on");
     await checkMarker(client);
     const results = [`marker polaris.environment = ${STAGING}`];
     results.push(
@@ -131,7 +159,13 @@ async function run() {
   }
 }
 
+// name, SQLSTATE and message only: no stack, and never the URL
 run().catch((error: unknown) => {
-  console.error(`Staging database check failed (${redactedFailure(error)})`);
+  const code = sqlState(error);
+  const message =
+    error instanceof Error
+      ? `${error.name}${code ? `, ${code}` : ""}: ${error.message.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]")}`
+      : "unknown failure";
+  console.error(`Staging database check failed (${message})`);
   process.exitCode = 1;
 });
