@@ -211,8 +211,8 @@ describe("handleQueueBatch", () => {
     expect(sent.retry).not.toHaveBeenCalled();
     expect(unknown.complete).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(
-      "queue_message_unknown_event",
       expect.objectContaining({
+        event: "queue_message_unknown_event",
         eventId: envelope().eventId,
         messageId: "msg-1",
         reason: "event_not_held",
@@ -319,8 +319,10 @@ describe("handleQueueBatch", () => {
     expect(sent.retry).toHaveBeenCalledOnce();
     expect(sent.ack).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
-      "queue_ledger_unavailable",
-      expect.objectContaining({ sqlState: "40001" })
+      expect.objectContaining({
+        event: "queue_ledger_unavailable",
+        sqlState: "40001",
+      })
     );
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
       "secret@example.com"
@@ -467,8 +469,11 @@ describe("the dead-letter queue of a message refused for good", () => {
     });
     expect(sent.ack).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
-      "queue_dead_letter_send_failed",
-      expect.objectContaining({ cause: "invalid_envelope", messageId: "msg-1" })
+      expect.objectContaining({
+        cause: "invalid_envelope",
+        event: "queue_dead_letter_send_failed",
+        messageId: "msg-1",
+      })
     );
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
       SECRET
@@ -490,8 +495,10 @@ describe("the dead-letter queue of a message refused for good", () => {
     expect(sent.retry).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(
-      "queue_dead_letter_not_configured",
-      { messageId: "msg-1" }
+      expect.objectContaining({
+        event: "queue_dead_letter_not_configured",
+        messageId: "msg-1",
+      })
     );
   });
 

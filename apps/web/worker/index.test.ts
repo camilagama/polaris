@@ -834,8 +834,10 @@ describe("the queue consumer", () => {
       expect(send).not.toHaveBeenCalled();
       expect(refused.ack).toHaveBeenCalledOnce();
       expect(console.warn).toHaveBeenCalledWith(
-        "queue_dead_letter_not_configured",
-        { messageId: "m" }
+        expect.objectContaining({
+          event: "queue_dead_letter_not_configured",
+          messageId: "m",
+        })
       );
 
       // durable ledger
@@ -858,8 +860,10 @@ describe("the queue consumer", () => {
       await runQueue({}, refused);
       expect(refused.ack).toHaveBeenCalledOnce();
       expect(console.warn).toHaveBeenCalledWith(
-        "queue_dead_letter_not_configured",
-        { messageId: "m" }
+        expect.objectContaining({
+          event: "queue_dead_letter_not_configured",
+          messageId: "m",
+        })
       );
     });
   });

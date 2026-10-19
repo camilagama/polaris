@@ -29,7 +29,7 @@ O [ADR 0089](0089-evlog-e-logger-tipado-no-backend.md) deu um ponto único de lo
 
 ## Limites aceitos
 
-- **Os `console.*` que restam não foram migrados** (consumidor, despachante e DLQ das filas, reconciliador de mídia, billing, auth, rate limit, `packages/db` e o catalog). Eles ainda emitem `errorName`, `type` e `attempts`; o `call-sites.test.ts` não os cobre porque não passam pelo logger. Cada um migra no PR que o tocar, e o teste de aliases passa a valer para ele automaticamente quando trocar para o logger.
+- **Os `console.*` que restavam migraram no PR116** (consumidor, despachante e DLQ das filas, reconciliador de mídia, billing, auth, rate limit, `packages/db` e o catalog) e passaram a usar os nomes canônicos (`errorName` → `errorClass`, `type` → `eventType`, `code` → `errorCode`): o `call-sites.test.ts` os cobre, e a regra `noConsole` do Biome ([ADR 0089](0089-evlog-e-logger-tipado-no-backend.md)) impede um novo.
 - **Nenhum evento largo por requisição HTTP foi ligado.** O helper existe, mas um evento por requisição muda o volume de log (e o custo no Workers Logs) e depende do desenho do contexto de requisição e da amostragem (PR 117); o `server_error` segue sendo emitido só na falha.
 - **A política de redação é do PR 116** (feita) e o tracing, do PR 117; este ADR só fixa nomes, unidades e a forma dos ids.
 - Só os campos de id têm o valor conferido; nos demais o chamador responde pelo que põe (o `errorClass` e o `errorCode` vindos de `describeError` ficam num alfabeto seguro).

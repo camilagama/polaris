@@ -1,3 +1,5 @@
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import {
   type BillingStore,
   createBillingStore,
@@ -180,7 +182,7 @@ async function processStored(
         const result = await store.processEvent(entry.id);
         if (result.status === "failed") {
           // stored and marked failed (for example the organization is not attached yet): the retry pass takes it
-          console.warn("billing_webhook_processing_deferred", {
+          logger.warn("billing_webhook_processing_deferred", {
             eventId: entry.id,
             outcomeCode: result.outcomeCode,
             provider,
@@ -188,8 +190,8 @@ async function processStored(
         }
       } catch (error: unknown) {
         // stored and marked failed: the retry pass takes it from here
-        console.error("billing_webhook_processing_failed", {
-          errorName: error instanceof Error ? error.name : "unknown",
+        logger.error("billing_webhook_processing_failed", {
+          ...describeError(error),
           eventId: entry.id,
           provider,
         });

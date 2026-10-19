@@ -1,3 +1,5 @@
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { OutboxEventBody } from "@polaris/domain/events/outbox";
 import {
   OUTBOX_DISPATCH_BATCH,
@@ -74,10 +76,6 @@ export interface DispatchDependencies {
   store: DispatchStore;
 }
 
-function errorClass(error: unknown): string {
-  return error instanceof Error ? error.name : "non_error_thrown";
-}
-
 function envelopeOf(row: DispatchedEvent): QueueEnvelope | null {
   try {
     return queueEnvelope({
@@ -124,8 +122,8 @@ export async function dispatchOutbox(
     const envelope = envelopeOf(row);
     if (!envelope) {
       // an older deploy, or a row it refuses: it waits the longest and stops being claimed at the cap (and becomes an incident, ADR 0085)
-      console.warn("outbox_event_unsendable", {
-        attempts: row.attempts,
+      logger.warn("outbox_event_unsendable", {
+        attempt: row.attempts,
         eventId: row.id,
       });
       report.unsendable += 1;
@@ -158,9 +156,9 @@ export async function dispatchOutbox(
       }
     } catch (error: unknown) {
       // the daily quota of the Free plan, the queue down or not bound: the events stay pending
-      console.error("outbox_send_failed", {
+      logger.error("outbox_send_failed", {
         count: group.length,
-        errorName: errorClass(error),
+        ...describeError(error),
         queue,
       });
       for (const { row } of group) {

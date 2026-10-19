@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import type {
   BillingRetryReport,
   BillingStore,
@@ -26,15 +27,18 @@ export async function runBillingMaintenance(
   const retry = await store.retryPending(now).catch(() => null);
   const sweep = await store.sweepDue(now).catch(() => null);
   if (retry === null || sweep === null) {
-    console.error("billing_maintenance_incomplete", {
-      retry: retry === null ? "threw" : retry,
-      sweep: sweep === null ? "threw" : sweep,
+    logger.error("billing_maintenance_incomplete", {
+      retry: retry === null ? "threw" : { ...retry },
+      sweep: sweep === null ? "threw" : { ...sweep },
     });
     throw new Error("billing_maintenance_incomplete");
   }
   const report = { retry, sweep };
   if (retry.failed > 0 || sweep.failed > 0) {
-    console.error("billing_maintenance_incomplete", report);
+    logger.error("billing_maintenance_incomplete", {
+      retry: { ...retry },
+      sweep: { ...sweep },
+    });
     throw new Error("billing_maintenance_incomplete");
   }
   return report;

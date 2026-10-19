@@ -22,6 +22,8 @@ import {
 } from "@polaris/domain/billing/grants";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
+import { logger, opaqueId } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import { type PoolClient, Pool } from "pg";
 
 /**
@@ -729,9 +731,9 @@ async function sweepExpiredGrants(
       }
     } catch (error: unknown) {
       report.failed += 1;
-      console.error("billing_grant_sweep_failed", {
-        organizationId: id,
-        reason: error instanceof Error ? error.message : "unknown",
+      logger.error("billing_grant_sweep_failed", {
+        ...describeError(error),
+        organizationId: opaqueId(id),
       });
     }
   }
@@ -1035,9 +1037,9 @@ export function createBillingStore(connectionString: string): BillingStore {
           }
         } catch (error: unknown) {
           report.failed += 1;
-          console.error("billing_event_retry_failed", {
+          logger.error("billing_event_retry_failed", {
+            ...describeError(error),
             eventId: id,
-            reason: error instanceof Error ? error.message : "unknown",
           });
         }
       }
@@ -1095,9 +1097,9 @@ export function createBillingStore(connectionString: string): BillingStore {
           }
         } catch (error: unknown) {
           report.failed += 1;
-          console.error("billing_sweep_failed", {
-            organizationId,
-            reason: error instanceof Error ? error.message : "unknown",
+          logger.error("billing_sweep_failed", {
+            ...describeError(error),
+            organizationId: opaqueId(organizationId),
           });
         }
       }
@@ -1109,9 +1111,7 @@ export function createBillingStore(connectionString: string): BillingStore {
         report.transitioned += grants.transitioned;
       } catch (error: unknown) {
         report.failed += 1;
-        console.error("billing_grant_sweep_failed", {
-          reason: error instanceof Error ? error.message : "unknown",
-        });
+        logger.error("billing_grant_sweep_failed", describeError(error));
       }
       return report;
     },

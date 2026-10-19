@@ -265,9 +265,12 @@ describe("reconcileRemovedMedia", () => {
       "media_removed_reconciliation_incomplete"
     );
 
-    expect(logged).toHaveBeenCalledWith("media_removed_asset_not_finalized", {
-      assetId,
-    });
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId,
+        event: "media_removed_asset_not_finalized",
+      })
+    );
     logged.mockRestore();
   });
 
@@ -279,10 +282,15 @@ describe("reconcileRemovedMedia", () => {
 
     await expect(reconcileRemovedMedia(fixture)).rejects.toThrow();
 
-    expect(logged).toHaveBeenCalledWith("media_removed_asset_failed", {
-      assetId,
-      reason: "db unavailable",
-    });
+    // the class of the error is logged, never its text
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId,
+        errorClass: "Error",
+        event: "media_removed_asset_failed",
+      })
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("db unavailable");
     logged.mockRestore();
   });
 
