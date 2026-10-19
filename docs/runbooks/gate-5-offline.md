@@ -98,7 +98,23 @@ Fatos a levar para a decisão do Gate:
 
 - `navigator.storage.persist()` respondeu **false** nos dois aparelhos: o armazenamento é "melhor esforço" e pode ser descartado pelo navegador; o item de dias sem abrir (ITP) segue no checklist manual.
 - O runtime decide que está offline pela caixa **"Rede disponível"** do laboratório, não pela rede real do aparelho. A rede foi derrubada de verdade (`no-network`, conferida de dentro da página), mas a prova de que o app reage à queda real da rede (`navigator.onLine` e falha de `fetch`) não vem desta suíte.
-- Essa execução ainda apagava os dados do site entre os fluxos 1 e 2 (ver Limites). Depois da correção do laboratório, o fluxo 2 não apaga mais, e isso ainda **não foi reexecutado em aparelho real**: rode `scripts/gate5-real-devices.sh` de novo antes de citar o 18/18 como prova final.
+- Essa execução ainda apagava os dados do site entre os fluxos 1 e 2 (ver Limites). Depois da correção do laboratório, o fluxo 2 não apaga mais; a reexecução em aparelho real está no registro de 19/10/2026, logo abaixo, e é ela (não este 18/18) que vale como prova do Gate.
+
+### Registro da reexecução de 19/10/2026 (depois da correção do laboratório)
+
+Uma única execução completa (`partial: false`, de 04:11:29Z a 04:16:20Z, cerca de 4 min 51 s ao todo, os dois aparelhos em sequência) na `main` no commit `8a7bc54`, que já inclui a correção do laboratório (dono do aparelho por usuário) e a recusa do `sync.push` com lease de outro usuário (#154). Os fluxos 1 e 2 rodaram seguidos, no mesmo aparelho e na mesma origem, **sem apagar os dados do site entre eles**: a suíte só apaga os dados no começo do fluxo 1 (aparelho recém-instalado), e o fluxo 2 reaproveita o aparelho e o lease do usuário do fluxo 1 com outro usuário. Sem segunda tentativa. O `report.md` fica só na máquina de quem rodou; este é o resumo, sem credenciais e sem links da conta do BrowserStack.
+
+| Aparelho | Navegador | Passos aprovados | Passos reprovados | Tempo |
+| --- | --- | --- | --- | --- |
+| iPhone 18 Pro Max, iOS 27 | Safari (Version/27.0) | 18/18 | 0 | 2 min 24 s de passos |
+| Google Pixel 11 Pro, Android 17 | Chrome 152 | 18/18 | 0 | 1 min 27 s de passos |
+
+Por fluxo, nos dois aparelhos: fluxo 1 (clientes) 7/7, fluxo 2 (venda, sem limpar os dados) 6/6, fluxo 3 (shell) 4/4 e encerramento 1/1.
+
+- `navigator.storage.persist()` respondeu **false** nos dois aparelhos, como em 18/10: o armazenamento segue "melhor esforço"; o item de dias sem abrir (ITP) continua no checklist manual.
+- O relatório não informa os minutos de BrowserStack consumidos; o tempo de relógio da execução (cerca de 5 min, duas sessões) é o que se tem. O consumo exato está no painel da conta, que exige login.
+- O `User-Agent` informado pelos navegadores é reduzido (o Safari diz "iPhone OS 18_7" com `Version/27.0`; o Chrome diz "Android 10"), então a versão do sistema vem do nome do aparelho no BrowserStack, não do `User-Agent`.
+- Valem as mesmas limitações de 18/10: o runtime lê a caixa "Rede disponível" do laboratório, o servidor é simulado na página, e instalar na tela inicial, relógio, modo avião real e ITP seguem no checklist manual. O ponto pendente de segurança sobre a troca de usuário **sem rede** (ver Limites) continua fora do escopo desta prova.
 
 ### Como o BrowserStack foi escolhido (fontes consultadas em 18/10/2026)
 
