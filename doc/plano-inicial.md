@@ -5126,6 +5126,8 @@ Provisionar:
 
 Documentar IDs/resources.
 
+Estado (ADR 0097, [runbook do staging](../docs/runbooks/staging.md)): staging fixo na conta Cloudflare atual, sem Previews; topo do `wrangler.jsonc` só local; `env.staging` e `env.production` explícitos nos três Workers, com placeholders que `verify:staging-isolation` recusa; banco num projeto Neon próprio com o marcador `polaris.environment`; login só pelo Google em modo Testing; Admin não exposto no staging. Workflows não entram no staging (ADR 0088). Os recursos e segredos são criados pelo responsável.
+
 
 
 ---
@@ -5154,6 +5156,8 @@ deploy staging
 
 Falha deixa main verde de código, mas release operacional bloqueada até correção.
 
+Estado (ADR 0097): `workflow_run` depois do CI verde da `main`, com a migration antes do Worker. Depende do ADR 0096 (migrations compatíveis com a versão anterior do Worker) na `main`; até lá o workflow fica desligado pela variável `STAGING_DEPLOY_ENABLED`.
+
 
 
 ---
@@ -5169,6 +5173,8 @@ Falha deixa main verde de código, mas release operacional bloqueada até corre�
 
 
 # PR 133 — Production resource provisioning
+
+Em outra conta Cloudflare e em outra organização ou projeto Neon (ADR 0097). Os placeholders de `env.production` nos `wrangler.jsonc` recebem os IDs dessa conta.
 
 
 

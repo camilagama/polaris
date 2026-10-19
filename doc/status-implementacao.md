@@ -1733,8 +1733,8 @@ Quinto passo da Fase 12 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-wor
 | --- | --- | --- |
 | Configuração | Concluído | `apps/web`, `apps/admin` e `apps/catalog`: logs e traces ligados, `traces.head_sampling_rate` 0,05 (produção), `logs.head_sampling_rate` 1 e `invocation_logs` desligado. |
 | Erros 100% | Concluído | A amostragem da plataforma é por requisição e não tem taxa própria para erros; por isso os logs ficam a 100% e só os traces são amostrados (ADR 0094). |
-| Staging | Pendente (Fase 14) | Ainda não há `env.staging`; ele repete o bloco com traces de 0,5 a 1 e logs a 1. |
-| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05, logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
+| Staging | Configurado (Fase 14) | `env.staging` repete o bloco com traces a 1 e logs a 1; `env.production` repete o de produção, com traces a 0,05 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md)). Nada implantado. |
+| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05 (no topo e em `env.production`), logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
 | Custo | Estimado | Cerca de 1 MB por dia hoje, contra 0,5 GB por dia de ingestão do Free (logs e traces somados, modelo de 1º/12/2026); US$ 0, dentro do teto de US$ 10 (ADR 0076); gatilho de revisão em 0,25 GB por dia. Medida real: Fase 14. |
 | Limites | Registrados | Sem medida em nuvem; `environment`, CPU do evlog e o destino das exceções com `invocation_logs` desligado ficam para a Fase 14; traces e logs dividem a cota diária (ADR). |
 
@@ -1752,3 +1752,17 @@ Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais
 | Onde rodam | Proposto | ADR 0095 recomenda uma consulta agendada (cron do Worker) com e-mail pelo Resend: US$ 0, dentro do teto de US$ 10 (ADR 0076); Cloudflare Notifications ficam de complemento e o Sentry espera o plano de estudante. Depende da aprovação do responsável. |
 | Criação real | Pendente (Fase 14) | Cron, token de leitura do Workers Observability e conta do Resend para alertas não foram criados; sem ambiente nenhum alerta dispara. |
 | Limites | Registrados | Limiares e limites de latência são um primeiro chute sem medida; o endpoint e a permissão da consulta do Workers Observability no Free não foram confirmados; a idade do evento pendente mais antigo do outbox não é um evento (o banco não a expõe sem uma função nova, área db): o sinal usa a ausência do job e o runbook traz a consulta SQL; taxa de 5xx é contagem por janela, sem denominador; o `http_request_timed` soma um evento por requisição às rotas críticas ao volume do ADR 0094 (estimado em 0,5 KB por evento, sem medida; a Fase 14 mede). |
+
+### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
+
+Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Configuração | Concluído | Os três `wrangler.jsonc`: topo só local (`*-local`, `workers_dev: false`, Hyperdrive `local-only`, filas e bucket `-local`); `env.staging` (`polaris-<app>-staging`) e `env.production` (`polaris-<app>`) explícitos, com todos os bindings e `vars`. Os IDs reais são placeholders. |
+| Isolamento estático | Concluído | `scripts/verify-staging-isolation.mjs` (`bun run verify:staging-isolation`, e `--built` sobre o `wrangler.json` da build de staging), com teste: recusa placeholder, recurso compartilhado com a produção ou o topo, dois papéis numa mesma configuração Hyperdrive, nome sem `-staging`, Previews, login por senha e Admin exposto. Hoje falha só pelos placeholders, como esperado. |
+| Isolamento remoto | Pronto, não executado | `--remote` lê cada Hyperdrive de staging (host, caching desligado, login que não é o dono); `staging:verify-database` (só leitura) exige o marcador `polaris.environment = 'staging'`, confere o dono antes do migrate e, depois, a parte só de leitura do `definer-hardening`, o `TEMPORARY` de `PUBLIC` e o grupo de cada login. Nunca rodou contra um banco real. |
+| Login | Decidido | Google próprio em modo Testing (allowlist de usuários de teste no Google), login por senha desligado, sem Cloudflare Access, Admin não exposto. |
+| Recursos e segredos | Pendente (responsável) | Projeto Neon `polaris-staging`, 8 Hyperdrive, filas, bucket, cliente OAuth do Google, segredos do Worker e Environment do GitHub: lista no runbook. |
+| Deploy automático | Pendente | O workflow vem num PR próprio e fica desligado até o ADR 0096 (expand/contract) estar na `main`. |
+| Limites | Registrados | O Admin não é provado no staging (item 16 dele fica para o go-live); o item 14 deixa as miniaturas do staging em fallback até a virada do mês; o seed sintético e o script de criação dos logins ficam para depois (área db). |

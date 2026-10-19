@@ -16,8 +16,8 @@ interface Observability {
 }
 
 interface WranglerConfig {
-  observability?: Observability;
   env?: Record<string, { observability?: Observability }>;
+  observability?: Observability;
 }
 
 // wrangler.jsonc is JSON with comments and trailing commas, which is also a valid JavaScript expression;
@@ -37,10 +37,14 @@ describe.each(WORKERS)("the observability block of the %s Worker", (worker) => {
     expect(observability?.traces?.enabled).toBe(true);
   });
 
+  // the top level is local only (ADR 0097) and keeps the production values; env.production is what the go-live deploys
   it("samples production traces at 5%", () => {
     expect(observability?.traces?.head_sampling_rate).toBe(
       PRODUCTION_TRACES_RATE
     );
+    expect(
+      config.env?.production?.observability?.traces?.head_sampling_rate
+    ).toBe(PRODUCTION_TRACES_RATE);
   });
 
   it("never samples logs below 100%, because the platform has no separate rate for errors", () => {

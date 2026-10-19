@@ -1,0 +1,533 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+/**
+ * Isolation of the fixed staging (ADR 0097). Reads the three `wrangler.jsonc` and, with `--built`,
+ * the `wrangler.json` the staging build generated (what `wrangler deploy` actually publishes), and
+ * fails when:
+ * - the top level is not local-only (it must never deploy anything);
+ * - `env.staging` or `env.production` is missing, or a binding of the top level is missing in them;
+ * - a staging value is still a PLACEHOLDER, or a staging id, queue, bucket or rate limit namespace is
+ *   shared with production or the top level, or does not say `staging`;
+ * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
+ * - the deployed name does not end in `-staging`, previews are on, or password sign-in is on;
+ * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
+ * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
+ * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
+ */
+
+export const WORKERS = ["web", "catalog", "admin"];
+
+const PLACEHOLDER = /PLACEHOLDER/i;
+const CLOUDFLARE_ID = /^[0-9a-f]{32}$/;
+const LOCAL_SUFFIX = /-local$/;
+const STAGING_SUFFIX = /-staging$/;
+const STAGING_WORD = /staging/;
+const LOCAL_WORD = /-local(-|$)/;
+// a role whose configuration is shared on purpose: the Admin's billing commands log in as the billing role (ADR 0073)
+const SHARED_HYPERDRIVE = new Set([
+  "BILLING_HYPERDRIVE",
+  "ADMIN_BILLING_HYPERDRIVE",
+]);
+const OWNER_USER = /_owner$/;
+
+/**
+ * Calls `visit(char, index)` for every character outside a string literal and copies string literals
+ * as they are; `visit` returns how many characters it consumed and what to write.
+ */
+function scanOutsideStrings(text, visit) {
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] === '"') {
+      const start = index;
+      index += 1;
+      while (index < text.length && text[index] !== '"') {
+        index += text[index] === "\\" ? 2 : 1;
+      }
+      index += 1;
+      out += text.slice(start, index);
+    } else {
+      const { length, write } = visit(text[index], index);
+      out += write;
+      index += length;
+    }
+  }
+  return out;
+}
+
+const NEXT_NON_SPACE = /\S/g;
+
+/** JSON with comments and trailing commas (the wrangler.jsonc format), without touching strings. */
+export function parseJsonc(text) {
+  const withoutComments = scanOutsideStrings(text, (char, index) => {
+    if (char === "/" && text[index + 1] === "/") {
+      const end = text.indexOf("\n", index);
+      return { length: (end === -1 ? text.length : end) - index, write: "" };
+    }
+    if (char === "/" && text[index + 1] === "*") {
+      const end = text.indexOf("*/", index + 2);
+      if (end === -1) {
+        throw new Error("unterminated comment");
+      }
+      return { length: end + 2 - index, write: "" };
+    }
+    return { length: 1, write: char };
+  });
+  const withoutTrailingCommas = scanOutsideStrings(
+    withoutComments,
+    (char, index) => {
+      if (char !== ",") {
+        return { length: 1, write: char };
+      }
+      NEXT_NON_SPACE.lastIndex = index + 1;
+      const next = NEXT_NON_SPACE.exec(withoutComments)?.[0];
+      return { length: 1, write: next === "}" || next === "]" ? "" : char };
+    }
+  );
+  return JSON.parse(withoutTrailingCommas);
+}
+
+/** The resources a config binds, by binding name. */
+export function bindingsOf(config) {
+  const hyperdrive = new Map(
+    (config.hyperdrive ?? []).map((item) => [item.binding, item.id])
+  );
+  const buckets = new Map(
+    (config.r2_buckets ?? []).map((item) => [item.binding, item.bucket_name])
+  );
+  const producers = new Map(
+    (config.queues?.producers ?? []).map((item) => [item.binding, item.queue])
+  );
+  const consumers = (config.queues?.consumers ?? []).flatMap((item) =>
+    [item.queue, item.dead_letter_queue].filter(Boolean)
+  );
+  const ratelimits = new Map(
+    (config.ratelimits ?? []).map((item) => [
+      item.name,
+      String(item.namespace_id),
+    ])
+  );
+  const images = config.images?.binding ? [config.images.binding] : [];
+  return { buckets, consumers, hyperdrive, images, producers, ratelimits };
+}
+
+function bindingNames(config) {
+  const b = bindingsOf(config);
+  return [
+    ...[...b.hyperdrive.keys()].map((name) => `hyperdrive:${name}`),
+    ...[...b.buckets.keys()].map((name) => `r2:${name}`),
+    ...[...b.producers.keys()].map((name) => `queue:${name}`),
+    ...[...b.ratelimits.keys()].map((name) => `ratelimit:${name}`),
+    ...b.images.map((name) => `images:${name}`),
+  ];
+}
+
+function stringsOf(value, path = "") {
+  if (typeof value === "string") {
+    return [[path, value]];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => stringsOf(item, `${path}[${index}]`));
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([key, item]) =>
+      stringsOf(item, path ? `${path}.${key}` : key)
+    );
+  }
+  return [];
+}
+
+function checkTopLevel(app, config, problems) {
+  const where = `${app}: top level`;
+  if (!LOCAL_SUFFIX.test(config.name ?? "")) {
+    problems.push(
+      `${where}: name "${config.name}" must end in -local (the top level is never deployed)`
+    );
+  }
+  if (config.workers_dev !== false) {
+    problems.push(`${where}: workers_dev must be false`);
+  }
+  if (config.account_id !== undefined) {
+    problems.push(
+      `${where}: account_id belongs to an environment, not to the top level`
+    );
+  }
+  if ((config.routes ?? []).length > 0 || config.route !== undefined) {
+    problems.push(
+      `${where}: routes belong to an environment, not to the top level`
+    );
+  }
+  const b = bindingsOf(config);
+  for (const [binding, id] of b.hyperdrive) {
+    if (id !== "local-only") {
+      problems.push(`${where}: Hyperdrive ${binding} must be local-only`);
+    }
+  }
+  for (const [binding, bucket] of b.buckets) {
+    if (!LOCAL_SUFFIX.test(bucket)) {
+      problems.push(`${where}: bucket of ${binding} must end in -local`);
+    }
+  }
+  for (const queue of [...b.producers.values(), ...b.consumers]) {
+    if (!LOCAL_WORD.test(queue)) {
+      problems.push(`${where}: queue ${queue} must be a -local queue`);
+    }
+  }
+}
+
+function checkParity(
+  app,
+  top,
+  environment,
+  envName,
+  problems,
+  { allowMissing = [] } = {}
+) {
+  const present = new Set(bindingNames(environment));
+  for (const name of bindingNames(top)) {
+    if (!(present.has(name) || allowMissing.includes(name))) {
+      problems.push(
+        `${app}: env.${envName} lacks ${name} (bindings are not inherited)`
+      );
+    }
+  }
+}
+
+/** The checks that hold for the staging block in the source and for the built wrangler.json alike. */
+function checkStagingBlock(app, where, staging, problems) {
+  if (!STAGING_SUFFIX.test(staging.name ?? "")) {
+    problems.push(
+      `${where}: name "${staging.name}" must end in -staging, or the deploy would publish another Worker`
+    );
+  }
+  if (
+    !(
+      CLOUDFLARE_ID.test(staging.account_id ?? "") ||
+      PLACEHOLDER.test(staging.account_id ?? "")
+    )
+  ) {
+    problems.push(
+      `${where}: account_id must be the 32-hex id of the staging account`
+    );
+  }
+  if (staging.preview_urls !== false) {
+    problems.push(
+      `${where}: preview_urls must be false (no Cloudflare Previews)`
+    );
+  }
+  if (staging.vars?.POLARIS_ENVIRONMENT !== "staging") {
+    problems.push(`${where}: vars.POLARIS_ENVIRONMENT must be "staging"`);
+  }
+  for (const [path, value] of stringsOf(staging)) {
+    if (PLACEHOLDER.test(value)) {
+      problems.push(`${where}: ${path} is still a placeholder`);
+    }
+  }
+  checkStagingResources(where, staging, problems);
+  if (app === "web" && staging.vars?.EMAIL_PASSWORD_AUTH_ENABLED !== "false") {
+    problems.push(
+      `${where}: password sign-in must stay off in staging (EMAIL_PASSWORD_AUTH_ENABLED "false")`
+    );
+  }
+  if (app === "admin") {
+    checkAdminNotExposed(where, staging, problems);
+  }
+}
+
+function checkStagingResources(where, staging, problems) {
+  const b = bindingsOf(staging);
+  for (const [binding, id] of b.hyperdrive) {
+    if (!(CLOUDFLARE_ID.test(id) || PLACEHOLDER.test(id))) {
+      problems.push(
+        `${where}: Hyperdrive ${binding} must be a real 32-hex configuration id`
+      );
+    }
+  }
+  for (const [binding, bucket] of b.buckets) {
+    if (!STAGING_WORD.test(bucket)) {
+      problems.push(`${where}: bucket of ${binding} must be a staging bucket`);
+    }
+  }
+  for (const queue of [...b.producers.values(), ...b.consumers]) {
+    if (!STAGING_WORD.test(queue)) {
+      problems.push(`${where}: queue ${queue} must be a staging queue`);
+    }
+  }
+}
+
+/** Not exposed: no public hostname, no Access (every API request is refused) and no database. */
+function checkAdminNotExposed(where, staging, problems) {
+  if (staging.workers_dev !== false) {
+    problems.push(
+      `${where}: the Admin is not exposed in staging (workers_dev must be false)`
+    );
+  }
+  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
+    problems.push(`${where}: the Admin is not exposed in staging (no routes)`);
+  }
+  if (staging.vars?.ACCESS_TEAM_DOMAIN || staging.vars?.ACCESS_AUDIENCE) {
+    problems.push(`${where}: the Admin has no Access application in staging`);
+  }
+  if ((staging.hyperdrive ?? []).length > 0) {
+    problems.push(`${where}: the Admin has no database binding in staging`);
+  }
+}
+
+/** Values that must never repeat between two environments of the same Worker set. */
+function resources(config) {
+  const b = bindingsOf(config);
+  return {
+    accounts: config.account_id ? [config.account_id] : [],
+    buckets: [...b.buckets.values()],
+    hyperdrive: [...b.hyperdrive.values()].filter((id) => id !== "local-only"),
+    namespaces: [...b.ratelimits.values()],
+    queues: [...new Set([...b.producers.values(), ...b.consumers])],
+  };
+}
+
+function checkCrossEnvironment(entries, problems) {
+  const staging = entries.map(({ app, config }) => ({
+    app,
+    values: resources(config.env?.staging ?? {}),
+  }));
+  const others = entries.flatMap(({ app, config }) => [
+    { app, label: "top level", values: resources(config) },
+    {
+      app,
+      label: "env.production",
+      values: resources(config.env?.production ?? {}),
+    },
+  ]);
+  for (const kind of [
+    "hyperdrive",
+    "buckets",
+    "queues",
+    "namespaces",
+    "accounts",
+  ]) {
+    for (const { app, values } of staging) {
+      for (const value of values[kind]) {
+        const clash = others.find((other) =>
+          other.values[kind].includes(value)
+        );
+        if (clash) {
+          problems.push(
+            `${app}: env.staging ${kind} "${value}" is also used by ${clash.app} ${clash.label}`
+          );
+        }
+      }
+    }
+  }
+  // one configuration per role: two staging bindings never share a Hyperdrive id, except the billing pair
+  const owners = new Map();
+  for (const { app, config } of entries) {
+    for (const [binding, id] of bindingsOf(config.env?.staging ?? {})
+      .hyperdrive) {
+      const previous = owners.get(id);
+      if (
+        previous &&
+        !(
+          SHARED_HYPERDRIVE.has(previous.binding) &&
+          SHARED_HYPERDRIVE.has(binding)
+        )
+      ) {
+        problems.push(
+          `${app}: env.staging Hyperdrive ${binding} shares its id with ${previous.app} ${previous.binding}`
+        );
+      }
+      owners.set(id, previous ?? { app, binding });
+    }
+  }
+}
+
+/**
+ * `entries`: one `{ app, config, built }` per Worker, `config` the parsed wrangler.jsonc and `built`
+ * the parsed wrangler.json of the staging build (or undefined when not checked). Returns the problems.
+ */
+export function findIsolationProblems(entries) {
+  const problems = [];
+  for (const { app, config, built } of entries) {
+    checkTopLevel(app, config, problems);
+    const staging = config.env?.staging;
+    const production = config.env?.production;
+    if (!(staging && production)) {
+      problems.push(
+        `${app}: env.staging and env.production must both be declared`
+      );
+      continue;
+    }
+    checkProductionBlock(app, production, problems);
+    checkParity(app, config, staging, "staging", problems, {
+      // the Admin is not exposed in staging: it keeps no database binding
+      allowMissing:
+        app === "admin"
+          ? bindingNames(config).filter((name) =>
+              name.startsWith("hyperdrive:")
+            )
+          : [],
+    });
+    checkParity(app, config, production, "production", problems);
+    checkStagingBlock(app, `${app}: env.staging`, staging, problems);
+    if (built !== undefined) {
+      checkBuilt(app, staging, built, problems);
+    }
+  }
+  checkCrossEnvironment(entries, problems);
+  return problems;
+}
+
+function checkProductionBlock(app, production, problems) {
+  const name = production.name ?? "";
+  if (!name || STAGING_SUFFIX.test(name) || LOCAL_SUFFIX.test(name)) {
+    problems.push(
+      `${app}: env.production needs its own name, without -staging or -local`
+    );
+  }
+  if (production.vars?.POLARIS_ENVIRONMENT !== "production") {
+    problems.push(
+      `${app}: env.production vars.POLARIS_ENVIRONMENT must be "production"`
+    );
+  }
+  if (production.preview_urls !== false) {
+    problems.push(`${app}: env.production preview_urls must be false`);
+  }
+}
+
+/** The wrangler.json the staging build generated: the file the deploy follows. */
+function checkBuilt(app, staging, built, problems) {
+  if (built === null) {
+    problems.push(
+      `${app}: no staging build found (run the build with CLOUDFLARE_ENV=staging first)`
+    );
+    return;
+  }
+  checkStagingBlock(app, `${app}: built wrangler.json`, built, problems);
+  if (
+    built.targetEnvironment !== undefined &&
+    built.targetEnvironment !== "staging"
+  ) {
+    problems.push(
+      `${app}: built wrangler.json targets "${built.targetEnvironment}", not staging`
+    );
+  }
+  const expected = JSON.stringify(bindingsSnapshot(staging));
+  if (JSON.stringify(bindingsSnapshot(built)) !== expected) {
+    problems.push(
+      `${app}: built wrangler.json bindings differ from env.staging`
+    );
+  }
+}
+
+function bindingsSnapshot(config) {
+  const b = bindingsOf(config);
+  return {
+    account: config.account_id,
+    buckets: [...b.buckets].sort(),
+    consumers: [...b.consumers].sort(),
+    hyperdrive: [...b.hyperdrive].sort(),
+    producers: [...b.producers].sort(),
+    ratelimits: [...b.ratelimits].sort(),
+  };
+}
+
+/**
+ * One staging Hyperdrive configuration as `wrangler hyperdrive get` shows it. The staging database host
+ * comes from STAGING_DATABASE_HOST (not a secret); the password never appears in that output.
+ */
+export function findHyperdriveProblems(binding, details, expectedHost) {
+  const problems = [];
+  const origin = details?.origin ?? {};
+  if (!expectedHost) {
+    problems.push("STAGING_DATABASE_HOST is not set");
+  } else if (origin.host !== expectedHost) {
+    problems.push(
+      `${binding}: Hyperdrive points to another host than the staging database`
+    );
+  }
+  if (details?.caching?.disabled !== true) {
+    problems.push(`${binding}: query caching must be disabled`);
+  }
+  if (!origin.user || OWNER_USER.test(origin.user)) {
+    problems.push(
+      `${binding}: Hyperdrive must log in as a runtime login, never as the database owner`
+    );
+  }
+  return problems;
+}
+
+function hyperdriveDetails(id, cwd) {
+  const result = spawnSync("bunx", ["wrangler", "hyperdrive", "get", id], {
+    cwd,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    return null;
+  }
+  const start = result.stdout.indexOf("{");
+  return start === -1 ? null : JSON.parse(result.stdout.slice(start));
+}
+
+function readBuilt(appDir) {
+  // the deploy follows .wrangler/deploy/config.json to the generated wrangler.json; so does this check
+  const redirect = resolve(appDir, ".wrangler/deploy/config.json");
+  if (!existsSync(redirect)) {
+    return null;
+  }
+  const { configPath } = JSON.parse(readFileSync(redirect, "utf8"));
+  const file = resolve(dirname(redirect), configPath);
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+}
+
+function findRemoteProblems(entries) {
+  return entries.flatMap(({ app, appDir, config }) =>
+    [...bindingsOf(config.env.staging).hyperdrive].flatMap(([binding, id]) => {
+      const details = hyperdriveDetails(id, appDir);
+      if (details === null) {
+        return [`${app}: could not read Hyperdrive ${binding}`];
+      }
+      return findHyperdriveProblems(
+        `${app} ${binding}`,
+        details,
+        process.env.STAGING_DATABASE_HOST
+      );
+    })
+  );
+}
+
+function main() {
+  const args = new Set(process.argv.slice(2));
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const entries = WORKERS.map((app) => {
+    const appDir = resolve(root, "apps", app);
+    const config = parseJsonc(
+      readFileSync(resolve(appDir, "wrangler.jsonc"), "utf8")
+    );
+    // the Admin is not deployed to staging and is not built by Vite: its source block is what counts
+    const built =
+      args.has("--built") && app !== "admin" ? readBuilt(appDir) : undefined;
+    return { app, appDir, built, config };
+  });
+  const problems = findIsolationProblems(entries);
+  if (args.has("--remote") && problems.length === 0) {
+    problems.push(...findRemoteProblems(entries));
+  }
+  if (problems.length > 0) {
+    console.error(`Staging isolation check failed (${problems.length}):`);
+    for (const problem of problems) {
+      console.error(`- ${problem}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+  console.log("Staging isolation check passed.");
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main();
+}
