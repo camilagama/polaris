@@ -10,15 +10,19 @@ import { pathToFileURL } from "node:url";
 
 /**
  * Paths that cannot change what the browser gate proves: prose; the database
- * package; and the web app's server, Worker and gate scripts. The gate serves
- * the static client bundle and answers the `/rpc` calls itself (page.route), so
- * none of that code runs in it, and the client never imports it.
+ * package; the web app's server, Worker and gate scripts; and the Admin app.
+ * The gate serves the static client bundle and answers the `/rpc` calls itself
+ * (page.route), so none of that code runs in it, and the client never imports
+ * it. Nothing under apps/web, apps/catalog or packages/ depends on apps/admin
+ * (ci-changed.test.mjs reads the import graph and fails if that changes), so
+ * the Admin app is outside both bundles the gate exercises.
  */
 const BROWSER_IRRELEVANT = [
   /^docs\//,
   /^doc\//,
   /\.md$/,
   /^packages\/db\//,
+  /^apps\/admin\//,
   /^apps\/web\/(src\/server|worker|scripts)\//,
 ];
 
@@ -51,9 +55,13 @@ export function classifyChanges(files) {
 
 /** The paths changed by the commit under test against its first parent (the base of a pull request merge). */
 function changedFiles() {
-  const result = spawnSync("git", ["diff", "--name-only", "HEAD^1", "HEAD"], {
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    "git",
+    ["diff", "--name-only", "--no-renames", "HEAD^1", "HEAD"],
+    {
+      encoding: "utf8",
+    }
+  );
   if (result.status !== 0) {
     return null;
   }
