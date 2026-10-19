@@ -4,8 +4,10 @@ import {
   canonicalNameFor,
   type ForbiddenAlias,
   isOpaqueId,
+  type OpaqueId,
   opaqueIdFields,
 } from "./fields";
+import { redact, redactText } from "./redaction";
 
 /**
  * Typed logger for the backend (Workers, Hono, Queue consumers, jobs, billing
@@ -15,16 +17,28 @@ import {
  * Never import this from `packages/domain` or from browser code: the domain
  * stays free of logging and the V1 has no client logging (see ADR 0089). The
  * field names are the canonical schema of `./fields` (ADR 0091): the type
- * refuses the forbidden aliases and the call drops them. The centralised
- * redaction (PR116) builds on this wrapper; until then callers keep emitting
- * only allow-listed, non-personal fields.
+ * refuses the forbidden aliases and the call drops them. Every event then goes
+ * through the redaction policy of `./redaction` (PR116) before evlog sees it,
+ * so a field that carries personal data or a secret leaves masked even when a
+ * call site forgets to leave it out.
  */
 
 export type {
   CanonicalFields,
   ForbiddenAlias,
+  OpaqueId,
   Outcome,
 } from "./fields";
+
+/**
+ * The value as an `OpaqueId`, or `undefined` when it does not have the shape of
+ * one (the logger drops an `undefined` field). Pass an id the system minted
+ * (the session's user id, the membership's organization id), never text the
+ * client sent.
+ */
+export function opaqueId(value: unknown): OpaqueId | undefined {
+  return isOpaqueId(value) ? value : undefined;
+}
 
 export type LogScalar = boolean | null | number | string | undefined;
 
@@ -107,10 +121,10 @@ function applyConfig(config: LoggingConfig): void {
     },
     // Workers Logs indexes the object as JSON; no ANSI, no timestamps prefix.
     pretty: false,
-    // evlog's built-in masking (e-mail, card number, IP, phone, secret-like
-    // keys) stays on as a safety net; the allow-list in each call site is still
-    // what keeps personal data out. The project's own policy is PR116.
-    redact: true,
+    // The Polaris policy (`./redaction`) masks every event in `emit`; evlog's
+    // generic masking would only mask a second time (and IP is masked there
+    // with no way to carry an exception an ADR asks for).
+    redact: false,
     stringify: false,
   });
   configured = true;
@@ -135,7 +149,8 @@ function applySchema(fields: LogFields | undefined): {
   ignored: string[];
   safe: Record<string, LogValue>;
 } {
-  const safe: Record<string, LogValue> = {};
+  // `Object.create(null)`: a key named `__proto__` is data here, not the prototype
+  const safe: Record<string, LogValue> = Object.create(null);
   const ignored: string[] = [];
   for (const [key, value] of Object.entries(fields ?? {})) {
     if (value === undefined) {
@@ -163,12 +178,24 @@ export function emit(level: LogLevel, event: string, fields?: LogFields): void {
     applyConfig({ service: "polaris" });
   }
 
-  const { ignored, safe } = applySchema(fields);
-  log[level]({
-    ...safe,
-    ...(ignored.length > 0 ? { ignoredFields: ignored } : {}),
-    event,
-  });
+  log[level]({ ...redacted(fields), event: redactText(event) });
+}
+
+/**
+ * The fields that go out. Fails closed: if the policy cannot read a value (a
+ * getter or a proxy that throws), the event carries only `redactionFailed`
+ * and the log call never throws into the code that was logging an error.
+ */
+function redacted(fields: LogFields | undefined): Record<string, unknown> {
+  try {
+    const { ignored, safe } = applySchema(fields);
+    return redact({
+      ...safe,
+      ...(ignored.length > 0 ? { ignoredFields: ignored } : {}),
+    });
+  } catch {
+    return { redactionFailed: true };
+  }
 }
 
 export const logger: Logger = {
