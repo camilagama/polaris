@@ -1203,6 +1203,8 @@ Usar bindings nativos de rate limiting do Workers para um limite geral por IP e 
 
 A interface de autenticação ainda não existe. Este PR fecha os endpoints; a tela futura deve renderizar o widget com a site key pública, enviar o token no header acima e usar a ação correspondente ao endpoint. Manter os fluxos de senha desligados até secret, hostnames, bindings e widget estarem configurados.
 
+Estado (ADR 0100): a tela de entrada vem na sequência P0 a P10 do PR 18A, abaixo. A site key chega ao cliente como `TURNSTILE_SITE_KEY`, var pública do Worker lida por `GET /api/auth-methods`, e não como `VITE_TURNSTILE_SITE_KEY`; a CSP do widget vale só nas rotas de entrada.
+
 
 
 Testar:
@@ -1280,6 +1282,28 @@ Implementar:
 - Reset de senha revoga todas as sessões.
 - Testar idle e absolute expiry, refresh perto do limite, múltiplas sessões, listagem/revogação do próprio usuário, logout, token cru e reset em duas sessões.
 - Aplicar a migration e verificar o limite absoluto em PostgreSQL 18.
+
+---
+
+# PR 18A — Tela de entrada, bloqueio de conta e aceite legal (ADR 0100)
+
+Estado (ADR 0100): sequência acrescentada em 19/10/2026 por decisão do usuário (E1 a E4), pré-requisito para ligar o modo offline e para o checklist do Gate 5. Cada item é um PR, no máximo dois em paralelo e um de banco por vez, e a senha (P8 e P9) fica atrás da flag e desligada até haver domínio de envio verificado. O Google não depende de e-mail.
+
+Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8 → P9 → P10**.
+
+- **P0 (docs):** o ADR 0100, as emendas dos ADRs 0017, 0044 e 0047 e os ajustes nas regras de autenticação e privacidade.
+- **P1 (app):** limitador do login social, 302 no callback e testes de open redirect no servidor.
+- **P6 (app):** páginas legais, conteúdo versionado, constante `LEGAL_DOCUMENTS`, renderizador e travas de build (`[preencher]` e aviso de rascunho). Vem antes do P3 para não haver link morto.
+- **P2 (db):** migration do bloqueio por e-mail, gate `login-lock`, classe de retenção e job de expurgo.
+- **P3 (app):** `/entrar` só com Google, `voltar` e motivo, "Entrar de novo", "Sair" com destino, o texto único de sessão encerrada e `/api/auth-methods`.
+- **P4 (db):** migration do aceite legal (só acrescenta) e gate `legal-acceptance`.
+- **P5 (app):** acesso sem internet vencido e temporizador (emenda do ADR 0047).
+- **P7 (app):** controle de aceite em `createAuthenticatedRequestContext`, `/aceite`, as RPCs, o aceite no cadastro e a pausa da sync. A recusa de aceite não tira o lojista da tela e não apaga a cópia offline.
+- **P8 (app):** servidor da senha: fluxo do bloqueio, troca de senha que revoga sessões e troca a época dos leases (sessão de até 15 minutos em `set-password` e `change-password`), `onPasswordReset`, `/api/login-unlock`, `/api/email-verification`, links com o token no fragmento, e-mails e redação.
+- **P9 (app):** CSP do Turnstile por rota (`authEntry`, `_headers`, service worker) e as telas de senha atrás da flag. O token sai da barra antes de o Turnstile carregar.
+- **P10 (db):** exclusão do usuário não verificado depois de 24 horas.
+
+Todo PR que toca auth, RLS, aceite ou CSP passa pelo `security-auditor` e pela revisão de segurança. Os BLOCK de staging (Google real, domínio, chaves e flags) impedem ligar as flags, não os merges. PR de tela traz capturas por estado, em celular e desktop, sem commitá-las.
 
 ---
 
