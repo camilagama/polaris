@@ -188,6 +188,7 @@ describe("the attention summary", () => {
         "entitlement_changed",
         ["review_account", "retry"],
       ],
+      ["session_changed", "session_changed", ["review_account", "retry"]],
       [
         "authorization_revoked",
         "authorization_revoked",
@@ -323,6 +324,23 @@ describe("resolving an item", () => {
     expect(after.commands[0]?.commandId).toBe(refused.commandId);
     expect(after.commands[0]?.status).toBe("pending");
     expect(after.commands[0]?.rejection).toBeNull();
+  });
+
+  it("keeps the command, with the same ID, after another account's session sent it", async () => {
+    const { lease, outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "session_changed");
+    const item = await itemOf(outbox);
+    expect(item.cause).toBe("session_changed");
+    expect(item.actions).toEqual(["review_account", "retry"]);
+    expect(item.actions).not.toContain("discard");
+
+    await resubmitAttentionItem(item, { lease, outbox });
+
+    const after = await outbox.snapshot();
+    expect(after.commands).toHaveLength(1);
+    expect(after.commands[0]?.commandId).toBe(refused.commandId);
+    expect(after.commands[0]?.status).toBe("pending");
   });
 
   it("says what a discard loses, per kind", () => {

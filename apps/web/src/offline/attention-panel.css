@@ -33,7 +33,8 @@
 }
 
 .attention-item[data-cause="authorization_revoked"],
-.attention-item[data-cause="entitlement_changed"] {
+.attention-item[data-cause="entitlement_changed"],
+.attention-item[data-cause="session_changed"] {
   background: var(--ui-danger-soft);
   border-left-color: var(--ui-danger);
 }

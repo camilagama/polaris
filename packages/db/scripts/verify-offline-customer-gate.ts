@@ -316,7 +316,7 @@ async function run() {
       actorA
     );
     assert.equal(borrowed.status, "rejected");
-    assert.equal(borrowed.code, "wrong_device");
+    assert.equal(borrowed.code, "session_changed");
     assert.equal((await customerOf(customerId))?.name, "Nome refeito");
     tests.push(
       "an unknown customer, or another organization's customer, is customer_not_found; another organization's lease is refused; nothing is changed"
