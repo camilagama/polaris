@@ -74,6 +74,11 @@
   color: var(--ui-muted);
 }
 
+.devices-page .device-session-gone {
+  margin: 1rem 0 0;
+  color: var(--ui-muted);
+}
+
 .devices-page .categories-message .quiet-button {
   margin-inline-start: 0.75rem;
 }

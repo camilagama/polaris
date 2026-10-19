@@ -7,6 +7,9 @@ import {
   END_OTHER_SESSIONS_HELP,
   END_OTHER_SESSIONS_LABEL,
   END_OTHER_SESSIONS_WARNING,
+  RECOGNIZING_SLOW_TEXT,
+  RECOGNIZING_UNAVAILABLE_TEXT,
+  recognitionState,
   REVOKE_WARNING,
   REVOKE_WARNING_NOTE,
   revokedMessage,
@@ -166,5 +169,26 @@ describe("the failures", () => {
     expect(devicesLoadError(new TypeError("Failed to fetch"))).toBe(
       "Não foi possível carregar os aparelhos. Verifique a conexão e tente de novo."
     );
+  });
+});
+
+describe("what the screen says while it does not know this device", () => {
+  it("slow: the runtime is still preparing after the patience ran out, and the text stays the one about a better connection", () => {
+    expect(recognitionState(false, "starting")).toBe("waiting");
+    expect(recognitionState(true, "starting")).toBe("slow");
+    expect(RECOGNIZING_SLOW_TEXT).toBe(
+      "Não foi possível reconhecer este aparelho agora. Recarregue a página. Se continuar, tente de novo com uma internet melhor."
+    );
+  });
+
+  it("unavailable or absent: says right away, with or without the wait, that this browser could not prepare offline access", () => {
+    for (const slow of [false, true]) {
+      expect(recognitionState(slow, "unavailable")).toBe("unavailable");
+      expect(recognitionState(slow, null)).toBe("unavailable");
+    }
+    expect(RECOGNIZING_UNAVAILABLE_TEXT).toBe(
+      "Este navegador não conseguiu preparar o acesso offline, e sem isso não dá para revogar por aqui. Recarregue a página. Se continuar, tente em outro celular ou computador em que o Polaris funcione."
+    );
+    expect(RECOGNIZING_UNAVAILABLE_TEXT).not.toBe(RECOGNIZING_SLOW_TEXT);
   });
 });

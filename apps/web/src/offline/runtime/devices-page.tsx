@@ -10,9 +10,12 @@ import {
   EMPTY_TEXT,
   LOADING_TEXT,
   OFFLINE_TEXT,
-  RECOGNIZING_FAILED_TEXT,
+  type Recognition,
   RECOGNIZING_PATIENCE_MS,
+  RECOGNIZING_SLOW_TEXT,
   RECOGNIZING_TEXT,
+  RECOGNIZING_UNAVAILABLE_TEXT,
+  recognitionState,
   revokedMessage,
   revokeFailure,
   SESSION_ENDED_PANEL,
@@ -132,8 +135,6 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
   );
 }
 
-type Recognition = "failed" | "waiting";
-
 /**
  * Whether the screen is still waiting to know which row is this browser (null when it
  * does not need to). It gives up when the runtime says it is unavailable, or after a while.
@@ -157,19 +158,20 @@ function useRecognition(
   if (!waiting) {
     return null;
   }
-  return slow || snapshot === null || snapshot.phase === "unavailable"
-    ? "failed"
-    : "waiting";
+  return recognitionState(slow, snapshot?.phase ?? null);
 }
 
 function RecognitionLine({ state }: { state: Recognition }) {
-  return state === "failed" ? (
+  if (state === "waiting") {
+    return (
+      <p className="device-recognizing" role="status">
+        {RECOGNIZING_TEXT}
+      </p>
+    );
+  }
+  return (
     <p className="categories-message is-error" role="status">
-      {RECOGNIZING_FAILED_TEXT}
-    </p>
-  ) : (
-    <p className="device-recognizing" role="status">
-      {RECOGNIZING_TEXT}
+      {state === "slow" ? RECOGNIZING_SLOW_TEXT : RECOGNIZING_UNAVAILABLE_TEXT}
     </p>
   );
 }
@@ -252,7 +254,7 @@ function ListSection({
         <RecognitionLine state={recognition} />
       ) : null}
       {devices && sessionGone ? (
-        <p className="categories-message is-error" role="status">
+        <p className="device-session-gone" role="status">
           {SESSION_GONE_LIST_TEXT}
         </p>
       ) : null}

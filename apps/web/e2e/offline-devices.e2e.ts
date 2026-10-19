@@ -470,7 +470,7 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
-    "abra o Menu; em tela larga, ele fica no alto da tela"
+    "use o botão Sair: no celular ele está no Menu; em tela grande, no alto da página"
   );
   await expect(askRevoke(page, "Caixa da loja")).toHaveCount(0);
   await askRevoke(page, "Celular da Ana").click();
@@ -962,7 +962,9 @@ test("depois de voltar à tela (a volta pelo login só será provada com a tela 
 
 const RECOGNIZING =
   "Estamos reconhecendo este aparelho. Os botões liberam em instantes.";
-const RECOGNIZING_FAILED =
+const RECOGNIZING_UNAVAILABLE =
+  "Este navegador não conseguiu preparar o acesso offline, e sem isso não dá para revogar por aqui. Recarregue a página. Se continuar, tente em outro celular ou computador em que o Polaris funcione.";
+const RECOGNIZING_SLOW =
   "Não foi possível reconhecer este aparelho agora. Recarregue a página. Se continuar, tente de novo com uma internet melhor.";
 
 /** The runtime has no context: the device registration does not answer, or fails. */
@@ -1000,7 +1002,7 @@ test("com internet e sem saber qual é este aparelho: a linha reconhecendo apare
   // the wait is real: the promise still stands a few seconds in, and the exit text is not here yet
   await page.waitForTimeout(3000);
   await expect(recognizing).toBeVisible();
-  await expect(page.getByText(RECOGNIZING_FAILED)).toHaveCount(0);
+  await expect(page.getByText(RECOGNIZING_SLOW)).toHaveCount(0);
   // above the list
   const lineBox = await recognizing.boundingBox();
   const listBox = await page
@@ -1008,9 +1010,7 @@ test("com internet e sem saber qual é este aparelho: a linha reconhecendo apare
     .boundingBox();
   expect(lineBox?.y ?? 0).toBeLessThan(listBox?.y ?? 0);
 
-  const failed = page
-    .getByRole("status")
-    .filter({ hasText: RECOGNIZING_FAILED });
+  const failed = page.getByRole("status").filter({ hasText: RECOGNIZING_SLOW });
   await expect(failed).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(RECOGNIZING)).toHaveCount(0);
   await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
@@ -1029,9 +1029,10 @@ test("com internet e o runtime indisponível: o texto de saída aparece logo, se
     timeout: 4000,
   });
   await expect(
-    page.getByRole("status").filter({ hasText: RECOGNIZING_FAILED })
+    page.getByRole("status").filter({ hasText: RECOGNIZING_UNAVAILABLE })
   ).toBeVisible({ timeout: 1000 });
   await expect(page.getByText(RECOGNIZING)).toHaveCount(0);
+  await expect(page.getByText(RECOGNIZING_SLOW)).toHaveCount(0);
   await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
 });
 
@@ -1043,7 +1044,8 @@ test("com o aparelho reconhecido, nenhuma das duas linhas aparece", async ({
     timeout: 20_000,
   });
   await expect(page.getByText(RECOGNIZING)).toHaveCount(0);
-  await expect(page.getByText(RECOGNIZING_FAILED)).toHaveCount(0);
+  await expect(page.getByText(RECOGNIZING_SLOW)).toHaveCount(0);
+  await expect(page.getByText(RECOGNIZING_UNAVAILABLE)).toHaveCount(0);
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 

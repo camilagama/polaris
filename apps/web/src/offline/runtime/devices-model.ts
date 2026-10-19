@@ -5,6 +5,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../../lib/rpc-error";
+import type { RuntimeSnapshot } from "./offline-runtime";
 
 /**
  * The devices of the signed-in user, as the "Aparelhos" screen shows them. A
@@ -56,7 +57,7 @@ export const RECENT_LOGIN_MINUTES = 15;
 
 /** The confirmation says it in two parts: what is lost (ink) and when to use it. */
 export const REVOKE_WARNING =
-  "Revogar este aparelho: ele perde o acesso e o que ele ainda não enviou (vendas, cadastros, movimentos) não será aceito. Não dá para desfazer.";
+  "Ele perde o acesso e o que ainda não enviou (vendas, cadastros, movimentos) não será aceito. Não dá para desfazer.";
 export const REVOKE_WARNING_NOTE =
   "Use para aparelho perdido ou roubado. Se ele estiver sem internet, só perde o acesso quando conectar.";
 export const REVOKE_TITLE = "Revogar este aparelho?";
@@ -64,10 +65,31 @@ export const REVOKE_TITLE = "Revogar este aparelho?";
 /** The way out for someone who lost the phone and the runtime does not know this browser's device yet. */
 export const RECOGNIZING_TEXT =
   "Estamos reconhecendo este aparelho. Os botões liberam em instantes.";
-export const RECOGNIZING_FAILED_TEXT =
+/** The runtime is still getting ready, but took longer than RECOGNIZING_PATIENCE_MS. */
+export const RECOGNIZING_SLOW_TEXT =
   "Não foi possível reconhecer este aparelho agora. Recarregue a página. Se continuar, tente de novo com uma internet melhor.";
+/** The runtime is unavailable or absent: waiting will not help, and revoking needs it. */
+export const RECOGNIZING_UNAVAILABLE_TEXT =
+  "Este navegador não conseguiu preparar o acesso offline, e sem isso não dá para revogar por aqui. Recarregue a página. Se continuar, tente em outro celular ou computador em que o Polaris funcione.";
 /** How long the screen waits for the runtime before it stops promising "em instantes". */
 export const RECOGNIZING_PATIENCE_MS = 5000;
+
+export type Recognition = "slow" | "unavailable" | "waiting";
+
+/**
+ * What the screen says while it still does not know which row is this browser.
+ * No runtime (null) or an unavailable one will not get better by waiting; one
+ * that is still preparing is "waiting", and "slow" once the patience ran out.
+ */
+export function recognitionState(
+  slow: boolean,
+  phase: RuntimeSnapshot["phase"] | null
+): Recognition {
+  if (phase === null || phase === "unavailable") {
+    return "unavailable";
+  }
+  return slow ? "slow" : "waiting";
+}
 
 export const SESSION_GONE_LIST_TEXT = "Entre de novo para usar esta lista.";
 
