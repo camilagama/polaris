@@ -70,6 +70,17 @@ export function describeError(error: unknown): {
   return described;
 }
 
+/**
+ * The SQLSTATE classes PostgreSQL defines (Appendix A of its manual). A code is taken for a SQLSTATE only when it has
+ * five characters and one of these classes, so `EPERM`, `ECONNRESET` or a five-digit provider code (`10001`) is not.
+ */
+const sqlStatePattern =
+  /^(?:00|01|02|03|08|09|0A|0B|0F|0L|0P|2[0-8]|2B|2D|2F|34|38|39|3B|3D|3F|40|42|44|5[3-8]|72|F0|HV|P0|XX)[0-9A-Z]{3}$/;
+
+export function isSqlState(code: unknown): code is string {
+  return typeof code === "string" && sqlStatePattern.test(code);
+}
+
 export function startWideEvent(
   event: string,
   initial: LogFields = {},

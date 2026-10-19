@@ -1,7 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -279,5 +279,109 @@ describe("sync.push", () => {
     await expect(
       client.sync.push({ commands: [await pushCommand(1)], organizationId })
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+});
+
+describe("sync.push rejection signal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function rejectedEvents(warn: { mock: { calls: unknown[][] } }) {
+    return warn.mock.calls
+      .map(([entry]) => entry as Record<string, unknown>)
+      .filter((entry) => entry.event === "sync_push_command_rejected");
+  }
+
+  it("logs one sync_push_command_rejected per rejected command, with the code and no command data", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const runSyncCommand = vi
+      .fn()
+      .mockResolvedValueOnce(acceptedOutcome)
+      .mockResolvedValueOnce({
+        code: "lease_invalid",
+        replayed: false,
+        result: null,
+        status: "rejected",
+      })
+      .mockResolvedValue(acceptedOutcome);
+    const client = createClient({
+      runSyncCommand,
+      syncCommandHandlers: [customerHandler],
+      withTenantRequestContext: tenantContext(),
+    });
+
+    const { results } = await client.sync.push({
+      commands: [
+        await pushCommand(1),
+        await pushCommand(2),
+        await pushCommand(3),
+      ],
+      organizationId,
+    });
+
+    expect(results.map((r) => r.status)).toEqual([
+      "accepted",
+      "rejected",
+      "not_processed",
+    ]);
+    const events = rejectedEvents(warn);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: "sync_push_command_rejected",
+      outcome: "rejected",
+      reason: "lease_invalid",
+    });
+    expect(events[0]?.requestId).toEqual(expect.any(String));
+    const serialized = JSON.stringify(events[0]);
+    for (const leaked of [
+      "Cliente",
+      deviceId,
+      organizationId,
+      uuid(2),
+      identity.userId,
+    ]) {
+      expect(serialized).not.toContain(leaked);
+    }
+  });
+
+  it("logs nothing when every command is accepted", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const client = createClient({
+      runSyncCommand: vi.fn(() => Promise.resolve(acceptedOutcome)),
+      syncCommandHandlers: [customerHandler],
+      withTenantRequestContext: tenantContext(),
+    });
+
+    await client.sync.push({
+      commands: [await pushCommand(1), await pushCommand(2)],
+      organizationId,
+    });
+
+    expect(rejectedEvents(warn)).toEqual([]);
+  });
+
+  it("does not count again the replay of a stored rejection", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const client = createClient({
+      runSyncCommand: vi.fn(() =>
+        Promise.resolve({
+          code: "stock_insufficient",
+          replayed: true,
+          result: null,
+          status: "rejected" as const,
+        })
+      ),
+      syncCommandHandlers: [customerHandler],
+      withTenantRequestContext: tenantContext(),
+    });
+
+    const { results } = await client.sync.push({
+      commands: [await pushCommand(1)],
+      organizationId,
+    });
+
+    expect(results[0]).toMatchObject({ replayed: true, status: "rejected" });
+    expect(rejectedEvents(warn)).toEqual([]);
   });
 });

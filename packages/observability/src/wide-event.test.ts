@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { configureLogging, type OpaqueId, opaqueId } from "./logger";
-import { describeError, startWideEvent, withWideEvent } from "./wide-event";
+import {
+  describeError,
+  isSqlState,
+  startWideEvent,
+  withWideEvent,
+} from "./wide-event";
 
 type Spy = ReturnType<typeof vi.spyOn>;
 
@@ -230,5 +235,35 @@ describe("describeError", () => {
     expect(describeError(hostile)).toEqual({ errorClass: "UnknownError" });
     expect(describeError("text")).toEqual({ errorClass: "NonObjectError" });
     expect(describeError(null)).toEqual({ errorClass: "NonObjectError" });
+  });
+});
+
+describe("isSqlState", () => {
+  it.each([
+    "23505",
+    "40001",
+    "08006",
+    "57P01",
+    "XX000",
+    "0A000",
+    "P0001",
+    "HV000",
+  ])("accepts the SQLSTATE %s", (code) => {
+    expect(isSqlState(code)).toBe(true);
+  });
+
+  it.each([
+    "EPERM",
+    "ECONNRESET",
+    "10001",
+    "9422",
+    "2305",
+    "230505",
+    "23a05",
+    "",
+    42_501,
+    undefined,
+  ])("rejects %s", (code) => {
+    expect(isSqlState(code)).toBe(false);
   });
 });
