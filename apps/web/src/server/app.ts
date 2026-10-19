@@ -17,6 +17,7 @@ import {
   rpcMutationRateLimitMiddleware,
 } from "./middleware/rate-limit";
 import { requestIdMiddleware } from "./middleware/request-id";
+import { routeTimingMiddleware } from "./middleware/route-timing";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import {
   logServerError,
@@ -80,6 +81,7 @@ export function createServerApp({
   });
 
   app.use("*", requestIdMiddleware);
+  app.use("*", routeTimingMiddleware);
   app.use("*", securityHeadersMiddleware);
   app.use("/rpc/*", originCheckMiddleware);
   app.use("/api/*", originCheckMiddleware);

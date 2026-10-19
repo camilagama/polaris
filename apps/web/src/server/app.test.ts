@@ -180,9 +180,17 @@ describe("RPC request guards", () => {
       error: { code: "internal_error" },
     });
     expect(text).not.toContain("bob@example.com");
-    expect(logger).toHaveBeenCalledOnce();
-    const serialized = JSON.stringify(logger.mock.calls[0]?.[0]);
-    expect(logger.mock.calls[0]?.[0]).toMatchObject({
+    // /api/auth/* is a critical route: besides server_error it emits one http_request_timed
+    const [serverError, ...otherErrors] = logger.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.event === "server_error");
+    expect(otherErrors).toEqual([]);
+    expect(logger.mock.calls.map(([entry]) => entry.event).sort()).toEqual([
+      "http_request_timed",
+      "server_error",
+    ]);
+    const serialized = JSON.stringify(serverError);
+    expect(serverError).toMatchObject({
       errorClass: "Error",
       event: "server_error",
       method: "GET",

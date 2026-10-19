@@ -6,6 +6,7 @@ import type {
   getSyncCursor,
   pullSyncChanges,
 } from "@polaris/db/sync-repository";
+import { logger } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
 import { offlineLeaseKeys } from "../offline-lease-service";
 import { syncPayloadHashKeys } from "../sync/payload-hash";
@@ -31,6 +32,32 @@ interface SyncRpcDependencies {
   runSyncCommand: typeof runSyncCommand | undefined;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
+}
+
+/**
+ * The signal of the sync rejection alert (PR119, ADR 0095): one event per rejected command, with the stable
+ * rejection code in `reason` and nothing of the command (no payload, no type, no ids of the device or the
+ * organization). A batch stops at its first rejection, so at most one line per push; a replay of a rejection already
+ * stored is not counted again (a code that is not stored counts every retry).
+ */
+function logRejections(
+  results: readonly {
+    code: string | null;
+    replayed: boolean;
+    status: string;
+  }[],
+  requestId: string
+): void {
+  for (const result of results) {
+    // a replay of a stored rejection is the same rejection, not a new one (a code that is never stored, such as `session_changed`, counts every retry)
+    if (result.status === "rejected" && !result.replayed) {
+      logger.warn("sync_push_command_rejected", {
+        outcome: "rejected",
+        reason: result.code ?? "unknown",
+        requestId,
+      });
+    }
+  }
 }
 
 /**
@@ -128,6 +155,7 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
               requestedOrganizationId: input.organizationId,
             }),
         });
+        logRejections(results, context.requestId);
         return { results };
       } catch (error) {
         return dependencies.toRpcError(error);
