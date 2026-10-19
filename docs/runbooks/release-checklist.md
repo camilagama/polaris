@@ -155,6 +155,20 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: o comando ou a configuração de build do deploy com `CLOUDFLARE_ENV=production` e o resultado do build de produção do SHA candidato (o build tem de falhar enquanto houver marcador, e passar depois da revisão jurídica).
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
+### 21. Sentry do navegador ligado, com source maps enviados e nenhum `.map` servido (WARN)
+
+- Critério: o build que vai a produção (e o do staging, se quiser ver os erros lá) tem `VITE_SENTRY_DSN` (o DSN do projeto `polaris`, nenhum outro) e `VITE_SENTRY_ENVIRONMENT=production` (ou `staging`). O release é o SHA do commit: o Vite o grava sozinho (`GITHUB_SHA` ou o `HEAD` do git) quando há DSN. Sem o DSN, o navegador não reporta nada e o resto do app funciona igual ([ADR 0098](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)). O workflow de staging não define essas variáveis: o responsável as põe na build quando decidir ligar.
+- Passos, com um token de CI do Sentry que permita enviar source maps (criado pelo responsável e guardado como segredo do ambiente, nunca no repositório, no log ou no PR). Confira os comandos e o escopo do token na [documentação atual do Sentry](https://docs.sentry.io/platforms/javascript/sourcemaps/uploading/cli/):
+  1. Build com `VITE_SENTRY_DSN` e `VITE_SENTRY_ENVIRONMENT` definidos. Conferir em `apps/web/dist/client/_headers` que o `connect-src` tem `'self'`, `data:` e **só** o host de ingestão do DSN.
+  2. Conferir que há `.map` em `apps/web/dist/client/assets` (é o `hidden`: os `.js` não os referenciam) e que `apps/web/dist/client/.assetsignore` lista `*.map` (a Cloudflare não os publica).
+  3. Antes do deploy: `sentry-cli sourcemaps inject apps/web/dist/client/assets` (grava o debug id nos `.js` e nos `.map`, só nos assets, sem tocar o `sw.js`) e `sentry-cli sourcemaps upload --org <organização> --project polaris --release <SHA> apps/web/dist/client/assets`. Confirme que o `inject` achou os `.map` vizinhos (o build `hidden` não deixa `sourceMappingURL` nos `.js`); se não achar, o upload não casa com as pilhas. O deploy sai dos mesmos arquivos, já com o debug id; senão o Sentry não casa o mapa com a pilha.
+  4. Deploy como de costume (o Wrangler respeita o `.assetsignore`).
+  5. Depois do deploy, pedir um `.map` publicado (`/assets/<arquivo>.js.map`): a resposta tem de ser o HTML do shell (o fallback do app de página única, `content-type: text/html`), nunca um source map.
+  6. No projeto `polaris`, antes de ligar em produção: conferir a opção de **não guardar endereço IP**, o scrubbing de dados no servidor e a retenção dos eventos. A retenção por classe ([ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)) e o purge do tenant não alcançam o Sentry, e o Sentry é um operador a listar na política de privacidade.
+  7. No staging (ou depois do go-live, com um erro de teste provocado por quem tem a conta), conferir no projeto `polaris` um evento com `environment` e `release` certos, a pilha com os nomes do código-fonte e **nenhum** dado pessoal (e-mail, CPF, telefone, cookie, token, valor de query). Qualquer vazamento impede ligar o DSN em produção até a correção.
+- Severidade WARN: **proposta, pendente de decisão**. O app funciona sem o Sentry, mas um go-live sem ele deixa o navegador sem registro de erro; o registro cita o item e o responsável.
+- Evidência: o ambiente, o SHA, a saída do upload (sem o token), o resultado do passo 5 e o evento de teste (sem dado pessoal).
+
 ## Veredito
 
 Ordem de decisão:
@@ -187,7 +201,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 10, 14, 15, 16, 18 e 19, já decididos (hoje 16 BLOCK e 4 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 10, 14, 15, 16, 18 e 19, já decididos (hoje 16 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.
