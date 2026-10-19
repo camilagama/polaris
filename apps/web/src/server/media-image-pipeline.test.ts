@@ -168,6 +168,8 @@ describe("processMediaImage", () => {
     ["a longer number", new Error("request 194220 failed")],
     ["a UUID segment", new Error("request a1b2-9422-4c3d-8e9f failed")],
     ["a width in px", new Error("width 9422 px exceeds the limit")],
+    ["a width in pixels", new Error("width 9422 pixels exceeds the limit")],
+    ["a width in pixel", new Error("width 9422 pixel is too large")],
     ["a width and height", new Error("size 9422 x 600 is not supported")],
     ["a width and height in capitals", new Error("size 9422 X 600 is invalid")],
     [
