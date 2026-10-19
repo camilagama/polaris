@@ -153,6 +153,51 @@ describe("legal review", () => {
   });
 });
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+describe("review state", () => {
+  it("is declared on every class, separate from the status", () => {
+    for (const policy of RETENTION_POLICIES) {
+      expect(policy.review, policy.class).toBeDefined();
+      expect(["pendente_juridica", "decidida"], policy.class).toContain(
+        policy.review.state
+      );
+    }
+  });
+
+  it("never says decided without who and when", () => {
+    for (const policy of RETENTION_POLICIES) {
+      if (policy.review.state === "decidida") {
+        expect(policy.review.by.trim(), policy.class).not.toBe("");
+        expect(policy.review.at, policy.class).toMatch(ISO_DAY);
+        expect(
+          new Date(`${policy.review.at}T00:00:00.000Z`).toISOString(),
+          policy.class
+        ).toContain(policy.review.at);
+      }
+    }
+  });
+
+  it("has decided only the 90-day purge period after closure", () => {
+    const decided = RETENTION_POLICIES.filter(
+      (policy) => policy.review.state === "decidida"
+    ).map((policy) => policy.class);
+    expect(decided).toEqual(["closed_organization"]);
+    expect(retentionPolicy("closed_organization").review).toEqual({
+      at: "2026-10-19",
+      by: "Arrascaeta (delegação do usuário)",
+      state: "decidida",
+    });
+  });
+
+  it("keeps an in-force class pending its review", () => {
+    expect(retentionPolicy("auth_sessions").status).toBe("aprovada");
+    expect(retentionPolicy("auth_sessions").review.state).toBe(
+      "pendente_juridica"
+    );
+  });
+});
+
 describe("purge blockers", () => {
   it("lifted the sessions' block now that the access record has its own table", () => {
     const sessions = retentionPolicy("auth_sessions");
