@@ -29,7 +29,7 @@ const expectedDatabase =
   "neondb";
 
 // a runtime role is a `polaris_*_runtime` group, a temporary gate login, or any role that is a member of such a group
-// (production logins have free names); PUBLIC is checked on its own, because every role inherits from it
+// (production logins have free names); superusers and the database owner (who always has TEMPORARY) are left out; PUBLIC is checked on its own, because every role inherits from it
 const RUNTIME_GROUP_PATTERN = "^polaris_.+_runtime$";
 const RUNTIME_ROLE_PATTERN = "^polaris_gate_runner_[0-9a-f]+$";
 const MIN_DEFINER_FUNCTIONS = 87;
@@ -96,11 +96,13 @@ async function findViolations(client: Client): Promise<Findings> {
             has_database_privilege(oid, current_database(), 'TEMPORARY') AS can_temp,
             has_schema_privilege(oid, 'public', 'CREATE') AS can_create
        FROM pg_roles
-      WHERE rolname ~ $2
+      WHERE NOT rolsuper
+        AND oid <> (SELECT datdba FROM pg_database WHERE datname = current_database())
+        AND (rolname ~ $2
          OR EXISTS (
            SELECT 1 FROM pg_roles g
             WHERE g.rolname ~ $1 AND pg_has_role(pg_roles.oid, g.oid, 'MEMBER')
-         )
+         ))
       ORDER BY 1`,
     [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
   );
@@ -275,9 +277,7 @@ async function run() {
       `GRANT TEMPORARY ON DATABASE "${expectedDatabase}" TO ${PROBE_ROLE}`
     );
     temporaryGranted = true;
-    assert.deepEqual((await findViolations(client)).temporary, [
-      PROBE_ROLE,
-    ]);
+    assert.deepEqual((await findViolations(client)).temporary, [PROBE_ROLE]);
     await client.query(
       `REVOKE TEMPORARY ON DATABASE "${expectedDatabase}" FROM ${PROBE_ROLE}`
     );
@@ -287,9 +287,7 @@ async function run() {
     assert.deepEqual((await findViolations(client)).createInPublic, [
       PROBE_ROLE,
     ]);
-    await client.query(
-      `REVOKE CREATE ON SCHEMA public FROM ${PROBE_ROLE}`
-    );
+    await client.query(`REVOKE CREATE ON SCHEMA public FROM ${PROBE_ROLE}`);
     createGranted = false;
     assertClean(await findViolations(client));
     tests.push(
