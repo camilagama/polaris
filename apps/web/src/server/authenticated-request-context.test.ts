@@ -1,22 +1,27 @@
 import type {
-  DatabaseOptions,
   createDatabase as createHyperdriveDatabase,
+  DatabaseOptions,
 } from "@polaris/db/client";
 import { describe, expect, it, vi } from "vitest";
-import type { WorkerBindings } from "./environment";
 import {
-  createAuthenticatedRequestContext,
   type AuthenticatedRequestContextDependencies,
+  createAuthenticatedRequestContext,
 } from "./authenticated-request-context";
+import type { WorkerBindings } from "./environment";
 
 const baseBindings = {
+  AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
-  AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
 } satisfies WorkerBindings;
 
-function contextWithDatabaseSpy() {
+function contextWithDatabaseSpy(
+  session: unknown = {
+    session: { createdAt: new Date(), id: "session-1" },
+    user: { id: "test-user" },
+  }
+) {
   const db = {} as ReturnType<typeof createHyperdriveDatabase>["db"];
   const endPool = vi.fn(async () => undefined);
   const createDatabase = vi.fn(
@@ -29,10 +34,7 @@ function contextWithDatabaseSpy() {
   );
   const createAuth = vi.fn(() => ({
     api: {
-      getSession: vi.fn(async () => ({
-        session: { createdAt: new Date() },
-        user: { id: "test-user" },
-      })),
+      getSession: vi.fn(async () => session),
     },
   }));
   const run = createAuthenticatedRequestContext({
@@ -90,5 +92,22 @@ describe("authenticated request database connection", () => {
       baseBindings.HYPERDRIVE.connectionString,
       { maxConnections: 1 }
     );
+  });
+
+  it("rejects a session without an id, running no operation", async () => {
+    const { run } = contextWithDatabaseSpy({
+      session: { createdAt: new Date() },
+      user: { id: "test-user" },
+    });
+    const operation = vi.fn(async () => "ok");
+
+    await expect(
+      run({
+        bindings: baseBindings,
+        operation,
+        request: new Request("https://polaris.example.invalid/rpc"),
+      })
+    ).rejects.toMatchObject({ code: "session_required" });
+    expect(operation).not.toHaveBeenCalled();
   });
 });

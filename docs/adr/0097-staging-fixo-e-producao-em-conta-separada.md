@@ -4,7 +4,7 @@ status: accepted
 
 # Staging fixo na conta atual e produção em conta separada
 
-> O número deste ADR (0097) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0095 é o dos alertas, na `main`, e o 0096 é o das migrations compatíveis com a versão anterior do Worker, no PR #162); pode mudar se outro entrar antes. As decisões abaixo marcadas como **decisão** foram tomadas pelo responsável (Arrascaeta) na revisão do desenho t067, com as correções de arquitetura (Filipe Luís) e de segurança (Rodrigo Caio).
+> O número deste ADR (0097) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0095 é o dos alertas, na `main`, e o 0096 é o das migrations compatíveis com a versão anterior do Worker, também na `main`); pode mudar se outro entrar antes. As decisões abaixo marcadas como **decisão** foram tomadas pelo responsável (Arrascaeta) na revisão do desenho t067, com as correções de arquitetura (Filipe Luís) e de segurança (Rodrigo Caio).
 
 ## Contexto
 
@@ -41,7 +41,7 @@ Os itens 3, 14, 15 e 16 do [release-checklist](../runbooks/release-checklist.md)
 ### Deploy contínuo
 
 - `.github/workflows/deploy-staging.yml`, disparado por `workflow_run` depois do CI verde da `main`, com build sem segredos num job separado e os segredos só no passo que os usa. Nunca `pull_request_target`. A restrição de branch do Environment do GitHub não protege no `workflow_run`: o controle é o `if` do job, que exige evento `push`, o próprio repositório, a branch `main` e um commit que ainda seja a ponta de `origin/main`, conferido antes do checkout. O repositório é público.
-- O deploy contínuo **depende** do ADR de migrations compatíveis com a versão anterior do Worker (expand/contract, [ADR 0096](0096-migrations-compativeis-com-a-versao-anterior-do-worker.md), tarefa t070): a migration vai ao banco antes do Worker, e o Worker que ainda está no ar tem de continuar funcionando. Até esse ADR estar na `main`, o workflow fica **desligado** por uma variável do repositório (`STAGING_DEPLOY_ENABLED`, que não existe enquanto ninguém a cria). O procedimento está no runbook.
+- O deploy contínuo **depende** do ADR de migrations compatíveis com a versão anterior do Worker (expand/contract, [ADR 0096](0096-migrations-compativeis-com-a-versao-anterior-do-worker.md), tarefa t070): a migration vai ao banco antes do Worker, e o Worker que ainda está no ar tem de continuar funcionando. O ADR 0096 já está na `main` (#162). Mesmo assim, o workflow fica **desligado** por uma variável do repositório (`STAGING_DEPLOY_ENABLED`, que não existe enquanto ninguém a cria) até os recursos e segredos existirem e o responsável ligá-lo. O procedimento está no runbook.
 
 ### Itens do release-checklist no staging
 

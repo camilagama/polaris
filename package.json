@@ -8,13 +8,14 @@
   "scripts": {
     "boundaries": "node scripts/verify-import-boundaries.mjs && node scripts/verify-no-import-cycles.mjs",
     "build": "turbo run build",
-    "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run knip && bun run test",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run boundaries && bun run migrations:compat && bun run knip && bun run test",
     "dev": "turbo run dev --filter=@polaris/web",
     "fix": "ultracite fix",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "knip": "knip",
     "lint": "biome lint .",
+    "migrations:compat": "node scripts/verify-migration-compat.mjs",
     "test": "vitest run",
     "typecheck": "turbo run typecheck",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"

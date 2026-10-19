@@ -7,7 +7,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 ## Gatilho
 
 - Criar o staging pela primeira vez (seções 1 a 6).
-- Ligar o deploy automático (seção 7), só depois do ADR 0096 (expand/contract) estar na `main`.
+- Ligar o deploy automático (seção 7), depois de criar os recursos e segredos. O ADR 0096 (expand/contract), pré-requisito, já está na `main`.
 - Provar os itens 3, 14, 15 e 16 do [release-checklist](./release-checklist.md) e o Gate 5 manual (seção 9).
 
 ## Pré-requisitos de acesso
@@ -94,7 +94,7 @@ O login por senha fica desligado (`EMAIL_PASSWORD_AUTH_ENABLED: "false"`), e a v
 
 ## 7. Ligar o deploy automático (responsável)
 
-Pré-requisito: o ADR 0096, de migrations compatíveis com a versão anterior do Worker, já está na `main`. Sem ele, uma migration pode quebrar o Worker que ainda está no ar.
+Pré-requisito: o ADR 0096, de migrations compatíveis com a versão anterior do Worker, na `main` (já está, desde o #162). Sem ele, uma migration pode quebrar o Worker que ainda está no ar.
 
 O workflow `.github/workflows/deploy-staging.yml` só roda com a variável de repositório `STAGING_DEPLOY_ENABLED` igual a `true`. Enquanto ela não existir, o workflow fica desligado. Para desligar de novo, apague a variável.
 

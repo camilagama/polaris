@@ -1,5 +1,5 @@
-import { logger } from "@polaris/observability/logger";
 import { createDatabase as createHyperdriveDatabase } from "@polaris/db/client";
+import { logger } from "@polaris/observability/logger";
 import { createBetterAuth } from "./auth";
 import {
   AuthDatabaseNotConfiguredError,
@@ -35,7 +35,8 @@ function authDatabaseConnectionOption(configuredTimeout: string | undefined): {
 }
 
 interface AuthenticatedRequestSession {
-  session: { createdAt: Date | string };
+  /** `id` identifies the session (it is not the token); devices link to it. */
+  session: { createdAt: Date | string; id: string };
   user: { emailVerified?: boolean; id: string };
 }
 
@@ -114,7 +115,13 @@ export function createAuthenticatedRequestContext(
         headers: input.request.headers,
       });
 
-      if (!session?.user.id.trim()) {
+      // the session id links devices to this session; a session without one is refused
+      const sessionId: unknown = session?.session.id;
+      if (
+        !session?.user.id.trim() ||
+        typeof sessionId !== "string" ||
+        !sessionId.trim()
+      ) {
         throw new TenantRequestContextError("session_required");
       }
       // Better Auth only enforces the idle window here; the 30-day absolute

@@ -11,7 +11,7 @@ import type { Client } from "pg";
 // (production logins have free names); PUBLIC is checked on its own, because every role inherits from it. Membership is explicit (pg_auth_members, followed through groups): pg_has_role says a superuser is a member of everything. A runtime role that is a superuser or the database owner is reported as such and left out of the membership checks
 export const RUNTIME_GROUP_PATTERN = "^polaris_.+_runtime$";
 // fewer definer functions than the migrations create means the database is not the migrated one
-export const MIN_DEFINER_FUNCTIONS = 87;
+export const MIN_DEFINER_FUNCTIONS = 88;
 const RUNTIME_ROLE_PATTERN = "^polaris_gate_runner_[0-9a-f]+$";
 const SEARCH_PATH_PREFIX = "search_path=";
 const SEARCH_PATH_SPLIT = /\s*,\s*/;

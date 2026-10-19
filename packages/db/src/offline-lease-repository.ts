@@ -8,10 +8,11 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { getEffectiveEntitlements } from "./billing-repository";
 import {
+  lockLiveDeviceForSession,
   type OfflineGrantRecord,
   recordOfflineGrant,
 } from "./device-repository";
-import { devices, offlineGrants } from "./schema/device";
+import { offlineGrants } from "./schema/device";
 import { memberships } from "./schema/organization";
 import type {
   TenantRequestIdentity,
@@ -174,14 +175,17 @@ export async function validateOfflineLeaseClaims(
   if (!options.allowExpired && grant.expiresAt.getTime() <= now.getTime()) {
     throw new OfflineLeaseRejectedError("grant_expired");
   }
-  const [device] = await transaction
-    .select({ revokedAt: devices.revokedAt })
-    .from(devices)
-    .where(
-      and(eq(devices.id, grant.deviceId), eq(devices.userId, identity.userId))
-    )
-    .limit(1);
-  if (!device || device.revokedAt !== null) {
+  // locks the live device for the rest of the command and links the session,
+  // so a concurrent revocation either waits and ends this session or wins and
+  // this command is refused
+  if (
+    !(await lockLiveDeviceForSession(
+      transaction,
+      identity.userId,
+      grant.deviceId,
+      identity.sessionId
+    ))
+  ) {
     throw new OfflineLeaseRejectedError("device_revoked");
   }
   const epoch = await currentEpoch(transaction, identity);

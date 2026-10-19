@@ -5,9 +5,11 @@ import type {
   listDevices,
   registerDevice,
   revokeDevice,
+  touchDevice,
 } from "@polaris/db/device-repository";
 import type { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
+import { isSessionFresh } from "../auth/session-policy";
 import type { WorkerBindings } from "../environment";
 import { offlineLeaseKeys, signLeaseClaims } from "../offline-lease-service";
 import type { withTenantRequestContext } from "../tenant-request-context";
@@ -23,12 +25,14 @@ interface OfflineRpcDependencies {
   defaultListDevices: typeof listDevices;
   defaultRegisterDevice: typeof registerDevice;
   defaultRevokeDevice: typeof revokeDevice;
+  defaultTouchDevice: typeof touchDevice;
   issueOfflineLeaseGrant: typeof issueOfflineLeaseGrant | undefined;
   listDevices: typeof listDevices | undefined;
   registerDevice: typeof registerDevice | undefined;
   requestAuditId: (requestId: string) => string | null;
   revokeDevice: typeof revokeDevice | undefined;
   toRpcError: (error: unknown) => never;
+  touchDevice: typeof touchDevice | undefined;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
@@ -47,7 +51,9 @@ function deviceReadModel(device: DeviceRecord) {
  * Devices and offline leases (plan PR48/PR49). Devices belong to the signed-in
  * user and use no tenant context; a lease is issued inside a tenant transaction
  * that has already checked the membership, the organization and the
- * `offline:manage` capability. The user always comes from the verified session.
+ * `offline:manage` capability. The user always comes from the verified session,
+ * and every operation on a device links that session to it, so revoking the
+ * device ends the session.
  */
 export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
   const implementContract =
@@ -58,6 +64,8 @@ export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
     dependencies.listDevices ?? dependencies.defaultListDevices;
   const revokeRepository =
     dependencies.revokeDevice ?? dependencies.defaultRevokeDevice;
+  const touchRepository =
+    dependencies.touchDevice ?? dependencies.defaultTouchDevice;
   const issueRepository =
     dependencies.issueOfflineLeaseGrant ??
     dependencies.defaultIssueOfflineLeaseGrant;
@@ -71,12 +79,29 @@ export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
             device: deviceReadModel(
               await registerRepository(database, session.user.id, {
                 label: input.label ?? null,
+                sessionId: session.session.id,
               })
             ),
           }),
           request: context.request,
         })
         .catch(dependencies.toRpcError)
+  );
+
+  const check = implementContract.device.check.handler(({ context, input }) =>
+    dependencies
+      .withAuthenticatedRequestContext({
+        bindings: context.bindings,
+        operation: async (database, session) => ({
+          device: deviceReadModel(
+            await touchRepository(database, session.user.id, input.deviceId, {
+              sessionId: session.session.id,
+            })
+          ),
+        }),
+        request: context.request,
+      })
+      .catch(dependencies.toRpcError)
   );
 
   const list = implementContract.device.list.handler(({ context }) =>
@@ -102,10 +127,19 @@ export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
             database,
             session.user.id,
             input.deviceId,
-            { requestId: dependencies.requestAuditId(context.requestId) }
+            {
+              actingSession: {
+                fresh: isSessionFresh(session.session.createdAt),
+                id: session.session.id,
+              },
+              endOtherSessions: input.endOtherSessions,
+              requestId: dependencies.requestAuditId(context.requestId),
+            }
           );
           return {
             device: deviceReadModel(result.device),
+            endedCurrentSession: result.endedCurrentSession,
+            endedSessionCount: result.endedSessionCount,
             revokedGrantIds: result.revokedGrantIds,
           };
         },
@@ -146,5 +180,8 @@ export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
         .catch(dependencies.toRpcError)
   );
 
-  return { device: { list, register, revoke }, offline: { issueLease } };
+  return {
+    device: { check, list, register, revoke },
+    offline: { issueLease },
+  };
 }

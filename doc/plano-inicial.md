@@ -5156,7 +5156,7 @@ deploy staging
 
 Falha deixa main verde de código, mas release operacional bloqueada até correção.
 
-Estado (ADR 0097): `workflow_run` depois do CI verde da `main`, com a migration antes do Worker. Depende do ADR 0096 (migrations compatíveis com a versão anterior do Worker) na `main`; até lá o workflow fica desligado pela variável `STAGING_DEPLOY_ENABLED`.
+Estado (ADR 0097): `workflow_run` depois do CI verde da `main`, com a migration antes do Worker. Depende do ADR 0096 (migrations compatíveis com a versão anterior do Worker), já na `main`; o workflow fica desligado pela variável `STAGING_DEPLOY_ENABLED` até o responsável criar os recursos e ligá-lo.
 
 
 

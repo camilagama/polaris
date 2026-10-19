@@ -106,6 +106,7 @@
     "poc:media-commands:verify": "bun scripts/verify-media-commands-gate.ts",
     "poc:offline-customer:verify": "bun scripts/verify-offline-customer-gate.ts",
     "poc:offline-devices:verify": "bun scripts/verify-offline-devices-gate.ts",
+    "poc:device-sessions:verify": "bun scripts/verify-device-sessions-gate.ts",
     "poc:offline-e2e:verify": "bun ../../apps/web/scripts/verify-offline-e2e-gate.ts",
     "poc:offline-lease:verify": "bun scripts/verify-offline-lease-gate.ts",
     "poc:offline-product:verify": "bun scripts/verify-offline-product-gate.ts",
