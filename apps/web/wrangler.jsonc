@@ -1,15 +1,23 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "polaris-web",
+  // The top level is for local development only (`vite dev`, tests). Every binding below is local:
+  // Hyperdrive ids are `local-only` and the queue and bucket names end in `-local`, so a deploy that
+  // forgets `CLOUDFLARE_ENV`/`--env` fails instead of publishing anything. What is deployed lives in
+  // `env.staging` (the fixed staging of this account, ADR 0097) and `env.production` (the go-live,
+  // in a separate account). Bindings, vars and secrets are not inherited by an environment, so each
+  // one repeats all of them; `scripts/verify-staging-isolation.mjs` checks the parity and the isolation.
+  "name": "polaris-web-local",
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat", "nodejs_als"],
+  "workers_dev": false,
+  "preview_urls": false,
   "vars": {
     "EMAIL_PASSWORD_AUTH_ENABLED": "false",
     "AUTH_ABUSE_PROTECTION_ENABLED": "false"
   },
   "main": "./worker/index.ts",
   // Structured logger output (see src/server/observability).
-  // Production defaults (ADR 0094); the staging environment of Phase 14 overrides this whole block with `env.staging`.
+  // Production defaults (ADR 0094); each environment repeats the whole block.
   // Logs stay at 100% because the platform samples a request as a whole and has no separate rate for errors:
   // lowering the rate would drop error events with the rest. Invocation logs are off, so only our own
   // structured events are stored (ADR 0094 lists what that drops). Traces are the sampled part: 5%.
@@ -70,29 +78,29 @@
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",
-      "bucket_name": "polaris-media"
+      "bucket_name": "polaris-media-local"
     }
   ],
-  // Reserve unique account-level namespace IDs before deploying these bindings.
+  // Rate limit namespace ids are per account: 900xxx is local, 902xxx staging, 901xxx production.
   "ratelimits": [
     {
       "name": "AUTH_RATE_LIMITER",
-      "namespace_id": "901016",
+      "namespace_id": "900016",
       "simple": { "limit": 10, "period": 60 }
     },
     {
       "name": "AUTH_EMAIL_RATE_LIMITER",
-      "namespace_id": "901017",
+      "namespace_id": "900017",
       "simple": { "limit": 3, "period": 60 }
     },
     {
       "name": "RPC_MUTATION_RATE_LIMIT",
-      "namespace_id": "901018",
+      "namespace_id": "900018",
       "simple": { "limit": 120, "period": 60 }
     },
     {
       "name": "MEDIA_UPLOAD_RATE_LIMIT",
-      "namespace_id": "901019",
+      "namespace_id": "900019",
       "simple": { "limit": 20, "period": 60 }
     }
   ],
@@ -104,20 +112,21 @@
   // least three operations (write, read, delete), and every retry another read.
   "queues": {
     "producers": [
-      { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical" },
-      { "binding": "QUEUE_DEFAULT", "queue": "polaris-default" },
-      { "binding": "QUEUE_MEDIA", "queue": "polaris-media" },
+      { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical-local" },
+      { "binding": "QUEUE_DEFAULT", "queue": "polaris-default-local" },
+      { "binding": "QUEUE_MEDIA", "queue": "polaris-media-local" },
       // the dead-letter queue (ADR 0085): the consumer sends a notice here for a message it refuses for good
-      { "binding": "QUEUE_DLQ", "queue": "polaris-dlq" }
+      { "binding": "QUEUE_DLQ", "queue": "polaris-dlq-local" }
     ],
     // One message per invocation and one invocation at a time: the handlers are heavy (a data export builds
     // archives) and a dead invocation then repeats one message, not ten. A message that fails max_retries
-    // times is moved by the platform to polaris-dlq (ADR 0085), whose consumer turns it into an operational
+    // times is moved by the platform to the dead-letter queue (ADR 0085), whose consumer turns it into an operational
     // incident; the dead-letter queue itself has no dead-letter queue, so its consumer retries for a long time.
+    // The environments repeat these settings with their own queue names.
     "consumers": [
       {
-        "queue": "polaris-critical",
-        "dead_letter_queue": "polaris-dlq",
+        "queue": "polaris-critical-local",
+        "dead_letter_queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -125,8 +134,8 @@
         "retry_delay": 30
       },
       {
-        "queue": "polaris-default",
-        "dead_letter_queue": "polaris-dlq",
+        "queue": "polaris-default-local",
+        "dead_letter_queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -134,8 +143,8 @@
         "retry_delay": 30
       },
       {
-        "queue": "polaris-media",
-        "dead_letter_queue": "polaris-dlq",
+        "queue": "polaris-media-local",
+        "dead_letter_queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -143,7 +152,7 @@
         "retry_delay": 60
       },
       {
-        "queue": "polaris-dlq",
+        "queue": "polaris-dlq-local",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 1,
@@ -156,11 +165,270 @@
   // "17 * * * *" is the maintenance lane (media, billing and privacy) and "19 * * * *" the outbox lane
   // (the dispatcher, ADR 0084), an invocation of its own because the Free plan gives each one 10 ms of
   // CPU. A test keeps this list equal to the lanes of @polaris/domain/scheduling/scheduled-jobs.
+  // The environments inherit it (triggers are inheritable), so the list exists once.
   "triggers": {
     "crons": ["17 * * * *", "19 * * * *"]
   },
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*"]
+  },
+  "env": {
+    // The fixed staging of this account (ADR 0097): synthetic data only, Google sign-in in Testing
+    // mode (test users only), password sign-in off. Every value marked PLACEHOLDER is filled in by the
+    // responsible after the resources exist; the isolation check refuses a placeholder, so nothing is
+    // deployed before that.
+    "staging": {
+      "name": "polaris-web-staging",
+      "account_id": "PLACEHOLDER-staging-account-id",
+      "workers_dev": true,
+      "preview_urls": false,
+      "vars": {
+        "POLARIS_ENVIRONMENT": "staging",
+        "EMAIL_PASSWORD_AUTH_ENABLED": "false",
+        "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        "BETTER_AUTH_BASE_URL": "https://polaris-web-staging.PLACEHOLDER-workers-subdomain.workers.dev",
+        "CATALOG_ORIGIN": "https://polaris-catalog-staging.PLACEHOLDER-workers-subdomain.workers.dev",
+        "OFFLINE_LEASE_KEY_ID": "staging-1"
+      },
+      // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": false
+        },
+        "traces": { "enabled": true, "head_sampling_rate": 1 }
+      },
+      // One configuration per database role, caching disabled, against the staging Neon project only.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-tenant"
+        },
+        {
+          "binding": "AUTH_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-auth"
+        },
+        {
+          "binding": "ONBOARDING_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-onboarding"
+        },
+        {
+          "binding": "MEDIA_CLEANUP_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-media-cleanup"
+        },
+        {
+          "binding": "PRIVACY_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-privacy"
+        },
+        {
+          "binding": "BILLING_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-billing"
+        },
+        {
+          "binding": "OUTBOX_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-outbox"
+        }
+      ],
+      "images": { "binding": "IMAGES" },
+      "r2_buckets": [
+        { "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media-staging" }
+      ],
+      "ratelimits": [
+        {
+          "name": "AUTH_RATE_LIMITER",
+          "namespace_id": "902016",
+          "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "AUTH_EMAIL_RATE_LIMITER",
+          "namespace_id": "902017",
+          "simple": { "limit": 3, "period": 60 }
+        },
+        {
+          "name": "RPC_MUTATION_RATE_LIMIT",
+          "namespace_id": "902018",
+          "simple": { "limit": 120, "period": 60 }
+        },
+        {
+          "name": "MEDIA_UPLOAD_RATE_LIMIT",
+          "namespace_id": "902019",
+          "simple": { "limit": 20, "period": 60 }
+        }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical-staging" },
+          { "binding": "QUEUE_DEFAULT", "queue": "polaris-default-staging" },
+          { "binding": "QUEUE_MEDIA", "queue": "polaris-media-staging" },
+          { "binding": "QUEUE_DLQ", "queue": "polaris-dlq-staging" }
+        ],
+        "consumers": [
+          {
+            "queue": "polaris-critical-staging",
+            "dead_letter_queue": "polaris-dlq-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 5,
+            "retry_delay": 30
+          },
+          {
+            "queue": "polaris-default-staging",
+            "dead_letter_queue": "polaris-dlq-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 3,
+            "retry_delay": 30
+          },
+          {
+            "queue": "polaris-media-staging",
+            "dead_letter_queue": "polaris-dlq-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 3,
+            "retry_delay": 60
+          },
+          {
+            "queue": "polaris-dlq-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 10,
+            "retry_delay": 60
+          }
+        ]
+      }
+    },
+    // The go-live (Phase 15, PR133): another Cloudflare account and another Neon organization or
+    // project (ADR 0097). Not deployed from this repository yet; the placeholders stay until then.
+    "production": {
+      "name": "polaris-web",
+      "account_id": "PLACEHOLDER-production-account-id",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "POLARIS_ENVIRONMENT": "production",
+        "EMAIL_PASSWORD_AUTH_ENABLED": "false",
+        "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
+        "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
+        "OFFLINE_LEASE_KEY_ID": "production-1"
+      },
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": false
+        },
+        "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-tenant"
+        },
+        {
+          "binding": "AUTH_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-auth"
+        },
+        {
+          "binding": "ONBOARDING_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-onboarding"
+        },
+        {
+          "binding": "MEDIA_CLEANUP_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-media-cleanup"
+        },
+        {
+          "binding": "PRIVACY_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-privacy"
+        },
+        {
+          "binding": "BILLING_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-billing"
+        },
+        {
+          "binding": "OUTBOX_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-outbox"
+        }
+      ],
+      "images": { "binding": "IMAGES" },
+      "r2_buckets": [
+        { "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media" }
+      ],
+      "ratelimits": [
+        {
+          "name": "AUTH_RATE_LIMITER",
+          "namespace_id": "901016",
+          "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "AUTH_EMAIL_RATE_LIMITER",
+          "namespace_id": "901017",
+          "simple": { "limit": 3, "period": 60 }
+        },
+        {
+          "name": "RPC_MUTATION_RATE_LIMIT",
+          "namespace_id": "901018",
+          "simple": { "limit": 120, "period": 60 }
+        },
+        {
+          "name": "MEDIA_UPLOAD_RATE_LIMIT",
+          "namespace_id": "901019",
+          "simple": { "limit": 20, "period": 60 }
+        }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "QUEUE_CRITICAL", "queue": "polaris-critical" },
+          { "binding": "QUEUE_DEFAULT", "queue": "polaris-default" },
+          { "binding": "QUEUE_MEDIA", "queue": "polaris-media" },
+          { "binding": "QUEUE_DLQ", "queue": "polaris-dlq" }
+        ],
+        "consumers": [
+          {
+            "queue": "polaris-critical",
+            "dead_letter_queue": "polaris-dlq",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 5,
+            "retry_delay": 30
+          },
+          {
+            "queue": "polaris-default",
+            "dead_letter_queue": "polaris-dlq",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 3,
+            "retry_delay": 30
+          },
+          {
+            "queue": "polaris-media",
+            "dead_letter_queue": "polaris-dlq",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 3,
+            "retry_delay": 60
+          },
+          {
+            "queue": "polaris-dlq",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_concurrency": 1,
+            "max_retries": 10,
+            "retry_delay": 60
+          }
+        ]
+      }
+    }
   }
 }

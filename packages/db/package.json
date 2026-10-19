@@ -140,6 +140,7 @@
     "poc:sync-push:verify": "bun scripts/verify-sync-push-gate.ts",
     "poc:tenant:prepare": "bun scripts/prepare-tenant-context-gate.ts",
     "poc:tenant:verify": "bun scripts/verify-tenant-context-gate.ts",
+    "staging:verify-database": "bun scripts/verify-staging-database.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "dependencies": {
