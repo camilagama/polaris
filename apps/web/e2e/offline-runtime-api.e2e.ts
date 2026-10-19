@@ -360,7 +360,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
 
     // session_changed: the runtime stops, the app reads the organizations again and the server says no
     await expect(
-      page.getByText("Sua sessão não está ativa. Entre novamente")
+      page.getByText("Sua sessão não está ativa. Entre novamente").first()
     ).toBeVisible({ timeout: 20_000 });
     expect(server.pushed).toEqual([]); // a queue is never pushed for a session the server denies
     expect(await stored(page, SESSION_USER_KEY)).toBeNull();
@@ -400,7 +400,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await page.context().setOffline(false);
 
     await expect(
-      page.getByText("Sua sessão não está ativa. Entre novamente")
+      page.getByText("Sua sessão não está ativa. Entre novamente").first()
     ).toBeVisible({ timeout: 20_000 });
     expect(await stored(page, leaseKey(user))).toBeNull();
     expect(await stored(page, SESSION_USER_KEY)).toBeNull();
