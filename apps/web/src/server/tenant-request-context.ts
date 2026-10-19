@@ -14,7 +14,7 @@ import { TenantRequestContextError } from "./request-context-error";
 type Database = ReturnType<typeof createDatabase>["db"];
 
 export interface TenantRequestSession {
-  session: { createdAt: Date | string };
+  session: { createdAt: Date | string; id: string };
   user: { emailVerified?: boolean; id: string };
 }
 
@@ -65,6 +65,7 @@ export function createTenantRequestContext(
               ? { isolationLevel: input.isolationLevel }
               : {}),
             requestedOrganizationId: input.requestedOrganizationId,
+            sessionId: session.session.id,
           },
           input.operation
         );

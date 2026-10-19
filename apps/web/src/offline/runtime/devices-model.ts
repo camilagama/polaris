@@ -1,6 +1,6 @@
 import type { DeviceReadModel } from "@polaris/contracts";
 import { formatInstant } from "../../lib/format";
-import { rpcErrorCode } from "../../lib/rpc-error";
+import { rpcErrorCode, rpcErrorReason } from "../../lib/rpc-error";
 
 /**
  * The devices of the signed-in user, as the "Aparelhos" screen shows them. A
@@ -68,6 +68,9 @@ export function revokeError(error: unknown): string {
   }
   if (code === "UNAUTHORIZED") {
     return "Sua sessão não está ativa. Entre novamente para revogar.";
+  }
+  if (rpcErrorReason(error) === "fresh_session_required") {
+    return "Para revogar outro aparelho, entre novamente: o login precisa ter sido feito há menos de 15 minutos. Nada foi revogado.";
   }
   return "Não foi possível confirmar a revogação agora. Atualize a lista e tente de novo: revogar um aparelho já revogado é seguro.";
 }

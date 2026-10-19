@@ -392,7 +392,9 @@ async function run() {
     );
 
     // revoked grant
-    const revoked = await revokeDevice(db, tenantA.userId, device2.id);
+    const revoked = await revokeDevice(db, tenantA.userId, device2.id, {
+      actingSession: null,
+    });
     assert.ok(revoked.revokedGrantIds.includes(epochLease.grant.id));
     assert.equal(
       await reason(validate(tenantA, epochLease.claims)),

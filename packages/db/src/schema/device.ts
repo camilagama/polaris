@@ -6,15 +6,18 @@ import {
   integer,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { user } from "./auth";
+import { session, user } from "./auth";
 import { memberships, organizations } from "./organization";
 
 const runtimeRole = "polaris_pr11_runtime";
+/** Owns `end_device_sessions()`; never a login (migration 0078). */
+const deviceSessionOwnerRole = "polaris_device_session_owner";
 
 const currentUser = sql`NULLIF(current_setting('app.user_id', true), '')`;
 
@@ -62,6 +65,69 @@ export const devices = pgTable(
       to: runtimeRole,
       using: sql`${table.userId} = ${currentUser}`,
       withCheck: sql`${table.userId} = ${currentUser}`,
+    }),
+    pgPolicy("devices_session_owner_select", {
+      for: "select",
+      to: deviceSessionOwnerRole,
+      using: sql`${table.userId} = ${currentUser}`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * Which sessions used which device (many-to-many). The server writes a row from
+ * the verified session whenever a session uses a live device, and revoking the
+ * device ends every session linked to it (`end_device_sessions()`). It keeps the
+ * session id, never the token, and has no organization: it goes with the session
+ * (logout, expiry) and with the device.
+ */
+export const deviceSessions = pgTable(
+  "device_sessions",
+  {
+    deviceId: uuid("device_id").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    /**
+     * `register` when this session registered the device (it is that session's
+     * own device), `use` when it only used one (lease, sync, check).
+     */
+    origin: text("origin").notNull(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => session.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.deviceId, table.sessionId],
+      name: "device_sessions_pk",
+    }),
+    foreignKey({
+      columns: [table.userId, table.deviceId],
+      foreignColumns: [devices.userId, devices.id],
+      name: "device_sessions_user_device_fk",
+    }).onDelete("cascade"),
+    check(
+      "device_sessions_origin_allowed",
+      sql`${table.origin} IN ('register', 'use')`
+    ),
+    // the cascade from session and the revocation look rows up by session
+    index("device_sessions_session_idx").on(table.sessionId),
+    pgPolicy("device_sessions_current_user_select", {
+      for: "select",
+      to: runtimeRole,
+      using: sql`${table.userId} = ${currentUser}`,
+    }),
+    pgPolicy("device_sessions_current_user_insert", {
+      for: "insert",
+      to: runtimeRole,
+      withCheck: sql`${table.userId} = ${currentUser}`,
+    }),
+    pgPolicy("device_sessions_session_owner_select", {
+      for: "select",
+      to: deviceSessionOwnerRole,
+      using: sql`${table.userId} = ${currentUser}`,
     }),
   ]
 ).enableRLS();

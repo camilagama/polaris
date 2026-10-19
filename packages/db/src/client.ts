@@ -3,10 +3,8 @@ import { Pool } from "pg";
 import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
-import { devices, offlineGrants } from "./schema/device";
+import { deviceSessions, devices, offlineGrants } from "./schema/device";
 import { expenseCategories, expenses } from "./schema/expense";
-import { syncChanges, syncCursors } from "./schema/sync";
-import { syncCommands } from "./schema/sync-command";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { mediaAssets, productMedia, variantMedia } from "./schema/media";
 import { mediaCleanupClaims } from "./schema/media-cleanup";
@@ -15,6 +13,8 @@ import { paymentProfileRules, paymentProfiles } from "./schema/payment-profile";
 import { dbPocOperations } from "./schema/poc";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { authSecurityAuditEvents } from "./schema/security-audit";
+import { syncChanges, syncCursors } from "./schema/sync";
+import { syncCommands } from "./schema/sync-command";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 
 const databaseSchema = {
@@ -24,6 +24,7 @@ const databaseSchema = {
   categories,
   customers,
   dbPocOperations,
+  deviceSessions,
   devices,
   expenseCategories,
   expenses,

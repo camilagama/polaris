@@ -90,15 +90,17 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
   });
 
 /**
- * Tables that came with the queues and the scheduler and have no organization column: nothing of a tenant to
- * remove (ADR 0081). The purge gate proves they still have none; a column of an organization moves the table
- * to one of the lists above.
+ * Tables without an organization column (the access log, the queues, the scheduler and the link between a session
+ * and a device): nothing of a tenant to remove (ADR 0081). The purge gate proves they still have none; a column of
+ * an organization moves the table to one of the lists above.
  */
 export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
   Record<string, string>
 > = Object.freeze({
   auth_access_log:
     "Registro de acesso do Marco Civil (art. 15), por usuário e sem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo de 6 meses, com a guarda cautelar do §2º (ADR 0092 e 0081).",
+  device_sessions:
+    "Vínculo entre sessão e aparelho de um usuário, sem organização: some com a sessão ou com o aparelho (chave estrangeira em cascata), e a retenção é a da classe `auth_sessions`. A classe de retenção dos aparelhos (`devices`) ainda não foi decidida.",
   operational_incidents:
     "Uma linha por causa (contagem, datas e uma referência opaca, o ID de um evento), sem organização (ADR 0085 e 0087).",
   scheduled_job_state:

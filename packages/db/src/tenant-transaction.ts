@@ -19,6 +19,12 @@ export interface TenantRequestIdentity {
   capability: string;
   organizationId: string;
   role: string;
+  /**
+   * The id (never the token) of the verified session of the request. The
+   * request handlers always pass it, so a session that uses a device is linked
+   * to it; scripts and gates that have no session leave it out.
+   */
+  sessionId?: string;
   userId: string;
 }
 
@@ -31,6 +37,8 @@ export interface AuthorizedTenantTransactionInput {
    */
   isolationLevel?: "read committed" | "repeatable read";
   requestedOrganizationId: string;
+  /** The verified session's id; see `TenantRequestIdentity.sessionId`. */
+  sessionId?: string;
 }
 
 /**
@@ -94,6 +102,7 @@ export function withAuthorizedTenantTransaction<T>(
     capability,
     isolationLevel = "read committed",
     requestedOrganizationId,
+    sessionId,
   } = input;
 
   if (
@@ -160,6 +169,7 @@ export function withAuthorizedTenantTransaction<T>(
         capability,
         organizationId: requestedOrganizationId,
         role: membership.role,
+        ...(sessionId ? { sessionId } : {}),
         userId: authenticatedUserId,
       });
     },

@@ -10,6 +10,15 @@ function isNoAnswer(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+function isDeviceRefusal(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "CONFLICT" || error.code === "NOT_FOUND")
+  );
+}
+
 /**
  * The runtime's window to the server, over the same RPC client the screens use:
  * the session cookie authorizes every call, the organization is only the
@@ -17,10 +26,20 @@ function isNoAnswer(status: number): boolean {
  */
 export function createRpcRuntimeApi(client: PolarisRpcClient): RuntimeApi {
   return {
-    deviceIsMine: async (deviceId) =>
-      (await client.device.list()).devices.some(
-        (device) => device.id === deviceId && device.revokedAt === null
-      ),
+    // `device.check` also links this session to the device, so revoking the
+    // device ends this session even if it never syncs (called at every online
+    // start). Revoked or unknown is "not mine"; any other failure is thrown.
+    deviceIsMine: async (deviceId) => {
+      try {
+        await client.device.check({ deviceId });
+        return true;
+      } catch (error) {
+        if (isDeviceRefusal(error)) {
+          return false;
+        }
+        throw error;
+      }
+    },
     issueLease: async (deviceId, organizationId) => {
       const issued = await client.offline.issueLease({
         deviceId,
