@@ -134,9 +134,9 @@ describe("refusals to schedule or cancel a purge", () => {
 });
 
 describe("the closure period before a purge", () => {
-  it("is 30 days, the recovery window of a closure (decision of 18/10/2026)", () => {
-    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(30);
-    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(
+  it("is 90 days (decision of 19/10/2026), never shorter than the recovery window of a closure", () => {
+    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(90);
+    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBeGreaterThanOrEqual(
       CLOSURE_RECOVERY_WINDOW_DAYS
     );
   });
@@ -144,7 +144,7 @@ describe("the closure period before a purge", () => {
   it("is told to the operator with the period and the export, and so is a legal hold", () => {
     expect(
       organizationPurgeRefusalMessage("closure_period_not_elapsed")
-    ).toContain("30 dias");
+    ).toContain("90 dias");
     expect(
       organizationPurgeRefusalMessage("closure_period_not_elapsed")
     ).toContain("exportar");
