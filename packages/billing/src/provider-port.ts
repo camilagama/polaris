@@ -22,10 +22,9 @@ export interface ProviderBillingEvent {
   providerRef: string;
   /**
    * The provider's own ID of the subscription this fact came from (Asaas `sub_`),
-   * when the provider has one. Extension point: the first matched fact is meant
-   * to store it next to `providerRef`, in a column that does not exist yet.
-   * TODO(PR 2, área db): add the additive column and store it on the first
-   * matched fact; until then the store ignores this field.
+   * when the provider has one. The inbox stores it with the event, and the first
+   * fact that matches `providerRef` stores it on the organization's record
+   * (`provider_subscription_id`): the commands then find the subscription by it.
    */
   providerSubscriptionId?: string;
 }
@@ -86,10 +85,17 @@ export interface PreparedSubscription {
   providerRef: string;
 }
 
+/**
+ * The commands that read the subscription take the `providerSubscriptionId` the
+ * record stored (null before a fact matched): with it the provider is asked for
+ * that subscription directly; without it (no webhook arrived yet), the
+ * subscription is looked up by `providerRef`.
+ */
 export interface BillingProviderPort {
   /** Cancels the renewal; safe to repeat. Access already paid for is not touched. */
   cancelRenewal: (
-    providerRef: string
+    providerRef: string,
+    providerSubscriptionId?: string | null
   ) => Promise<"already_cancelled" | "cancelled" | "nothing_to_cancel">;
   /** Gives up a prepared checkout that could not be linked (best effort). */
   discardCheckout: (checkoutId: string) => Promise<void>;
@@ -101,12 +107,14 @@ export interface BillingProviderPort {
   /** The provider's state as facts, for the reconciliation; read again first, never guessed. */
   readState: (
     providerRef: string,
-    now: Date
+    now: Date,
+    providerSubscriptionId?: string | null
   ) => Promise<ProviderBillingEvent[]>;
   /** Refunds in full the charge of the period in force at `now`; never part of it, never an earlier one. */
   refundCurrentPeriod: (
     providerRef: string,
-    now: Date
+    now: Date,
+    providerSubscriptionId?: string | null
   ) => Promise<"nothing_to_refund" | "refund_requested">;
 }
 

@@ -589,6 +589,13 @@
       "when": 1792441668820,
       "tag": "0083_entrada_aceite_legal",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792449433775,
+      "tag": "0084_trial_por_pessoa",
+      "breakpoints": true
     }
   ]
 }

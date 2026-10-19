@@ -33,7 +33,7 @@ Os itens abaixo são hipóteses ajustáveis, não invariantes arquiteturais:
 
 - ofertas Free e Pro;
 - trial Pro de sete dias, iniciado somente por escolha do usuário e após o método de renovação estar pronto;
-- preços iniciais Pro de R$ 24,90 por mês, R$ 124,50 por semestre e R$ 249,00 por ano;
+- preços iniciais Pro de R$ 24,90 por mês, R$ 124,50 por semestre (temporariamente não ofertado: desativado no banco, volta por decisão e migration) e R$ 249,00 por ano;
 - limites iniciais Free: 50 variantes ativas, uma imagem por produto, 50 imagens ativas, uma meta ativa e sem escrita offline ou catálogo público;
 - limites iniciais Pro: 2.000 variantes ativas, dez imagens por produto, 5.000 imagens ativas, três metas ativas, escrita offline e catálogo público.
 

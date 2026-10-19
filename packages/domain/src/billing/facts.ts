@@ -1,3 +1,4 @@
+import { Money } from "../money/money";
 import {
   type BillingFacts,
   type BillingState,
@@ -33,6 +34,18 @@ export function isBillingCycleMonths(
   return (BILLING_CYCLE_MONTHS as readonly number[]).includes(value);
 }
 
+/**
+ * What a payment moved, as the provider reported it (`money.md`: exact decimal
+ * text, two places, never a float). It is the fiscal record of a money fact
+ * (ADR 0101, Filipe V2); the lifecycle never reads it. Optional: a fact stored
+ * before it existed has none.
+ */
+export interface BillingFactAmount {
+  currency: "BRL";
+  /** `"24.90"`, positive. */
+  value: string;
+}
+
 export type BillingFact =
   | {
       /** The renewal method (card, or Pix authorization) is confirmed: the trial may start. */
@@ -42,6 +55,7 @@ export type BillingFact =
     }
   | {
       /** A charge went through: the first one or a renewal. */
+      amount?: BillingFactAmount;
       cycleMonths: BillingCycleMonths;
       occurredAt: Date;
       /** The provider-confirmed end of the period that was just paid for. */
@@ -65,18 +79,21 @@ export type BillingFact =
        * The charge that paid the period ending at `periodEndsAt` was refunded in
        * full. A partial refund is a commercial gesture and is not a fact.
        */
+      amount?: BillingFactAmount;
       occurredAt: Date;
       periodEndsAt: Date;
       type: "charge_refunded";
     }
   | {
       /** The charge that paid the period ending at `periodEndsAt` was charged back. */
+      amount?: BillingFactAmount;
       occurredAt: Date;
       periodEndsAt: Date;
       type: "charge_disputed";
     }
   | {
       /** The chargeback on the period ending at `periodEndsAt` was decided in Polaris's favour. */
+      amount?: BillingFactAmount;
       occurredAt: Date;
       periodEndsAt: Date;
       type: "dispute_reversed";
@@ -237,8 +254,6 @@ function applied(
   const record = normalized({
     ...before,
     ...next,
-    // new Pro access is a new payment: what was taken back before no longer matters
-    revoked: revokedAfter(before, next),
     // an older fact never rewinds the clock of facts, and a fact dated in the
     // future (a skewed provider clock) never pushes it past the present, which
     // would make every later, legitimate fact look stale
@@ -251,6 +266,8 @@ function applied(
               Math.min(occurredAt.getTime(), now.getTime())
             )
           ),
+    // new Pro access is a new payment: what was taken back before no longer matters
+    revoked: revokedAfter(before, next),
     // the trial is used by running it and waived by paying without it
     trialConsumed: before.trialConsumed || grantsPro(next.state),
   });
@@ -834,6 +851,29 @@ export function isCoherentBillingRecord(record: BillingRecord): boolean {
 }
 
 /** A fact as the inbox stores it: plain JSON, dates as ISO text, no personal data. */
+/** The amount, if it is one `money.md` writes: positive, two places, normalized. */
+function isBillingAmountValue(value: string): boolean {
+  try {
+    const money = Money.from(value);
+    return money.minorUnits > 0n && money.toString() === value;
+  } catch {
+    return false;
+  }
+}
+
+/** The amount as stored (`amount` and `currency`, plain values the purge keeps), or nothing. */
+function amountFields(
+  amount: BillingFactAmount | undefined
+): Record<string, string> {
+  if (amount === undefined) {
+    return {};
+  }
+  if (amount.currency !== "BRL" || !isBillingAmountValue(amount.value)) {
+    throw new RangeError("invalid_billing_fact_amount");
+  }
+  return { amount: amount.value, currency: amount.currency };
+}
+
 export function serializeBillingFact(
   fact: BillingFact
 ): Record<string, number | string> {
@@ -845,13 +885,18 @@ export function serializeBillingFact(
     case "charge_succeeded":
       return {
         ...base,
+        ...amountFields(fact.amount),
         cycleMonths: fact.cycleMonths,
         periodEndsAt: fact.periodEndsAt.toISOString(),
       };
     case "charge_refunded":
     case "charge_disputed":
     case "dispute_reversed":
-      return { ...base, periodEndsAt: fact.periodEndsAt.toISOString() };
+      return {
+        ...base,
+        ...amountFields(fact.amount),
+        periodEndsAt: fact.periodEndsAt.toISOString(),
+      };
     default:
       return base;
   }
@@ -869,6 +914,33 @@ function cycleField(value: unknown): BillingCycleMonths | null {
   return typeof value === "number" && isBillingCycleMonths(value)
     ? value
     : null;
+}
+
+/**
+ * The stored amount: none when the fact has neither key (stored before the
+ * amount existed), null (malformed) when it has one without the other or a
+ * value that is not an amount.
+ */
+function amountField(
+  record: Record<string, unknown>
+): BillingFactAmount | undefined | null {
+  const { amount, currency } = record;
+  if (amount === undefined && currency === undefined) {
+    return;
+  }
+  return currency === "BRL" &&
+    typeof amount === "string" &&
+    isBillingAmountValue(amount)
+    ? { currency, value: amount }
+    : null;
+}
+
+/** The fact with its amount, when it has one (no `amount` key at all otherwise). */
+function withAmount<T extends object>(
+  fact: T,
+  amount: BillingFactAmount | undefined
+): T & { amount?: BillingFactAmount } {
+  return amount === undefined ? fact : { ...fact, amount };
 }
 
 /**
@@ -893,16 +965,26 @@ export function parseBillingFact(value: unknown): BillingFact | null {
         : null;
     case "charge_succeeded": {
       const periodEndsAt = dateField(record.periodEndsAt);
-      return cycleMonths && periodEndsAt
-        ? { cycleMonths, occurredAt, periodEndsAt, type: "charge_succeeded" }
+      const amount = amountField(record);
+      return cycleMonths && periodEndsAt && amount !== null
+        ? withAmount(
+            {
+              cycleMonths,
+              occurredAt,
+              periodEndsAt,
+              type: "charge_succeeded" as const,
+            },
+            amount
+          )
         : null;
     }
     case "charge_refunded":
     case "charge_disputed":
     case "dispute_reversed": {
       const periodEndsAt = dateField(record.periodEndsAt);
-      return periodEndsAt
-        ? { occurredAt, periodEndsAt, type: record.type }
+      const amount = amountField(record);
+      return periodEndsAt && amount !== null
+        ? withAmount({ occurredAt, periodEndsAt, type: record.type }, amount)
         : null;
     }
     case "charge_failed":

@@ -338,9 +338,17 @@ function chargeFact(
     return { occurredAt, type };
   }
   const periodEndsAt = chargePeriodEndsAt(payment, subscription);
+  // the amount the charge moved, read from the JSON text (the fiscal record; Asaas charges in BRL)
+  const amount = { currency: "BRL" as const, value: payment.amount };
   return type === "charge_succeeded"
-    ? { cycleMonths: cycleOf(subscription), occurredAt, periodEndsAt, type }
-    : { occurredAt, periodEndsAt, type };
+    ? {
+        amount,
+        cycleMonths: cycleOf(subscription),
+        occurredAt,
+        periodEndsAt,
+        type,
+      }
+    : { amount, occurredAt, periodEndsAt, type };
 }
 
 /**

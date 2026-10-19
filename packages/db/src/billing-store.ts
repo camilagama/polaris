@@ -24,7 +24,7 @@ import { episodeStartAfter } from "@polaris/domain/billing/operational-selection
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
-import { type PoolClient, Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 
 /**
  * The billing path (plan PR79 and PR81, ADR 0062): the one place that writes an
@@ -53,6 +53,17 @@ interface RecordBillingEventInput {
   providerEventId: string;
   /** The subscription reference the provider reported. */
   providerRef?: string | null;
+  /** The provider's own ID of the subscription (Asaas `sub_`), when the fact carries one. */
+  providerSubscriptionId?: string | null;
+}
+
+/** How the organization's subscription is reached at its provider. */
+export interface BillingProviderLink {
+  provider: string;
+  /** The reference `attachProvider` stored (for Asaas, the checkout's ID). */
+  providerRef: string;
+  /** The provider's own ID of the subscription, once a fact matched the reference; null before. */
+  providerSubscriptionId: string | null;
 }
 
 type BillingEventStatus = "applied" | "failed" | "ignored" | "received";
@@ -102,6 +113,8 @@ export interface BillingStore {
     providerRef: string
   ) => Promise<void>;
   close: () => Promise<void>;
+  /** The grant with this ID, or null. A command that names its own ID reads this first, so a repeat later is the same grant whatever its relative duration. */
+  findEntitlementGrant: (id: string) => Promise<StoredEntitlementGrant | null>;
   /**
    * Gives an organization a temporary entitlement (plan PR85): more than its plan,
    * for a while, with who, why, from when and until when. It is never a
@@ -113,10 +126,12 @@ export interface BillingStore {
     input: GrantEntitlementInput,
     now?: Date
   ) => Promise<{ created: boolean; id: string }>;
-  /** The grant with this ID, or null. A command that names its own ID reads this first, so a repeat later is the same grant whatever its relative duration. */
-  findEntitlementGrant: (id: string) => Promise<StoredEntitlementGrant | null>;
   /** Applies one stored event to its organization; safe to call again for an event already processed. */
   processEvent: (eventId: string, now?: Date) => Promise<ProcessedBillingEvent>;
+  /** The provider link of the organization, or null when none is attached. */
+  readProviderLink: (
+    organizationId: string
+  ) => Promise<BillingProviderLink | null>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
@@ -130,8 +145,19 @@ export interface BillingStore {
     input: { actor: string; id: string; organizationId?: string },
     now?: Date
   ) => Promise<{ revoked: boolean }>;
-  /** The organization opts into the trial (the renewal method comes next). */
-  startTrial: (organizationId: string, now?: Date) => Promise<BillingRecord>;
+  /**
+   * The organization opts into the trial (the renewal method comes next). The
+   * trial is once per person (ADR 0101): `userId` is the authenticated user of
+   * the session, set by the server, never taken from the client. It reserves
+   * that person's trial for the organization; a trial already used is
+   * `trial_already_used`, and one reserved for another organization still
+   * setting up its trial is `trial_in_progress`.
+   */
+  startTrial: (
+    organizationId: string,
+    userId: string,
+    now?: Date
+  ) => Promise<BillingRecord>;
   /** Applies what time itself causes to records whose access has run out. */
   sweepDue: (now?: Date, limit?: number) => Promise<BillingSweepReport>;
 }
@@ -146,6 +172,7 @@ interface BillingRow {
   pending_cycle_months: number | null;
   provider: string | null;
   provider_ref: string | null;
+  provider_subscription_id: string | null;
   revoked_cancel_at_period_end: boolean;
   revoked_cycle_months: number | null;
   revoked_reason: string | null;
@@ -155,7 +182,7 @@ interface BillingRow {
 }
 
 const BILLING_COLUMNS =
-  "organization_id, state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, last_fact_at, provider, provider_ref, trial_started_at, revoked_through, revoked_reason, revoked_cycle_months, revoked_cancel_at_period_end, over_limit_since";
+  "organization_id, state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, last_fact_at, provider, provider_ref, provider_subscription_id, trial_started_at, revoked_through, revoked_reason, revoked_cycle_months, revoked_cancel_at_period_end, over_limit_since";
 
 function cycle(value: number | null): BillingCycleMonths | null {
   return value !== null && isBillingCycleMonths(value) ? value : null;
@@ -168,7 +195,6 @@ function toRecord(row: BillingRow): BillingRecord {
     cycleMonths: cycle(row.cycle_months),
     lastFactAt: row.last_fact_at,
     pendingCycleMonths: cycle(row.pending_cycle_months),
-    state: row.state as BillingState,
     revoked:
       row.revoked_through !== null &&
       (row.revoked_reason === "refund" ||
@@ -181,6 +207,7 @@ function toRecord(row: BillingRow): BillingRecord {
             reason: row.revoked_reason,
           }
         : null,
+    state: row.state as BillingState,
     trialConsumed: row.trial_started_at !== null,
   };
 }
@@ -234,12 +261,20 @@ async function exceedsFreeLimits(
   return result.rows[0]?.exceeds === true;
 }
 
+/**
+ * Writes the record. `consumesTrial` is set when the fact that starts the trial
+ * (`trial_method_ready`) applied: the trial of the person who reserved it for
+ * this organization is consumed in the same statement that records
+ * `trial_started_at` (ADR 0101), so one never exists without the other.
+ * Abandoning the checkout consumes nothing.
+ */
 async function saveRecord(
   client: PoolClient,
   organizationId: string,
   before: BillingRecord,
   next: BillingRecord,
-  now: Date
+  now: Date,
+  consumesTrial = false
 ): Promise<void> {
   // when the organization left Pro (the start of the Free Over Limit adaptation window, ADR 0064)
   const episode = episodeStartAfter({
@@ -248,7 +283,11 @@ async function saveRecord(
     now,
   });
   await client.query(
-    `UPDATE public.organization_billing SET
+    `WITH trial_claim AS (
+       UPDATE public.billing_trial_claims SET consumed_at = $9::timestamptz
+        WHERE $16::boolean AND organization_id = $1 AND consumed_at IS NULL
+     )
+     UPDATE public.organization_billing SET
        state = $2,
        access_ends_at = $3,
        cancel_at_period_end = $4,
@@ -281,6 +320,7 @@ async function saveRecord(
       next.revoked?.reason ?? null,
       next.revoked?.cycleMonths ?? null,
       next.revoked?.cancelAtPeriodEnd ?? false,
+      consumesTrial && !before.trialConsumed && next.trialConsumed,
     ]
   );
 }
@@ -292,6 +332,7 @@ interface EventRow {
   organization_id: string | null;
   provider: string;
   provider_ref: string | null;
+  provider_subscription_id: string | null;
   status: BillingEventStatus;
 }
 
@@ -373,7 +414,7 @@ async function processInTransaction(
   now: Date
 ): Promise<ProcessedBillingEvent> {
   const found = await client.query<EventRow>(
-    "SELECT id, provider, provider_ref, organization_id, fact, status, attempts FROM public.billing_events WHERE id = $1 FOR UPDATE",
+    "SELECT id, provider, provider_ref, provider_subscription_id, organization_id, fact, status, attempts FROM public.billing_events WHERE id = $1 FOR UPDATE",
     [eventId]
   );
   const [event] = found.rows;
@@ -493,6 +534,18 @@ async function processInTransaction(
       status: "ignored",
     };
   }
+  // the first fact that matched the reference tells which subscription it is at the
+  // provider: the commands find it by that ID from then on (ADR 0101). The first
+  // one stays: a checkout makes one subscription
+  if (
+    event.provider_subscription_id !== null &&
+    row.provider_subscription_id === null
+  ) {
+    await client.query(
+      "UPDATE public.organization_billing SET provider_subscription_id = $2 WHERE organization_id = $1 AND provider_subscription_id IS NULL",
+      [organizationId, event.provider_subscription_id]
+    );
+  }
   const result = reconcileFact(before, fact, {
     now,
     // every state asks: an abandoned trial checkout returns to Free Over Limit, not to Free,
@@ -520,7 +573,14 @@ async function processInTransaction(
       status: "ignored",
     };
   }
-  await saveRecord(client, organizationId, before, result.record, now);
+  await saveRecord(
+    client,
+    organizationId,
+    before,
+    result.record,
+    now,
+    fact.type === "trial_method_ready"
+  );
   await finishEvent(
     client,
     eventId,
@@ -740,6 +800,59 @@ async function sweepExpiredGrants(
   return report;
 }
 
+/**
+ * Reserves the person's trial for the organization (ADR 0101), inside the
+ * transaction that moves the organization to `trial_setup`. The person's claim
+ * row is the lock: two organizations of the same person starting a trial at the
+ * same time wait for each other here, and the second one sees what the first
+ * one did. A trial already consumed is refused; one reserved for another
+ * organization moves only if that organization is no longer setting up its
+ * trial (its checkout was abandoned or it subscribed without one).
+ */
+async function reserveTrial(
+  client: PoolClient,
+  userId: string,
+  organizationId: string,
+  now: Date
+): Promise<void> {
+  const inserted = await client.query(
+    `INSERT INTO public.billing_trial_claims (user_id, organization_id, reserved_at)
+     VALUES ($1, $2, $3) ON CONFLICT (user_id) DO NOTHING`,
+    [userId, organizationId, now]
+  );
+  if (inserted.rowCount === 1) {
+    return;
+  }
+  const found = await client.query<{
+    consumed_at: Date | null;
+    organization_id: string;
+  }>(
+    "SELECT organization_id, consumed_at FROM public.billing_trial_claims WHERE user_id = $1 FOR UPDATE",
+    [userId]
+  );
+  const [claim] = found.rows;
+  if (!claim) {
+    throw new Error("billing_trial_claim_missing");
+  }
+  if (claim.consumed_at !== null) {
+    throw new Error("trial_already_used");
+  }
+  if (claim.organization_id === organizationId) {
+    return;
+  }
+  const other = await client.query<{ state: string }>(
+    "SELECT state FROM public.organization_billing WHERE organization_id = $1",
+    [claim.organization_id]
+  );
+  if (other.rows[0]?.state === "trial_setup") {
+    throw new Error("trial_in_progress");
+  }
+  await client.query(
+    "UPDATE public.billing_trial_claims SET organization_id = $2, reserved_at = $3 WHERE user_id = $1",
+    [userId, organizationId, now]
+  );
+}
+
 export function createBillingStore(connectionString: string): BillingStore {
   const pool = new Pool({
     connectionString,
@@ -765,7 +878,7 @@ export function createBillingStore(connectionString: string): BillingStore {
         }
         await client.query(
           // a new subscription reference is a new checkout: a payment taken back on the old one does not follow it
-          `UPDATE public.organization_billing SET provider = $2, provider_ref = $3,
+          `UPDATE public.organization_billing SET provider = $2, provider_ref = $3, provider_subscription_id = NULL,
              revoked_through = NULL, revoked_reason = NULL, revoked_cycle_months = NULL, revoked_cancel_at_period_end = false,
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [organizationId, provider, providerRef]
@@ -901,52 +1014,6 @@ export function createBillingStore(connectionString: string): BillingStore {
         return { created: true, id };
       });
     },
-    async revokeEntitlementGrant(input, now = new Date()) {
-      if (!uuidPattern.test(input.id)) {
-        throw new InvalidEntitlementGrantError("invalid_id");
-      }
-      if (!isValidGrantActor(input.actor)) {
-        throw new InvalidEntitlementGrantError("invalid_actor");
-      }
-      const actor = input.actor.trim();
-      return await inTransaction(pool, async (client) => {
-        // a grant ends now; one that has not started ends as soon as the table allows (a millisecond after its start, and it never counts: it was revoked before it began)
-        const ended = await client.query<{
-          key: string;
-          organization_id: string;
-        }>(
-          `UPDATE public.entitlement_grants
-              SET expires_at = LEAST(expires_at, GREATEST($3::timestamptz, starts_at + interval '1 millisecond')), revoked_at = $3, revoked_by = $2
-            WHERE id = $1 AND revoked_at IS NULL AND expires_at > $3::timestamptz
-              AND ($4::text IS NULL OR organization_id = $4)
-            RETURNING organization_id, key`,
-          [input.id, actor, now, input.organizationId ?? null]
-        );
-        const [grant] = ended.rows;
-        if (!grant) {
-          return { revoked: false };
-        }
-        const row = await lockRecord(client, grant.organization_id);
-        await writeLedger(
-          client,
-          {
-            fact: {
-              actor,
-              grantId: input.id,
-              key: grant.key,
-              type: "revoke_entitlement_grant",
-            },
-            factType: "command",
-            organizationId: grant.organization_id,
-            providerEventId: `command:revoke-grant:${input.id}`,
-            stateAfter: row.state as BillingState,
-            stateBefore: row.state as BillingState,
-          },
-          now
-        );
-        return { revoked: true };
-      });
-    },
     async processEvent(eventId, now = new Date()) {
       try {
         return await inTransaction(pool, (client) =>
@@ -963,6 +1030,24 @@ export function createBillingStore(connectionString: string): BillingStore {
         throw error;
       }
     },
+    async readProviderLink(organizationId) {
+      const result = await pool.query<{
+        provider: string | null;
+        provider_ref: string | null;
+        provider_subscription_id: string | null;
+      }>(
+        "SELECT provider, provider_ref, provider_subscription_id FROM public.organization_billing WHERE organization_id = $1",
+        [organizationId]
+      );
+      const [row] = result.rows;
+      return row?.provider && row.provider_ref
+        ? {
+            provider: row.provider,
+            providerRef: row.provider_ref,
+            providerSubscriptionId: row.provider_subscription_id,
+          }
+        : null;
+    },
     async readRecord(organizationId) {
       const result = await pool.query<BillingRow>(
         `SELECT ${BILLING_COLUMNS} FROM public.organization_billing WHERE organization_id = $1`,
@@ -975,8 +1060,8 @@ export function createBillingStore(connectionString: string): BillingStore {
       const fact = serializeBillingFact(input.fact);
       const inserted = await pool.query<{ id: string }>(
         `INSERT INTO public.billing_events
-           (provider, provider_event_id, organization_id, provider_ref, fact, fact_type, occurred_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+           (provider, provider_event_id, organization_id, provider_ref, provider_subscription_id, fact, fact_type, occurred_at)
+         VALUES ($1, $2, $3, $4, $8, $5::jsonb, $6, $7)
          ON CONFLICT (provider, provider_event_id) DO NOTHING
          RETURNING id`,
         [
@@ -987,6 +1072,7 @@ export function createBillingStore(connectionString: string): BillingStore {
           JSON.stringify(fact),
           input.fact.type,
           input.fact.occurredAt,
+          input.providerSubscriptionId ?? null,
         ]
       );
       const [created] = inserted.rows;
@@ -1045,7 +1131,53 @@ export function createBillingStore(connectionString: string): BillingStore {
       }
       return report;
     },
-    async startTrial(organizationId, now = new Date()) {
+    async revokeEntitlementGrant(input, now = new Date()) {
+      if (!uuidPattern.test(input.id)) {
+        throw new InvalidEntitlementGrantError("invalid_id");
+      }
+      if (!isValidGrantActor(input.actor)) {
+        throw new InvalidEntitlementGrantError("invalid_actor");
+      }
+      const actor = input.actor.trim();
+      return await inTransaction(pool, async (client) => {
+        // a grant ends now; one that has not started ends as soon as the table allows (a millisecond after its start, and it never counts: it was revoked before it began)
+        const ended = await client.query<{
+          key: string;
+          organization_id: string;
+        }>(
+          `UPDATE public.entitlement_grants
+              SET expires_at = LEAST(expires_at, GREATEST($3::timestamptz, starts_at + interval '1 millisecond')), revoked_at = $3, revoked_by = $2
+            WHERE id = $1 AND revoked_at IS NULL AND expires_at > $3::timestamptz
+              AND ($4::text IS NULL OR organization_id = $4)
+            RETURNING organization_id, key`,
+          [input.id, actor, now, input.organizationId ?? null]
+        );
+        const [grant] = ended.rows;
+        if (!grant) {
+          return { revoked: false };
+        }
+        const row = await lockRecord(client, grant.organization_id);
+        await writeLedger(
+          client,
+          {
+            fact: {
+              actor,
+              grantId: input.id,
+              key: grant.key,
+              type: "revoke_entitlement_grant",
+            },
+            factType: "command",
+            organizationId: grant.organization_id,
+            providerEventId: `command:revoke-grant:${input.id}`,
+            stateAfter: row.state as BillingState,
+            stateBefore: row.state as BillingState,
+          },
+          now
+        );
+        return { revoked: true };
+      });
+    },
+    async startTrial(organizationId, userId, now = new Date()) {
       return await inTransaction(pool, async (client) => {
         const row = await lockRecord(client, organizationId);
         const before = toRecord(row);
@@ -1059,6 +1191,7 @@ export function createBillingStore(connectionString: string): BillingStore {
             trialConsumed: before.trialConsumed,
           }
         );
+        await reserveTrial(client, userId, organizationId, now);
         const record: BillingRecord = { ...before, ...next };
         await saveRecord(client, organizationId, before, record, now);
         await writeLedger(

@@ -485,6 +485,32 @@ describe("facts in the inbox", () => {
     { occurredAt: base, periodEndsAt: at(30), type: "charge_refunded" },
     { occurredAt: base, periodEndsAt: at(30), type: "charge_disputed" },
     { occurredAt: base, periodEndsAt: at(30), type: "dispute_reversed" },
+    // the money facts with what they moved (the fiscal record), and without it (stored before it existed)
+    {
+      amount: { currency: "BRL", value: "24.90" },
+      cycleMonths: 1,
+      occurredAt: base,
+      periodEndsAt: at(30),
+      type: "charge_succeeded",
+    },
+    {
+      amount: { currency: "BRL", value: "249.00" },
+      occurredAt: base,
+      periodEndsAt: at(365),
+      type: "charge_refunded",
+    },
+    {
+      amount: { currency: "BRL", value: "24.90" },
+      occurredAt: base,
+      periodEndsAt: at(30),
+      type: "charge_disputed",
+    },
+    {
+      amount: { currency: "BRL", value: "24.90" },
+      occurredAt: base,
+      periodEndsAt: at(30),
+      type: "dispute_reversed",
+    },
   ];
 
   it("round-trips every fact through plain JSON", () => {
@@ -527,8 +553,47 @@ describe("facts in the inbox", () => {
         periodEndsAt: "never",
         type: "dispute_reversed",
       },
+      // an amount comes whole (value and currency), exact and positive, or the fact is malformed
+      ...[
+        { amount: "24.90" },
+        { currency: "BRL" },
+        { amount: "24.90", currency: "USD" },
+        { amount: 24.9, currency: "BRL" },
+        { amount: "24.9", currency: "BRL" },
+        { amount: "24.901", currency: "BRL" },
+        { amount: "0.00", currency: "BRL" },
+        { amount: "-1.00", currency: "BRL" },
+        { amount: "1e3", currency: "BRL" },
+      ].map((money) => ({
+        ...money,
+        occurredAt: base.toISOString(),
+        periodEndsAt: at(30).toISOString(),
+        type: "charge_refunded",
+      })),
     ]) {
       expect(parseBillingFact(value)).toBeNull();
+    }
+  });
+
+  it("stores the amount of a money fact as two plain values, and refuses one that is not an amount", () => {
+    expect(
+      serializeBillingFact({
+        amount: { currency: "BRL", value: "124.50" },
+        cycleMonths: 6,
+        occurredAt: base,
+        periodEndsAt: at(180),
+        type: "charge_succeeded",
+      })
+    ).toMatchObject({ amount: "124.50", currency: "BRL" });
+    for (const value of ["24.9", "0.00", "-24.90", "abc"]) {
+      expect(() =>
+        serializeBillingFact({
+          amount: { currency: "BRL", value },
+          occurredAt: base,
+          periodEndsAt: at(30),
+          type: "charge_refunded",
+        })
+      ).toThrow(RangeError);
     }
   });
 
@@ -540,6 +605,7 @@ describe("facts in the inbox", () => {
           "type",
           ...("cycleMonths" in fact ? ["cycleMonths"] : []),
           ...("periodEndsAt" in fact ? ["periodEndsAt"] : []),
+          ...("amount" in fact ? ["amount", "currency"] : []),
         ].sort()
       );
     }

@@ -21,6 +21,11 @@ const auditMigration = readFileSync(
   new URL("../drizzle/0080_auditoria_sobrevive_ao_purge.sql", import.meta.url),
   "utf8"
 );
+// the money facts carry their amount since this one (ADR 0101): it redefines the function with the two keys
+const trialMigration = readFileSync(
+  new URL("../drizzle/0084_trial_por_pessoa.sql", import.meta.url),
+  "utf8"
+);
 const billingStore = readFileSync(
   new URL("./billing-store.ts", import.meta.url),
   "utf8"
@@ -50,7 +55,13 @@ function everyFact(): BillingFact[] {
   const periodEndsAt = new Date("2026-11-18T12:00:00.000Z");
   return BILLING_FACT_TYPES.map(
     (type) =>
-      ({ cycleMonths: 1, occurredAt, periodEndsAt, type }) as BillingFact
+      ({
+        amount: { currency: "BRL", value: "24.90" },
+        cycleMonths: 1,
+        occurredAt,
+        periodEndsAt,
+        type,
+      }) as BillingFact
   );
 }
 
@@ -82,10 +93,16 @@ describe("the purge of the billing facts", () => {
     }
   });
 
-  it("is the same list in the migration", () => {
-    expect(sqlArrays("kept_fact_keys text[] := ARRAY[")).toEqual([
-      [...PURGE_BILLING_FACT_KEYS],
-    ]);
+  it("is the same list in the latest migration that defines the function", () => {
+    expect(
+      sqlArrays("kept_fact_keys text[] := ARRAY[", trialMigration)
+    ).toEqual([[...PURGE_BILLING_FACT_KEYS]]);
+  });
+
+  it("keeps the amount and the currency of a money fact (the fiscal record)", () => {
+    expect(PURGE_BILLING_FACT_KEYS).toEqual(
+      expect.arrayContaining(["amount", "currency"])
+    );
   });
 
   it("keeps no payer data in the fact (pseudonymization)", () => {
@@ -110,6 +127,12 @@ describe("the purge in the migration", () => {
     expect(
       sqlArrays("deleted_tables text[] := ARRAY[", auditMigration)
     ).toEqual([[...PURGE_DELETE_ORDER]]);
+    // and in the one that recreated it with the amount: the same tables, and still no audit
+    expect(
+      sqlArrays("deleted_tables text[] := ARRAY[", trialMigration)
+    ).toEqual([[...PURGE_DELETE_ORDER]]);
+    expect(trialMigration).not.toMatch(GRANT_AUDIT_TO_PURGE_OWNER);
+    expect(trialMigration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(6);
   });
 
   it("does not delete the audit of the tenant: the list has no `tenant_audit_event` and the migration takes the table away from the purge role", () => {

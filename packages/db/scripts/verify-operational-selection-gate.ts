@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import type { Client } from "pg";
 import {
   EntitlementVariantLockedError,
   OperationalSelectionError,
 } from "@polaris/domain/billing/operational-selection";
+import type { Client } from "pg";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import {
@@ -668,7 +668,7 @@ async function run() {
     );
     // opening a trial checkout on such a record does not give it a fresh window either
     const o3Rows = await selectionRows(o3);
-    await billing.startTrial(o3.organizationId, new Date());
+    await billing.startTrial(o3.organizationId, o3.userId, new Date());
     const [o3Setup] = (
       await admin.pool.query<{ since: Date | null; state: string }>(
         "SELECT state, over_limit_since AS since FROM public.organization_billing WHERE organization_id = $1",
@@ -701,7 +701,7 @@ async function run() {
       )
     ).rows;
     assert.ok(o5Before?.since);
-    await billing.startTrial(o5.organizationId, new Date());
+    await billing.startTrial(o5.organizationId, o5.userId, new Date());
     await billing.attachProvider(o5.organizationId, "gate", "sub_gate_o5");
     const cancelled = await billing.recordEvent({
       fact: { occurredAt: new Date(), type: "subscription_cancelled" },
@@ -841,7 +841,7 @@ async function run() {
       "the window does not move when the sweep stores the lapse"
     );
     // opening a trial checkout keeps the episode (abandoning it cannot restart the window)
-    await billing.startTrial(o4.organizationId, new Date());
+    await billing.startTrial(o4.organizationId, o4.userId, new Date());
     const [duringSetup] = (
       await admin.pool.query<{ since: Date | null; state: string }>(
         "SELECT state, over_limit_since AS since FROM public.organization_billing WHERE organization_id = $1",
