@@ -200,8 +200,7 @@ test("o primeiro acesso de uma conta sem organização chega à tela de criar or
   await expect(page.getByText("Não foi possível")).toHaveCount(0);
   await expect(page.getByText("Sua sessão acabou")).toHaveCount(0);
   expect(new URL(page.url()).pathname).toBe("/");
-  await expect(page.getByRole("form"))
-    .toBeVisible()
-    .catch(() => undefined);
-  await expect(page.locator("main")).toContainText(/organiza/i);
+  await expect(
+    page.getByRole("heading", { name: "Abra a sua organização" })
+  ).toBeVisible();
 });

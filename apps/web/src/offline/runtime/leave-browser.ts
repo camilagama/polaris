@@ -14,6 +14,15 @@ import type { SignInPath } from "../../lib/sign-in-path";
  */
 export function forgetSessionCaches(): void {
   markSigningOut();
+  clearSessionCaches();
+}
+
+/**
+ * Drops the copies a session left in the browser without marking the page as leaving: a refusal of one
+ * call does not say the person will not come back, and a screen that is signed in again (in another tab)
+ * has to be able to keep its copies anew.
+ */
+export function clearSessionCaches(): void {
   clearOrganizationsCache(browserStorage());
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());
