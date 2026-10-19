@@ -47,3 +47,4 @@ Não cole segredos, connection strings, tokens nem dados reais de clientes.
 - [ ] Decisão estrutural nova que contradiz o plano tem um ADR.
 - [ ] Nenhum segredo, connection string ou dado real foi incluído.
 - [ ] Migrations são revisadas e reproduzíveis; `db:generate` não mostra drift.
+- [ ] Migration nova funciona com o Worker da versão anterior (expand/contract, [ADR 0096](../docs/adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)): só adiciona, ou tem o marcador `-- expand-contract: contract|janela <motivo>` e a descrição explica (não se aplica sem migration).
