@@ -89,11 +89,18 @@ const PAYER_FACT = Object.freeze({
   phone: "+55 81 99999-0000",
 });
 
+/**
+ * The contacts typed in the free texts below, whole, hyphen included. The search for what survived uses them
+ * whole: a short run of digits ("98888") also shows up by chance inside a UUID or a timestamp.
+ */
+const CASE_PHONE = "98888-7777";
+const GRANT_PHONE = "97777-6666";
+
 /** Free text an operator could have typed in a case, with someone's contact in it. */
-const CASE_TEXT = "Dono ligou de 81 98888-7777 (Joana)";
+const CASE_TEXT = `Dono ligou de 81 ${CASE_PHONE} (Joana)`;
 
 /** The reason an operator typed when giving an entitlement grant: free text, with someone's contact in it. */
-const GRANT_REASON = "Compensação combinada com Rita (81 97777-6666)";
+const GRANT_REASON = `Compensação combinada com Rita (81 ${GRANT_PHONE})`;
 
 /** The call is refused with this code (SQLSTATE 55000), and nothing else. */
 async function expectBlocked(
@@ -1501,6 +1508,16 @@ async function run() {
       "55000",
       "nor for an active organization"
     );
+    // A call that refuses (a `cancel`, a hold, a mark) raises inside a function that may hold the row of the purge; the
+    // error can reach the client a moment before the abort releases that lock, and `claim_organization_purge` skips
+    // a locked row (SKIP LOCKED), so a claim would answer `null` for a reason that is not the one under test. Taking
+    // the lock here waits for the release, so the next claim does not depend on that timing.
+    const purgeRowSettled = () =>
+      owner.pool.query(
+        "SELECT 1 FROM public.organization_purges WHERE organization_id = $1 FOR UPDATE",
+        [target.organizationId]
+      );
+    await purgeRowSettled();
     const blocked = await maintenance.claimOrganizationPurge(900);
     assert.equal(blocked, null, "an export holding its lease delays the purge");
     await owner.pool.query(
@@ -1511,6 +1528,7 @@ async function run() {
       "UPDATE public.organization_purges SET not_before = now() + interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
+    await purgeRowSettled();
     assert.equal(
       await maintenance.claimOrganizationPurge(900),
       null,
@@ -1556,6 +1574,7 @@ async function run() {
       target.organizationId,
       new Date(Date.now() + 30 * 86_400_000).toISOString()
     );
+    await purgeRowSettled();
     assert.equal(
       await maintenance.claimOrganizationPurge(900),
       null,
@@ -1584,6 +1603,7 @@ async function run() {
       "UPDATE public.organization_closures SET requested_at = now() - interval '10 days' WHERE organization_id = $1",
       [target.organizationId]
     );
+    await purgeRowSettled();
     assert.equal(
       await maintenance.claimOrganizationPurge(900),
       null,
@@ -1723,6 +1743,7 @@ async function run() {
     );
     assert.equal((await purgeState())?.status, "purge_pending");
     // a run holds the purge: nothing is undone
+    await purgeRowSettled();
     const held = await maintenance.claimOrganizationPurge(900);
     assert.deepEqual(held, {
       attempt: 1,
@@ -1792,6 +1813,7 @@ async function run() {
       "the reason stays out of the audit"
     );
     // closed again: nothing to claim, nothing to purge, nothing more to cancel
+    await purgeRowSettled();
     assert.equal(await maintenance.claimOrganizationPurge(900), null);
     await expectSqlState(
       () => maintenance.purgeOrganizationData(target.organizationId),
@@ -1852,6 +1874,7 @@ async function run() {
     // nobody rewrites the history: the owner of the Admin functions only reads and appends
     await expectCancellationsAppendOnly(owner.pool);
     // a run reaches the storage: written down before the first object goes, and from then on no cancellation
+    await purgeRowSettled();
     const reached = await maintenance.claimOrganizationPurge(900);
     assert.equal(reached?.organizationId, target.organizationId);
     assert.deepEqual(await purgeState(), {
@@ -2107,6 +2130,7 @@ async function run() {
       [privacyCase.id]
     );
 
+    await purgeRowSettled();
     const purgeReport = await runOrganizationPurges({
       bucket,
       client: maintenance,
@@ -2349,10 +2373,10 @@ async function run() {
         target.organizationId,
         [
           "%Joana%",
-          "%98888%",
+          `%${CASE_PHONE}%`,
           "%retirado pelo dono%",
           "%Rita%",
-          "%97777%",
+          `%${GRANT_PHONE}%`,
           ...Object.values(PAYER_FACT).map((value) => `%${value}%`),
         ],
       ]
@@ -2444,6 +2468,7 @@ async function run() {
       [target.organizationId]
     );
     assert.deepEqual(purgeRecord.rows[0], { purged: true, swept: true });
+    await purgeRowSettled();
     assert.deepEqual(
       await runOrganizationPurges({
         bucket,
@@ -2517,6 +2542,7 @@ async function run() {
         error.code === "purge_storage_touched",
       "a purge reapplied after a restore cannot be cancelled"
     );
+    await purgeRowSettled();
     assert.deepEqual(
       await runOrganizationPurges({
         bucket,

@@ -1,5 +1,5 @@
 import { type LogFields, logger } from "@polaris/observability/logger";
-import { describeError } from "@polaris/observability/wide-event";
+import { describeError, isSqlState } from "@polaris/observability/wide-event";
 import type { Context } from "hono";
 import { routePath } from "hono/route";
 import type { ServerEnv } from "../environment";
@@ -37,6 +37,11 @@ function summarizeError(error: unknown): ErrorSummary[] {
   return chain;
 }
 
+/** The first SQLSTATE in the error chain (a driver error is often the `cause` of an ORM error), for the database-error alert. */
+function sqlStateOf(chain: readonly ErrorSummary[]): string | undefined {
+  return chain.find((summary) => isSqlState(summary.errorCode))?.errorCode;
+}
+
 export interface ServerErrorLogInput {
   error: unknown;
   extra?: LogFields;
@@ -48,7 +53,8 @@ export interface ServerErrorLogInput {
 }
 
 export function logServerError(input: ServerErrorLogInput): void {
-  const [top, ...causes] = summarizeError(input.error);
+  const chain = summarizeError(input.error);
+  const [top, ...causes] = chain;
 
   logger.error("server_error", {
     ...input.extra,
@@ -60,6 +66,7 @@ export function logServerError(input: ServerErrorLogInput): void {
     method: input.method,
     requestId: input.requestId,
     route: input.route,
+    sqlState: sqlStateOf(chain),
   });
 }
 

@@ -1,5 +1,5 @@
 import { logger } from "@polaris/observability/logger";
-import { describeError } from "@polaris/observability/wide-event";
+import { describeError, isSqlState } from "@polaris/observability/wide-event";
 import { getIp } from "better-auth/api";
 import { isIP } from "node:net";
 
@@ -40,7 +40,6 @@ export interface AccessLogQueryable {
 /** The time a login waits for the record, at most. */
 const ACCESS_LOG_WRITE_TIMEOUT_MS = 300;
 
-const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
 const RESULT_CODE_PATTERN = /^[a-z_]{1,40}$/;
 const CLIENT_IP_HEADER = "cf-connecting-ip";
 const QUERY_TIMEOUT_MESSAGE = "Query read timeout";
@@ -86,10 +85,9 @@ function logFailure(
     errorClass: described?.errorClass,
     reason,
     requestId: entry.requestId,
-    sqlState:
-      described?.errorCode && SQLSTATE_PATTERN.test(described.errorCode)
-        ? described.errorCode
-        : undefined,
+    sqlState: isSqlState(described?.errorCode)
+      ? described?.errorCode
+      : undefined,
   });
 }
 

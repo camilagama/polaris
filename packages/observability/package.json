@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./alerts": "./src/alerts.ts",
     "./logger": "./src/logger.ts",
     "./wide-event": "./src/wide-event.ts"
   },

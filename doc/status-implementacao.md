@@ -1,6 +1,6 @@
 ﻿# Polaris — acompanhamento da implementação
 
-Atualizado em 18 de outubro de 2026.
+Atualizado em 19 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -1710,7 +1710,7 @@ Terceiro passo da Fase 12 ([ADR 0091](../docs/adr/0091-esquema-canonico-de-event
 | Aliases | Concluído | `LogFields` recusa os aliases no tipo; o logger os descarta e lista em `ignoredFields`; `call-sites.test.ts` falha se uma chamada de log do backend usar um. |
 | Evento largo | Concluído | `startWideEvent`, `withWideEvent` e `describeError` (`@polaris/observability/wide-event`); o agendador emite `scheduled_job_run` por eles. |
 | Migração | Concluída | Todos os pontos que já chamavam o logger, só nos nomes dos campos (`errorName` → `errorClass`, `status` → `httpStatus`, `outcome` do agendador → `success\|failure\|skipped`); os `console.*` restantes migraram no PR116. |
-| Limites | Registrados | Nenhum evento por requisição HTTP ainda (volume e amostragem: PR117, [ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-workers-observability.md)); a política de redação é da Fase 12D. |
+| Limites | Registrados | Nenhum evento por requisição HTTP, exceto o `http_request_timed` das rotas críticas, criado para o alerta de latência (Fase 12F); o volume e a amostragem são do PR117, [ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-workers-observability.md); a política de redação é da Fase 12D. |
 
 ### Fase 12D — política de redação centralizada dos logs (PR116; implementação local concluída; nada criado na conta Cloudflare)
 
@@ -1739,3 +1739,17 @@ Quinto passo da Fase 12 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-wor
 | Custo | Estimado | Cerca de 1 MB por dia hoje, contra 0,5 GB por dia de ingestão do Free (logs e traces somados, modelo de 1º/12/2026); US$ 0, dentro do teto de US$ 10 (ADR 0076); gatilho de revisão em 0,25 GB por dia. Medida real: Fase 14. |
 | Limites | Registrados | Sem medida em nuvem; `environment`, CPU do evlog e o destino das exceções com `invocation_logs` desligado ficam para a Fase 14; traces e logs dividem a cota diária (ADR). |
 
+
+### Fase 12F — alertas operacionais definidos no código e nos docs (PR119; implementação local concluída; nenhum alerta, cron, token ou conta criados)
+
+Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais-vao-rodar.md); o número pode mudar): os sinais são código revisável; o lugar onde rodam depende da aprovação do responsável e do ambiente (Fase 14).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Registro de sinais | Concluído | `packages/observability/src/alerts.ts` (`alertSignals`, `criticalRoutes`): 12 sinais com evento de origem, janela, limiar, severidade, acorda ou só relatório e a seção do runbook. Cobre 5xx, latência p95, DLQ, outbox parado e falhando, reconcile da cobrança, erros de banco, jobs agendados, R2/mídia, cota 9422 do Images, rejeição do sync e `auth_access_log_write_failed`. |
+| Eventos novos | Concluído | `http_request_timed` (evento largo só nas rotas críticas, para a latência), `sync_push_command_rejected` (um por comando rejeitado, com o código em `reason`) e `sqlState` no `server_error`. Sem dado pessoal. |
+| Teste | Concluído | `packages/observability/src/alerts.test.ts` lê as fontes (AST) e exige que todo evento do registro seja emitido, que cada sinal tenha seção no runbook citando seus eventos e que só `critical` acorde alguém; testes do middleware, do `sqlState` e da rejeição do sync ao lado do código. |
+| Runbook | Concluído | [docs/runbooks/alertas.md](../docs/runbooks/alertas.md): significado, consulta nos Workers Logs ou no banco e ação de cada sinal. |
+| Onde rodam | Proposto | ADR 0095 recomenda uma consulta agendada (cron do Worker) com e-mail pelo Resend: US$ 0, dentro do teto de US$ 10 (ADR 0076); Cloudflare Notifications ficam de complemento e o Sentry espera o plano de estudante. Depende da aprovação do responsável. |
+| Criação real | Pendente (Fase 14) | Cron, token de leitura do Workers Observability e conta do Resend para alertas não foram criados; sem ambiente nenhum alerta dispara. |
+| Limites | Registrados | Limiares e limites de latência são um primeiro chute sem medida; o endpoint e a permissão da consulta do Workers Observability no Free não foram confirmados; a idade do evento pendente mais antigo do outbox não é um evento (o banco não a expõe sem uma função nova, área db): o sinal usa a ausência do job e o runbook traz a consulta SQL; taxa de 5xx é contagem por janela, sem denominador; o `http_request_timed` soma um evento por requisição às rotas críticas ao volume do ADR 0094 (estimado em 0,5 KB por evento, sem medida; a Fase 14 mede). |
