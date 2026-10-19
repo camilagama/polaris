@@ -1077,6 +1077,26 @@ test("o resultado incerto aparece dentro da confirmação, acima dos botões, e 
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
+test("cancelar a confirmação depois de um resultado incerto não deixa no topo um aviso que manda tocar em um Sim que já não existe", async ({
+  page,
+}) => {
+  const state = scenario({
+    answers: [{ error: rpcError(500, "INTERNAL_SERVER_ERROR") }, {}],
+    devices: twoDevices(),
+  });
+  await openDevices(page, state);
+  await askRevoke(page, "Celular da Ana").click();
+  await confirmButton(page).click();
+  await expect(page.getByRole("group").getByRole("alert")).toContainText(
+    "Não conseguimos confirmar se o aparelho"
+  );
+
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("toque em Sim de novo")).toHaveCount(0);
+});
+
 test("o resultado incerto de uma revogação que valeu não se perde quando a linha sai da lista: o aviso vai para o topo", async ({
   page,
 }) => {

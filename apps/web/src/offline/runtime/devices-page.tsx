@@ -433,6 +433,7 @@ export function DevicesPage() {
     setConfirming(id);
   }, []);
   const handleCancel = useCallback(() => {
+    setActionError(null);
     setEndOtherSessions(false);
     setConfirming(null);
   }, []);
