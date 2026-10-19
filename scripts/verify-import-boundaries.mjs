@@ -24,6 +24,11 @@ const adminMessage =
 const browserMessage =
   "Browser code must not import the database, the server layer or server-only libraries.";
 
+// Biome's category for each kind of case: the run checks the rule and the message of every
+// diagnostic, so a different rule that happens to print the same text cannot satisfy a fixture.
+const importRule = "lint/style/noRestrictedImports";
+const consoleRule = "lint/suspicious/noConsole";
+
 const forbiddenImport = (specifier, extra = "") =>
   `import ${extra}${JSON.stringify(specifier)};\nexport const forbiddenImport = 1;\n`;
 
@@ -99,6 +104,7 @@ const cases = [
   ["pg", ["apps", "admin", "src"], adminMessage],
 ].map(([specifier, workspace, expected]) => ({
   expected,
+  rule: importRule,
   source: forbiddenImport(specifier),
   specifier,
   workspace,
@@ -120,8 +126,9 @@ const consoleRejected = [
   ["packages", "observability", "src"],
 ].map((workspace) => ({
   allowed: false,
-  expected: "noConsole",
+  expected: "Don't use console.",
   file: ".ts",
+  rule: consoleRule,
   source: consoleSource,
   specifier: "console.log",
   workspace,
@@ -134,8 +141,9 @@ const consoleAllowed = [
   [["packages", "ui", "src"], ".ts"],
 ].map(([workspace, file]) => ({
   allowed: true,
-  expected: "noConsole",
+  expected: "Don't use console.",
   file,
+  rule: consoleRule,
   source: consoleSource,
   specifier: "console.log",
   workspace,
@@ -146,6 +154,7 @@ const evlogMessage =
 const evlogCase = (workspace, allowed) => ({
   allowed,
   expected: evlogMessage,
+  rule: importRule,
   source: forbiddenImport("evlog"),
   specifier: "evlog",
   workspace,
@@ -159,7 +168,26 @@ const evlogRejected = [
   ["packages", "billing", "src"],
   ["packages", "http-security", "src"],
 ].map((workspace) => evlogCase(workspace, false));
+// Controls: a harmless import in the same restricted folders, linted in the same run as the forbidden
+// ones. The rule must stay silent on it, or "rejected" above would only mean "flags every file".
+const controlImport = (workspace, expected) => ({
+  allowed: true,
+  expected,
+  rule: importRule,
+  source: forbiddenImport("./neighbour-module"),
+  specifier: "./neighbour-module",
+  workspace,
+});
+const importControls = [
+  controlImport(["packages", "domain", "src"], domainMessage),
+  controlImport(["packages", "contracts", "src"], contractsMessage),
+  controlImport(["packages", "db", "src"], dbMessage),
+  controlImport(["apps", "web", "src", "lib"], browserMessage),
+  controlImport(["apps", "catalog", "src"], catalogMessage),
+  controlImport(["apps", "admin", "src"], adminMessage),
+];
 cases.push(
+  ...importControls,
   ...consoleRejected,
   ...consoleAllowed,
   ...evlogRejected,
@@ -188,51 +216,113 @@ async function sweep() {
 
 await sweep();
 
-// Sequential on purpose: parallel fixtures race with builds and typechecks.
-let index = 0;
-for (const testCase of cases) {
-  index += 1;
-  const fixture = path.join(
+// One Biome run over every fixture (a run per fixture paid the config load and the project scan 60
+// times). The fixtures sit at their real paths, not in a temp folder, because the boundary rules are
+// `overrides` keyed on repo paths such as packages/domain/**; they live only while that single run
+// takes, so a build or typecheck racing with them is as unlikely as before.
+const fixtures = cases.map((testCase, position) => ({
+  ...testCase,
+  path: path.join(
     root,
     ...testCase.workspace,
-    `${fixturePrefix}${index}${testCase.file ?? ".ts"}`
-  );
+    `${fixturePrefix}${position + 1}${testCase.file ?? ".ts"}`
+  ),
+}));
 
-  try {
-    // biome-ignore lint/performance/noAwaitInLoops: sequential on purpose (see above)
-    await writeFile(fixture, testCase.source, { flag: "wx" });
-
-    const result = spawnSync(biome, ["lint", path.relative(root, fixture)], {
+/** Biome's diagnostics grouped by repo-relative file: rule, message and whether it is an error. */
+function lintAll(files) {
+  const result = spawnSync(
+    biome,
+    ["lint", "--reporter=json", "--max-diagnostics=none", ...files],
+    {
       cwd: root,
       encoding: "utf8",
-      timeout: 30_000,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 300_000,
+    }
+  );
+  if (result.error) {
+    throw result.error;
+  }
+  const json = result.stdout.slice(result.stdout.indexOf("{"));
+  let report;
+  try {
+    report = JSON.parse(json);
+  } catch (error) {
+    throw new Error(
+      `Biome did not print a JSON report: ${result.stdout}${result.stderr}`,
+      { cause: error }
+    );
+  }
+  const byFile = new Map(files.map((file) => [file, []]));
+  for (const diagnostic of report.diagnostics) {
+    byFile.get(diagnostic.location?.path)?.push({
+      error: diagnostic.severity === "error",
+      message: diagnostic.message,
+      rule: diagnostic.category,
     });
-    const output = (result.stdout ?? "") + (result.stderr ?? "");
+  }
+  return byFile;
+}
 
-    if (result.error) {
-      throw result.error;
+try {
+  // allSettled, not all: a failed write must not let the cleanup below run while others are in flight
+  const writes = await Promise.allSettled(
+    fixtures.map((fixture) =>
+      writeFile(fixture.path, fixture.source, { flag: "wx" })
+    )
+  );
+  const failedWrite = writes.find((write) => write.status === "rejected");
+  if (failedWrite) {
+    throw failedWrite.reason;
+  }
+
+  const relativePaths = fixtures.map((fixture) =>
+    path.relative(root, fixture.path)
+  );
+  const diagnostics = lintAll(relativePaths);
+
+  for (const fixture of fixtures) {
+    const relative = path.relative(root, fixture.path);
+    const lines = diagnostics.get(relative);
+    const output = lines
+      .map((line) => `${line.rule} ${line.message}`)
+      .join("\n");
+    const matches = (line) =>
+      line.rule === fixture.rule && line.message.includes(fixture.expected);
+
+    // Every fixture breaks the file-name rule (the `__` prefix), so a file with no diagnostic at all
+    // was not linted (ignored, or dropped from the run) and its "allowed" verdict would be vacuous.
+    if (lines.length === 0) {
+      throw new Error(
+        `Biome reported nothing for ${relative}: it was not linted.`
+      );
     }
 
-    if (testCase.allowed) {
-      if (output.includes(testCase.expected)) {
+    if (fixture.allowed) {
+      if (lines.some(matches)) {
         throw new Error(
-          `Biome rejected "${testCase.specifier}" in ${path.relative(root, fixture)}, ` +
+          `Biome rejected "${fixture.specifier}" in ${relative}, ` +
             `where it is allowed: ${output}`
         );
       }
-    } else if (result.status === 0 || !output.includes(testCase.expected)) {
+    } else if (!lines.some((line) => line.error && matches(line))) {
       throw new Error(
-        `Biome did not reject the forbidden "${testCase.specifier}" in ` +
-          `${path.relative(root, fixture)}: ${output}`
+        `Biome did not reject the forbidden "${fixture.specifier}" in ` +
+          `${relative}: ${output}`
       );
     }
-  } finally {
-    await unlink(fixture).catch((error) => {
-      if (error.code !== "ENOENT") {
-        throw error;
-      }
-    });
   }
+} finally {
+  await Promise.all(
+    fixtures.map((fixture) =>
+      unlink(fixture.path).catch((error) => {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      })
+    )
+  );
 }
 console.log(
   `Boundary rules behave as expected on all ${cases.length} fixtures (prohibited imports, evlog outside the logger and console calls rejected; the allowed exceptions left alone).`
