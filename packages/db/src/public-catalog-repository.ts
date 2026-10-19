@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { assertFlag } from "@polaris/domain/billing/entitlements";
 import {
   normalizePublicProfile,
@@ -216,7 +215,7 @@ export async function savePublicCatalogProfile(
       throw new PublicCatalogVersionConflictError();
     }
     await recordTenantAuditEvent(transaction, identity, {
-      entityId: randomUUID(),
+      entityId: identity.organizationId,
       entityType: "public_catalog",
       eventType: existing
         ? "public_catalog.profile_updated"
@@ -286,7 +285,7 @@ export async function setPublicCatalogPublished(
     throw new PublicCatalogVersionConflictError();
   }
   await recordTenantAuditEvent(transaction, identity, {
-    entityId: randomUUID(),
+    entityId: identity.organizationId,
     entityType: "public_catalog",
     eventType: input.published
       ? "public_catalog.published"

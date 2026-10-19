@@ -22,7 +22,7 @@ Este documento é a fonte de verdade para **como** a venda, o cancelamento, a de
 | `sale_returns` e `sale_return_items` | Registro de cada devolução e suas linhas, com quantidade devolvida e quantidade reposta separadas. |
 | `stock_movements` | Ledger de estoque append-only; as vendas e suas compensações aparecem como movimentos de tipo `sale`, `sale_cancellation` e `sale_return`, identificados por comando e posição. |
 | `inventory_balances` | Saldo e custo médio por variante e organização, atualizados junto com o movimento correspondente. |
-| `tenant_audit_event` | Auditoria transacional, apenas de inserção, com códigos limitados e identificador opaco da entidade. |
+| `tenant_audit_event` | Auditoria transacional, apenas de inserção (imutável por gatilho), com códigos limitados, classe do evento (`security` ou `operational`) e identificador opaco da entidade; sobrevive ao purge da organização e sai só por prazo (ADR 0081, emenda de 19/10/2026). |
 
 Todas as tabelas de domínio têm `FORCE ROW LEVEL SECURITY` com policy por organização, e as chaves estrangeiras são compostas com a organização.
 

@@ -34,7 +34,7 @@ O ADR de retenção por classe de dado ([ADR 0079](0079-retencao-por-classe-de-d
 - **O instante diz quando** a exclusão foi feita, não **por quê**: o caso de privacidade só entra quando o comando de anonimização passar a conhecê-lo (o campo existe e é nulo).
 - **A reaplicação do purge depende do PR107** (idempotência do purge e varredura do R2); este PR só deixa o formato do tombstone pronto para ele.
 - **Reaplicar uma anonimização é um `UPDATE` privilegiado** do dono do banco (o runtime do tenant não consegue, e nem deve), feito à mão, com o mesmo efeito do comando: nome fixo, sem contatos nem observações, arquivado, `anonymized_at`, versão +1. Os aparelhos aprendem pelo log de mudanças como em qualquer alteração; um aparelho que sincronizou com o ambiente perdido pode ter estado mais novo que o restaurado, o que é um problema geral do restore, não do ledger.
-- **`TRUNCATE` e o dono do banco.** Nenhum papel de aplicação trunca a tabela, mas o dono do banco (que ignora RLS na Neon) pode; é o acesso de quem opera o banco, igual ao das outras trilhas.
+- **`TRUNCATE` e o dono do banco.** Nenhum papel de aplicação trunca a tabela. Desde a emenda de 19/10/2026 do ADR 0081 um gatilho `ENABLE ALWAYS` recusa `UPDATE`, `DELETE` e `TRUNCATE` até do dono do banco; o DDL do dono (desligar o gatilho) continua possível, é o acesso de quem opera o banco, igual ao das outras trilhas.
 - **Sem tela, sem aviso, sem listagem na API.** O ledger é um registro de banco para o restore; ninguém o lê pelo aplicativo.
 
 ## Emenda (ADR 0081)

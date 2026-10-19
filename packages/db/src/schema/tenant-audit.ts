@@ -1,3 +1,7 @@
+import {
+  tenantAuditEventCheckSql,
+  tenantAuditEventClassSql,
+} from "@polaris/domain/privacy/tenant-audit-events";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -12,6 +16,11 @@ import { organizations } from "./organization";
 
 const runtimeRole = "polaris_pr11_runtime";
 
+/**
+ * The audit of the tenant survives the purge of the organization (ADR 0081, amended 19/10/2026): the foreign key
+ * restricts, and the triggers of migration 0080 refuse UPDATE, DELETE and TRUNCATE (only the retention function
+ * removes an expired row). `event_type` is a registered type (a CHECK built from the domain registry).
+ */
 export const tenantAuditEvents = pgTable(
   "tenant_audit_event",
   {
@@ -22,10 +31,14 @@ export const tenantAuditEvents = pgTable(
     entityId: text("entity_id").notNull(),
     entityType: text("entity_type").notNull(),
     eventType: text("event_type").notNull(),
+    // the class of the type in the domain registry (ADR 0081, amended 19/10/2026): it decides the retention
+    eventClass: text("event_class")
+      .notNull()
+      .generatedAlwaysAs(sql.raw(tenantAuditEventClassSql())),
     id: uuid("id").defaultRandom().primaryKey(),
     organizationId: text("organization_id")
       .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+      .references(() => organizations.id, { onDelete: "restrict" }),
     requestId: uuid("request_id"),
   },
   (table) => [
@@ -36,6 +49,10 @@ export const tenantAuditEvents = pgTable(
     check(
       "tenant_audit_event_type_format",
       sql`char_length(${table.eventType}) BETWEEN 1 AND 128 AND ${table.eventType} ~ '^[a-z][a-z0-9_.-]*$'`
+    ),
+    check(
+      "tenant_audit_event_type_registered",
+      sql.raw(tenantAuditEventCheckSql(`"tenant_audit_event"."event_type"`))
     ),
     check(
       "tenant_audit_entity_type_format",

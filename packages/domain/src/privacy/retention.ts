@@ -19,7 +19,8 @@
 export const RETENTION_CLASSES = Object.freeze([
   "media_staging_marker",
   "media_removed_image",
-  "tenant_audit_events",
+  "tenant_audit_security",
+  "tenant_audit_operational",
   "product_media",
   "customers",
   "sales_records",
@@ -148,6 +149,18 @@ const DAY_MS = 24 * HOUR_MS;
 
 const TO_CONFIRM = "a confirmar pelo responsável";
 
+/**
+ * The proposed periods of the tenant's audit (ADR 0081, amended 19/10/2026; the legal review is pending). They are
+ * proposals, so no code reads them as an approved period: the database function `expire_tenant_audit_events`
+ * holds the same numbers, and the audit gate proves its behavior at their edges.
+ */
+export const TENANT_AUDIT_RETENTION = Object.freeze({
+  /** `operational`: counted from the purge of the organization (`organization_purges.purged_at`). */
+  operational: Object.freeze({ from: "organization_purge", months: 6 }),
+  /** `security`: counted from the event (`created_at`). */
+  security: Object.freeze({ from: "event", months: 60 }),
+} as const);
+
 export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
   {
     basis: "decisao",
@@ -176,14 +189,26 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "aprovada",
   },
   {
-    approvedOn: "2026-10-18",
     basis: "decisao",
-    class: "tenant_audit_events",
-    data: ["tenant_audit_event"],
-    period: { kind: "until_organization_purge" },
-    rule: "Sem expiração automática. O Polaris é operador desses dados (LGPD) e a obrigação fiscal de guardá-los é do cliente, que tem a exportação: saem no purge ao fim do prazo de encerramento de 90 dias (decisão de 19/10/2026), salvo legal hold (decisão do responsável de 18/10/2026, ADR 0081).",
-    sources: ["ADR 0006", "ADR 0081", "docs/business-rules/privacy.md"],
-    status: "aprovada",
+    class: "tenant_audit_security",
+    data: ["tenant_audit_event (event_class = 'security')"],
+    legalReview: "pending",
+    period: { kind: "undecided" },
+    proposed: `Sobrevive ao purge da organização e sai só por prazo: ${TENANT_AUDIT_RETENTION.security.months} meses (5 anos) contados do evento (proposto em 19/10/2026; ${TO_CONFIRM} a validação jurídica do prazo).`,
+    rule: "A auditoria do tenant de classe `security` (exportações de dados, anonimização de cliente, concessões offline, vida da organização, publicação no catálogo público e, quando existirem, os eventos de membros) nunca sai no purge: a linha é imutável (gatilho ENABLE ALWAYS) e a chave estrangeira da organização é restritiva. A remoção por prazo é a função `expire_tenant_audit_events`, do papel `polaris_retention_owner`, que pula a organização sob legal hold; nenhum job a chama ainda (decisão do responsável de 19/10/2026, ADR 0081 emendado).",
+    sources: ["ADR 0006", "ADR 0079", "ADR 0081"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "tenant_audit_operational",
+    data: ["tenant_audit_event (event_class = 'operational')"],
+    legalReview: "pending",
+    period: { kind: "undecided" },
+    proposed: `Sobrevive ao purge da organização e sai por prazo: ${TENANT_AUDIT_RETENTION.operational.months} meses contados do purge dela, e nunca antes, enquanto a organização existir (proposto em 19/10/2026; ${TO_CONFIRM} a validação do prazo).`,
+    rule: "A auditoria do tenant de classe `operational` (o resto do dia a dia: catálogo, vendas, estoque, despesas, metas) também sobrevive ao purge, imutável. Enquanto a organização não foi purgada nada dela vence; depois do purge a função `expire_tenant_audit_events` apaga as linhas quando passam 6 meses de `organization_purges.purged_at`, e pula a organização sob legal hold. Nenhum job a chama ainda (decisão do responsável de 19/10/2026, ADR 0081 emendado).",
+    sources: ["ADR 0006", "ADR 0079", "ADR 0081"],
+    status: "proposta",
   },
   {
     approvedOn: "2026-10-18",
@@ -421,9 +446,10 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     basis: "decisao",
     class: "deletion_ledger",
     data: ["deletion_ledger (tombstones de anonimização e de purge)"],
+    legalReview: "pending",
     period: { kind: "undecided" },
-    proposed: `Sobrevive à organização, sem expiração automática e sem job; não expira antes da janela de restauração mais longa do provedor (${TO_CONFIRM}, junto da janela de backup).`,
-    rule: "O purge da organização não apaga o ledger; enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir. Nenhum papel o apaga hoje, e uma remoção futura exige uma migration revisada.",
+    proposed: `Sobrevive à organização, por 5 anos (proposto em 19/10/2026), sem job; não expira antes da janela de restauração mais longa do provedor (${TO_CONFIRM} a validação jurídica e, junto da janela de backup, o prazo).`,
+    rule: "O purge da organização não apaga o ledger; enquanto um backup anterior ao tombstone puder ser restaurado, o tombstone precisa existir. Um gatilho ENABLE ALWAYS recusa UPDATE, DELETE e TRUNCATE (migration 0080), e nenhum papel o apaga: a remoção por prazo exige uma migration revisada.",
     sources: ["ADR 0080", "docs/business-rules/privacy.md"],
     status: "proposta",
   },

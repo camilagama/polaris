@@ -9,10 +9,16 @@ import {
   PURGE_BILLING_FACT_KEYS,
   PURGE_DELETE_ORDER,
   PURGE_REMOVED_TEXT,
+  PURGE_SURVIVING_TABLES,
 } from "./purge-datasets";
 
 const migration = readFileSync(
   new URL("../drizzle/0075_organization_purge.sql", import.meta.url),
+  "utf8"
+);
+// the audit leaves the purge in this one (ADR 0081, amended 19/10/2026): it redefines the function
+const auditMigration = readFileSync(
+  new URL("../drizzle/0080_auditoria_sobrevive_ao_purge.sql", import.meta.url),
   "utf8"
 );
 const billingStore = readFileSync(
@@ -21,17 +27,19 @@ const billingStore = readFileSync(
 );
 
 const quoted = /'([^']+)'/g;
+const GRANT_AUDIT_TO_PURGE_OWNER =
+  /GRANT[^;]*tenant_audit_event[^;]*TO polaris_purge_owner/;
 
 /** The quoted names of a SQL `ARRAY[...]` that starts with the given declaration. */
-function sqlArrays(declaration: string): string[][] {
+function sqlArrays(declaration: string, source = migration): string[][] {
   const arrays: string[][] = [];
-  let from = migration.indexOf(declaration);
+  let from = source.indexOf(declaration);
   while (from !== -1) {
     const start = from + declaration.length;
-    const end = migration.indexOf("]", start);
-    const body = migration.slice(start, end);
+    const end = source.indexOf("]", start);
+    const body = source.slice(start, end);
     arrays.push([...body.matchAll(quoted)].map((match) => match[1] ?? ""));
-    from = migration.indexOf(declaration, end);
+    from = source.indexOf(declaration, end);
   }
   return arrays;
 }
@@ -98,15 +106,30 @@ describe("the purge of the billing facts", () => {
 });
 
 describe("the purge in the migration", () => {
-  it("deletes the tables of the list, in its order, in the grants and in the function", () => {
-    expect(sqlArrays("deleted_tables text[] := ARRAY[")).toEqual([
-      [...PURGE_DELETE_ORDER],
-      [...PURGE_DELETE_ORDER],
-    ]);
+  it("deletes the tables of the list, in its order, in the function of the audit migration", () => {
+    expect(
+      sqlArrays("deleted_tables text[] := ARRAY[", auditMigration)
+    ).toEqual([[...PURGE_DELETE_ORDER]]);
+  });
+
+  it("does not delete the audit of the tenant: the list has no `tenant_audit_event` and the migration takes the table away from the purge role", () => {
+    expect(PURGE_DELETE_ORDER).not.toContain("tenant_audit_event");
+    expect(Object.keys(PURGE_SURVIVING_TABLES)).toContain("tenant_audit_event");
+    expect(auditMigration).toContain(
+      "REVOKE SELECT, DELETE ON TABLE public.tenant_audit_event FROM polaris_purge_owner;"
+    );
+    // the grants of 0075 still held the table (that is what the revoke undoes); the audit migration never grants it back
+    expect(
+      sqlArrays("deleted_tables text[] := ARRAY[").every((list) =>
+        list.includes("tenant_audit_event")
+      )
+    ).toBe(true);
+    expect(auditMigration).not.toMatch(GRANT_AUDIT_TO_PURGE_OWNER);
   });
 
   it("writes the same fixed text it declares in place of the free text", () => {
     expect(migration).toContain(`'${PURGE_REMOVED_TEXT}'`);
     expect(migration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(11);
+    expect(auditMigration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(6);
   });
 });

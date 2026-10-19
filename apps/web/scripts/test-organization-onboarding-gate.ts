@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
+import { deleteOrganizationsWithAudit } from "../../../packages/db/scripts/teardown-support";
 import {
   CreateInitialOrganizationError,
   createInitialOrganization,
@@ -257,10 +258,7 @@ async function main() {
         ]),
       ];
       if (cleanupIds.length) {
-        await pool.query(
-          "DELETE FROM public.organizations WHERE id = ANY($1::text[])",
-          [cleanupIds]
-        );
+        await deleteOrganizationsWithAudit(pool, cleanupIds);
       }
       if (fixtureUserIds.length) {
         await pool.query(
