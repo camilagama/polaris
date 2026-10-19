@@ -137,6 +137,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: "não se aplica, sem usuários antes do deploy" (com a data) ou o caminho escolhido e quando foi feito.
 - Severidade WARN: proposta, pendente de decisão do responsável.
 
+### 18. Gate das funções do purge verde (BLOCK)
+
+- Critério: o gate `purge-functions` (suítes `ci` e `gate10`, `packages/db/scripts/verify-purge-functions-gate.ts`) passa no SHA candidato, com as migrations replayadas do zero. Ele lê `pg_get_functiondef` de `admin_schedule_organization_purge`, `organization_purge_blocker` e `purge_organization_data` e confere: o escopo `whole_organization` contra `ORGANIZATION_PURGE_REQUIRED_SCOPE`, o prazo contra `ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS`, as tabelas apagadas (nomes e ordem) contra `PURGE_DELETE_ORDER` e as chaves do fato de cobrança contra `PURGE_BILLING_FACT_KEYS`. Ele confere também que cada lista é lida (o laço sobre `deleted_tables`, a chamada de `organization_purge_blocker`, as duas conferências do escopo) e que nenhum outro `DELETE` existe. Motivo: duas migrations que recriam a mesma função não dão conflito no git, e a última sobrescreve a anterior sem aviso (a 0079 e a 0080 recriaram `admin_schedule_organization_purge` com corpos diferentes, e o prazo de 90 dias e o escopo sem a auditoria só foram preservados por conferência manual do diff). O gate também é obrigatório em todo PR que recrie uma das três funções.
+- Evidência: `"status": "passed"` do gate `purge-functions` no SHA candidato (no CI, ou na execução do item 4). Não vale rodar o gate num banco que não seja o das migrations do SHA.
+- Severidade BLOCK: proposta, pendente de decisão do responsável (os revisores pediram o gate como obrigatório antes de qualquer PR que recrie uma das três funções).
+
 ## Veredito
 
 Ordem de decisão:
@@ -169,7 +175,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 14 BLOCK e 3 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 15 BLOCK e 3 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

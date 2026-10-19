@@ -1773,6 +1773,15 @@ Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho apro
 | Gate | Concluído | `audit-retention` em `gates:ci`: FK `confdeltype = 'r'`, `tgenabled = 'A'`, recusa sob `session_replication_role = replica`, `CHECK` igual ao domínio, o purge mantém toda a auditoria e o expurgo apaga só o vencido de cada classe e respeita o legal hold. `organization-purge` e `deletion-ledger` ajustados. |
 | Pendências | Abertas | Revisão jurídica dos prazos (bloqueia a promoção a produção); nenhum job de expurgo; HMAC do ator no desenho da exclusão de usuário; expurgo de `auth_security_audit_event`, `platform_audit_events` e `deletion_ledger` exige função própria em migration futura. |
 
+### Fase 10I — gate de regressão das funções do purge (t075; sem migration)
+
+Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos diferentes e o git não acusou conflito; a regressão foi evitada à mão, por diff.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Gate | Concluído | `purge-functions` em `gates:ci` e `gate10` (`packages/db/scripts/verify-purge-functions-gate.ts`, comparação em `packages/db/src/purge-function-definitions.ts`): lê `pg_get_functiondef` das três funções e confere `whole_organization`, o prazo de 90 dias, as tabelas apagadas (nomes e ordem), as chaves do fato de cobrança e o único `DELETE`. Falha provada por mutação (30 dias, `audit_logs` de volta, tabela fora da lista) no banco e nos testes unitários, que também leem as migrations sem banco. |
+| Checklist de release | Concluído | Item 18 de [release-checklist.md](../docs/runbooks/release-checklist.md): o gate verde no SHA candidato (BLOCK, severidade proposta). |
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
@@ -1787,3 +1796,11 @@ Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-e
 | Deploy automático | Pendente | O workflow vem num PR próprio e fica desligado (variável `STAGING_DEPLOY_ENABLED`) até o responsável criar os recursos e ligá-lo; o ADR 0096 (expand/contract), pré-requisito, já está na `main`. |
 | Filas | Concluído | Os nomes seguem `polaris-<fila>-<ambiente>` (`-local`, `-staging`), que o consumidor e a DLQ reconhecem; `apps/web/src/server/queue/queue-names.test.ts` confere os nomes de cada ambiente do `wrangler.jsonc` contra o consumidor. |
 | Limites | Registrados | A allowlist de login do staging vive no Google (modo Testing), fora do repositório; uma allowlist no código é acompanhamento proposto. O Admin não é provado no staging (item 16 dele fica para o go-live); o item 14 deixa as miniaturas do staging em fallback até a virada do mês; o seed sintético e o script de criação dos logins ficam para depois (área db). |
+
+### Cobertura do `createRpcRuntimeApi` em navegador
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| e2e do `createRpcRuntimeApi` | Concluído | `apps/web/e2e/offline-runtime-api.e2e.ts`: o app real com o runtime ligado e o servidor interceptado (`page.route`), sem API falsa no lugar do `createRpcRuntimeApi`. Cenários: get-session 401 com duas operações na fila, `push` 401 (lease e coleções apagados, fila guardada), get-session 429 e lento, `device.check` 404 e 500 (com e sem lease próprio) e `push` com `session_changed`. Entra na matriz do [runbook do Gate 5](../docs/runbooks/gate-5-offline.md) (linha "API do runtime em navegador") e roda no job de navegador do CI. |
+| Runbook | Concluído | A frase sobre `device.check` e `session_changed` na prova final foi corrigida (a suíte de aparelho real não os carrega) e o checklist manual ganhou o item "Sessão trocada". |
+| Limites | Registrados | O servidor é interceptado, não o real: não prova API, Neon nem RLS. get-session 401 para o runtime e esquece o usuário lembrado, mas não apaga o lease nem as coleções (só a recusa do servidor a um comando ou ao lease apaga); o teste registra o comportamento atual. |
