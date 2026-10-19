@@ -24,6 +24,11 @@ const adminMessage =
 const browserMessage =
   "Browser code must not import the database, the server layer or server-only libraries.";
 
+// Biome's category for each kind of case: the run checks the rule and the message of every
+// diagnostic, so a different rule that happens to print the same text cannot satisfy a fixture.
+const importRule = "lint/style/noRestrictedImports";
+const consoleRule = "lint/suspicious/noConsole";
+
 const forbiddenImport = (specifier, extra = "") =>
   `import ${extra}${JSON.stringify(specifier)};\nexport const forbiddenImport = 1;\n`;
 
@@ -99,6 +104,7 @@ const cases = [
   ["pg", ["apps", "admin", "src"], adminMessage],
 ].map(([specifier, workspace, expected]) => ({
   expected,
+  rule: importRule,
   source: forbiddenImport(specifier),
   specifier,
   workspace,
@@ -120,8 +126,9 @@ const consoleRejected = [
   ["packages", "observability", "src"],
 ].map((workspace) => ({
   allowed: false,
-  expected: "noConsole",
+  expected: "Don't use console.",
   file: ".ts",
+  rule: consoleRule,
   source: consoleSource,
   specifier: "console.log",
   workspace,
@@ -134,8 +141,9 @@ const consoleAllowed = [
   [["packages", "ui", "src"], ".ts"],
 ].map(([workspace, file]) => ({
   allowed: true,
-  expected: "noConsole",
+  expected: "Don't use console.",
   file,
+  rule: consoleRule,
   source: consoleSource,
   specifier: "console.log",
   workspace,
@@ -146,6 +154,7 @@ const evlogMessage =
 const evlogCase = (workspace, allowed) => ({
   allowed,
   expected: evlogMessage,
+  rule: importRule,
   source: forbiddenImport("evlog"),
   specifier: "evlog",
   workspace,
@@ -159,7 +168,26 @@ const evlogRejected = [
   ["packages", "billing", "src"],
   ["packages", "http-security", "src"],
 ].map((workspace) => evlogCase(workspace, false));
+// Controls: a harmless import in the same restricted folders, linted in the same run as the forbidden
+// ones. The rule must stay silent on it, or "rejected" above would only mean "flags every file".
+const controlImport = (workspace, expected) => ({
+  allowed: true,
+  expected,
+  rule: importRule,
+  source: forbiddenImport("./neighbour-module"),
+  specifier: "./neighbour-module",
+  workspace,
+});
+const importControls = [
+  controlImport(["packages", "domain", "src"], domainMessage),
+  controlImport(["packages", "contracts", "src"], contractsMessage),
+  controlImport(["packages", "db", "src"], dbMessage),
+  controlImport(["apps", "web", "src", "lib"], browserMessage),
+  controlImport(["apps", "catalog", "src"], catalogMessage),
+  controlImport(["apps", "admin", "src"], adminMessage),
+];
 cases.push(
+  ...importControls,
   ...consoleRejected,
   ...consoleAllowed,
   ...evlogRejected,
@@ -201,7 +229,7 @@ const fixtures = cases.map((testCase, position) => ({
   ),
 }));
 
-/** Biome's diagnostics grouped by repo-relative file: "category message" and whether it is an error. */
+/** Biome's diagnostics grouped by repo-relative file: rule, message and whether it is an error. */
 function lintAll(files) {
   const result = spawnSync(
     biome,
@@ -220,16 +248,18 @@ function lintAll(files) {
   let report;
   try {
     report = JSON.parse(json);
-  } catch {
+  } catch (error) {
     throw new Error(
-      `Biome did not print a JSON report: ${result.stdout}${result.stderr}`
+      `Biome did not print a JSON report: ${result.stdout}${result.stderr}`,
+      { cause: error }
     );
   }
   const byFile = new Map(files.map((file) => [file, []]));
   for (const diagnostic of report.diagnostics) {
     byFile.get(diagnostic.location?.path)?.push({
       error: diagnostic.severity === "error",
-      text: `${diagnostic.category} ${diagnostic.message}`,
+      message: diagnostic.message,
+      rule: diagnostic.category,
     });
   }
   return byFile;
@@ -250,7 +280,11 @@ try {
   for (const fixture of fixtures) {
     const relative = path.relative(root, fixture.path);
     const lines = diagnostics.get(relative);
-    const output = lines.map((line) => line.text).join("\n");
+    const output = lines
+      .map((line) => `${line.rule} ${line.message}`)
+      .join("\n");
+    const matches = (line) =>
+      line.rule === fixture.rule && line.message.includes(fixture.expected);
 
     // Every fixture breaks the file-name rule (the `__` prefix), so a file with no diagnostic at all
     // was not linted (ignored, or dropped from the run) and its "allowed" verdict would be vacuous.
@@ -261,15 +295,13 @@ try {
     }
 
     if (fixture.allowed) {
-      if (output.includes(fixture.expected)) {
+      if (lines.some(matches)) {
         throw new Error(
           `Biome rejected "${fixture.specifier}" in ${relative}, ` +
             `where it is allowed: ${output}`
         );
       }
-    } else if (
-      !lines.some((line) => line.error && line.text.includes(fixture.expected))
-    ) {
+    } else if (!lines.some((line) => line.error && matches(line))) {
       throw new Error(
         `Biome did not reject the forbidden "${fixture.specifier}" in ` +
           `${relative}: ${output}`
