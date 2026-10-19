@@ -328,34 +328,40 @@ describe("approved periods", () => {
   it("count calendar months, moving a day that does not exist to the next month", () => {
     const expiry = (from: string) =>
       retentionExpiry("auth_security_audit", new Date(from)).toISOString();
-    // 31/08 + 6 months: February has no 31st, so it ends in March, never earlier than six months
-    expect(expiry("2026-08-31T10:00:00.000Z")).toBe("2027-03-03T10:00:00.000Z");
-    // in a leap year February has 29 days
-    expect(expiry("2027-08-31T10:00:00.000Z")).toBe("2028-03-02T10:00:00.000Z");
-    // an ordinary day keeps its day and its time; the year rolls over
-    expect(expiry("2026-10-18T23:59:59.000Z")).toBe("2027-04-18T23:59:59.000Z");
-    expect(expiry("2026-12-31T00:00:00.000Z")).toBe("2027-07-01T00:00:00.000Z");
+    // 29/02 of a leap year + 12 months: the next February has no 29th, so it ends in March
+    expect(expiry("2028-02-29T10:00:00.000Z")).toBe("2029-03-01T10:00:00.000Z");
+    // an ordinary day keeps its day and its time
+    expect(expiry("2026-10-18T23:59:59.000Z")).toBe("2027-10-18T23:59:59.000Z");
+    expect(expiry("2026-12-31T00:00:00.000Z")).toBe("2027-12-31T00:00:00.000Z");
   });
 
-  it("keep the access record six calendar months, as the Marco Civil asks", () => {
+  it("keep the security audit of authentication 12 calendar months, by decision, apart from the 6 months of the access record", () => {
     const policy = retentionPolicy("auth_security_audit");
     expect(policy.status).toBe("aprovada");
-    expect(policy.period).toEqual({ kind: "calendar_months", months: 6 });
+    expect(policy.basis).toBe("decisao");
+    expect(policy.legalSources).toBeUndefined();
+    expect(policy.period).toEqual({ kind: "calendar_months", months: 12 });
+    expect(policy.rule).toContain("12 meses");
     expect(() => approvedRetention("auth_security_audit")).toThrow(
       RetentionNotApprovedError
     );
+    // 29/02 of a leap year plus 12 months: 2027 has no 29th of February, so it ends in March
     expect(
       retentionExpiry(
         "auth_security_audit",
-        new Date("2026-08-31T10:00:00.000Z")
+        new Date("2028-02-29T10:00:00.000Z")
       ).toISOString()
-    ).toBe("2027-03-03T10:00:00.000Z");
+    ).toBe("2029-03-01T10:00:00.000Z");
     expect(
       retentionExpiry(
         "auth_security_audit",
         new Date("2026-10-18T10:00:00.000Z")
       ).toISOString()
-    ).toBe("2027-04-18T10:00:00.000Z");
+    ).toBe("2027-10-18T10:00:00.000Z");
+    // the access record keeps the Marco Civil minimum of 6 months; the audit is no longer the one that carries it
+    expect(retentionPolicy("auth_access_log").period).toMatchObject({
+      months: 6,
+    });
   });
 
   it("keep the access log six calendar months plus 30 days on the law, pending its legal review", () => {
@@ -388,10 +394,12 @@ describe("approved periods", () => {
     ).toBe("2027-05-18T10:00:00.000Z");
   });
 
-  it("leave the provider backups to the provider's own rotation", () => {
+  it("leave the provider backups to the provider's own rotation, in a window of 35 days", () => {
     const policy = retentionPolicy("provider_backups");
     expect(policy.status).toBe("aprovada");
     expect(policy.period).toEqual({ kind: "provider_rotation" });
+    // the window is only text (the provider rotates, Polaris does not count it): lock the number
+    expect(policy.rule).toContain("A janela de backup é de 35 dias");
     expect(() => retentionExpiry("provider_backups", new Date())).toThrow(
       RetentionNotApprovedError
     );
