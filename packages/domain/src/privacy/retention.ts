@@ -41,6 +41,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "auth_sessions",
   "devices",
   "auth_verification",
+  "auth_login_lock",
   "auth_security_audit",
   "auth_access_log",
   "platform_audit_and_support",
@@ -106,6 +107,7 @@ export const RESOLVED_RETENTION_BLOCKERS: readonly RetentionBlocker[] =
 
 /** The purge jobs that already exist; each one serves exactly one approved class. */
 export type RetentionPurgeJobId =
+  | "auth.login_lock_expiry"
   | "media.removed_cleanup"
   | "media.staging_reconcile"
   | "outbox.processing_expiry"
@@ -437,6 +439,20 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "aprovada",
   },
   {
+    approvedOn: "2026-10-19",
+    basis: "decisao",
+    class: "auth_login_lock",
+    data: [
+      "auth_login_lock (contador de falhas de senha por e-mail digitado, só HMAC do e-mail normalizado)",
+    ],
+    job: "auth.login_lock_expiry",
+    period: { kind: "duration", ms: DAY_MS },
+    review: USER_APPROVED_REVIEW,
+    rule: "O bloqueio da entrada por senha (5 falhas em 15 minutos travam por 15 minutos) guarda uma linha por e-mail digitado, exista a conta ou não, e ela não tem uso depois de 1 dia sem mudar (`updated_at`): é apagada pelo job horário `auth.login_lock_expiry` (decisão do usuário de 19/10/2026, ADR 0100). A chave é o HMAC-SHA-256 do e-mail normalizado com escopo e `BETTER_AUTH_SECRET`; a tabela não guarda o e-mail, o ID do usuário nem o IP, então não tem dado pessoal legível e não entra no purge da organização. A limpeza da própria chave na tentativa seguinte é oportunista; o prazo de 1 dia vale a todas.",
+    sources: ["ADR 0100", "ADR 0079", "docs/business-rules/authentication.md"],
+    status: "aprovada",
+  },
+  {
     approvedOn: "2026-10-18",
     basis: "decisao",
     class: "auth_security_audit",
@@ -567,6 +583,7 @@ export const RETENTION_PURGE_JOBS: readonly {
   class: RetentionClass;
   id: RetentionPurgeJobId;
 }[] = Object.freeze([
+  { class: "auth_login_lock", id: "auth.login_lock_expiry" },
   { class: "media_staging_marker", id: "media.staging_reconcile" },
   { class: "media_removed_image", id: "media.removed_cleanup" },
   { class: "data_exports", id: "privacy.data_export_expiry" },
