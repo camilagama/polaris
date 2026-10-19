@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RECENT_LOGIN_MINUTES } from "../../offline/runtime/devices-model";
 import {
   FRESH_SESSION_MAX_AGE_MILLISECONDS,
   isSessionFresh,
@@ -10,6 +11,12 @@ const now = Date.parse("2026-10-19T12:00:00.000Z");
 describe("isSessionFresh", () => {
   it("allows 15 minutes of freshness", () => {
     expect(FRESH_SESSION_MAX_AGE_MILLISECONDS).toBe(15 * minute);
+  });
+
+  it("is the window the devices screen words in its text", () => {
+    expect(RECENT_LOGIN_MINUTES * minute).toBe(
+      FRESH_SESSION_MAX_AGE_MILLISECONDS
+    );
   });
 
   it("is fresh 14 minutes after sign-in", () => {
