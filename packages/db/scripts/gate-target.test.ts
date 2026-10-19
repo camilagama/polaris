@@ -1,12 +1,18 @@
 import { createServer, type Server } from "node:net";
+import type { Client } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import { disposableHostPattern, isAllowedGateHost } from "./gate-hosts";
-import { connectToGateTarget, validateGateTarget } from "./gate-target";
+import {
+  assertDisposableEnvironment,
+  connectToGateTarget,
+  validateGateTarget,
+} from "./gate-target";
 
 const branch = "pr0-ci-gate";
 const database = "polaris_gate";
 const neonDirect = "ep-cool-wave-a5b6c7d8.c-2.sa-east-1.aws.neon.tech";
 const refused = /direct disposable Neon endpoint/;
+const protectedRefusal = /protected environment/;
 
 const urlFor = (host: string, port = 5432) =>
   `postgresql://owner:secret@${host}:${port}/${database}`;
@@ -181,5 +187,77 @@ describe("connectToGateTarget", () => {
       })
     ).rejects.not.toThrow(refused);
     expect(connections()).toBe(1);
+  });
+});
+
+describe("the environment marker of the target", () => {
+  /** A client that answers the marker query with the given values and records its calls. */
+  function fakeClient(current: string | null, stored: string | null = null) {
+    const calls: string[] = [];
+    const client = {
+      connect: () => {
+        calls.push("connect");
+        return Promise.resolve();
+      },
+      end: () => {
+        calls.push("end");
+        return Promise.resolve();
+      },
+      query: (sql: string) => {
+        calls.push(sql.includes("polaris.environment") ? "marker" : "other");
+        return Promise.resolve({ rows: [{ current, stored }] });
+      },
+    };
+    return { calls, client: client as unknown as Client };
+  }
+
+  const target = { branch, ci: true, database, url: urlFor("localhost") };
+
+  for (const value of ["production", "staging", "restore-drill"]) {
+    it(`refuses a database marked '${value}' and closes the connection`, async () => {
+      const { calls, client } = fakeClient(value);
+      await expect(connectToGateTarget(target, () => client)).rejects.toThrow(
+        protectedRefusal
+      );
+      expect(calls).toEqual(["connect", "marker", "end"]);
+    });
+
+    it(`refuses '${value}' when only the stored marker says so`, async () => {
+      const { client } = fakeClient("", value);
+      await expect(assertDisposableEnvironment(client)).rejects.toThrow(
+        protectedRefusal
+      );
+    });
+  }
+
+  it("refuses the marker with other case or spaces", async () => {
+    await expect(
+      assertDisposableEnvironment(fakeClient(" Production ").client)
+    ).rejects.toThrow(protectedRefusal);
+  });
+
+  it("allows an empty or missing marker (the disposable branch)", async () => {
+    const markers = [
+      [null, null],
+      ["", null],
+      ["", ""],
+    ] as const;
+    const runs = await Promise.all(
+      markers.map(async ([current, stored]) => {
+        const { calls, client } = fakeClient(current, stored);
+        const connected = await connectToGateTarget(target, () => client);
+        return { admin: connected.admin, calls, client };
+      })
+    );
+    for (const { admin, calls, client } of runs) {
+      expect(admin).toBe(client);
+      expect(calls).toEqual(["connect", "marker"]);
+    }
+  });
+
+  it("allows a marker that is not a protected environment", async () => {
+    await expect(
+      assertDisposableEnvironment(fakeClient("gate").client)
+    ).resolves.toBeUndefined();
   });
 });

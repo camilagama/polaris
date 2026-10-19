@@ -28,6 +28,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 1. Criar o projeto Neon Free `polaris-staging` em `aws-sa-east-1`, com PostgreSQL 18, só a branch `main` e compute de 0,25 CU com autosuspend de 5 min.
 2. Com o dono (`neondb_owner`) e a URL **direta**, sem pooler:
    - `ALTER DATABASE neondb SET polaris.environment = 'staging';`
+     (o marcador também faz o executor dos gates recusar este banco: `connectToGateTarget` recusa `production`, `staging` e `restore-drill`, mesmo que alguém aponte um gate para a URL direta daqui.)
    - `CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;` (o papel de tenant vive fora das migrations, como no CI).
 3. Aplicar as migrations do zero, sempre com **a mesma variável** no verify e no migrate, para que uma URL errada não passe no verify e migre outro banco. A URL não é escrita na linha de comando (iria para o histórico do shell): `read -rs STAGING_MIGRATOR_DATABASE_URL && export STAGING_MIGRATOR_DATABASE_URL`, e então:
 

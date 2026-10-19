@@ -6,6 +6,18 @@
  * - Neon: a direct (non-pooled) endpoint of a disposable branch in São Paulo.
  * - Local: the Postgres service of the CI job, accepted only when `CI=true`
  *   (a developer machine never gets it).
+ *
+ * The host `postgres` (the service name of a future CI job that runs in a
+ * container) is NOT accepted today: the CI job runs on the runner and reaches
+ * its Postgres at `localhost`. If the CI moves to a container, add the service
+ * name to `localCiHosts` in a reviewed change, with the test of the list, and
+ * keep it CI-only like the others.
+ *
+ * A host on this list says nothing about the environment behind it: the Neon
+ * pattern also matches production. The executor (`run-gates.ts`, through
+ * `connectToGateTarget` in gate-target.ts) refuses a database whose
+ * `polaris.environment` marker is production, staging or restore-drill. The
+ * gates run by hand (`poc:*:verify`) do not go through it.
  */
 export const neonDisposableHostPattern =
   /^(?!.*pooler)ep-[a-z0-9-]+\.[a-z0-9-]+\.sa-east-1\.aws\.neon\.tech$/;
