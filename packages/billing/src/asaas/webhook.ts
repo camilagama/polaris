@@ -4,7 +4,7 @@ import {
   type UnresolvedProviderEvent,
 } from "../provider-port";
 import type { AsaasClient } from "./client";
-import { isAsaasEventId, isAsaasId, isPolarisReference } from "./ids";
+import { isAsaasEventId, isAsaasId, normalizeCheckoutId } from "./ids";
 import {
   asaasEventKind,
   mapAsaasCheckoutPaid,
@@ -12,6 +12,7 @@ import {
   mapAsaasSubscriptionEvent,
   pickAsaasPayment,
   pickAsaasSubscription,
+  subscriptionsOfCheckout,
 } from "./mapper";
 
 /**
@@ -25,8 +26,8 @@ import {
 
 /** What is read of a webhook body: IDs, the event name and its time. Nothing else. */
 export interface AsaasWebhookEnvelope {
-  /** The reference of a finished checkout (`CHECKOUT_PAID`), checked against the `pol_<uuid>` shape. */
-  checkoutReference: string | null;
+  /** The ID of a finished checkout (`CHECKOUT_PAID`, `checkout.id`), checked against the UUID shape. */
+  checkoutId: string | null;
   /** True when the body's time was ahead of the clock and `occurredAt` was cut down to the present. */
   dateClamped: boolean;
   eventId: string;
@@ -127,14 +128,12 @@ export function readAsaasWebhook(
   const paymentId = nestedId(fields, "payment");
   const subscriptionId = nestedId(fields, "subscription");
   const { checkout } = fields;
-  const checkoutReference =
+  const checkoutId =
     typeof checkout === "object" && checkout !== null
-      ? (checkout as Record<string, unknown>).externalReference
+      ? (checkout as Record<string, unknown>).id
       : undefined;
   const envelope: AsaasWebhookEnvelope = {
-    checkoutReference: isPolarisReference(checkoutReference)
-      ? checkoutReference
-      : null,
+    checkoutId: normalizeCheckoutId(checkoutId),
     dateClamped,
     eventId: id,
     eventType: event,
@@ -146,7 +145,7 @@ export function readAsaasWebhook(
   };
   // an event that needs a resource must name one in the expected shape
   const needed = {
-    checkout: envelope.checkoutReference,
+    checkout: envelope.checkoutId,
     ignored: "",
     payment: envelope.paymentId,
     subscription: envelope.subscriptionId,
@@ -197,6 +196,10 @@ export async function resolveAsaasWebhook(
       const subscription = pickAsaasSubscription(
         await client.getSubscription(missing)
       );
+      if (subscription.checkoutSession === null) {
+        // no checkout ID, no organization: waits to be read again (AC-48)
+        return unresolved(envelope, subscription.id);
+      }
       return mapAsaasPaymentEvent({
         ...meta,
         eventType: envelope.eventType,
@@ -210,17 +213,22 @@ export async function resolveAsaasWebhook(
       const subscription = pickAsaasSubscription(
         await client.getSubscription(missing)
       );
+      if (subscription.checkoutSession === null) {
+        return unresolved(envelope, subscription.id);
+      }
       return mapAsaasSubscriptionEvent({ ...meta, subscription });
     }
     if (kind === "checkout") {
-      const reference = envelope.checkoutReference as string;
-      const subscriptions = (
-        await client.listSubscriptionsByReference(reference)
-      ).map(pickAsaasSubscription);
+      const checkoutId = envelope.checkoutId as string;
+      const subscriptions = subscriptionsOfCheckout(
+        await client.listSubscriptionsByCheckout(checkoutId),
+        checkoutId
+      );
       const subscription =
         subscriptions.find((entry) => !entry.deleted) ?? subscriptions[0];
       if (!subscription) {
-        return unresolved(envelope, reference);
+        // the checkout ID is the payer's page key: only its first block goes to the log
+        return unresolved(envelope, `checkout:${checkoutId.slice(0, 8)}`);
       }
       missing = subscription.id;
       const payments = (

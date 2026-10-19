@@ -7,7 +7,10 @@
 const asaasIdPattern = /^(pay|sub)_[A-Za-z\d]{1,64}$/;
 /** `evt_<hex>&<digits>` in the documentation; kept loose but bounded (the column holds 160). */
 const asaasEventIdPattern = /^evt_[A-Za-z\d&_-]{1,150}$/;
-/** The opaque reference Polaris gives a checkout: `pol_` and a UUID v4, lowercase. */
+/**
+ * The opaque reference Polaris still sends in the checkout's `externalReference`.
+ * The provider does not carry it to the subscription (S1.3), so no fact depends on it.
+ */
 const polarisReferencePattern =
   /^pol_[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/;
 
@@ -23,7 +26,20 @@ export function isAsaasEventId(value: unknown): value is string {
   return typeof value === "string" && asaasEventIdPattern.test(value);
 }
 
-export function isPolarisReference(value: unknown): value is string {
+/** The ID of a hosted checkout, which Asaas also writes in `checkoutSession` of its subscription and charges. */
+const checkoutIdPattern =
+  /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
+
+/** A checkout ID, lowercase (Asaas writes it so; the comparison never depends on case). */
+export function normalizeCheckoutId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const lower = value.toLowerCase();
+  return checkoutIdPattern.test(lower) ? lower : null;
+}
+
+function isPolarisReference(value: unknown): value is string {
   return typeof value === "string" && polarisReferencePattern.test(value);
 }
 

@@ -20,6 +20,14 @@ export interface ProviderBillingEvent {
   providerEventId: string;
   /** The subscription reference at the provider, exactly as `attachProvider` stored it. */
   providerRef: string;
+  /**
+   * The provider's own ID of the subscription this fact came from (Asaas `sub_`),
+   * when the provider has one. Extension point: the first matched fact is meant
+   * to store it next to `providerRef`, in a column that does not exist yet.
+   * TODO(PR 2, área db): add the additive column and store it on the first
+   * matched fact; until then the store ignores this field.
+   */
+  providerSubscriptionId?: string;
 }
 
 /**
@@ -35,7 +43,7 @@ export interface UnresolvedProviderEvent {
   /** The provider's time was ahead of the clock and was cut down to now: it never counts as recent. */
   occurredAtClamped?: true;
   providerEventId: string;
-  /** The ID of the resource that was not found (a charge, a subscription or a Polaris reference). */
+  /** The ID of the resource that was not found, or that does not carry the checkout ID (a charge, a subscription or a checkout). */
   resourceId: string;
 }
 
@@ -70,7 +78,11 @@ export interface PreparedSubscription {
   checkoutId: string;
   /** What the client needs to finish at the provider. Never logged. */
   handoff: CheckoutHandoff;
-  /** The reference every later fact carries; `attachProvider` stores it before the handoff is returned. */
+  /**
+   * The reference every later fact carries; `attachProvider` stores it before the
+   * handoff is returned. For Asaas it is the checkout's own ID, which the
+   * provider copies into the subscription and its first charge (`checkoutSession`).
+   */
   providerRef: string;
 }
 

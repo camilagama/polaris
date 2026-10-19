@@ -15,7 +15,7 @@ const SANDBOX_URL = "https://api-sandbox.asaas.com/v3";
 const PRODUCTION_URL = "https://api.asaas.com/v3";
 const PERSONAL_BODY =
   '{"errors":[{"description":"Cliente maria@example.com CPF 529.982.247-25 recusado"}]}';
-const REFERENCE = "pol_3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
+const CHECKOUT = "7a1d5c20-3b4e-4f60-9a8b-0c1d2e3f4a5b";
 
 interface Call {
   init: FetchInit;
@@ -388,28 +388,73 @@ describe("createAsaasClient ID checks", () => {
   it.each([
     "../",
     "pol_x",
-    `${REFERENCE}&includeDeleted=false`,
-    REFERENCE.toUpperCase(),
+    `${CHECKOUT}&includeDeleted=false`,
+    "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b/x",
     "",
-  ])("refuses the reference %j without calling fetch", async (reference) => {
+  ])("refuses the checkout ID %j without calling fetch", async (checkoutId) => {
     const { calls, fetch } = recorder(() => ok());
     await expect(
-      settled(() => clientWith(fetch).listSubscriptionsByReference(reference))
+      settled(() => clientWith(fetch).listSubscriptionsByCheckout(checkoutId))
     ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
     expect(calls).toHaveLength(0);
   });
 });
 
 describe("createAsaasClient lists", () => {
-  it("lists subscriptions by reference including the deleted ones", async () => {
-    const { calls, fetch } = recorder(() => ok(listPage(1, false)));
-    const items =
-      await clientWith(fetch).listSubscriptionsByReference(REFERENCE);
-    expect(items).toHaveLength(1);
+  const subscriptionsPage = (
+    sessions: (string | null)[],
+    hasMore: boolean
+  ): string =>
+    JSON.stringify({
+      data: sessions.map((checkoutSession, id) => ({
+        checkoutSession,
+        id: `s${id}`,
+      })),
+      hasMore,
+      object: "list",
+    });
+
+  it("lists subscriptions newest first, deleted ones included, and keeps only those of the checkout", async () => {
+    const { calls, fetch } = recorder(() =>
+      ok(subscriptionsPage([null, CHECKOUT.toUpperCase(), "other"], false))
+    );
+    const items = await clientWith(fetch).listSubscriptionsByCheckout(CHECKOUT);
+    expect(items).toEqual([
+      { checkoutSession: CHECKOUT.toUpperCase(), id: "s1" },
+    ]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(
-      `${SANDBOX_URL}/subscriptions?externalReference=${encodeURIComponent(REFERENCE)}&includeDeleted=true&limit=100&offset=0`
+      `${SANDBOX_URL}/subscriptions?includeDeleted=true&sort=dateCreated&order=desc&limit=100&offset=0`
     );
+  });
+
+  it("stops at the page where the checkout is found", async () => {
+    const { calls, fetch } = recorder((_call, index) =>
+      ok(subscriptionsPage(index === 0 ? [CHECKOUT] : ["other"], true))
+    );
+    await clientWith(fetch).listSubscriptionsByCheckout(CHECKOUT);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("reads on while the checkout is not found, and gives nothing when it is not there", async () => {
+    const { calls, fetch } = recorder((_call, index) =>
+      ok(subscriptionsPage(["other"], index < 2))
+    );
+    expect(
+      await clientWith(fetch).listSubscriptionsByCheckout(CHECKOUT)
+    ).toEqual([]);
+    expect(calls).toHaveLength(3);
+    expect(calls[2]?.url).toContain("offset=200");
+  });
+
+  it("is an error, never an empty answer, when the pages run out before the checkout shows", async () => {
+    const { calls, fetch } = recorder(() =>
+      ok(subscriptionsPage(["other"], true))
+    );
+    await expect(
+      settled(() => clientWith(fetch).listSubscriptionsByCheckout(CHECKOUT))
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls).toHaveLength(10);
   });
 
   it("lists the charges of a subscription", async () => {

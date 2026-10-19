@@ -19,12 +19,12 @@ import {
 } from "./mapper";
 import { createAsaasPort } from "./port";
 import {
+  CHECKOUT_ID,
   EVENT_ID,
   FAKE_CARD_TOKEN,
   FAKE_INVOICE_URL,
   FAKE_PAYER,
   PAYMENT_ID,
-  POLARIS_REF,
   paymentJson,
   SUBSCRIPTION_ID,
   subscriptionJson,
@@ -83,11 +83,11 @@ function fakeApi(
             .map((entry) => read(entry))
         ) as Promise<unknown[]>
     ),
-    listSubscriptionsByReference: vi.fn(
-      (reference: string) =>
-        answer(`subscriptions-by:${reference}`, () =>
+    listSubscriptionsByCheckout: vi.fn(
+      (checkoutId: string) =>
+        answer(`subscriptions-by:${checkoutId}`, () =>
           subscriptions
-            .filter((entry) => entry.externalReference === reference)
+            .filter((entry) => entry.checkoutSession === checkoutId)
             .map((entry) => read(entry))
         ) as Promise<unknown[]>
     ),
@@ -172,7 +172,7 @@ describe("the webhook envelope: only IDs, the event name and its time", () => {
     expect(
       readAsaasWebhook(JSON.stringify(webhookBody("PAYMENT_CONFIRMED")), clock)
     ).toEqual({
-      checkoutReference: null,
+      checkoutId: null,
       dateClamped: false,
       eventId: EVENT_ID,
       eventType: "PAYMENT_CONFIRMED",
@@ -228,10 +228,10 @@ describe("the webhook envelope: only IDs, the event name and its time", () => {
       ),
     ],
     [
-      "a checkout without a Polaris reference",
+      "a checkout without a checkout ID",
       JSON.stringify(
         webhookBody("CHECKOUT_PAID", {
-          checkout: { externalReference: "outra-coisa" },
+          checkout: { externalReference: "outra-coisa", id: "not-a-uuid" },
         })
       ),
     ],
@@ -367,7 +367,8 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
           type: "charge_succeeded",
         },
         providerEventId: EVENT_ID,
-        providerRef: POLARIS_REF,
+        providerRef: CHECKOUT_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -414,7 +415,8 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
       {
         fact: { occurredAt, type: "charge_failed" },
         providerEventId: EVENT_ID,
-        providerRef: POLARIS_REF,
+        providerRef: CHECKOUT_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -425,7 +427,8 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
       {
         fact: { occurredAt, periodEndsAt: monthlyEnd, type: "charge_refunded" },
         providerEventId: EVENT_ID,
-        providerRef: POLARIS_REF,
+        providerRef: CHECKOUT_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -477,7 +480,8 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
         {
           fact: { occurredAt, type: "subscription_cancelled" },
           providerEventId: EVENT_ID,
-          providerRef: POLARIS_REF,
+          providerRef: CHECKOUT_ID,
+          providerSubscriptionId: SUBSCRIPTION_ID,
         },
       ]);
       // a cancellation the subscription does not show is no fact
@@ -504,10 +508,7 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
       subscriptions: [subscriptionJson({ cycle: "YEARLY" })],
     });
     const body = {
-      checkout: {
-        externalReference: POLARIS_REF,
-        id: "c6d42a6f-0000-4000-8000-000000000001",
-      },
+      checkout: { id: CHECKOUT_ID },
       dateCreated: "2026-10-19 10:00:00",
       event: "CHECKOUT_PAID",
       id: EVENT_ID,
@@ -520,7 +521,8 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
           type: "trial_method_ready",
         },
         providerEventId: EVENT_ID,
-        providerRef: POLARIS_REF,
+        providerRef: CHECKOUT_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -535,7 +537,7 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
       ],
     });
     const body = {
-      checkout: { externalReference: POLARIS_REF },
+      checkout: { id: CHECKOUT_ID },
       dateCreated: "2026-10-26 10:00:00",
       event: "CHECKOUT_PAID",
       id: EVENT_ID,
@@ -586,24 +588,130 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
         })
       )
     ).toEqual([]);
+    // a charge that names another checkout than its subscription's is not trusted
     expect(
       await factsOf(
         webhookBody("PAYMENT_CONFIRMED"),
         fakeApi({
-          subscriptions: [subscriptionJson({ externalReference: null })],
-        })
-      )
-    ).toEqual([]);
-    expect(
-      await factsOf(
-        webhookBody("PAYMENT_CONFIRMED"),
-        fakeApi({
-          subscriptions: [
-            subscriptionJson({ externalReference: "pedido-123" }),
+          payments: [
+            paymentJson({
+              checkoutSession: "aaaaaaaa-0000-4000-8000-000000000009",
+            }),
           ],
         })
       )
     ).toEqual([]);
+  });
+});
+
+describe("S1.3: the fact is tied to the organization by the checkout ID, not by externalReference", () => {
+  const body = {
+    checkout: { id: CHECKOUT_ID },
+    dateCreated: "2026-10-26 10:00:00",
+    event: "CHECKOUT_PAID",
+    id: EVENT_ID,
+  };
+  const trial = () =>
+    fakeApi({
+      payments: [
+        paymentJson({
+          confirmedDate: null,
+          dateCreated: "2026-10-19",
+          originalDueDate: "2026-10-26",
+          status: "PENDING",
+        }),
+      ],
+    });
+
+  it("a subscription read back with externalReference null and a known checkoutSession gives the fact of that checkout", async () => {
+    const api = fakeApi({
+      subscriptions: [
+        subscriptionJson({
+          checkoutSession: CHECKOUT_ID,
+          externalReference: null,
+        }),
+      ],
+    });
+    expect(await factsOf(webhookBody("PAYMENT_CONFIRMED"), api)).toEqual([
+      {
+        fact: {
+          cycleMonths: 1,
+          occurredAt,
+          periodEndsAt: monthlyEnd,
+          type: "charge_succeeded",
+        },
+        providerEventId: EVENT_ID,
+        providerRef: CHECKOUT_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
+      },
+    ]);
+  });
+
+  it("a payment and a subscription event with the fixture's null externalReference carry the checkout ID", async () => {
+    const [charge] = await factsOf(webhookBody("PAYMENT_CONFIRMED"));
+    const [cancel] = await factsOf(
+      webhookBody("SUBSCRIPTION_DELETED", {
+        subscription: { id: SUBSCRIPTION_ID },
+      }),
+      fakeApi({
+        subscriptions: [
+          subscriptionJson({ deleted: true, status: "INACTIVE" }),
+        ],
+      })
+    );
+    expect(charge?.providerRef).toBe(CHECKOUT_ID);
+    expect(cancel?.providerRef).toBe(CHECKOUT_ID);
+    expect(cancel?.providerSubscriptionId).toBe(SUBSCRIPTION_ID);
+  });
+
+  it("a fake externalReference on the resource changes nothing: the checkout ID is the link", async () => {
+    const [fact] = await factsOf(
+      webhookBody("PAYMENT_CONFIRMED"),
+      fakeApi({
+        subscriptions: [subscriptionJson({ externalReference: "pol_forjada" })],
+      })
+    );
+    expect(fact?.providerRef).toBe(CHECKOUT_ID);
+  });
+
+  it("a subscription that shows no checkoutSession is unresolved (AC-48), for a charge and for a cancellation", async () => {
+    const orphan = fakeApi({
+      subscriptions: [subscriptionJson({ checkoutSession: null })],
+    });
+    expect(
+      await deliver(webhookBody("PAYMENT_CONFIRMED"), orphan)
+    ).toMatchObject({ kind: "unresolved", resourceId: SUBSCRIPTION_ID });
+    expect(
+      await deliver(
+        webhookBody("SUBSCRIPTION_DELETED", {
+          subscription: { id: SUBSCRIPTION_ID },
+        }),
+        orphan
+      )
+    ).toMatchObject({ kind: "unresolved", resourceId: SUBSCRIPTION_ID });
+  });
+
+  it("CHECKOUT_PAID finds the subscription by its checkoutSession and gives the trial fact of that checkout", async () => {
+    const [fact] = await factsOf(body, trial());
+    expect(fact).toMatchObject({
+      fact: { cycleMonths: 1, type: "trial_method_ready" },
+      providerRef: CHECKOUT_ID,
+      providerSubscriptionId: SUBSCRIPTION_ID,
+    });
+  });
+
+  it("CHECKOUT_PAID ignores a subscription of another checkout that the list returned", async () => {
+    const other = "bbbbbbbb-0000-4000-8000-000000000002";
+    const api = trial();
+    api.client.listSubscriptionsByCheckout = vi.fn(async () => [
+      parseProviderJson(
+        JSON.stringify(subscriptionJson({ checkoutSession: other }))
+      ),
+    ]);
+    expect(await deliver(body, api)).toMatchObject({
+      kind: "unresolved",
+      resourceId: `checkout:${CHECKOUT_ID.slice(0, 8)}`,
+    });
   });
 });
 
@@ -658,14 +766,14 @@ describe("AC-1c: the fact comes from the resource read back, never from the body
       resourceId: SUBSCRIPTION_ID,
     });
     const body = {
-      checkout: { externalReference: POLARIS_REF },
+      checkout: { id: CHECKOUT_ID },
       dateCreated: "2026-10-19 10:00:00",
       event: "CHECKOUT_PAID",
       id: EVENT_ID,
     };
     expect(await deliver(body, orphan)).toMatchObject({
       kind: "unresolved",
-      resourceId: POLARIS_REF,
+      resourceId: `checkout:${CHECKOUT_ID.slice(0, 8)}`,
     });
   });
 
@@ -696,7 +804,7 @@ describe("AC-1c: the fact comes from the resource read back, never from the body
   it("a finished checkout whose subscription has no charge yet is unresolved, to be read again", async () => {
     const api = fakeApi({ payments: [] });
     const body = {
-      checkout: { externalReference: POLARIS_REF },
+      checkout: { id: CHECKOUT_ID },
       dateCreated: "2026-10-19 10:00:00",
       event: "CHECKOUT_PAID",
       id: EVENT_ID,
@@ -730,7 +838,8 @@ describe("AC-1c: the fact comes from the resource read back, never from the body
           type: "charge_succeeded",
         },
         providerEventId: EVENT_ID,
-        providerRef: POLARIS_REF,
+        providerRef: CHECKOUT_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -917,6 +1026,7 @@ describe("AC-3: no personal or card data leaves the mapper", () => {
     );
     expect(Object.keys(payment).sort()).toEqual([
       "amount",
+      "checkoutSession",
       "confirmedOn",
       "createdOn",
       "deleted",
@@ -930,9 +1040,9 @@ describe("AC-3: no personal or card data leaves the mapper", () => {
       parseProviderJson(JSON.stringify(subscriptionJson()))
     );
     expect(Object.keys(subscription).sort()).toEqual([
+      "checkoutSession",
       "cycleMonths",
       "deleted",
-      "externalReference",
       "id",
       "status",
     ]);
@@ -942,8 +1052,8 @@ describe("AC-3: no personal or card data leaves the mapper", () => {
 describe("AC-2 (Asaas side): stable event IDs and the reference attachProvider stored", () => {
   it("the providerRef of a fact is, character for character, the one the checkout was prepared with", async () => {
     const checkout = {
-      id: "c6d42a6f-0000-4000-8000-000000000001",
-      link: "https://sandbox.asaas.com/checkoutSession/show/c6d42a6f-0000-4000-8000-000000000001",
+      id: CHECKOUT_ID,
+      link: `https://sandbox.asaas.com/checkoutSession/show/${CHECKOUT_ID}`,
     };
     const port = createAsaasPort({
       apiKey: "$aact_hmlg_FAKE_TEST_KEY",
@@ -966,7 +1076,7 @@ describe("AC-2 (Asaas side): stable event IDs and the reference attachProvider s
       webhookBody("PAYMENT_CONFIRMED"),
       fakeApi({
         subscriptions: [
-          subscriptionJson({ externalReference: prepared.providerRef }),
+          subscriptionJson({ checkoutSession: prepared.providerRef }),
         ],
       })
     );

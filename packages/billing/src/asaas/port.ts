@@ -14,9 +14,9 @@ import {
   asaasCycle,
   pickAsaasCheckout,
   pickAsaasPayment,
-  pickAsaasSubscription,
   reconcileAsaasSubscription,
   refundableCharge,
+  subscriptionsOfCheckout,
 } from "./mapper";
 
 /** How long the payer has to finish the hosted checkout. */
@@ -62,7 +62,9 @@ export function checkoutReturnUrls(appBaseUrl: string): CheckoutReturnUrls {
  * The checkout request: a hosted Asaas page for a recurring card charge
  * (`RECURRENT`, `CREDIT_CARD`), the first charge on `firstChargeOn`. Polaris
  * sends no payer data: the payer types it on Asaas's page (ADR 0101, B7). The
- * opaque `pol_<uuid>` goes in `externalReference`; the facts carry it back.
+ * opaque `pol_<uuid>` still goes in `externalReference`, but Asaas does not carry
+ * it to the subscription (S1.3): the facts are tied to the organization by the
+ * checkout's ID (`checkoutSession`), which is the `providerRef`.
  */
 function checkoutBody(
   input: PrepareSubscriptionInput,
@@ -106,9 +108,11 @@ function checkoutBody(
 export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
   const client = createAsaasClient(config);
 
+  /** `providerRef` is the checkout's ID: the subscription it created carries it as `checkoutSession`. */
   async function subscriptionsOf(providerRef: string) {
-    return (await client.listSubscriptionsByReference(providerRef)).map(
-      pickAsaasSubscription
+    return subscriptionsOfCheckout(
+      await client.listSubscriptionsByCheckout(providerRef),
+      providerRef
     );
   }
   async function chargesOf(subscriptionId: string): Promise<AsaasPayment[]> {
@@ -147,7 +151,8 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       return {
         checkoutId: checkout.id,
         handoff: { kind: "redirect", url: checkout.link },
-        providerRef: reference,
+        // the provider copies the checkout's ID into the subscription, not the reference
+        providerRef: checkout.id,
       };
     },
     provider: "asaas",

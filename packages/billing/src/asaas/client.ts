@@ -7,7 +7,7 @@ import {
   ProviderResponseMalformedError,
   ProviderUnavailableError,
 } from "../provider-port";
-import { isAsaasId, isPolarisReference } from "./ids";
+import { isAsaasId, normalizeCheckoutId } from "./ids";
 
 /**
  * The HTTP client of the Asaas API v3 (ADR 0101). It answers raw resources
@@ -39,8 +39,14 @@ export interface AsaasClient {
   getPayment: (paymentId: string) => Promise<unknown>;
   getSubscription: (subscriptionId: string) => Promise<unknown>;
   listSubscriptionPayments: (subscriptionId: string) => Promise<unknown[]>;
-  /** Every subscription with this Polaris reference, deleted ones included. */
-  listSubscriptionsByReference: (reference: string) => Promise<unknown[]>;
+  /**
+   * The subscription(s) a checkout created, deleted ones included. The API has
+   * no `checkoutSession` filter (it ignores the parameter: sandbox, 19/10/2026),
+   * so the list is read newest first and filtered here, stopping at the page
+   * where the checkout is found. A checkout makes one subscription. A checkout
+   * not found within the pages read is an error, never an empty answer.
+   */
+  listSubscriptionsByCheckout: (checkoutId: string) => Promise<unknown[]>;
   refundPayment: (paymentId: string) => Promise<unknown>;
 }
 
@@ -133,7 +139,11 @@ export function createAsaasClient(config: AsaasClientConfig): AsaasClient {
     return parseProviderJson(text);
   }
 
-  async function list(path: string): Promise<unknown[]> {
+  async function list(
+    path: string,
+    keep: (item: unknown) => boolean = () => true,
+    stopAfterKept = false
+  ): Promise<unknown[]> {
     const items: unknown[] = [];
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const separator = path.includes("?") ? "&" : "?";
@@ -149,12 +159,15 @@ export function createAsaasClient(config: AsaasClientConfig): AsaasClient {
       if (!Array.isArray(data) || typeof hasMore !== "boolean") {
         throw new ProviderResponseMalformedError();
       }
-      items.push(...data);
-      if (!hasMore) {
+      const kept = data.filter(keep);
+      items.push(...kept);
+      if (!hasMore || (stopAfterKept && kept.length > 0)) {
         return items;
       }
     }
-    // more charges than a subscription can have: not an answer to trust
+    // more than the pages read and nothing found (a checkout older than the 1000
+    // newest subscriptions, or more charges than a subscription can have): an
+    // empty answer would read as "nothing to cancel", so it is not an answer to trust
     throw new ProviderResponseMalformedError();
   }
 
@@ -181,10 +194,22 @@ export function createAsaasClient(config: AsaasClientConfig): AsaasClient {
       list(
         `/subscriptions/${pathId(subscriptionId, (id) => isAsaasId("sub", id))}/payments`
       ),
-    listSubscriptionsByReference: async (reference) =>
-      list(
-        `/subscriptions?externalReference=${pathId(reference, isPolarisReference)}&includeDeleted=true`
-      ),
+    listSubscriptionsByCheckout: async (checkoutId) => {
+      const wanted = normalizeCheckoutId(checkoutId);
+      if (wanted === null) {
+        throw new ProviderResponseMalformedError();
+      }
+      return await list(
+        "/subscriptions?includeDeleted=true&sort=dateCreated&order=desc",
+        (item) =>
+          typeof item === "object" &&
+          item !== null &&
+          normalizeCheckoutId(
+            (item as Record<string, unknown>).checkoutSession
+          ) === wanted,
+        true
+      );
+    },
     refundPayment: async (paymentId) =>
       call(
         "POST",

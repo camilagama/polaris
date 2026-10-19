@@ -12,7 +12,8 @@ export const FAKE_PAYER = {
 } as const;
 export const FAKE_CARD_TOKEN = "tok_FAKE_9f8e7d6c5b4a39281706";
 export const FAKE_INVOICE_URL = "https://sandbox.asaas.com/i/fakeinvoice000";
-export const POLARIS_REF = "pol_3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
+/** The ID of the hosted checkout: what the subscription and its first charge carry as `checkoutSession`, and the `providerRef`. */
+export const CHECKOUT_ID = "c6d42a6f-0000-4000-8000-000000000001";
 export const SUBSCRIPTION_ID = "sub_fake0000000001";
 export const PAYMENT_ID = "pay_fake0000000001";
 export const EVENT_ID = "evt_0123456789abcdef0123456789abcdef&100000001";
@@ -23,7 +24,7 @@ export function subscriptionJson(
 ): Record<string, unknown> {
   return {
     billingType: "CREDIT_CARD",
-    checkoutSession: "c6d42a6f-0000-4000-8000-000000000001",
+    checkoutSession: CHECKOUT_ID,
     creditCard: {
       creditCardBrand: "MASTERCARD",
       creditCardNumber: "4444",
@@ -34,7 +35,8 @@ export function subscriptionJson(
     dateCreated: "2026-10-19",
     deleted: false,
     description: "Polaris Pro mensal",
-    externalReference: POLARIS_REF,
+    // null, as the sandbox answered for a finished checkout (S1.3, 19/10/2026)
+    externalReference: null,
     fine: { type: "PERCENTAGE", value: 0 },
     id: SUBSCRIPTION_ID,
     interest: { type: "PERCENTAGE", value: 0 },
@@ -58,7 +60,7 @@ export function paymentJson(
     anticipated: false,
     bankSlipUrl: null,
     billingType: "CREDIT_CARD",
-    checkoutSession: "c6d42a6f-0000-4000-8000-000000000001",
+    checkoutSession: CHECKOUT_ID,
     clientPaymentDate: "2026-10-26",
     confirmedDate: "2026-10-26",
     creditCard: {
@@ -75,7 +77,8 @@ export function paymentJson(
     dueDate: "2026-10-26",
     escrow: null,
     estimatedCreditDate: null,
-    externalReference: POLARIS_REF,
+    // null, as the sandbox answered for a finished checkout (S1.3, 19/10/2026)
+    externalReference: null,
     fine: { type: "FIXED", value: 0 },
     id: PAYMENT_ID,
     installmentNumber: null,

@@ -15,7 +15,6 @@ const enabled =
   Boolean(process.env.ASAAS_API_KEY) &&
   process.env.ASAAS_BASE_URL === "https://api-sandbox.asaas.com/v3";
 
-const POLARIS_REFERENCE = /^pol_[\da-f-]{36}$/;
 const UUID = /^[\da-f-]{36}$/;
 const ASAAS_HOST = /asaas\.com$/;
 
@@ -38,7 +37,7 @@ const sevenDaysLater = () => {
 };
 
 describe.skipIf(!enabled)("Asaas sandbox", () => {
-  it("creates a hosted recurring card checkout with the Polaris reference, then cancels it", async () => {
+  it("creates a hosted recurring card checkout whose ID is the providerRef, then cancels it", async () => {
     const port = createAsaasPort({
       ...config(),
       appBaseUrl: "https://polaris.example.test",
@@ -51,7 +50,7 @@ describe.skipIf(!enabled)("Asaas sandbox", () => {
       payer: { email: "pagador.teste@example.com", name: "Pagadora de Teste" },
     });
     try {
-      expect(prepared.providerRef).toMatch(POLARIS_REFERENCE);
+      expect(prepared.providerRef).toBe(prepared.checkoutId);
       expect(prepared.checkoutId).toMatch(UUID);
       expect(prepared.handoff.kind).toBe("redirect");
       expect(new URL(prepared.handoff.url).hostname).toMatch(ASAAS_HOST);

@@ -16,7 +16,8 @@ import { createAsaasAdapter } from "./asaas-adapter";
  */
 
 const TOKEN = "fake-webhook-token-0123456789abcdef";
-const REF = "pol_3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
+/** The ID of the checkout: the `providerRef`, and the `checkoutSession` of the subscription (S1.3). */
+const REF = "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
 const EVENT_ID = "evt_0123456789abcdef0123456789abcdef&100000001";
 const PAYER = {
   cpf: "529.982.247-25",
@@ -47,7 +48,7 @@ const payment = (overrides: Record<string, unknown> = {}) => ({
   dateCreated: "2026-10-26",
   deleted: false,
   dueDate: "2026-10-26",
-  externalReference: REF,
+  externalReference: null,
   id: "pay_fake0000000001",
   invoiceUrl: INVOICE_URL,
   originalDueDate: "2026-10-26",
@@ -57,11 +58,12 @@ const payment = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 const subscription = {
+  checkoutSession: REF,
   creditCard: { creditCardToken: CARD_TOKEN },
   customer: "cus_fake0000000001",
   cycle: "MONTHLY",
   deleted: false,
-  externalReference: REF,
+  externalReference: null,
   id: "sub_fake0000000001",
   status: "ACTIVE",
   value: 24.9,

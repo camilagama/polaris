@@ -10,7 +10,7 @@ import {
   type ProviderBillingEvent,
   ProviderResponseMalformedError,
 } from "../provider-port";
-import { isAsaasId, isPolarisReference } from "./ids";
+import { isAsaasId, normalizeCheckoutId } from "./ids";
 
 /**
  * Asaas resource → Polaris fact (ADR 0101). Pure: no clock (the reconciliation
@@ -28,6 +28,11 @@ import { isAsaasId, isPolarisReference } from "./ids";
 export interface AsaasPayment {
   /** The amount, as `money.md` writes it, read from the JSON text (never a float). */
   amount: string;
+  /**
+   * The ID of the checkout the charge came from, or null (a charge made by the API, or a
+   * later one that does not carry it). Read only to check it against the subscription's.
+   */
+  checkoutSession: string | null;
   /** The day the charge was confirmed (`AAAA-MM-DD`), or null when the resource shows none. */
   confirmedOn: string | null;
   /** The day the charge was created (`AAAA-MM-DD`). */
@@ -45,11 +50,16 @@ export interface AsaasPayment {
 
 /** A subscription, with only what the facts need. */
 export interface AsaasSubscription {
+  /**
+   * The ID of the hosted checkout that created the subscription: the
+   * `providerRef` of every fact (ADR 0101, S1.3). The `externalReference` sent
+   * with the checkout does not reach the subscription, so nothing reads it.
+   * Null when the resource shows none: the fact cannot be tied to an organization.
+   */
+  checkoutSession: string | null;
   /** 1, 6 or 12; null for a cycle Polaris does not sell. */
   cycleMonths: BillingCycleMonths | null;
   deleted: boolean;
-  /** The Polaris reference the checkout carried (`pol_<uuid>`), or null. */
-  externalReference: string | null;
   id: string;
   status: string;
 }
@@ -162,6 +172,7 @@ export function pickAsaasPayment(raw: unknown): AsaasPayment {
   }
   return {
     amount,
+    checkoutSession: normalizeCheckoutId(source.checkoutSession),
     confirmedOn: optionalCalendarDate(source.confirmedDate),
     createdOn: calendarDate(source.dateCreated),
     deleted: flag(source.deleted),
@@ -179,15 +190,28 @@ export function pickAsaasSubscription(raw: unknown): AsaasSubscription {
     throw new ProviderResponseMalformedError();
   }
   const months = ASAAS_CYCLE_MONTHS[text(source.cycle)];
-  const reference = source.externalReference;
   return {
+    checkoutSession: normalizeCheckoutId(source.checkoutSession),
     cycleMonths:
       months !== undefined && isBillingCycleMonths(months) ? months : null,
     deleted: flag(source.deleted),
-    externalReference: isPolarisReference(reference) ? reference : null,
     id: source.id as string,
     status: text(source.status),
   };
+}
+
+/**
+ * The subscriptions a checkout created, read back: only those whose own
+ * `checkoutSession` is the checkout's (the list is never trusted to filter).
+ */
+export function subscriptionsOfCheckout(
+  raw: readonly unknown[],
+  checkoutId: string
+): AsaasSubscription[] {
+  const wanted = normalizeCheckoutId(checkoutId);
+  return raw
+    .map(pickAsaasSubscription)
+    .filter((entry) => wanted !== null && entry.checkoutSession === wanted);
 }
 
 /** The allowed keys of a hosted checkout (`POST /v3/checkouts`): its ID and its link, nothing else. */
@@ -209,7 +233,7 @@ export function pickAsaasCheckout(raw: unknown): { id: string; link: string } {
   if (!(url && onAsaas)) {
     throw new ProviderResponseMalformedError();
   }
-  return { id, link: url.href };
+  return { id: id.toLowerCase(), link: url.href };
 }
 
 /** What the webhook events become; any other event is acknowledged with no fact. */
@@ -278,19 +302,24 @@ function event(
   return {
     fact,
     providerEventId,
-    providerRef: subscription.externalReference as string,
+    // every caller has checked that the subscription carries its checkout ID
+    providerRef: subscription.checkoutSession as string,
+    providerSubscriptionId: subscription.id,
   };
 }
 
-/** A charge that is part of this Polaris subscription; anything else gives no fact. */
+/** A charge that is part of this checkout's subscription; anything else gives no fact. */
 function ownsCharge(
   payment: AsaasPayment,
   subscription: AsaasSubscription
 ): boolean {
   return (
-    subscription.externalReference !== null &&
+    subscription.checkoutSession !== null &&
     payment.subscriptionId === subscription.id &&
-    !payment.deleted
+    !payment.deleted &&
+    // a charge that names another checkout than its subscription's is not trusted
+    (payment.checkoutSession === null ||
+      payment.checkoutSession === subscription.checkoutSession)
   );
 }
 
@@ -380,7 +409,7 @@ export function mapAsaasSubscriptionEvent(input: {
 }): ProviderBillingEvent[] {
   const { subscription } = input;
   if (
-    subscription.externalReference === null ||
+    subscription.checkoutSession === null ||
     !(subscription.deleted || subscription.status !== "ACTIVE")
   ) {
     return [];
@@ -430,10 +459,10 @@ export function mapAsaasCheckoutPaid(input: {
   subscription: AsaasSubscription;
 }): ProviderBillingEvent[] {
   const { subscription } = input;
-  const own = input.payments.filter(
-    (payment) => payment.subscriptionId === subscription.id
+  const own = input.payments.filter((payment) =>
+    ownsCharge(payment, subscription)
   );
-  if (subscription.externalReference === null || !startedWithTrial(own)) {
+  if (subscription.checkoutSession === null || !startedWithTrial(own)) {
     return [];
   }
   return [
@@ -463,7 +492,7 @@ export function reconcileAsaasSubscription(input: {
   subscription: AsaasSubscription;
 }): ProviderBillingEvent[] {
   const { now, subscription } = input;
-  if (subscription.externalReference === null) {
+  if (subscription.checkoutSession === null) {
     return [];
   }
   const charges = byDueDate(

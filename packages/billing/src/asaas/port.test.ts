@@ -82,7 +82,7 @@ function subscription(
     status = "ACTIVE",
     cycle = "MONTHLY",
   } = overrides;
-  return `{"object":"subscription","id":"${id}","dateCreated":"2026-10-19","customer":"cus_000FAKE","value":24.90,"nextDueDate":"2026-11-19","cycle":"${cycle}","description":"Polaris Pro mensal","billingType":"CREDIT_CARD","deleted":${deleted},"status":"${status}","externalReference":"${REFERENCE}","checkoutSession":"${CHECKOUT_ID}","creditCard":{"creditCardNumber":"1234","creditCardBrand":"VISA","creditCardToken":"${CARD_TOKEN}"}}`;
+  return `{"object":"subscription","id":"${id}","dateCreated":"2026-10-19","customer":"cus_000FAKE","value":24.90,"nextDueDate":"2026-11-19","cycle":"${cycle}","description":"Polaris Pro mensal","billingType":"CREDIT_CARD","deleted":${deleted},"status":"${status}","externalReference":null,"checkoutSession":"${CHECKOUT_ID}","creditCard":{"creditCardNumber":"1234","creditCardBrand":"VISA","creditCardToken":"${CARD_TOKEN}"}}`;
 }
 
 function payment(
@@ -103,7 +103,7 @@ function payment(
     status = "CONFIRMED",
     subscription: sub = "sub_abc123",
   } = overrides;
-  return `{"object":"payment","id":"${id}","dateCreated":"${created}","customer":"cus_000FAKE","subscription":"${sub}","value":24.90,"netValue":23.91,"billingType":"CREDIT_CARD","status":"${status}","dueDate":"${due}","originalDueDate":"${due}","confirmedDate":"${due}","creditCard":{"creditCardNumber":"1234","creditCardBrand":"VISA","creditCardToken":"${CARD_TOKEN}"},"invoiceUrl":"${INVOICE_URL}","transactionReceiptUrl":"${INVOICE_URL}/r","externalReference":"${REFERENCE}","deleted":${deleted},"refunds":null,"customerName":"${PAYER_NAME}","email":"${PAYER_EMAIL}","cpfCnpj":"${PAYER_TAX_ID}"}`;
+  return `{"object":"payment","id":"${id}","dateCreated":"${created}","customer":"cus_000FAKE","subscription":"${sub}","value":24.90,"netValue":23.91,"billingType":"CREDIT_CARD","status":"${status}","dueDate":"${due}","originalDueDate":"${due}","confirmedDate":"${due}","creditCard":{"creditCardNumber":"1234","creditCardBrand":"VISA","creditCardToken":"${CARD_TOKEN}"},"invoiceUrl":"${INVOICE_URL}","transactionReceiptUrl":"${INVOICE_URL}/r","externalReference":null,"deleted":${deleted},"refunds":null,"customerName":"${PAYER_NAME}","email":"${PAYER_EMAIL}","cpfCnpj":"${PAYER_TAX_ID}"}`;
 }
 
 const input = (
@@ -236,13 +236,13 @@ describe("prepareSubscription", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("returns the reference, the checkout ID and a redirect handoff", async () => {
+  it("returns the checkout ID as the reference, and a redirect handoff", async () => {
     const { fetch } = fakeAsaas(checkoutCreated);
     await expect(portWith(fetch).prepareSubscription(input())).resolves.toEqual(
       {
         checkoutId: CHECKOUT_ID,
         handoff: { kind: "redirect", url: CHECKOUT_LINK },
-        providerRef: REFERENCE,
+        providerRef: CHECKOUT_ID,
       }
     );
   });
@@ -289,7 +289,7 @@ describe("prepareSubscription", () => {
 describe("cancelRenewal", () => {
   it("does nothing when no subscription carries the reference", async () => {
     const { calls, fetch } = fakeAsaas(() => ({ text: list([]) }));
-    await expect(portWith(fetch).cancelRenewal(REFERENCE)).resolves.toBe(
+    await expect(portWith(fetch).cancelRenewal(CHECKOUT_ID)).resolves.toBe(
       "nothing_to_cancel"
     );
     expect(calls.every((call) => call.method === "GET")).toBe(true);
@@ -302,7 +302,7 @@ describe("cancelRenewal", () => {
         subscription({ deleted: true, id: "sub_old002" }),
       ]),
     }));
-    await expect(portWith(fetch).cancelRenewal(REFERENCE)).resolves.toBe(
+    await expect(portWith(fetch).cancelRenewal(CHECKOUT_ID)).resolves.toBe(
       "already_cancelled"
     );
     expect(calls.some((call) => call.method === "DELETE")).toBe(false);
@@ -321,7 +321,7 @@ describe("cancelRenewal", () => {
         ]),
       })
     );
-    await expect(portWith(fetch).cancelRenewal(REFERENCE)).resolves.toBe(
+    await expect(portWith(fetch).cancelRenewal(CHECKOUT_ID)).resolves.toBe(
       "cancelled"
     );
     const deletes = calls.filter((call) => call.method === "DELETE");
@@ -330,18 +330,30 @@ describe("cancelRenewal", () => {
     ]);
   });
 
-  it("reads the subscriptions by reference including the deleted ones", async () => {
+  it("reads the subscriptions newest first, including the deleted ones, and keeps those of the checkout", async () => {
     const { calls, fetch } = fakeAsaas(() => ({ text: list([]) }));
-    await portWith(fetch).cancelRenewal(REFERENCE);
+    await portWith(fetch).cancelRenewal(CHECKOUT_ID);
     expect(calls[0]?.url).toContain(
-      `externalReference=${encodeURIComponent(REFERENCE)}&includeDeleted=true`
+      "/subscriptions?includeDeleted=true&sort=dateCreated&order=desc"
     );
+  });
+
+  it("never deletes a subscription of another checkout that the list returned", async () => {
+    const other = subscription({ id: "sub_other01" }).replace(
+      CHECKOUT_ID,
+      "bbbbbbbb-0000-4000-8000-000000000002"
+    );
+    const { calls, fetch } = fakeAsaas(() => ({ text: list([other]) }));
+    await expect(portWith(fetch).cancelRenewal(CHECKOUT_ID)).resolves.toBe(
+      "nothing_to_cancel"
+    );
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
   });
 
   it("propagates an unavailable provider instead of reporting a state", async () => {
     const { fetch } = fakeAsaas(() => ({ status: 503, text: "{}" }));
     await expect(
-      portWith(fetch).cancelRenewal(REFERENCE)
+      portWith(fetch).cancelRenewal(CHECKOUT_ID)
     ).rejects.toBeInstanceOf(ProviderUnavailableError);
   });
 });
@@ -371,7 +383,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(REFERENCE, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
     expect(calls.length).toBeGreaterThan(0);
@@ -380,7 +392,7 @@ describe("refundCurrentPeriod", () => {
   it("does nothing when the reference has no subscription", async () => {
     const { calls, fetch } = fakeAsaas(() => ({ text: list([]) }));
     await expect(
-      portWith(fetch).refundCurrentPeriod(REFERENCE, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -395,7 +407,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(REFERENCE, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
     ).resolves.toBe("refund_requested");
     const posts = calls.filter((call) => call.method === "POST");
     expect(posts).toHaveLength(1);
@@ -415,7 +427,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(REFERENCE, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -428,7 +440,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(REFERENCE, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -445,7 +457,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(REFERENCE, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -476,10 +488,11 @@ describe("readState", () => {
 
   it("returns a charge_succeeded fact with a reconcile event ID", async () => {
     const { fetch } = fakeAsaas(...routes(payment()));
-    const events = await portWith(fetch).readState(REFERENCE, now);
+    const events = await portWith(fetch).readState(CHECKOUT_ID, now);
     expect(events).toHaveLength(1);
     expect(events[0]?.providerEventId).toBe("reconcile:pay_one111:CONFIRMED");
-    expect(events[0]?.providerRef).toBe(REFERENCE);
+    expect(events[0]?.providerRef).toBe(CHECKOUT_ID);
+    expect(events[0]?.providerSubscriptionId).toBe("sub_abc123");
     expect(events[0]?.fact).toEqual({
       cycleMonths: 1,
       occurredAt: now,
@@ -491,9 +504,9 @@ describe("readState", () => {
   it("gives the same event IDs when the same state is read twice", async () => {
     const { fetch } = fakeAsaas(...routes(payment()));
     const port = portWith(fetch);
-    const first = await port.readState(REFERENCE, now);
+    const first = await port.readState(CHECKOUT_ID, now);
     const second = await port.readState(
-      REFERENCE,
+      CHECKOUT_ID,
       new Date("2026-10-21T08:00:00.000Z")
     );
     expect(second.map((entry) => entry.providerEventId)).toEqual(
@@ -508,7 +521,7 @@ describe("readState", () => {
         payment({ due: "2026-10-18", id: "pay_ref001", status: "REFUNDED" })
       )
     );
-    const events = await portWith(fetch).readState(REFERENCE, now);
+    const events = await portWith(fetch).readState(CHECKOUT_ID, now);
     const ids = events.map((entry) => entry.providerEventId);
     expect(ids).toContain("reconcile:pay_over01:OVERDUE");
     expect(ids).toContain("reconcile:pay_ref001:REFUNDED");
@@ -525,7 +538,7 @@ describe("readState", () => {
           ? { text: list([subscription({ deleted: true })]) }
           : undefined
     );
-    const events = await portWith(fetch).readState(REFERENCE, now);
+    const events = await portWith(fetch).readState(CHECKOUT_ID, now);
     expect(events.map((entry) => entry.providerEventId)).toEqual([
       "reconcile:sub_abc123:DELETED",
     ]);
@@ -538,7 +551,7 @@ describe("readState", () => {
         payment({ created: "2026-10-19", due: "2026-11-02", status: "PENDING" })
       )
     );
-    const events = await portWith(fetch).readState(REFERENCE, now);
+    const events = await portWith(fetch).readState(CHECKOUT_ID, now);
     expect(events.map((entry) => entry.providerEventId)).toEqual([
       "reconcile:sub_abc123:CHECKOUT_PAID",
     ]);
@@ -549,13 +562,13 @@ describe("readState", () => {
     const { fetch } = fakeAsaas(
       ...routes(payment({ created: "2026-01-10", due: "2026-01-10" }))
     );
-    const events = await portWith(fetch).readState(REFERENCE, now);
+    const events = await portWith(fetch).readState(CHECKOUT_ID, now);
     expect(events).toEqual([]);
   });
 
   it("returns nothing when the reference has no subscription", async () => {
     const { fetch } = fakeAsaas(() => ({ text: list([]) }));
-    await expect(portWith(fetch).readState(REFERENCE, now)).resolves.toEqual(
+    await expect(portWith(fetch).readState(CHECKOUT_ID, now)).resolves.toEqual(
       []
     );
   });
@@ -567,7 +580,7 @@ describe("readState", () => {
         payment({ due: "2026-10-19", id: "pay_over01", status: "OVERDUE" })
       )
     );
-    const events = await portWith(fetch).readState(REFERENCE, now);
+    const events = await portWith(fetch).readState(CHECKOUT_ID, now);
     expect(events.length).toBeGreaterThan(0);
     const serialized = JSON.stringify(events);
     expect(serialized).not.toContain(CARD_TOKEN);
@@ -586,7 +599,7 @@ describe("readState", () => {
       ...routes('{"id":"pay_bad001","value":"24.90"}')
     );
     await expect(
-      portWith(fetch).readState(REFERENCE, now)
+      portWith(fetch).readState(CHECKOUT_ID, now)
     ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
   });
 });
