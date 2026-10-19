@@ -50,17 +50,16 @@ const failureText: Readonly<Record<SignInFailure, string>> = {
 function LegalLinks() {
   return (
     <p className="sign-in-legal">
-      {LEGAL_LINKS_INTRO}{" "}
+      <span>{LEGAL_LINKS_INTRO}</span>
       <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
         {TERMS_LINK}
         <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-      </a>{" "}
-      e a{" "}
+      </a>
+      <span>e a</span>
       <a href={LEGAL_PATHS.privacy} rel="noopener noreferrer" target="_blank">
         {PRIVACY_LINK}
         <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
       </a>
-      .
     </p>
   );
 }
