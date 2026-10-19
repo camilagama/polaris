@@ -421,7 +421,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     ],
     period: { kind: "duration", ms: 90 * DAY_MS },
     review: USER_APPROVED_REVIEW,
-    rule: "O aparelho revogado fica 90 dias depois da revogação (revoked_at) e então é apagado; se o último uso (last_seen_at) for posterior, a contagem parte dele, então o aparelho nunca é apagado antes de 90 dias sem uso (decisão do responsável de 19/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; necessidade e eliminação ao fim do tratamento, LGPD art. 6º III e art. 16; validar com contador ou jurídico antes do go-live). O aparelho é do usuário, sem organização, e não guarda impressão digital: só id aleatório, rótulo digitado, datas. O vínculo `device_sessions` segue a classe de sessões (`auth_sessions`): o aparelho apagado leva os vínculos em cascata. A auditoria `device_revoked` guarda só o identificador e segue a classe `auth_security_audit`. Nenhum job novo: o expurgo ainda não existe.",
+    rule: "O aparelho revogado fica 90 dias depois da revogação (revoked_at) e então é apagado; se o último uso (last_seen_at) for posterior, a contagem parte dele, então o aparelho nunca é apagado antes de 90 dias sem uso (decisão do responsável de 19/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; necessidade e eliminação ao fim do tratamento, LGPD art. 6º III e art. 16; revisão de contador ou jurídico recomendada antes do go-live, sem bloquear). O aparelho é do usuário, sem organização, e não guarda impressão digital: só id aleatório, rótulo digitado, datas. O vínculo `device_sessions` segue a classe de sessões (`auth_sessions`): o aparelho apagado leva os vínculos em cascata. A auditoria `device_revoked` guarda só o identificador e segue a classe `auth_security_audit`. Nenhum job novo: o expurgo ainda não existe.",
     sources: ["ADR 0048", "ADR 0079", "docs/business-rules/privacy.md"],
     status: "aprovada",
   },
@@ -445,7 +445,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     legalSources: ["Marco Civil da Internet (Lei 12.965/2014), art. 15"],
     period: { kind: "calendar_months", months: 6 },
     review: USER_APPROVED_REVIEW,
-    rule: "A auditoria de segurança da autenticação (Google, saída e revogação de aparelho que encerrou sessões) fica 6 meses, o mínimo do Marco Civil, junto do registro de acesso; a norma pede ainda sigilo, ambiente controlado e de segurança (decisão do responsável de 18/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; validar com contador ou jurídico antes do go-live). A tabela guarda data, hora, ator e identificador da requisição e, na revogação de aparelho, o aparelho revogado, quantas sessões caíram e a sessão e o aparelho de quem revogou (identificadores, nunca o token), mas não o IP: o IP de cada acesso está em `auth_access_log` (classe `auth_access_log`, ADR 0092). O prazo é contado em meses corridos e, ao somar meses, o dia que não existe no mês de destino passa ao mês seguinte (nunca encurta o mínimo). O job de expurgo ainda não existe.",
+    rule: "A auditoria de segurança da autenticação (Google, saída e revogação de aparelho que encerrou sessões) fica 6 meses, o mínimo do Marco Civil, junto do registro de acesso; a norma pede ainda sigilo, ambiente controlado e de segurança (decisão do responsável de 18/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; revisão de contador ou jurídico recomendada antes do go-live, sem bloquear). A tabela guarda data, hora, ator e identificador da requisição e, na revogação de aparelho, o aparelho revogado, quantas sessões caíram e a sessão e o aparelho de quem revogou (identificadores, nunca o token), mas não o IP: o IP de cada acesso está em `auth_access_log` (classe `auth_access_log`, ADR 0092). O prazo é contado em meses corridos e, ao somar meses, o dia que não existe no mês de destino passa ao mês seguinte (nunca encurta o mínimo). O job de expurgo ainda não existe.",
     sources: ["docs/business-rules/privacy.md", "ADR 0079"],
     status: "aprovada",
   },
@@ -462,7 +462,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     ],
     period: { graceDays: 30, kind: "calendar_months", months: 6 },
     review: USER_APPROVED_REVIEW,
-    rule: "O registro de acesso a aplicação (login, login que falhou, saída e atualização da sessão, com o IP da requisição) fica 6 meses corridos mais 30 dias de folga (o mínimo do Marco Civil são os 6 meses; a folga só alonga, decisão do usuário de 19/10/2026), em sigilo e em ambiente de segurança; só se fornece com ordem judicial (decisão do responsável de 18/10/2026, delegada ao orquestrador, POL-80; validar com contador ou jurídico antes do go-live). Não tem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo. O prazo está aprovado, mas nenhum job de expurgo pode existir enquanto não houver a guarda cautelar do art. 15, §2º (`blockedUntil: access_log_hold`): apagar sem ela pode descumprir um pedido de guarda por prazo maior. Nenhuma linha vence antes de 6 meses do go-live. O job futuro corta a data no banco (6 meses mais a folga de 30 dias, que também cobre o mês curto) e pula o usuário sob guarda. Não há porta lógica de origem: a Cloudflare não a entrega ao Worker (limite no ADR 0092).",
+    rule: "O registro de acesso a aplicação (login, login que falhou, saída e atualização da sessão, com o IP da requisição) fica 6 meses corridos mais 30 dias de folga (o mínimo do Marco Civil são os 6 meses; a folga só alonga, decisão do usuário de 19/10/2026), em sigilo e em ambiente de segurança; só se fornece com ordem judicial (decisão do responsável de 18/10/2026, delegada ao orquestrador, POL-80; revisão de contador ou jurídico recomendada antes do go-live, sem bloquear). Não tem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo. O prazo está aprovado, mas nenhum job de expurgo pode existir enquanto não houver a guarda cautelar do art. 15, §2º (`blockedUntil: access_log_hold`): apagar sem ela pode descumprir um pedido de guarda por prazo maior. Nenhuma linha vence antes de 6 meses do go-live. O job futuro corta a data no banco (6 meses mais a folga de 30 dias, que também cobre o mês curto) e pula o usuário sob guarda. Não há porta lógica de origem: a Cloudflare não a entrega ao Worker (limite no ADR 0092).",
     sources: [
       "docs/business-rules/privacy.md",
       "docs/business-rules/authentication.md",
@@ -708,7 +708,7 @@ export function legalReviewDefects(
   });
 }
 
-/** The legal classes still waiting for the accountant or the lawyer (they block the release). */
+/** The legal classes still waiting for the accountant or the lawyer (a warning in the release checklist, not a block). */
 export function pendingLegalReviews(
   policies: readonly RetentionPolicy[] = RETENTION_POLICIES
 ): RetentionClass[] {
