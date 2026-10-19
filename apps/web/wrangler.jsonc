@@ -8,8 +8,20 @@
     "AUTH_ABUSE_PROTECTION_ENABLED": "false"
   },
   "main": "./worker/index.ts",
-  // Structured console.error/console.warn output (see src/server/observability).
-  "observability": { "enabled": true },
+  // Structured logger output (see src/server/observability).
+  // Production defaults (ADR 0094); the staging environment of Phase 14 overrides this whole block with `env.staging`.
+  // Logs stay at 100% because the platform samples a request as a whole and has no separate rate for errors:
+  // lowering the rate would drop error events with the rest. Invocation logs are off, so only our own
+  // structured events are stored (ADR 0094 lists what that drops). Traces are the sampled part: 5%.
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false
+    },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  },
   // The ids below only serve local development. Deployed Workers need real
   // Hyperdrive configurations with query caching disabled:
   // - HYPERDRIVE: tenant role (RLS, no access to the auth tables)

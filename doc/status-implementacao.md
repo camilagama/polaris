@@ -1684,7 +1684,7 @@ Primeiro passo da Fase 12 ([ADR 0089](../docs/adr/0089-evlog-e-logger-tipado-no-
 | Pacote | Concluído | `@polaris/observability/logger` (`logger`, `configureLogging`), único importador do `evlog` (2.33.0, MIT, compatível com Workers); testes do wrapper. |
 | Fronteira | Concluída | Biome recusa `evlog` e o wrapper em `packages/domain` e no código do navegador; `bun run boundaries` tem fixtures para os dois. |
 | Migração | Concluída | Todo o código de servidor usa o logger (`server-log`, agendador, entrada do Worker web, relatório do Admin e, no PR116, filas, DLQ, mídia, billing, auth, rate limit, `packages/db` e catálogo); `noConsole` do Biome impede um `console.*` novo fora de scripts de CLI, gates e testes. |
-| Limites | Registrados | Sem *drain*; a redação embutida do evlog ficou ligada até o PR116 (Fase 12D); o esquema de campos é da Fase 12C; o campo `environment` depende do `NODE_ENV` do bundle; sem medida em nuvem. |
+| Limites | Registrados | Sem *drain*; a redação embutida do evlog ficou ligada até o PR116 (Fase 12D); o esquema de campos é da Fase 12C; o campo `environment` depende do `NODE_ENV` do bundle e é conferido na Fase 14 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-workers-observability.md)); sem medida em nuvem. |
 
 ### Fase 12B — Headers de segurança e CSP centralizados (PR120; implementação e verificações locais concluídas; nada criado na conta Cloudflare)
 
@@ -1710,7 +1710,7 @@ Terceiro passo da Fase 12 ([ADR 0091](../docs/adr/0091-esquema-canonico-de-event
 | Aliases | Concluído | `LogFields` recusa os aliases no tipo; o logger os descarta e lista em `ignoredFields`; `call-sites.test.ts` falha se uma chamada de log do backend usar um. |
 | Evento largo | Concluído | `startWideEvent`, `withWideEvent` e `describeError` (`@polaris/observability/wide-event`); o agendador emite `scheduled_job_run` por eles. |
 | Migração | Concluída | Todos os pontos que já chamavam o logger, só nos nomes dos campos (`errorName` → `errorClass`, `status` → `httpStatus`, `outcome` do agendador → `success\|failure\|skipped`); os `console.*` restantes migraram no PR116. |
-| Limites | Registrados | Nenhum evento por requisição HTTP ainda (volume e amostragem: PR117); a política de redação é da Fase 12D. |
+| Limites | Registrados | Nenhum evento por requisição HTTP ainda (volume e amostragem: PR117, [ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-workers-observability.md)); a política de redação é da Fase 12D. |
 
 ### Fase 12D — política de redação centralizada dos logs (PR116; implementação local concluída; nada criado na conta Cloudflare)
 
@@ -1725,3 +1725,17 @@ Quarto passo da Fase 12 (emenda do [ADR 0089](../docs/adr/0089-evlog-e-logger-ti
 | Teste de aliases | Concluído | `call-sites.test.ts` por AST (`oxc-parser`), sem o limite `scanned > 30`: falha se um arquivo fora das pastas varridas importa o logger ou se um arquivo varrido importa uma função de log e não a chama. |
 | `console.*` no servidor | Concluído | As chamadas diretas de servidor (filas, DLQ, mídia, webhooks e manutenção de billing, auth, rate limit, `billing-store`, catálogo) migraram para o logger, com classe e código do erro em vez do objeto do driver; `noConsole` do Biome falha um `console.*` novo em `apps/web/src/server`, `apps/web/worker`, `apps/admin/src`, `apps/catalog/src` (menos as rotas) e `packages/*/src` (exceções: scripts, gates, testes, `packages/ui`), `evlog` só pode ser importado por `packages/observability`, e `bun run boundaries` prova a recusa. |
 | Limites | Registrados | Nome de pessoa e texto livre sem forma de dado passam (a lista de campos permitidos segue sendo a primeira barreira); número só é mascarado por chave; *digest* hexadecimal não é mascarado; texto acima de 4096 caracteres e contêiner acima de 100 entradas são truncados; falso positivo em texto parecido com telefone ou IP é aceito; scripts de CLI, gates e testes seguem com `console.*` (regra `noConsole` não os cobre). |
+
+### Fase 12E — tracing e amostragem do Workers Observability (PR117; implementação local concluída; nada implantado nem criado na conta Cloudflare)
+
+Quinto passo da Fase 12 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-workers-observability.md); o número pode mudar): só configuração nos `wrangler.jsonc`, em vigor no primeiro deploy.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Configuração | Concluído | `apps/web`, `apps/admin` e `apps/catalog`: logs e traces ligados, `traces.head_sampling_rate` 0,05 (produção), `logs.head_sampling_rate` 1 e `invocation_logs` desligado. |
+| Erros 100% | Concluído | A amostragem da plataforma é por requisição e não tem taxa própria para erros; por isso os logs ficam a 100% e só os traces são amostrados (ADR 0094). |
+| Staging | Pendente (Fase 14) | Ainda não há `env.staging`; ele repete o bloco com traces de 0,5 a 1 e logs a 1. |
+| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05, logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
+| Custo | Estimado | Cerca de 1 MB por dia hoje, contra 0,5 GB por dia de ingestão do Free (logs e traces somados, modelo de 1º/12/2026); US$ 0, dentro do teto de US$ 10 (ADR 0076); gatilho de revisão em 0,25 GB por dia. Medida real: Fase 14. |
+| Limites | Registrados | Sem medida em nuvem; `environment`, CPU do evlog e o destino das exceções com `invocation_logs` desligado ficam para a Fase 14; traces e logs dividem a cota diária (ADR). |
+

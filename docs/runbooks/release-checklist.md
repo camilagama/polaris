@@ -20,7 +20,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - **Nunca aprovar parcialmente um item BLOCK.** Ou ele tem evidência e passa, ou não passa.
 - **Nunca editar o resultado esperado para ficar verde.** Se o resultado esperado de um teste ou gate precisa mudar, a mudança é um commit próprio, revisado, e o SHA candidato muda.
 - **Sem critério de aceite, o veredito é dados insuficientes.**
-- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 14 e 15, que já foram decididos.
+- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 14, 15 e 16, que já foram decididos.
 
 ## Itens
 
@@ -119,6 +119,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: todo login que o app usa em produção (os usuários dos bindings Hyperdrive de tenant, auth, onboarding, cleanup, catálogo, privacidade, Admin e os demais) é membro de um papel `polaris_*_runtime`. O gate `definer-hardening` ([ADR 0093](../adr/0093-funcoes-security-definer-e-privilegios-padrao.md)) só enxerga como runtime os papéis `polaris_*_runtime`, quem é membro deles e os logins dos gates; um login fora desses grupos escapa das verificações por papel (concessão direta de `TEMPORARY` ou `CREATE` em `public`, dono do banco e papéis poderosos alcançáveis). Listar os logins dos bindings e a pertença de cada um (`pg_auth_members`), em modo leitura.
 - Evidência: a lista de logins (nome do papel, sem senha nem URL) com o grupo `polaris_*_runtime` de cada um, a data e quem leu. Login sem grupo, ou que seja o dono do banco, bloqueia até ser corrigido ou ter decisão registrada.
 
+### 16. Exceção não capturada visível nos Workers Logs com `invocation_logs` desligado (BLOCK)
+
+- Critério: os três Workers têm `observability.logs.invocation_logs: false` ([ADR 0094](../adr/0094-tracing-e-amostragem-do-workers-observability.md)), e a documentação da Cloudflare não diz se as exceções não capturadas continuam nos Workers Logs com ele desligado. No staging, provocar uma exceção não capturada em cada Worker (`polaris-web`, `polaris-admin`, `polaris-catalog`) e conferir se ela aparece nos Workers Logs. Se não aparecer em algum Worker, ligar `invocation_logs` nele (o custo é uma linha por requisição, dentro da estimativa do ADR 0094) antes do go-live e repetir a prova.
+- Severidade BLOCK: decidida pelo Arrascaeta. Frequência: **em aberto, proposta pendente de decisão**: o item vale uma vez antes do go-live e de novo quando mudar a configuração `observability` de um Worker ou a `compatibility_date`; depois, as promoções citam o registro vigente (Worker, data, ambiente, resultado). Até a decisão, vale esta proposta.
+- Evidência: por Worker, o ambiente, a data, quem provocou a exceção, se ela apareceu nos Workers Logs (sim ou não) e, se não, o valor de `invocation_logs` depois da correção. Sem segredos nem dados de cliente.
+
 ## Veredito
 
 Ordem de decisão:
@@ -151,9 +157,10 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 14 e 15, já decididos (hoje 13 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 14 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.
 5. Como ler o SHA no host de deploy (item 8).
 6. Se uma execução anterior da suíte completa em Neon (a do fim da fase) vale como evidência do item 4, e se o nome `run-AAAA-MM-DD-<SHA curto>.md` é o adotado para o relatório.
+7. Frequência do item 16 (severidade BLOCK já decidida): se basta uma prova antes do go-live e outra quando mudar a configuração `observability` ou a `compatibility_date`, ou se é por promoção.

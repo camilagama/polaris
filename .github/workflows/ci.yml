@@ -206,3 +206,11 @@ jobs:
         working-directory: apps/web
       - run: bun run test:pwa
         working-directory: apps/web
+      # The public catalog under its production CSP (ADR 0090): nonce on every inline
+      # script, no inline style, hydration without violations, catalog_nonce_missing.
+      - run: bunx playwright install chromium
+        working-directory: apps/catalog
+      - name: Catalog CSP browser test
+        run: bun run --filter @polaris/catalog test:e2e
+        env:
+          POLARIS_CATALOG_E2E: "1"

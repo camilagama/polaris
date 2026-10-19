@@ -53,6 +53,6 @@ O backend registra diagnóstico com `console.*` espalhado pelos Workers, sempre 
 ## Limites aceitos
 
 - ~~A máscara do evlog é genérica e não conhece os dados do Polaris; um campo novo num relatório espalhado com `{ ...relatorio }` passa a ser logado sem ninguém ver.~~ Resolvido pelo PR116: o campo novo sai mascarado se tiver nome ou valor de dado pessoal ou segredo (ver abaixo). O que a política não cobre está em "Limites da política de redação".
-- O campo `environment` do evento vem do `NODE_ENV` do bundle (evlog); não foi confirmado em nuvem e pode sair `development`. O PR117 o fixa.
+- O campo `environment` do evento vem do `NODE_ENV` do bundle (evlog); não foi confirmado em nuvem e pode sair `development`. A Fase 14 o confere em nuvem ([ADR 0094](0094-tracing-e-amostragem-do-workers-observability.md)).
 - `packages/contracts` não tem regra própria contra o logger: não há motivo para importá-lo ali, e a regra do domínio é a que o plano exige.
-- Não há medida de CPU nem de custo do evlog no Worker em nuvem; o `wrangler tail` e o Workers Logs ficam para a validação do PR117.
+- Não há medida de CPU nem de custo do evlog no Worker em nuvem; o `wrangler tail` e o Workers Logs ficam para a validação do PR117 ([ADR 0094](0094-tracing-e-amostragem-do-workers-observability.md): só a configuração; a medida em nuvem fica para a Fase 14).
