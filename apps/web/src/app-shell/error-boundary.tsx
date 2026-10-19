@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { reportRenderError } from "../observability/sentry";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -24,8 +25,9 @@ export class ErrorBoundary extends Component<
     return { failed: true };
   }
 
-  override componentDidCatch(_error: Error, _info: ErrorInfo): void {
-    // There is no error reporting service yet; the fallback is the contract.
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Reported only when the build has a Sentry DSN (ADR 0098); the fallback below is the contract either way.
+    reportRenderError(error, info);
   }
 
   readonly handleRetry = () => {

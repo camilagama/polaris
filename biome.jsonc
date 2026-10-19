@@ -156,6 +156,7 @@
                       "evlog/**",
                       "@polaris/observability",
                       "@polaris/observability/**",
+                      "!@polaris/observability/redaction",
                       "../**/observability/src/**",
                       "../server/**",
                       "../../server/**",

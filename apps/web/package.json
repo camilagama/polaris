@@ -26,6 +26,7 @@
     "@polaris/domain": "workspace:*",
     "@polaris/http-security": "workspace:*",
     "@polaris/observability": "workspace:*",
+    "@sentry/react": "11.8.0",
     "@tanstack/browser-db-sqlite-persistence": "^0.2.30",
     "@tanstack/db": "^0.12.1",
     "@tanstack/offline-transactions": "^1.0.63",

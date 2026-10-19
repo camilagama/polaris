@@ -1701,7 +1701,7 @@ Pacote `@polaris/http-security` e [ADR 0090](../docs/adr/0090-headers-de-seguran
 | Catálogo | Concluído | Entrada `src/server.ts` (o `main` do Worker) com nonce por requisição e CSP sem `'unsafe-inline'`; páginas nunca em cache compartilhado; imagem pública com `sandbox` e `Cross-Origin-Resource-Policy: cross-origin`; prova de navegador da CSP com nonce em `apps/catalog/e2e` (`bun run --filter @polaris/catalog test:e2e`, ainda fora do CI). |
 | Testes | Concluídos | Unitários do módulo (nenhum curinga, `unsafe-inline` ou esquema solto em nenhum perfil) e de integração nas respostas dos três apps. |
 | Gate de navegador | Ver o PR | CSP do shell inalterada na parte de script, estilo e conexão; o resultado de `test:offline-poc` e `test:pwa` está na seção "Verificação" do PR. |
-| Limites | Registrados | Teste de navegador do catálogo com nonce (`apps/catalog/e2e`, ADR 0090) ainda fora do CI; sem `report-uri`; Sentry ainda não ligado (nenhuma origem aberta). |
+| Limites | Registrados | Teste de navegador do catálogo com nonce (`apps/catalog/e2e`, ADR 0090) ainda fora do CI; sem `report-uri`; o Sentry do navegador só abre o host de ingestão num build com `VITE_SENTRY_DSN` ([ADR 0098](../docs/adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); o `_headers` commitado segue sem origem. |
 
 ### Fase 12C — esquema canônico de eventos largos (PR115; implementação local concluída; nada criado na conta Cloudflare)
 
@@ -1756,6 +1756,21 @@ Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais
 | Onde rodam | Proposto | ADR 0095 recomenda uma consulta agendada (cron do Worker) com e-mail pelo Resend: US$ 0, dentro do teto de US$ 10 (ADR 0076); Cloudflare Notifications ficam de complemento e o Sentry espera o plano de estudante. Depende da aprovação do responsável. |
 | Criação real | Pendente (Fase 14) | Cron, token de leitura do Workers Observability e conta do Resend para alertas não foram criados; sem ambiente nenhum alerta dispara. |
 | Limites | Registrados | Limiares e limites de latência são um primeiro chute sem medida; o endpoint e a permissão da consulta do Workers Observability no Free não foram confirmados; a idade do evento pendente mais antigo do outbox não é um evento (o banco não a expõe sem uma função nova, área db): o sinal usa a ausência do job e o runbook traz a consulta SQL; taxa de 5xx é contagem por janela, sem denominador; o `http_request_timed` soma um evento por requisição às rotas críticas ao volume do ADR 0094 (estimado em 0,5 KB por evento, sem medida; a Fase 14 mede). |
+
+### Fase 12G — Sentry no navegador (PR118, POL-53; implementação local concluída; nenhum projeto, DSN ou token criados)
+
+Sétimo passo da Fase 12 ([ADR 0098](../docs/adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md); o número pode mudar). O servidor ainda não usa o SDK do Sentry (ADR 0089, 0094 e 0095); o navegador reaproveita a política de redação dele.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| SDK desligado por padrão | Concluído | `apps/web/src/observability/sentry.ts`: só inicia com `VITE_SENTRY_DSN` válido (host `o<id>.ingest[.<região>].sentry.io`) e `VITE_SENTRY_ENVIRONMENT` em `local`/`staging`/`production`; o SDK é um chunk que só existe no build com DSN. Sem DSN o build não o contém, nada é carregado nem enviado. |
+| Só erros | Concluído | Sem Replay, profiling, tracing, sessões, console ou breadcrumb de DOM; coleta automática desligada (`dataCollection`, o substituto do `sendDefaultPii` no SDK 11); sem `sentry-trace`/`baggage` nas requisições. |
+| Sanitização | Concluído | `sentry-sanitize.ts` em `beforeSend` e `beforeBreadcrumb`, sobre `@polaris/observability/redaction` (nova exportação do pacote): e-mail, telefone, CPF/CNPJ, cartão, IP, cookie e token por padrão e por chave; valores de query e fragmento mascarados; corpo, cookies, headers (menos `User-Agent` e `Referer`) e subárvores de formulário removidos. |
+| Error Boundary | Concluído | `componentDidCatch` reporta com a pilha de componentes; a tela de erro não muda. |
+| CSP | Concluído | Num build com DSN, `pwa/sentry-build.ts` regrava o `_headers` da saída com só o host de ingestão no `connect-src`; o `public/_headers` commitado segue sem origem (ADR 0090, emenda no ADR 0098). |
+| Source maps | Gerados, upload pendente | `sourcemap: "hidden"` no cliente e `public/.assetsignore` (`*.map`) fora dos Static Assets; o upload ao Sentry é o item 18 do [checklist de release](../docs/runbooks/release-checklist.md) e precisa de um token que não existe aqui. |
+| Teste | Concluído | `apps/web/src/observability/*.test.ts` e `apps/web/pwa/sentry-build.test.ts`: evento com cookie, token, e-mail, CPF, CNPJ, telefone e `?token=` sai limpo; sem DSN o SDK não inicia; a CSP muda só o `connect-src`. |
+| Pendências | Abertas | Projeto `polaris`, DSN e token são do responsável; o workflow de staging não define `VITE_SENTRY_*` (fora do escopo desta tarefa); revisão de dados pessoais antes de ligar em produção; até o upload dos mapas as pilhas chegam minificadas. |
 
 ### Fase 10H — a auditoria do tenant sobrevive ao purge, imutável, com retenção por classe (t062; emenda de 19/10/2026 do ADR 0081; implementação local concluída)
 
