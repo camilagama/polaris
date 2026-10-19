@@ -1134,16 +1134,22 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 
-test("/entrar ainda não existe: o app mostra a página de endereço não encontrado, não uma tela branca", async ({
+test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo e o botão do Google, não 'Página não encontrada' (AC-19)", async ({
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
-  await page.goto("/entrar?motivo=sessao&voltar=/devices");
+  await page.goto("/entrar?motivo=recente&voltar=/devices");
   await expect(
-    page.getByRole("heading", { name: "Página não encontrada" })
+    page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Ir para Vender" })
+    page.getByText("Por segurança, entre de novo para confirmar que é você.")
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Página não encontrada" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Continuar com o Google" })
   ).toBeVisible();
 });
 
