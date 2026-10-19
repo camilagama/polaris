@@ -1289,7 +1289,7 @@ Implementar:
 
 Estado (ADR 0100): sequência acrescentada em 19/10/2026 por decisão do usuário (E1 a E4), pré-requisito para ligar o modo offline e para o checklist do Gate 5. Cada item é um PR, no máximo dois em paralelo e um de banco por vez, e a senha (P8 e P9) fica atrás da flag e desligada até haver domínio de envio verificado. O Google não depende de e-mail.
 
-Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8 → P9 → P10**.
+Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8a → P8 → P9 → P10**.
 
 - **P0 (docs):** o ADR 0100, as emendas dos ADRs 0017, 0044 e 0047 e os ajustes nas regras de autenticação e privacidade.
 - **P1 (app):** limitador do login social, 302 no callback e testes de open redirect no servidor.
@@ -1298,8 +1298,9 @@ Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8 → P9 → P
 - **P3 (app):** `/entrar` só com Google, `voltar` e motivo, "Entrar de novo", "Sair" com destino, o texto único de sessão encerrada e `/api/auth-methods`.
 - **P4 (db):** migration do aceite legal (só acrescenta), gate `legal-acceptance` e a classe de retenção `legal_acceptance`.
 - **P5 (app):** acesso sem internet vencido e temporizador (emenda do ADR 0047).
-- **P7 (app):** controle de aceite em `createAuthenticatedRequestContext`, `/aceite`, as RPCs, o aceite no cadastro e a pausa da sync. A recusa de aceite não tira o lojista da tela e não apaga a cópia offline.
-- **P8 (app, precedido de uma migration de banco só com os novos tipos de auditoria):** servidor da senha: fluxo do bloqueio, troca de senha que revoga sessões e troca a época dos leases (sessão de até 15 minutos em `set-password` e `change-password`), `onPasswordReset`, `/api/login-unlock`, `/api/email-verification`, links com o token no fragmento, e-mails e redação.
+- **P7 (app):** controle de aceite em `createAuthenticatedRequestContext`, `/aceite`, as RPCs, o aceite no cadastro e a pausa da sync. A recusa de aceite não tira o lojista da tela e não apaga a cópia offline. O controle nasce desligado (`LEGAL_ACCEPTANCE_ENFORCED=false`) e só liga depois de o cliente com o ramo novo estar publicado e atualizado pelo service worker; a flag offline segue desligada em produção até lá (item 19 do checklist de release). As isenções (entrada, o aceite, páginas legais, pedidos do titular e `device.list`) são uma constante testada contra o router; sync, lease e escrita nunca são isentos. Alvo: até 30 ms de p95 acrescentado, medido no staging.
+- **P8a (db):** migration só com os novos tipos de auditoria de segurança, em PR próprio, mesclada logo antes do P8 e nunca depois.
+- **P8 (app):** servidor da senha: fluxo do bloqueio, troca de senha que revoga sessões e troca a época dos leases (sessão de até 15 minutos em `set-password` e `change-password`), `onPasswordReset`, `/api/login-unlock`, `/api/email-verification`, links com o token no fragmento, e-mails e redação. A falha de envio de e-mail só aparece em `set-password` e `change-password` (dono autenticado); as falhas de `currentPassword` contam no mesmo `login_lock`.
 - **P9 (app):** CSP do Turnstile por rota (`authEntry`, `_headers`, service worker) e as telas de senha atrás da flag. O token sai da barra antes de o Turnstile carregar.
 - **P10 (db):** exclusão do usuário não verificado depois de 24 horas.
 
