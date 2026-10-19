@@ -1,0 +1,245 @@
+name: Deploy staging
+
+# The fixed staging (ADR 0097, runbook docs/runbooks/staging.md): after the CI of a push to main is green,
+# migrate the staging database, then publish polaris-web-staging and polaris-catalog-staging, then smoke.
+# The Admin is not exposed in staging and is never deployed here.
+#
+# The repository is public. workflow_run runs the file of the default branch, never the one of a pull
+# request, and the restriction of branches of the `staging` Environment does not protect a workflow_run:
+# the `if` of each job is the control. Never pull_request_target.
+#
+# Migrations go to the database before the Worker, which works because they are compatible with the
+# previous Worker (expand/contract, ADR 0096). OFF until the responsible creates the staging resources and
+# secrets: the jobs run only when the repository variable STAGING_DEPLOY_ENABLED is "true". Delete it to turn off.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  # Before any checkout or install: is this green commit still the tip of main?
+  decide:
+    name: Decide
+    if: >-
+      vars.STAGING_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      deploy: ${{ steps.tip.outputs.deploy }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      REPOSITORY: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      # A green run is not enough: the two jobs that are never skipped must have succeeded (release checklist, item 2).
+      - name: The required CI jobs succeeded
+        run: |
+          set -euo pipefail
+          jobs=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | "\(.name)\t\(.conclusion)"')
+          for required in "Checks (lint, types, knip, build, tests)" "PostgreSQL 18 gates"; do
+            if ! grep -Fxq "$required"$'\t'"success" <<< "$jobs"; then
+              echo "::error::CI job \"$required\" did not succeed on $HEAD_SHA"
+              exit 1
+            fi
+          done
+      - id: tip
+        name: The commit is still the tip of main
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$REPOSITORY/branches/main" --jq .commit.sha)
+          if [ "$tip" = "$HEAD_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main moved on; the run of the newer tip deploys it"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The build runs the repository's code and dependencies: no Environment and no secret here.
+  build:
+    name: Build staging
+    needs: decide
+    if: >-
+      needs.decide.outputs.deploy == 'true' &&
+      vars.STAGING_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Build the staging Workers
+        env:
+          CLOUDFLARE_ENV: staging
+          # the offline runtime is on in staging only, for the manual Gate 5 (ADR 0043)
+          VITE_OFFLINE_RUNTIME_ENABLED: "true"
+        run: |
+          bun run --filter @polaris/web build
+          bun run --filter @polaris/catalog build
+      # what the deploy follows: refuses placeholders, shared resources and a name without -staging
+      - name: Staging isolation (generated config)
+        run: node scripts/verify-staging-isolation.mjs --built
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: staging-build
+          # .wrangler/deploy/config.json points the deploy at the generated wrangler.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            apps/web/dist
+            apps/web/.wrangler/deploy/config.json
+            apps/catalog/dist
+            apps/catalog/.wrangler/deploy/config.json
+
+  deploy:
+    name: Migrate, deploy and smoke
+    needs: [decide, build]
+    if: >-
+      needs.decide.outputs.deploy == 'true' &&
+      vars.STAGING_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+    # One deploy at a time and never cancelled: stopping a migration halfway is worse than waiting. GitHub keeps
+    # one pending job, so a burst of merges becomes one deploy of the newest tip. On the job, not on the
+    # workflow: a run that the `if` skips never takes the place of a pending deploy.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    env:
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      REPOSITORY: ${{ github.repository }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      # checked again before checkout, after waiting for the concurrency group: main may have moved
+      - id: tip
+        name: The commit is still the tip of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$REPOSITORY/branches/main" --jq .commit.sha)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::notice::main moved on; the run of the newer tip deploys it"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.tip.outputs.deploy == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - if: steps.tip.outputs.deploy == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - if: steps.tip.outputs.deploy == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - if: steps.tip.outputs.deploy == 'true'
+        run: bun install --frozen-lockfile
+      # The artifact comes from a job that ran dependencies: it is downloaded outside the tree and only the
+      # build output is copied in, so it can never replace a binary or a package the next steps run.
+      - if: steps.tip.outputs.deploy == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: staging-build
+          path: ${{ runner.temp }}/staging-build
+      - if: steps.tip.outputs.deploy == 'true'
+        name: Take only the build output from the artifact
+        env:
+          ARTIFACT: ${{ runner.temp }}/staging-build
+        run: |
+          set -euo pipefail
+          if [ -n "$(find "$ARTIFACT" -type l)" ]; then
+            echo "::error::the build artifact contains a symbolic link"
+            exit 1
+          fi
+          for entry in "$ARTIFACT"/* "$ARTIFACT"/.[!.]*; do
+            [ -e "$entry" ] || continue
+            case "$(basename "$entry")" in
+              web | catalog) ;;
+              *) echo "::error::unexpected entry in the build artifact"; exit 1 ;;
+            esac
+          done
+          for app in web catalog; do
+            redirect="$ARTIFACT/$app/.wrangler/deploy/config.json"
+            config_path=$(jq -r .configPath "$redirect")
+            if ! [[ "$config_path" =~ ^\.\./\.\./dist/[a-z0-9_-]+/wrangler\.json$ ]]; then
+              echo "::error::unexpected configPath in the $app deploy redirect"
+              exit 1
+            fi
+            rm -rf "apps/$app/dist" "apps/$app/.wrangler/deploy"
+            mkdir -p "apps/$app/.wrangler/deploy"
+            cp -R "$ARTIFACT/$app/dist" "apps/$app/dist"
+            cp "$redirect" "apps/$app/.wrangler/deploy/config.json"
+          done
+      - if: steps.tip.outputs.deploy == 'true'
+        name: Staging isolation (generated config)
+        run: node scripts/verify-staging-isolation.mjs --built
+      # The owner's URL exists only in this step. The marker and the owner first, then the migrations,
+      # then the read-only part of the definer-hardening gate and the runtime logins (ADR 0097).
+      # A failure here stops before the deploy: the Worker on the air is the previous one.
+      - if: steps.tip.outputs.deploy == 'true'
+        name: Migrate the staging database
+        env:
+          STAGING_MIGRATOR_DATABASE_URL: ${{ secrets.STAGING_MIGRATOR_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          bun run --filter @polaris/db staging:verify-database before-migrate
+          DATABASE_URL="$STAGING_MIGRATOR_DATABASE_URL" bun run --filter @polaris/db db:migrate
+          bun run --filter @polaris/db staging:verify-database after-migrate
+      # The Cloudflare token exists only in this step. --remote reads each staging Hyperdrive first; if it
+      # fails, the database is already migrated, which the previous Worker supports (ADR 0096).
+      - if: steps.tip.outputs.deploy == 'true'
+        name: Deploy the staging Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          STAGING_DATABASE_HOST: ${{ vars.STAGING_DATABASE_HOST }}
+        run: |
+          set -euo pipefail
+          node scripts/verify-staging-isolation.mjs --built --remote
+          # no --env: the generated wrangler.json is already the staging one (the isolation check proved it);
+          # --no-install: only the wrangler of the lockfile, never a download
+          (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
+          (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
+      - if: steps.tip.outputs.deploy == 'true'
+        name: Smoke
+        env:
+          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
+          STAGING_CATALOG_URL: ${{ vars.STAGING_CATALOG_URL }}
+        run: node scripts/smoke-staging.mjs

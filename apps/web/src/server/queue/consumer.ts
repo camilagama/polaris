@@ -128,6 +128,11 @@ async function refuse(
 
 const QUEUE_NAME = /^polaris-(critical|default|media)(?:-[a-z0-9-]+)?$/;
 
+/** The lane of a queue name (`polaris-default-staging` is `default`), or undefined for another queue. */
+export function queueLaneOf(queue: string): string | undefined {
+  return QUEUE_NAME.exec(queue)?.[1];
+}
+
 async function processMessage(
   message: QueueMessage,
   queue: string,
@@ -147,7 +152,7 @@ async function processMessage(
     });
     return;
   }
-  if (QUEUE_NAME.exec(queue)?.[1] !== queueForEventType(envelope.type)) {
+  if (queueLaneOf(queue) !== queueForEventType(envelope.type)) {
     // a type runs only on its own queue, so a heavy handler never runs on the queue of another weight
     logger.warn("queue_message_misrouted", {
       eventType: envelope.type,

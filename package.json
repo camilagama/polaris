@@ -17,7 +17,8 @@
     "lint": "biome lint .",
     "migrations:compat": "node scripts/verify-migration-compat.mjs",
     "test": "vitest run",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"
   },
   "overrides": {
     "sharp": "0.35.5"

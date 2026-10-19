@@ -1734,8 +1734,8 @@ Quinto passo da Fase 12 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-wor
 | --- | --- | --- |
 | Configuração | Concluído | `apps/web`, `apps/admin` e `apps/catalog`: logs e traces ligados, `traces.head_sampling_rate` 0,05 (produção), `logs.head_sampling_rate` 1 e `invocation_logs` desligado. |
 | Erros 100% | Concluído | A amostragem da plataforma é por requisição e não tem taxa própria para erros; por isso os logs ficam a 100% e só os traces são amostrados (ADR 0094). |
-| Staging | Pendente (Fase 14) | Ainda não há `env.staging`; ele repete o bloco com traces de 0,5 a 1 e logs a 1. |
-| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05, logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
+| Staging | Configurado (Fase 14) | `env.staging` repete o bloco com traces a 1 e logs a 1; `env.production` repete o de produção, com traces a 0,05 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md)). Nada implantado. |
+| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05 (no topo e em `env.production`), logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
 | Custo | Estimado | Cerca de 1 MB por dia hoje, contra 0,5 GB por dia de ingestão do Free (logs e traces somados, modelo de 1º/12/2026); US$ 0, dentro do teto de US$ 10 (ADR 0076); gatilho de revisão em 0,25 GB por dia. Medida real: Fase 14. |
 | Limites | Registrados | Sem medida em nuvem; `environment`, CPU do evlog e o destino das exceções com `invocation_logs` desligado ficam para a Fase 14; traces e logs dividem a cota diária (ADR). |
 
@@ -1768,3 +1768,18 @@ Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho apro
 | Leitura depois do purge | Concluído | [Runbook](../docs/runbooks/auditoria-do-tenant-apos-o-purge.md): leitura direta no banco pelo dono, sob caso. A função auditada do Admin fica para o futuro (ADR 0081). |
 | Gate | Concluído | `audit-retention` em `gates:ci`: FK `confdeltype = 'r'`, `tgenabled = 'A'`, recusa sob `session_replication_role = replica`, `CHECK` igual ao domínio, o purge mantém toda a auditoria e o expurgo apaga só o vencido de cada classe e respeita o legal hold. `organization-purge` e `deletion-ledger` ajustados. |
 | Pendências | Abertas | Revisão jurídica dos prazos (bloqueia a promoção a produção); nenhum job de expurgo; HMAC do ator no desenho da exclusão de usuário; expurgo de `auth_security_audit_event`, `platform_audit_events` e `deletion_ledger` exige função própria em migration futura. |
+
+### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
+
+Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Configuração | Concluído | Os três `wrangler.jsonc`: topo só local (`*-local`, `workers_dev: false`, Hyperdrive `local-only`, filas e bucket `-local`); `env.staging` (`polaris-<app>-staging`) e `env.production` (`polaris-<app>`) explícitos, com todos os bindings e `vars`. Os IDs reais são placeholders. |
+| Isolamento estático | Concluído | `scripts/verify-staging-isolation.mjs` (`bun run verify:staging-isolation`, e `--built` sobre o `wrangler.json` da build de staging), com teste: recusa placeholder, recurso compartilhado com a produção ou o topo, dois papéis numa mesma configuração Hyperdrive, nome sem `-staging`, Previews, login por senha e Admin exposto. Hoje falha só pelos placeholders, como esperado. |
+| Isolamento remoto | Pronto, não executado | `--remote` lê cada Hyperdrive de staging (host, caching desligado, login que não é o dono); `staging:verify-database` (só leitura) exige o marcador `polaris.environment = 'staging'`, confere o dono antes do migrate e, depois, a parte só de leitura do `definer-hardening`, o `TEMPORARY` de `PUBLIC` e o grupo de cada login. Nunca rodou contra um banco real. |
+| Login | Decidido | Google próprio em modo Testing (allowlist de usuários de teste no Google), login por senha desligado, sem Cloudflare Access, Admin não exposto. |
+| Recursos e segredos | Pendente (responsável) | Projeto Neon `polaris-staging`, 8 Hyperdrive, filas, bucket, cliente OAuth do Google, segredos do Worker e Environment do GitHub: lista no runbook. |
+| Deploy automático | Pendente | O workflow vem num PR próprio e fica desligado (variável `STAGING_DEPLOY_ENABLED`) até o responsável criar os recursos e ligá-lo; o ADR 0096 (expand/contract), pré-requisito, já está na `main`. |
+| Filas | Concluído | Os nomes seguem `polaris-<fila>-<ambiente>` (`-local`, `-staging`), que o consumidor e a DLQ reconhecem; `apps/web/src/server/queue/queue-names.test.ts` confere os nomes de cada ambiente do `wrangler.jsonc` contra o consumidor. |
+| Limites | Registrados | A allowlist de login do staging vive no Google (modo Testing), fora do repositório; uma allowlist no código é acompanhamento proposto. O Admin não é provado no staging (item 16 dele fica para o go-live); o item 14 deixa as miniaturas do staging em fallback até a virada do mês; o seed sintético e o script de criação dos logins ficam para depois (área db). |

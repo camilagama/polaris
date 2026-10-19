@@ -2,7 +2,7 @@
 
 Este arquivo é a fonte de verdade para os **procedimentos operacionais repetíveis** e para o checklist de go-live. Runbooks descrevem procedimentos, não decisões de produto ou arquitetura; as decisões estão em [adr/](../adr/).
 
-A fundação atual não provisiona recursos de produção nem dados de clientes reais. Adicione um runbook junto da primeira implementação de outras operações repetíveis, como deploy de staging, backup, restore, purge de privacidade ou resposta a incidente.
+A fundação atual não provisiona recursos de produção nem dados de clientes reais. Adicione um runbook junto da primeira implementação de outras operações repetíveis, como backup, restore, purge de privacidade ou resposta a incidente.
 
 Antes de qualquer comando Cloudflare ou Neon, siga [CLI profile policy](./cli-profile-policy.md) para confirmar a identidade autorizada.
 
@@ -23,6 +23,7 @@ Gates e provas por fase:
 - Privacidade (Fase 10, [ADR 0081](../adr/0081-purge-completo-da-organizacao-encerrada.md), emenda de 19/10/2026): [Auditoria do tenant depois do purge](./auditoria-do-tenant-apos-o-purge.md), com como o dono lê a auditoria de uma organização purgada e o que não fazer com ela.
 - Infraestrutura assíncrona (Fase 11): [Filas Cloudflare](./queues.md), com o que está declarado, o plano Free e o comando de criação para o responsável, e [Jobs agendados](./scheduled-jobs.md), com os crons, o estado de cada job, o log e como forçar ou desligar uma execução.
 - Observabilidade (Fase 12, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)): [Alertas operacionais](./alertas.md), com o significado de cada sinal, como confirmar nos Workers Logs ou no banco e o que fazer.
+- Ambientes (Fase 14, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): [Staging fixo](./staging.md), com os recursos e segredos que o responsável cria, o cliente OAuth do Google em modo Testing, a verificação de isolamento e os itens do release-checklist provados no staging.
 
 Dependências: [Auditoria de dependências](./dependency-audit.md), com o procedimento do job "Dependency audit", as exceções vigentes e seus prazos de revisão.
 
@@ -36,7 +37,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 
 ### Hyperdrive e banco
 
-- [ ] Todos os bindings Hyperdrive de produção e de staging existem de verdade (hoje o `wrangler.jsonc` usa `id: "local-only"`) e têm **query caching desabilitado**: `HYPERDRIVE` (tenant), `ONBOARDING_HYPERDRIVE`, o binding da role de auth (nome definido na implementação) e `MEDIA_CLEANUP_HYPERDRIVE`. O `OUTBOX_HYPERDRIVE` entra por último, no passo 7 do [checklist das filas](./queues.md), depois das medições. Registrar a configuração lida de volta.
+- [ ] Todos os bindings Hyperdrive de produção e de staging existem de verdade (o topo do `wrangler.jsonc` é só local, com `id: "local-only"`; `env.staging` e `env.production` trazem placeholders até a criação, e `bun run verify:staging-isolation` os recusa; ver o [runbook do staging](./staging.md)) e têm **query caching desabilitado**: `HYPERDRIVE` (tenant), `ONBOARDING_HYPERDRIVE`, o binding da role de auth (nome definido na implementação) e `MEDIA_CLEANUP_HYPERDRIVE`. O `OUTBOX_HYPERDRIVE` entra por último, no passo 7 do [checklist das filas](./queues.md), depois das medições. Registrar a configuração lida de volta.
 - [ ] As roles de aplicação (tenant, auth, onboarding, cleanup) são roles de login sem `SUPERUSER`, `CREATEROLE`, `CREATEDB` nem `BYPASSRLS`, **não são donas** das tabelas e **não são membros de `neon_superuser`**. O Neon CLI `roles create` gerou membros de `neon_superuser` no passado ([media-storage-reconciliation.md](./media-storage-reconciliation.md)); conferir `pg_roles` e a pertença de cada role.
 - [ ] A role de autenticação tem DML apenas nas tabelas `user`, `account`, `session` e `verification`, e a role de tenant não tem nenhum acesso a elas ([ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md)). Provar a negação cruzada num gate.
 - [ ] `TimeZone` da sessão das roles de aplicação e do banco é UTC, e as colunas de instante são `timestamptz` ([ADR 0024](../adr/0024-colunas-de-instante-timestamptz.md)); provar com uma sessão em fuso diferente de UTC.

@@ -1,8 +1,14 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "polaris-catalog",
+  // The top level is for local development only: the bucket name ends in `-local` and the Hyperdrive id
+  // is `local-only`, so a deploy that forgets `CLOUDFLARE_ENV`/`--env` fails. What is deployed lives in
+  // `env.staging` and `env.production` (ADR 0097); bindings and vars are not inherited, so each
+  // environment repeats them, and `scripts/verify-staging-isolation.mjs` checks the parity.
+  "name": "polaris-catalog-local",
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
   // CATALOG_ORIGIN (the public origin canonical links point to) is a per-environment variable:
   // a deploy without it fails closed instead of publishing a development address.
   // Our own server entry (nonce and security headers, ADR 0090). With the Cloudflare plugin the Worker's
@@ -10,7 +16,7 @@
   // src/server.ts; that file delegates to the package's handler (the router then refuses a page
   // without a nonce: catalog_nonce_missing).
   "main": "./src/server.ts",
-  // Production defaults (ADR 0094); the staging environment of Phase 14 overrides this whole block with `env.staging`.
+  // Production defaults (ADR 0094); each environment repeats the whole block.
   // Logs stay at 100% because the platform samples a request as a whole and has no separate rate for errors:
   // lowering the rate would drop error events with the rest. Invocation logs are off, so only our own
   // structured events are stored (ADR 0094 lists what that drops). Traces are the sampled part: 5%.
@@ -25,7 +31,9 @@
   },
   // The private media bucket. The Worker only calls get: what is served is
   // authorized by the database first (ADR 0069).
-  "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media" }],
+  "r2_buckets": [
+    { "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media-local" }
+  ],
   // The id below only serves local development. A deployed Worker needs a real
   // Hyperdrive configuration with query caching disabled, using the login of the
   // public catalog role (a member of polaris_catalog_runtime): the role reads no
@@ -36,5 +44,66 @@
       "id": "local-only",
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
     }
-  ]
+  ],
+  "env": {
+    // The fixed staging of this account (ADR 0097): only the synthetic organization of the seed is
+    // published. PLACEHOLDER values are filled in by the responsible; the isolation check refuses them.
+    "staging": {
+      "name": "polaris-catalog-staging",
+      "account_id": "PLACEHOLDER-staging-account-id",
+      "workers_dev": true,
+      "preview_urls": false,
+      "vars": {
+        "POLARIS_ENVIRONMENT": "staging",
+        "CATALOG_ORIGIN": "https://polaris-catalog-staging.PLACEHOLDER-workers-subdomain.workers.dev"
+      },
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": false
+        },
+        "traces": { "enabled": true, "head_sampling_rate": 1 }
+      },
+      "r2_buckets": [
+        { "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media-staging" }
+      ],
+      "hyperdrive": [
+        {
+          "binding": "CATALOG_HYPERDRIVE",
+          "id": "PLACEHOLDER-staging-hyperdrive-catalog"
+        }
+      ]
+    },
+    // The go-live (Phase 15, PR133), in another account; not deployed from this repository yet.
+    "production": {
+      "name": "polaris-catalog",
+      "account_id": "PLACEHOLDER-production-account-id",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "POLARIS_ENVIRONMENT": "production",
+        "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin"
+      },
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": false
+        },
+        "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+      },
+      "r2_buckets": [
+        { "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media" }
+      ],
+      "hyperdrive": [
+        {
+          "binding": "CATALOG_HYPERDRIVE",
+          "id": "PLACEHOLDER-production-hyperdrive-catalog"
+        }
+      ]
+    }
+  }
 }
