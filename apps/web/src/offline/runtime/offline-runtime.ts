@@ -36,6 +36,8 @@ import { type PushFunction, syncOutbox } from "../sync-runner";
  * thing as a dependency, so it is tested without a browser.
  */
 export interface KeyValueStore {
+  /** Every key held, when the store can list them (used to sweep keys of an older layout). */
+  keys?: () => string[];
   read: (key: string) => string | null;
   remove: (key: string) => void;
   write: (key: string, value: string) => void;
@@ -56,7 +58,23 @@ export interface RuntimeApi {
   push: (organizationId: string) => PushFunction;
   /** Registers this device for the signed-in user and returns its ID. */
   registerDevice: (label: string | null) => Promise<string>;
+  /**
+   * The ID of the signed-in user, as the server sees the session; null when there
+   * is none (the server said so, or refused with 401/403). Throws
+   * SessionUnreachableError when the server gave no answer (no connection, timeout,
+   * 5xx, 429: the remembered user stands in), and any other error when it answered
+   * with something unusable.
+   */
+  sessionUserId: () => Promise<string | null>;
   source: (organizationId: string) => BootstrapSource;
+}
+
+/** The server could not be reached at all (no connection, timeout): the last known session user may stand in. */
+export class SessionUnreachableError extends Error {
+  constructor(message = "session_unreachable", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "SessionUnreachableError";
+  }
 }
 
 export interface OpenedStores {
@@ -92,6 +110,8 @@ export interface RuntimeDependencies {
     namespace: LocalNamespace,
     options: { discardPending: boolean }
   ) => Promise<void>;
+  /** Deletes only the local collections (the OPFS file) of a namespace, keeping its queue. */
+  wipeCollections: (namespace: LocalNamespace) => Promise<void>;
 }
 
 type RuntimePhase = "off" | "ready" | "starting" | "unavailable";
@@ -147,10 +167,38 @@ function clampLabel(label: string | null | undefined): string | null {
     ? [...cleaned].slice(0, MAX_LABEL_CODE_POINTS).join("").trim()
     : null;
 }
-const leaseKey = (organizationId: string) =>
-  `polaris.offline.lease.${organizationId}`;
+/** The lease is the user's own: a second user of this browser never finds it. */
+const leaseKey = (userId: string, organizationId: string) =>
+  `${LEASE_KEY_PREFIX}${userId}.${organizationId}`;
+/** Before the lease belonged to a user; only ever removed. */
+const LEASE_KEY_PREFIX = "polaris.offline.lease.";
+/** The old key was `prefix + organization` and ids have no dots; the new one is `prefix + user.organization`. */
+const isLegacyLeaseKey = (key: string) =>
+  key.startsWith(LEASE_KEY_PREFIX) &&
+  !key.slice(LEASE_KEY_PREFIX.length).includes(".");
+/** Who was signed in the last time the server could be asked; what offline starts trust. */
+const SESSION_USER_KEY = "polaris.offline.session-user";
+/** The server's code for a lease, device or grant that no longer stands. */
+const AUTHORIZATION_REVOKED = "authorization_revoked";
 const RENEW_BEFORE_MS = 12 * 3_600_000;
+/**
+ * A confirmation of who is signed in is reused by the syncs that follow it, so a
+ * burst of syncs (reconnect, return to the app) costs one get-session, not one
+ * each. Never reused when something is queued: the push must not leave under
+ * somebody else's session (the server would refuse and record that for good).
+ * It only bounds how long a first user's runtime may keep reading and queueing
+ * after somebody else signed in.
+ */
+const SESSION_RECHECK_MS = 30_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
+
+/** What one sync run was started for, so a late answer never acts on whoever opened after it. */
+interface RunScope {
+  generation: number;
+  namespace: LocalNamespace;
+  stores: OpenedStores;
+  userId: string;
+}
 
 interface CachedLease {
   expiresAt: string;
@@ -195,9 +243,12 @@ export class OfflineRuntime {
   private stopListening: (() => void) | null = null;
   private namespace: LocalNamespace | null = null;
   private organizationId: string | null = null;
+  private userId: string | null = null;
   private deviceId: string | null = null;
   private lease: string | null = null;
   private inFlight: Promise<void> | null = null;
+  /** When the server last confirmed the session user of the open namespace; null forces a new look. */
+  private sessionConfirmedAt: number | null = null;
   /** Bumped by every start and stop so a late answer of an old run is dropped. */
   private generation = 0;
 
@@ -287,48 +338,132 @@ export class OfflineRuntime {
   async logoutWorkspaces(): Promise<LogoutWorkspace[]> {
     const current = this.logoutWorkspace();
     if (!current) {
-      return [];
+      return await this.closedLogoutWorkspaces();
     }
     const others: LogoutWorkspace[] = [];
-    const known = this.dependencies.keyValues.read(DEVICE_KEY) ?? this.deviceId;
     for (const item of this.namespaces()) {
+      if (this.namespace && item.userId !== this.namespace.userId) {
+        // somebody else's data on this browser is not this person's to inspect, send or discard
+        continue;
+      }
       if (
         this.namespace &&
-        item.userId === this.namespace.userId &&
         item.organizationId === this.namespace.organizationId
       ) {
         continue;
       }
       // biome-ignore lint/performance/noAwaitInLoops: each namespace is opened and inspected in turn
-      const namespace = await this.dependencies.namespaceFor(
-        item.userId,
-        item.organizationId
-      );
-      const stores = await this.dependencies.openStores(
-        namespace,
-        known ?? "00000000-0000-7000-8000-000000000000"
-      );
-      let closed = false;
-      const release = async () => {
-        if (!closed) {
-          closed = true;
-          await stores.close();
-        }
-      };
-      others.push({
-        label: `${item.organizationId} (outra organização)`,
-        outbox: stores.outbox,
-        purge: async (options) => {
-          await release();
-          await this.dependencies.purge(namespace, options);
-          this.forgetNamespace(namespace);
-          this.dependencies.keyValues.remove(leaseKey(item.organizationId));
-        },
-        release,
-        trySync: () => Promise.reject(new Error("switch_organization")),
+      const workspace = await this.inspectedWorkspace(item, {
+        stoppedRuntime: false,
       });
+      others.push(workspace);
     }
     return [current, ...others];
+  }
+
+  /**
+   * "Sair" with no store open (the runtime is unavailable, refused or stopped):
+   * the person's local copy is still on the disk and must go with the session.
+   * Every namespace of the signed-in user is opened just to be inspected and
+   * purged like the others; whose they are comes from the server's answer, never from
+   * what the runtime last held or remembered.
+   * With work still queued the logout is blocked as always, but the collections
+   * (patient-level data) and the lease go anyway, the same rule as a revocation:
+   * the queue stays until the person sends or discards it (ADR 0038).
+   */
+  private async closedLogoutWorkspaces(): Promise<LogoutWorkspace[]> {
+    if (this.snapshot.phase === "starting") {
+      return []; // the start is still opening stores: not a moment to open them again
+    }
+    const userId = await this.signedInUserForLogout();
+    if (!userId) {
+      return [];
+    }
+    const workspaces: LogoutWorkspace[] = [];
+    for (const item of this.namespaces()) {
+      if (item.userId === userId) {
+        // biome-ignore lint/performance/noAwaitInLoops: each namespace is opened and inspected in turn
+        const workspace = await this.inspectedWorkspace(item, {
+          stoppedRuntime: true,
+        });
+        workspaces.push(workspace);
+      }
+    }
+    return workspaces;
+  }
+
+  /**
+   * Who is leaving when the runtime holds nothing: only the server's own answer
+   * names them. A remembered user can be stale (another person signed in since),
+   * and ending a session needs the server anyway, so with no answer nobody is named.
+   */
+  private async signedInUserForLogout(): Promise<string | null> {
+    if (!this.dependencies.isOnline()) {
+      return null;
+    }
+    try {
+      return await this.dependencies.api.sessionUserId();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A namespace that is not the open one, opened only to look at its queue. It
+   * cannot be sent from here (that needs that organization's session context),
+   * so queued work blocks the logout until the person switches to it.
+   */
+  private async inspectedWorkspace(
+    item: { organizationId: string; userId: string },
+    options: { stoppedRuntime: boolean }
+  ): Promise<LogoutWorkspace> {
+    const { keyValues } = this.dependencies;
+    const known = keyValues.read(DEVICE_KEY) ?? this.deviceId;
+    const namespace = await this.dependencies.namespaceFor(
+      item.userId,
+      item.organizationId
+    );
+    const stores = await this.dependencies.openStores(
+      namespace,
+      known ?? "00000000-0000-7000-8000-000000000000"
+    );
+    let closed = false;
+    const release = async () => {
+      if (!closed) {
+        closed = true;
+        await stores.close();
+      }
+    };
+    const forgetLease = () =>
+      keyValues.remove(leaseKey(item.userId, item.organizationId));
+    return {
+      label: options.stoppedRuntime
+        ? item.organizationId
+        : `${item.organizationId} (outra organização)`,
+      outbox: stores.outbox,
+      purge: async (purgeOptions) => {
+        await release();
+        await this.dependencies.purge(namespace, purgeOptions);
+        this.forgetNamespace(namespace);
+        forgetLease();
+        if (options.stoppedRuntime) {
+          // no open organization is left to forget the device and the remembered user
+          keyValues.remove(DEVICE_KEY);
+          keyValues.remove(SESSION_USER_KEY);
+        }
+      },
+      release,
+      ...(options.stoppedRuntime
+        ? {
+            scrub: async () => {
+              await release();
+              await this.dependencies.wipeCollections(namespace);
+              forgetLease();
+            },
+          }
+        : {}),
+      trySync: () => Promise.reject(new Error("switch_organization")),
+    };
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -367,6 +502,7 @@ export class OfflineRuntime {
       return;
     }
     this.organizationId = null;
+    this.userId = null;
     this.lease = null;
     this.set({
       ...this.snapshot,
@@ -433,11 +569,28 @@ export class OfflineRuntime {
 
   private forgetDevice() {
     this.dependencies.keyValues.remove(DEVICE_KEY);
-    if (this.organizationId) {
-      this.dependencies.keyValues.remove(leaseKey(this.organizationId));
-    }
+    this.dependencies.keyValues.remove(SESSION_USER_KEY);
+    this.forgetLease();
     this.deviceId = null;
     this.lease = null;
+  }
+
+  /** Leases of the old layout (one per organization, no user) are never read again: sweep them all, whatever the organization. */
+  private sweepLegacyLeases() {
+    const { keyValues } = this.dependencies;
+    for (const key of keyValues.keys?.() ?? []) {
+      if (isLegacyLeaseKey(key)) {
+        keyValues.remove(key);
+      }
+    }
+  }
+
+  private forgetLease() {
+    if (this.userId && this.organizationId) {
+      this.dependencies.keyValues.remove(
+        leaseKey(this.userId, this.organizationId)
+      );
+    }
   }
 
   /** Another tab changed the shared rows: read them (and the queue) again. */
@@ -461,8 +614,13 @@ export class OfflineRuntime {
     await stores?.close();
   }
 
-  private cachedLease(organizationId: string): CachedLease | null {
-    const raw = this.dependencies.keyValues.read(leaseKey(organizationId));
+  private cachedLease(
+    userId: string,
+    organizationId: string
+  ): CachedLease | null {
+    const raw = this.dependencies.keyValues.read(
+      leaseKey(userId, organizationId)
+    );
     if (!raw) {
       return null;
     }
@@ -479,30 +637,30 @@ export class OfflineRuntime {
 
   private leaseIsUsable(
     token: string,
+    userId: string,
     organizationId: string,
     deviceId: string
   ): boolean {
     const claims = readUnverifiedOfflineLease(token);
     return (
       claims !== null &&
+      claims.sub === userId &&
       claims.org === organizationId &&
       claims.dev === deviceId &&
       claims.exp * 1000 > this.now().getTime()
     );
   }
 
-  private async ensureDevice(): Promise<string> {
+  private async ensureDevice(userId: string): Promise<string> {
     const { keyValues } = this.dependencies;
     const known = keyValues.read(DEVICE_KEY);
-    if (known && (await this.stillMine(known))) {
+    if (known && (await this.stillMine(known, userId))) {
       return known;
     }
     if (known) {
       // Somebody else's device (or a revoked one): never reuse it or its lease.
       keyValues.remove(DEVICE_KEY);
-      if (this.organizationId) {
-        keyValues.remove(leaseKey(this.organizationId));
-      }
+      this.forgetLease();
     }
     if (!this.dependencies.isOnline()) {
       throw new Error("no_device_offline");
@@ -514,16 +672,64 @@ export class OfflineRuntime {
     return id;
   }
 
-  /** Online, asks the server whether the remembered device is this user's; offline, trusts it. */
-  private async stillMine(deviceId: string): Promise<boolean> {
+  /**
+   * Online, asks the server whether the remembered device is this user's; offline,
+   * trusts it (the session user is the one the server last confirmed). When the
+   * server cannot be asked, a hiccup does not discard the device of a user who
+   * already holds a lease for it, but it never lends it to a user who does not.
+   */
+  private async stillMine(deviceId: string, userId: string): Promise<boolean> {
     if (!this.dependencies.isOnline()) {
       return true;
     }
     try {
       return await this.dependencies.api.deviceIsMine(deviceId);
     } catch {
-      return true; // the server could not be asked: do not discard on a hiccup
+      return this.leaseProvesDevice(deviceId, userId);
     }
+  }
+
+  /** Whether this user's own cached lease names the device, i.e. the server once issued it to them for it. */
+  private leaseProvesDevice(deviceId: string, userId: string): boolean {
+    if (!this.organizationId) {
+      return false;
+    }
+    const cached = this.cachedLease(userId, this.organizationId);
+    const claims = cached ? readUnverifiedOfflineLease(cached.lease) : null;
+    return claims?.sub === userId && claims.dev === deviceId;
+  }
+
+  /**
+   * Who is signed in: the server's answer while online (remembered for the next
+   * offline start), the last remembered one otherwise or when the server cannot
+   * be asked. A session that is over, or never was known, has no one to open.
+   */
+  private async sessionUser(): Promise<{ confirmed: boolean; userId: string }> {
+    const { api, isOnline, keyValues } = this.dependencies;
+    let userId: string | null | undefined;
+    if (isOnline()) {
+      try {
+        userId = await api.sessionUserId();
+      } catch (error) {
+        if (!(error instanceof SessionUnreachableError)) {
+          throw error; // the server answered, and not with a session: never guess who it is
+        }
+        userId = undefined; // no connection after all: the remembered one stands in, as offline
+      }
+    }
+    if (userId === null) {
+      keyValues.remove(SESSION_USER_KEY);
+      throw new Error("no_session");
+    }
+    if (userId !== undefined) {
+      keyValues.write(SESSION_USER_KEY, userId);
+      return { confirmed: true, userId };
+    }
+    const remembered = keyValues.read(SESSION_USER_KEY);
+    if (!remembered) {
+      throw new Error("no_session_offline");
+    }
+    return { confirmed: false, userId: remembered };
   }
 
   private namespaces(): { organizationId: string; userId: string }[] {
@@ -581,13 +787,15 @@ export class OfflineRuntime {
 
   /** The lease to work under: the cached one while it lasts, a fresh one when due. */
   private async ensureLease(
+    userId: string,
     organizationId: string,
     deviceId: string
   ): Promise<string> {
     const { api, isOnline, keyValues } = this.dependencies;
-    const cached = this.cachedLease(organizationId);
+    const cached = this.cachedLease(userId, organizationId);
     const usable =
-      cached && this.leaseIsUsable(cached.lease, organizationId, deviceId)
+      cached &&
+      this.leaseIsUsable(cached.lease, userId, organizationId, deviceId)
         ? cached
         : null;
     const due =
@@ -597,7 +805,16 @@ export class OfflineRuntime {
     if (due && isOnline()) {
       try {
         const issued = await api.issueLease(deviceId, organizationId);
-        keyValues.write(leaseKey(organizationId), JSON.stringify(issued));
+        // a lease for somebody else is never kept, whatever the server said
+        if (
+          !this.leaseIsUsable(issued.lease, userId, organizationId, deviceId)
+        ) {
+          throw new Error("lease_wrong_user");
+        }
+        keyValues.write(
+          leaseKey(userId, organizationId),
+          JSON.stringify(issued)
+        );
         return issued.lease;
       } catch (error) {
         if (!usable) {
@@ -613,10 +830,18 @@ export class OfflineRuntime {
   }
 
   private async boot(organizationId: string, generation: number) {
-    const deviceId = await this.ensureDevice();
+    const { confirmed, userId } = await this.sessionUser();
+    if (generation !== this.generation) {
+      return;
+    }
+    this.userId = userId;
+    // only the server's own answer opens the window; a remembered user does not
+    this.sessionConfirmedAt = confirmed ? this.now().getTime() : null;
+    this.sweepLegacyLeases();
+    const deviceId = await this.ensureDevice(userId);
     try {
-      const lease = await this.ensureLease(organizationId, deviceId);
-      await this.open(organizationId, deviceId, lease, generation);
+      const lease = await this.ensureLease(userId, organizationId, deviceId);
+      await this.open(userId, organizationId, deviceId, lease, generation);
     } catch (error) {
       if (
         !this.dependencies.isOnline() ||
@@ -628,13 +853,14 @@ export class OfflineRuntime {
       // The remembered device may belong to another user of this browser:
       // forget it and register again, once.
       this.dependencies.keyValues.remove(DEVICE_KEY);
-      const fresh = await this.ensureDevice();
-      const lease = await this.ensureLease(organizationId, fresh);
-      await this.open(organizationId, fresh, lease, generation);
+      const fresh = await this.ensureDevice(userId);
+      const lease = await this.ensureLease(userId, organizationId, fresh);
+      await this.open(userId, organizationId, fresh, lease, generation);
     }
   }
 
   private async open(
+    userId: string,
     organizationId: string,
     deviceId: string,
     lease: string,
@@ -644,8 +870,12 @@ export class OfflineRuntime {
     if (!claims) {
       throw new Error("lease_unreadable");
     }
+    if (claims.sub !== userId) {
+      // the namespace is the session user's, never the one a lease happens to name
+      throw new Error("lease_wrong_user");
+    }
     const namespace = await this.dependencies.namespaceFor(
-      claims.sub,
+      userId,
       organizationId
     );
     const stores = await this.dependencies.openStores(namespace, deviceId);
@@ -689,27 +919,144 @@ export class OfflineRuntime {
     await this.refreshCounts();
   }
 
+  /**
+   * The server withdrew this user's access (the session ended, the membership or
+   * the device was revoked). Nothing of this user is read again: the lease is
+   * forgotten at once, not left to work until it expires, and the local
+   * collections are deleted. What was still queued is work no one else can redo,
+   * so it stays in its own namespace (the next session of this user sends it, or
+   * asks what to do with what the server refused); with nothing queued the whole
+   * namespace goes. Only this user's namespace is ever touched.
+   */
+  private async dropLocalCopy(
+    run: RunScope,
+    options: { forgetDevice: boolean }
+  ) {
+    const { generation, namespace, stores } = run;
+    if (generation !== this.generation) {
+      return; // another organization or user took over while the answer was on its way
+    }
+    const queued = (await stores.outbox.snapshot()).commands.length > 0;
+    await this.closeStores();
+    this.forgetLease();
+    this.lease = null;
+    if (options.forgetDevice) {
+      this.dependencies.keyValues.remove(DEVICE_KEY);
+      this.deviceId = null;
+    }
+    let reason = "session_refused";
+    try {
+      if (queued) {
+        await this.dependencies.wipeCollections(namespace);
+      } else {
+        await this.dependencies.purge(namespace, { discardPending: false });
+        this.forgetNamespace(namespace);
+      }
+    } catch {
+      reason = "purge_failed";
+    }
+    if (generation !== this.generation) {
+      return;
+    }
+    this.set({
+      ...this.snapshot,
+      bootstrapped: false,
+      counts: EMPTY_COUNTS,
+      dataVersion: this.snapshot.dataVersion + 1,
+      leaseExpiresAt: null,
+      phase: "unavailable",
+      reason,
+      sessionRefused: true,
+      syncing: false,
+    });
+  }
+
+  /**
+   * Whether the session still belongs to the user whose namespace is open. A
+   * session that changed hands (another person signed in, in this tab or another)
+   * must not keep queueing into the first person's namespace. Nothing is deleted:
+   * that data is still its owner's, and only the owner can open it again.
+   */
+  private async sessionChangedHands(run: RunScope): Promise<boolean> {
+    const queued = (await run.stores.outbox.snapshot()).commands.length > 0;
+    const sinceConfirmed =
+      this.sessionConfirmedAt === null
+        ? Number.NaN
+        : this.now().getTime() - this.sessionConfirmedAt;
+    // never push the queue on a reused confirmation: a refusal of a command is recorded by the server for good
+    if (!queued && sinceConfirmed >= 0 && sinceConfirmed < SESSION_RECHECK_MS) {
+      return false; // (a clock that went back counts as no confirmation)
+    }
+    let current: string | null;
+    try {
+      current = await this.dependencies.api.sessionUserId();
+    } catch {
+      return false; // the server could not say: the push will be refused if it matters
+    }
+    if (current === run.userId) {
+      this.sessionConfirmedAt = this.now().getTime();
+      return false;
+    }
+    if (current === null) {
+      this.dependencies.keyValues.remove(SESSION_USER_KEY);
+    } else {
+      this.dependencies.keyValues.write(SESSION_USER_KEY, current);
+    }
+    if (run.generation !== this.generation) {
+      return true;
+    }
+    await this.closeStores();
+    this.lease = null;
+    this.set({
+      ...this.snapshot,
+      counts: EMPTY_COUNTS,
+      leaseExpiresAt: null,
+      phase: "unavailable",
+      reason: "session_changed",
+      sessionRefused: true,
+      syncing: false,
+    });
+    return true;
+  }
+
   private async runSync(): Promise<void> {
-    const { stores, organizationId, deviceId } = this;
+    const { stores, organizationId, deviceId, userId, namespace } = this;
     if (
       this.snapshot.phase !== "ready" ||
-      !(stores && organizationId && deviceId)
+      !(stores && organizationId && deviceId && userId && namespace)
     ) {
       return;
     }
+    const run: RunScope = {
+      generation: this.generation,
+      namespace,
+      stores,
+      userId,
+    };
     if (!this.dependencies.isOnline()) {
+      this.sessionConfirmedAt = null; // whoever is signed in when the network returns is looked at again
       this.set({ ...this.snapshot, online: false });
       return;
     }
     this.set({ ...this.snapshot, online: true, reason: null, syncing: true });
+    if (await this.sessionChangedHands(run)) {
+      return;
+    }
     try {
-      this.lease = await this.ensureLease(organizationId, deviceId);
+      this.lease = await this.ensureLease(userId, organizationId, deviceId);
       const source = this.dependencies.api.source(organizationId);
-      await syncOutbox({
+      const summary = await syncOutbox({
         outbox: stores.outbox,
         pull: { source, writer: stores.writer },
         push: this.dependencies.api.push(organizationId),
       });
+      if (
+        summary.rejected > 0 &&
+        summary.blockedBy?.rejection?.code === AUTHORIZATION_REVOKED
+      ) {
+        await this.dropLocalCopy(run, { forgetDevice: true });
+        return;
+      }
       const meta = await stores.writer.readMeta();
       if (isLocalStoreReady(meta) && meta?.cursor) {
         await pullLocalChanges(source, stores.writer, meta.cursor);
@@ -727,12 +1074,17 @@ export class OfflineRuntime {
       });
       this.channel?.post();
     } catch (error) {
+      if (isSessionRefusal(error)) {
+        this.dependencies.keyValues.remove(SESSION_USER_KEY);
+        await this.dropLocalCopy(run, { forgetDevice: false });
+        return;
+      }
       // a partial sync may still have changed rows (accepted commands, pulled pages)
       this.set({
         ...this.snapshot,
         dataVersion: this.snapshot.dataVersion + 1,
         reason: "sync_failed",
-        sessionRefused: isSessionRefusal(error),
+        sessionRefused: false,
         syncing: false,
       });
       this.channel?.post();
