@@ -519,7 +519,7 @@ async function run() {
         `${signature} owner`
       );
       assert.ok(
-        row.config?.includes("search_path=pg_catalog, public"),
+        row.config?.includes("search_path=pg_catalog, public, pg_temp"),
         `${signature} pins its search_path`
       );
       assert.equal(row.public_grant, false, `PUBLIC executes ${signature}`);
