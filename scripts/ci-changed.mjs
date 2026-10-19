@@ -10,15 +10,19 @@ import { pathToFileURL } from "node:url";
 
 /**
  * Paths that cannot change what the browser gate proves: prose; the database
- * package; and the web app's server, Worker and gate scripts. The gate serves
- * the static client bundle and answers the `/rpc` calls itself (page.route), so
- * none of that code runs in it, and the client never imports it.
+ * package; the web app's server, Worker and gate scripts; and the Admin app.
+ * The gate serves the static client bundle and answers the `/rpc` calls itself
+ * (page.route), so none of that code runs in it, and the client never imports
+ * it. Nothing under apps/web, apps/catalog or packages/ depends on apps/admin
+ * (ci-changed.test.mjs reads the import graph and fails if that changes), so
+ * the Admin app is outside both bundles the gate exercises.
  */
 const BROWSER_IRRELEVANT = [
   /^docs\//,
   /^doc\//,
   /\.md$/,
   /^packages\/db\//,
+  /^apps\/admin\//,
   /^apps\/web\/(src\/server|worker|scripts)\//,
 ];
 
