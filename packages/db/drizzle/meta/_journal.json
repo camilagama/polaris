@@ -547,6 +547,13 @@
       "when": 1792369033735,
       "tag": "0077_endurecimento_security_definer",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1792380917659,
+      "tag": "0078_revogar_aparelho_encerra_sessoes",
+      "breakpoints": true
     }
   ]
 }

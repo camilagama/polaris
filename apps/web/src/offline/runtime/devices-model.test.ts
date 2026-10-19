@@ -61,6 +61,13 @@ describe("the messages", () => {
       "conexão"
     );
     expect(revokeError(rpcError("NOT_FOUND"))).toContain("já foi revogado");
+    expect(
+      revokeError(
+        Object.assign(rpcError("FORBIDDEN"), {
+          data: { reason: "fresh_session_required" },
+        })
+      )
+    ).toContain("entre novamente");
     expect(revokeError(new TypeError("Failed to fetch"))).toContain(
       "revogar um aparelho já revogado é seguro"
     );

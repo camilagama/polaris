@@ -38,10 +38,13 @@ import {
   DeviceLimitError,
   DeviceNotFoundError,
   DeviceRevokedError,
+  DeviceSessionEndedError,
+  FreshSessionRequiredError,
   listDevices,
   OfflineGrantNotFoundError,
   registerDevice,
   revokeDevice,
+  touchDevice,
 } from "@polaris/db/device-repository";
 import {
   getInventoryBalance,
@@ -372,6 +375,7 @@ interface RpcRouterDependencies {
   restoreProduct: typeof restoreProduct;
   revokeDevice: typeof revokeDevice;
   runSyncCommand: typeof runSyncCommand;
+  touchDevice: typeof touchDevice;
   syncCommandHandlers: readonly SyncCommandHandler[];
   setProductVariantListPrice: typeof setProductVariantListPrice;
   setProductVariantSku: typeof setProductVariantSku;
@@ -608,6 +612,18 @@ function toRpcError(error: unknown): never {
 
   if (matchesRpcError(error, [TenantAuthorizationError])) {
     throw new ORPCError("FORBIDDEN", { cause: error });
+  }
+
+  // the session was ended (a device revocation) while it was in use
+  if (error instanceof DeviceSessionEndedError) {
+    throw new ORPCError("UNAUTHORIZED", { cause: error });
+  }
+
+  if (error instanceof FreshSessionRequiredError) {
+    throw new ORPCError("FORBIDDEN", {
+      cause: error,
+      data: { reason: error.code },
+    });
   }
 
   if (
@@ -1288,12 +1304,14 @@ export function createRpcRouter(
     defaultListDevices: listDevices,
     defaultRegisterDevice: registerDevice,
     defaultRevokeDevice: revokeDevice,
+    defaultTouchDevice: touchDevice,
     issueOfflineLeaseGrant: overrides.issueOfflineLeaseGrant,
     listDevices: overrides.listDevices,
     registerDevice: overrides.registerDevice,
     requestAuditId,
     revokeDevice: overrides.revokeDevice,
     toRpcError,
+    touchDevice: overrides.touchDevice,
     withAuthenticatedRequestContext: authenticatedRequest,
     withTenantRequestContext: tenantRequest,
   });

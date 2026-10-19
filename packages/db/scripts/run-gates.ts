@@ -96,6 +96,7 @@ const gates: Gate[] = [
   ],
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
+  ["device-sessions", "verify-device-sessions-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
@@ -198,6 +199,7 @@ const suites: Record<string, string[]> = {
     "access-log-login",
     "media-commands",
     "offline-devices",
+    "device-sessions",
     "offline-lease",
     "sync-log",
     "bootstrap",
@@ -229,6 +231,7 @@ const suites: Record<string, string[]> = {
   // Phase 5 (offline): grows with every offline gate.
   gate5: [
     "offline-devices",
+    "device-sessions",
     "offline-lease",
     "sync-log",
     "bootstrap",
