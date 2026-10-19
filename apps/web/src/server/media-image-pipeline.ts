@@ -83,13 +83,32 @@ function normalizedImageFormat(format: string): string | null {
  * Cloudflare Images answers 9422 ("the transformation request is rejected because
  * the usage limit was reached") once the free allowance of 5,000 unique
  * transformations in the month is spent. The documentation does not show how the
- * Workers binding exposes it, so the numeric (or numeric string) `code`, the same
- * shape used for 9412, and the `Cf-Resized: err=9422` header of a rejected
- * response are all accepted. Source: developers.cloudflare.com/images/pricing and
+ * Workers binding exposes it, so every plausible shape is accepted: the numeric
+ * (or numeric string) `code`, the same shape used for 9412; the standalone number
+ * 9422 in the error message (or in a thrown string); and the `Cf-Resized:
+ * err=9422` header of a rejected response. The real format is a go-live BLOCK in
+ * the release checklist. Source: developers.cloudflare.com/images/pricing and
  * /images/reference/troubleshooting (consulted 18/10/2026).
  */
 const QUOTA_EXCEEDED_CODE = 9422;
 const QUOTA_EXCEEDED_HEADER = /(?:^|[\s,;])err=9422(?:$|[\s,;])/;
+// 9422 as its own token: not inside UUIDs, versions or longer numbers.
+const QUOTA_EXCEEDED_MESSAGE = /(?<![\w.-])9422(?![\w.-])/;
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return "";
+}
 
 function hasQuotaExceededCode(error: unknown): boolean {
   return (
@@ -98,6 +117,26 @@ function hasQuotaExceededCode(error: unknown): boolean {
     "code" in error &&
     (error.code === QUOTA_EXCEEDED_CODE ||
       error.code === String(QUOTA_EXCEEDED_CODE))
+  );
+}
+
+function hasProviderInvalidImageCode(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === 9412
+  );
+}
+
+/** Only for errors thrown by the Images binding: the message is a last-resort signal. */
+function isProviderQuotaFailure(cause: unknown): boolean {
+  if (hasProviderInvalidImageCode(cause)) {
+    return false;
+  }
+  return (
+    hasQuotaExceededCode(cause) ||
+    QUOTA_EXCEEDED_MESSAGE.test(errorMessage(cause))
   );
 }
 
@@ -114,19 +153,10 @@ export function isMediaTransformQuotaExceeded(error: unknown): boolean {
 }
 
 function providerFailure(cause: unknown): Error {
-  if (hasQuotaExceededCode(cause)) {
+  if (isProviderQuotaFailure(cause)) {
     return new MediaTransformQuotaExceededError({ cause });
   }
   return new MediaImageProcessingError({ cause });
-}
-
-function hasProviderInvalidImageCode(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === 9412
-  );
 }
 
 async function readImageInfo(

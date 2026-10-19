@@ -141,6 +141,51 @@ describe("processMediaImage", () => {
     }
   );
 
+  it.each([
+    ["9422 in the error message", new Error("ImagesError 9422: usage limit")],
+    ["9422 in a thrown string", "9422: usage limit reached"],
+  ])(
+    "maps the provider's quota error with %s to the quota error",
+    async (_name, thrown) => {
+      const { binding } = imageBinding();
+      binding.input.mockImplementationOnce(() => {
+        throw thrown;
+      });
+
+      await expect(
+        processMediaImage({
+          crop: { height: 1, width: 1, x: 0, y: 0 },
+          declaredContentType: "image/jpeg",
+          images: binding,
+          sourceBytes: new Uint8Array([1, 2, 3]),
+        })
+      ).rejects.toBeInstanceOf(MediaTransformQuotaExceededError);
+    }
+  );
+
+  it.each([
+    ["a longer number", new Error("request 194220 failed")],
+    ["a UUID segment", new Error("request a1b2-9422-4c3d-8e9f failed")],
+    [
+      "an invalid-image code that mentions 9422",
+      Object.assign(new Error("not 9422, bad image"), { code: 9412 }),
+    ],
+  ])("does not take %s for the quota error", async (_name, thrown) => {
+    const { binding } = imageBinding();
+    binding.input.mockImplementationOnce(() => {
+      throw thrown;
+    });
+
+    await expect(
+      processMediaImage({
+        crop: { height: 1, width: 1, x: 0, y: 0 },
+        declaredContentType: "image/jpeg",
+        images: binding,
+        sourceBytes: new Uint8Array([1, 2, 3]),
+      })
+    ).rejects.toBeInstanceOf(MediaImageProcessingError);
+  });
+
   it("maps a quota error raised while decoding to the quota error", async () => {
     const { binding } = imageBinding();
     binding.info.mockRejectedValueOnce(

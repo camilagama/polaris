@@ -9,7 +9,7 @@ import {
   ProductVariantNotFoundError,
 } from "@polaris/domain/catalog/product";
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
 import { requestIdMiddleware } from "../middleware/request-id";
 import { createMediaRoutes, type MediaRouteDependencies } from "./media";
@@ -156,6 +156,10 @@ const testBindings: ServerEnv["Bindings"] = {
 };
 
 describe("media upload route", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("stores a private WebP object and commits the product media association", async () => {
     const { app, bindings, dependencies, mediaBucket, stored } =
       createTestApp();
@@ -416,6 +420,9 @@ describe("media upload route", () => {
   it.each([320, 640] as const)(
     "serves the master with a short private cache when Images is over quota (%i)",
     async (size) => {
+      // each case starts after the delivery log window of the previous one
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 1, 0, 0, size)));
       const warn = vi
         .spyOn(console, "warn")
         .mockImplementation(() => undefined);
@@ -465,6 +472,52 @@ describe("media upload route", () => {
       warn.mockRestore();
     }
   );
+
+  it("logs one delivery fallback event per window and counts the rest", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 2)));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+    const { app, bindings, stored } = createTestApp({
+      getMediaAssetForDelivery: vi.fn(() =>
+        Promise.resolve({
+          assetId: mediaAsset.assetId,
+          byteSize: 4,
+          contentType: "image/webp" as const,
+          height: 200,
+          storageKey,
+          width: 600,
+        })
+      ),
+      processMediaDerivative: vi.fn(() =>
+        Promise.reject(new MediaTransformQuotaExceededError())
+      ),
+    });
+    stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
+    const deliver = () =>
+      app.fetch(
+        new Request(
+          `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+        ),
+        bindings
+      );
+    const quotaEvents = () =>
+      warn.mock.calls
+        .map(([entry]) => entry)
+        .filter((entry) => entry?.event === "media_transform_quota_exceeded");
+
+    const responses = await Promise.all([deliver(), deliver(), deliver()]);
+    expect(responses.map((response) => response.status)).toEqual([
+      200, 200, 200,
+    ]);
+    expect(quotaEvents()).toHaveLength(1);
+
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 2, 0, 1, 1)));
+    expect((await deliver()).status).toBe(200);
+    expect(quotaEvents()).toHaveLength(2);
+    expect(quotaEvents()[1]).toMatchObject({ suppressed: 2 });
+    warn.mockRestore();
+  });
 
   it("does not hide other derivative failures behind the master", async () => {
     const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;

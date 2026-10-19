@@ -86,18 +86,41 @@ interface MediaUploadTarget {
   variantIds: string[];
 }
 
-/** The signal the future alert reads (plan PR119): one event per refused or degraded request. */
+/** The signal the future alert reads (plan PR119): one event per refused or degraded request (delivery fallbacks are throttled, see below). */
 function logMediaTransformQuotaExceeded(
   context: Context<ServerEnv>,
   operation: "media.delivery" | "media.derivative" | "media.upload",
-  outcome: "partial" | "rejected"
+  outcome: "partial" | "rejected",
+  extra: { suppressed?: number } = {}
 ): void {
   logServerEvent("media_transform_quota_exceeded", context, {
+    ...extra,
     errorCode: "9422",
     operation,
     outcome,
     provider: "cloudflare_images",
     reason: "transform_quota_exceeded",
+  });
+}
+
+/** A screen with many thumbnails would otherwise log one event per image every cache window. */
+const DELIVERY_FALLBACK_LOG_WINDOW_MS = 60_000;
+let deliveryFallbackWindowStart = Number.NEGATIVE_INFINITY;
+let deliveryFallbacksSuppressed = 0;
+
+/** One event per window per isolate; `suppressed` (omitted when 0) counts the deliveries the previous window absorbed; the alert sums 1 + suppressed. */
+function logMediaDeliveryFallback(context: Context<ServerEnv>): void {
+  const now = Date.now();
+  const elapsed = now - deliveryFallbackWindowStart;
+  if (elapsed >= 0 && elapsed < DELIVERY_FALLBACK_LOG_WINDOW_MS) {
+    deliveryFallbacksSuppressed += 1;
+    return;
+  }
+  const suppressed = deliveryFallbacksSuppressed;
+  deliveryFallbackWindowStart = now;
+  deliveryFallbacksSuppressed = 0;
+  logMediaTransformQuotaExceeded(context, "media.delivery", "partial", {
+    ...(suppressed > 0 ? { suppressed } : {}),
   });
 }
 
@@ -941,7 +964,7 @@ async function handleMediaDelivery(
       size,
     });
     if (payload?.fallback) {
-      logMediaTransformQuotaExceeded(context, "media.delivery", "partial");
+      logMediaDeliveryFallback(context);
     }
     return payload
       ? mediaDeliveryResponse(context, payload)
