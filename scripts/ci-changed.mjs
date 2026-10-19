@@ -55,9 +55,13 @@ export function classifyChanges(files) {
 
 /** The paths changed by the commit under test against its first parent (the base of a pull request merge). */
 function changedFiles() {
-  const result = spawnSync("git", ["diff", "--name-only", "HEAD^1", "HEAD"], {
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    "git",
+    ["diff", "--name-only", "--no-renames", "HEAD^1", "HEAD"],
+    {
+      encoding: "utf8",
+    }
+  );
   if (result.status !== 0) {
     return null;
   }

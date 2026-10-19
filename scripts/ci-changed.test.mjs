@@ -9,6 +9,10 @@ const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
 const SKIPPED_FOLDERS = new Set([
   "node_modules",
   "dist",
+  "dist-bare",
+  "coverage",
+  "playwright-report",
+  "test-results",
   ".wrangler",
   ".turbo",
 ]);
@@ -27,7 +31,7 @@ function sourceFiles(folder) {
 function importSpecifiers(source) {
   const found = [];
   const pattern =
-    /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"']+)["']/g;
+    /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire(?:\.resolve)?\s*\(\s*|\bvi\.(?:do)?[mM]ock\s*\(\s*)["']([^"']+)["']/g;
   for (const match of source.matchAll(pattern)) {
     found.push(match[1]);
   }
@@ -50,6 +54,38 @@ function reachesAdminApp(file, specifier) {
     path.resolve(path.dirname(file), specifier)
   );
   return target === "apps/admin" || target.startsWith("apps/admin/");
+}
+
+const CONFIG_FILE =
+  /^(?:tsconfig.*\.json|vite.*\.[cm]?ts|vitest.*\.[cm]?ts|wrangler.*\.jsonc?|playwright.*\.[cm]?ts|turbo\.json)$/;
+const ADMIN_TEXT = /apps\/admin|@polaris\/admin|\.\.\/admin(?:[/"'`]|$)/;
+
+/** Config files (tsconfig paths and references, Vite aliases, wrangler bindings) that name the Admin app. */
+function adminConfigReferences() {
+  const hits = [];
+  const workspaces = [
+    "apps/web",
+    "apps/catalog",
+    ...readdirSync(path.join(root, "packages")).map(
+      (name) => `packages/${name}`
+    ),
+  ];
+  for (const workspace of workspaces) {
+    for (const entry of readdirSync(path.join(root, workspace), {
+      withFileTypes: true,
+    })) {
+      if (
+        entry.isFile() &&
+        CONFIG_FILE.test(entry.name) &&
+        ADMIN_TEXT.test(
+          readFileSync(path.join(root, workspace, entry.name), "utf8")
+        )
+      ) {
+        hits.push(`${workspace}/${entry.name}`);
+      }
+    }
+  }
+  return hits;
 }
 
 /** Every file outside apps/admin that imports the Admin app, or declares it as a dependency. */
@@ -217,6 +253,10 @@ describe("the Admin app is outside the browser gate's import graph", () => {
     expect(adminDependents()).toEqual([]);
   });
 
+  it("is named by no tsconfig, Vite, Vitest, Playwright or wrangler config of those workspaces", () => {
+    expect(adminConfigReferences()).toEqual([]);
+  });
+
   it("recognises the ways an import can reach the Admin app", () => {
     const file = path.join(root, "apps/web/src/lib/x.ts");
     expect(importSpecifiers('import { a } from "@polaris/admin";')).toEqual([
@@ -231,6 +271,19 @@ describe("the Admin app is outside the browser gate's import graph", () => {
     expect(importSpecifiers('import "../../admin/src/side-effect";')).toEqual([
       "../../admin/src/side-effect",
     ]);
+    expect(importSpecifiers('require.resolve("@polaris/admin")')).toEqual([
+      "@polaris/admin",
+    ]);
+    expect(importSpecifiers('vi.mock("../../../admin/src/app")')).toEqual([
+      "../../../admin/src/app",
+    ]);
+    expect(ADMIN_TEXT.test('"paths": { "@a/*": ["../admin/src/*"] }')).toBe(
+      true
+    );
+    expect(ADMIN_TEXT.test('"extends": "../../apps/admin/tsconfig.json"')).toBe(
+      true
+    );
+    expect(ADMIN_TEXT.test('"../admin-extra/x"')).toBe(false);
     expect(reachesAdminApp(file, "@polaris/admin")).toBe(true);
     expect(reachesAdminApp(file, "@polaris/admin/src/app")).toBe(true);
     expect(reachesAdminApp(file, "../../../admin/src/app")).toBe(true);

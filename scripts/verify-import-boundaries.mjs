@@ -266,11 +266,16 @@ function lintAll(files) {
 }
 
 try {
-  await Promise.all(
+  // allSettled, not all: a failed write must not let the cleanup below run while others are in flight
+  const writes = await Promise.allSettled(
     fixtures.map((fixture) =>
       writeFile(fixture.path, fixture.source, { flag: "wx" })
     )
   );
+  const failedWrite = writes.find((write) => write.status === "rejected");
+  if (failedWrite) {
+    throw failedWrite.reason;
+  }
 
   const relativePaths = fixtures.map((fixture) =>
     path.relative(root, fixture.path)
