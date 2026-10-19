@@ -222,12 +222,67 @@ describe("the checks that no mode relaxes", () => {
 });
 
 describe("what is a production build", () => {
-  it("is every build the deploy names, except staging; local and CI leave the name empty", () => {
+  it("is every build the deploy names, except staging", () => {
     expect(isProductionBuild({ CLOUDFLARE_ENV: "production" })).toBe(true);
     expect(isProductionBuild({ CLOUDFLARE_ENV: "Production" })).toBe(true);
     expect(isProductionBuild({ CLOUDFLARE_ENV: "prod" })).toBe(true);
     expect(isProductionBuild({ CLOUDFLARE_ENV: "staging" })).toBe(false);
-    expect(isProductionBuild({ CLOUDFLARE_ENV: " " })).toBe(false);
-    expect(isProductionBuild({})).toBe(false);
+    expect(isProductionBuild({ CLOUDFLARE_ENV: " Staging " })).toBe(false);
+  });
+
+  it("fails closed: no environment, an empty one or an unknown one is production", () => {
+    expect(isProductionBuild({})).toBe(true);
+    expect(isProductionBuild({ CLOUDFLARE_ENV: "" })).toBe(true);
+    expect(isProductionBuild({ CLOUDFLARE_ENV: " " })).toBe(true);
+    expect(isProductionBuild({ CLOUDFLARE_ENV: undefined })).toBe(true);
+    expect(isProductionBuild({ CLOUDFLARE_ENV: "stagin" })).toBe(true);
+    expect(isProductionBuild({ CLOUDFLARE_ENV: "preview" })).toBe(true);
+  });
+
+  it("lets a build with no environment carry markers only when it says LEGAL_DRAFT_BUILD=1", () => {
+    expect(isProductionBuild({ LEGAL_DRAFT_BUILD: "1" })).toBe(false);
+    expect(
+      isProductionBuild({ CLOUDFLARE_ENV: "", LEGAL_DRAFT_BUILD: "1" })
+    ).toBe(false);
+    expect(isProductionBuild({ LEGAL_DRAFT_BUILD: "true" })).toBe(true);
+    expect(isProductionBuild({ LEGAL_DRAFT_BUILD: "0" })).toBe(true);
+  });
+
+  it("never lets LEGAL_DRAFT_BUILD loosen a named or unknown environment", () => {
+    expect(
+      isProductionBuild({
+        CLOUDFLARE_ENV: "production",
+        LEGAL_DRAFT_BUILD: "1",
+      })
+    ).toBe(true);
+    expect(
+      isProductionBuild({ CLOUDFLARE_ENV: "stagin", LEGAL_DRAFT_BUILD: "1" })
+    ).toBe(true);
+  });
+
+  it("blocks the pending markers when the environment is empty or unknown", () => {
+    const texts = {
+      privacy: "# P\n\n## 1. Um\n\nContato: **[preencher: e-mail]**.\n",
+      terms: finalTexts.terms,
+    };
+    for (const env of [
+      {},
+      { CLOUDFLARE_ENV: "" },
+      { CLOUDFLARE_ENV: "oops" },
+    ]) {
+      const result = checkLegalDocuments({
+        ...publish(texts, "2026-11-01"),
+        draftNotice: null,
+        production: isProductionBuild(env),
+      });
+      expect(result.errors.join("\n")).toContain("[preencher: e-mail]");
+    }
+    const staging = checkLegalDocuments({
+      ...publish(texts, "2026-11-01"),
+      draftNotice: null,
+      production: isProductionBuild({ CLOUDFLARE_ENV: "staging" }),
+    });
+    expect(staging.errors).toEqual([]);
+    expect(staging.warnings.join("\n")).toContain("[preencher: e-mail]");
   });
 });

@@ -8,7 +8,9 @@ const contentRoot = new URL("../src/legal/content/", import.meta.url);
 
 /**
  * Runs the checks of `legal-guard.ts` before every build: the text and the version constant must
- * agree, and a production build (CLOUDFLARE_ENV=production) refuses any marker still to be filled in.
+ * agree, and a production build refuses any marker still to be filled in. What counts as production
+ * is in `isProductionBuild`: a build with no `CLOUDFLARE_ENV` counts too, unless `LEGAL_DRAFT_BUILD=1`
+ * (the `build` script of the app) says it is a local or CI build.
  */
 export function legalBuildGuardPlugin(): Plugin {
   let checked = false;

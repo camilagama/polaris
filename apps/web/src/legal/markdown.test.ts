@@ -82,12 +82,26 @@ describe("blocks", () => {
     expect(table?.kind === "table" && table.rows).toHaveLength(1);
   });
 
+  it("reads a line that starts with > as a highlighted notice, with bold inside", () => {
+    const blocks = parseMarkdown("> **Atenção:** envie a fila\n> antes.");
+    expect(blocks).toEqual([
+      {
+        children: [
+          { children: [{ kind: "text", text: "Atenção:" }], kind: "bold" },
+          { kind: "text", text: " envie a fila antes." },
+        ],
+        kind: "callout",
+      },
+    ]);
+  });
+
   it.each([
     ["HTML", "<b>oi</b>"],
     ["an image", "![x](/a.png)"],
     ["code", "`x`"],
     ["a third-level heading", "### x"],
-    ["a quote", "> citação"],
+    ["a quote with no space after the sign", ">citação"],
+    ["a notice glued to a paragraph", "texto\n> aviso"],
     ["a numbered list", "1. um"],
     [
       "a table row with the wrong number of columns",

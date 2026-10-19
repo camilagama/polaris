@@ -47,7 +47,8 @@ for (const { path, title } of pages) {
     }) => {
       await page.setViewportSize({ height: 800, width: 360 });
       await page.goto(path);
-      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      // the title shows while the text still loads: wait for the text
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
 
       const overflow = await page.evaluate(
         () =>
@@ -81,6 +82,62 @@ for (const { path, title } of pages) {
       ).toBeInViewport();
     });
 
+    test('o quadro "O essencial" vem antes do sumário e cada seção volta a ele', async ({
+      page,
+    }) => {
+      await page.goto(path);
+      const essential = page.getByRole("complementary", {
+        name: "O essencial",
+      });
+      await expect(essential).toBeVisible();
+      const summary = page.getByRole("navigation", { name: "Sumário" });
+      const [essentialBox, summaryBox] = await Promise.all([
+        essential.boundingBox(),
+        summary.boundingBox(),
+      ]);
+      expect(essentialBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(
+        summaryBox?.y ?? 0
+      );
+
+      const back = page.getByRole("link", { name: "Voltar ao sumário" });
+      await back.nth(2).scrollIntoViewIfNeeded();
+      await back.nth(2).click();
+      await expect(summary).toBeInViewport();
+    });
+
+    test("se o texto não carrega, a página mostra a marca, o título e o erro", async ({
+      page,
+    }) => {
+      await page.route("**/assets/legal-page-*.js", (route) => route.abort());
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
+      await expect(
+        page.getByRole("link", { name: "Polaris, início" })
+      ).toBeVisible();
+      await expect(page.getByRole("alert")).toContainText("Tente de novo");
+      await expect(
+        page.getByRole("button", { name: "Tentar novamente" })
+      ).toBeVisible();
+    });
+
+    test("enquanto o texto carrega, a página já mostra a marca e o título", async ({
+      page,
+    }) => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/assets/legal-page-*.js", async (route) => {
+        await gate;
+        await route.continue();
+      });
+      await page.goto(path, { waitUntil: "commit" });
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
+      await expect(page.getByRole("status")).toHaveText("Carregando…");
+      release();
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
+    });
+
     test("abre sem rede depois de o app ser instalado", async ({
       context,
       page,
@@ -89,6 +146,7 @@ for (const { path, title } of pages) {
       await context.setOffline(true);
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
       await expect(page.getByRole("alert")).toHaveCount(0);
     });
   });

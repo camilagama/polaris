@@ -18,7 +18,7 @@ import { parseMarkdown } from "../src/legal/markdown";
  * Always: each document has the text of the version in force, and the SHA-256 of that text is the
  * one in the constant (so a text that changed without a new version, or a constant that was not
  * updated, stops the build), and the text parses with the restricted Markdown (so a text the page
- * cannot render never reaches a user). Production only: no `[preencher...]` or `[confirmar com o usuário antes
+ * cannot render never reaches a user). Production (see `isProductionBuild`) only: no `[preencher...]` or `[confirmar com o usuário antes
  * de publicar...]` marker left in the text or in the version line, and no draft notice. Staging may
  * carry them, and the page shows them.
  */
@@ -42,12 +42,18 @@ export interface LegalGuardResult {
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Local and CI builds leave `CLOUDFLARE_ENV` empty and staging sets `staging`: those may carry
- * markers. Any other value is treated as production, so a typo in the name never loosens the check.
+ * The build that carries the pending markers of the legal texts says so twice: `CLOUDFLARE_ENV` is
+ * `staging`, or it is empty and `LEGAL_DRAFT_BUILD` is `1` (the `build` script of the app sets it, so
+ * local and CI builds work). Everything else is production and refuses them: a missing, empty or
+ * unknown `CLOUDFLARE_ENV` never loosens the check, so a typo in the name or a build with no
+ * environment cannot publish a draft.
  */
 export function isProductionBuild(env: Record<string, string | undefined>) {
   const name = (env.CLOUDFLARE_ENV ?? "").trim().toLowerCase();
-  return name !== "" && name !== "staging";
+  if (name === "staging") {
+    return false;
+  }
+  return !(name === "" && env.LEGAL_DRAFT_BUILD === "1");
 }
 
 export function sha256Hex(bytes: Uint8Array): string {

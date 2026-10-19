@@ -17,6 +17,7 @@ const terms = currentLegalText("terms");
 const DAY_MS = 86_400_000;
 const periodInBold = /\*\*(\d+ (?:dia|dias|meses|anos))\*\*/g;
 const outsideHttp = /https?:\/\//;
+const sentenceEnd = /[.!?]$/;
 
 /** The words of a text with the bold and the line breaks flattened, for the sentences below. */
 const flat = (text: string) => text.replaceAll("**", "").replaceAll("\n", " ");
@@ -236,11 +237,96 @@ describe("both texts", () => {
   it("keeps the numbered sections in order", () => {
     for (const document of LEGAL_DOCUMENT_IDS) {
       const numbers = parseMarkdown(currentLegalText(document))
-        .filter((block) => block.kind === "heading" && block.level === 2)
+        .filter(
+          (block) =>
+            block.kind === "heading" &&
+            block.level === 2 &&
+            block.id !== "o-essencial"
+        )
         .map((block) =>
           block.kind === "heading" ? Number.parseInt(block.text, 10) : 0
         );
       expect(numbers).toEqual(numbers.map((_, index) => index + 1));
     }
+  });
+});
+
+describe("the essentials box (V5)", () => {
+  const essentialItems = (document: (typeof LEGAL_DOCUMENT_IDS)[number]) => {
+    const blocks = parseMarkdown(currentLegalText(document));
+    const at = blocks.findIndex(
+      (block) => block.kind === "heading" && block.id === "o-essencial"
+    );
+    const list = blocks[at + 1];
+    return list?.kind === "list" ? list.items.map(inlineText) : [];
+  };
+
+  it.each(LEGAL_DOCUMENT_IDS)(
+    "%s opens with 4 to 6 one-sentence items",
+    (document) => {
+      const items = essentialItems(document);
+      expect(items.length).toBeGreaterThanOrEqual(4);
+      expect(items.length).toBeLessThanOrEqual(6);
+      for (const item of items) {
+        expect(item).toMatch(sentenceEnd);
+      }
+    }
+  );
+
+  it("says the same as the text about the periods and the shop's tax record, and no more", () => {
+    for (const document of LEGAL_DOCUMENT_IDS) {
+      const box = essentialItems(document).join(" ");
+      expect(box).toContain("90 dias");
+      expect(box).toContain("5 anos");
+      expect(box).toContain("ainda não confere");
+      // the conditional form of the text (AC-20): nothing is promised that the text does not promise
+      expect(box).not.toContain("apagamos automaticamente");
+      expect(box).not.toContain("e-mail");
+    }
+    expect(essentialItems("terms").join(" ")).toContain(
+      "30 dias para desfazer"
+    );
+  });
+});
+
+describe("plain language (V4)", () => {
+  it("writes the legal term in parentheses after the plain words, once", () => {
+    const text = flat(privacy);
+    expect(text).toContain("(identificador da requisição)");
+    expect(text).toContain("(legítimo interesse, art. 7º, IX)");
+    expect(text).toContain("(cláusulas-padrão contratuais,");
+    expect(text).toContain("(anonimização)");
+    for (const term of [
+      "identificador da requisição",
+      "legítimo interesse",
+      "cláusulas-padrão",
+      "anonimização",
+    ]) {
+      expect(text.split(term)).toHaveLength(2);
+    }
+  });
+
+  it.each([
+    ["LGPD", "Lei Geral de Proteção de Dados"],
+    ["ANPD", "Autoridade Nacional de Proteção de Dados"],
+  ])("spells %s out where it first appears (AC-15)", (acronym, name) => {
+    const text = flat(privacy);
+    const at = text.indexOf(acronym);
+    expect(at).toBeGreaterThan(0);
+    expect(text.slice(at - name.length - 2, at + acronym.length + 1)).toBe(
+      `${name} (${acronym})`
+    );
+  });
+
+  it("turns the long enumerations into lists", () => {
+    const rights = parseMarkdown(privacy).filter(
+      (block) => block.kind === "list"
+    );
+    expect(rights.some((block) => block.items.length === 7)).toBe(true);
+    expect(
+      parseMarkdown(terms).some(
+        (block) => block.kind === "list" && block.items.length === 5
+      )
+    ).toBe(true);
   });
 });

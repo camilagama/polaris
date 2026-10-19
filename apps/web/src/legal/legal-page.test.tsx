@@ -7,19 +7,58 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { currentLegalText } from "./legal-content";
+import { LegalLoadFailure, LegalLoading } from "./legal-frame";
 import { LegalDocumentView, LegalPage } from "./legal-page";
 import { LEGAL_PAGE_TITLES } from "./legal-routes";
 
+const noop = () => undefined;
 const render = (document: (typeof LEGAL_DOCUMENT_IDS)[number]) =>
   renderToStaticMarkup(<LegalPage document={document} />);
-const anchorPattern = /<a href="#([^"]+)"/g;
+const summaryAnchorPattern = /<li><a href="#([^"]+)"/g;
+const backLinkPattern =
+  /<a class="legal-back" href="#sumario">Voltar ao sumário<\/a>/g;
+const tagStartPattern = /^\/?([a-z][a-z0-9]*)/i;
 const headingLowerPattern = /<h[3-6][ >]/g;
 const hrefPattern = /href="([^"#][^"]*)"/g;
-const collectingTagPattern = /<(form|input|script|iframe|img|link|style)[ >]/;
 const outsideAddressPattern = /(?:href|src|action)="(?:https?:)?\/\//;
 const appPagePattern = /^\/(?:privacidade|termos)?$/;
 const count = (html: string, pattern: RegExp) =>
   html.match(pattern)?.length ?? 0;
+
+/** The tags of a markup, by name in lowercase: read from each `<`, so case and spacing never hide one. */
+const tagNames = (html: string) =>
+  new Set(
+    html
+      .split("<")
+      .slice(1)
+      .map((part) => tagStartPattern.exec(part)?.[1]?.toLowerCase() ?? "?")
+  );
+const allowedTags = new Set([
+  "a",
+  "aside",
+  "article",
+  "button",
+  "div",
+  "h1",
+  "h2",
+  "header",
+  "li",
+  "main",
+  "mark",
+  "nav",
+  "ol",
+  "p",
+  "section",
+  "span",
+  "strong",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+]);
 
 describe.each(LEGAL_DOCUMENT_IDS)("the page of %s", (document) => {
   const html = render(document);
@@ -34,7 +73,9 @@ describe.each(LEGAL_DOCUMENT_IDS)("the page of %s", (document) => {
   });
 
   it("has a summary whose every anchor leads to a heading (AC-1, AC-15)", () => {
-    const anchors = [...html.matchAll(anchorPattern)].map((match) => match[1]);
+    const anchors = [...html.matchAll(summaryAnchorPattern)].map(
+      (match) => match[1]
+    );
     expect(anchors.length).toBeGreaterThan(5);
     for (const anchor of anchors) {
       expect(html).toContain(`<h2 id="${anchor}"`);
@@ -53,7 +94,8 @@ describe.each(LEGAL_DOCUMENT_IDS)("the page of %s", (document) => {
   });
 
   it("collects nothing and loads nothing: no form, no script, no outside address (AC-17)", () => {
-    expect(html).not.toMatch(collectingTagPattern);
+    const tags = [...tagNames(html)];
+    expect(tags.filter((tag) => !allowedTags.has(tag))).toEqual([]);
     expect(html).not.toMatch(outsideAddressPattern);
     expect(html).not.toContain("dangerouslySetInnerHTML");
   });
@@ -71,8 +113,8 @@ describe("the tables (AC-16)", () => {
 
   it("keep a header row and name the column of every cell, for the narrow layout", () => {
     expect(count(html, /<table /g)).toBe(3);
-    // the three tables have 3, 2 and 3 columns
-    expect(count(html, /<th scope="col">/g)).toBe(8);
+    // the three tables have 3, 2 and 2 columns
+    expect(count(html, /<th scope="col">/g)).toBe(7);
     expect(count(html, /<td /g)).toBe(count(html, /<td data-label="[^"]+"/g));
     expect(count(html, /<td /g)).toBeGreaterThan(30);
   });
@@ -112,4 +154,99 @@ describe("the view", () => {
     expect(html).toContain('<h2 id="1-so-isto">1. Só isto</h2>');
     expect(currentLegalText("terms")).not.toContain("Um texto novo.");
   });
+});
+
+describe("the markup check", () => {
+  it("sees a tag in any case or spacing, so a text cannot slip one past the list", () => {
+    expect(
+      [...tagNames("<SCRIPT>x</SCRIPT><Img src=x><p></p>")].sort()
+    ).toEqual(["img", "p", "script"]);
+  });
+});
+
+describe.each(LEGAL_DOCUMENT_IDS)("the essentials of %s (V5)", (document) => {
+  const html = render(document);
+  const essential = html.slice(
+    html.indexOf('<aside aria-labelledby="o-essencial"'),
+    html.indexOf("</aside>")
+  );
+
+  it("come in a box before the summary, with 4 to 6 sentences", () => {
+    expect(essential).toContain('<h2 id="o-essencial">O essencial</h2>');
+    expect(html.indexOf("o-essencial")).toBeLessThan(
+      html.indexOf('id="sumario"')
+    );
+    expect(count(essential, /<li>/g)).toBeGreaterThanOrEqual(4);
+    expect(count(essential, /<li>/g)).toBeLessThanOrEqual(6);
+  });
+
+  it("is not in the summary, which lists only the numbered sections", () => {
+    const anchors = [...html.matchAll(summaryAnchorPattern)].map(
+      (match) => match[1]
+    );
+    expect(anchors).not.toContain("o-essencial");
+  });
+
+  it("does not take the box in for a section: no 'Voltar ao sumário' in it", () => {
+    expect(essential).not.toContain("Voltar ao sumário");
+  });
+});
+
+describe.each(LEGAL_DOCUMENT_IDS)(
+  "the way back to the summary of %s (V2)",
+  (document) => {
+    const html = render(document);
+
+    it("ends every numbered section with a link to the summary, and the summary has that id", () => {
+      const sections = count(html, /<section /g);
+      expect(sections).toBeGreaterThan(5);
+      expect(count(html, backLinkPattern)).toBe(sections);
+      expect(html).toContain('id="sumario"');
+    });
+  }
+);
+
+describe("the notice of the queue in the terms (V5)", () => {
+  it("is highlighted in section 8, before the list", () => {
+    const html = render("terms");
+    const section = html.slice(html.indexOf('<h2 id="8-encerrar-a-loja">'));
+    expect(section.indexOf('class="legal-callout"')).toBeGreaterThan(-1);
+    expect(section.indexOf('class="legal-callout"')).toBeLessThan(
+      section.indexOf("<ul>")
+    );
+    expect(section).toContain("a fila pode se perder");
+  });
+});
+
+describe("the states of a page that is not there yet (V3)", () => {
+  it.each(LEGAL_DOCUMENT_IDS)(
+    "loading shows the brand and the title of %s",
+    (document) => {
+      const html = renderToStaticMarkup(<LegalLoading document={document} />);
+      expect(html).toContain("Polaris");
+      expect(html).toContain(
+        `<h1 id="legal-title">${LEGAL_PAGE_TITLES[document]}</h1>`
+      );
+      expect(html).toContain('role="status"');
+      expect(html).toContain("Carregando…");
+    }
+  );
+
+  it.each([
+    [false, "Não foi possível abrir esta página. Tente de novo."],
+    [true, "Sem conexão. Abra de novo quando a internet voltar."],
+  ])(
+    "failure (offline: %s) shows the brand, the title, the message and a retry",
+    (offline, message) => {
+      const html = renderToStaticMarkup(
+        <LegalLoadFailure document="terms" offline={offline} onRetry={noop} />
+      );
+      expect(html).toContain("Polaris");
+      expect(html).toContain('<h1 id="legal-title">Termos de Uso</h1>');
+      expect(html).toContain(
+        `<p class="legal-state" role="alert">${message}</p>`
+      );
+      expect(html).toContain("Tentar novamente");
+    }
+  );
 });

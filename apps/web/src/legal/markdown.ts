@@ -2,7 +2,7 @@ import { findPendingMarkers } from "@polaris/domain/legal/legal-documents";
 
 /**
  * The restricted Markdown of the legal texts: headings (`#`, `##`), paragraphs, `-` lists, tables,
- * `**bold**` and links to a page of the app. Anything else is an error, so a text can never bring
+ * `**bold**`, a `> ` line (a highlighted notice) and links to a page of the app. Anything else is an error, so a text can never bring
  * HTML, an image or an outside link in without someone changing this file on purpose. The result is
  * plain data; the page turns it into React elements (no `dangerouslySetInnerHTML`).
  */
@@ -13,6 +13,7 @@ export type Inline =
   | { kind: "text"; text: string };
 
 export type Block =
+  | { kind: "callout"; children: Inline[] }
   | { kind: "heading"; id: string; level: 1 | 2; text: string }
   | { kind: "list"; items: Inline[][] }
   | { kind: "paragraph"; children: Inline[] }
@@ -27,8 +28,8 @@ const diacritics = /\p{Diacritic}/gu;
 const notAlphanumeric = /[^a-z0-9]+/g;
 const edgeDashes = /^-+|-+$/g;
 const unsupportedSource = /<|!\[|`/;
-const unsupportedLine = /^>|^\d+\. |^\* |^_{3,}$|^-{3,}$/;
-const startsBlock = /^(?:#|- |\|)/;
+const unsupportedLine = /^>(?! )|^\d+\. |^\* |^_{3,}$|^-{3,}$/;
+const startsBlock = /^(?:#|- |\||> )/;
 const leadingPipe = /^\|/;
 const trailingPipe = /\|$/;
 
@@ -167,6 +168,16 @@ function readBlock(lines: string[]): Read {
         kind: "list",
       },
       lines: items.length,
+    };
+  }
+  if (line.startsWith("> ")) {
+    const quoted = takeWhile(lines, (candidate) => candidate.startsWith("> "));
+    return {
+      block: {
+        children: parseInline(quoted.map((item) => item.slice(2)).join(" ")),
+        kind: "callout",
+      },
+      lines: quoted.length,
     };
   }
   if (line.startsWith("|")) {

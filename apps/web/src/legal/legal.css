@@ -171,3 +171,42 @@
     content: attr(data-label);
   }
 }
+
+/* "O essencial": the few sentences that sum the text up, above the summary. */
+.legal-essential {
+  padding: 0.25rem 1rem 0.5rem;
+  margin: 1.5rem 0 0;
+  background: var(--ui-accent-soft);
+  border: 1px solid var(--ui-accent-strong);
+  border-radius: 0.75rem;
+}
+
+.legal-main .legal-essential h2 {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.legal-main .legal-essential ul {
+  margin-bottom: 0.5rem;
+}
+
+/* A warning inside the text, such as the queue that may be lost when a shop closes. */
+.legal-callout {
+  padding: 0.75rem 1rem;
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border: 1px solid var(--ui-warning);
+  border-left-width: 0.35rem;
+  border-radius: 0.6rem;
+}
+
+.legal-main a.legal-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: 0.95rem;
+}
+
+.legal-state {
+  margin: 1.5rem 0 1rem;
+}
