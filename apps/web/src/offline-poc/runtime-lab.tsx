@@ -1,6 +1,7 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { type ChangeEvent, useCallback, useMemo, useState } from "react";
 import { signOfflineLease } from "../lib/offline-lease-token";
+import { wipeLocalStore } from "../offline/local-store";
 import { purgeNamespace } from "../offline/logout-purge";
 import { localNamespace } from "../offline/namespace";
 import { createOfflineProduct } from "../offline/product-create";
@@ -60,6 +61,10 @@ export function RuntimeLab() {
           },
           push: () => (input) => server.push(input),
           registerDevice: () => Promise.resolve(uuid(7001)),
+          sessionUserId: () =>
+            Promise.resolve(
+              window.localStorage.getItem("runtime-lab-user") ?? "u"
+            ),
           source: () => server,
         },
         isOnline: () => network.online,
@@ -71,6 +76,9 @@ export function RuntimeLab() {
         namespaceFor: localNamespace,
         openStores: openRuntimeStores,
         purge: purgeNamespace,
+        wipeCollections: async (namespace) => {
+          await wipeLocalStore(namespace);
+        },
       }),
     [network, server]
   );

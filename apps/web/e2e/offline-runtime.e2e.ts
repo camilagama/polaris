@@ -65,6 +65,6 @@ test("sem nenhum acesso anterior e sem rede, o offline fica indisponível e diz 
   await openLab(page, `user-${crypto.randomUUID()}`);
   await click(page, "Esquecer aparelho", "Esquecer aparelho: ok");
   await page.getByLabel("Rede disponível").uncheck();
-  await click(page, "Iniciar", "unavailable:no_device_offline");
+  await click(page, "Iniciar", "unavailable:no_session_offline");
   await expect(chip(page)).toContainText("Offline indisponível");
 });

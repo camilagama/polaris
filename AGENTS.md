@@ -48,6 +48,14 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - Executar **bun run check** e **bun run build** para a baseline.
 - Relatar os checks executados e qualquer gate restante; não afirmar que um check não executado passou.
 
+## Fluxo de trabalho
+
+- **Numeração de migration e de ADR:** o número é provisório até o merge. Antes de cada commit, confira o próximo número livre na main (e, para ADR, nos PRs abertos). Se outro PR entrar antes com o mesmo número, renumere: migration, snapshot, `_journal.json` e as referências nos docs.
+- **Desenho antes do código:** tarefa grande (migration nova, cobrança, purge, auth, mais de ~15 arquivos ou decisão de arquitetura) começa por um desenho de 1 a 2 páginas, revisado pelo arquiteto e pela segurança. Só depois vem o código.
+- **Capturas de tela:** PR que muda tela traz capturas por fluxo, em celular e desktop, nos estados vazio, carregando, erro e offline, para a revisão de UX. As capturas não são commitadas.
+- **Paralelismo:** no máximo uma tarefa de banco por vez. Duas tarefas em paralelo não podem tocar os mesmos arquivos.
+- **Revisão:** todo PR passa por revisão de código. PR sensível (RLS, grants, SECURITY DEFINER, auth, cobrança, sync offline, mídia, dados pessoais, headers/CSP, dependência nova) também passa por revisão de segurança antes do merge.
+
 ## Decisões e integração
 
 - Mudança de ordem de fases, de escopo de gate ou decisão estrutural que contradiga o plano exige um ADR curto e a atualização do plano no mesmo pull request ([ADR 0016](docs/adr/0016-ordem-das-fases-gate-auth-e-gate-2.md)).
