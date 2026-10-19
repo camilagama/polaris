@@ -76,7 +76,7 @@ export interface PrivacyMaintenanceClient {
   /**
    * Writes the tombstone, deletes every row of the tenant, takes the payer out of the billing events and the
    * free text out of the cases, in one transaction. Refused (`legal_hold_active`, `closure_period_not_elapsed`)
-   * with nothing removed while a legal hold is in force or the closure is younger than 30 days.
+   * with nothing removed while a legal hold is in force or the closure is younger than 90 days.
    */
   purgeOrganizationData: (organizationId: string) => Promise<{
     alreadyPurged: boolean;

@@ -246,7 +246,7 @@ async function run() {
         "organization_id",
         "phone",
       ],
-      // the closure, read before a purge is scheduled: the recovery window and the 30 days (ADR 0081)
+      // the closure, read before a purge is scheduled: the recovery window and the 90 days (ADR 0081)
       organization_closures: [
         "closed_at",
         "organization_id",

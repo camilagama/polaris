@@ -68,7 +68,7 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * organization's prefixes; every row of the tenant goes in one transaction that writes the deletion
  * ledger tombstone first; the cases, the audit, the billing and the ledger survive; running it again
  * changes nothing; and an export cannot leave a copy of an organization that is no longer active. The
- * decisions of 18/10/2026: the purge refuses a closure younger than 30 days and a legal hold, with nothing
+ * decisions of 18/10/2026: the purge refuses a closure younger than 90 days and a legal hold, with nothing
  * removed; the billing events stay pseudonymized (the payer's data out of the fact, the provider's references
  * kept); the cases and the entitlement grants stay without their free text.
  */
@@ -95,6 +95,9 @@ const PAYER_FACT = Object.freeze({
  */
 const CASE_PHONE = "98888-7777";
 const GRANT_PHONE = "97777-6666";
+
+/** The same contacts with only the digits (988887777), the form a copy or a search index may keep. */
+const digitsOnly = (value: string) => value.replace(/\D/g, "");
 
 /** Free text an operator could have typed in a case, with someone's contact in it. */
 const CASE_TEXT = `Dono ligou de 81 ${CASE_PHONE} (Joana)`;
@@ -1044,7 +1047,7 @@ async function run() {
       "an organization still in its recovery window (closing) is not purged"
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     // other gates may leave closures due: only this organization must end up closed
@@ -1115,7 +1118,7 @@ async function run() {
 
     // the refusals of the schedule, each a state to change first
     await owner.pool.query(
-      "UPDATE public.organization_closures SET recover_until = now() + interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '89 days', recover_until = now() + interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     await expectRefusal(
@@ -1124,7 +1127,7 @@ async function run() {
       "the recovery window must be over"
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET recover_until = now() - interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     await expectRefusal(
@@ -1158,18 +1161,28 @@ async function run() {
       InvalidSupportRequestError,
       "an unknown case"
     );
-    // the closure period (decision of 18/10/2026): a window that ended early does not shorten the 30 days
+    // the closure period (decision of 19/10/2026, 90 days): a window that ended early does not shorten it, and the
+    // old period of 30 days is no longer enough; the day before the 90th is still refused
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '20 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     await expectRefusal(
       privacyCase.id,
       "closure_period_not_elapsed",
-      "an organization closed less than 30 days ago"
+      "an organization closed 31 days ago"
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '89 days' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    await expectRefusal(
+      privacyCase.id,
+      "closure_period_not_elapsed",
+      "an organization closed 89 days ago"
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     // a legal hold: placed under a case of the organization named, audited, and while in force no schedule
@@ -1332,7 +1345,7 @@ async function run() {
       );
     }
     tests.push(
-      "the schedule refuses an active or closing organization, an open window, a closure younger than 30 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record"
+      "the schedule refuses an active or closing organization, an open window, a closure younger than 90 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record"
     );
 
     // the operator names the organization of the case, or nothing happens
@@ -1547,7 +1560,7 @@ async function run() {
     );
 
     // the run refuses too (decisions of 18/10/2026): a legal hold placed after the schedule, or a closure younger
-    // than 30 days, keeps the claim away; a run that already holds the purge touches neither storage nor rows
+    // than 90 days, keeps the claim away; a run that already holds the purge touches neither storage nor rows
     const holdLease = () =>
       owner.pool.query(
         "UPDATE public.organization_purges SET locked_until = now() + interval '15 minutes' WHERE organization_id = $1",
@@ -1600,21 +1613,21 @@ async function run() {
       target.organizationId
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '10 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '89 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     await purgeRowSettled();
     assert.equal(
       await maintenance.claimOrganizationPurge(900),
       null,
-      "a purge of a closure younger than 30 days is not taken"
+      "a purge of a closure younger than 90 days is not taken"
     );
     await holdLease();
     await expectBlocked(
       () =>
         maintenance.markOrganizationPurgeStorageTouched(target.organizationId),
       "closure_period_not_elapsed",
-      "a run before the 30 days does not touch the storage"
+      "a run before the 90 days does not touch the storage"
     );
     await expectBlocked(
       () => maintenance.purgeOrganizationData(target.organizationId),
@@ -1623,7 +1636,7 @@ async function run() {
     );
     await dropLease();
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     assert.equal(await salesLeft(), salesBeforeRefusals, "nothing was removed");
@@ -1636,7 +1649,7 @@ async function run() {
     );
     assert.deepEqual(untouched.rows[0], { attempts: 0, touched: false });
     tests.push(
-      "a scheduled purge under a legal hold, or whose closure is younger than 30 days, is not claimed, and a run holding it is refused with the code before touching the storage or the rows: nothing is removed"
+      "a scheduled purge under a legal hold, or whose closure is younger than 90 days, is not claimed, and a run holding it is refused with the code before touching the storage or the rows: nothing is removed"
     );
 
     const counts = async (tenant: TenantFixture) => {
@@ -2374,9 +2387,12 @@ async function run() {
         [
           "%Joana%",
           `%${CASE_PHONE}%`,
+          `%${digitsOnly(CASE_PHONE)}%`,
           "%retirado pelo dono%",
           "%Rita%",
           `%${GRANT_PHONE}%`,
+          `%${digitsOnly(GRANT_PHONE)}%`,
+          `%${digitsOnly(PAYER_FACT.phone)}%`,
           ...Object.values(PAYER_FACT).map((value) => `%${value}%`),
         ],
       ]
@@ -2566,7 +2582,7 @@ async function run() {
       "the reapplied purge is audited again"
     );
     tests.push(
-      "after a restore brings the organization back, the runbook's check shows it and its reapplication purges it again, with one tombstone (the closure went with the first purge: the tombstone proves the 30 days were over)"
+      "after a restore brings the organization back, the runbook's check shows it and its reapplication purges it again, with one tombstone (the closure went with the first purge: the tombstone proves the 90 days were over)"
     );
 
     // after the purge, what the Admin writes in a case of the organization keeps no free text either: the

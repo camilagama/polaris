@@ -554,6 +554,13 @@
       "when": 1792380917659,
       "tag": "0078_revogar_aparelho_encerra_sessoes",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792394891001,
+      "tag": "0079_purge_90_dias",
+      "breakpoints": true
     }
   ]
 }
