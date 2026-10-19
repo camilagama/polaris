@@ -20,7 +20,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - **Nunca aprovar parcialmente um item BLOCK.** Ou ele tem evidência e passa, ou não passa.
 - **Nunca editar o resultado esperado para ficar verde.** Se o resultado esperado de um teste ou gate precisa mudar, a mudança é um commit próprio, revisado, e o SHA candidato muda.
 - **Sem critério de aceite, o veredito é dados insuficientes.**
-- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**.
+- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 14 e 15, que já foram decididos.
 
 ## Itens
 
@@ -151,7 +151,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item (hoje 12 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 14 e 15, já decididos (hoje 13 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.
