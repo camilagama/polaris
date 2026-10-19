@@ -318,9 +318,12 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     basis: "decisao",
     blockedUntil: "access_record_table",
     class: "auth_sessions",
-    data: ["session (IP e user-agent)"],
+    data: [
+      "session (IP e user-agent)",
+      "device_sessions (que sessão usou que aparelho)",
+    ],
     period: { kind: "duration", ms: 30 * DAY_MS },
-    rule: "Sessão vale no máximo 30 dias; a linha expirada fica mais 30 dias depois do fim (expires_at) e então é apagada (decisão do responsável de 18/10/2026). A linha guarda o IP da sessão (o último visto, atualizado a cada atualização diária e a cada troca de IP), mas o registro de acesso de 6 meses do Marco Civil mora na tabela própria `auth_access_log` (ADR 0092), então apagar a sessão não perde o IP. O bloqueio `access_record_table` está resolvido; o job de expurgo de sessões ainda não existe.",
+    rule: "Sessão vale no máximo 30 dias; a linha expirada fica mais 30 dias depois do fim (expires_at) e então é apagada (decisão do responsável de 18/10/2026). A linha guarda o IP da sessão (o último visto, atualizado a cada atualização diária e a cada troca de IP), mas o registro de acesso de 6 meses do Marco Civil mora na tabela própria `auth_access_log` (ADR 0092), então apagar a sessão não perde o IP. O vínculo `device_sessions` (sessão, aparelho, usuário e instante, sem organização) segue a sessão: é apagado em cascata quando a sessão é apagada (saída, expurgo, revogação do aparelho) e quando o aparelho é apagado, então não precisa de prazo próprio. O bloqueio `access_record_table` está resolvido; o job de expurgo de sessões ainda não existe.",
     sources: [
       "docs/business-rules/authentication.md",
       "docs/business-rules/privacy.md",
@@ -346,7 +349,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     legalReview: "pending",
     legalSources: ["Marco Civil da Internet (Lei 12.965/2014), art. 15"],
     period: { kind: "calendar_months", months: 6 },
-    rule: "A auditoria de segurança da autenticação (Google e saída) fica 6 meses, o mínimo do Marco Civil, junto do registro de acesso; a norma pede ainda sigilo, ambiente controlado e de segurança (decisão do responsável de 18/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; validar com contador ou jurídico antes do go-live). A tabela guarda data, hora, ator e identificador da requisição, mas não o IP: o IP de cada acesso está em `auth_access_log` (classe `auth_access_log`, ADR 0092). O prazo é contado em meses corridos e, ao somar meses, o dia que não existe no mês de destino passa ao mês seguinte (nunca encurta o mínimo). O job de expurgo ainda não existe.",
+    rule: "A auditoria de segurança da autenticação (Google, saída e revogação de aparelho que encerrou sessões) fica 6 meses, o mínimo do Marco Civil, junto do registro de acesso; a norma pede ainda sigilo, ambiente controlado e de segurança (decisão do responsável de 18/10/2026, delegada ao orquestrador com base em pesquisa, POL-80; validar com contador ou jurídico antes do go-live). A tabela guarda data, hora, ator e identificador da requisição e, na revogação de aparelho, o aparelho revogado, quantas sessões caíram e a sessão e o aparelho de quem revogou (identificadores, nunca o token), mas não o IP: o IP de cada acesso está em `auth_access_log` (classe `auth_access_log`, ADR 0092). O prazo é contado em meses corridos e, ao somar meses, o dia que não existe no mês de destino passa ao mês seguinte (nunca encurta o mínimo). O job de expurgo ainda não existe.",
     sources: ["docs/business-rules/privacy.md", "ADR 0079"],
     status: "aprovada",
   },

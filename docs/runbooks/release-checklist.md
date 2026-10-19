@@ -42,11 +42,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: listar as migrations de `packages/db/drizzle` ainda não aplicadas em produção, comparando com a tabela de controle do Drizzle, lida em modo leitura.
 - Para cada migration: se é aditiva ou destrutiva, a ordem de aplicação e o plano de volta (rollback ou forward-fix).
 - Migration destrutiva sem plano de volta bloqueia.
+- Compatibilidade com a versão anterior do Worker ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)): cada migration pendente depois da 0077 é classificada como **compatível** (só adiciona), **contract** (remove o que nenhuma versão no ar usa mais; o PR diz qual versão parou de usar) ou **janela** (marcador `-- expand-contract: janela <motivo>`, com a janela descrita e autorizada). O rollback do Worker (PR 136 do plano) não volta o banco, então o Worker anterior precisa funcionar sobre o schema migrado. Migration sem classificação, ou `contract` cuja versão ainda está no ar ou na janela de rollback, bloqueia. Conferir também que `bun run migrations:compat` passa no SHA candidato.
 - Respeitar a ordem de publicação de cada gate. A migration vai ao banco **antes** do Worker que a usa (Worker novo sobre banco antigo falha nas funções novas; ver o passo 1 do [checklist das filas](./queues.md)); o servidor vai ao ar antes do app que usa um campo novo de comando ([Gate 5](./gate-5-offline.md#ordem-de-publicação)).
 - Pré-requisito de quem aplica: o papel que roda as migrations tem de ser o dono do banco (`datdba`) e do schema `public`. No Neon, é o `neondb_owner`. A migration 0077 revoga `TEMPORARY` no banco e `CREATE` no schema `public` de `PUBLIC`, e um `REVOKE` feito por quem não é dono só emite `WARNING`, sem efeito. Confirmar antes de aplicar, em modo leitura: `SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()` e `SELECT current_user`; os dois nomes têm de coincidir. O schema `public` pertence a `pg_database_owner` (PostgreSQL 15 ou superior), do qual o dono do banco é membro implícito; se `pg_namespace.nspowner` de `public` mostrar outro papel, ele também tem de ser o migrador.
 - Se a 0077 falhar no bloco `DO` final (`PUBLIC still has TEMPORARY` ou `PUBLIC still has CREATE`): **parar**. Não seguir para as migrations seguintes nem para o deploy do Worker; conferir na tabela de controle do Drizzle se a 0077 ficou registrada (o Drizzle costuma aplicar o lote pendente numa transação só, e a exceção do bloco `DO` desfaz o lote inteiro; confirmar, sem presumir) e, se ficou, tratar como falha de privilégio a corrigir, não como aplicada. Conferir quem é o dono do banco (e, se `public` não for de `pg_database_owner`, do schema) e com que papel a migration rodou (a mesma consulta acima); se o migrador não é o dono, refazer a aplicação com o papel dono. Só seguir quando a 0077 passar. Nunca ajustar o bloco `DO` nem revogar à mão com outro papel para "passar".
 - Comando de produção só entra no plano depois de testado em branch descartável ou staging, como pede o [README de runbooks](./README.md).
-- Evidência: lista das migrations pendentes (nome e hash), saída da leitura do banco e o plano escrito.
+- Evidência: lista das migrations pendentes (nome e hash), a classificação de cada uma (compatível, contract ou janela), saída da leitura do banco e o plano escrito.
 
 ### 4. Gates de banco em Neon descartável (BLOCK)
 
@@ -70,7 +71,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 7. Critérios de rollback e responsável (BLOCK)
 
-- Critério: para os Workers, os Static Assets e as migrations, a condição que dispara rollback ou forward-fix, a ação e o responsável com o escalonamento. Migration sem reversão automática precisa de forward-fix descrito. Os runbooks de [Filas Cloudflare](./queues.md#rollback-ou-forward-fix) e de [Jobs agendados](./scheduled-jobs.md#rollback-ou-forward-fix) já descrevem como parar o consumo e os crons.
+- Critério: para os Workers, os Static Assets e as migrations, a condição que dispara rollback ou forward-fix, a ação e o responsável com o escalonamento. Migration sem reversão automática precisa de forward-fix descrito. O rollback dos Workers não volta o schema: o banco migrado tem de servir a versão revertida ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)). Os runbooks de [Filas Cloudflare](./queues.md#rollback-ou-forward-fix) e de [Jobs agendados](./scheduled-jobs.md#rollback-ou-forward-fix) já descrevem como parar o consumo e os crons.
 - Evidência: o plano no relatório da execução, com nome ou papel do responsável (**proposta, pendente de decisão:** o responsável pelo projeto, como nos demais runbooks).
 
 ### 8. SHA implantado conferido no host de deploy (BLOCK)
@@ -125,6 +126,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Severidade BLOCK: decidida pelo Arrascaeta. Frequência: **em aberto, proposta pendente de decisão**: o item vale uma vez antes do go-live e de novo quando mudar a configuração `observability` de um Worker ou a `compatibility_date`; depois, as promoções citam o registro vigente (Worker, data, ambiente, resultado). Até a decisão, vale esta proposta.
 - Evidência: por Worker, o ambiente, a data, quem provocou a exceção, se ela apareceu nos Workers Logs (sim ou não) e, se não, o valor de `invocation_logs` depois da correção. Sem segredos nem dados de cliente.
 
+### 17. Sessões anteriores à revogação por aparelho (WARN)
+
+- Critério: a revogação que encerra as sessões do aparelho ([ADR 0048](../adr/0048-tela-de-aparelhos.md), emenda de 19/10/2026) só alcança sessões que já usaram o aparelho depois do deploy dela, porque o vínculo `device_sessions` nasce com o uso e não há backfill. Uma sessão criada antes (um celular perdido e parado, por exemplo) não cai ao revogar o aparelho. No go-live não há sessões antigas e o item não se aplica. Se a revogação por aparelho for para produção depois de haver usuários (o item vale só nessa promoção; nas seguintes, citar o registro), antes de anunciar que "revogar encerra a sessão do aparelho perdido", fazer um destes: pedir aos usuários que usem "encerrar as outras sessões" (a opção da API `device.revoke`; a tela de aparelhos ainda não a oferece, e essa tela é tarefa de produto separada) ou encerrar as sessões existentes no deploy, por procedimento operacional aprovado pelo responsável (todos entram de novo).
+- Evidência: "não se aplica, sem usuários antes do deploy" (com a data) ou o caminho escolhido e quando foi feito.
+- Severidade WARN: proposta, pendente de decisão do responsável.
+
 ## Veredito
 
 Ordem de decisão:
@@ -157,7 +164,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 14 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 14 BLOCK e 3 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

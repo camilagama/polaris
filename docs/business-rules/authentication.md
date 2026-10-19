@@ -27,6 +27,10 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 - O campo `token` retornado pela API nativa de sessões serve como identificador para revogação; autenticar ainda exige o cookie assinado. Não registrar esse campo em logs ou telemetria.
 - `session.ip_address` guarda o último IP visto na sessão, pelo IP de origem da requisição. Ele é atualizado na renovação diária e quando o IP muda; em IPv6, a linha da sessão guarda só a rede /64. Uma troca de IP é registrada como renovação de sessão no registro de acesso, e a verificação não faz consulta extra quando o IP é o mesmo. A troca de endereço dentro da mesma rede /64 não gera renovação; o login sempre grava o endereço inteiro. Se a gravação do registro falhar, a linha da sessão não muda e a próxima requisição tenta de novo.
 - Login, falha de login, saída e renovação de sessão são registrados no registro de acesso de autenticação, com as regras de guarda e sigilo de [privacidade](privacy.md). O registro nunca impede o login.
+- Uma sessão fica ligada a um aparelho quando o usa: registro do aparelho, autorização offline, sincronização e verificação ao iniciar. Uma sessão ligada a um aparelho revogado é encerrada na revogação; as sessões que não usaram esse aparelho continuam.
+- Encerrar as outras sessões do usuário é uma opção separada, desmarcada por padrão. Quando marcada, encerra todas as sessões do usuário, exceto a atual, inclusive as que nunca usaram um aparelho.
+- Revogar outro aparelho ou encerrar as outras sessões exige login nos últimos 15 minutos. Revogar o próprio aparelho, o que a sessão atual registrou, não exige esse login recente; usar um aparelho não o torna próprio.
+- Todo aparelho que passa de vivo a revogado gera um registro `device_revoked` na auditoria de autenticação, com a sessão e o aparelho de quem revogou, mesmo sem nenhuma sessão ligada a ele. A repetição de uma revogação só é registrada quando encerra alguma sessão.
 
 A configuração segue a [documentação Better Auth de gerenciamento de sessões](https://www.better-auth.com/docs/concepts/session-management).
 ## Email transacional

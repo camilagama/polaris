@@ -4,6 +4,8 @@ import {
   DeviceLimitError,
   DeviceNotFoundError,
   DeviceRevokedError,
+  DeviceSessionEndedError,
+  FreshSessionRequiredError,
 } from "@polaris/db/device-repository";
 import { InvalidDeviceLabelError } from "@polaris/domain/offline/offline-grant";
 import {
@@ -20,7 +22,11 @@ import { createRpcRouter } from "./router";
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
 const grantId = "0199c2d0-0000-7000-8000-0000000000a1";
-const session = { user: { emailVerified: true, id: "session-user-17" } };
+const sessionId = "session-row-17";
+const session = {
+  session: { createdAt: new Date(), id: sessionId },
+  user: { emailVerified: true, id: "session-user-17" },
+};
 const identity = {
   capability: "offline:manage",
   organizationId,
@@ -63,11 +69,15 @@ function createClient(
   });
   return createORPCClient(link) as unknown as {
     device: {
+      check: (input: unknown) => Promise<{ device: DeviceView }>;
       list: () => Promise<{ devices: DeviceView[] }>;
       register: (input: unknown) => Promise<{ device: DeviceView }>;
-      revoke: (
-        input: unknown
-      ) => Promise<{ device: DeviceView; revokedGrantIds: string[] }>;
+      revoke: (input: unknown) => Promise<{
+        device: DeviceView;
+        endedCurrentSession: boolean;
+        endedSessionCount: number;
+        revokedGrantIds: string[];
+      }>;
     };
     offline: {
       issueLease: (input: unknown) => Promise<{
@@ -120,6 +130,7 @@ describe("device procedures", () => {
     const result = await client.device.register({ label: "Balcão" });
     expect(registerDevice).toHaveBeenCalledWith({}, "session-user-17", {
       label: "Balcão",
+      sessionId,
     });
     expect(result.device).toEqual({
       createdAt: "2026-10-14T12:00:00.000Z",
@@ -147,6 +158,7 @@ describe("device procedures", () => {
     await client.device.register({ label: null, userId: "someone-else" });
     expect(registerDevice).toHaveBeenCalledWith({}, "session-user-17", {
       label: null,
+      sessionId,
     });
   });
 
@@ -170,6 +182,8 @@ describe("device procedures", () => {
     const revokeDevice = vi.fn(() =>
       Promise.resolve({
         device: record({ revokedAt: new Date("2026-10-14T13:00:00.000Z") }),
+        endedCurrentSession: true,
+        endedSessionCount: 2,
         revokedGrantIds: [grantId],
       })
     );
@@ -178,14 +192,137 @@ describe("device procedures", () => {
       withAuthenticatedRequestContext: authenticated(),
     });
     const result = await client.device.revoke({ deviceId });
+    expect(revokeDevice).toHaveBeenCalledWith({}, "session-user-17", deviceId, {
+      actingSession: { fresh: true, id: sessionId },
+      endOtherSessions: false,
+      requestId: expect.any(String),
+    });
+    expect(result.device.revokedAt).toBe("2026-10-14T13:00:00.000Z");
+    expect(result.revokedGrantIds).toEqual([grantId]);
+    expect(result.endedSessionCount).toBe(2);
+    expect(result.endedCurrentSession).toBe(true);
+  });
+
+  const revokeResult = () => ({
+    device: record({ revokedAt: new Date("2026-10-14T13:00:00.000Z") }),
+    endedCurrentSession: false,
+    endedSessionCount: 0,
+    revokedGrantIds: [],
+  });
+
+  it("revoke marks a session signed in 16 minutes ago as not fresh", async () => {
+    const revokeDevice = vi.fn(() => Promise.resolve(revokeResult()));
+    const staleSession = {
+      ...session,
+      session: {
+        createdAt: new Date(Date.now() - 16 * 60 * 1000),
+        id: sessionId,
+      },
+    };
+    const client = createClient({
+      revokeDevice,
+      withAuthenticatedRequestContext: (input: {
+        operation: (database: unknown, current: unknown) => Promise<unknown>;
+      }) => input.operation({}, staleSession),
+    });
+    await client.device.revoke({ deviceId });
     expect(revokeDevice).toHaveBeenCalledWith(
       {},
       "session-user-17",
       deviceId,
-      expect.objectContaining({ requestId: expect.any(String) })
+      expect.objectContaining({
+        actingSession: { fresh: false, id: sessionId },
+      })
     );
-    expect(result.device.revokedAt).toBe("2026-10-14T13:00:00.000Z");
-    expect(result.revokedGrantIds).toEqual([grantId]);
+  });
+
+  it("revoke passes endOtherSessions through", async () => {
+    const revokeDevice = vi.fn(() => Promise.resolve(revokeResult()));
+    const client = createClient({
+      revokeDevice,
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    await client.device.revoke({ deviceId, endOtherSessions: true });
+    expect(revokeDevice).toHaveBeenCalledWith(
+      {},
+      "session-user-17",
+      deviceId,
+      expect.objectContaining({ endOtherSessions: true })
+    );
+  });
+
+  it("a stale session revoking another device is FORBIDDEN with the fresh_session_required reason", async () => {
+    const client = createClient({
+      revokeDevice: () => Promise.reject(new FreshSessionRequiredError()),
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    await expect(client.device.revoke({ deviceId })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "fresh_session_required" },
+    });
+  });
+
+  it("a session ended by a device revocation is UNAUTHORIZED on register", async () => {
+    const client = createClient({
+      registerDevice: () => Promise.reject(new DeviceSessionEndedError()),
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    await expect(client.device.register({})).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+
+  it("check touches the device with the session user and session, ignoring a smuggled user id", async () => {
+    const touchDevice = vi.fn(() => Promise.resolve(record()));
+    const client = createClient({
+      touchDevice,
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    const result = await client.device.check({
+      deviceId,
+      userId: "someone-else",
+    });
+    expect(touchDevice).toHaveBeenCalledWith({}, "session-user-17", deviceId, {
+      sessionId,
+    });
+    expect(result.device.id).toBe(deviceId);
+  });
+
+  it("check answers CONFLICT for a revoked device and NOT_FOUND for an unknown one", async () => {
+    const revoked = createClient({
+      touchDevice: () => Promise.reject(new DeviceRevokedError()),
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    await expect(revoked.device.check({ deviceId })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    const unknown = createClient({
+      touchDevice: () => Promise.reject(new DeviceNotFoundError()),
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    await expect(unknown.device.check({ deviceId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("check answers 401 without a session and rejects a malformed device id", async () => {
+    const touchDevice = vi.fn();
+    const anonymous = createClient({
+      touchDevice,
+      withAuthenticatedRequestContext: () =>
+        Promise.reject(new TenantRequestContextError("session_required")),
+    });
+    await expect(anonymous.device.check({ deviceId })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    const client = createClient({
+      touchDevice,
+      withAuthenticatedRequestContext: authenticated(),
+    });
+    await expect(
+      client.device.check({ deviceId: "not-a-uuid" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(touchDevice).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed device id before the repository", async () => {
@@ -353,5 +490,16 @@ describe("offline.issueLease", () => {
     await expect(
       missing.offline.issueLease({ deviceId, organizationId })
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("maps a session ended by a device revocation to UNAUTHORIZED", async () => {
+    const client = createClient({
+      issueOfflineLeaseGrant: () =>
+        Promise.reject(new DeviceSessionEndedError()),
+      withTenantRequestContext: tenantContext(),
+    });
+    await expect(
+      client.offline.issueLease({ deviceId, organizationId })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 });
