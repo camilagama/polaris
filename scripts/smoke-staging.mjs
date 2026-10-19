@@ -46,33 +46,78 @@ export function smokeChecks({ catalog, web }) {
   ];
 }
 
-const HTTPS_ORIGIN = /^https:\/\/[^/]+$/;
+const STAGING_HOST = /^polaris-[a-z]+-staging\./;
+const ATTEMPTS = 3;
+const TIMEOUT_MS = 10_000;
+
+/** An https origin of a staging Worker, with no path, query or credentials. */
+function isStagingOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === "https:" &&
+      url.origin === origin &&
+      STAGING_HOST.test(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The code of a network failure (ENOTFOUND, ETIMEDOUT), never its message. */
+function reasonOf(error) {
+  if (!(error instanceof Error)) {
+    return "error";
+  }
+  const code = error.cause?.code;
+  return typeof code === "string" ? `${error.name} ${code}` : error.name;
+}
+
+/**
+ * One check, tried up to ATTEMPTS times with a pause: right after a deploy, a version may still be
+ * propagating. Each request gives up after TIMEOUT_MS.
+ */
+async function attempt(check, fetchImpl, pause) {
+  let outcome = "";
+  for (let tries = 1; tries <= ATTEMPTS; tries += 1) {
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts are sequential by design
+      const response = await fetchImpl(check.url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (check.expect(response)) {
+        return { outcome: String(response.status), passed: true };
+      }
+      outcome = String(response.status);
+    } catch (error) {
+      outcome = reasonOf(error);
+    }
+    if (tries < ATTEMPTS) {
+      await pause();
+    }
+  }
+  return { outcome, passed: false };
+}
+
+const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 
 /** Runs every check (none stops the others) and returns the failures. */
-export async function runSmoke(origins, fetchImpl = fetch) {
+export async function runSmoke(origins, fetchImpl = fetch, pause = wait) {
   for (const [key, origin] of Object.entries(origins)) {
-    if (!HTTPS_ORIGIN.test(origin ?? "")) {
+    if (!isStagingOrigin(origin)) {
       return [
-        `${key}: the staging origin must be https://host, without a path`,
+        `${key}: the origin must be https://polaris-<app>-staging.…, without a path`,
       ];
     }
   }
   const failures = [];
   for (const check of smokeChecks(origins)) {
-    try {
-      // biome-ignore lint/performance/noAwaitInLoops: one request at a time, for a readable log
-      const response = await fetchImpl(check.url, { redirect: "manual" });
-      const passed = check.expect(response);
-      console.log(
-        `${passed ? "ok" : "FAIL"} ${check.name}: ${response.status}`
-      );
-      if (!passed) {
-        failures.push(`${check.name}: ${response.status}`);
-      }
-    } catch (error) {
-      const reason = error instanceof Error ? error.name : "error";
-      console.log(`FAIL ${check.name}: ${reason}`);
-      failures.push(`${check.name}: ${reason}`);
+    // biome-ignore lint/performance/noAwaitInLoops: one check at a time, for a readable log
+    const { passed, outcome } = await attempt(check, fetchImpl, pause);
+    console.log(`${passed ? "ok" : "FAIL"} ${check.name}: ${outcome}`);
+    if (!passed) {
+      failures.push(`${check.name}: ${outcome}`);
     }
   }
   return failures;

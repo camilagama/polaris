@@ -6,6 +6,8 @@ const origins = {
   web: "https://polaris-web-staging.example.workers.dev",
 };
 
+const noPause = () => Promise.resolve();
+
 const response = (status, headers = {}) => ({
   headers: new Headers(headers),
   status,
@@ -42,7 +44,7 @@ describe("the staging smoke", () => {
   });
 
   it("passes when every check answers as expected", async () => {
-    expect(await runSmoke(origins, fakeStaging())).toEqual([]);
+    expect(await runSmoke(origins, fakeStaging(), noPause)).toEqual([]);
   });
 
   it("fails when the auth secrets are missing (503) and keeps running the other checks", async () => {
@@ -51,10 +53,11 @@ describe("the staging smoke", () => {
         [`${origins.web}/api/auth/get-session`]: response(503),
       })
     );
-    expect(await runSmoke(origins, fetchImpl)).toEqual([
+    expect(await runSmoke(origins, fetchImpl, noPause)).toEqual([
       "web /api/auth/get-session (auth configured): 503",
     ]);
-    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    // four checks pass at once, the failing one is tried three times
+    expect(fetchImpl).toHaveBeenCalledTimes(7);
   });
 
   it("fails when the catalog cannot reach the database (500 instead of 404)", async () => {
@@ -63,7 +66,8 @@ describe("the staging smoke", () => {
         origins,
         fakeStaging({
           [`${origins.catalog}/smoke-staging-loja-inexistente`]: response(500),
-        })
+        }),
+        noPause
       )
     ).toEqual([
       "catalog store page through Hyperdrive (unknown store answers 404): 500",
@@ -78,31 +82,63 @@ describe("the staging smoke", () => {
           [`${origins.catalog}/`]: response(200, {
             "content-security-policy": "script-src 'self'",
           }),
-        })
+        }),
+        noPause
       )
     ).toEqual(["catalog / (CSP with nonce): 200"]);
   });
 
-  it("reports a network failure by its name only", async () => {
+  it("reports a network failure by its name and code only", async () => {
     const fetchImpl = (url) =>
       url === `${origins.web}/health`
-        ? Promise.reject(new TypeError("fetch failed: secret detail"))
+        ? Promise.reject(
+            new TypeError("fetch failed: secret detail", {
+              cause: { code: "ENOTFOUND" },
+            })
+          )
         : fakeStaging()(url);
-    expect(await runSmoke(origins, fetchImpl)).toEqual([
-      "web /health: TypeError",
+    expect(await runSmoke(origins, fetchImpl, noPause)).toEqual([
+      "web /health: TypeError ENOTFOUND",
     ]);
   });
 
-  it("refuses an origin that is not https or has a path, before any request", async () => {
+  it("passes a check that recovers on a later attempt, and gives each request a timeout", async () => {
+    let healthCalls = 0;
+    const signals = [];
+    const pause = vi.fn(noPause);
+    const fetchImpl = (url, init) => {
+      signals.push(init.signal);
+      if (url === `${origins.web}/health`) {
+        healthCalls += 1;
+        return Promise.resolve(response(healthCalls === 1 ? 503 : 200));
+      }
+      return fakeStaging()(url);
+    };
+    expect(await runSmoke(origins, fetchImpl, pause)).toEqual([]);
+    expect(healthCalls).toBe(2);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+  });
+
+  it("refuses an origin that is not an https staging origin without a path, before any request", async () => {
     const fetchImpl = vi.fn();
-    expect(
-      await runSmoke({ ...origins, web: "http://localhost:5173" }, fetchImpl)
-    ).toEqual(["web: the staging origin must be https://host, without a path"]);
+    const refused = (key) => [
+      `${key}: the origin must be https://polaris-<app>-staging.…, without a path`,
+    ];
+    for (const web of [
+      "http://polaris-web-staging.example.workers.dev",
+      "https://polaris-web-staging.example.workers.dev/path",
+      "https://user:pw@polaris-web-staging.example.workers.dev",
+      "https://app.example.com",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      expect(await runSmoke({ ...origins, web }, fetchImpl)).toEqual(
+        refused("web")
+      );
+    }
     expect(
       await runSmoke({ ...origins, catalog: undefined }, fetchImpl)
-    ).toEqual([
-      "catalog: the staging origin must be https://host, without a path",
-    ]);
+    ).toEqual(refused("catalog"));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
