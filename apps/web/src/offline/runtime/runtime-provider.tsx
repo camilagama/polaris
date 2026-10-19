@@ -10,6 +10,7 @@ import { OFFLINE_RUNTIME_ENABLED } from "./enabled";
 import { OfflineRuntime } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 import { RuntimeContext } from "./runtime-context";
+import { isSessionOver } from "./session-ended";
 import { openRuntimeStores } from "./runtime-stores";
 
 /**
@@ -120,7 +121,10 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
       const refused = runtime.getSnapshot().sessionRefused;
       if (refused && !handled) {
         handled = true;
-        reload();
+        // a screen already knows this session is over and keeps saying so: reading the organizations again would take it away
+        if (!isSessionOver()) {
+          reload();
+        }
       } else if (!refused) {
         handled = false;
       }
