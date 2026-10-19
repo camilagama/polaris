@@ -22,9 +22,9 @@ function createBindings(
   overrides: Partial<WorkerBindings> = {}
 ): WorkerBindings {
   return {
+    AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
     BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
     BETTER_AUTH_SECRET: "a".repeat(32),
-    AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
     HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
     ...overrides,
   };
@@ -101,9 +101,22 @@ describe("tenant request context", () => {
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
   });
 
-  it("passes only the Better Auth session user and requested organization to the transaction", async () => {
+  it("rejects a session without an id before any tenant authorization", async () => {
     const fixture = createFixture({
       session: { createdAt: new Date() },
+      user: { id: "session-user-42" },
+    } as unknown as TenantRequestSession);
+
+    await expect(fixture.context(baseInput)).rejects.toMatchObject({
+      code: "session_required",
+    });
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
+    expect(fixture.database.pool.end).toHaveBeenCalledOnce();
+  });
+
+  it("passes only the Better Auth session user and requested organization to the transaction", async () => {
+    const fixture = createFixture({
+      session: { createdAt: new Date(), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -115,6 +128,7 @@ describe("tenant request context", () => {
         authenticatedUserId: "session-user-42",
         capability: "catalog:read",
         requestedOrganizationId: "org-requested-by-client",
+        sessionId: "session-1",
       },
       baseInput.operation
     );
@@ -141,7 +155,7 @@ describe("tenant request context", () => {
   });
   it("fails when Better Auth configuration is unavailable without opening a database pool", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -158,7 +172,7 @@ describe("tenant request context", () => {
 
   it("closes the database pool when the requested organization is invalid", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -173,7 +187,7 @@ describe("tenant request context", () => {
   it("rejects a session older than the 30-day absolute lifetime without touching tenant data", async () => {
     const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
     const fixture = createFixture({
-      session: { createdAt: thirtyOneDaysAgo },
+      session: { createdAt: thirtyOneDaysAgo, id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -188,7 +202,7 @@ describe("tenant request context", () => {
 
   it("rejects a session whose creation time is unknown", async () => {
     const fixture = createFixture({
-      session: { createdAt: "not-a-date" },
+      session: { createdAt: "not-a-date", id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -201,7 +215,7 @@ describe("tenant request context", () => {
   it("accepts a session just inside the absolute lifetime", async () => {
     const twentyNineDaysAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000);
     const fixture = createFixture({
-      session: { createdAt: twentyNineDaysAgo },
+      session: { createdAt: twentyNineDaysAgo, id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -210,7 +224,7 @@ describe("tenant request context", () => {
 
   it("fails closed when a deployed Worker has no dedicated auth Hyperdrive", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(), id: "session-1" },
       user: { id: "session-user-42" },
     });
     const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
@@ -226,7 +240,7 @@ describe("tenant request context", () => {
 
   it("uses one shared pool in local development when both roles share a connection", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(), id: "session-1" },
       user: { id: "session-user-42" },
     });
     const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =

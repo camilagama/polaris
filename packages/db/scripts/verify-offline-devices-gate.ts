@@ -227,7 +227,9 @@ async function run() {
     );
     const [oneToFree] = limitDevices;
     assert.ok(oneToFree);
-    await revokeDevice(db, limitUser.userId, oneToFree.id);
+    await revokeDevice(db, limitUser.userId, oneToFree.id, {
+      actingSession: null,
+    });
     await registerDevice(db, limitUser.userId);
     tests.push(
       "a user keeps at most 20 live devices even under concurrent registrations; revoking one frees a slot"
@@ -240,7 +242,7 @@ async function run() {
       DeviceNotFoundError
     );
     await assert.rejects(
-      () => revokeDevice(db, tenantB.userId, first.id),
+      () => revokeDevice(db, tenantB.userId, first.id, { actingSession: null }),
       DeviceNotFoundError
     );
     assert.equal((await listDevices(db, tenantA.userId)).length, 2);
@@ -292,18 +294,22 @@ async function run() {
 
     // --------------------------------------------- 5. touching and revoking
     const seenAt = new Date(Date.now() + 1000);
-    const touched = await touchDevice(db, tenantA.userId, first.id, seenAt);
+    const touched = await touchDevice(db, tenantA.userId, first.id, {
+      now: seenAt,
+    });
     assert.equal(touched.lastSeenAt.getTime(), seenAt.getTime());
     const standalone = await registerDevice(db, tenantA.userId, {
       label: "Caixa 2",
     });
     const revokedAt = new Date();
     const revocation = await revokeDevice(db, tenantA.userId, standalone.id, {
+      actingSession: null,
       now: revokedAt,
     });
     assert.equal(revocation.device.revokedAt?.getTime(), revokedAt.getTime());
     assert.deepEqual(revocation.revokedGrantIds, []);
     const again = await revokeDevice(db, tenantA.userId, standalone.id, {
+      actingSession: null,
       now: new Date(revokedAt.getTime() + 60_000),
     });
     assert.equal(
@@ -614,7 +620,9 @@ async function run() {
       );
     const grantOne = await grantIn(tenantA);
     const grantTwo = await grantIn(tenantA2);
-    const wide = await revokeDevice(db, tenantA.userId, wideDevice.id);
+    const wide = await revokeDevice(db, tenantA.userId, wideDevice.id, {
+      actingSession: null,
+    });
     assert.deepEqual(
       wide.revokedGrantIds.sort(),
       [grantOne.id, grantTwo.id].sort()
@@ -643,7 +651,9 @@ async function run() {
       [tenantA.organizationId, tenantA2.organizationId].sort(),
       "each organization gets its own audit event"
     );
-    const repeat = await revokeDevice(db, tenantA.userId, wideDevice.id);
+    const repeat = await revokeDevice(db, tenantA.userId, wideDevice.id, {
+      actingSession: null,
+    });
     assert.deepEqual(repeat.revokedGrantIds, []);
     tests.push(
       "revoking a device revokes its live grants in every organization of the user with reason device_revoked, one audit event per grant in its own organization, and is idempotent"
@@ -665,7 +675,7 @@ async function run() {
             issuedAt,
           })
         ),
-        revokeDevice(db, tenantA.userId, racer.id),
+        revokeDevice(db, tenantA.userId, racer.id, { actingSession: null }),
       ]);
       const live = await admin.pool.query<{ count: string }>(
         "SELECT count(*)::text AS count FROM public.offline_grants WHERE device_id = $1 AND revoked_at IS NULL",

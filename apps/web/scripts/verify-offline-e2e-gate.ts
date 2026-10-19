@@ -645,7 +645,7 @@ async function run() {
       "SELECT count(*)::text AS n FROM public.sales WHERE organization_id = $1",
       tenant.organizationId
     );
-    await revokeDevice(db, tenant.userId, d2.deviceId);
+    await revokeDevice(db, tenant.userId, d2.deviceId, { actingSession: null });
     const revoked = await d2.sync();
     assert.equal(revoked.blockedBy?.rejection?.code, "authorization_revoked");
     assert.equal(

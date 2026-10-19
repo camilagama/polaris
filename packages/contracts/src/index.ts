@@ -1499,15 +1499,36 @@ export const polarisContract = {
     // Devices belong to the signed-in user, never to an organization: no
     // organization or user field to trust, the server reads the session.
     list: oc.output(z.object({ devices: z.array(deviceReadModel) })),
+    // Confirms a live device of the user and links this session to it; the
+    // offline runtime calls it at every online start. A revoked device is a
+    // CONFLICT, an unknown one NOT_FOUND.
+    check: oc
+      .input(z.object({ deviceId: z.string().uuid() }))
+      .output(z.object({ device: deviceReadModel })),
     register: oc
       .input(z.object({ label: z.string().max(200).nullish() }))
       .output(z.object({ device: deviceReadModel })),
-    revoke: oc.input(z.object({ deviceId: z.string().uuid() })).output(
-      z.object({
-        device: deviceReadModel,
-        revokedGrantIds: z.array(z.string().uuid()),
-      })
-    ),
+    // Ends the sessions linked to the device; `endOtherSessions` (off unless
+    // the user ticks it) ends every other session of the user too, but never
+    // this one. Revoking another device, or ending the other sessions, needs a
+    // session signed in within 15 minutes: otherwise FORBIDDEN with reason
+    // `fresh_session_required`. `endedCurrentSession` tells the screen this
+    // browser is signed out as well.
+    revoke: oc
+      .input(
+        z.object({
+          deviceId: z.string().uuid(),
+          endOtherSessions: z.boolean().default(false),
+        })
+      )
+      .output(
+        z.object({
+          device: deviceReadModel,
+          endedCurrentSession: z.boolean(),
+          endedSessionCount: z.number().int().nonnegative(),
+          revokedGrantIds: z.array(z.string().uuid()),
+        })
+      ),
   },
   inventory: {
     getBalance: oc

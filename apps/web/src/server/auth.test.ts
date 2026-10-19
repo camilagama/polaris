@@ -267,6 +267,24 @@ function stubGoogleTokenExchange() {
   return () => tokenCalls;
 }
 
+describe("Better Auth session configuration", () => {
+  it("keeps the session cookie cache off, so a deleted session row drops the cookie on the next request", () => {
+    const auth = createBetterAuth({
+      auditEventWriter: () => Promise.resolve(),
+      baseURL: testBaseURL,
+      databaseAdapter: memoryAdapter({
+        account: [],
+        session: [],
+        user: [],
+        verification: [],
+      }),
+      secret: testSecret,
+    });
+
+    expect(auth.options.session?.cookieCache?.enabled).toBe(false);
+  });
+});
+
 describe("Better Auth route", () => {
   it("fails closed when the Worker secret is not configured", async () => {
     const env = {
