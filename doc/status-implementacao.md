@@ -1787,7 +1787,7 @@ Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-e
 | Filas | Concluído | Os nomes seguem `polaris-<fila>-<ambiente>` (`-local`, `-staging`), que o consumidor e a DLQ reconhecem; `apps/web/src/server/queue/queue-names.test.ts` confere os nomes de cada ambiente do `wrangler.jsonc` contra o consumidor. |
 | Limites | Registrados | A allowlist de login do staging vive no Google (modo Testing), fora do repositório; uma allowlist no código é acompanhamento proposto. O Admin não é provado no staging (item 16 dele fica para o go-live); o item 14 deixa as miniaturas do staging em fallback até a virada do mês; o seed sintético e o script de criação dos logins ficam para depois (área db). |
 
-### Cobertura do `createRpcRuntimeApi` em navegador (t076)
+### Cobertura do `createRpcRuntimeApi` em navegador
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |

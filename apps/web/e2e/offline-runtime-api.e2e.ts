@@ -3,7 +3,10 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { signOfflineLease } from "../src/lib/offline-lease-token";
+import {
+  readUnverifiedOfflineLease,
+  signOfflineLease,
+} from "../src/lib/offline-lease-token";
 import { SaleLabServer } from "../src/offline-poc/sale-lab-server";
 
 /**
@@ -25,8 +28,9 @@ const LAB_KEY = {
   secret: "lab-secret-lab-secret-lab-secret-0123456789",
 };
 const HOUR = 3_600_000;
-// the lookup gives up after 4 s (runtime-api.ts), so a 6 s answer is a lie-fi one
-const SLOW_ANSWER_MS = 6000;
+// the lookup gives up after 4 s (runtime-api.ts): an answer that takes 30 s only
+// lets the app open within the chip's timeout if the app really stops waiting
+const SLOW_ANSWER_MS = 30_000;
 const DEVICE_KEY = "polaris.offline.device";
 const SESSION_USER_KEY = "polaris.offline.session-user";
 const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
@@ -256,7 +260,7 @@ async function openSales(page: Page, server: RpcServer) {
 
 async function goOffline(page: Page) {
   await page.context().setOffline(true);
-  await expect(chip(page)).toContainText("Sem conexão");
+  await expect(chip(page)).toContainText("Sem conexão", { timeout: 15_000 });
 }
 
 async function keepOneSale(page: Page) {
@@ -347,6 +351,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
   test("get-session 401 com duas operações na fila: nada é enviado, a fila fica intacta, o usuário lembrado é esquecido e a tela vai para a sessão encerrada", async ({
     page,
   }) => {
+    test.setTimeout(90_000);
     const user = `user-${crypto.randomUUID()}`;
     const server = new RpcServer(user);
     await openSales(page, server);
@@ -375,13 +380,16 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     // the same person signs in again: the very same commands go out, once each
     server.sessionUser = user;
     await page.reload();
-    await expect(chip(page)).toContainText("Tudo sincronizado", {
-      timeout: 20_000,
-    });
+    // wait for the effect, not for the chip: "Tudo sincronizado" is also what the app shows before the queue is read
+    await expect
+      .poll(() => server.pushed.flat().length, { timeout: 30_000 })
+      .toBe(queued.length);
+    await expect
+      .poll(() => outboxCommands(page), { timeout: 30_000 })
+      .toEqual([]);
     expect(server.pushed.flat().map(({ commandId }) => commandId)).toEqual(
       queued.map(({ commandId }) => commandId)
     );
-    expect(await outboxCommands(page)).toEqual([]);
   });
 
   test("push 401 com duas operações na fila: o lease e as coleções são apagados, a fila fica", async ({
@@ -440,15 +448,21 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     const server = new RpcServer(user);
     await openSales(page, server);
     const device = await stored(page, DEVICE_KEY);
+    const lease = await stored(page, leaseKey(user));
 
     server.sessionAnswer = "slow";
+    const before = server.sessionLookups;
     await page.reload();
+    // the answer would take 30 s: opening within the timeout means the app gave up on it
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
+    expect(server.sessionLookups).toBeGreaterThan(before);
     expect(server.registered).toBe(1);
     expect(await stored(page, DEVICE_KEY)).toBe(device);
     expect(await stored(page, SESSION_USER_KEY)).toBe(user);
+    expect(await stored(page, leaseKey(user))).toBe(lease);
+    await expect(page.getByLabel("Produto ou variante")).toBeVisible();
   });
 
   // ADR 0047 (emenda do 0044, L6): only an explicit refusal is "not mine". A
@@ -473,6 +487,12 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     const replaced = await stored(page, DEVICE_KEY);
     expect(replaced).not.toBeNull();
     expect(replaced).not.toBe(device);
+    // the lease of the dropped device went with it: the one kept now names the new device
+    const kept = JSON.parse((await stored(page, leaseKey(user))) ?? "null") as {
+      lease: string;
+    } | null;
+    expect(kept).not.toBeNull();
+    expect(readUnverifiedOfflineLease(String(kept?.lease))?.dev).toBe(replaced);
   });
 
   // A 500 (like a 429, a timeout or no connection) is the server that could not
