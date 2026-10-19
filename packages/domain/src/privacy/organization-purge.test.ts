@@ -134,9 +134,9 @@ describe("refusals to schedule or cancel a purge", () => {
 });
 
 describe("the closure period before a purge", () => {
-  it("is 30 days, the recovery window of a closure (decision of 18/10/2026)", () => {
-    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(30);
-    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(
+  it("is 90 days (decision of 19/10/2026), never shorter than the recovery window of a closure", () => {
+    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBe(90);
+    expect(ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS).toBeGreaterThanOrEqual(
       CLOSURE_RECOVERY_WINDOW_DAYS
     );
   });
@@ -144,7 +144,7 @@ describe("the closure period before a purge", () => {
   it("is told to the operator with the period and the export, and so is a legal hold", () => {
     expect(
       organizationPurgeRefusalMessage("closure_period_not_elapsed")
-    ).toContain("30 dias");
+    ).toContain("90 dias");
     expect(
       organizationPurgeRefusalMessage("closure_period_not_elapsed")
     ).toContain("exportar");
@@ -157,14 +157,13 @@ describe("the closure period before a purge", () => {
 describe("the scope a privacy case needs to start a purge", () => {
   it("is every tenant category the purge removes, and none of the data it keeps", () => {
     expect([...ORGANIZATION_PURGE_REQUIRED_SCOPE].sort()).toEqual([
-      "audit_logs",
       "customers",
       "inventory_catalog",
       "media",
       "organization_profile",
       "sales",
     ]);
-    for (const kept of ["account", "authentication", "billing"]) {
+    for (const kept of ["account", "authentication", "billing", "audit_logs"]) {
       expect(ORGANIZATION_PURGE_REQUIRED_SCOPE).not.toContain(kept);
       expect(PRIVACY_DATA_CATEGORIES).toContain(kept);
     }
@@ -180,7 +179,7 @@ describe("what an operator reads for a refusal", () => {
     }
     expect(
       organizationPurgeRefusalMessage("privacy_scope_covers_kept_data")
-    ).toContain("conta, autenticação ou cobrança");
+    ).toContain("conta, autenticação, cobrança ou registros de auditoria");
     expect(organizationPurgeRefusalMessage("purge_storage_touched")).toContain(
       "armazenamento"
     );

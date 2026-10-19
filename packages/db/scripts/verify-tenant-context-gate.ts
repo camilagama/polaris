@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { deleteOrganizationsWithAudit } from "./teardown-support";
 import {
   type CreateInitialOrganizationInDatabaseResult,
   createInitialOrganizationInDatabase,
@@ -210,9 +211,9 @@ async function cleanupTenantFixtures(input: {
   }
   if (input.fixtureOrganizationIds.length > 0) {
     try {
-      await input.adminPool.query(
-        "DELETE FROM public.organizations WHERE id = ANY($1::text[])",
-        [input.fixtureOrganizationIds]
+      await deleteOrganizationsWithAudit(
+        input.adminPool,
+        input.fixtureOrganizationIds
       );
     } catch (error) {
       errors.push(error);
@@ -680,7 +681,7 @@ async function main() {
         await recordTenantAuditEvent(transaction, identity, {
           entityId: auditMutationToken,
           entityType: "rls_poc_operation",
-          eventType: "poc.mutation_recorded",
+          eventType: "category.created",
           requestId: auditRequestId,
         });
       }
@@ -693,7 +694,7 @@ async function main() {
     }>(
       "SELECT actor_user_id, entity_id, organization_id, request_id " +
         "FROM public.tenant_audit_event WHERE event_type = $1 AND entity_id = $2",
-      ["poc.mutation_recorded", auditMutationToken]
+      ["category.created", auditMutationToken]
     );
     assert.deepEqual(committedAuditEvent.rows, [
       {
@@ -814,7 +815,7 @@ async function main() {
             actorUserId: userA,
             entityId: invalidAuditEntityId,
             entityType: "rls_poc_operation",
-            eventType: "poc.unsafe_entity_denied",
+            eventType: "category.archived",
             organizationId: initialA.organization.id,
           });
         }
@@ -835,7 +836,7 @@ async function main() {
             actorUserId: userA,
             entityId: crossTenantAuditToken,
             entityType: "rls_poc_operation",
-            eventType: "poc.cross_tenant_denied",
+            eventType: "category.deleted",
             organizationId: initialB.organization.id,
           });
         }
@@ -903,7 +904,7 @@ async function main() {
             {
               entityId: rollbackToken,
               entityType: "rls_poc_operation",
-              eventType: "poc.mutation_rolled_back",
+              eventType: "category.renamed",
               requestId: randomUUID(),
             }
           );
@@ -922,7 +923,7 @@ async function main() {
     const rolledBackAuditEvent = await adminPool.query(
       "SELECT id FROM public.tenant_audit_event " +
         "WHERE event_type = $1 AND entity_id = $2",
-      ["poc.mutation_rolled_back", rollbackToken]
+      ["category.renamed", rollbackToken]
     );
     assert.deepEqual(rolledBackAuditEvent.rows, []);
 

@@ -59,14 +59,15 @@ export function organizationMediaPrefix(organizationId: string): string {
 }
 
 /**
- * The closure period (decision of 18/10/2026, ADR 0081): the purge removes the tenant's operational data only
- * once the organization has been closed for this long, and refuses before it (`closure_period_not_elapsed`),
- * whatever recovery window the closure had. During it the owner can still export (by recovering). Polaris is
- * the processor of that data and the fiscal duty to keep it is the customer's, who has the export. The
- * migration holds the same period (`interval '30 days'` in `admin_schedule_organization_purge` and
- * `organization_purge_blocker`).
+ * The closure period (decision of 18/10/2026, changed from 30 to 90 days on 19/10/2026, ADR 0081): the purge
+ * removes the tenant's operational data only once the organization has been closed for this long, and refuses
+ * before it (`closure_period_not_elapsed`), whatever recovery window the closure had. Polaris is the processor
+ * of that data and the fiscal duty to keep it is the customer's, who has the export. The intent is that the
+ * owner only reads and exports during the period; the read-only mode after the recovery window is a requirement
+ * of ADR 0081, not built yet. The migration holds the same period (`interval '90 days'` in
+ * `admin_schedule_organization_purge` and `organization_purge_blocker`).
  */
-export const ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS = 30;
+export const ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS = 90;
 
 /**
  * The time between the end of the recovery window and the earliest purge, from the retention
@@ -96,8 +97,8 @@ export function automaticPurgeSchedulingAllowed(
 
 /**
  * The categories a privacy case must cover for its accepted deletion to start a purge: every tenant
- * category the purge removes (ADR 0081), and exactly those. Account, authentication and billing are not
- * here: the purge keeps them, so a case that claims them is refused instead of recording a decision the
+ * category the purge removes (ADR 0081), and exactly those. Account, authentication, billing and the audit
+ * logs are not here (the audit of the tenant survives the purge, ADR 0081 amended on 19/10/2026): the purge keeps them, so a case that claims them is refused instead of recording a decision the
  * purge does not carry out. The migration holds the same list (`whole_organization` in
  * `admin_schedule_organization_purge`), and the gate proves each category is required and each kept one refused.
  */
@@ -107,7 +108,6 @@ export const ORGANIZATION_PURGE_REQUIRED_SCOPE = Object.freeze([
   "sales",
   "inventory_catalog",
   "media",
-  "audit_logs",
 ] as const satisfies readonly PrivacyDataCategory[]);
 
 const ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL =
@@ -144,7 +144,7 @@ export type OrganizationPurgeRefusalCode =
 const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   Record<OrganizationPurgeRefusalCode, string>
 > = Object.freeze({
-  closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, em que o dono pode exportar os dados.`,
+  closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, para o dono poder ler e exportar os dados.`,
   legal_hold_active:
     "Há uma trava legal vigente na organização: o purge não é agendado nem executado enquanto ela não for liberada.",
   organization_mismatch: "A organização informada não é a do caso.",
@@ -160,7 +160,7 @@ const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
     "Um caso de suporte comum não inicia o purge: use o caso de privacidade do pedido de exclusão.",
   privacy_requester_not_owner:
     "O pedido de exclusão não foi feito pelo dono da organização.",
-  privacy_scope_covers_kept_data: `O escopo do caso inclui dados que o purge mantém (conta, autenticação ou cobrança). Registre o escopo exato do que o purge apaga: ${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}.`,
+  privacy_scope_covers_kept_data: `O escopo do caso inclui dados que o purge mantém (conta, autenticação, cobrança ou registros de auditoria). Registre o escopo exato do que o purge apaga: ${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}.`,
   privacy_scope_incomplete: `O escopo do caso não cobre tudo o que o purge apaga (${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}).`,
   purge_already_done: "O purge já foi concluído e não pode ser desfeito.",
   purge_in_progress:

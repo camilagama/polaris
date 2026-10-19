@@ -9,7 +9,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Organização (organization):** unidade operacional que possui o catálogo, o estoque, as vendas e os registros do revendedor.<br>
 **Estado da organização (organization status):** `active` e `suspended` (operacionais) e `closing`, `closed`, `purge_pending` e `purged` (o encerramento); não representa o estado de billing.<br>
-**Encerramento (closure) e janela de recuperação:** o dono encerra a organização digitando o nome; o acesso acaba na hora e, por 30 dias (`closing`), ele pode desfazer. Distinto da suspensão (medida da plataforma) e da exclusão física (purge).<br>
+**Encerramento (closure) e janela de recuperação:** o dono encerra a organização digitando o nome; o acesso acaba na hora e, por 30 dias (`closing`), ele pode desfazer; o purge só vem 90 dias depois do pedido de encerramento. Distinto da suspensão (medida da plataforma) e da exclusão física (purge).<br>
 **Evitar:** workspace na interface; tenant como nome de produto.
 
 **Anonimização de cliente (customer anonymization):** a pessoa sai do cadastro (nome fixo, sem telefone, email nem observações) e o registro fica, para que as vendas ligadas a ele mantenham seus fatos econômicos. Irreversível; distinta de arquivar.<br>

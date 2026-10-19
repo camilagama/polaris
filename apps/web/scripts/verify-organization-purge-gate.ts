@@ -68,7 +68,7 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * organization's prefixes; every row of the tenant goes in one transaction that writes the deletion
  * ledger tombstone first; the cases, the audit, the billing and the ledger survive; running it again
  * changes nothing; and an export cannot leave a copy of an organization that is no longer active. The
- * decisions of 18/10/2026: the purge refuses a closure younger than 30 days and a legal hold, with nothing
+ * decisions of 18/10/2026: the purge refuses a closure younger than 90 days and a legal hold, with nothing
  * removed; the billing events stay pseudonymized (the payer's data out of the fact, the provider's references
  * kept); the cases and the entitlement grants stay without their free text.
  */
@@ -95,6 +95,9 @@ const PAYER_FACT = Object.freeze({
  */
 const CASE_PHONE = "98888-7777";
 const GRANT_PHONE = "97777-6666";
+
+/** The same contacts with only the digits (988887777), the form a copy or a search index may keep. */
+const digitsOnly = (value: string) => value.replace(/\D/g, "");
 
 /** Free text an operator could have typed in a case, with someone's contact in it. */
 const CASE_TEXT = `Dono ligou de 81 ${CASE_PHONE} (Joana)`;
@@ -479,6 +482,12 @@ async function raceCancellationAgainstMark(
     marker.release();
   }
   return await outcome;
+}
+
+/** The audit rows of the organization to purge cover both classes, so the purge is proved to keep each. */
+function hasBothAuditClasses(rows: { event_class: string }[]) {
+  const classes = new Set(rows.map((row) => row.event_class));
+  return classes.has("security") && classes.has("operational");
 }
 
 async function run() {
@@ -1044,7 +1053,7 @@ async function run() {
       "an organization still in its recovery window (closing) is not purged"
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     // other gates may leave closures due: only this organization must end up closed
@@ -1115,7 +1124,7 @@ async function run() {
 
     // the refusals of the schedule, each a state to change first
     await owner.pool.query(
-      "UPDATE public.organization_closures SET recover_until = now() + interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '89 days', recover_until = now() + interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     await expectRefusal(
@@ -1124,7 +1133,7 @@ async function run() {
       "the recovery window must be over"
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET recover_until = now() - interval '1 day' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
     await expectRefusal(
@@ -1158,18 +1167,28 @@ async function run() {
       InvalidSupportRequestError,
       "an unknown case"
     );
-    // the closure period (decision of 18/10/2026): a window that ended early does not shorten the 30 days
+    // the closure period (decision of 19/10/2026, 90 days): a window that ended early does not shorten it, and the
+    // old period of 30 days is no longer enough; the day before the 90th is still refused
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '20 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     await expectRefusal(
       privacyCase.id,
       "closure_period_not_elapsed",
-      "an organization closed less than 30 days ago"
+      "an organization closed 31 days ago"
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '89 days' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    await expectRefusal(
+      privacyCase.id,
+      "closure_period_not_elapsed",
+      "an organization closed 89 days ago"
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     // a legal hold: placed under a case of the organization named, audited, and while in force no schedule
@@ -1332,7 +1351,7 @@ async function run() {
       );
     }
     tests.push(
-      "the schedule refuses an active or closing organization, an open window, a closure younger than 30 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record"
+      "the schedule refuses an active or closing organization, an open window, a closure younger than 90 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record"
     );
 
     // the operator names the organization of the case, or nothing happens
@@ -1416,6 +1435,7 @@ async function run() {
     );
     assert.deepEqual([...keptCategories].sort(), [
       "account",
+      "audit_logs",
       "authentication",
       "billing",
     ]);
@@ -1547,7 +1567,7 @@ async function run() {
     );
 
     // the run refuses too (decisions of 18/10/2026): a legal hold placed after the schedule, or a closure younger
-    // than 30 days, keeps the claim away; a run that already holds the purge touches neither storage nor rows
+    // than 90 days, keeps the claim away; a run that already holds the purge touches neither storage nor rows
     const holdLease = () =>
       owner.pool.query(
         "UPDATE public.organization_purges SET locked_until = now() + interval '15 minutes' WHERE organization_id = $1",
@@ -1600,21 +1620,21 @@ async function run() {
       target.organizationId
     );
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '10 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '89 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     await purgeRowSettled();
     assert.equal(
       await maintenance.claimOrganizationPurge(900),
       null,
-      "a purge of a closure younger than 30 days is not taken"
+      "a purge of a closure younger than 90 days is not taken"
     );
     await holdLease();
     await expectBlocked(
       () =>
         maintenance.markOrganizationPurgeStorageTouched(target.organizationId),
       "closure_period_not_elapsed",
-      "a run before the 30 days does not touch the storage"
+      "a run before the 90 days does not touch the storage"
     );
     await expectBlocked(
       () => maintenance.purgeOrganizationData(target.organizationId),
@@ -1623,7 +1643,7 @@ async function run() {
     );
     await dropLease();
     await owner.pool.query(
-      "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
+      "UPDATE public.organization_closures SET requested_at = now() - interval '91 days' WHERE organization_id = $1",
       [target.organizationId]
     );
     assert.equal(await salesLeft(), salesBeforeRefusals, "nothing was removed");
@@ -1636,7 +1656,7 @@ async function run() {
     );
     assert.deepEqual(untouched.rows[0], { attempts: 0, touched: false });
     tests.push(
-      "a scheduled purge under a legal hold, or whose closure is younger than 30 days, is not claimed, and a run holding it is refused with the code before touching the storage or the rows: nothing is removed"
+      "a scheduled purge under a legal hold, or whose closure is younger than 90 days, is not claimed, and a run holding it is refused with the code before touching the storage or the rows: nothing is removed"
     );
 
     const counts = async (tenant: TenantFixture) => {
@@ -1651,8 +1671,23 @@ async function run() {
       }
       return result;
     };
+    // the audit of the tenant is not in the purge (ADR 0081, amended 19/10/2026): its rows are read by ID, before and after
+    const auditRows = async (tenant: TenantFixture) =>
+      (
+        await owner.pool.query<{ event_class: string; id: string }>(
+          "SELECT id, event_class FROM public.tenant_audit_event WHERE organization_id = $1 ORDER BY id",
+          [tenant.organizationId]
+        )
+      ).rows;
     const witnessBefore = await counts(witness);
     const targetBefore = await counts(target);
+    const witnessAuditBefore = await auditRows(witness);
+    const targetAuditBefore = await auditRows(target);
+    assert.ok(
+      targetAuditBefore.length > 0,
+      "the organization to purge has audit rows"
+    );
+    assert.ok(hasBothAuditClasses(targetAuditBefore), "of both classes");
     for (const table of [
       "sales",
       "sale_items",
@@ -1663,7 +1698,6 @@ async function run() {
       "media_assets",
       "customers",
       "memberships",
-      "tenant_audit_event",
       "data_exports",
       "event_outbox",
       "queue_processing",
@@ -2157,8 +2191,14 @@ async function run() {
       assert.equal(count, 0, `${table} is empty for the purged organization`);
     }
     assert.deepEqual(await counts(witness), witnessBefore);
+    assert.deepEqual(
+      await auditRows(target),
+      targetAuditBefore,
+      "every audit row of the purged organization is still there"
+    );
+    assert.deepEqual(await auditRows(witness), witnessAuditBefore);
     tests.push(
-      "every row of the tenant is gone, from sales and stock movements to the audit and the memberships; the witness is untouched"
+      "every row of the tenant is gone, from sales and stock movements to the memberships, but not its audit (every row of both classes stays, immutable); the witness is untouched"
     );
 
     const tombstoneRow = await owner.pool.query<{
@@ -2374,9 +2414,12 @@ async function run() {
         [
           "%Joana%",
           `%${CASE_PHONE}%`,
+          `%${digitsOnly(CASE_PHONE)}%`,
           "%retirado pelo dono%",
           "%Rita%",
           `%${GRANT_PHONE}%`,
+          `%${digitsOnly(GRANT_PHONE)}%`,
+          `%${digitsOnly(PAYER_FACT.phone)}%`,
           ...Object.values(PAYER_FACT).map((value) => `%${value}%`),
         ],
       ]
@@ -2566,7 +2609,7 @@ async function run() {
       "the reapplied purge is audited again"
     );
     tests.push(
-      "after a restore brings the organization back, the runbook's check shows it and its reapplication purges it again, with one tombstone (the closure went with the first purge: the tombstone proves the 30 days were over)"
+      "after a restore brings the organization back, the runbook's check shows it and its reapplication purges it again, with one tombstone (the closure went with the first purge: the tombstone proves the 90 days were over)"
     );
 
     // after the purge, what the Admin writes in a case of the organization keeps no free text either: the

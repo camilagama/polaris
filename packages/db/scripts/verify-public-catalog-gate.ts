@@ -827,6 +827,26 @@ async function run() {
     );
     assert.ok(await profileOf(slugA));
     assert.equal(on.published, true);
+    const catalogEvents = await admin.pool.query<{
+      entity_id: string;
+      event_type: string;
+    }>(
+      `SELECT event_type, entity_id FROM public.tenant_audit_event
+        WHERE organization_id = $1 AND event_type LIKE 'public_catalog.%'`,
+      [orgA.organizationId]
+    );
+    const catalogTypes = new Set(catalogEvents.rows.map((r) => r.event_type));
+    for (const type of [
+      "public_catalog.profile_created",
+      "public_catalog.published",
+      "public_catalog.unpublished",
+    ]) {
+      assert.ok(catalogTypes.has(type), `${type} is audited`);
+    }
+    assert.ok(
+      catalogEvents.rows.every((r) => r.entity_id === orgA.organizationId),
+      "the catalog's events point at the catalog profile (keyed by the organization)"
+    );
     const events = await admin.pool.query<{
       entity_id: string;
       event_type: string;
