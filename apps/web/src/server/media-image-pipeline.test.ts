@@ -144,6 +144,7 @@ describe("processMediaImage", () => {
   it.each([
     ["9422 in the error message", new Error("ImagesError 9422: usage limit")],
     ["9422 in a thrown string", "9422: usage limit reached"],
+    ["9422 followed by a hyphenated word", new Error("9422 x-quota reached")],
   ])(
     "maps the provider's quota error with %s to the quota error",
     async (_name, thrown) => {
@@ -166,6 +167,9 @@ describe("processMediaImage", () => {
   it.each([
     ["a longer number", new Error("request 194220 failed")],
     ["a UUID segment", new Error("request a1b2-9422-4c3d-8e9f failed")],
+    ["a width in px", new Error("width 9422 px exceeds the limit")],
+    ["a width and height", new Error("size 9422 x 600 is not supported")],
+    ["a width and height in capitals", new Error("size 9422 X 600 is invalid")],
     [
       "an invalid-image code that mentions 9422",
       Object.assign(new Error("not 9422, bad image"), { code: 9412 }),
