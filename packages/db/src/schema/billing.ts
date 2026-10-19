@@ -257,6 +257,10 @@ export const organizationBilling = pgTable(
     uniqueIndex("organization_billing_provider_ref_unique")
       .on(table.provider, table.providerRef)
       .where(sql`${table.providerRef} IS NOT NULL`),
+    // and so does its subscription ID there
+    uniqueIndex("organization_billing_provider_subscription_unique")
+      .on(table.provider, table.providerSubscriptionId)
+      .where(sql`${table.providerSubscriptionId} IS NOT NULL`),
     // the sweep of expired access reads this
     index("organization_billing_due_idx")
       .on(table.accessEndsAt)

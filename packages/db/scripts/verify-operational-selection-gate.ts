@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import type { Client } from "pg";
 import {
   EntitlementVariantLockedError,
   OperationalSelectionError,
 } from "@polaris/domain/billing/operational-selection";
-import type { Client } from "pg";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import {

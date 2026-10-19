@@ -6,10 +6,10 @@
  */
 
 export interface ExportDataset {
-  /** The name of the file in the archive. */
-  name: string;
   /** Columns that are internal machinery, not the organization's data. */
   omit?: readonly string[];
+  /** The name of the file in the archive. */
+  name: string;
   table: string;
 }
 
@@ -62,12 +62,12 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
     billing_trial_claims:
       "cobrança: o teste grátis da pessoa, lido só pelo papel de billing (antiabuso)",
     data_export_files: "o próprio export",
-    data_exports: "o próprio export",
     deletion_ledger:
       "tombstones de exclusão, só IDs opacos: o papel do tenant só grava, não lê",
-    entitlement_grants: "cobrança: lida só pelo papel de billing",
+    data_exports: "o próprio export",
     event_outbox:
       "eventos a despachar, só IDs opacos: o papel do tenant só grava, não lê",
+    entitlement_grants: "cobrança: lida só pelo papel de billing",
     memberships: "conta: o pedido sobre os dados da conta é outro",
     offline_grants: "autorização offline: mecanismo interno",
     organization_billing: "cobrança: lida só pelo papel de billing",
@@ -86,9 +86,9 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
     sync_changes: "mecanismo interno de sincronização",
     sync_commands: "mecanismo interno de sincronização",
     sync_cursors: "mecanismo interno de sincronização",
-    tenant_access_grants: "da plataforma, não do tenant",
     tenant_audit_event:
       "trilha de auditoria: o papel do tenant só grava nela, não lê",
+    tenant_access_grants: "da plataforma, não do tenant",
   });
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;

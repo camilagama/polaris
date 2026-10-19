@@ -1,6 +1,8 @@
 import {
+  type BillingFact,
   type BillingRecord,
   reconcileFact,
+  serializeBillingFact,
 } from "@polaris/domain/billing/facts";
 import { describe, expect, it, vi } from "vitest";
 import { parseProviderJson } from "../json";
@@ -374,6 +376,20 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
         providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
+  });
+
+  it("a charge of no value keeps its fact without an amount (never a refusal that would make Asaas resend it)", async () => {
+    const api = fakeApi({ payments: [paymentJson({ value: 0 })] });
+    const [confirmed] = await factsOf(webhookBody("PAYMENT_CONFIRMED"), api);
+    expect(confirmed?.fact).toEqual({
+      cycleMonths: 1,
+      occurredAt,
+      periodEndsAt: monthlyEnd,
+      type: "charge_succeeded",
+    });
+    expect(() =>
+      serializeBillingFact(confirmed?.fact as BillingFact)
+    ).not.toThrow();
   });
 
   it("PAYMENT_RECEIVED → charge_succeeded (the same period: a duplicate by value)", async () => {

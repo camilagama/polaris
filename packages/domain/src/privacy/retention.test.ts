@@ -7,16 +7,16 @@ import {
   isRetentionClass,
   legalReviewDefects,
   pendingLegalReviews,
-  RESOLVED_RETENTION_BLOCKERS,
   RETENTION_CLASSES,
   RETENTION_POLICIES,
+  RESOLVED_RETENTION_BLOCKERS,
   RETENTION_PURGE_JOBS,
   type RetentionClass,
   RetentionNotApprovedError,
   type RetentionPolicy,
+  TENANT_AUDIT_RETENTION,
   retentionExpiry,
   retentionPolicy,
-  TENANT_AUDIT_RETENTION,
 } from "./retention";
 
 const HOUR_MS = 3_600_000;

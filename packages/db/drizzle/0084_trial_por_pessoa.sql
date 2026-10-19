@@ -8,7 +8,7 @@
 --   of the organization (anti-abuse: the foreign key to the organization restricts, and organizations are never
 --   deleted) and goes with the account (cascade). Retention class `billing_trial_claims`.
 -- * `provider_subscription_id` (Asaas `sub_`) on the inbox and on the record: stored from the first fact that matched
---   `provider_ref`. The tenant keeps reading the ledger's old columns only (column grant) and never the new one.
+--   `provider_ref`, unique per provider on the record (one subscription, one organization). The tenant keeps reading the ledger's old columns only (column grant) and never the new one.
 -- * The semiannual Pro price stops being sold (Q12); it comes back by migration.
 -- * `purge_organization_data` keeps `amount` and `currency` in a pseudonymized fact (Filipe V2): the money facts now
 --   carry the amount, which the fiscal record needs. The rest of the function is the one of migration 0080, unchanged.
@@ -25,6 +25,7 @@ ALTER TABLE "organization_billing" ADD COLUMN "provider_subscription_id" text;--
 ALTER TABLE "billing_trial_claims" ADD CONSTRAINT "billing_trial_claims_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_trial_claims" ADD CONSTRAINT "billing_trial_claims_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "billing_trial_claims_organization_idx" ON "billing_trial_claims" USING btree ("organization_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "organization_billing_provider_subscription_unique" ON "organization_billing" USING btree ("provider","provider_subscription_id") WHERE "organization_billing"."provider_subscription_id" IS NOT NULL;--> statement-breakpoint
 ALTER TABLE "billing_events" ADD CONSTRAINT "billing_events_provider_subscription_length" CHECK ("billing_events"."provider_subscription_id" IS NULL OR char_length("billing_events"."provider_subscription_id") BETWEEN 1 AND 128);--> statement-breakpoint
 ALTER TABLE "organization_billing" ADD CONSTRAINT "organization_billing_provider_subscription_coherent" CHECK ("organization_billing"."provider_subscription_id" IS NULL OR ("organization_billing"."provider_ref" IS NOT NULL AND char_length("organization_billing"."provider_subscription_id") BETWEEN 1 AND 128));--> statement-breakpoint
 CREATE POLICY "billing_trial_claims_billing_runtime_select" ON "billing_trial_claims" AS PERMISSIVE FOR SELECT TO "polaris_billing_runtime" USING (true);--> statement-breakpoint

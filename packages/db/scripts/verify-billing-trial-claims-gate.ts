@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import type { BillingFact } from "@polaris/domain/billing/facts";
 import { Client } from "pg";
 import { createBillingStore } from "../src/billing-store";
@@ -42,6 +42,7 @@ const TRIAL_IN_PROGRESS = /trial_in_progress/;
 const TRIAL_ALREADY_USED = /trial_already_used/;
 const BACKFILL_STATEMENT =
   /INSERT INTO public\.billing_trial_claims \(user_id, organization_id, reserved_at, consumed_at\)[\s\S]*?ON CONFLICT \(user_id\) DO NOTHING;/;
+const TRIAL_MIGRATION = /^\d{4}_trial_por_pessoa\.sql$/;
 /** The advisory lock key of the barrier (any constant the other gates do not use). */
 const BARRIER_KEY = 840_101;
 
@@ -377,6 +378,44 @@ async function main() {
       "a subscription without a trial and an abandoned checkout leave the reservation unconsumed"
     );
 
+    // two owners of one organization: the trial being set up is one person's, and only that one is spent
+    const shared = await newTenant("shared");
+    const coOwner = await newUser();
+    await addOwner(shared.organizationId, coOwner, at(0));
+    await billing.startTrial(shared.organizationId, shared.userId, at(0));
+    await assert.rejects(
+      () => billing.startTrial(shared.organizationId, coOwner, at(0.1)),
+      TRIAL_IN_PROGRESS
+    );
+    assert.equal(await claimOf(coOwner), null);
+    // the first owner abandons; the co-owner opts in and finishes the checkout
+    await abandon(shared.organizationId);
+    await billing.startTrial(shared.organizationId, coOwner, at(0.2));
+    await billing.attachProvider(
+      shared.organizationId,
+      "fake",
+      `chk_shared_${run}`
+    );
+    await deliver(`chk_shared_${run}`, methodReady(at(0.3)));
+    assert.equal((await billingRow(shared.organizationId))?.state, "trialing");
+    assert.ok((await claimOf(coOwner))?.consumed_at);
+    assert.equal(
+      (await claimOf(shared.userId))?.consumed_at,
+      null,
+      "the first owner, whose checkout was abandoned, keeps an unused trial"
+    );
+    // that unused reservation moves on: the organization is no longer setting up its trial
+    const sharedNext = await newTenant("shared next");
+    await addOwner(sharedNext.organizationId, shared.userId, at(0));
+    await billing.startTrial(sharedNext.organizationId, shared.userId, at(1));
+    assert.equal(
+      (await claimOf(shared.userId))?.organization_id,
+      sharedNext.organizationId
+    );
+    tests.push(
+      "with two owners, a second person cannot start a trial on an organization already setting up the first one's (trial_in_progress); after the first abandons, the trial started is the last person's to reserve and only that reservation is consumed, while the other one stays unused and can move to another organization"
+    );
+
     // ------------------------------------------- 3. the race, behind a barrier
     const racer = await newTenant("race A");
     const raceOther = await newTenant("race B");
@@ -516,8 +555,14 @@ async function main() {
     );
 
     // --------------------------------------------------- 5. the backfill and its edges
+    // found by its name, so a renumbering at the merge does not break the gate
+    const drizzleDirectory = new URL("../drizzle/", import.meta.url);
+    const migrationFile = readdirSync(drizzleDirectory).find((name) =>
+      TRIAL_MIGRATION.test(name)
+    );
+    assert.ok(migrationFile, "the migration of the trial per person exists");
     const migration = readFileSync(
-      new URL("../drizzle/0084_trial_por_pessoa.sql", import.meta.url),
+      new URL(migrationFile, drizzleDirectory),
       "utf8"
     );
     const backfill = BACKFILL_STATEMENT.exec(migration)?.[0];
@@ -583,6 +628,14 @@ async function main() {
         [kept, several, at(-1)]
       );
 
+      // two owners since the same instant: the smaller user ID, so the result never depends on the plan
+      const tied = await make("tied", at(-15));
+      const tiedOwners = [await owner(), await owner()].sort();
+      for (const tiedOwner of tiedOwners) {
+        // biome-ignore lint/performance/noAwaitInLoops: Two memberships, in order.
+        await member(tied, tiedOwner, at(-100));
+      }
+
       await fill.query(backfill);
       // the statement can run again: nothing changes
       await fill.query(backfill);
@@ -593,7 +646,7 @@ async function main() {
         user_id: string;
       }>(
         "SELECT user_id, organization_id, reserved_at, consumed_at FROM public.billing_trial_claims WHERE user_id = ANY($1) ORDER BY user_id",
-        [[oldest, newer, idle, twice, kept]]
+        [[oldest, newer, idle, twice, kept, ...tiedOwners]]
       );
       const byUser = new Map(claims.rows.map((row) => [row.user_id, row]));
       assert.deepEqual(byUser.get(oldest), {
@@ -616,6 +669,8 @@ async function main() {
         reserved_at: at(-1),
         user_id: kept,
       });
+      assert.equal(byUser.get(tiedOwners[0] ?? "")?.organization_id, tied);
+      assert.equal(byUser.has(tiedOwners[1] ?? ""), false);
       const ownerlessClaims = await fill.query<{ count: string }>(
         "SELECT count(*)::text AS count FROM public.billing_trial_claims WHERE organization_id = $1",
         [ownerless]
@@ -626,7 +681,7 @@ async function main() {
       await fill.end();
     }
     tests.push(
-      "the migration's backfill gives the oldest owner of each organization whose trial started a consumed claim dated by that start: a newer owner, an organization with no owner and one whose trial never started give none, the oldest owner of two gets the earliest, an existing claim is kept and running it twice changes nothing"
+      "the migration's backfill gives the oldest owner of each organization whose trial started a consumed claim dated by that start: a newer owner, an organization with no owner and one whose trial never started give none, the oldest owner of two gets the earliest, two owners since the same instant give it to the smaller user ID, an existing claim is kept and running it twice changes nothing"
     );
 
     // ----------------------------------------- 6. the account and the organization
@@ -836,6 +891,36 @@ async function main() {
     assert.ok(Number(tenantLedger.rows[0]?.count) >= 2);
     tests.push(
       "the first fact that matched the reference stores the provider's subscription ID on the record (a later one does not replace it, a mismatched one stores nothing, a new checkout clears it), the inbox keeps the ID of each event and the money fact keeps its amount and currency; the tenant still reads its ledger but neither ID column"
+    );
+
+    // one subscription ID belongs to one organization: another record never takes it
+    const elsewhere = await newTenant("elsewhere");
+    await billing.attachProvider(
+      elsewhere.organizationId,
+      "fake",
+      `chk_elsewhere_${run}`
+    );
+    await deliver(
+      `chk_elsewhere_${run}`,
+      { occurredAt: at(1), type: "charge_failed" },
+      `sub_trial_B_${run}`
+    );
+    assert.equal(
+      (await billingRow(elsewhere.organizationId))?.provider_subscription_id,
+      null
+    );
+    await expectSqlState(
+      () =>
+        admin.pool.query(
+          "UPDATE public.organization_billing SET provider_subscription_id = $2 WHERE organization_id = $1",
+          [elsewhere.organizationId, `sub_trial_B_${run}`]
+        ),
+      "23505",
+      "a subscription ID held by another organization",
+      "organization_billing_provider_subscription_unique"
+    );
+    tests.push(
+      "a subscription ID already held by another organization is never stored on a second record (the store skips it and a unique index refuses it)"
     );
 
     // ----------------------------------------------------- 9. the semiannual cycle

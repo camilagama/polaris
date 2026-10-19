@@ -1,5 +1,5 @@
 {
-  "id": "7d942d5e-872a-436e-93aa-461993b70186",
+  "id": "c28b32ea-20a7-4e70-9395-5aea32de881b",
   "prevId": "d6191eec-9725-4634-ba8c-1fffd526625c",
   "version": "7",
   "dialect": "postgresql",
@@ -1509,6 +1509,28 @@
           ],
           "isUnique": true,
           "where": "\"organization_billing\".\"provider_ref\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_billing_provider_subscription_unique": {
+          "name": "organization_billing_provider_subscription_unique",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_subscription_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"organization_billing\".\"provider_subscription_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

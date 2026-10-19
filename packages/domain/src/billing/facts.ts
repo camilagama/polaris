@@ -254,6 +254,8 @@ function applied(
   const record = normalized({
     ...before,
     ...next,
+    // new Pro access is a new payment: what was taken back before no longer matters
+    revoked: revokedAfter(before, next),
     // an older fact never rewinds the clock of facts, and a fact dated in the
     // future (a skewed provider clock) never pushes it past the present, which
     // would make every later, legitimate fact look stale
@@ -266,8 +268,6 @@ function applied(
               Math.min(occurredAt.getTime(), now.getTime())
             )
           ),
-    // new Pro access is a new payment: what was taken back before no longer matters
-    revoked: revokedAfter(before, next),
     // the trial is used by running it and waived by paying without it
     trialConsumed: before.trialConsumed || grantsPro(next.state),
   });
@@ -850,7 +850,6 @@ export function isCoherentBillingRecord(record: BillingRecord): boolean {
   return accessOk && flagsOk && trialOk && revokedOk && wonOk;
 }
 
-/** A fact as the inbox stores it: plain JSON, dates as ISO text, no personal data. */
 /** The amount, if it is one `money.md` writes: positive, two places, normalized. */
 function isBillingAmountValue(value: string): boolean {
   try {
@@ -874,6 +873,7 @@ function amountFields(
   return { amount: amount.value, currency: amount.currency };
 }
 
+/** A fact as the inbox stores it: plain JSON, dates as ISO text, no personal data. */
 export function serializeBillingFact(
   fact: BillingFact
 ): Record<string, number | string> {

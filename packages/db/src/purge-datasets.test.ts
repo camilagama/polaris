@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import {
   BILLING_FACT_TYPES,
   type BillingFact,
@@ -21,9 +21,16 @@ const auditMigration = readFileSync(
   new URL("../drizzle/0080_auditoria_sobrevive_ao_purge.sql", import.meta.url),
   "utf8"
 );
+const TRIAL_MIGRATION = /^\d{4}_trial_por_pessoa\.sql$/;
 // the money facts carry their amount since this one (ADR 0101): it redefines the function with the two keys
+// (found by its name: a renumbering at the merge does not break the test)
+const drizzleDirectory = new URL("../drizzle/", import.meta.url);
 const trialMigration = readFileSync(
-  new URL("../drizzle/0084_trial_por_pessoa.sql", import.meta.url),
+  new URL(
+    readdirSync(drizzleDirectory).find((name) => TRIAL_MIGRATION.test(name)) ??
+      "missing-trial-migration.sql",
+    drizzleDirectory
+  ),
   "utf8"
 );
 const billingStore = readFileSync(

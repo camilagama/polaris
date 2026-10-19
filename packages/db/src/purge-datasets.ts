@@ -74,7 +74,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     entitlement_grants:
       "Concessões da plataforma, parte do registro de cobrança (ADR 0067 e 0079): ficam a chave, o valor, as datas e o identificador de quem concedeu, sem dado do pagador; o motivo escrito pelo operador é trocado por um texto fixo no purge (ADR 0081, decisão de 18/10/2026).",
     organization_billing:
-      "Estado da assinatura e `provider_ref` e `provider_subscription_id`, as referências da assinatura no provedor: registro da plataforma sem dado do pagador na linha, mas a referência localiza o pagador no provedor (pseudonimização), mantida pelo prazo fiscal; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
+      "Estado da assinatura, `provider_ref` e `provider_subscription_id`, as referências da assinatura no provedor: registro da plataforma sem dado do pagador na linha, mas a referência localiza o pagador no provedor (pseudonimização), mantida pelo prazo fiscal; o purge exige que o trial ou o acesso pago tenha terminado (ADR 0081).",
     organization_legal_holds:
       "Registro das travas legais (quem, sob qual caso, quando entrou e saiu), sem texto livre: é a prova de que o purge esperou a trava (ADR 0081).",
     organization_purge_cancellations:
@@ -105,10 +105,10 @@ export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
     "Registro de acesso do Marco Civil (art. 15), por usuário e sem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo de 6 meses, com a guarda cautelar do §2º (ADR 0092 e 0081).",
   auth_login_lock:
     "Contador do bloqueio da entrada por senha, uma linha por e-mail digitado e sem organização: a chave é o HMAC do e-mail normalizado (nem e-mail, nem usuário, nem IP), e a linha dura no máximo 1 dia (classe `auth_login_lock`, ADR 0100).",
-  device_sessions:
-    "Vínculo entre sessão e aparelho de um usuário, sem organização: some com a sessão ou com o aparelho (chave estrangeira em cascata), e a retenção é a da classe `auth_sessions`. A classe de retenção dos aparelhos (`devices`) ainda não foi decidida.",
   legal_acceptance:
     "Aceite dos termos e da política de privacidade, por usuário e sem organização: a linha só acrescenta (gatilho), sobrevive ao purge da organização e à exclusão do usuário, e fica 10 anos depois da exclusão da conta (classe `legal_acceptance`, ADR 0100). Sem IP.",
+  device_sessions:
+    "Vínculo entre sessão e aparelho de um usuário, sem organização: some com a sessão ou com o aparelho (chave estrangeira em cascata), e a retenção é a da classe `auth_sessions`. A classe de retenção dos aparelhos (`devices`) ainda não foi decidida.",
   operational_incidents:
     "Uma linha por causa (contagem, datas e uma referência opaca, o ID de um evento), sem organização (ADR 0085 e 0087).",
   scheduled_job_state:
