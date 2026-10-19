@@ -35,7 +35,8 @@ export const RECENT_LOGIN_REASON =
 
 export const PRIVACY_LINK = "Política de Privacidade";
 export const TERMS_LINK = "Termos de Uso";
-export const LEGAL_LINKS_INTRO = "Ao continuar, você concorda com os";
+// Only a pointer to the texts: the acceptance itself is recorded by its own screen (P7), not implied here.
+export const LEGAL_LINKS_INTRO = "Leia os";
 export const NEW_TAB_HINT = "abre em outra aba";
 
 /** The line above the button for the reason the person was sent here, if any. */

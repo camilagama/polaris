@@ -1,8 +1,8 @@
+import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import { parseSignInSearch } from "../lib/sign-in-path";
 import { GoogleLogo } from "./google-logo";
-import { LEGAL_LINKS, LEGAL_PAGES_PUBLISHED } from "./legal-links";
 import {
   hasSession,
   loadAuthMethods,
@@ -46,29 +46,19 @@ const failureText: Readonly<Record<SignInFailure, string>> = {
   limite: SIGN_IN_LIMIT,
 };
 
+/** The two legal pages open in another tab, so a half-done sign-in is not lost (L1 of the legal pages). */
 function LegalLinks() {
-  if (!LEGAL_PAGES_PUBLISHED) {
-    return null;
-  }
   return (
     <p className="sign-in-legal">
       {LEGAL_LINKS_INTRO}{" "}
-      <a
-        href={LEGAL_LINKS.terms}
-        rel="noopener noreferrer"
-        target="_blank"
-        title={NEW_TAB_HINT}
-      >
+      <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
         {TERMS_LINK}
+        <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
       </a>{" "}
       e a{" "}
-      <a
-        href={LEGAL_LINKS.privacy}
-        rel="noopener noreferrer"
-        target="_blank"
-        title={NEW_TAB_HINT}
-      >
+      <a href={LEGAL_PATHS.privacy} rel="noopener noreferrer" target="_blank">
         {PRIVACY_LINK}
+        <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
       </a>
       .
     </p>

@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 const GOOGLE_URL =
   "https://accounts.google.com/o/oauth2/v2/auth?client_id=teste";
 const CSP_VIOLATION = /Content Security Policy/i;
+const NOOPENER = /noopener/;
 const BUTTON = "Continuar com o Google";
 const TECHNICAL =
   /\b(40[13]|429|50[03])\b|auth_|rate_limited|UNAUTHORIZED|Unauthorized/;
@@ -146,6 +147,33 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     await expect(googleButton(page).locator("img")).toHaveCount(0);
     expect(external).toEqual([]);
     expect(printed.filter((line) => CSP_VIOLATION.test(line))).toEqual([]);
+  });
+
+  test("os links dos Termos de Uso e da Política de Privacidade abrem em outra aba, sem sessão (AC-1, AC-36)", async ({
+    context,
+    page,
+  }) => {
+    await serve(page, newServer());
+    await page.goto("/entrar");
+    for (const [name, path, heading] of [
+      ["Termos de Uso", "/termos", "Termos de Uso"],
+      ["Política de Privacidade", "/privacidade", "Política de Privacidade"],
+    ] as const) {
+      const link = page.getByRole("link", { name: new RegExp(name) });
+      // biome-ignore lint/performance/noAwaitInLoops: one link after the other
+      await expect(link).toHaveAttribute("href", path);
+      await expect(link).toHaveAttribute("target", "_blank");
+      await expect(link).toHaveAttribute("rel", NOOPENER);
+      const opened = context.waitForEvent("page");
+      await link.click();
+      const popup = await opened;
+      await expect(
+        popup.getByRole("heading", { level: 1, name: heading })
+      ).toBeVisible();
+      // the sign-in screen stays where it was
+      expect(new URL(page.url()).pathname).toBe("/entrar");
+      await popup.close();
+    }
   });
 
   test("o clique chama o início com o provedor, o destino codificado e sem idToken, e navega para a URL devolvida (AC-2)", async ({
