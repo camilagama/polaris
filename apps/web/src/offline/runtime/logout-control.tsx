@@ -1,13 +1,7 @@
 import { useCallback, useState } from "react";
-import {
-  browserStorage,
-  clearOrganizationsCache,
-} from "../../lib/current-organization-model";
-import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
-import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
-import { markSigningOut } from "../../lib/sign-out";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
+import { type LeavePath, leaveTo } from "./leave-browser";
 import {
   discardAndLeave,
   type LogoutFlowDependencies,
@@ -33,7 +27,12 @@ async function signOutOnServer(): Promise<void> {
   }
 }
 
-export function LogoutControl() {
+/**
+ * The protected logout as a hook: "Sair" uses it to go home, the devices screen
+ * to go to the sign-in screen (its "Entrar de novo" while the session is still
+ * alive). Same guard, same dialog, only the destination changes.
+ */
+export function useLogout(destination: LeavePath) {
   const runtime = useOfflineRuntime();
   const [blocked, setBlocked] = useState<BlockedWorkspace[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,19 +43,12 @@ export function LogoutControl() {
       const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
       return workspaces.length > 0
         ? {
-            leave: () => {
-              // the next person to open this browser must not be offered these organizations
-              markSigningOut();
-              clearOrganizationsCache(browserStorage());
-              clearPaymentProfileCaches(browserStorage());
-              clearPeriodSummaryCaches(browserStorage());
-              window.location.assign("/");
-            },
+            leave: () => leaveTo(destination),
             signOut: signOutOnServer,
             workspaces,
           }
         : null;
-    }, [runtime]);
+    }, [destination, runtime]);
 
   const run = useCallback(
     async (
@@ -102,6 +94,21 @@ export function LogoutControl() {
     []
   );
 
+  return {
+    blocked,
+    busy,
+    cancel: handleCancel,
+    discard: handleDiscard,
+    message,
+    showAttention: handleAttention,
+    start: handleLogout,
+  };
+}
+
+export function LogoutControl() {
+  const runtime = useOfflineRuntime();
+  const logout = useLogout("/");
+  const { blocked, busy, message } = logout;
   if (!runtime) {
     return null;
   }
@@ -110,7 +117,7 @@ export function LogoutControl() {
       <button
         className="secondary-button"
         disabled={busy}
-        onClick={handleLogout}
+        onClick={logout.start}
         type="button"
       >
         Sair
@@ -125,10 +132,10 @@ export function LogoutControl() {
           blocked={blocked}
           busy={busy}
           errorMessage={null}
-          onCancel={handleCancel}
-          onDiscard={handleDiscard}
-          onRetry={handleLogout}
-          onShowAttention={handleAttention}
+          onCancel={logout.cancel}
+          onDiscard={logout.discard}
+          onRetry={logout.start}
+          onShowAttention={logout.showAttention}
         />
       ) : null}
     </div>

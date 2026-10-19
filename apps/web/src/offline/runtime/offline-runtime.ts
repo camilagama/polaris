@@ -302,6 +302,26 @@ export class OfflineRuntime {
     };
   }
 
+  /**
+   * The server said, outside of a sync (the answer to a revocation), that this
+   * session is over: the same as a refusal found while sending. The lease and
+   * the local collections go now, not at the next send; the queue stays. Nothing
+   * to do when the stores are already closed (a refusal got there first).
+   */
+  async dropSessionCopy(): Promise<void> {
+    // a send in flight finishes first (it ends in the same refusal), never under the stores being closed
+    await this.inFlight?.catch(() => undefined);
+    const { namespace, stores, userId } = this;
+    if (!(namespace && stores && userId)) {
+      return;
+    }
+    this.dependencies.keyValues.remove(SESSION_USER_KEY);
+    await this.dropLocalCopy(
+      { generation: this.generation, namespace, stores, userId },
+      { forgetDevice: false }
+    );
+  }
+
   /** This organization's part of a logout (ADR 0039). */
   logoutWorkspace(): LogoutWorkspace | null {
     const { namespace, organizationId, stores } = this;
