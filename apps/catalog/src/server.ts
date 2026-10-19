@@ -1,6 +1,9 @@
 import { createCspNonce } from "@polaris/http-security";
+import { configureLogging } from "@polaris/observability/logger";
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { requestWithNonce, secureResponse } from "./server/security";
+
+configureLogging({ service: "polaris-catalog" });
 
 // Start finds this file by itself and delegates to its own handler; this entry adds the nonce and the
 // security headers of ADR 0090. The dev server injects inline scripts of its own (HMR, React refresh),

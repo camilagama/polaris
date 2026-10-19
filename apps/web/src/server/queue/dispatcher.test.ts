@@ -180,8 +180,11 @@ describe("dispatchOutbox", () => {
     expect(report).toMatchObject({ released: 2, sent: 0, unmarked: 0 });
     // the class of the error is logged, never its text
     expect(console.error).toHaveBeenCalledWith(
-      "outbox_send_failed",
-      expect.objectContaining({ errorName: "Error", queue: "default" })
+      expect.objectContaining({
+        errorClass: "Error",
+        event: "outbox_send_failed",
+        queue: "default",
+      })
     );
     expect(logged()).not.toContain("ana@example.com");
   });

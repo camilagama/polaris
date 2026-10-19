@@ -206,10 +206,12 @@ describe("rate limit middleware", () => {
     expect((await post(app, "/rpc/sale/confirm", bindings())).status).toBe(200);
 
     expect(warn).toHaveBeenCalledOnce();
-    expect(warn).toHaveBeenCalledWith({
-      event: "rate_limit_binding_missing",
-      scope: "rpc-mutation",
-    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "rate_limit_binding_missing",
+        scope: "rpc-mutation",
+      })
+    );
   });
 
   it("fails open, with a payload-free error log, when the limiter itself fails", async () => {

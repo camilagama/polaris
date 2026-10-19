@@ -249,8 +249,8 @@ describe("the billing webhook route", () => {
     await Promise.all(t.background);
 
     expect(warned).toHaveBeenCalledWith(
-      "billing_webhook_processing_deferred",
       expect.objectContaining({
+        event: "billing_webhook_processing_deferred",
         eventId: "id-evt-1",
         outcomeCode: "unknown_organization",
       })
@@ -408,8 +408,11 @@ describe("the billing webhook route", () => {
 
     expect(t.store.processEvent).toHaveBeenCalledTimes(2);
     expect(logged).toHaveBeenCalledWith(
-      "billing_webhook_processing_failed",
-      expect.objectContaining({ eventId: "id-evt-1", provider: "fake" })
+      expect.objectContaining({
+        event: "billing_webhook_processing_failed",
+        eventId: "id-evt-1",
+        provider: "fake",
+      })
     );
     expect(t.store.close).toHaveBeenCalledTimes(1);
     logged.mockRestore();

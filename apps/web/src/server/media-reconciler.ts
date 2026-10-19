@@ -1,3 +1,5 @@
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
 import type { MediaBucketBinding } from "./environment";
 import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
@@ -218,12 +220,12 @@ async function reclaimRemovedAsset(input: {
     // The asset gained a link (or vanished) after its objects were deleted: the
     // database guard says a link is only added to a new asset, so this should
     // never happen. If it does, an image may have lost its files: never silent.
-    console.error("media_removed_asset_not_finalized", { assetId });
+    logger.error("media_removed_asset_not_finalized", { assetId });
     return "failed";
   } catch (error: unknown) {
-    console.error("media_removed_asset_failed", {
+    logger.error("media_removed_asset_failed", {
       assetId,
-      reason: error instanceof Error ? error.message : "unknown",
+      ...describeError(error),
     });
     return "failed";
   }
@@ -273,7 +275,7 @@ export async function reconcileRemovedMedia(input: {
   }
 
   if (report.failed > 0) {
-    console.error("media_removed_reconciliation_incomplete", report);
+    logger.error("media_removed_reconciliation_incomplete", { ...report });
     throw new Error("media_removed_reconciliation_incomplete");
   }
   return report;

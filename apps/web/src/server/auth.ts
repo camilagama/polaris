@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import { authSchema } from "@polaris/db/auth-schema";
 import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
 import type { createDatabase } from "@polaris/db/client";
@@ -891,7 +892,8 @@ export function createBetterAuth({
     hooks: { after: auditHook, before: captureLogoutSession },
     logger: {
       level: "error",
-      log: (level) => console.error("better_auth_internal_error", level),
+      log: (level) =>
+        logger.error("better_auth_internal_error", { logLevel: level }),
     },
     session: {
       cookieCache: { enabled: false },

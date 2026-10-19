@@ -104,6 +104,68 @@ const cases = [
   workspace,
 }));
 
+// Server code logs through @polaris/observability (ADR 0089): a direct `console.*` skips the redaction
+// policy, so `noConsole` must reject a new one in every server folder and leave CLI scripts and tests alone.
+const consoleSource = 'console.log("boundary fixture");\n';
+const consoleRejected = [
+  ["apps", "web", "src", "server"],
+  ["apps", "web", "src", "server", "queue"],
+  ["apps", "web", "worker"],
+  ["apps", "admin", "src"],
+  ["apps", "catalog", "src", "server"],
+  ["apps", "catalog", "src"],
+  ["packages", "db", "src"],
+  ["packages", "billing", "src"],
+  ["packages", "domain", "src"],
+  ["packages", "observability", "src"],
+].map((workspace) => ({
+  allowed: false,
+  expected: "noConsole",
+  file: ".ts",
+  source: consoleSource,
+  specifier: "console.log",
+  workspace,
+}));
+const consoleAllowed = [
+  [["apps", "web", "scripts"], ".ts"],
+  [["packages", "db", "scripts"], ".ts"],
+  [["apps", "web", "src", "server"], ".test.ts"],
+  [["packages", "observability", "src"], ".test.ts"],
+  [["packages", "ui", "src"], ".ts"],
+].map(([workspace, file]) => ({
+  allowed: true,
+  expected: "noConsole",
+  file,
+  source: consoleSource,
+  specifier: "console.log",
+  workspace,
+}));
+// evlog runs with its own masking off, so only packages/observability may import it.
+const evlogMessage =
+  "Server code logs through @polaris/observability: evlog directly would skip the redaction policy (ADR 0089).";
+const evlogCase = (workspace, allowed) => ({
+  allowed,
+  expected: evlogMessage,
+  source: forbiddenImport("evlog"),
+  specifier: "evlog",
+  workspace,
+});
+const evlogRejected = [
+  ["apps", "web", "src", "server"],
+  ["apps", "web", "worker"],
+  ["apps", "admin", "src"],
+  ["apps", "catalog", "src"],
+  ["packages", "db", "src"],
+  ["packages", "billing", "src"],
+  ["packages", "http-security", "src"],
+].map((workspace) => evlogCase(workspace, false));
+cases.push(
+  ...consoleRejected,
+  ...consoleAllowed,
+  ...evlogRejected,
+  evlogCase(["packages", "observability", "src"], true)
+);
+
 const fixturePrefix = "__boundary_fixture_";
 
 // A crashed run can leave a fixture behind and break the next typecheck, so
@@ -133,7 +195,7 @@ for (const testCase of cases) {
   const fixture = path.join(
     root,
     ...testCase.workspace,
-    `${fixturePrefix}${index}.ts`
+    `${fixturePrefix}${index}${testCase.file ?? ".ts"}`
   );
 
   try {
@@ -151,9 +213,16 @@ for (const testCase of cases) {
       throw result.error;
     }
 
-    if (result.status === 0 || !output.includes(testCase.expected)) {
+    if (testCase.allowed) {
+      if (output.includes(testCase.expected)) {
+        throw new Error(
+          `Biome rejected "${testCase.specifier}" in ${path.relative(root, fixture)}, ` +
+            `where it is allowed: ${output}`
+        );
+      }
+    } else if (result.status === 0 || !output.includes(testCase.expected)) {
       throw new Error(
-        `Biome did not reject the forbidden import of "${testCase.specifier}" in ` +
+        `Biome did not reject the forbidden "${testCase.specifier}" in ` +
           `${path.relative(root, fixture)}: ${output}`
       );
     }
@@ -166,5 +235,5 @@ for (const testCase of cases) {
   }
 }
 console.log(
-  `Import boundary rules reject all ${cases.length} prohibited fixtures.`
+  `Boundary rules behave as expected on all ${cases.length} fixtures (prohibited imports, evlog outside the logger and console calls rejected; the allowed exceptions left alone).`
 );

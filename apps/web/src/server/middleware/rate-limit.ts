@@ -1,3 +1,5 @@
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { MiddlewareHandler } from "hono";
 import { limiterKey } from "../auth/abuse-protection";
 import type {
@@ -110,10 +112,7 @@ export function createRateLimitMiddleware(
     if (!(limiter && secret)) {
       if (!warnedAboutMissingBinding) {
         warnedAboutMissingBinding = true;
-        console.warn({
-          event: "rate_limit_binding_missing",
-          scope: options.scope,
-        });
+        logger.warn("rate_limit_binding_missing", { scope: options.scope });
       }
       await next();
       return;
@@ -128,9 +127,8 @@ export function createRateLimitMiddleware(
         context.req.raw
       );
     } catch (error) {
-      console.error({
-        errorName: error instanceof Error ? error.name : "UnknownError",
-        event: "rate_limit_unavailable",
+      logger.error("rate_limit_unavailable", {
+        ...describeError(error),
         requestId: context.get("requestId"),
         scope: options.scope,
       });

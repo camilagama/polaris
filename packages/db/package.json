@@ -143,6 +143,7 @@
   },
   "dependencies": {
     "@polaris/domain": "workspace:*",
+    "@polaris/observability": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.1"
   },

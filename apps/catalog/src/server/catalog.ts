@@ -5,6 +5,8 @@ import {
   type PublicCatalogReader,
   withPublicCatalog,
 } from "@polaris/db/public-catalog-reader";
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import { isNotFound, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
@@ -86,7 +88,7 @@ async function read<T>(
     if (isNotFound(error)) {
       throw error;
     }
-    console.error("catalog read failed", error);
+    logger.error("catalog_read_failed", describeError(error));
     throw new Error("catalog_unavailable", { cause: error });
   }
   if (found === null) {

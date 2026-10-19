@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import { createDatabase as createHyperdriveDatabase } from "@polaris/db/client";
 import { createBetterAuth } from "./auth";
 import {
@@ -91,7 +92,7 @@ export function createAuthenticatedRequestContext(
       authConnectionString = resolveAuthConnectionString(input.bindings);
     } catch (error) {
       if (error instanceof AuthDatabaseNotConfiguredError) {
-        console.error({ event: "auth_database_not_configured" });
+        logger.error("auth_database_not_configured");
         // biome-ignore lint/style/useErrorCause: The configuration detail is logged above and must not reach clients.
         throw new TenantRequestContextError("authentication_unavailable");
       }
