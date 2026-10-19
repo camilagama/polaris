@@ -810,7 +810,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Servidor | Concluído | `createCustomer` aceita `id` (validado, em savepoint, conflito limpo); manipulador `customer.create` registrado em `server/sync/registry.ts`, com 9 testes do manipulador e do roteador. |
 | Cliente | Concluído | `lib/uuidv7.ts`; `offline/customer-create.ts` (enfileira, grava a linha otimista, restaura após queda, estado pendente/rejeitado); `offline/sync-runner.ts` (lotes em ordem, `sending` antes da requisição, aplicação dos resultados, atualização das coleções pelo change log); servidor sintético com resposta perdida e rejeição. |
 | Gate Neon PostgreSQL 18 | Concluído | `customers` (ID do cliente mantido, duplicata na mesma organização e em outra, transação do chamador intacta após o conflito, ID inválido recusado) e `sync-push` verdes. |
-| Limites | Registrados | Nenhuma tela monta o fluxo (a prova em Android físico ainda bloqueia ligar a escrita offline); sem laboratório de navegador para este fluxo; o sincronizador ainda não tem agendamento (online, foco, tentativa com espera). |
+| Limites | Registrados | Nenhuma tela monta o fluxo (o checklist manual curto do Gate 5, com o responsável (POL-9), ainda bloqueia ligar a escrita offline); sem laboratório de navegador para este fluxo; o sincronizador ainda não tem agendamento (online, foco, tentativa com espera). |
 
 ### PR55 — Produto criado offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
 
@@ -822,7 +822,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Servidor | Concluído | Manipulador `product.create` registrado; `extraCapabilities` no `sync.push` (lease precisa carregar todas); 8 testes do manipulador e 1 do `push`. |
 | Cliente | Concluído | `offline/product-create.ts` (valida, enfileira, linhas otimistas de produto/variante/saldo, restauração, estado pendente/recusado, descarte explícito com bloqueio por dependentes e por `sending`); servidor sintético atômico com SKU único e resposta perdida; 9 testes. |
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-product:verify` (`offline-product`, suítes `ci` e `gate5`): IDs, SKU, preço e estoque preservados; change log; reenvio cria uma vez; SKU em uso (qualquer caixa) recusa tudo; ID de produto ou variante ocupado (mesma ou outra organização); atomicidade com estoque recusado e categoria indisponível; `receiveStock` negado sob `sync:push` puro. |
-| Limites | Registrados | Só a variante padrão é criada offline (opções e variantes continuam online); sem laboratório de navegador nem tela; a prova em Android físico ainda bloqueia ligar a escrita offline. |
+| Limites | Registrados | Só a variante padrão é criada offline (opções e variantes continuam online); sem laboratório de navegador nem tela; a prova automatizada em Android físico passou (Gate 5); o checklist manual curto, com o responsável (POL-9), ainda bloqueia ligar a escrita offline. |
 
 ### PR56 — Comandos de estoque offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
 
@@ -834,7 +834,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Servidor | Concluído | `handlers/stock-commands.ts` (três manipuladores, códigos estáveis, contagem exige `baseVersion`), `handlers/identity.ts` (`withCapability`); 13 testes. |
 | Cliente | Concluído | `offline/stock-commands.ts`: `effectiveStock`, `receiveStockOffline`, `writeOffStockOffline`, `countStockOffline` (leva a versão-base), `pendingStockCommands`, `discardPendingStock`; leitor `inventoryRow` no armazenamento local; servidor sintético do razão; 12 testes. |
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-stock:verify` (`offline-stock`, suítes `ci` e `gate5`): entrada uma vez e replay; fila com a versão-base prevista igual à do razão; baixa acima do saldo e contagem obsoleta recusadas sem rastro; variante inexistente; data futura; duas contagens concorrentes (uma conflita); duas baixas concorrentes (saldo nunca negativo); isolamento entre organizações. |
-| Limites | Registrados | Sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; contagem obsoleta após descarte de um movimento anterior só é percebida pelo servidor. |
+| Limites | Registrados | Sem tela nem laboratório de navegador; o checklist manual curto do Gate 5, com o responsável (POL-9), ainda bloqueia ligar a escrita offline; contagem obsoleta após descarte de um movimento anterior só é percebida pelo servidor. |
 
 ### PR57 — Venda offline (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
 
@@ -847,7 +847,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Servidor | Concluído | `handlers/sale-confirm.ts` (esquema mais normalização do domínio sem checagem de relógio, códigos estáveis, snapshot inválido classificado); 6 testes. |
 | Cliente | Concluído | `offline/sale-confirm.ts`: `createOfflineSale` (preço de tabela local, total, avisos de estoque), `pendingSales` com os cinco estados, `confirmedSales`, `resubmitRejectedSale`, `discardPendingSale`; `syncOutbox` informa `acceptedCommands`; `effectiveStock` desconta vendas na fila; leitor `variantRow`; 13 testes. |
 | Gate Neon PostgreSQL 18 | Concluído | `poc:offline-sale:verify` (`offline-sale`, suítes `ci` e `gate5`): confirmada uma vez com `recordedAt` e replay; versão por linha; recusa total sem rastro; recusa gravada e reenvio como comando novo; janela de datas; disputa pelas últimas unidades; isolamento entre organizações. |
-| Limites | Registrados | Sem perfil de pagamento offline; sem tela nem laboratório de navegador; a prova em Android físico ainda bloqueia ligar a escrita offline; aparelho offline além da janela retroativa tem as vendas recusadas por `sale_occurred_too_old`. |
+| Limites | Registrados | Sem perfil de pagamento offline; sem tela nem laboratório de navegador; o checklist manual curto do Gate 5, com o responsável (POL-9), ainda bloqueia ligar a escrita offline; aparelho offline além da janela retroativa tem as vendas recusadas por `sale_occurred_too_old`. |
 
 ### PR58 — Painel de atenção das operações offline (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
 
@@ -858,7 +858,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Modelo | Concluído | `offline/attention.ts` (`buildAttention`, `discardAttentionItem`, `resubmitAttentionItem`, `discardWarning`); `discardPendingCustomer` no módulo do cliente; 8 testes. |
 | Painel | Concluído | `offline/attention-panel.tsx` e CSS (só apresentação, botões desabilitados durante a resolução); 5 testes de marcação (sem botão que force a sincronização). |
 | Gate de navegador | Concluído | `e2e/offline-attention.e2e.ts` sobre o laboratório `/offline-attention-lab` (outbox real em IndexedDB): venda recusada aparece, bloqueia a fila e sobrevive a recarregar; reenvio como comando novo; descarte com confirmação; direito alterado só leva à revisão da conta. 4 cenários em Chromium desktop e Pixel 5 emulado. |
-| Limites | Registrados | O painel ainda não está montado no app (a interface offline não está montada); sem edição guiada de SKU; a prova em Android físico ainda bloqueia ligar a escrita offline. |
+| Limites | Registrados | O painel ainda não está montado no app (a interface offline não está montada); sem edição guiada de SKU; a prova automatizada em Android físico passou (Gate 5); o checklist manual curto, com o responsável (POL-9), ainda bloqueia ligar a escrita offline. |
 
 ### PR59 — Sair com operações pendentes (implementação, gate de navegador e verificações locais concluídos; publicação: ver linha abaixo)
 
@@ -869,9 +869,9 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Guarda | Concluído | `offline/logout-guard.ts` (`attemptLogout`, `discardAndLogout`), `offline/logout-purge.ts` (`purgeNamespace`: outbox e depois coleções locais); 9 testes. |
 | Diálogo | Concluído | `offline/logout-dialog.tsx` e CSS (sem "sair assim mesmo", descarte em duas etapas, aviso de comandos já enviados); 5 testes de marcação. |
 | Gate de navegador | Concluído | `e2e/offline-logout.e2e.ts` sobre `/offline-logout-lab` (outbox em IndexedDB e banco em OPFS reais, rede e servidor simulados): 6 cenários em Chromium desktop e Pixel 5 emulado. |
-| Limites | Registrados | O app ainda não tem tela de conta: o guarda não está ligado a um botão "Sair" nem ao `signOut`; sem registro das organizações do usuário no aparelho (quem chama informa as organizações); a prova em Android físico ainda bloqueia ligar a escrita offline. |
+| Limites | Registrados | O app ainda não tem tela de conta: o guarda não está ligado a um botão "Sair" nem ao `signOut`; sem registro das organizações do usuário no aparelho (quem chama informa as organizações); a prova automatizada em Android físico passou (Gate 5); o checklist manual curto, com o responsável (POL-9), ainda bloqueia ligar a escrita offline. |
 
-### Gate 5 — offline (provas automáticas concluídas; aparelho físico adiado)
+### Gate 5 — offline (provas automáticas concluídas; prova automatizada em aparelho real aprovada, 18 de 18 passos no iPhone e no Android; checklist manual curto com o responsável, POL-9)
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -879,7 +879,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Gate ponta a ponta | Concluído | `poc:offline-e2e:verify` (`offline-e2e`, suítes `ci` e `gate5`, em `apps/web/scripts`): o cliente offline real (outbox, construtores de comando, sincronizador, atenção) contra o código real do servidor (`sync.push`, verificação do lease, todos os manipuladores) sobre o banco real, com oráculo independente: fila de sete comandos feita offline, primeira resposta perdida, reenvio que repete os sete sem executar nenhum duas vezes; saldos e versões iguais à previsão do aparelho; totais da venda em centavos; razão explica todos os saldos; conflito de estoque recusado sem corromper e corrigido do cliente (reenvio como comando novo, contagem obsoleta descartada); SKU em uso recusa o produto inteiro; aparelho revogado confirma nada e vira `needs_attention`. |
 | Suíte completa de gates | Concluída | Os 22 gates em Neon descartável PostgreSQL 18 (migrations reaplicadas do zero, dados sintéticos) passam, inclusive os de venda, estoque, clientes, mídia e os nove da Fase 5. |
 | Navegador | Concluído | Persistência, coleções locais, outbox, painel de atenção e saída com pendências em Chromium desktop e Pixel 5 emulado (CI). |
-| Aparelho físico | **Parcial (bloqueia ligar a escrita offline)** | Suíte `scripts/gate5-real-devices.sh` (BrowserStack Automate Mobile, iPhone e Android físicos, rede do aparelho derrubada de verdade, laboratórios com servidor simulado): cadastro e venda sem rede, reinício da página e shell offline; execuções reais em 18 e 19/10/2026 com todos os passos aprovados em iPhone 18 Pro Max (iOS 27, Safari) e Pixel 11 Pro (Android 17, Chrome), ver o registro no runbook do Gate 5 (storage.persist() respondeu false nos dois aparelhos; o runtime decide offline pela caixa "Rede disponível" do laboratório, não pela rede real). A limpeza obrigatória entre os fluxos era defeito do laboratório (aparelho e lease do usuário anterior reaproveitados), corrigido. Prova final em 19/10/2026 na main `29aec22` (com os PRs 149, 154 e 157), fluxos 1 e 2 seguidos sem limpar os dados: 18/18 passos aprovados nos dois aparelhos. A troca de usuário sem rede foi corrigida no PR 149 (lease e namespace por usuário). Continuam no checklist do runbook, nada executado: PWA instalado na tela inicial, servidor real em staging com a chave ligada, matar e reabrir durante envio, relógio errado, dias sem abrir (ITP). |
+| Aparelho físico | **Prova automatizada aprovada; checklist manual curto com o responsável (POL-9)** | Suíte `scripts/gate5-real-devices.sh` (BrowserStack Automate Mobile, iPhone e Android físicos, rede do aparelho derrubada de verdade, laboratórios com servidor simulado): cadastro e venda sem rede, reinício da página e shell offline; execuções reais em 18 e 19/10/2026 com todos os passos aprovados em iPhone 18 Pro Max (iOS 27, Safari) e Pixel 11 Pro (Android 17, Chrome), ver o registro no runbook do Gate 5 (storage.persist() respondeu false nos dois aparelhos; o runtime decide offline pela caixa "Rede disponível" do laboratório, não pela rede real). A limpeza obrigatória entre os fluxos era defeito do laboratório (aparelho e lease do usuário anterior reaproveitados), corrigido. Prova final em 19/10/2026 na main `29aec22` (com os PRs 149, 154 e 157), fluxos 1 e 2 seguidos sem limpar os dados: 18/18 passos aprovados nos dois aparelhos (registrada no PR 167, POL-9). A troca de usuário sem rede foi corrigida no PR 149 (lease e namespace por usuário). Em resumo: 18 de 18 passos no iPhone e 18 de 18 no Android em 18 e 19/10/2026. Falta só o checklist manual curto, com o item "Sessão trocada", que segue com o responsável (POL-9) e bloqueia ligar a escrita offline. Continuam no checklist do runbook, nada executado: PWA instalado na tela inicial, servidor real em staging com a chave ligada, matar e reabrir durante envio, relógio errado, dias sem abrir (ITP). |
 | Limites | Registrados | A interface offline (telas) e o botão "Sair" ainda não estão montados no app; PWA, service worker e atualização (PR60 a PR62 do plano) não foram feitos; promover os jobs de CI `database` e `audit` a obrigatórios é decisão do responsável. |
 
 ### PR60 — Service worker do app shell (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
@@ -966,7 +966,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 
 ## Fase 6 — despesas, análises e metas
 
-Ordem do plano ([doc/plano-inicial.md](plano-inicial.md), PR63 a PR71). O Gate 5 só termina com o iPhone real, que depende do responsável e está adiado (ver o checklist do [runbook](../docs/runbooks/gate-5-offline.md)); a Fase 6 não depende dele e segue em PRs agrupados por tema.
+Ordem do plano ([doc/plano-inicial.md](plano-inicial.md), PR63 a PR71). O Gate 5 tem a prova automatizada em aparelho real aprovada (18 e 19/10/2026, 18 de 18 passos no iPhone e 18 de 18 no Android, PR 167); só termina com o checklist manual curto, com o item "Sessão trocada", que segue com o responsável (POL-9; ver o [runbook](../docs/runbooks/gate-5-offline.md)); a Fase 6 não depende dele e segue em PRs agrupados por tema.
 
 ### PR63 e PR64 — categorias de despesa e despesas (implementação, prova em navegador, gate PostgreSQL 18 e verificações locais concluídos; publicação: ver linha abaixo)
 
@@ -1068,11 +1068,11 @@ Os dois PRs do plano vão juntos: o indicador de qualidade é a metade do painel
 
 ## Fase 6 — encerramento
 
-PR63 a PR71 mesclados (PR #81 a #86). O Gate 5 em aparelho físico (iPhone e Android) segue com o responsável e não bloqueia a Fase 7 no servidor.
+PR63 a PR71 mesclados (PR #81 a #86). A prova automatizada do Gate 5 em aparelho real passou em 18 e 19/10/2026 (18 de 18 passos no iPhone e 18 de 18 no Android, PR 167); o checklist manual curto, com o item "Sessão trocada", segue com o responsável (POL-9) e não bloqueia a Fase 7 no servidor.
 
 ## Fase 7 — billing e entitlements
 
-Ordem do plano ([doc/plano-inicial.md](plano-inicial.md), PR72 a PR82 e Gate 7). Os adaptadores de provedor (Asaas cartão e Woovi Pix Automático, PR77 e PR78), o inbox de webhooks (PR79) e o Gate 7 exigem contas sandbox reais dos provedores e ficam fora do alcance enquanto elas não existirem; a base do domínio e do servidor, que não depende de provedor, segue em PRs agrupados.
+Ordem do plano ([doc/plano-inicial.md](plano-inicial.md), PR72 a PR82 e Gate 7). A parte do PR79 que não depende de provedor está **concluída** (caixa de entrada, reconciliação, rota de webhooks, porta de adaptador e cron). A **caixa de webhooks real** (PR79 com um provedor de verdade), os adaptadores de provedor (Asaas cartão e Woovi Pix Automático, PR77 e PR78) e o Gate 7 dependem das contas sandbox Asaas e Woovi, que **ainda não foram liberadas ao time**; a base do domínio e do servidor, que não depende de provedor, segue em PRs agrupados.
 
 ### PR72, PR73 e PR76 — catálogo de planos, entitlements e máquina de estados (implementação, gate PostgreSQL 18 e verificações locais concluídos; revisão independente e publicação: ver linhas abaixo)
 
@@ -1166,7 +1166,7 @@ O núcleo que não depende de qual provedor chegar; a rota de webhook, o registr
 
 ### PR79 (rota) e PR81 (manutenção) — rota de webhooks de billing, porta de adaptador e cron (implementação, revisão independente e verificações locais concluídas; publicação: ver PR)
 
-Fecha a parte do PR79 e do PR81 que não depende de um provedor: o caminho público por onde os fatos chegam e o trabalho horário. Os adaptadores (PR77 e PR78) e o Gate 7 dependem das contas sandbox.
+Fecha a parte do PR79 e do PR81 que não depende de um provedor: o caminho público por onde os fatos chegam e o trabalho horário. Essa parte está **concluída**. A **caixa de webhooks real** (o PR79 recebendo fatos de um provedor), os adaptadores (PR77 e PR78) e o Gate 7 dependem das contas sandbox Asaas e Woovi, que **ainda não foram liberadas ao time**.
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -1524,16 +1524,16 @@ Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 20 classes com origem, regra, fontes e estado (a `deletion_ledger` entrou com o PR106, proposta e sem job); só as duas de mídia e a de exportação estão aprovadas, com prazo e job (os jobs horários existentes); as constantes do reconciliador e da exportação vêm do registro. |
+| Registro de retenção | Concluído | `@polaris/domain/privacy/retention`: 20 classes com origem, regra, fontes e estado (a `deletion_ledger` entrou com o PR106, proposta e sem job); só as duas de mídia e a de exportação estavam aprovadas, com prazo e job (os jobs horários existentes; o estado "aprovada" é do registro, ver a 10E-2); as constantes do reconciliador e da exportação vêm do registro. |
 | Jobs de expurgo | Nenhum novo | As classes aprovadas com prazo (mídia e exportação) já tinham job; as demais ficam propostas, sem job, até a decisão do responsável. |
 | HMAC do `payload_hash` | Concluído | `SYNC_PAYLOAD_HASH_SECRET` (503 sem ele); reenvio compara também o SHA-256 legado e o segredo anterior. Sem migration. O segredo não foi criado em nenhum ambiente. |
 | Descarte da edição de cliente anonimizado | Concluído | O aparelho descarta o `customer.update` recusado com `customer_anonymized` e segue a fila. |
 | Gate PostgreSQL 18 | No CI | Caso novo no gate `sync-push` (hash legado equivalente); não rodado localmente. |
 | Limites | Registrados | Linhas antigas de `sync_commands` mantêm o SHA-256 sem sal até o job de expurgo do log (90 dias, já aprovado) existir; prazos legais a confirmar pelo responsável. |
 
-### Fase 10E-2 — Privacidade: prazos de retenção aprovados (POL-80; verificações locais concluídas, gates no PostgreSQL 18 local)
+### Fase 10E-2 — Privacidade: prazos de retenção propostos (revisão jurídica pendente, POL-80; verificações locais concluídas, gates no PostgreSQL 18 local)
 
-Decisões do responsável de 18/10/2026 sobre os prazos do [ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md); as legais foram delegadas ao orquestrador, com base em pesquisa, e **precisam de validação por contador ou jurídico antes do go-live**.
+Prazos do [ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md) definidos em 18/10/2026; as legais foram delegadas ao orquestrador, com base em pesquisa. **Todos os prazos seguem propostos:** os legais, com a revisão jurídica pendente (POL-80, antes do go-live), e os operacionais, até o usuário aprovar. O registro no código (e o texto do ADR 0079) ainda marca várias classes como `aprovada`, estado do registro e não decisão final; esse estado vai ser ajustado em tarefa de código (esta só muda Markdown). A **exceção** é o purge 90 dias depois do encerramento: está **decidido**, com o prazo delegado pelo usuário ao Arrascaeta em 19/10/2026 (ADR 0081, decisão 1).
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -1759,7 +1759,7 @@ Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais
 
 ### Fase 10H — a auditoria do tenant sobrevive ao purge, imutável, com retenção por classe (t062; emenda de 19/10/2026 do ADR 0081; implementação local concluída)
 
-Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho aprovado pelo arquiteto e pela segurança: nenhuma linha da auditoria do tenant sai no purge. O número da migration (0080) e o do ADR podem mudar até o merge.
+Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho aprovado pelo arquiteto e pela segurança: nenhuma linha da auditoria do tenant sai no purge. O número da migration (0080) e o do ADR podem mudar até o merge. Como na [10E-2](#fase-10e-2--privacidade-prazos-de-retenção-propostos-revisão-jurídica-pendente-pol-80-verificações-locais-concluídas-gates-no-postgresql-18-local), os prazos de retenção são **propostos** (revisão jurídica pendente, POL-80); a exceção é o purge 90 dias depois do encerramento, **decidido** (prazo delegado pelo usuário ao Arrascaeta).
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -1779,7 +1779,7 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Gate | Concluído | `purge-functions` em `gates:ci` e `gate10` (`packages/db/scripts/verify-purge-functions-gate.ts`, comparação em `packages/db/src/purge-function-definitions.ts`): lê `pg_get_functiondef` das três funções e confere `whole_organization`, o prazo de 90 dias, as tabelas apagadas (nomes e ordem), as chaves do fato de cobrança e o único `DELETE`. Falha provada por mutação (30 dias, `audit_logs` de volta, tabela fora da lista) no banco e nos testes unitários, que também leem as migrations sem banco. |
-| Checklist de release | Concluído | Item 18 de [release-checklist.md](../docs/runbooks/release-checklist.md): o gate verde no SHA candidato (BLOCK, severidade proposta). |
+| Checklist de release | Concluído | Item 18 de [release-checklist.md](../docs/runbooks/release-checklist.md): o gate verde no SHA candidato (BLOCK, **decidido**). |
 
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
