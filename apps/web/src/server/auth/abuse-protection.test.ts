@@ -450,24 +450,30 @@ describe("Google sign-in rate limit", () => {
     expect(first).not.toBe(second);
   });
 
-  it.each([
-    ["the start", startRequest],
-    ["the callback", callbackRequest],
-  ])(
-    "fails closed with 503 on %s when the binding is missing",
-    async (_name, build) => {
-      const response = await protectSocialAuthRequest(
-        build(),
-        withoutSocialLimiter(),
-        requestId
-      );
+  it("fails closed with 503 JSON on the start when the binding is missing", async () => {
+    const response = await protectSocialAuthRequest(
+      startRequest(),
+      withoutSocialLimiter(),
+      requestId
+    );
 
-      expect(response?.status).toBe(503);
-      expect(await response?.json()).toMatchObject({
-        error: { code: "auth_rate_limit_unavailable" },
-      });
-    }
-  );
+    expect(response?.status).toBe(503);
+    expect(await response?.json()).toMatchObject({
+      error: { code: "auth_rate_limit_unavailable" },
+    });
+  });
+
+  it("redirects the callback to the sign-in page when the binding is missing", async () => {
+    const response = await protectSocialAuthRequest(
+      callbackRequest(),
+      withoutSocialLimiter(),
+      requestId
+    );
+
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get("location")).toBe("/entrar?erro=indisponivel");
+    expect(response?.headers.get("cache-control")).toBe("no-store");
+  });
 
   it.each([
     ["has no client IP", () => startRequest(null), createLimiter()],
@@ -498,6 +504,36 @@ describe("Google sign-in rate limit", () => {
       );
 
       expect(response?.status).toBe(503);
+    }
+  );
+
+  it.each([
+    ["has no client IP", () => callbackRequest(null), createLimiter()],
+    [
+      "meets a limiter that throws",
+      () => callbackRequest(),
+      {
+        limit: vi.fn(() => Promise.reject(new Error("limiter down"))),
+      },
+    ],
+    [
+      "meets a limiter with an unreadable answer",
+      () => callbackRequest(),
+      { limit: vi.fn(async () => ({}) as { success: boolean }) },
+    ],
+  ])(
+    "redirects the callback to the sign-in page when the request %s",
+    async (_name, build, limiter) => {
+      const response = await protectSocialAuthRequest(
+        build(),
+        socialBindings({ AUTH_SOCIAL_RATE_LIMITER: limiter }),
+        requestId
+      );
+
+      expect(response?.status).toBe(302);
+      expect(response?.headers.get("location")).toBe(
+        "/entrar?erro=indisponivel"
+      );
     }
   );
 
@@ -577,7 +613,7 @@ describe("Google sign-in rate limit", () => {
       expect(authHandler).not.toHaveBeenCalled();
     });
 
-    it("answers 503 on the start and on the callback when the binding is missing", async () => {
+    it("answers 503 on the start and a 302 to the sign-in page on the callback when the binding is missing", async () => {
       const authHandler = vi.fn(async () => Response.json({ reached: true }));
       const testApp = createServerApp({ authHandler });
       const { AUTH_SOCIAL_RATE_LIMITER: _removed, ...rest } = appBindings();
@@ -598,7 +634,10 @@ describe("Google sign-in rate limit", () => {
       );
 
       expect(start.status).toBe(503);
-      expect(callback.status).toBe(503);
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get("location")).toBe(
+        "/entrar?erro=indisponivel"
+      );
       expect(authHandler).not.toHaveBeenCalled();
     });
   });

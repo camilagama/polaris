@@ -13,6 +13,7 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import "./payment-profiles-page.css";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 const methods = [
   ["pix", "Pix"],
@@ -142,7 +143,7 @@ function errorText(error: unknown): string {
       ? String((error as { code?: unknown }).code)
       : "";
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar os perfis.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

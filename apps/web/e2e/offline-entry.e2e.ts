@@ -98,16 +98,23 @@ test("quando a sessão acabou, a cópia das organizações é apagada e não é 
     await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)
   ).toContain("Loja do teste");
 
+  // the session was refused on opening: the app goes to the sign-in screen by itself (AC-16)
   listing = "unauthorized";
   await page.reload();
-  await expect(page.getByText("Sua sessão não está ativa")).toBeVisible();
+  await page.waitForURL("**/entrar?motivo=sessao&voltar=/");
+  await expect(
+    page.getByRole("heading", { name: "Entrar no Polaris" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+  ).toBeVisible();
   expect(
     await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)
   ).toBeNull();
 
   // and offline afterwards there is nothing to open from
   listing = "down";
-  await page.reload();
+  await page.goto("/");
   await expect(
     page.getByText("Não foi possível carregar suas organizações")
   ).toBeVisible();

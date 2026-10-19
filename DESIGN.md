@@ -73,7 +73,16 @@ Os tokens vivem como variáveis CSS `--category-*` no contêiner `.categories-pa
 
 **Hoje**, cada página monta o próprio topo (marca "Polaris" e navegação em barra de links). Há duas variações da mesma barra: Categorias, Produtos, Clientes e Perfis de pagamento nas telas de catálogo; essas e mais "Nova venda", "Histórico" e "Cliente da venda" nas telas de venda. A rota `/` abre Categorias. O item atual usa `aria-current="page"`. A organização usada pelas telas vem de `localStorage` e é gravada pelo onboarding; sem ela, cada tela mostra um cartão "Abra uma organização". A tela "Cliente da venda" pede o identificador da venda digitado.
 
-**Diretriz (decidida na revisão do checkpoint Gate 4, 13/10/2026, ainda não implementada):** um único shell de aplicação compartilhado por todas as telas, com a mesma navegação e o item atual marcado; a organização resolvida a partir da sessão (RPC `organization.listMine`), sem valor digitado; a entrada de uma venda a partir do histórico, sem pedir identificador; e uma página inicial operacional em vez de Categorias. A interface de login permanece pré-go-live.
+**Diretriz (decidida na revisão do checkpoint Gate 4, 13/10/2026, ainda não implementada):** um único shell de aplicação compartilhado por todas as telas, com a mesma navegação e o item atual marcado; a organização resolvida a partir da sessão (RPC `organization.listMine`), sem valor digitado; a entrada de uma venda a partir do histórico, sem pedir identificador; e uma página inicial operacional em vez de Categorias. A tela de entrada (`/entrar`) existe fora desse shell (ver "Tela de entrada").
+
+## Tela de entrada
+
+`/entrar` fica fora do shell: sem menu, sem organização e sem o runtime offline (ninguém entrou ainda). É um cartão central com a marca, o título "Entrar no Polaris", a frase de apoio e o botão "Continuar com o Google" (G nas cores originais, embutido no código, sem imagem externa). Fonte: ADR 0100 e o corte da tela de entrada.
+
+- **Parâmetros do endereço:** só `voltar` (destino validado, nunca `/entrar`, `/api` nem `/rpc`), `motivo` (`sessao` ou `recente`) e `erro` (`google`, `limite` ou `indisponivel`). Valor desconhecido mostra a tela padrão e nunca é refletido. A tela não guarda nada no navegador.
+- **Estados:** pronta; abrindo o Google (botão pendente, `aria-busy`, um clique só); entrando (volta do Google ou quem já está dentro, `role="status"`); erro do Google, limite e indisponível (`role="alert"`, o foco vai ao aviso, mesmo texto para qualquer causa); sem conexão (aviso, botão desabilitado, volta sozinho com o evento `online`); sessão acabou e "por segurança, entre de novo" (frase acima do botão); Google desligado no servidor (botão desabilitado e aviso).
+- **Alvos e cores:** botão de 48 px, links de 44 px, foco de 3 px, erro com texto e ícone (nunca só cor), tokens claro e escuro. Os links da política de privacidade e dos termos ficam atrás de uma constante até as páginas legais existirem (`LEGAL_PAGES_PUBLISHED`).
+- **Dentro do app:** quando o servidor responde que a sessão acabou, o shell mostra o aviso "Sua sessão acabou. Entre de novo para continuar." com o botão "Entrar de novo" (e, se há texto digitado, o aviso de que ele pode se perder). Na abertura do app, o 401 de `organization.listMine` leva sozinho a `/entrar?motivo=sessao&voltar=<tela>`.
 
 ## Telas existentes
 

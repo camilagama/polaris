@@ -25,6 +25,7 @@ import {
   logServerError,
   logServerErrorFromContext,
 } from "./observability/server-log";
+import { authMethodsRoutes } from "./routes/auth-methods";
 import { createBillingWebhookRoutes } from "./routes/billing-webhooks";
 import { createDataExportRoutes } from "./routes/data-exports";
 import { createMediaRoutes } from "./routes/media";
@@ -155,6 +156,7 @@ export function createServerApp({
   app.get("/api/auth/*", authRoute);
   app.post("/api/auth/*", authRoute);
 
+  app.route("/", authMethodsRoutes);
   app.route("/", systemRoutes);
   app.route("/", createMediaRoutes());
   app.route("/", createDataExportRoutes());

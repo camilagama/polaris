@@ -109,6 +109,7 @@ describe("answering a failed read from the device's copy", () => {
 
   it("opens the preferred organization from the copy when offline", () => {
     const outcome = organizationLoadAfterFailure({
+      atOpen: true,
       cached: [alpha, beta],
       error: new TypeError("Failed to fetch"),
       offlineEnabled: true,
@@ -121,23 +122,50 @@ describe("answering a failed read from the device's copy", () => {
     });
   });
 
-  it("shows the error when the runtime is off, the copy is empty, or the session is over", () => {
+  it("shows the error when the runtime is off or the copy is empty", () => {
     const network = new TypeError("Failed to fetch");
     for (const input of [
       { cached: [alpha], error: network, offlineEnabled: false },
       { cached: [], error: network, offlineEnabled: true },
-      {
-        cached: [alpha],
-        error: rpcError("UNAUTHORIZED"),
-        offlineEnabled: true,
-      },
     ]) {
       const outcome = organizationLoadAfterFailure({
         ...input,
+        atOpen: true,
         preferredId: null,
       });
       expect(outcome.fromCache).toBe(false);
       expect(outcome.load.status).toBe("error");
+    }
+  });
+
+  it("says the session ended, never from the copy, and whether it was the read that opens the app", () => {
+    for (const atOpen of [true, false]) {
+      const outcome = organizationLoadAfterFailure({
+        atOpen,
+        cached: [alpha],
+        error: rpcError("UNAUTHORIZED"),
+        offlineEnabled: true,
+        preferredId: null,
+      });
+      expect(outcome.fromCache).toBe(false);
+      expect(outcome.load).toEqual({ atOpen, status: "session_ended" });
+    }
+  });
+
+  it("does not take a 429 or a 5xx for a refusal of the session (AC-11)", () => {
+    for (const error of [
+      rpcError("TOO_MANY_REQUESTS"),
+      rpcError("SERVICE_UNAVAILABLE"),
+      rpcError("INTERNAL_SERVER_ERROR"),
+    ]) {
+      const outcome = organizationLoadAfterFailure({
+        atOpen: true,
+        cached: [alpha],
+        error,
+        offlineEnabled: true,
+        preferredId: null,
+      });
+      expect(outcome.load.status).not.toBe("session_ended");
     }
   });
 });

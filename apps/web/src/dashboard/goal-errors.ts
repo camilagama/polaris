@@ -1,4 +1,5 @@
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 export type GoalAction = "cancel" | "create" | "history" | "load" | "update";
 
@@ -30,7 +31,7 @@ function fallbackMessage(action: GoalAction): string {
 export function goalErrorMessage(error: unknown, action: GoalAction): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar as metas.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso às metas desta organização.";

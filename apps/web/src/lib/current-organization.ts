@@ -55,6 +55,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const [load, setLoad] = useState<OrganizationLoad>({ status: "loading" });
   const latestRequest = useRef(0);
   const fromCache = useRef<boolean>(false);
+  const opened = useRef(false);
 
   const loadOrganizations = useCallback(() => {
     latestRequest.current += 1;
@@ -63,6 +64,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       .listMine()
       .then(({ organizations }) => {
         if (request === latestRequest.current) {
+          opened.current = true;
           fromCache.current = false;
           if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
             writeOrganizationsCache(browserStorage(), organizations);
@@ -86,11 +88,13 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           clearPeriodSummaryCaches(browserStorage());
         }
         const outcome = organizationLoadAfterFailure({
+          atOpen: !opened.current,
           cached: readOrganizationsCache(browserStorage()),
           error,
           offlineEnabled: OFFLINE_RUNTIME_ENABLED,
           preferredId: readPreferredOrganizationId(browserStorage()),
         });
+        opened.current = true;
         fromCache.current = outcome.fromCache;
         setLoad(outcome.load);
       });

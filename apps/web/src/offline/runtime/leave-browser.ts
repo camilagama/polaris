@@ -5,19 +5,7 @@ import {
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { markSigningOut } from "../../lib/sign-out";
-
-/** Why the sign-in screen is opened: the login is only old, or the session is already gone. */
-export type SignInReason = "recente" | "sessao";
-
-/** Where the sign-in screen sends the person back to after the login. */
-const DEVICES_PATH = "/devices" as const;
-
-export type SignInPath =
-  `/entrar?motivo=${SignInReason}&voltar=${typeof DEVICES_PATH}`;
-
-export function signInPath(reason: SignInReason): SignInPath {
-  return `/entrar?motivo=${reason}&voltar=${DEVICES_PATH}`;
-}
+import type { SignInPath } from "../../lib/sign-in-path";
 
 /**
  * The session is over: the next person to open this browser must not be offered

@@ -859,7 +859,8 @@ for (const lookup of ["answers", "unreachable"] as const) {
     }
     await page.waitForTimeout(1000);
     await expect(panel).toBeVisible();
-    await expect(page.getByText("Sua sessão não está ativa")).toHaveCount(0);
+    // the screen says it with its own panel; the shell adds no second notice
+    await expect(page.locator(".session-ended-notice")).toHaveCount(0);
     expect(state.listCalls).toBe(callsBefore);
     // whatever way the 401 came, what was waiting is still waiting: the same count in the real storage
     expect(await queuedOperations(page)).toBe(queuedBefore);

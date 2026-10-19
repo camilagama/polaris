@@ -675,7 +675,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   server.failure = { code: "UNAUTHORIZED", status: 401 };
   await signIn(page, user);
   await expect(page.getByRole("alert")).toContainText(
-    "Sua sessão não está ativa"
+    "Sua sessão acabou. Entre de novo para continuar."
   );
   await expect(page.locator(".dashboard-card")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);

@@ -1,5 +1,6 @@
 import type { OrganizationMembershipReadModel } from "@polaris/contracts";
 import { rpcErrorCode } from "./rpc-error";
+import { SESSION_ENDED_MESSAGE } from "./session-ended-text";
 
 export type Organization = OrganizationMembershipReadModel;
 
@@ -171,11 +172,19 @@ export interface OrganizationLoadOutcome {
  * otherwise the error.
  */
 export function organizationLoadAfterFailure(input: {
+  /** This is the read that opens the app (nothing was shown yet), not a read while a screen is in use. */
+  atOpen: boolean;
   cached: readonly Organization[];
   error: unknown;
   offlineEnabled: boolean;
   preferredId: string | null;
 }): OrganizationLoadOutcome {
+  if (rpcErrorCode(input.error) === "UNAUTHORIZED") {
+    return {
+      fromCache: false,
+      load: { atOpen: input.atOpen, status: "session_ended" },
+    };
+  }
   if (
     input.offlineEnabled &&
     canUseCachedOrganizations(input.error) &&
@@ -197,6 +206,8 @@ export function organizationLoadAfterFailure(input: {
 
 export type OrganizationLoad =
   | { status: "loading" }
+  /** The server refused the session. `atOpen`: nothing was on screen yet, so the app goes to the sign-in screen by itself. */
+  | { atOpen: boolean; status: "session_ended" }
   | { message: string; status: "error" }
   | { status: "empty" }
   | {
@@ -232,7 +243,7 @@ export function selectOrganization(
 export function organizationLoadErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar a organização.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O Polaris está temporariamente indisponível. Tente novamente.";

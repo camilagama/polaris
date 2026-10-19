@@ -20,7 +20,13 @@ const listeners = new Set<() => void>();
 
 /** The server said the session is over (a 401 in answer to a screen's own call). */
 export function markSessionOver(): void {
+  if (over) {
+    return;
+  }
   over = true;
+  for (const listener of listeners) {
+    listener();
+  }
 }
 
 /** Whether this page already knows the session is over, so it must not read what needs one. */
@@ -47,4 +53,9 @@ function subscribe(listener: () => void): () => void {
 
 export function useSessionEndedHere(): SessionEndedHere | null {
   return useSyncExternalStore(subscribe, sessionEndedHere);
+}
+
+/** Whether a call of this page was answered with "the session is over" (the shell then offers "Entrar de novo"). */
+export function useSessionOver(): boolean {
+  return useSyncExternalStore(subscribe, isSessionOver);
 }

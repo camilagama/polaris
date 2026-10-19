@@ -7,6 +7,7 @@ import {
 } from "@polaris/domain/sales/sale-cancellation";
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
 import { isDefiniteRejection } from "./sale-form-model";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type CancelSaleRequest = Parameters<PolarisRpcClient["sale"]["cancel"]>[0];
 export type CancelSaleResult = Awaited<
@@ -186,9 +187,7 @@ export function operationFailure(
 function genericOperationFailure(code: string | undefined): OperationFailure {
   switch (code) {
     case "UNAUTHORIZED":
-      return operationFailure(
-        "Sua sessão não está ativa. Entre novamente para continuar; os dados continuam no formulário."
-      );
+      return operationFailure(SESSION_ENDED_MESSAGE);
     case "FORBIDDEN":
       return operationFailure(
         "Sua conta não tem acesso a esta organização ou ação."

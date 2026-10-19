@@ -31,6 +31,7 @@ import {
   toLocalCustomerRow,
 } from "./local-customers";
 import "./customers-page.css";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type CustomerListStatus = "active" | "archived";
 type CustomerAction = "anonymize" | "archive" | "restore";
@@ -74,7 +75,7 @@ function errorMessage(
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar os clientes.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

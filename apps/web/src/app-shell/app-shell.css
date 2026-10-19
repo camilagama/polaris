@@ -321,3 +321,22 @@
     white-space: nowrap;
   }
 }
+
+/* "Sua sessão acabou": the shell's notice with "Entrar de novo" (same weight as the other warnings) */
+.session-ended-notice {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+  padding: clamp(0.9rem, 2.5vw, 1.25rem);
+  margin: 0 0 1.25rem;
+  color: var(--ui-ink);
+  background: var(--ui-warning-soft);
+  border: 1px solid var(--ui-line);
+  border-left: 0.3rem solid var(--ui-warning);
+  border-radius: 0.85rem;
+}
+
+.session-ended-notice p {
+  margin: 0;
+  line-height: 1.5;
+}
