@@ -28,6 +28,7 @@ import {
   restoreCategory,
 } from "../src/category-repository";
 import { createDatabase } from "../src/client";
+import { deleteOrganizationsWithAudit } from "./teardown-support";
 import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import {
   archiveProduct,
@@ -2719,7 +2720,7 @@ async function main() {
       ]
     );
 
-    await adminPool.query("DELETE FROM public.organizations WHERE id = $1", [
+    await deleteOrganizationsWithAudit(adminPool, [
       organizationB.organization.id,
     ]);
     fixtureOrganizations.splice(
@@ -2817,9 +2818,7 @@ async function main() {
     }
     const organizationCleanup = await Promise.allSettled(
       fixtureOrganizations.map((organizationId) =>
-        adminPool.query("DELETE FROM public.organizations WHERE id = $1", [
-          organizationId,
-        ])
+        deleteOrganizationsWithAudit(adminPool, [organizationId])
       )
     );
     for (const result of organizationCleanup) {

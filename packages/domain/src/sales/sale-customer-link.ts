@@ -161,12 +161,12 @@ export function planSaleCustomerLinkTransition(
   }
 }
 
-export function saleCustomerLinkAuditEvent(
-  action: SaleCustomerLinkAction
-): string {
-  return `sale_customer_link.${
-    { assign: "assigned", reassign: "reassigned", unassign: "unassigned" }[
-      action
-    ]
-  }`;
+const SALE_CUSTOMER_LINK_AUDIT_EVENTS = {
+  assign: "sale_customer_link.assigned",
+  reassign: "sale_customer_link.reassigned",
+  unassign: "sale_customer_link.unassigned",
+} as const satisfies Record<SaleCustomerLinkAction, string>;
+
+export function saleCustomerLinkAuditEvent(action: SaleCustomerLinkAction) {
+  return SALE_CUSTOMER_LINK_AUDIT_EVENTS[action];
 }

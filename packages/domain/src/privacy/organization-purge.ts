@@ -97,8 +97,8 @@ export function automaticPurgeSchedulingAllowed(
 
 /**
  * The categories a privacy case must cover for its accepted deletion to start a purge: every tenant
- * category the purge removes (ADR 0081), and exactly those. Account, authentication and billing are not
- * here: the purge keeps them, so a case that claims them is refused instead of recording a decision the
+ * category the purge removes (ADR 0081), and exactly those. Account, authentication, billing and the audit
+ * logs are not here (the audit of the tenant survives the purge, ADR 0081 amended on 19/10/2026): the purge keeps them, so a case that claims them is refused instead of recording a decision the
  * purge does not carry out. The migration holds the same list (`whole_organization` in
  * `admin_schedule_organization_purge`), and the gate proves each category is required and each kept one refused.
  */
@@ -108,7 +108,6 @@ export const ORGANIZATION_PURGE_REQUIRED_SCOPE = Object.freeze([
   "sales",
   "inventory_catalog",
   "media",
-  "audit_logs",
 ] as const satisfies readonly PrivacyDataCategory[]);
 
 const ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL =
@@ -161,7 +160,7 @@ const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
     "Um caso de suporte comum não inicia o purge: use o caso de privacidade do pedido de exclusão.",
   privacy_requester_not_owner:
     "O pedido de exclusão não foi feito pelo dono da organização.",
-  privacy_scope_covers_kept_data: `O escopo do caso inclui dados que o purge mantém (conta, autenticação ou cobrança). Registre o escopo exato do que o purge apaga: ${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}.`,
+  privacy_scope_covers_kept_data: `O escopo do caso inclui dados que o purge mantém (conta, autenticação, cobrança ou registros de auditoria). Registre o escopo exato do que o purge apaga: ${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}.`,
   privacy_scope_incomplete: `O escopo do caso não cobre tudo o que o purge apaga (${ORGANIZATION_PURGE_REQUIRED_SCOPE_LABEL}).`,
   purge_already_done: "O purge já foi concluído e não pode ser desfeito.",
   purge_in_progress:

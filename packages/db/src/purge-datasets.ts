@@ -40,7 +40,6 @@ export const PURGE_DELETE_ORDER = Object.freeze([
   "data_export_files",
   "data_exports",
   "public_catalog_profiles",
-  "tenant_audit_event",
   "event_outbox",
   "queue_processing",
   "queue_dead_letters",
@@ -57,7 +56,8 @@ export const PURGE_CASCADED_TABLES = Object.freeze([
 ] as const);
 
 /**
- * Tables with an organization that the purge keeps, and why. Since the decisions of 18/10/2026 (ADR 0081) the
+ * Tables with an organization that the purge keeps, and why. `tenant_audit_event` is one of them since 19/10/2026
+ * (ADR 0081, amended): nothing of the audit leaves in the purge. Since the decisions of 18/10/2026 (ADR 0081) the
  * purge also rewrites four of them in the same transaction: the facts of `billing_events` lose every key but
  * `PURGE_BILLING_FACT_KEYS` (a pseudonymization: the provider's references stay and still find the payer at the
  * provider), and the free text of `support_cases`, `privacy_cases` (no organization column: it hangs from the
@@ -87,6 +87,8 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
       "Casos de suporte e de privacidade: o registro do caso (datas, tipo, decisão, IDs opacos) sobrevive como evidência do atendimento; o texto livre é apagado no purge (ADR 0077 e 0081, decisão de 18/10/2026).",
     tenant_access_grants:
       "Acessos temporários do Admin: registro de acesso privilegiado, sem texto livre, sobrevive à organização (ADR 0072).",
+    tenant_audit_event:
+      "Auditoria do tenant: sobrevive ao purge, imutável (gatilho ENABLE ALWAYS que recusa UPDATE, DELETE e TRUNCATE) e com a chave estrangeira da organização restritiva. Sai só por prazo, conforme a classe do evento (`security`: 5 anos do evento; `operational`: 6 meses depois do purge), pela função `expire_tenant_audit_events` do papel `polaris_retention_owner`, que pula a organização sob legal hold. O motivo: é o registro de quem fez o quê numa organização cujo dono pediu a exclusão, e uma apuração futura (fraude, disputa, ordem judicial) precisa dele; só IDs opacos, sem dado pessoal além do identificador do usuário (decisão de 19/10/2026, ADR 0081 emendado).",
   });
 
 /**

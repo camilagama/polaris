@@ -90,6 +90,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 10. Prazos legais com validação jurídica pendente (BLOCK)
 
 - Critério: prazos legais com `legalReview` pendente bloqueiam a promoção a produção. Em `packages/domain/src/privacy/retention.ts`, toda classe de base legal (`basis: "lei"`) está com `legalReview` preenchido por quem validou (`reviewedBy` e `reviewedAt`: contador ou jurídico); uma classe ainda `"pending"` falha o item. Os prazos legais foram decididos pelo orquestrador com base em pesquisa (ADR 0079) e nenhuma validação profissional existe até esse campo ser preenchido.
+- A auditoria do tenant (classes `tenant_audit_security` e `tenant_audit_operational`, emenda de 19/10/2026 do ADR 0081) e o `deletion_ledger` entram na mesma regra, e **sem o job que chama `expire_tenant_audit_events` nada vence**: a guarda é indefinida até ele existir. Rodar o gate `audit-retention` no SHA candidato, para provar os gatilhos `ENABLE ALWAYS`.
 - Evidência: a lista das classes legais com o `legalReview` lido no SHA candidato (quem validou e quando).
 
 ### 11. Registro de acesso do Marco Civil: pendências depois da tabela própria (BLOCK)

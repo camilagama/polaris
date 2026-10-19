@@ -8,6 +8,7 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { PolarisRpcClient } from "@polaris/contracts";
 import { createDatabase } from "@polaris/db/client";
+import { deleteOrganizationsWithAudit } from "../../../packages/db/scripts/teardown-support";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { createBetterAuth } from "../src/server/auth";
@@ -1137,11 +1138,15 @@ async function main() {
 
     try {
       if (fixtureUsers.length > 0) {
-        await pool.query(
-          "DELETE FROM public.organizations WHERE id = ANY($1::text[]) " +
+        const linked = await pool.query<{ id: string }>(
+          "SELECT id FROM public.organizations WHERE id = ANY($1::text[]) " +
             "OR id IN (SELECT organization_id FROM public.memberships " +
             "WHERE user_id = ANY($2::text[]))",
           [fixtureOrganizations, fixtureUsers]
+        );
+        await deleteOrganizationsWithAudit(
+          pool,
+          linked.rows.map((row) => row.id)
         );
       }
     } catch (error) {
