@@ -85,6 +85,8 @@ const gates: Gate[] = [
   ],
   // the audit of the tenant survives the purge, is immutable and leaves only by period (ADR 0081, amended)
   ["audit-retention", "verify-audit-retention-gate.ts"],
+  // the live purge functions against the domain; mandatory before a PR that recreates one of them
+  ["purge-functions", "verify-purge-functions-gate.ts"],
   ["event-outbox", "verify-event-outbox-gate.ts"],
   ["outbox-dispatcher", "verify-outbox-dispatcher-gate.ts"],
   ["dead-letter", "verify-dead-letter-gate.ts"],
@@ -193,6 +195,7 @@ const suites: Record<string, string[]> = {
     "deletion-ledger",
     "organization-purge",
     "audit-retention",
+    "purge-functions",
     "event-outbox",
     "outbox-dispatcher",
     "dead-letter",
@@ -273,6 +276,7 @@ const suites: Record<string, string[]> = {
     "data-export",
     "organization-purge",
     "audit-retention",
+    "purge-functions",
   ],
   // Phase 11 (async infrastructure): grows with every gate of the phase.
   gate11: [

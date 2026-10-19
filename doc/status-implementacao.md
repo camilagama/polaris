@@ -1772,6 +1772,15 @@ Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho apro
 | Gate | Concluído | `audit-retention` em `gates:ci`: FK `confdeltype = 'r'`, `tgenabled = 'A'`, recusa sob `session_replication_role = replica`, `CHECK` igual ao domínio, o purge mantém toda a auditoria e o expurgo apaga só o vencido de cada classe e respeita o legal hold. `organization-purge` e `deletion-ledger` ajustados. |
 | Pendências | Abertas | Revisão jurídica dos prazos (bloqueia a promoção a produção); nenhum job de expurgo; HMAC do ator no desenho da exclusão de usuário; expurgo de `auth_security_audit_event`, `platform_audit_events` e `deletion_ledger` exige função própria em migration futura. |
 
+### Fase 10I — gate de regressão das funções do purge (t075; sem migration)
+
+Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos diferentes e o git não acusou conflito; a regressão foi evitada à mão, por diff.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Gate | Concluído | `purge-functions` em `gates:ci` e `gate10` (`packages/db/scripts/verify-purge-functions-gate.ts`, comparação em `packages/db/src/purge-function-definitions.ts`): lê `pg_get_functiondef` das três funções e confere `whole_organization`, o prazo de 90 dias, as tabelas apagadas (nomes e ordem), as chaves do fato de cobrança e o único `DELETE`. Falha provada por mutação (30 dias, `audit_logs` de volta, tabela fora da lista) no banco e nos testes unitários, que também leem as migrations sem banco. |
+| Checklist de release | Concluído | Item 18 de [release-checklist.md](../docs/runbooks/release-checklist.md): o gate verde no SHA candidato (BLOCK, severidade proposta). |
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
