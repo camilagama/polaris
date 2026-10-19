@@ -35,7 +35,7 @@ Registro retroativo das decisões tomadas nos PR13 a PR18 e confirmadas na revis
 
 ## Emenda (19/10/2026, [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md))
 
-O ADR 0100 registra a tela de entrada e fecha parte das pendências acima. Sem mudar nada do que está decidido neste ADR:
+O ADR 0100 registra a tela de entrada e fecha parte das pendências acima; o que ele decide ainda não está no código e vale a partir dos PRs P1 a P10 (estado em `doc/status-implementacao.md`). Sem mudar nada do que está decidido neste ADR:
 
 - **Rota e retorno.** O app ganha `/entrar`. O login social envia `callbackURL = /entrar?voltar=<destino codificado>` e `errorCallbackURL = /entrar?erro=google`, porque o Better Auth 1.6.23 recusa o destino inteiro codificado; `/entrar` valida o `voltar` de novo (caminho do app, sem caracteres de controle, `/api` nem `/rpc`, nunca `/entrar`) e um valor inválido vira `/`.
 - **Limitador do login social.** `AUTH_SOCIAL_RATE_LIMITER` (20 por 60 s por IP) cobre o início e o callback do Google e não depende de `AUTH_ABUSE_PROTECTION_ENABLED`. O 429 do início devolve JSON `auth_rate_limited`; o 429 do callback devolve **302 `/entrar?erro=limite`**; sem o binding, 503.

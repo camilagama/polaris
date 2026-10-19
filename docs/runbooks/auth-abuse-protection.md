@@ -7,7 +7,7 @@ This runbook describes setup for the Turnstile and Workers Rate Limiting control
 ## Before enabling
 
 1. Create a Turnstile widget for each intended environment. Restrict its allowed hostnames to the exact hostname used by `BETTER_AUTH_BASE_URL`.
-2. Keep the site key public and expose it to the future auth UI as `VITE_TURNSTILE_SITE_KEY`. Keep the secret key only in the Worker secret store.
+2. Keep the site key public and expose it to the auth UI as the Worker var `TURNSTILE_SITE_KEY`, read through `GET /api/auth-methods` (ADR 0100). Keep the secret key only in the Worker secret store.
 3. Set the secret with `bunx wrangler secret put TURNSTILE_SECRET_KEY` in the intended Wrangler environment. Do not paste it into `wrangler.jsonc`, `.dev.vars`, CI logs, or this runbook.
 4. Replace `namespace_id` values `901016` and `901017` in `apps/web/wrangler.jsonc` with integers confirmed unique for the Cloudflare account and environment. Do this before a remote deployment; these values are placeholders, not provisioned namespaces.
 5. Set `AUTH_ABUSE_PROTECTION_ENABLED=true` only after the UI can render Turnstile and attach its token. Enable `EMAIL_PASSWORD_AUTH_ENABLED` only after Resend, its verified sender domain, and the UI are configured too.

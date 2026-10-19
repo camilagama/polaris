@@ -1296,12 +1296,14 @@ Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8 → P9 → P
 - **P6 (app):** páginas legais, conteúdo versionado, constante `LEGAL_DOCUMENTS`, renderizador e travas de build (`[preencher]` e aviso de rascunho). Vem antes do P3 para não haver link morto.
 - **P2 (db):** migration do bloqueio por e-mail, gate `login-lock`, classe de retenção e job de expurgo.
 - **P3 (app):** `/entrar` só com Google, `voltar` e motivo, "Entrar de novo", "Sair" com destino, o texto único de sessão encerrada e `/api/auth-methods`.
-- **P4 (db):** migration do aceite legal (só acrescenta) e gate `legal-acceptance`.
+- **P4 (db):** migration do aceite legal (só acrescenta), gate `legal-acceptance` e a classe de retenção `legal_acceptance`.
 - **P5 (app):** acesso sem internet vencido e temporizador (emenda do ADR 0047).
 - **P7 (app):** controle de aceite em `createAuthenticatedRequestContext`, `/aceite`, as RPCs, o aceite no cadastro e a pausa da sync. A recusa de aceite não tira o lojista da tela e não apaga a cópia offline.
-- **P8 (app):** servidor da senha: fluxo do bloqueio, troca de senha que revoga sessões e troca a época dos leases (sessão de até 15 minutos em `set-password` e `change-password`), `onPasswordReset`, `/api/login-unlock`, `/api/email-verification`, links com o token no fragmento, e-mails e redação.
+- **P8 (app, precedido de uma migration de banco só com os novos tipos de auditoria):** servidor da senha: fluxo do bloqueio, troca de senha que revoga sessões e troca a época dos leases (sessão de até 15 minutos em `set-password` e `change-password`), `onPasswordReset`, `/api/login-unlock`, `/api/email-verification`, links com o token no fragmento, e-mails e redação.
 - **P9 (app):** CSP do Turnstile por rota (`authEntry`, `_headers`, service worker) e as telas de senha atrás da flag. O token sai da barra antes de o Turnstile carregar.
 - **P10 (db):** exclusão do usuário não verificado depois de 24 horas.
+
+Requisitos de UX dos PRs de tela (revisão do Petković): "Entrada pausada" no lugar de "conta bloqueada", com o botão desabilitado só para o e-mail pausado, plural e o link de troca de senha; "Criar conta" e "Continuar" não ficam desabilitados por falta de aceite (a tela mostra o erro); recarregar não mostra um falso "link venceu"; Turnstile com `appearance`, pt-BR, status e foco, e o caso de bloqueador de anúncio; tabelas legais legíveis a 360 px; capturas a 360 px, iPhone SE, 390 px e 1280 px, nos dois temas, com o SHA; a tela de troca de senha só diz o destino do trabalho guardado nos outros aparelhos depois de um teste que o prove. O `DESIGN.md` e o runbook de abuso ganham o texto da tela no P3 e no P9.
 
 Todo PR que toca auth, RLS, aceite ou CSP passa pelo `security-auditor` e pela revisão de segurança. Os BLOCK de staging (Google real, domínio, chaves e flags) impedem ligar as flags, não os merges. PR de tela traz capturas por estado, em celular e desktop, sem commitá-las.
 
