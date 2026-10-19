@@ -8,13 +8,13 @@ O Gate 4 prova seis propriedades: venda atômica, estoque correto, dinheiro corr
 
 O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neon. No pull request, quem roda é o job "PostgreSQL 18 gates" do CI (`bun run --filter @polaris/db gates:ci`); não há passo manual nem acesso a Neon. Para reproduzir ou depurar antes do push, rode o mesmo numa instância local.
 
-**O que a suíte `ci` não cobre.** Ela deixa de fora os gates que dependem de hostname ou de papéis do Neon: `customers` (parte do `gate4`), `gate2-runtime`, `inventory` e `media-upload` (parte do `gate3`). Esses quatro só rodam em Neon, na prova de liberação (e no fim da fase); o `gate4` do executor, como suíte nomeada, inclui `customers` e por isso também exige Neon. As propriedades de venda do Gate 4 (venda, cancelamento, devolução, vínculo de cliente, datas e o cenário ponta a ponta `gate4`) rodam no CI.
+**O que a suíte `ci` cobre e o que só roda em Neon.** A suíte `ci` inclui `inventory`, `customers`, `media-upload`, `tenant-context` e `rls`, que antes ficavam de fora pela trava de hostname. As propriedades de venda do Gate 4 (venda, cancelamento, devolução, vínculo de cliente, datas e o cenário ponta a ponta `gate4`) e o `customers` do executor rodam no CI. O que continua só em Neon está em [O que só roda em Neon](#o-que-só-roda-em-neon).
 
 ### Pré-requisitos
 
 - PostgreSQL 18 em `localhost` (por exemplo, um container `postgres:18`, como o do CI), com o dono `neondb_owner` e um banco vazio e descartável (`polaris_gate`). Nunca aponte para um banco com dados que importem: as migrations e os gates escrevem no banco, e os gates de falha injetada criam gatilhos nele.
 - Cliente `psql` e `docker` (ou outro PostgreSQL 18 em `localhost`). Não é preciso CLI Cloudflare ou Neon, nem credencial alguma além da senha do PostgreSQL local, que fica só nas variáveis do processo.
-- O executor só aceita um host local com `CI=true` (a trava de host de `scripts/run-gates.ts`); fora do CI, ele vai só no prefixo dos comandos do executor, como abaixo.
+- O executor só aceita um host da lista de `packages/db/scripts/gate-hosts.ts`: um endpoint Neon direto em São Paulo, ou `localhost`/`127.0.0.1` com `CI=true`; qualquer outro é recusado antes de abrir conexão (teste em `gate-target.test.ts`). Fora do CI, o `CI=true` vai só no prefixo dos comandos do executor, como abaixo.
 - Não rode dois gates ao mesmo tempo no mesmo banco: os gates de falha injetada criam gatilhos nas tabelas compartilhadas e contaminam a execução do outro.
 
 ### Passos
@@ -38,14 +38,25 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
 
        CI=true bun run --filter @polaris/db gates:ci   # o que o CI roda, incluindo os gates de venda e o gate4
 
-   `gates:gate4` e `gates:all` incluem gates só de Neon (ver acima) e falham num PostgreSQL local. Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
+   `gates:gate3` e `gates:all` incluem o `gate2-runtime`, só de Neon, e falham num PostgreSQL local (`gates:gate4` roda local). Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
 4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
 
 Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:verify`, `poc:sales:customer-link:verify`, `poc:sales:cancellation:verify`, `poc:sales:return:verify`, `poc:sales:dates:verify`, `poc:gate4:verify`, `poc:review-hardening:verify`) e usam as variáveis `POLARIS_SALES_GATE_*`; o executor é o caminho recomendado.
 
+## O que só roda em Neon
+
+Dois itens, cada um por um motivo que o PostgreSQL local não resolve:
+
+| Item | Por que só em Neon |
+| --- | --- |
+| `gate2-runtime` | Prova o onboarding e o RLS de Categories contra o Worker local com duas bindings Hyperdrive e papéis de login do Neon. Tem a trava de host de Neon própria e, num PostgreSQL local, falha numa verificação de papéis e privilégios (visto em 19/10/2026 com a trava de host afrouxada; a causa não foi investigada, fora do escopo do T-122a). |
+| Caminho Worker, Hyperdrive e Neon (`poc:rls:verify` pelo Worker remoto) | A suíte `ci` roda o mesmo gate de RLS (`rls`), com a mesma rota e as mesmas transações, contra um servidor local que fala direto com o PostgreSQL. Isso prova a política, `FORCE RLS`, leitura e escrita entre tenants, rollback, contexto local à transação e o retry depois de matar o backend. Não prova o pool do Hyperdrive (reuso de backend entre tenants), o cache de SQL desligado nem a região: o relatório do `rls` local diz `not_applicable_local` nesses campos, e o gate com Worker remoto segue na prova de liberação. |
+
+O `rls` só roda contra o PostgreSQL local (`localOnly` no executor): `gates:all` num Neon o deixa de fora, e pedi-lo pelo nome num Neon é erro.
+
 ## Prova antes de liberação em Neon
 
-O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon). Ela roda **antes de uma liberação** e, como o ADR 0025 já pedia, no fim de cada fase e quando mudam o executor (`run-gates.ts`), o suporte comum dos gates (`sales-gate-support.ts`) ou os privilégios de forma ampla ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emendas da issue #115). Por pull request **não** se roda nada em Neon: o job do CI roda a suíte `ci`; os quatro gates só de Neon ficam para esta prova. Um PR que mude o executor, o suporte comum ou privilégios de forma ampla roda esta prova **antes do merge**; o fim de fase e a liberação rodam depois do merge, antes de fechar a fase ou de promover. Nas fases já fechadas (3 e 4), um PR que quebre um dos quatro gates só de Neon é pego na prova de liberação (item 4 do checklist, BLOCK): não escapa, só chega mais tarde.
+O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon). Ela roda **antes de uma liberação** e, como o ADR 0025 já pedia, no fim de cada fase e quando mudam o executor (`run-gates.ts`), o suporte comum dos gates (`sales-gate-support.ts`) ou os privilégios de forma ampla ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emendas da issue #115). Por pull request **não** se roda nada em Neon: o job do CI roda a suíte `ci`; o `gate2-runtime` e a prova de Hyperdrive ficam para esta prova. Um PR que mude o executor, o suporte comum ou privilégios de forma ampla roda esta prova **antes do merge**; o fim de fase e a liberação rodam depois do merge, antes de fechar a fase ou de promover. Nas fases já fechadas (3 e 4), um PR que quebre o `gate2-runtime` ou o caminho Hyperdrive é pego na prova de liberação (item 4 do checklist, BLOCK): não escapa, só chega mais tarde.
 
 ### Regras da branch
 
