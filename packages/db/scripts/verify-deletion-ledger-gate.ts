@@ -733,6 +733,11 @@ async function run() {
     const backfilled = await owner.pool.connect();
     try {
       await backfilled.query("BEGIN");
+      // the ledger is immutable (migration 0079); the check removes the tombstone as the owner, with the
+      // trigger off, and the rollback below puts everything back
+      await backfilled.query(
+        "ALTER TABLE public.deletion_ledger DISABLE TRIGGER deletion_ledger_no_change"
+      );
       await backfilled.query(
         "CREATE POLICY ledger_probe_delete ON public.deletion_ledger FOR DELETE TO CURRENT_USER USING (true)"
       );

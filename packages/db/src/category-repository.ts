@@ -50,7 +50,7 @@ const categoryAuditEvent = {
   archive: "category.archived",
   delete: "category.deleted",
   restore: "category.restored",
-} satisfies Record<CategoryLifecycleAction, string>;
+} as const satisfies Record<CategoryLifecycleAction, string>;
 
 function sqlState(error: unknown): string | undefined {
   const visited = new Set<object>();

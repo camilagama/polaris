@@ -1,3 +1,4 @@
+import type { TenantAuditEventType } from "@polaris/domain/privacy/tenant-audit-events";
 import { tenantAuditEvents } from "./schema/tenant-audit";
 import type {
   TenantRequestIdentity,
@@ -12,7 +13,8 @@ export type TenantAuditIdentity = Pick<
 export interface TenantAuditEventInput {
   entityId: string;
   entityType: string;
-  eventType: string;
+  /** A type of the domain registry, which gives it its class: the database refuses any other (ADR 0081). */
+  eventType: TenantAuditEventType;
   requestId?: string | null;
 }
 

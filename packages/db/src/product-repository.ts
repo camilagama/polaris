@@ -491,11 +491,13 @@ async function changeProductLifecycle(
     throw new ProductVersionConflictError();
   }
 
-  const productAuditEvent = {
-    archive: "product.archived",
-    delete: "product.deleted",
-    restore: "product.restored",
-  }[action];
+  const productAuditEvent = (
+    {
+      archive: "product.archived",
+      delete: "product.deleted",
+      restore: "product.restored",
+    } as const
+  )[action];
   await recordTenantAuditEvent(transaction, identity, {
     entityId: product.id,
     entityType: "product",

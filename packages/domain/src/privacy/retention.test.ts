@@ -14,6 +14,7 @@ import {
   type RetentionClass,
   RetentionNotApprovedError,
   type RetentionPolicy,
+  TENANT_AUDIT_RETENTION,
   retentionExpiry,
   retentionPolicy,
 } from "./retention";
@@ -335,7 +336,6 @@ describe("approved periods", () => {
   it("keep the tenant's operational data until the purge, which no job expires", () => {
     // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after 30 days
     for (const retentionClass of [
-      "tenant_audit_events",
       "sales_records",
       "inventory_ledger",
       "expenses_and_goals",
@@ -349,6 +349,48 @@ describe("approved periods", () => {
       expect(() => approvedRetention(retentionClass)).toThrow(
         RetentionNotApprovedError
       );
+    }
+  });
+
+  it("keep the tenant's audit past the purge, proposed by class, with the legal review pending", () => {
+    // decision of 19/10/2026 (ADR 0081 amended): no row of the audit leaves in the purge; only a period removes it
+    expect(TENANT_AUDIT_RETENTION.security).toEqual({
+      from: "event",
+      months: 60,
+    });
+    expect(TENANT_AUDIT_RETENTION.operational).toEqual({
+      from: "organization_purge",
+      months: 6,
+    });
+    for (const retentionClass of [
+      "tenant_audit_security",
+      "tenant_audit_operational",
+    ] as const) {
+      const policy = retentionPolicy(retentionClass);
+      expect(policy.status, retentionClass).toBe("proposta");
+      expect(policy.period.kind, retentionClass).not.toBe(
+        "until_organization_purge"
+      );
+      expect(policy.legalReview, retentionClass).toBe("pending");
+      expect(pendingLegalReviews()).toContain(retentionClass);
+      expect(() => approvedRetention(retentionClass)).toThrow(
+        RetentionNotApprovedError
+      );
+      expect(() => retentionExpiry(retentionClass, new Date())).toThrow(
+        RetentionNotApprovedError
+      );
+    }
+    for (const retentionClass of [
+      "platform_audit_and_support",
+      "privacy_cases",
+      "deletion_ledger",
+    ] as const) {
+      const policy = retentionPolicy(retentionClass);
+      expect(policy.status, retentionClass).toBe("proposta");
+      expect(policy.legalReview, retentionClass).toBe("pending");
+      if (policy.status === "proposta") {
+        expect(policy.proposed, retentionClass).toContain("5 anos");
+      }
     }
   });
 

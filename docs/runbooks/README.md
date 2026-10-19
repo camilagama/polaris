@@ -20,6 +20,7 @@ Gates e provas por fase:
 - Offline (Fase 5): [Gate 5 — offline](./gate-5-offline.md), com o checklist manual em aparelho físico (iPhone e Android) que bloqueia ligar a escrita offline.
 - Privacidade (Fase 10): [Restore de backup e deletion ledger](./deletion-ledger-restore.md), com o que ler antes de substituir um ambiente e como reaplicar as exclusões.
 - Privacidade (Fase 10, [ADR 0092](../adr/0092-registro-de-acesso-a-aplicacao.md)): [Registro de acesso de autenticação](./registro-de-acesso.md), com o fornecimento só por ordem judicial, a guarda cautelar, o horário, o sigilo da saída e o monitoramento da gravação.
+- Privacidade (Fase 10, [ADR 0081](../adr/0081-purge-completo-da-organizacao-encerrada.md), emenda de 19/10/2026): [Auditoria do tenant depois do purge](./auditoria-do-tenant-apos-o-purge.md), com como o dono lê a auditoria de uma organização purgada e o que não fazer com ela.
 - Infraestrutura assíncrona (Fase 11): [Filas Cloudflare](./queues.md), com o que está declarado, o plano Free e o comando de criação para o responsável, e [Jobs agendados](./scheduled-jobs.md), com os crons, o estado de cada job, o log e como forçar ou desligar uma execução.
 - Observabilidade (Fase 12, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)): [Alertas operacionais](./alertas.md), com o significado de cada sinal, como confirmar nos Workers Logs ou no banco e o que fazer.
 

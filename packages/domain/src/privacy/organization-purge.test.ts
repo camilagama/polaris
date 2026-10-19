@@ -157,14 +157,13 @@ describe("the closure period before a purge", () => {
 describe("the scope a privacy case needs to start a purge", () => {
   it("is every tenant category the purge removes, and none of the data it keeps", () => {
     expect([...ORGANIZATION_PURGE_REQUIRED_SCOPE].sort()).toEqual([
-      "audit_logs",
       "customers",
       "inventory_catalog",
       "media",
       "organization_profile",
       "sales",
     ]);
-    for (const kept of ["account", "authentication", "billing"]) {
+    for (const kept of ["account", "authentication", "billing", "audit_logs"]) {
       expect(ORGANIZATION_PURGE_REQUIRED_SCOPE).not.toContain(kept);
       expect(PRIVACY_DATA_CATEGORIES).toContain(kept);
     }
@@ -180,7 +179,7 @@ describe("what an operator reads for a refusal", () => {
     }
     expect(
       organizationPurgeRefusalMessage("privacy_scope_covers_kept_data")
-    ).toContain("conta, autenticação ou cobrança");
+    ).toContain("conta, autenticação, cobrança ou registros de auditoria");
     expect(organizationPurgeRefusalMessage("purge_storage_touched")).toContain(
       "armazenamento"
     );

@@ -481,6 +481,12 @@ async function raceCancellationAgainstMark(
   return await outcome;
 }
 
+/** The audit rows of the organization to purge cover both classes, so the purge is proved to keep each. */
+function hasBothAuditClasses(rows: { event_class: string }[]) {
+  const classes = new Set(rows.map((row) => row.event_class));
+  return classes.has("security") && classes.has("operational");
+}
+
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -1416,6 +1422,7 @@ async function run() {
     );
     assert.deepEqual([...keptCategories].sort(), [
       "account",
+      "audit_logs",
       "authentication",
       "billing",
     ]);
@@ -1651,8 +1658,23 @@ async function run() {
       }
       return result;
     };
+    // the audit of the tenant is not in the purge (ADR 0081, amended 19/10/2026): its rows are read by ID, before and after
+    const auditRows = async (tenant: TenantFixture) =>
+      (
+        await owner.pool.query<{ event_class: string; id: string }>(
+          "SELECT id, event_class FROM public.tenant_audit_event WHERE organization_id = $1 ORDER BY id",
+          [tenant.organizationId]
+        )
+      ).rows;
     const witnessBefore = await counts(witness);
     const targetBefore = await counts(target);
+    const witnessAuditBefore = await auditRows(witness);
+    const targetAuditBefore = await auditRows(target);
+    assert.ok(
+      targetAuditBefore.length > 0,
+      "the organization to purge has audit rows"
+    );
+    assert.ok(hasBothAuditClasses(targetAuditBefore), "of both classes");
     for (const table of [
       "sales",
       "sale_items",
@@ -1663,7 +1685,6 @@ async function run() {
       "media_assets",
       "customers",
       "memberships",
-      "tenant_audit_event",
       "data_exports",
       "event_outbox",
       "queue_processing",
@@ -2157,8 +2178,14 @@ async function run() {
       assert.equal(count, 0, `${table} is empty for the purged organization`);
     }
     assert.deepEqual(await counts(witness), witnessBefore);
+    assert.deepEqual(
+      await auditRows(target),
+      targetAuditBefore,
+      "every audit row of the purged organization is still there"
+    );
+    assert.deepEqual(await auditRows(witness), witnessAuditBefore);
     tests.push(
-      "every row of the tenant is gone, from sales and stock movements to the audit and the memberships; the witness is untouched"
+      "every row of the tenant is gone, from sales and stock movements to the memberships, but not its audit (every row of both classes stays, immutable); the witness is untouched"
     );
 
     const tombstoneRow = await owner.pool.query<{
