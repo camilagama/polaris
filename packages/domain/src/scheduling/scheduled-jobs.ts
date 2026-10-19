@@ -21,6 +21,7 @@ export const SCHEDULED_JOB_IDS = [
   "media.maintenance",
   "billing.maintenance",
   "privacy.maintenance",
+  "auth.login_lock_expiry",
   "outbox.dispatch",
   "billing.provider_reconcile",
   "expenses.recurring_generation",
@@ -114,6 +115,18 @@ export const SCHEDULED_JOBS: readonly ScheduledJob[] = Object.freeze([
     lane: "maintenance",
     leaseSeconds: LEASE_SECONDS,
     purges: ["privacy.data_export_expiry"],
+    status: "enabled",
+  },
+  {
+    cadenceSeconds: HOUR_SECONDS,
+    description:
+      "Authentication: removes the rows of the sign-in lock untouched for a day (the e-mails typed, kept only as an HMAC).",
+    id: "auth.login_lock_expiry",
+    idempotentBy:
+      "it deletes what the clock already made old; nothing old, nothing deleted",
+    lane: "maintenance",
+    leaseSeconds: LEASE_SECONDS,
+    purges: ["auth.login_lock_expiry"],
     status: "enabled",
   },
   {

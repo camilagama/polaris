@@ -94,6 +94,8 @@ const gates: Gate[] = [
   ["dead-letter", "verify-dead-letter-gate.ts"],
   ["scheduled-jobs", "verify-scheduled-jobs-gate.ts"],
   ["access-log", "verify-access-log-gate.ts"],
+  // the lock of the sign-in by password (ADR 0100): the 5th failure, the release, the reservation, the expiry
+  ["login-lock", "verify-login-lock-gate.ts"],
   ["definer-hardening", "verify-definer-hardening-gate.ts"],
   // lives in apps/web: it runs the real Better Auth against the database with the log function's EXECUTE revoked
   [
@@ -228,6 +230,7 @@ const suites: Record<string, string[]> = {
     "dead-letter",
     "scheduled-jobs",
     "access-log",
+    "login-lock",
     "definer-hardening",
     "access-log-login",
     "media-commands",

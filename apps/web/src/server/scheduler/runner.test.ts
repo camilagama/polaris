@@ -139,6 +139,7 @@ describe("a scheduler tick", () => {
       "media.maintenance",
       "billing.maintenance",
       "privacy.maintenance",
+      "auth.login_lock_expiry",
     ]);
     expect(outbox["outbox.dispatch"]).not.toHaveBeenCalled();
   });
@@ -278,7 +279,7 @@ describe("a scheduler tick", () => {
 
       await expect(tick("maintenance", handlers, store)).rejects.toBe(lost);
 
-      expect(claim).toHaveBeenCalledTimes(3);
+      expect(claim).toHaveBeenCalledTimes(4);
       expect(handlers["media.maintenance"]).not.toHaveBeenCalled();
       expect(handlers["billing.maintenance"]).toHaveBeenCalledOnce();
     });
