@@ -30,6 +30,7 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 - Uma sessão fica ligada a um aparelho quando o usa: registro do aparelho, autorização offline, sincronização e verificação ao iniciar. Uma sessão ligada a um aparelho revogado é encerrada na revogação; as sessões que não usaram esse aparelho continuam.
 - Encerrar as outras sessões do usuário é uma opção separada, desmarcada por padrão. Quando marcada, encerra todas as sessões do usuário, exceto a atual, inclusive as que nunca usaram um aparelho.
 - Revogar outro aparelho ou encerrar as outras sessões exige login nos últimos 15 minutos. Revogar o próprio aparelho, o que a sessão atual registrou, não exige esse login recente; usar um aparelho não o torna próprio.
+- Todo aparelho que passa de vivo a revogado gera um registro `device_revoked` na auditoria de autenticação, com a sessão e o aparelho de quem revogou, mesmo sem nenhuma sessão ligada a ele. A repetição de uma revogação só é registrada quando encerra alguma sessão.
 
 A configuração segue a [documentação Better Auth de gerenciamento de sessões](https://www.better-auth.com/docs/concepts/session-management).
 ## Email transacional

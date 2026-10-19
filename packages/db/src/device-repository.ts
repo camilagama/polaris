@@ -365,11 +365,12 @@ function sqlStateOf(error: unknown): string | undefined {
 async function endDeviceSessions(
   tx: TenantRequestTransaction,
   deviceId: string,
-  options: RevokeDeviceOptions
+  options: RevokeDeviceOptions,
+  newlyRevoked: boolean
 ): Promise<{ endedCurrentSession: boolean; endedSessionCount: number }> {
   let result: Awaited<ReturnType<typeof runEndDeviceSessions>>;
   try {
-    result = await runEndDeviceSessions(tx, deviceId, options);
+    result = await runEndDeviceSessions(tx, deviceId, options, newlyRevoked);
   } catch (error) {
     const state = sqlStateOf(error);
     if (state === ACTING_SESSION_ENDED) {
@@ -392,7 +393,8 @@ async function endDeviceSessions(
 function runEndDeviceSessions(
   tx: TenantRequestTransaction,
   deviceId: string,
-  options: RevokeDeviceOptions
+  options: RevokeDeviceOptions,
+  newlyRevoked: boolean
 ) {
   return tx.execute<{
     ended_current_session: boolean;
@@ -403,6 +405,7 @@ function runEndDeviceSessions(
             ${deviceId}::uuid,
             ${options.actingSession?.id ?? null}::text,
             ${options.endOtherSessions === true}::boolean,
+            ${newlyRevoked}::boolean,
             ${options.requestId ?? null}::text
           )`
   );
@@ -413,9 +416,11 @@ function runEndDeviceSessions(
  * device holds in any of the user's organizations and every session linked to
  * the device (optionally every other session of the user as well). Revoking
  * another device than the acting session's, or ending the other sessions,
- * needs a fresh session. Revocation is terminal and idempotent: revoking a
- * revoked device returns it unchanged and ends again any session still linked
- * to it.
+ * needs a fresh session. The revocation that takes the device from live to
+ * revoked is always audited (`device_revoked`, with the acting session and
+ * device), even with no session linked. Revocation is terminal and idempotent:
+ * revoking a revoked device returns it unchanged, ends again any session still
+ * linked to it and is audited only when it ends one.
  */
 export function revokeDevice(
   database: Database,
@@ -468,7 +473,7 @@ export function revokeDevice(
       return {
         device: existing,
         revokedGrantIds: [] as string[],
-        ...(await endDeviceSessions(tx, deviceId, options)),
+        ...(await endDeviceSessions(tx, deviceId, options, false)),
       };
     }
 
@@ -512,7 +517,7 @@ export function revokeDevice(
     return {
       device: revoked,
       revokedGrantIds,
-      ...(await endDeviceSessions(tx, deviceId, options)),
+      ...(await endDeviceSessions(tx, deviceId, options, true)),
     };
   });
 }

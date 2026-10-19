@@ -125,6 +125,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Severidade BLOCK: decidida pelo Arrascaeta. Frequência: **em aberto, proposta pendente de decisão**: o item vale uma vez antes do go-live e de novo quando mudar a configuração `observability` de um Worker ou a `compatibility_date`; depois, as promoções citam o registro vigente (Worker, data, ambiente, resultado). Até a decisão, vale esta proposta.
 - Evidência: por Worker, o ambiente, a data, quem provocou a exceção, se ela apareceu nos Workers Logs (sim ou não) e, se não, o valor de `invocation_logs` depois da correção. Sem segredos nem dados de cliente.
 
+### 17. Sessões anteriores à revogação por aparelho (WARN)
+
+- Critério: a revogação que encerra as sessões do aparelho ([ADR 0048](../adr/0048-tela-de-aparelhos.md), emenda de 19/10/2026) só alcança sessões que já usaram o aparelho depois do deploy dela, porque o vínculo `device_sessions` nasce com o uso e não há backfill. Uma sessão criada antes (um celular perdido e parado, por exemplo) não cai ao revogar o aparelho. No go-live não há sessões antigas e o item não se aplica. Se a revogação por aparelho for para produção depois de haver usuários (o item vale só nessa promoção; nas seguintes, citar o registro), antes de anunciar que "revogar encerra a sessão do aparelho perdido", fazer um destes: pedir aos usuários que usem "encerrar as outras sessões" (a opção da API `device.revoke`; a tela de aparelhos ainda não a oferece, e essa tela é tarefa de produto separada) ou encerrar as sessões existentes no deploy, por procedimento operacional aprovado pelo responsável (todos entram de novo).
+- Evidência: "não se aplica, sem usuários antes do deploy" (com a data) ou o caminho escolhido e quando foi feito.
+- Severidade WARN: proposta, pendente de decisão do responsável.
+
 ## Veredito
 
 Ordem de decisão:
@@ -157,7 +163,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 14 BLOCK e 2 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 14, 15 e 16, já decididos (hoje 14 BLOCK e 3 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

@@ -14,6 +14,7 @@ BEGIN
   EXECUTE 'ALTER ROLE polaris_device_session_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
 END
 $roles$;--> statement-breakpoint
+-- the plpgsql body below reads the new value only when it runs, which is why it can live in the same migration
 ALTER TYPE "public"."auth_security_audit_event_type" ADD VALUE 'device_revoked';--> statement-breakpoint
 CREATE TABLE "device_sessions" (
 	"device_id" uuid NOT NULL,
@@ -57,13 +58,17 @@ SET ROLE polaris_device_session_owner;--> statement-breakpoint
 -- every session of the user linked to the device and, with p_end_other_sessions, every other session of the user but
 -- the acting one, which must then have signed in within 15 minutes. The acting session must be a live one of the user
 -- (it is the verified session of the request); the acting device is the device that session registered or, failing
--- that, the one it linked last (the links are written by the server from the verified session). When at least one session ended, appends one
--- `device_revoked` row to the auth audit (a repeated revocation that ends a session again is audited again). A missing
--- or malformed request id becomes a fresh one, as the auth audit does, so it never fails the revocation.
+-- that, the one it linked last (the links are written by the server from the verified session). Appends one
+-- `device_revoked` row to the auth audit whenever the device went from live to revoked in this call
+-- (p_newly_revoked), even when no session was linked to it, so a revocation by a stolen session leaves the acting
+-- session and device on record; a repeated revocation is audited again only when it ends a session. A caller that
+-- passes p_newly_revoked wrongly can only add audit rows about its own user (or skip one). A missing or malformed request id
+-- becomes a fresh one, as the auth audit does, so it never fails the revocation.
 CREATE FUNCTION public.end_device_sessions(
   p_device_id uuid,
   p_acting_session_id text,
   p_end_other_sessions boolean,
+  p_newly_revoked boolean,
   p_request_id text
 )
 RETURNS TABLE (ended_session_count integer, ended_current_session boolean)
@@ -127,7 +132,7 @@ BEGIN
          COALESCE(pg_catalog.bool_or(ended.id = p_acting_session_id), false)
     INTO v_count, v_current
     FROM ended;
-  IF v_count > 0 THEN
+  IF v_count > 0 OR COALESCE(p_newly_revoked, false) THEN
     INSERT INTO public.auth_security_audit_event
       (event_type, outcome, actor_id, request_id, subject_id, ended_session_count, acting_session_id, acting_device_id)
     VALUES (
@@ -139,8 +144,8 @@ BEGIN
   RETURN QUERY SELECT v_count, v_current;
 END;
 $function$;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.end_device_sessions(uuid, text, boolean, text) FROM PUBLIC;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.end_device_sessions(uuid, text, boolean, text) TO polaris_pr11_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.end_device_sessions(uuid, text, boolean, boolean, text) FROM PUBLIC;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.end_device_sessions(uuid, text, boolean, boolean, text) TO polaris_pr11_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_device_session_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_device_session_owner;

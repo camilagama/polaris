@@ -47,7 +47,8 @@ import {
  *     session ends) or is refused, on two real connections;
  *   - `end_device_sessions()` is a SECURITY DEFINER of a NOLOGIN owner with the least privileges, executable only by
  *     the tenant runtime, and it refuses a live device, another user's device, a missing user and a foreign session;
- *   - the auth audit gets one `device_revoked` row whenever a revocation ends a session, repeated ones included.
+ *   - the auth audit gets one `device_revoked` row whenever a device goes from live to revoked (even with no session
+ *     linked to it) and whenever a repeated revocation ends a session; a repetition that ends nothing is not audited.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -286,7 +287,7 @@ async function run() {
               has_function_privilege('public', p.oid, 'EXECUTE') AS public_execute,
               has_function_privilege($1, p.oid, 'EXECUTE') AS runtime,
               has_function_privilege($2, p.oid, 'EXECUTE') AS auth_runtime
-         FROM pg_proc p WHERE p.oid = 'public.end_device_sessions(uuid, text, boolean, text)'::regprocedure`,
+         FROM pg_proc p WHERE p.oid = 'public.end_device_sessions(uuid, text, boolean, boolean, text)'::regprocedure`,
       [runtimeRole, authRuntimeRole]
     );
     assert.deepEqual(fn.rows, [
@@ -413,6 +414,11 @@ async function run() {
     });
     assert.equal(d4Revocation.endedCurrentSession, true, "S2 used D4 as well");
     assert.equal(
+      d4Revocation.endedSessionCount,
+      2,
+      "the count includes the acting session when it ended (S2 and the re-login)"
+    );
+    assert.equal(
       await sessionExists(relogin),
       false,
       "the checked session ended"
@@ -509,6 +515,11 @@ async function run() {
       true,
       "revoking its own device signs it out"
     );
+    assert.equal(
+      own.endedSessionCount,
+      1,
+      "the count includes the current one"
+    );
     assert.equal(await sessionExists(old), false);
     // the acting session ended meanwhile (a logout): the revocation is undone and answered as a lost session
     const gone = await createSession(tenantA.userId);
@@ -530,6 +541,53 @@ async function run() {
     assert.equal(goneState.rows[0]?.revoked_at, null, "nothing was revoked");
     tests.push(
       "a session older than the fresh window cannot revoke another device nor end the other sessions (nothing changes), not even after using that device (check), but can revoke the device it registered, which ends it and says so; an acting session that ended meanwhile undoes the revocation as a lost session"
+    );
+
+    // ------- 5b. a device with no linked session is still audited when it goes from live to revoked
+    const bare = await registerDevice(db, tenantA.userId);
+    const bareActor = await createSession(tenantA.userId);
+    const bareActorDevice = await registerDevice(db, tenantA.userId, {
+      sessionId: bareActor,
+    });
+    const bareRevocation = await revokeDevice(db, tenantA.userId, bare.id, {
+      actingSession: fresh(bareActor),
+      requestId: randomUUID(),
+    });
+    assert.equal(bareRevocation.endedSessionCount, 0);
+    assert.equal(await sessionExists(bareActor), true);
+    const bareAudit = await auditRows(bare.id);
+    assert.equal(bareAudit.length, 1, "the revocation is audited");
+    assert.equal(bareAudit[0]?.actor_id, tenantA.userId);
+    assert.equal(bareAudit[0]?.outcome, "succeeded");
+    assert.equal(bareAudit[0]?.ended_session_count, 0);
+    assert.equal(bareAudit[0]?.acting_session_id, bareActor);
+    assert.equal(bareAudit[0]?.acting_device_id, bareActorDevice.id);
+    const bareRepeat = await revokeDevice(db, tenantA.userId, bare.id, {
+      actingSession: fresh(bareActor),
+      requestId: randomUUID(),
+    });
+    assert.equal(bareRepeat.endedSessionCount, 0);
+    assert.equal(
+      (await auditRows(bare.id)).length,
+      1,
+      "a repetition that ends nothing is not audited"
+    );
+    // an acting session with a blank id revokes nothing: it fails closed as a lost session and the transaction rolls back
+    const blank = await registerDevice(db, tenantA.userId);
+    await assert.rejects(
+      () =>
+        revokeDevice(db, tenantA.userId, blank.id, {
+          actingSession: { fresh: true, id: "" },
+        }),
+      DeviceSessionEndedError
+    );
+    const blankState = await admin.pool.query<{ revoked_at: Date | null }>(
+      "SELECT revoked_at FROM public.devices WHERE id = $1",
+      [blank.id]
+    );
+    assert.equal(blankState.rows[0]?.revoked_at, null, "nothing was revoked");
+    tests.push(
+      "revoking a device with no linked session audits device_revoked once with the acting session and device (ended_session_count 0) and a repetition audits nothing; an acting session with a blank id is refused as a lost session and revokes nothing"
     );
 
     // ------------------------------------- 6. what the function refuses
@@ -555,7 +613,7 @@ async function run() {
       }
     };
     const end =
-      "SELECT * FROM public.end_device_sessions($1::uuid, $2::text, $3::boolean, NULL)";
+      "SELECT * FROM public.end_device_sessions($1::uuid, $2::text, $3::boolean, false, NULL)";
     try {
       await expectSqlState(
         () => asRuntime(tenantA.userId, end, [live.id, owner5, false]),
@@ -590,6 +648,29 @@ async function run() {
         () => asRuntime(tenantA.userId, end, [d1.id, null, true]),
         "22023",
         "the option without an acting session"
+      );
+      // a forged p_newly_revoked = true only ever adds a row about the caller's own user: every refusal above still holds
+      const forged =
+        "SELECT * FROM public.end_device_sessions($1::uuid, $2::text, false, true, NULL)";
+      await expectSqlState(
+        () => asRuntime(tenantA.userId, forged, [live.id, owner5]),
+        "42501",
+        "a live device, with newly_revoked forged"
+      );
+      await expectSqlState(
+        () => asRuntime(tenantB.userId, forged, [d1.id, null]),
+        "42501",
+        "another user's device, with newly_revoked forged"
+      );
+      await expectSqlState(
+        () => asRuntime(null, forged, [d1.id, null]),
+        "42501",
+        "no session user, with newly_revoked forged"
+      );
+      await expectSqlState(
+        () => asRuntime(tenantA.userId, forged, [d1.id, sessionOfB]),
+        "PD001",
+        "a session of another user, with newly_revoked forged"
       );
       await expectSqlState(
         () => asRuntime(tenantA.userId, "SELECT id FROM public.session", []),
@@ -636,7 +717,7 @@ async function run() {
       await runtimeClient.end();
     }
     tests.push(
-      "end_device_sessions() refuses a live device, another user's device, an empty app.user_id, an acting session of another user, the option without an acting session and the option with an acting session older than 15 minutes; the tenant runtime reads no session, neither updates nor deletes a link, sees no link of another user and cannot forge one"
+      "end_device_sessions() refuses a live device, another user's device, an empty app.user_id, an acting session of another user, the option without an acting session and the option with an acting session older than 15 minutes, also when newly_revoked is forged as true; the tenant runtime reads no session, neither updates nor deletes a link, sees no link of another user and cannot forge one"
     );
 
     // ------------------- 7. a sync racing the revocation, on two connections
@@ -767,7 +848,7 @@ async function run() {
       );
       await waitForLockWait();
       await revoker.query(
-        "SELECT * FROM public.end_device_sessions($1::uuid, $2::text, false, NULL)",
+        "SELECT * FROM public.end_device_sessions($1::uuid, $2::text, false, false, NULL)",
         [second.id, actor]
       );
       await revoker.query("COMMIT");
