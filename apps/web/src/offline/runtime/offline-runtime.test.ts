@@ -58,7 +58,7 @@ function world(options: { leaseHours?: number } = {}) {
     /** The oRPC code the failing push carries (UNAUTHORIZED, FORBIDDEN...), if any. */
     pushCode?: string;
     /** The server answers every pushed command as rejected, with this code. */
-    rejectCode?: string;
+    rejectCode?: string | undefined;
   } = {
     deviceIsMine: false,
     issueLease: [],

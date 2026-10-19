@@ -38,7 +38,7 @@ export function createRpcRuntimeApi(client: PolarisRpcClient): RuntimeApi {
           signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
         });
       } catch (cause) {
-        throw new SessionUnreachableError({ cause });
+        throw new SessionUnreachableError("session_unreachable", { cause });
       }
       if (!response.ok) {
         throw new Error("session_unavailable");

@@ -67,8 +67,8 @@ export interface RuntimeApi {
 
 /** The server could not be reached at all (no connection, timeout): the last known session user may stand in. */
 export class SessionUnreachableError extends Error {
-  constructor(options?: ErrorOptions) {
-    super("session_unreachable", options);
+  constructor(message = "session_unreachable", options?: ErrorOptions) {
+    super(message, options);
     this.name = "SessionUnreachableError";
   }
 }
