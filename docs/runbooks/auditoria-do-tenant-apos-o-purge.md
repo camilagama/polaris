@@ -7,7 +7,7 @@
 ## O que a auditoria guarda, e até quando
 
 - Só IDs opacos (o ID do ator é pseudônimo: liga a linha a uma pessoa enquanto a conta existir): a organização, o ID interno do ator (`actor_user_id`), o tipo do evento, o tipo e o ID da entidade, o ID da requisição e a hora. Nenhum nome, e-mail ou telefone. A organização purgada continua existindo como tombstone (`status = 'purged'`, nome trocado por "Organização removida").
-- Cada evento tem uma classe (`event_class`), definida pelo registro do domínio (`packages/domain/src/privacy/tenant-audit-events.ts`): `security` (exportações de dados, anonimização de cliente, concessões offline, vida da organização, publicação no catálogo público) ou `operational` (o resto).
+- Cada evento tem uma classe (`event_class`), definida pelo registro do domínio (`packages/domain/src/privacy/tenant-audit-events.ts`): `security` (exportações de dados, anonimização de cliente, concessões offline, vida da organização, publicação de produto no catálogo público, criação e edição do perfil do catálogo e publicação ou despublicação do catálogo da loja) ou `operational` (o resto).
 - Prazos **propostos**, com a revisão jurídica pendente: `security`, 5 anos contados do evento; `operational`, 6 meses contados do purge. Nenhum job expurga ainda; quando existir, ele pula a organização sob legal hold. Se a pergunta chega depois do prazo e o job já rodou, a linha pode não existir mais.
 
 ## Pré-requisitos de acesso

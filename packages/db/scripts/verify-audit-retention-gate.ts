@@ -973,6 +973,12 @@ async function run() {
         label: "sec-expired",
         type: "offline_grant.revoked",
       },
+      // security (the whole catalog on or off): past the operational period of the purge, still inside the security one
+      {
+        age: "12 months",
+        label: "sec-catalog-live",
+        type: "public_catalog.unpublished",
+      },
     ]);
     const caseC = await supportCase(orgC);
     await markPurged(orgC, caseC, `${OPERATIONAL_MONTHS} months -${MARGIN}`);
@@ -982,6 +988,11 @@ async function run() {
         age: securityExpired,
         label: "sec-expired",
         type: "product.published_to_catalog",
+      },
+      {
+        age: securityExpired,
+        label: "sec-catalog-expired",
+        type: "public_catalog.published",
       },
     ]);
     const caseD = await supportCase(orgD);
@@ -1051,7 +1062,7 @@ async function run() {
     );
     assert.deepEqual(
       await survivors(rowsB),
-      ["sec-recent"],
+      ["sec-catalog-live", "sec-recent"],
       "B: operational counts from the purge, whatever the age of the event; security from the event"
     );
     assert.deepEqual(
@@ -1125,7 +1136,10 @@ async function run() {
     assert.deepEqual(await expireRows(), dueAgain);
     assert.deepEqual(await expiredNow(), { operational: 0, security: 0 });
     assert.deepEqual(await survivors(rowsA), ["op-very-old", "sec-live"]);
-    assert.deepEqual(await survivors(rowsB), ["sec-recent"]);
+    assert.deepEqual(await survivors(rowsB), [
+      "sec-catalog-live",
+      "sec-recent",
+    ]);
     const rowsF = await seed(orgF, [
       { age: securityExpired, label: "f1", type: "customer.anonymized" },
       { age: securityExpired, label: "f2", type: "customer.anonymized" },

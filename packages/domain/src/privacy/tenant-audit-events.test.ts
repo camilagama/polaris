@@ -22,7 +22,7 @@ describe("the tenant audit event registry", () => {
     }
   });
 
-  it("marks as security what the decision of 19/10/2026 lists, and nothing else", () => {
+  it("marks as security what the decision of 19/10/2026 and its review corrections list, and nothing else", () => {
     const security = tenantAuditEventTypesOf("security");
     const families = ["data_export.", "offline_grant."];
     const named = [
@@ -32,6 +32,10 @@ describe("the tenant audit event registry", () => {
       "organization.closure_recovered",
       "product.published_to_catalog",
       "product.unpublished_from_catalog",
+      "public_catalog.profile_created",
+      "public_catalog.profile_updated",
+      "public_catalog.published",
+      "public_catalog.unpublished",
     ];
     for (const eventType of security) {
       expect(
