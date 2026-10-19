@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { Client } from "pg";
+import { isLocalGateHost } from "./gate-hosts";
+import { connectToGateTarget, validateGateTarget } from "./gate-target";
 
 /**
  * Runs the PostgreSQL gates one after another against ONE disposable database.
@@ -15,18 +16,15 @@ import { Client } from "pg";
  *   POLARIS_GATE_DATABASE_URL  direct (non-pooled) owner URL of the disposable database
  *   POLARIS_GATE_BRANCH        branch name, `prNN-...-gate`
  *   POLARIS_GATE_DATABASE      database name (default `neondb`)
- * The target must be a Neon disposable endpoint, or a local Postgres when the
- * process runs in CI (`CI=true`). Each gate script keeps its own checks; this
+ * The target must be on the list of hosts in gate-hosts.ts: a Neon disposable
+ * endpoint, or a local Postgres when the process runs in CI (`CI=true`); any
+ * other host is refused before a connection opens. Each gate script keeps its own checks; this
  * runner only maps the unified variables onto the per-gate ones and creates the
  * temporary login roles some gates need.
  */
 
-const neonHost = /^ep-[a-z0-9-]+\.[a-z0-9-]+\.sa-east-1\.aws\.neon\.tech$/;
-const localHost = /^(localhost|127\.0\.0\.1|postgres)$/;
-const branchPattern = /^pr\d+-[a-z0-9-]+-gate$/;
 const lineBreak = /\r?\n/;
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
-const poolerPattern = /pooler/i;
 
 interface Context {
   branch: string;
@@ -39,7 +37,11 @@ interface Context {
 
 interface Gate {
   env: (context: Context) => Record<string, string>;
+  /** Proves nothing without the job's own Postgres: never selected against Neon. */
+  localOnly?: boolean;
   name: string;
+  /** Reads the synthetic `rls_poc_operations` rows the Neon bootstrap seeds. */
+  needsPocFixture?: boolean;
   script: string;
 }
 
@@ -154,6 +156,31 @@ gates.push(
     }),
     name: "media-upload",
     script: "verify-media-upload-gate.ts",
+  },
+  {
+    env: (context) => ({
+      POLARIS_TENANT_CONTEXT_TEST_CONFIRM_DISPOSABLE:
+        "polaris-pr22-tenant-context-disposable",
+      POLARIS_TENANT_CONTEXT_TEST_DATABASE_URL: context.url,
+      POLARIS_TENANT_CONTEXT_TEST_EXPECTED_HOSTNAME: context.host,
+    }),
+    name: "tenant-context",
+    needsPocFixture: true,
+    script: "verify-tenant-context-gate.ts",
+  },
+  // lives in apps/web: serves the PR11 route from a local server and runs the RLS gate against it.
+  // Local Postgres only: on Neon the proof goes through the Worker and Hyperdrive (`poc:rls:verify`).
+  {
+    env: (context) => ({
+      POLARIS_RLS_ADMIN_DATABASE_URL: context.url,
+      POLARIS_RLS_CONFIRM_DISPOSABLE: "polaris-pr11-rls-gate",
+      POLARIS_RLS_EXPECTED_HOSTNAME: context.host,
+      POLARIS_RLS_RUNTIME_DATABASE_URL: context.runtimeUrl,
+    }),
+    localOnly: true,
+    name: "rls",
+    needsPocFixture: true,
+    script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
   }
 );
 
@@ -215,6 +242,11 @@ const suites: Record<string, string[]> = {
     "offline-stock",
     "offline-sale",
     "offline-e2e",
+    "inventory",
+    "customers",
+    "media-upload",
+    "tenant-context",
+    "rls",
   ],
   gate3: [
     "gate2-runtime",
@@ -350,38 +382,31 @@ async function main() {
   if (!url) {
     throw new Error("POLARIS_GATE_DATABASE_URL is required.");
   }
-  if (!branchPattern.test(branch)) {
-    throw new Error("POLARIS_GATE_BRANCH must look like prNN-name-gate.");
-  }
-  const parsed = new URL(url);
-  const isLocalCi =
-    process.env.CI === "true" && localHost.test(parsed.hostname);
-  if (
-    !(neonHost.test(parsed.hostname) || isLocalCi) ||
-    poolerPattern.test(parsed.hostname)
-  ) {
-    throw new Error(
-      "The gate target must be a direct disposable Neon endpoint (or local Postgres in CI)."
-    );
-  }
-  if (decodeURIComponent(parsed.pathname.slice(1)) !== database) {
-    throw new Error("The URL database does not match POLARIS_GATE_DATABASE.");
-  }
+  const parsed = validateGateTarget({ branch, database, url });
+  const isLocalCi = isLocalGateHost(parsed.hostname);
 
   const wanted = process.argv
     .slice(2)
     .flatMap((argument) => suites[argument] ?? [argument]);
+  const named = new Set(process.argv.slice(2));
+  const eligible = gates.filter(
+    (gate) => !gate.localOnly || isLocalCi || named.has(gate.name)
+  );
   const selected = wanted.length
-    ? gates.filter((gate) => wanted.includes(gate.name))
-    : gates;
+    ? eligible.filter((gate) => wanted.includes(gate.name))
+    : eligible;
   if (selected.length === 0) {
     throw new Error(
       `No gate matches. Known: ${gates.map((gate) => gate.name).join(", ")}`
     );
   }
+  if (!isLocalCi && selected.some((gate) => gate.localOnly)) {
+    throw new Error(
+      "A gate named here runs only against the CI Postgres; against Neon use its own command (poc:rls:verify)."
+    );
+  }
 
-  const admin = new Client({ connectionString: url });
-  await admin.connect();
+  const { admin } = await connectToGateTarget({ branch, database, url });
   const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
   const password = randomBytes(24).toString("hex");
   const results: Array<{ gate: string; seconds: number; status: string }> = [];
@@ -390,6 +415,15 @@ async function main() {
       `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
     );
     await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
+    if (isLocalCi && selected.some((gate) => gate.needsPocFixture)) {
+      // what the Neon bootstrap seeds by hand; the migrations create only the table
+      await admin.query(
+        `INSERT INTO public.rls_poc_operations (organization_id, token, value)
+         VALUES ('org_a', 'seed-a', 'synthetic data for org_a'),
+                ('org_b', 'seed-b', 'synthetic data for org_b')
+         ON CONFLICT (organization_id, token) DO NOTHING`
+      );
+    }
     const runtime = new URL(url);
     runtime.username = login;
     runtime.password = password;

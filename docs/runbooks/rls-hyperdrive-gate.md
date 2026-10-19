@@ -77,6 +77,10 @@ try {
 
 The runner checks the database version and region, role ownership and `BYPASSRLS`, `FORCE ROW LEVEL SECURITY`, policy expressions, isolated and context-free reads, cross-tenant read/write behavior, rollback after application and SQL failures, transaction-local context reset across two transactions on the same request-scoped backend, 16 concurrent `org_a`/`org_b` requests, and recovery after the owner terminates an active Worker backend. Sixteen requests were measured to reuse a backend across both tenants. An initial 120-request burst against the prior globally shared `pg.Pool` implementation produced connection timeouts; the gate uses a bounded concurrency to prove RLS isolation, not to benchmark saturation. PostgreSQL may report an unset custom GUC as either `NULL` or an empty string after a transaction-local value is restored; both are accepted as absent context, and the runner separately requires zero visible rows. The interruption case uses an idempotency key, expects the first transaction to roll back, and checks that the retry uses a new transaction with the organization context reapplied.
 
+## The same gate in CI
+
+The `ci` suite runs this gate as `rls` (`apps/web/scripts/verify-rls-ci-gate.ts`): the same route and transactions, served by a local server that connects straight to the job's PostgreSQL as the runtime login. It proves the policy, `FORCE ROW LEVEL SECURITY`, cross-tenant reads and writes, rollback, the transaction-local context and the retry after a killed backend. It does not prove Hyperdrive's pooling (backend reuse across tenants), the disabled SQL caching or the region; the report says `not_applicable_local` for those, so the remote run above stays part of the release proof. The gate deletes its own retry row at the end, so the fixture goes back to its two seeds.
+
 ## Security boundaries and limits
 
 - The test route returns 404 unless `DB_RLS_POC_ENABLED=true`; the main Worker config sets it to `false`. The PR11 config is only for `wrangler dev`.

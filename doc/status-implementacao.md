@@ -1782,6 +1782,16 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Gate | Concluído | `purge-functions` em `gates:ci` e `gate10` (`packages/db/scripts/verify-purge-functions-gate.ts`, comparação em `packages/db/src/purge-function-definitions.ts`): lê `pg_get_functiondef` das três funções e confere `whole_organization`, o prazo de 90 dias, as tabelas apagadas (nomes e ordem), as chaves do fato de cobrança e o único `DELETE`. Falha provada por mutação (30 dias, `audit_logs` de volta, tabela fora da lista) no banco e nos testes unitários, que também leem as migrations sem banco. |
 | Checklist de release | Concluído | Item 18 de [release-checklist.md](../docs/runbooks/release-checklist.md): o gate verde no SHA candidato (BLOCK, **decidido**). |
 
+### Fase 13 — gates de RLS e de domínio na suíte `ci` (T-122a, POL-57; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Gates na suíte `ci` | Concluído | `inventory`, `customers`, `media-upload`, `tenant-context` (`poc:tenant:verify`) e `rls` (`poc:rls:verify`) em `packages/db/scripts/run-gates.ts`. O `rls` roda a rota do PR11 num servidor local (`apps/web/scripts/verify-rls-ci-gate.ts`); o pool do Hyperdrive, o cache de SQL e a região ficam para o gate com Worker remoto. O `tenant-context` estava defasado (políticas do papel da retenção) e foi corrigido. |
+| Lista de hosts | Concluído | `packages/db/scripts/gate-hosts.ts`: Neon direto em São Paulo, ou `localhost`/`127.0.0.1` com `CI=true`; o executor valida antes de conectar (`gate-target.test.ts`: host fora da lista é recusado e nenhuma conexão é aberta). |
+| Só em Neon | Documentado | `gate2-runtime` e a prova de Hyperdrive: [runbook do Gate 4](../docs/runbooks/gate-4-sales-core.md#o-que-só-roda-em-neon), emenda do [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md). |
+| Verificação local | Concluída (19/10/2026) | Migrations do zero num PostgreSQL 18.4 local descartável; suíte `ci` inteira (55 gates, 0 falhas, cerca de 5 min; os cinco novos somam cerca de 11 s); falha provada por mutação (`DISABLE ROW LEVEL SECURITY` em `rls_poc_operations` derruba `rls` e `tenant-context`; `NO FORCE` em `customers` derruba `customers`; `DISABLE` em `organizations` derruba `tenant-context`); `bun run check` verde. O CI ainda não rodou a suíte com os gates novos. |
+
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
