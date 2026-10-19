@@ -20,7 +20,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - **Nunca aprovar parcialmente um item BLOCK.** Ou ele tem evidência e passa, ou não passa.
 - **Nunca editar o resultado esperado para ficar verde.** Se o resultado esperado de um teste ou gate precisa mudar, a mudança é um commit próprio, revisado, e o SHA candidato muda.
 - **Sem critério de aceite, o veredito é dados insuficientes.**
-- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 14, 15, 16 e 18, que já foram decididos.
+- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 10, 14, 15, 16, 18 e 19, que já foram decididos.
 
 ## Itens
 
@@ -87,19 +87,18 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: na revisão do PR de origem, nenhum achado de severidade "bloqueia" está aberto e nenhum achado de segurança está sem resolução.
 - Evidência: link da revisão e o estado de cada achado.
 
-### 10. Prazos legais com validação jurídica pendente (BLOCK)
+### 10. Prazos legais: decidido pelo usuário em 19/10; revisão de advogado recomendada (WARN)
 
-- Critério: prazos legais com `legalReview` pendente bloqueiam a promoção a produção. Em `packages/domain/src/privacy/retention.ts`, toda classe de base legal (`basis: "lei"`) está com `legalReview` preenchido por quem validou (`reviewedBy` e `reviewedAt`: contador ou jurídico); uma classe ainda `"pending"` falha o item. Os prazos legais foram decididos pelo orquestrador com base em pesquisa (ADR 0079) e nenhuma validação profissional existe até esse campo ser preenchido.
-- A auditoria do tenant (classes `tenant_audit_security` e `tenant_audit_operational`, emenda de 19/10/2026 do ADR 0081) e o `deletion_ledger` entram na mesma regra, e **sem o job que chama `expire_tenant_audit_events` nada vence**: a guarda é indefinida até ele existir. Rodar o gate `audit-retention` no SHA candidato, para provar os gatilhos `ENABLE ALWAYS`.
-- Evidência: a lista das classes legais com o `legalReview` lido no SHA candidato (quem validou e quando).
+- Critério: o usuário aprovou todos os prazos, os legais incluídos, em 19/10/2026 (ADR 0079), e a revisão de advogado é **recomendada, sem bloquear**. Em `packages/domain/src/privacy/retention.ts`, a classe de base legal (`basis: "lei"`) com `legalReview` `"pending"` é só registrada no relatório; preenchida por quem validou (`reviewedBy` e `reviewedAt`: contador ou jurídico), sai da lista.
+- A auditoria do tenant (classes `tenant_audit_security` e `tenant_audit_operational`, emenda de 19/10/2026 do ADR 0081) e o `deletion_ledger` entram na mesma regra (aviso), e **sem o job que chama `expire_tenant_audit_events` nada vence**: a guarda é indefinida até ele existir. Rodar o gate `audit-retention` no SHA candidato, para provar os gatilhos `ENABLE ALWAYS`.
+- Evidência: a lista das classes legais com o `legalReview` lido no SHA candidato (quem validou e quando, ou "pendente: decidido pelo usuário em 19/10").
 
 ### 11. Registro de acesso do Marco Civil: pendências depois da tabela própria (BLOCK)
 
 - Critério: a tabela própria do registro de acesso existe (`auth_access_log`, migration 0076, [ADR 0092](../adr/0092-registro-de-acesso-a-aplicacao.md)) e o bloqueio `access_record_table` da classe `auth_sessions` está resolvido no registro de retenção. Ainda faltam, para o item passar:
-  - a revisão jurídica (`legalReview`) das classes `auth_access_log` e `auth_security_audit`, pendente. A regra geral está no item 10; este item só aponta as duas classes, sem repetir o critério;
   - o alerta sobre `auth_access_log_write_failed` configurado no destino dos logs, e o `auth_access_log_skipped` acompanhado ([runbook do registro de acesso](./registro-de-acesso.md#6-monitoramento));
   - o job de expurgo com guarda cautelar (Marco Civil, art. 15, §2º), que só pode existir antes do go-live + 6 meses. Nenhuma linha vence antes de 6 meses do go-live, e o bloqueio `access_log_hold` do registro impede o job até a guarda existir. Item datado: **job de expurgo com guarda cautelar antes de go-live + 6 meses**.
-- Evidência: o nome da tabela e o resultado do gate `access-log` no SHA candidato; o `legalReview` lido no SHA candidato (quem validou e quando) das duas classes; a configuração do alerta (nome da regra, sem segredo); e, para o job, a pendência datada no [status de implementação](../../doc/status-implementacao.md).
+- Evidência: o nome da tabela e o resultado do gate `access-log` no SHA candidato; a configuração do alerta (nome da regra, sem segredo); e, para o job, a pendência datada no [status de implementação](../../doc/status-implementacao.md).
 
 ### 12. Achados "vale corrigir" e "menor" registrados (WARN)
 
@@ -143,6 +142,13 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: `"status": "passed"` do gate `purge-functions` no SHA candidato (no CI, ou na execução do item 4). Não vale rodar o gate num banco que não seja o das migrations do SHA.
 - Severidade BLOCK: **decidida** (os revisores pediram o gate como obrigatório antes de qualquer PR que recrie uma das três funções, e o Arrascaeta decidiu BLOCK em 19/10/2026).
 
+### 19. Ordem do controle de aceite legal: cliente primeiro, flag depois (BLOCK)
+
+- Critério: vale quando a promoção liga `LEGAL_ACCEPTANCE_ENFORCED=true` no Worker `polaris-web` ou leva o P7 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O controle de aceite do servidor nasce **desligado** (`LEGAL_ACCEPTANCE_ENFORCED=false`, ou ausente). Só pode ser ligado depois de: (1) o cliente com o ramo novo (`data.reason` tratado antes de `isSessionRefusal` em `sync`, `issueLease` e `registerDevice`) estar **publicado em uma versão anterior** à promoção que liga a flag; e (2) o prazo de atualização do service worker ter passado desde essa publicação, para nenhum cliente em cache ainda ter o runtime antigo, que trata todo `FORBIDDEN` como sessão recusada e apagaria o lease e as coleções. Enquanto isso não for verdade, a flag offline (`VITE_OFFLINE_RUNTIME_ENABLED`) segue **desligada em produção**.
+- Ordem: publicar o cliente com o ramo novo, com a flag do servidor desligada; esperar o prazo de atualização do service worker; só então ligar a flag em outra promoção, com leitura de volta. Ligar a flag nunca entra na mesma promoção que publica o ramo novo do cliente.
+- Evidência: o SHA e a data da publicação do cliente com o ramo novo; o prazo de atualização do service worker e a data em que passou; o valor lido de `LEGAL_ACCEPTANCE_ENFORCED` e de `VITE_OFFLINE_RUNTIME_ENABLED` em produção (só os valores booleanos, sem segredo); o p95 acrescentado pelo controle medido no staging (alvo de até 30 ms; acima disso, cache por sessão).
+- Severidade BLOCK: **decidida** pelo Arrascaeta em 19/10/2026.
+
 ## Veredito
 
 Ordem de decisão:
@@ -175,7 +181,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 14, 15, 16 e 18, já decididos (hoje 15 BLOCK e 3 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 10, 14, 15, 16, 18 e 19, já decididos (hoje 15 BLOCK e 4 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

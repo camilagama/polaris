@@ -88,7 +88,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     tenant_access_grants:
       "Acessos temporários do Admin: registro de acesso privilegiado, sem texto livre, sobrevive à organização (ADR 0072).",
     tenant_audit_event:
-      "Auditoria do tenant: sobrevive ao purge, imutável (gatilho ENABLE ALWAYS que recusa UPDATE, DELETE e TRUNCATE) e com a chave estrangeira da organização restritiva. Sai só por prazo, conforme a classe do evento (`security`: 5 anos do evento; `operational`: 6 meses depois do purge), pela função `expire_tenant_audit_events` do papel `polaris_retention_owner`, que pula a organização sob legal hold. O motivo: é o registro de quem fez o quê numa organização cujo dono pediu a exclusão, e uma apuração futura (fraude, disputa, ordem judicial) precisa dele; só IDs opacos, sem dado pessoal além do identificador do usuário (decisão de 19/10/2026, ADR 0081 emendado).",
+      "Auditoria do tenant: sobrevive ao purge, imutável (gatilho ENABLE ALWAYS que recusa UPDATE, DELETE e TRUNCATE) e com a chave estrangeira da organização restritiva. Sai só por prazo, conforme a classe do evento (`security`: 12 meses do evento; `operational`: 6 meses depois do purge), pela função `expire_tenant_audit_events` do papel `polaris_retention_owner`, que pula a organização sob legal hold. O motivo: é o registro de quem fez o quê numa organização cujo dono pediu a exclusão, e uma apuração futura (fraude, disputa, ordem judicial) precisa dele; só IDs opacos, sem dado pessoal além do identificador do usuário (decisão de 19/10/2026, ADR 0081 emendado).",
   });
 
 /**

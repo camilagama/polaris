@@ -792,7 +792,11 @@ async function run() {
     await seed(orgE, [
       { age: "1 day", label: "e-op", type: "sale.confirmed" },
       { age: "2 days", label: "e-sec", type: "data_export.requested" },
-      { age: "400 days", label: "e-old-sec", type: "offline_grant.issued" },
+      {
+        age: `${SECURITY_MONTHS - 1} months`,
+        label: "e-old-sec",
+        type: "offline_grant.issued",
+      },
       { age: "400 days", label: "e-old-op", type: "category.created" },
     ]);
     await withTenantAs(
@@ -975,7 +979,7 @@ async function run() {
       },
       // security (the whole catalog on or off): past the operational period of the purge, still inside the security one
       {
-        age: "12 months",
+        age: `${SECURITY_MONTHS - 1} months`,
         label: "sec-catalog-live",
         type: "public_catalog.unpublished",
       },
