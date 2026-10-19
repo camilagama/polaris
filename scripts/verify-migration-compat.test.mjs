@@ -33,9 +33,9 @@ describe("expand/contract guard", () => {
     ['ALTER TABLE "t" DROP IF EXISTS "c";', "DROP COLUMN"],
     ['DROP TABLE "t";', "DROP TABLE"],
     ["DROP ROUTINE public.f(uuid);", "DROP FUNCTION"],
-    ['DO $x$ BEGIN ALTER TABLE t RENAME COLUMN a TO b; END $x$;', "RENAME"],
+    ["DO $x$ BEGIN ALTER TABLE t RENAME COLUMN a TO b; END $x$;", "RENAME"],
     [
-      'DO $x$ BEGIN ALTER TABLE t ADD COLUMN c text NOT NULL; END $x$;',
+      "DO $x$ BEGIN ALTER TABLE t ADD COLUMN c text NOT NULL; END $x$;",
       "NOT NULL without DEFAULT",
     ],
     ["DROP FUNCTION public.f(uuid);", "DROP FUNCTION"],
