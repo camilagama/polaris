@@ -4,6 +4,7 @@ import {
   MAX_MEDIA_OUTPUT_EDGE,
   MediaImageProcessingError,
   MediaImageTooLargeError,
+  MediaTransformQuotaExceededError,
   type NormalizedMediaCropRect,
   UnsupportedMediaImageError,
   validateMediaImageSource,
@@ -78,6 +79,47 @@ function normalizedImageFormat(format: string): string | null {
   }
 }
 
+/**
+ * Cloudflare Images answers 9422 ("the transformation request is rejected because
+ * the usage limit was reached") once the free allowance of 5,000 unique
+ * transformations in the month is spent. The documentation does not show how the
+ * Workers binding exposes it, so every plausible shape is accepted: the numeric
+ * (or numeric string) `code`, the same shape used for 9412; the standalone number
+ * 9422 in the error message (or in a thrown string); and the `Cf-Resized:
+ * err=9422` header of a rejected response. The real format is a go-live BLOCK in
+ * the release checklist. Source: developers.cloudflare.com/images/pricing and
+ * /images/reference/troubleshooting (consulted 18/10/2026).
+ */
+const QUOTA_EXCEEDED_CODE = 9422;
+const QUOTA_EXCEEDED_HEADER = /(?:^|[\s,;])err=9422(?:$|[\s,;])/;
+// 9422 as its own token: not inside UUIDs, versions or longer numbers.
+const QUOTA_EXCEEDED_MESSAGE = /(?<![\w.-])9422(?![\w.-])/;
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return "";
+}
+
+function hasQuotaExceededCode(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === QUOTA_EXCEEDED_CODE ||
+      error.code === String(QUOTA_EXCEEDED_CODE))
+  );
+}
+
 function hasProviderInvalidImageCode(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -85,6 +127,36 @@ function hasProviderInvalidImageCode(error: unknown): boolean {
     "code" in error &&
     error.code === 9412
   );
+}
+
+/** Only for errors thrown by the Images binding: the message is a last-resort signal. */
+function isProviderQuotaFailure(cause: unknown): boolean {
+  if (hasProviderInvalidImageCode(cause)) {
+    return false;
+  }
+  return (
+    hasQuotaExceededCode(cause) ||
+    QUOTA_EXCEEDED_MESSAGE.test(errorMessage(cause))
+  );
+}
+
+function isQuotaExceededResponse(response: Response): boolean {
+  return QUOTA_EXCEEDED_HEADER.test(response.headers.get("cf-resized") ?? "");
+}
+
+/** The transformation was refused for quota; any other failure is a processing error. */
+export function isMediaTransformQuotaExceeded(error: unknown): boolean {
+  return (
+    error instanceof MediaTransformQuotaExceededError ||
+    hasQuotaExceededCode(error)
+  );
+}
+
+function providerFailure(cause: unknown): Error {
+  if (isProviderQuotaFailure(cause)) {
+    return new MediaTransformQuotaExceededError({ cause });
+  }
+  return new MediaImageProcessingError({ cause });
 }
 
 async function readImageInfo(
@@ -98,8 +170,7 @@ async function readImageInfo(
       // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable image validation error.
       throw new UnsupportedMediaImageError({ cause });
     }
-    // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 }
 
@@ -168,18 +239,19 @@ export async function processMediaImage({
       })
       .output({ format: "image/webp", quality: 85 });
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 
   let response: Response;
   try {
     response = transformed.response();
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Keep provider details available internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 
+  if (isQuotaExceededResponse(response)) {
+    throw new MediaTransformQuotaExceededError();
+  }
   if (!response.ok || response.body === null) {
     throw new MediaImageProcessingError();
   }
@@ -254,16 +326,17 @@ export async function processMediaDerivative(input: {
       })
       .output({ format: "image/webp", quality: 85 });
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
   }
 
   let response: Response;
   try {
     response = transformed.response();
   } catch (cause: unknown) {
-    // biome-ignore lint/style/useErrorCause: Preserve provider details internally while returning a stable processing error.
-    throw new MediaImageProcessingError({ cause });
+    throw providerFailure(cause);
+  }
+  if (isQuotaExceededResponse(response)) {
+    throw new MediaTransformQuotaExceededError();
   }
   if (!response.ok || response.body === null) {
     throw new MediaImageProcessingError();

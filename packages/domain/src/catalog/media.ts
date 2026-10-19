@@ -48,6 +48,21 @@ export class MediaImageProcessingError extends Error {
   }
 }
 
+/**
+ * The Cloudflare Images free allowance of unique transformations for the month is
+ * spent (provider error 9422, ADR 0018 amendment). Nothing was stored: the upload
+ * may be sent again in the next cycle. Cloudflare's documentation says no charge
+ * applies above the allowance; that is not verified on the real provider.
+ */
+export class MediaTransformQuotaExceededError extends Error {
+  readonly code = "media_transform_quota_exceeded";
+
+  constructor(options?: ErrorOptions) {
+    super("media_transform_quota_exceeded", options);
+    this.name = "MediaTransformQuotaExceededError";
+  }
+}
+
 export class MediaUploadCommandConflictError extends Error {
   readonly code = "media_upload_command_conflict";
 

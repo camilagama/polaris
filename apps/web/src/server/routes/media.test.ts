@@ -1,5 +1,7 @@
 import {
   InvalidMediaOrderError,
+  MediaImageProcessingError,
+  MediaTransformQuotaExceededError,
   ProductMediaLimitError,
 } from "@polaris/domain/catalog/media";
 import {
@@ -7,7 +9,7 @@ import {
   ProductVariantNotFoundError,
 } from "@polaris/domain/catalog/product";
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
 import { requestIdMiddleware } from "../middleware/request-id";
 import { createMediaRoutes, type MediaRouteDependencies } from "./media";
@@ -154,6 +156,10 @@ const testBindings: ServerEnv["Bindings"] = {
 };
 
 describe("media upload route", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("stores a private WebP object and commits the product media association", async () => {
     const { app, bindings, dependencies, mediaBucket, stored } =
       createTestApp();
@@ -352,6 +358,200 @@ describe("media upload route", () => {
       );
     }
   );
+
+  it("refuses the upload with a stable code when Images is over its quota, storing nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { app, bindings, dependencies, mediaBucket, stored } = createTestApp({
+      processMediaImage: vi.fn(() =>
+        Promise.reject(new MediaTransformQuotaExceededError())
+      ),
+    });
+
+    const response = await app.fetch(
+      uploadRequest({ body: new Uint8Array([1, 2, 3]) }),
+      bindings
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: { code: "media_transform_quota_exceeded" },
+    });
+    expect(mediaBucket.put).not.toHaveBeenCalled();
+    expect(stored.size).toBe(0);
+    expect(dependencies.createProductMediaAsset).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledOnce();
+    const [entry] = warn.mock.calls[0] ?? [];
+    expect(entry).toMatchObject({
+      errorCode: "9422",
+      event: "media_transform_quota_exceeded",
+      operation: "media.upload",
+      outcome: "rejected",
+      provider: "cloudflare_images",
+      reason: "transform_quota_exceeded",
+      route: "/api/products/:productId/media",
+    });
+    expect(JSON.stringify(entry)).not.toContain(organizationId);
+    warn.mockRestore();
+  });
+
+  it("keeps the upload and logs the event when only the derivatives hit the quota", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const derivativeProcessor = vi.fn(() =>
+      Promise.reject(Object.assign(new Error("limit"), { code: 9422 }))
+    );
+    const { app, bindings, stored } = createTestApp({
+      processMediaDerivative: derivativeProcessor,
+    });
+
+    const response = await app.fetch(
+      uploadRequest({ body: new Uint8Array([1, 2, 3]) }),
+      bindings
+    );
+
+    expect(response.status).toBe(201);
+    expect(stored.size).toBe(1);
+    expect(derivativeProcessor).toHaveBeenCalledTimes(1);
+    const events = warn.mock.calls.map(([entry]) => entry?.event);
+    expect(events).toContain("media_transform_quota_exceeded");
+    expect(events).toContain("media_derivative_deferred");
+    warn.mockRestore();
+  });
+
+  it.each([320, 640] as const)(
+    "serves the master with a short private cache when Images is over quota (%i)",
+    async (size) => {
+      // each case starts after the delivery log window of the previous one
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 1, 0, 0, size)));
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+      const { app, bindings, mediaBucket, stored } = createTestApp({
+        getMediaAssetForDelivery: vi.fn(() =>
+          Promise.resolve({
+            assetId: mediaAsset.assetId,
+            byteSize: 4,
+            contentType: "image/webp" as const,
+            height: 200,
+            storageKey,
+            width: 600,
+          })
+        ),
+        processMediaDerivative: vi.fn(() =>
+          Promise.reject(new MediaTransformQuotaExceededError())
+        ),
+      });
+      stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
+
+      const response = await app.fetch(
+        new Request(
+          `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=${size}`
+        ),
+        bindings
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/webp");
+      expect(response.headers.get("cache-control")).toBe("private, max-age=60");
+      expect(response.headers.get("x-media-fallback")).toBe("master");
+      expect(response.headers.get("content-length")).toBe("4");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+        new Uint8Array([82, 73, 70, 70])
+      );
+      // the fallback is never stored as if it were the derivative
+      expect(mediaBucket.put).not.toHaveBeenCalled();
+      const [entry] = warn.mock.calls[0] ?? [];
+      expect(entry).toMatchObject({
+        errorCode: "9422",
+        event: "media_transform_quota_exceeded",
+        operation: "media.delivery",
+        outcome: "partial",
+        provider: "cloudflare_images",
+      });
+      warn.mockRestore();
+    }
+  );
+
+  it("logs one delivery fallback event per window and counts the rest", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 2)));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+    const { app, bindings, stored } = createTestApp({
+      getMediaAssetForDelivery: vi.fn(() =>
+        Promise.resolve({
+          assetId: mediaAsset.assetId,
+          byteSize: 4,
+          contentType: "image/webp" as const,
+          height: 200,
+          storageKey,
+          width: 600,
+        })
+      ),
+      processMediaDerivative: vi.fn(() =>
+        Promise.reject(new MediaTransformQuotaExceededError())
+      ),
+    });
+    stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
+    const deliver = () =>
+      app.fetch(
+        new Request(
+          `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+        ),
+        bindings
+      );
+    const quotaEvents = () =>
+      warn.mock.calls
+        .map(([entry]) => entry)
+        .filter((entry) => entry?.event === "media_transform_quota_exceeded");
+
+    const responses = await Promise.all([deliver(), deliver(), deliver()]);
+    expect(responses.map((response) => response.status)).toEqual([
+      200, 200, 200,
+    ]);
+    expect(quotaEvents()).toHaveLength(1);
+
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 2, 0, 1, 1)));
+    expect((await deliver()).status).toBe(200);
+    expect(quotaEvents()).toHaveLength(2);
+    expect(quotaEvents()[1]).toMatchObject({ suppressed: 2 });
+    warn.mockRestore();
+  });
+
+  it("does not hide other derivative failures behind the master", async () => {
+    const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const { app, bindings, stored } = createTestApp({
+      getMediaAssetForDelivery: vi.fn(() =>
+        Promise.resolve({
+          assetId: mediaAsset.assetId,
+          byteSize: 4,
+          contentType: "image/webp" as const,
+          height: 200,
+          storageKey,
+          width: 600,
+        })
+      ),
+      processMediaDerivative: vi.fn(() =>
+        Promise.reject(new MediaImageProcessingError())
+      ),
+    });
+    stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
+
+    const response = await app.fetch(
+      new Request(
+        `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+      ),
+      bindings
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-media-fallback")).toBeNull();
+    error.mockRestore();
+  });
 
   it("serves a cached derivative without reprocessing", async () => {
     const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
