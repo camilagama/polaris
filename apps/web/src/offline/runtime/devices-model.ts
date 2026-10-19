@@ -54,12 +54,26 @@ export function deviceRows(
  */
 export const RECENT_LOGIN_MINUTES = 15;
 
+/** The confirmation says it in two parts: what is lost (ink) and when to use it. */
 export const REVOKE_WARNING =
-  "Revogar tira o acesso offline deste aparelho: ele deixa de enviar e o que estiver guardado nele (vendas, cadastros, movimentos) não será aceito pelo servidor. Use para um aparelho perdido ou roubado. Não dá para desfazer; o aparelho só volta registrando-se de novo. Se ele estiver sem internet, só perde o acesso quando se conectar de novo.";
+  "Revogar este aparelho: ele perde o acesso e o que ele ainda não enviou (vendas, cadastros, movimentos) não será aceito. Não dá para desfazer.";
+export const REVOKE_WARNING_NOTE =
+  "Use para aparelho perdido ou roubado. Se ele estiver sem internet, só perde o acesso quando conectar.";
+export const REVOKE_TITLE = "Revogar este aparelho?";
+
+/** The way out for someone who lost the phone and the runtime does not know this browser's device yet. */
+export const RECOGNIZING_TEXT =
+  "Estamos reconhecendo este aparelho. Os botões liberam em instantes.";
+export const RECOGNIZING_FAILED_TEXT =
+  "Não foi possível reconhecer este aparelho agora. Recarregue a página. Se continuar, tente de novo com uma internet melhor.";
+/** How long the screen waits for the runtime before it stops promising "em instantes". */
+export const RECOGNIZING_PATIENCE_MS = 5000;
+
+export const SESSION_GONE_LIST_TEXT = "Entre de novo para usar esta lista.";
 
 export const END_OTHER_SESSIONS_LABEL = "Encerrar também as outras sessões";
 export const END_OTHER_SESSIONS_HELP =
-  "Sai da sua conta em todos os outros celulares e computadores, menos neste. Eles vão pedir a senha de novo. Marque se acha que alguém entrou na sua conta.";
+  "Sai da sua conta em todos os outros celulares e computadores, menos neste. Eles vão pedir para entrar de novo. Marque se acha que alguém entrou na sua conta.";
 export const END_OTHER_SESSIONS_WARNING =
   "Quem estiver usando sua conta em outro aparelho será desconectado agora.";
 
@@ -75,7 +89,8 @@ export const EMPTY_TEXT =
 export const OFFLINE_TEXT =
   "Sem conexão. Para revogar um aparelho ou encerrar sessões, conecte-se à internet. Nada fica guardado para depois.";
 const UNCERTAIN_TEXT =
-  "Não foi possível confirmar agora. Atualize a lista e tente de novo: repetir é seguro.";
+  "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro.";
+export const REVOKING_LABEL = "Revogando…";
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -89,12 +104,12 @@ export function revokedMessage(counts: {
   const parts = ["Aparelho revogado."];
   if (counts.grants > 0) {
     parts.push(
-      `${plural(counts.grants, "autorização offline cancelada", "autorizações offline canceladas")}.`
+      `${plural(counts.grants, "permissão de uso offline cancelada", "permissões de uso offline canceladas")}.`
     );
   }
   if (counts.sessions > 0) {
     parts.push(
-      `${plural(counts.sessions, "sessão encerrada", "sessões encerradas")}.`
+      `${plural(counts.sessions, "acesso encerrado", "acessos encerrados")}.`
     );
   }
   return parts.join(" ");
@@ -102,8 +117,9 @@ export function revokedMessage(counts: {
 
 export const SESSION_ENDED_PANEL = {
   body: "O aparelho que você revogou usava a mesma sessão deste navegador, então ela foi encerrada. A revogação foi feita. Para continuar, entre de novo.",
-  keptWork: "O que estava guardado aqui para enviar continua guardado.",
-  title: "Este navegador também saiu da sua conta",
+  keptWork:
+    "As operações que estavam guardadas neste aparelho continuam nele. Elas são enviadas quando você entrar de novo, com internet.",
+  title: "Este navegador saiu da sua conta",
 } as const;
 
 /** Which way "Entrar de novo" goes: the session is still alive but old, or already gone. */

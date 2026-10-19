@@ -19,6 +19,7 @@ function render(props: Partial<Parameters<typeof DeviceItem>[0]> = {}): string {
   return renderToStaticMarkup(
     <ul>
       <DeviceItem
+        actionError={null}
         busy={false}
         confirming={false}
         endOtherSessions={false}
@@ -87,5 +88,31 @@ describe("a device row", () => {
     // checkbox + confirm; Cancelar stays available
     expect(disabled).toHaveLength(2);
     expect(render({ offline: true })).toContain('disabled=""');
+  });
+
+  it("the confirmation has the short red title, the two sentences, and the error right above the buttons", () => {
+    const html = render({
+      actionError: "Não conseguimos confirmar se o aparelho foi revogado.",
+      confirming: true,
+    });
+    expect(html).toContain("Revogar este aparelho?");
+    expect(html).toContain("Não dá para desfazer.");
+    expect(html).toContain("Use para aparelho perdido ou roubado.");
+    const alert = html.indexOf('role="alert"');
+    expect(alert).toBeGreaterThan(html.indexOf("Use para aparelho perdido"));
+    expect(alert).toBeLessThan(html.indexOf("Sim, revogar este aparelho"));
+    expect(render({ confirming: true })).not.toContain('role="alert"');
+  });
+
+  it("the confirm button says Revogando… during the call", () => {
+    const html = render({ busy: true, confirming: true });
+    expect(html).toContain(">Revogando…<");
+    expect(html).not.toContain(">Sim, revogar este aparelho<");
+  });
+
+  it("says where Sair is on the phone and on the computer", () => {
+    const html = render({ row: row({ isCurrent: true }) });
+    expect(html).toContain("abra o Menu");
+    expect(html).toContain("no computador");
   });
 });

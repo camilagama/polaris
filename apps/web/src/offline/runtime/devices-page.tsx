@@ -8,9 +8,13 @@ import {
   EMPTY_TEXT,
   LOADING_TEXT,
   OFFLINE_TEXT,
+  RECOGNIZING_FAILED_TEXT,
+  RECOGNIZING_PATIENCE_MS,
+  RECOGNIZING_TEXT,
   revokedMessage,
   revokeFailure,
   SESSION_ENDED_PANEL,
+  SESSION_GONE_LIST_TEXT,
   SESSION_GONE_LOAD_PANEL,
   type SignInAgainPanel,
   signInAgainPanel,
@@ -148,6 +152,23 @@ export function DevicesPage() {
   // without the runtime we cannot tell which row is this browser: offer no action at all
   const knowsThisDevice = currentDeviceId !== null;
   const sessionOver = endedHere !== null;
+  // the runtime gave up on this browser's device, or it is taking too long: say so instead of leaving the buttons dead
+  const [recognitionSlow, setRecognitionSlow] = useState(false);
+  const waitingForDevice = online && !knowsThisDevice && !sessionOver;
+  useEffect(() => {
+    setRecognitionSlow(false);
+    if (!waitingForDevice) {
+      return;
+    }
+    const timer = setTimeout(
+      () => setRecognitionSlow(true),
+      RECOGNIZING_PATIENCE_MS
+    );
+    return () => clearTimeout(timer);
+  }, [waitingForDevice]);
+  const recognitionFailed =
+    waitingForDevice &&
+    (recognitionSlow || snapshot === null || snapshot.phase === "unavailable");
 
   // the server says the session is over: forget the caches it left here now (the runtime
   // drops the lease and the collections when it sees the refusal, or when the person leaves)
@@ -290,6 +311,7 @@ export function DevicesPage() {
   }, []);
   const handleDismiss = useCallback(() => setPanel(null), []);
 
+  const sessionGone = panel?.kind === "session_gone";
   const rows = devices ? deviceRows(devices, currentDeviceId) : [];
   const loading = devices === null && loadFailed === null && !sessionOver;
   return (
@@ -329,7 +351,7 @@ export function DevicesPage() {
           </button>
         </p>
       ) : null}
-      {actionError && !endedHere ? (
+      {actionError && confirming === null && !endedHere ? (
         <p className="categories-message is-error" role="alert">
           {actionError}
         </p>
@@ -342,15 +364,33 @@ export function DevicesPage() {
       {devices && rows.length === 0 && !loadFailed && !endedHere ? (
         <p className="category-empty-state">{EMPTY_TEXT}</p>
       ) : null}
+      {devices && waitingForDevice ? (
+        <p
+          className={
+            recognitionFailed
+              ? "categories-message is-error"
+              : "device-recognizing"
+          }
+          role="status"
+        >
+          {recognitionFailed ? RECOGNIZING_FAILED_TEXT : RECOGNIZING_TEXT}
+        </p>
+      ) : null}
+      {devices && sessionGone && !endedHere ? (
+        <p className="categories-message is-error" role="status">
+          {SESSION_GONE_LIST_TEXT}
+        </p>
+      ) : null}
       {devices && !endedHere ? (
         <ul aria-label="Aparelhos" className="device-list">
           {rows.map((row) => (
             <DeviceItem
+              actionError={confirming === row.id ? actionError : null}
               busy={busy}
               confirming={confirming === row.id}
               endOtherSessions={endOtherSessions}
               key={row.id}
-              offline={!(online && knowsThisDevice)}
+              offline={!(online && knowsThisDevice) || sessionGone}
               onAsk={handleAsk}
               onCancel={handleCancel}
               onChoose={setEndOtherSessions}

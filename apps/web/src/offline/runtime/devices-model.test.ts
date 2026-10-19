@@ -8,6 +8,7 @@ import {
   END_OTHER_SESSIONS_LABEL,
   END_OTHER_SESSIONS_WARNING,
   REVOKE_WARNING,
+  REVOKE_WARNING_NOTE,
   revokedMessage,
   revokeFailure,
   SESSION_GONE_PANEL,
@@ -66,19 +67,19 @@ describe("the result of a revocation", () => {
       "Aparelho revogado."
     );
     expect(revokedMessage({ grants: 1, sessions: 0 })).toBe(
-      "Aparelho revogado. 1 autorização offline cancelada."
+      "Aparelho revogado. 1 permissão de uso offline cancelada."
     );
     expect(revokedMessage({ grants: 3, sessions: 0 })).toBe(
-      "Aparelho revogado. 3 autorizações offline canceladas."
+      "Aparelho revogado. 3 permissões de uso offline canceladas."
     );
     expect(revokedMessage({ grants: 0, sessions: 1 })).toBe(
-      "Aparelho revogado. 1 sessão encerrada."
+      "Aparelho revogado. 1 acesso encerrado."
     );
     expect(revokedMessage({ grants: 0, sessions: 2 })).toBe(
-      "Aparelho revogado. 2 sessões encerradas."
+      "Aparelho revogado. 2 acessos encerrados."
     );
     expect(revokedMessage({ grants: 1, sessions: 2 })).toBe(
-      "Aparelho revogado. 1 autorização offline cancelada. 2 sessões encerradas."
+      "Aparelho revogado. 1 permissão de uso offline cancelada. 2 acessos encerrados."
     );
   });
 
@@ -92,6 +93,7 @@ describe("the result of a revocation", () => {
   it("does not say before the answer whether this browser leaves, because only the answer tells", () => {
     for (const text of [
       REVOKE_WARNING,
+      REVOKE_WARNING_NOTE,
       END_OTHER_SESSIONS_LABEL,
       END_OTHER_SESSIONS_HELP,
       END_OTHER_SESSIONS_WARNING,
@@ -154,7 +156,7 @@ describe("the failures", () => {
     ]) {
       expect(revokeFailure(unknown)).toEqual({
         kind: "message",
-        text: "Não foi possível confirmar agora. Atualize a lista e tente de novo: repetir é seguro.",
+        text: "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro.",
         uncertain: true,
       });
     }

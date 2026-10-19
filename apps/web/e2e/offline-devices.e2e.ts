@@ -334,7 +334,7 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
 
   await confirmButton(page).click();
   await expect(
-    page.getByText("Aparelho revogado. 1 autorização offline cancelada.")
+    page.getByText("Aparelho revogado. 1 permissão de uso offline cancelada.")
   ).toBeVisible();
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
@@ -373,7 +373,7 @@ test("com a opção marcada, a chamada leva endOtherSessions verdadeiro e o resu
 
   await expect(
     page.getByText(
-      "Aparelho revogado. 1 autorização offline cancelada. 2 sessões encerradas."
+      "Aparelho revogado. 1 permissão de uso offline cancelada. 2 acessos encerrados."
     )
   ).toBeVisible();
   expect(state.revokeBodies).toEqual([
@@ -424,7 +424,7 @@ test("a caixa vem desmarcada toda vez que a confirmação abre: depois de cancel
   await confirmButton(page, CONFIRM_ALL).click();
   await expect(
     page.getByText(
-      "Não foi possível confirmar agora. Atualize a lista e tente de novo: repetir é seguro."
+      "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro."
     )
   ).toBeVisible();
   await expect(page.getByText("Aparelho revogado")).toHaveCount(0);
@@ -463,7 +463,7 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
-    "use Sair no menu"
+    "abra o Menu; no computador, fica no alto da tela"
   );
   await expect(askRevoke(page, "Caixa da loja")).toHaveCount(0);
   await askRevoke(page, "Celular da Ana").click();
@@ -550,7 +550,7 @@ test("falhar ao revogar não esconde a lista já carregada", async ({ page }) =>
   await openDevices(page, state);
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
-  await expect(page.getByRole("alert")).toContainText("repetir é seguro");
+  await expect(page.getByRole("alert")).toContainText("Repetir é seguro");
   await expect(deviceItems(page)).toHaveCount(2);
 });
 
@@ -585,8 +585,10 @@ test("o botão de confirmar fica pendente durante a chamada e não reenvia", asy
   });
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
-  await expect(confirmButton(page)).toBeDisabled();
-  await confirmButton(page).click({ force: true });
+  // while the call is out, the button says so and cannot be pressed again
+  const pending = page.getByRole("button", { exact: true, name: "Revogando…" });
+  await expect(pending).toBeDisabled();
+  await pending.click({ force: true });
   release();
   await expect(page.getByText("Aparelho revogado.")).toBeVisible();
   expect(state.revokeBodies).toHaveLength(1);
@@ -645,6 +647,12 @@ test("login antigo: o painel diz que nada foi revogado, não repete sozinho e um
   // no automatic repetition
   await page.waitForTimeout(500);
   expect(state.revokeBodies).toHaveLength(1);
+
+  // a login that is only old leaves the list as it is
+  await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
+  await expect(page.getByText("Entre de novo para usar esta lista.")).toHaveCount(
+    0
+  );
 
   await panel.getByRole("button", { name: "Agora não" }).click();
   await expect(panel).toHaveCount(0);
@@ -733,6 +741,14 @@ test("sessão que acabou durante a ação: painel próprio, sem passar pelo Sair
   });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("button", { name: "Agora não" })).toHaveCount(0);
+  // the list stays, but it is of no use without a session: "Revogar" is off and says why
+  await expect(deviceItems(page)).toHaveCount(2);
+  await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Entre de novo para usar esta lista.",
+    })
+  ).toBeVisible();
 
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL("**/entrar?motivo=sessao&voltar=/devices");
@@ -750,6 +766,11 @@ test("sessão que acabou durante a ação: painel próprio, sem passar pelo Sair
   ).toEqual([]);
   expect(await queuedOperations(page)).toBe(2);
 });
+
+const rememberedUser = (page: Page) =>
+  page.evaluate(() =>
+    window.localStorage.getItem("polaris.offline.session-user")
+  );
 
 const leaseKeys = (page: Page) =>
   page.evaluate(() =>
@@ -774,11 +795,16 @@ async function revokeAndLeave(
   await expect(chip(page)).toContainText("2 operações guardadas");
   await expect(deviceItems(page)).toHaveCount(2);
   expect(state.listCalls).toBeGreaterThan(0);
-  expect(await queuedOperations(page)).toBe(2);
+  // what the real storage (IndexedDB, where the queue lives) holds before the session ends
+  const queuedBefore = await queuedOperations(page);
+  expect(queuedBefore).toBe(2);
+  const organizationsCache = await page.evaluate(() =>
+    window.localStorage.getItem("polaris.offline.organizations")
+  );
 
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
-  return state;
+  return { organizationsCache, queuedBefore, state };
 }
 
 for (const lookup of ["answers", "unreachable"] as const) {
@@ -786,18 +812,17 @@ for (const lookup of ["answers", "unreachable"] as const) {
     page,
   }) => {
     const printed = watchConsole(page);
-    const state = await revokeAndLeave(page, lookup);
+    const { queuedBefore, state } = await revokeAndLeave(page, lookup);
     const callsBefore = state.listCalls;
 
     const panel = page.getByRole("alert").filter({
-      hasText: "Este navegador também saiu da sua conta",
+      hasText: "Este navegador saiu da sua conta",
     });
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("A revogação foi feita");
     await expect(panel).toContainText(
-      "O que estava guardado aqui para enviar continua guardado."
+      "As operações que estavam guardadas neste aparelho continuam nele. Elas são enviadas quando você entrar de novo, com internet."
     );
-    await expect(panel).not.toContainText("será enviado");
     // the revoked device is not listed and nothing else needs a session
     await expect(page.getByRole("list", { name: "Aparelhos" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: REVOKE_BUTTON })).toHaveCount(
@@ -813,7 +838,7 @@ for (const lookup of ["answers", "unreachable"] as const) {
         window.localStorage.getItem("polaris.offline.organizations")
       );
     await expect.poll(cachedOrganizations).toBeNull();
-    expect(await queuedOperations(page)).toBe(2);
+    expect(await queuedOperations(page)).toBe(queuedBefore);
 
     // the next request is refused (401) too: nothing reads the list again
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
@@ -829,30 +854,73 @@ for (const lookup of ["answers", "unreachable"] as const) {
     await expect(panel).toBeVisible();
     await expect(page.getByText("Sua sessão não está ativa")).toHaveCount(0);
     expect(state.listCalls).toBe(callsBefore);
-    // whatever way the 401 came, what was waiting is still waiting
-    expect(await queuedOperations(page)).toBe(2);
+    // whatever way the 401 came, what was waiting is still waiting: the same count in the real storage
+    expect(await queuedOperations(page)).toBe(queuedBefore);
     expect(printed.filter((line) => SECRET_IN_CONSOLE.test(line))).toEqual([]);
 
     await panel.getByRole("button", { name: "Entrar de novo" }).click();
     await page.waitForURL("**/entrar?motivo=sessao&voltar=/devices");
     expect(state.signOutCalls).toBe(0);
-    expect(await queuedOperations(page)).toBe(2);
+    expect(await queuedOperations(page)).toBe(queuedBefore);
   });
 }
+
+test("depois do 401 no envio, o início offline seguinte recusa: ninguém é lembrado, o lease some e a fila continua no disco", async ({
+  page,
+}) => {
+  const { organizationsCache, queuedBefore, state } = await revokeAndLeave(
+    page,
+    "unreachable"
+  );
+  await expect(
+    page.getByRole("alert").filter({
+      hasText: "Este navegador saiu da sua conta",
+    })
+  ).toBeVisible();
+  expect(await rememberedUser(page)).not.toBeNull();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  // the 401 on the send: the runtime forgets the lease and who was signed in
+  await expect.poll(() => state.pushRefused).toBeGreaterThan(0);
+  await expect.poll(() => leaseKeys(page)).toEqual([]);
+  await expect.poll(() => rememberedUser(page)).toBeNull();
+
+  // The next start has no network and nobody remembered, so it must refuse
+  // (no_session_offline, the reason the unit test of the runtime names; the screen
+  // only says "Offline indisponível"). The organizations cache is put back to
+  // show it is the runtime that refuses, not the missing cache.
+  // really without a network for the organizations too, so the cached list is what the app has
+  await page.route("**/rpc/organization/listMine", (route) =>
+    route.abort("internetdisconnected")
+  );
+  await page.addInitScript((cache) => {
+    Object.defineProperty(navigator, "onLine", { get: () => false });
+    if (cache) {
+      window.localStorage.setItem("polaris.offline.organizations", cache);
+    }
+  }, organizationsCache);
+  await page.goto("/customers");
+  await expect(chip(page)).toContainText("Offline indisponível neste aparelho", {
+    timeout: 20_000,
+  });
+  expect(await rememberedUser(page)).toBeNull();
+  expect(await leaseKeys(page)).toEqual([]);
+  // refusing to open does not touch the queue
+  expect(await queuedOperations(page)).toBe(queuedBefore);
+});
 
 test("este navegador saiu e a pessoa clica em Entrar de novo antes de qualquer envio: o lease e as coleções vão embora, a fila fica e não passa pelo Sair", async ({
   page,
 }) => {
-  const state = await revokeAndLeave(page, "answers");
+  const { queuedBefore, state } = await revokeAndLeave(page, "answers");
   const panel = page.getByRole("alert").filter({
-    hasText: "Este navegador também saiu da sua conta",
+    hasText: "Este navegador saiu da sua conta",
   });
   await expect(panel).toBeVisible();
   expect(await leaseKeys(page)).not.toEqual([]); // nothing dropped it yet
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL("**/entrar?motivo=sessao&voltar=/devices");
   expect(await leaseKeys(page)).toEqual([]);
-  expect(await queuedOperations(page)).toBe(2);
+  expect(await queuedOperations(page)).toBe(queuedBefore);
   expect(state.signOutCalls).toBe(0);
 });
 
@@ -880,6 +948,144 @@ test("depois de voltar à tela (a volta pelo login só será provada com a tela 
   expect(state.revokeBodies).toHaveLength(1);
   await askRevoke(page, "Celular da Ana").click();
   await expect(page.getByLabel(OTHER_SESSIONS)).not.toBeChecked();
+});
+
+const RECOGNIZING = "Estamos reconhecendo este aparelho. Os botões liberam em instantes.";
+const RECOGNIZING_FAILED =
+  "Não foi possível reconhecer este aparelho agora. Recarregue a página. Se continuar, tente de novo com uma internet melhor.";
+
+/** The runtime has no context: the device registration does not answer, or fails. */
+async function withoutRuntimeContext(
+  page: Page,
+  how: "hangs" | "fails"
+): Promise<() => void> {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/rpc/device/register", async (route) => {
+    if (how === "fails") {
+      await route.abort("internetdisconnected");
+      return;
+    }
+    await gate;
+    await route.abort("internetdisconnected");
+  });
+  return release;
+}
+
+test("com internet e sem saber qual é este aparelho: a linha reconhecendo aparece acima da lista, os botões ficam desativados e depois de uns 5 s vira o texto de saída", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await serve(page, state);
+  const release = await withoutRuntimeContext(page, "hangs");
+  await page.goto("/devices");
+  await expect(deviceItems(page)).toHaveCount(2);
+
+  const recognizing = page.getByRole("status").filter({ hasText: RECOGNIZING });
+  await expect(recognizing).toBeVisible();
+  await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
+  // above the list
+  const lineBox = await recognizing.boundingBox();
+  const listBox = await page
+    .getByRole("list", { name: "Aparelhos" })
+    .boundingBox();
+  expect(lineBox?.y ?? 0).toBeLessThan(listBox?.y ?? 0);
+
+  const failed = page
+    .getByRole("status")
+    .filter({ hasText: RECOGNIZING_FAILED });
+  await expect(failed).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(RECOGNIZING)).toHaveCount(0);
+  await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
+  release();
+});
+
+test("com internet e o runtime indisponível: o texto de saída aparece logo, sem esperar os 5 s", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await serve(page, state);
+  await withoutRuntimeContext(page, "fails");
+  await page.goto("/devices");
+  await expect(deviceItems(page)).toHaveCount(2);
+  await expect(chip(page)).toContainText("Offline indisponível", {
+    timeout: 4000,
+  });
+  await expect(
+    page.getByRole("status").filter({ hasText: RECOGNIZING_FAILED })
+  ).toBeVisible({ timeout: 1000 });
+  await expect(page.getByText(RECOGNIZING)).toHaveCount(0);
+  await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
+});
+
+test("com o aparelho reconhecido, nenhuma das duas linhas aparece", async ({
+  page,
+}) => {
+  await openDevices(page, scenario({ devices: twoDevices() }));
+  await expect(chip(page)).toContainText("Tudo sincronizado", {
+    timeout: 20_000,
+  });
+  await expect(page.getByText(RECOGNIZING)).toHaveCount(0);
+  await expect(page.getByText(RECOGNIZING_FAILED)).toHaveCount(0);
+  await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
+});
+
+test("o resultado incerto aparece dentro da confirmação, acima dos botões, e não no topo da página", async ({
+  page,
+}) => {
+  const state = scenario({
+    answers: [{ error: rpcError(500, "INTERNAL_SERVER_ERROR") }, {}],
+    devices: twoDevices(),
+  });
+  await openDevices(page, state);
+  await askRevoke(page, "Celular da Ana").click();
+  await confirmButton(page).click();
+
+  const confirmation = page.getByRole("group");
+  const alert = confirmation.getByRole("alert");
+  await expect(alert).toContainText("Não conseguimos confirmar se o aparelho");
+  await expect(page.getByRole("alert")).toHaveCount(1); // only the one inside
+  const alertBox = await alert.boundingBox();
+  const buttonBox = await confirmButton(page).boundingBox();
+  expect(alertBox ? alertBox.y + alertBox.height : 0).toBeLessThanOrEqual(
+    buttonBox?.y ?? 0
+  );
+  await expect(page.getByText("Aparelho revogado")).toHaveCount(0);
+
+  await confirmButton(page).click();
+  // success stays at the top of the page, as a status
+  await expect(
+    page.getByRole("status").filter({ hasText: "Aparelho revogado." })
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a lista à vista", async ({
+  page,
+}) => {
+  const state = scenario({
+    answers: [{ error: rpcError(400, "BAD_REQUEST") }],
+    devices: twoDevices(),
+  });
+  await openDevices(page, state);
+  await askRevoke(page, "Celular da Ana").click();
+  await confirmButton(page).click();
+  await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
+  await expect(page.getByRole("group")).toHaveCount(0);
+  await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
+});
+
+test("/entrar ainda não existe: o app mostra a página de endereço não encontrado, não uma tela branca", async ({
+  page,
+}) => {
+  await serve(page, scenario({ devices: twoDevices() }));
+  await page.goto("/entrar?motivo=sessao&voltar=/devices");
+  await expect(
+    page.getByRole("heading", { name: "Página não encontrada" })
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Ir para Vender" })).toBeVisible();
 });
 
 test("os alvos de toque têm 44 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({

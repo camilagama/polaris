@@ -11,6 +11,9 @@ export interface SessionEndedHere {
   keptWork: boolean;
 }
 
+// Module-level on purpose, and it never goes back to null: the only way out of the
+// ended state is "Entrar de novo", which reloads the page (window.location.assign),
+// so a fresh module starts with nothing marked.
 let ended: SessionEndedHere | null = null;
 let over = false;
 const listeners = new Set<() => void>();
