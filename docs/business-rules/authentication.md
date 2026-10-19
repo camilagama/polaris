@@ -5,7 +5,8 @@
 - Better Auth é responsável pela identidade e pelas sessões; o domínio Polaris continua responsável por organizações e acesso.
 - Contas criadas com email/senha precisam verificar o endereço antes de obter uma sessão de email/senha. Endereços não verificados não podem criar organizações; a operação de criação também precisa validar essa precondição no servidor.
 - Tokens de verificação e de recuperação são segredos de uso único: nunca registrar token, URL completa ou payload de email em logs/auditoria. Links de verificação expiram em 24 horas; links de reset expiram em 1 hora.
-- Respostas de recuperação não podem revelar se um email existe.
+- Respostas de recuperação não podem revelar se um email existe. O mesmo vale para o cadastro com um e-mail que já tem conta: a resposta é igual e o e-mail de cadastro, de recuperação e de reenvio sai em segundo plano, para o tempo de resposta não revelar a conta. Por isso uma falha do provedor de e-mail nesses fluxos não vira erro na resposta (só uma rota autenticada, a ser nomeada no desenho, poderia mostrar a falha; nenhum fluxo sem sessão mostra): vira um evento `auth_email_failed`, sem endereço nem token, com alerta ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Para quem tem conta Google e tenta se cadastrar com o mesmo e-mail, sai um aviso de que a conta já existe (idempotente por usuário e por dia).
+- O token de verificação, de recuperação e de desbloqueio chega ao app no **fragmento** do link, nunca no caminho nem na consulta. O token nunca trafega em URL de documento nem em log: vai no corpo de um POST. O servidor nunca monta link com o token na URL de um documento. Os valores `token`, `newPassword`, `currentPassword` e `email` são redigidos dos logs.
 
 ## Senhas
 
@@ -15,8 +16,20 @@
 - Se a consulta HIBP não puder ser concluída, rejeitar a criação/alteração da senha com erro temporário genérico. Não armazenar a senha sem a verificação.
 - Não executar a consulta HIBP durante login: ela é necessária quando a senha é criada ou alterada, não em cada autenticação.
 - Reset de senha revoga todas as sessões Better Auth do usuário.
+- **Definir** (`set-password`) ou **trocar** (`change-password`) a senha exige uma sessão com login nos últimos 15 minutos. A troca e a definição revogam as outras sessões do usuário e troca a época de autorização, o que revoga as concessões de acesso offline vivas; a sessão de quem trocou continua (com token novo) e o token não é devolvido ao JavaScript. As duas operações geram auditoria de segurança (`password_set`, `password_changed`) e um e-mail de aviso à pessoa. O reset de senha grava `password_reset_completed` e limpa o contador de bloqueio.
 
 A política de tamanho, Unicode, composição e expiração segue as recomendações de senhas do [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html). A consulta de senhas comprometidas segue a [API oficial Pwned Passwords](https://haveibeenpwned.com/API/v3). O limite máximo de 128 pontos de código é a escolha do produto e supera o mínimo de capacidade recomendado pelo NIST. O NIST também recomenda bloquear valores comuns, esperados ou específicos do serviço; o plano exige a consulta HIBP, e a necessidade de uma lista adicional fica para revisão antes do go-live.
+
+## Bloqueio de conta por tentativas
+
+> As regras desta seção, das de aceite e da troca de senha valem a partir dos PRs P2, P4, P7 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md); o código ainda não as aplica (estado em [status-implementacao](../../doc/status-implementacao.md)).
+
+- "Bloqueio de conta" é o termo das regras e do código; a pessoa vê "entrada pausada", porque só a entrada por senha daquele e-mail fica parada, e não a conta.
+- Cinco falhas de login por senha na mesma janela de 15 minutos travam a entrada por senha daquele e-mail por 15 minutos. O contador é por e-mail digitado, exista a conta ou não, e guarda só um HMAC do e-mail normalizado (a chave funde tudo o que o Better Auth funde para achar o usuário; o formato é validado antes), sem e-mail em claro, ID de usuário nem IP.
+- A tentativa é reservada antes de conferir a senha, para que nem requisições paralelas passem de cinco conferências por janela. Uma tentativa reservada e perdida por queda do Worker conta como falha.
+- Uma conta travada recebe 429 com o tempo de espera, igual exista a conta ou não. Só quando a conta existe sai um e-mail de desbloqueio, em segundo plano, com token de 32 bytes aleatórios guardado só como SHA-256, válido por 1 hora e no máximo um por trava. O token de desbloqueio é de uso único; repeti-lo dentro da hora não zera o contador de novo. O bloqueio cobre só o login por e-mail e senha, não `change-password` nem `verify-password`.
+- Entrar com sucesso, redefinir a senha, ou acertar a senha com o e-mail ainda não verificado, zera o contador. O login pelo Google não passa por ele e não é afetado.
+- Uma linha do contador dura no máximo 1 dia mais 1 hora ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Quem conhece o e-mail de alguém pode travar a entrada por senha dele de 15 em 15 minutos: risco aceito; a pessoa ainda entra pelo Google, desbloqueia pelo e-mail ou redefine a senha.
 
 ## Sessões
 
@@ -42,9 +55,25 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 
 - Antes de encaminhar signup, login por senha, solicitação/conclusão de reset e reenvio de verificação, o Worker exige um token Turnstile de uso único validado pelo Siteverify. O servidor confere a ação esperada para a rota e o hostname de `BETTER_AUTH_BASE_URL`; o cliente não é autoridade para esses valores.
 - O token vem no header `x-turnstile-token`; não registrar nem devolver esse valor. Sem token/configuração, com token inválido, ou se a validação externa estiver indisponível, não processar a operação.
+- O login social tem limitador próprio por IP (20 por 60 segundos), que cobre também o retorno do Google e não depende da flag de proteção das rotas de senha; o excesso no retorno do Google é redirecionado ao app com um indicador de limite, não respondido em JSON. Sem o binding, 503.
+- A CSP que libera o Turnstile acrescenta apenas `https://challenges.cloudflare.com` a `script-src` e a `frame-src`, e vale só nas rotas que usam o desafio; o resto do app não a recebe. A site key é pública e vem do Worker. O hostname e a ação continuam conferidos no servidor.
 - Aplicar um limite geral por IP nas rotas protegidas e limite menor nas rotas que podem enviar email. As chaves usam HMAC e não incluem o IP em claro.
 - Os bindings nativos Workers Rate Limiting mantêm contadores aproximados por localidade Cloudflare, não um contador global. Eles são uma camada de contenção; não tratar o resultado como quota global ou como única defesa contra abuso distribuído.
-- A autenticação por email/senha permanece desligada até Turnstile, bindings, site key do cliente, Resend e domínio de envio estarem configurados. A interface de login é pré-go-live; ela deve obter um token novo para cada envio e transmiti-lo no header definido.
+- A autenticação por email/senha permanece desligada até Turnstile, bindings, site key do cliente, Resend e domínio de envio estarem configurados. A interface de entrada deve obter um token novo para cada envio e transmiti-lo no header definido.
+
+## Retorno após a entrada
+
+- O destino depois de entrar viaja dentro do `callbackURL` do app e é validado de novo na volta (forma exata no ADR 0100). Só vale caminho do próprio app, decodificado antes da validação, de até 200 caracteres, de rota conhecida, sem caracteres de controle e nunca `/entrar`, `/api` ou `/rpc`. Um valor inválido vira `/`. Um destino que não seja do app nunca vira `Location`.
+- O login social tem `errorCallbackURL` do app. Quem criou a conta por e-mail e senha e tenta o Google recebe o erro genérico, porque o vínculo implícito continua proibido.
+
+## Aceite dos termos e da política de privacidade
+
+- O aceite dos termos de uso e da política de privacidade é **por usuário**, registrado por versão de cada documento com o SHA-256 do texto aceito e o instante do banco. Só se acrescenta: nada é alterado ou apagado. Não guarda IP nem navegador, e a linha não tem chave estrangeira para o usuário, para sobreviver à exclusão da conta ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)).
+- O cadastro por senha só é aceito com as versões vigentes dos dois documentos, e sem elas não cria o usuário. O primeiro acesso por Google e cada versão abaixo do piso `minAcceptedVersion` pedem o aceite antes de liberar o uso.
+- **O servidor é o único ponto de controle**, em todo pedido autenticado (RPC, sync, lease e rotas `/api/*` autenticadas), exceto uma lista fixa, numa constante testada contra o router: as rotas de entrada, o próprio aceite, as páginas legais, os pedidos do titular de privacidade (exportação e exclusão) e `device.list`. Sync, lease e qualquer escrita nunca ficam isentos. Nas rotas `/api/*` a recusa é 403, nunca 503. O cliente não é barreira. O controle só liga (`LEGAL_ACCEPTANCE_ENFORCED`) depois de o cliente que trata a recusa sem apagar a cópia local estar publicado e atualizado pelo service worker.
+- A recusa por aceite pendente **não é recusa de sessão**: não encerra a sessão, não apaga a cópia local, o lease nem a fila de comandos, e não rejeita comando nenhum. A sincronização só pausa até o aceite ([ADR 0047](../adr/0047-abrir-o-app-sem-rede.md), emenda).
+- A guarda do registro de aceite é de 10 anos depois do fim do contrato, que é a data em que a conta do usuário é excluída; a rotina de exclusão de conta é quem grava o `blockedUntil` nesse evento.
+- Subir só a versão vigente de um texto não obriga novo aceite; quem sobe `minAcceptedVersion` é decisão do responsável com o jurídico.
 
 ## Vínculo de contas
 

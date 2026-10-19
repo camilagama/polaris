@@ -169,6 +169,8 @@ A suíte acima já exercita, em iPhone e Android reais e sem dados reais, o arma
 
 O servidor vai ao ar antes do app que usa um campo novo de comando: o payload da venda é estrito e um app mais novo que o servidor tem a venda recusada (`invalid_payload`). Nunca remova nem reinterprete um campo de comando; o arquivo dourado de payloads falha quando um construtor muda.
 
+O controle de aceite legal do servidor (`LEGAL_ACCEPTANCE_ENFORCED`, [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)) é o contrário: o **cliente** com o ramo que trata `data.reason` antes de `isSessionRefusal` vai antes, e a flag só liga depois do prazo de atualização do service worker; a flag offline segue desligada em produção até lá ([item 19 do checklist de release](./release-checklist.md#19-ordem-do-controle-de-aceite-legal-cliente-primeiro-flag-depois-block)).
+
 ## Rollback ou forward-fix
 
 Os gates não alteram recursos persistentes: use apenas a branch descartável própria e apague-a ao final (`neon branches delete <nome> --project-id green-tooth-16857010 --profile junior-pessoal`). Uma falha de gate é corrigida com um commit novo; nunca com reset ou force-push.
