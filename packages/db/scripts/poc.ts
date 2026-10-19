@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import { dbPocOperations } from "../src/schema/poc";
 
+// This POC creates a TEMP TABLE, so it only runs with the database owner on a disposable database, never with a runtime
+// role: since migration 0077 no runtime role has TEMPORARY on the database (ADR 0093).
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {

@@ -216,4 +216,15 @@ BEGIN
   EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
 END
 $$;
-
+--> statement-breakpoint
+-- REVOKE without the privilege to revoke only raises a WARNING (a migrator that is not the owner, as on Neon, would pass unnoticed): confirm the end state and fail the migration if PUBLIC still has either privilege
+DO $$
+BEGIN
+  IF has_database_privilege('public', current_database(), 'TEMPORARY') THEN
+    RAISE EXCEPTION 'migration 0077: PUBLIC still has TEMPORARY on database %', current_database();
+  END IF;
+  IF has_schema_privilege('public', 'public', 'CREATE') THEN
+    RAISE EXCEPTION 'migration 0077: PUBLIC still has CREATE on schema public';
+  END IF;
+END
+$$;
