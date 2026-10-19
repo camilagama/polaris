@@ -149,13 +149,15 @@ export function clearOrganizationsCache(
 
 /**
  * Whether a failed read of the organizations may be answered from the cache: the
- * network or the server is down, not "the session is over" or "not allowed".
+ * network or the server is down or busy (429, 5xx), not "the session is over" or
+ * "not allowed" (AC-11 of the sign-in corte: only 401, 403 and "no session" end the offline open).
  */
 export function canUseCachedOrganizations(error: unknown): boolean {
   const code = rpcErrorCode(error);
   return (
     code === undefined ||
     code === "SERVICE_UNAVAILABLE" ||
+    code === "TOO_MANY_REQUESTS" ||
     code === "INTERNAL_SERVER_ERROR"
   );
 }

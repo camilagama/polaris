@@ -453,6 +453,8 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     expect(await stored(page, SESSION_USER_KEY)).toBeNull();
     expect(await collectionFiles(page)).toBe(0);
     expect(await outboxCommands(page)).toEqual(queued);
+    // the copy of the organizations goes with the session, even if the person only closes the tab
+    expect(await stored(page, "polaris.offline.organizations")).toBeNull();
   });
 
   test("get-session 429: o app segue com o usuário lembrado e o lease próprio, sem registrar outro aparelho", async ({

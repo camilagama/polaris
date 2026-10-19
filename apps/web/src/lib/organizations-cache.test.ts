@@ -102,6 +102,7 @@ describe("answering a failed read from the device's copy", () => {
     expect(canUseCachedOrganizations(rpcError("INTERNAL_SERVER_ERROR"))).toBe(
       true
     );
+    expect(canUseCachedOrganizations(rpcError("TOO_MANY_REQUESTS"))).toBe(true);
     for (const code of ["UNAUTHORIZED", "FORBIDDEN", "BAD_REQUEST"]) {
       expect(canUseCachedOrganizations(rpcError(code))).toBe(false);
     }
@@ -152,7 +153,7 @@ describe("answering a failed read from the device's copy", () => {
     }
   });
 
-  it("does not take a 429 or a 5xx for a refusal of the session (AC-11)", () => {
+  it("opens from the copy on a 429 or a 5xx, never taking them for a refusal of the session (AC-11)", () => {
     for (const error of [
       rpcError("TOO_MANY_REQUESTS"),
       rpcError("SERVICE_UNAVAILABLE"),
@@ -165,7 +166,8 @@ describe("answering a failed read from the device's copy", () => {
         offlineEnabled: true,
         preferredId: null,
       });
-      expect(outcome.load.status).not.toBe("session_ended");
+      expect(outcome.fromCache).toBe(true);
+      expect(outcome.load.status).toBe("ready");
     }
   });
 });

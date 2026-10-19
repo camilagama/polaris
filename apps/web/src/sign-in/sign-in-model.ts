@@ -12,6 +12,9 @@ export interface AuthMethodsView {
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 
 const GOOGLE_AUTHORIZATION_HOST = "accounts.google.com";
+/** A network that is "online" but stuck must not hide the button forever: the lookups give up and the screen is ready. */
+const LOOKUP_TIMEOUT_MS = 6000;
+const START_TIMEOUT_MS = 15_000;
 
 /** The answer of `/api/auth-methods`, or null when it is not what the server promises. */
 export function parseAuthMethods(body: unknown): AuthMethodsView | null {
@@ -46,6 +49,7 @@ export async function loadAuthMethods(
     const response = await fetcher("/api/auth-methods", {
       cache: "no-store",
       credentials: "same-origin",
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
     return response.ok ? parseAuthMethods(await response.json()) : null;
   } catch {
@@ -59,6 +63,7 @@ export async function hasSession(fetcher: Fetcher = fetch): Promise<boolean> {
     const response = await fetcher("/api/auth/get-session", {
       cache: "no-store",
       credentials: "same-origin",
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
     if (!response.ok) {
       return false;
@@ -115,6 +120,7 @@ export async function startGoogleSignIn(
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
       method: "POST",
+      signal: AbortSignal.timeout(START_TIMEOUT_MS),
     });
   } catch {
     return { failure: "indisponivel", status: "failed" };

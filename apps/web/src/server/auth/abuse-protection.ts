@@ -169,7 +169,7 @@ async function checkEmailSendRateLimit(
 const socialStartSuffix = "/sign-in/social";
 const socialCallbackSuffix = "/callback/google";
 const socialRateLimitedLocation = "/entrar?erro=limite";
-const socialUnavailableLocation = "/entrar?erro=indisponivel";
+export const SOCIAL_UNAVAILABLE_LOCATION = "/entrar?erro=indisponivel";
 
 type SocialAuthStep = "callback" | "start";
 
@@ -225,7 +225,7 @@ export async function protectSocialAuthRequest(
   // The callback is a navigation of the browser: a 503 there would show JSON, so it goes back to the sign-in page.
   const unavailable = () =>
     step === "callback"
-      ? redirectToSignIn(socialUnavailableLocation)
+      ? redirectToSignIn(SOCIAL_UNAVAILABLE_LOCATION)
       : jsonError(503, "auth_rate_limit_unavailable", requestId);
 
   const secret = bindings.BETTER_AUTH_SECRET;

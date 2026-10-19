@@ -6,6 +6,7 @@ import {
   isAuthAbuseProtectionApplicable,
   isSocialAuthRateLimitApplicable,
   protectAuthRequest,
+  SOCIAL_UNAVAILABLE_LOCATION,
   protectSocialAuthRequest,
 } from "./auth/abuse-protection";
 import {
@@ -24,6 +25,7 @@ import { securityHeadersMiddleware } from "./middleware/security-headers";
 import {
   logServerError,
   logServerErrorFromContext,
+  logServerEvent,
 } from "./observability/server-log";
 import { authMethodsRoutes } from "./routes/auth-methods";
 import { createBillingWebhookRoutes } from "./routes/billing-webhooks";
@@ -128,6 +130,13 @@ export function createServerApp({
         context.get("requestId")
       );
       if (socialResponse !== undefined) {
+        // The callback turns a failing limiter into a redirect, which a 5xx alert no longer sees: say it here.
+        if (
+          socialResponse.status === 503 ||
+          socialResponse.headers.get("location") === SOCIAL_UNAVAILABLE_LOCATION
+        ) {
+          logServerEvent("auth_social_rate_limit_unavailable", context);
+        }
         return context.newResponse(socialResponse.body, socialResponse);
       }
     }

@@ -55,6 +55,11 @@
   border-radius: 0.55rem;
 }
 
+.sign-in-live {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .sign-in-support,
 .sign-in-reason,
 .sign-in-status,

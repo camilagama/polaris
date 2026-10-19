@@ -241,6 +241,18 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     await expect(googleButton(page)).toHaveCount(0);
   });
 
+  test("com motivo=sessao e uma sessão que o servidor ainda aceita no lookup, a tela fica e oferece o botão: nunca um laço entre o app e /entrar", async ({
+    page,
+  }) => {
+    const server = newServer({ session: true });
+    await serve(page, server);
+    await page.goto("/entrar?motivo=sessao&voltar=%2Fsales");
+    await expect(googleButton(page)).toBeEnabled();
+    expect(new URL(page.url()).pathname).toBe("/entrar");
+    await page.waitForTimeout(800);
+    expect(new URL(page.url()).pathname).toBe("/entrar");
+  });
+
   test("a volta do Google mostra 'Entrando…' até o redirecionamento, sem o botão voltar a piscar (AC-4)", async ({
     page,
   }) => {

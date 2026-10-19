@@ -15,7 +15,7 @@ function hasUnsentInput(root: ParentNode): boolean {
   );
   return [...fields].some((field) => {
     if (field instanceof HTMLInputElement) {
-      const filled = ["email", "number", "search", "tel", "text", "url"];
+      const filled = ["email", "number", "tel", "text", "url"];
       return filled.includes(field.type) && field.value.trim().length > 0;
     }
     return field.value.trim().length > 0;
@@ -45,8 +45,12 @@ export function SessionEndedNotice({
   const runtime = useOfflineRuntime();
   const [leaving, setLeaving] = useState(false);
   const [unsent, setUnsent] = useState(false);
+  // looked at again whenever the person types, so a notice that appeared while they were away still tells the truth
   useEffect(() => {
-    setUnsent(hasUnsentInput(document));
+    const look = () => setUnsent(hasUnsentInput(document));
+    look();
+    document.addEventListener("input", look);
+    return () => document.removeEventListener("input", look);
   }, []);
   const handleClick = useCallback(() => {
     setLeaving(true);
@@ -62,6 +66,7 @@ export function SessionEndedNotice({
       <p>{SESSION_ENDED_MESSAGE}</p>
       {unsent ? <p>{UNSENT_INPUT_WARNING}</p> : null}
       <button
+        aria-busy={leaving}
         className="primary-button"
         disabled={leaving}
         onClick={handleClick}

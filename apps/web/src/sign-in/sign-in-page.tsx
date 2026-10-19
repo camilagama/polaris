@@ -94,7 +94,6 @@ export function SignInPage() {
   const [failure, setFailure] = useState<SignInFailure | null>(null);
   const [reconnected, setReconnected] = useState(false);
   const startedRef = useRef<boolean>(false);
-  const checkedRef = useRef<boolean>(false);
   const alertRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
@@ -118,13 +117,25 @@ export function SignInPage() {
     };
   }, []);
 
+  // The page can come back from the browser's cache (the Back button from Google, mostly on iOS) with the
+  // button still pending: it is ready again.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        startedRef.current = false;
+        setStarting(false);
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   // Someone who is already in goes straight to the destination; the same lookup is what a return from
   // Google meets. With no connection nothing goes to the network: the screen says so and waits.
   useEffect(() => {
-    if (!online || checkedRef.current) {
+    if (!online) {
       return;
     }
-    checkedRef.current = true;
     let current = true;
     const slowTimer = setTimeout(() => setSlowCheck(true), SLOW_CHECK_MS);
     Promise.all([hasSession(), loadAuthMethods()])
@@ -133,7 +144,9 @@ export function SignInPage() {
           return;
         }
         clearTimeout(slowTimer);
-        if (inside) {
+        // `motivo=sessao` says the app was just refused with this very session: going back to `voltar` would
+        // be refused again and bring the person here again, so the screen stays and offers the button
+        if (inside && search.reason !== "sessao") {
           setPhase("entering");
           window.location.replace(search.returnTo ?? "/");
           return;
@@ -151,7 +164,7 @@ export function SignInPage() {
       current = false;
       clearTimeout(slowTimer);
     };
-  }, [online, search.returnTo]);
+  }, [online, search.reason, search.returnTo]);
 
   const handleGoogle = useCallback(() => {
     if (startedRef.current) {
@@ -252,19 +265,20 @@ export function SignInPage() {
             </button>
           ) : null}
 
-          {online ? null : (
-            <p className="sign-in-offline">
-              <span aria-hidden="true" className="sign-in-alert-icon">
-                ×
-              </span>
-              <span>{SIGN_IN_OFFLINE}</span>
-            </p>
-          )}
-          {online && reconnected ? (
-            <p className="sign-in-status" role="status">
-              {SIGN_IN_BACK_ONLINE}
-            </p>
-          ) : null}
+          {/* always mounted, so a screen reader announces the change when the connection goes or returns */}
+          <div className="sign-in-live" role="status">
+            {online ? null : (
+              <p className="sign-in-offline">
+                <span aria-hidden="true" className="sign-in-alert-icon">
+                  ×
+                </span>
+                <span>{SIGN_IN_OFFLINE}</span>
+              </p>
+            )}
+            {online && reconnected ? (
+              <p className="sign-in-status">{SIGN_IN_BACK_ONLINE}</p>
+            ) : null}
+          </div>
 
           <LegalLinks />
         </section>

@@ -613,6 +613,32 @@ describe("Google sign-in rate limit", () => {
       expect(authHandler).not.toHaveBeenCalled();
     });
 
+    it("logs the failing limiter on the callback, which the 302 hides from a 5xx alert, without the IP", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const testApp = createServerApp({
+        authHandler: vi.fn(async () => Response.json({ reached: true })),
+      });
+      const { AUTH_SOCIAL_RATE_LIMITER: _removed, ...rest } = appBindings();
+
+      await testApp.request(
+        "/api/auth/callback/google?code=fake-code&state=fake-state",
+        { headers: { "cf-connecting-ip": "203.0.113.17" } },
+        rest as WorkerBindings
+      );
+
+      expect(warn).toHaveBeenCalledOnce();
+      const [entry] = warn.mock.calls[0] ?? [];
+      expect(entry).toMatchObject({
+        event: "auth_social_rate_limit_unavailable",
+        method: "GET",
+      });
+      expect(JSON.stringify(entry)).not.toContain("203.0.113.17");
+      expect(JSON.stringify(entry)).not.toContain("fake-code");
+      warn.mockRestore();
+    });
+
     it("answers 503 on the start and a 302 to the sign-in page on the callback when the binding is missing", async () => {
       const authHandler = vi.fn(async () => Response.json({ reached: true }));
       const testApp = createServerApp({ authHandler });

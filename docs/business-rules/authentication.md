@@ -63,7 +63,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 
 ## Retorno após a entrada
 
-- O destino depois de entrar viaja dentro do `callbackURL` do app e é validado de novo na volta (forma exata no ADR 0100). Só vale caminho do próprio app, decodificado antes da validação, de até 200 caracteres, sem caracteres de controle e nunca `/entrar`, `/api` ou `/rpc`. Um valor inválido vira `/`. Um destino que não seja do app nunca vira `Location`.
+- O destino depois de entrar viaja dentro do `callbackURL` do app e é validado de novo na volta (forma exata no ADR 0100). Só vale caminho do próprio app, decodificado antes da validação, de até 200 caracteres, sem caracteres de controle e nunca `/entrar` nem um caminho que o Worker responde sozinho (`/api`, `/rpc`, `/health`, `/ready`, `/webhooks`). Um valor inválido vira `/`. Um destino que não seja do app nunca vira `Location`.
 - O login social tem `errorCallbackURL` do app. Quem criou a conta por e-mail e senha e tenta o Google recebe o erro genérico, porque o vínculo implícito continua proibido.
 
 ## Aceite dos termos e da política de privacidade
