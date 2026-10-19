@@ -1,4 +1,7 @@
-import type { BillingFact } from "@polaris/domain/billing/facts";
+import type {
+  ProviderBillingEvent,
+  UnresolvedProviderEvent,
+} from "@polaris/billing/provider-port";
 import type { WorkerBindings } from "../environment";
 
 /**
@@ -31,13 +34,28 @@ export class WebhookMalformedError extends Error {
   }
 }
 
-export interface ParsedBillingEvent {
-  fact: BillingFact;
-  /** The provider's own ID of the event: the key that makes a redelivery a no-op. */
-  providerEventId: string;
-  /** The subscription reference at the provider that the event is about. */
-  providerRef: string;
+/**
+ * How long a delivery the adapter could not resolve (the resource was not found,
+ * or came back in a shape the provider does not document) is refused with a 503
+ * so the provider sends it again. A provider pauses a webhook that keeps
+ * failing (Asaas after 15 failures in a row), so an older one is acknowledged
+ * and logged as an error with its IDs, for the reconciliation to recover.
+ */
+const PROVIDER_RETRY_WINDOW_MS = 30 * 60_000;
+
+/** True while an event is recent enough to be refused for a retry. */
+export function withinRetryWindow(occurredAt: Date, now = new Date()): boolean {
+  return now.getTime() - occurredAt.getTime() <= PROVIDER_RETRY_WINDOW_MS;
 }
+
+/** A fact with the provider's event ID and the subscription reference it is about. */
+export type ParsedBillingEvent = ProviderBillingEvent;
+
+/**
+ * An event whose resource the provider did not find when the adapter read it
+ * back (AC-48): only IDs. It is never acknowledged as handled.
+ */
+export type UnresolvedBillingEvent = UnresolvedProviderEvent;
 
 interface WebhookRequest {
   bindings: WorkerBindings;
@@ -51,11 +69,14 @@ export interface BillingProviderAdapter {
    * Verifies the request first (throwing `WebhookRejectedError`), then reads
    * the payload. A payload that carries nothing the lifecycle needs (a
    * notification of another kind) returns an empty list: it is acknowledged and
-   * dropped.
+   * dropped. An event whose resource could not be found comes back as an
+   * `UnresolvedBillingEvent`.
    */
   parse: (
     request: WebhookRequest
-  ) => Promise<ParsedBillingEvent[]> | ParsedBillingEvent[];
+  ) =>
+    | Promise<(ParsedBillingEvent | UnresolvedBillingEvent)[]>
+    | (ParsedBillingEvent | UnresolvedBillingEvent)[];
   /** The provider name stored with every event, as in the route (`/webhooks/billing/:provider`). */
   readonly provider: string;
 }

@@ -1179,6 +1179,17 @@ Fecha a parte do PR79 e do PR81 que não depende de um provedor: o caminho públ
 | Verificação local | Concluída | `bun run format:check`, `lint`, `typecheck`, `boundaries`, `knip`, `test` (146 arquivos, 1656 testes) e `build`; sem mudança de schema nem de migration, então `db:generate` e os gates em branch Neon não se aplicam a este PR (a rota não tem acesso a banco além do repositório já provado no PR #93). |
 | Limites | Registrados | **Nenhum webhook é aceito ainda**: o registro de adaptadores está vazio até o PR77 e o PR78; nada foi provado contra um provedor real; a rota não tem limite de taxa próprio; o cron não foi exercitado em Cloudflare (implantação adiada pelo responsável). |
 
+### PR77, parte 1 — porta de saída, cliente e mapeador Asaas, adaptador de entrada (implementação e verificações locais concluídas; revisão e publicação: ver PR; merge espera o S1.3)
+
+Primeiro PR da cobrança real (desenho t088 e spikes t092, consolidados em 19/10/2026). Sem migration e sem comando do tenant: o checkout, a reconciliação, o reembolso e o cancelamento por comando vêm no PR seguinte.
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Decisões | Registradas | [ADR 0101](../docs/adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md) (número provisório): porta comum em `packages/billing`; o fato vem do recurso relido, nunca do corpo; allowlist de chaves; `periodEndsAt` = `originalDueDate` + ciclo; valor lido pelo texto-fonte do JSON; o ID do checkout (`checkoutSession`) como `providerRef`, porque o `externalReference` não passa para a assinatura (S1.3); URLs de retorno montadas no servidor. |
+| Código | Concluído | `packages/billing` (porta, cliente com trava de ambiente, mapeador, webhook, JSON exato); `packages/domain/src/billing/provider-period.ts`; adaptador `asaas` registrado; rota responde 503 a recurso não achado (AC-48, só IDs no log) e a provedor sem segredo; redação ganha `taxID`, `pixKey`, `emv`, `creditCardHolderInfo` e `creditCardToken`. |
+| Testes | Concluídos | Unidade do mapeador (uma linha por evento da tabela, AC-1c, AC-2 lado Asaas, AC-3, AC-5 com bordas de calendário), do cliente (AC-12), da porta (AC-42), do JSON e da redação; adaptador atrás da rota real (AC-1a, AC-48, 503 e alerta); teste opcional contra o sandbox (checkout criado e cancelado, 404 na releitura). |
+| Limites | Registrados | A linha `unresolved` em `billing_events` exige migration (PR de banco seguinte); até lá o 404 depende do reenvio do Asaas. O S1.3 (checkout concluído por uma pessoa) decide o campo do `providerRef` e é condição do merge. `charge_disputed` e `dispute_reversed` seguem a documentação (AC-17). Woovi continua 404 (PR78). |
+
 ### PR82 — Free acima do limite: variantes operacionais (implementação, gates, revisão independente e verificações locais concluídos; publicação: ver PR)
 
 Quem sai do Pro com mais variantes do que o Free permite mantém todas; só as variantes escolhidas (ou as vendidas mais recentemente, se não escolheu) recebem nova venda ou entrada de estoque. A tela de escolha vem com o PR80.

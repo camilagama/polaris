@@ -19,6 +19,7 @@
     "./billing/facts": "./src/billing/facts.ts",
     "./billing/grants": "./src/billing/grants.ts",
     "./billing/operational-selection": "./src/billing/operational-selection.ts",
+    "./billing/provider-period": "./src/billing/provider-period.ts",
     "./billing/subscription-state": "./src/billing/subscription-state.ts",
     "./economics/period-summary": "./src/economics/period-summary.ts",
     "./economics/sale-economics": "./src/economics/sale-economics.ts",
