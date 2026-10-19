@@ -29,6 +29,12 @@ export interface LogoutWorkspace {
   purge: (options: { discardPending: boolean }) => Promise<void>;
   /** Frees what was opened only to inspect this workspace; safe to call twice. */
   release?: () => Promise<void> | void;
+  /**
+   * Removes everything except the queue (the local collections, the lease), for a
+   * workspace nothing is reading when the logout is blocked by queued work.
+   * Safe to call twice; the queue is never touched.
+   */
+  scrub?: () => Promise<void>;
   /** Sends what is queued (the caller wires `syncOutbox`); rejects when there is no network. */
   trySync: () => Promise<unknown>;
 }
@@ -123,6 +129,11 @@ async function attemptLogoutUnreleased(
   }
   if (blocked.length > 0) {
     // Nothing is purged while any workspace still holds work: the person decides first.
+    // A workspace nothing is reading gives up its copy of the data, never its queue,
+    // blocked or not (an organization with an empty queue is not purged here, but its data goes).
+    await Promise.allSettled(
+      workspaces.map((workspace) => workspace.scrub?.())
+    );
     return { blocked, status: "blocked" };
   }
   for (const workspace of clear) {
