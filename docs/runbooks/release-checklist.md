@@ -109,7 +109,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 14. Formato do erro 9422 do binding IMAGES confirmado (BLOCK)
 
 - Critério: confirmar no Cloudflare real o formato do erro 9422 do binding `IMAGES` (ou provocá-lo e registrar) antes do go-live. Motivo: a documentação da Cloudflare não mostra como o binding expõe o 9422, e a detecção em `apps/web/src/server/media-image-pipeline.ts` é uma suposição (`code` numérico ou texto, o número 9422 na mensagem do erro e o cabeçalho `Cf-Resized: err=9422`). Se o formato real for outro, o fallback não dispara e, com a cota estourada, as miniaturas do ERP voltam 503 e o upload falha com 503 `media_processing_unavailable`, em vez de `media_transform_quota_exceeded`. Confirmar também que não há cobrança acima da franquia, que hoje só consta na documentação (ADR 0018).
-- Evidência: o formato observado (campo e valor, sem segredos), a data, quem leu e o ambiente. Se o formato diferir dos aceitos, o ajuste do código e do teste entra antes da promoção. **Proposta, pendente de decisão:** com o formato registrado uma vez, o item passa nas promoções seguintes citando esse registro, e só volta a ser conferido se a detecção ou o binding `IMAGES` mudar; a alternativa é conferir a cada promoção.
+- Evidência: o formato observado (campo e valor, sem segredos), a data, quem leu e o ambiente. Se o formato diferir dos aceitos, o ajuste do código e do teste entra antes da promoção.
+- Frequência (decisão do Arrascaeta): o item é conferido uma vez antes do go-live e de novo sempre que mudar a versão do binding `IMAGES` ou a `compatibility_date` do Worker. Fora esses casos, as promoções seguintes citam o registro vigente (formato, data, ambiente).
 
 ## Veredito
 
@@ -149,4 +150,3 @@ Cada uma está marcada no texto como proposta, pendente de decisão:
 4. Como fazer o smoke test do item 6.
 5. Como ler o SHA no host de deploy (item 8).
 6. Se uma execução anterior da suíte completa em Neon (a do fim da fase) vale como evidência do item 4, e se o nome `run-AAAA-MM-DD-<SHA curto>.md` é o adotado para o relatório.
-7. Se o item 14 (formato do erro 9422) vale para as promoções seguintes depois de registrado uma vez, ou é conferido a cada promoção.
