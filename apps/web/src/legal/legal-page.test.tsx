@@ -214,7 +214,7 @@ describe("the notice of the queue in the terms (V5)", () => {
     expect(section.indexOf('class="legal-callout"')).toBeLessThan(
       section.indexOf("<ul>")
     );
-    expect(section).toContain("a fila pode se perder");
+    expect(section).toContain("o que não foi enviado pode ser perdido");
   });
 });
 

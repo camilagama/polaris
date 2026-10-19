@@ -30,13 +30,13 @@ export const LEGAL_DOCUMENTS: Readonly<
   privacy: Object.freeze({
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "8a397a3b231d51eb13e19a34e084a22f26003d87dbee64a2e59f3638ee22cda4",
+    sha256: "ece2c5effc521484059d69dc56f9a1d53ac1362049cdae230d0d591ec2bfb5d4",
     version: 1,
   }),
   terms: Object.freeze({
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "026a940ce012315fc0ac337e1a6fd43417a0267df362fae4450ee5f9f87f8636",
+    sha256: "4c20fc3f0dd3ae768845de318134c92e20e0864923c0fab69cf85f2df1ef495c",
     version: 1,
   }),
 });

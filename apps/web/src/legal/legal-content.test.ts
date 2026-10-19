@@ -165,7 +165,7 @@ describe("the terms of use", () => {
     );
     expect(text).toContain("A tela avisa as datas ao encerrar.");
     expect(text).toContain(
-      "O Polaris ainda não confere a fila antes de encerrar"
+      "O Polaris ainda não confere o que está guardado nos aparelhos antes de encerrar"
     );
   });
 
@@ -307,7 +307,6 @@ describe("plain language (V4)", () => {
     const text = flat(privacy);
     expect(text).toContain("(identificador da requisição)");
     expect(text).toContain("(legítimo interesse, art. 7º, IX)");
-    expect(text).toContain("(cláusulas-padrão contratuais,");
     expect(text).toContain("(anonimização)");
     for (const term of [
       "identificador da requisição",
