@@ -5,6 +5,8 @@ import {
   Suspense,
   useEffect,
 } from "react";
+import { LegalApp } from "../legal/legal-app";
+import { resolveLegalRoute } from "../legal/legal-routes";
 import { OrganizationProvider } from "../lib/current-organization";
 import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
 import { getUpdateStore } from "../pwa/runtime";
@@ -127,7 +129,7 @@ function UpdateSlot() {
   return store ? <UpdateBanner store={store} /> : null;
 }
 
-export function App() {
+function StoreApp() {
   const route = resolveRoute(window.location.pathname);
   const { title } = route;
   useEffect(() => {
@@ -144,4 +146,10 @@ export function App() {
       </OrganizationProvider>
     </ErrorBoundary>
   );
+}
+
+/** The legal pages are public and stand apart from the store: no organization, no offline runtime. */
+export function App() {
+  const legalDocument = resolveLegalRoute(window.location.pathname);
+  return legalDocument ? <LegalApp document={legalDocument} /> : <StoreApp />;
 }

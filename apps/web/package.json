@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "LEGAL_DRAFT_BUILD=1 vite build",
     "build:offline-poc": "vite build --config vite.offline.config.ts --mode offline-poc --outDir dist/offline-poc",
     "check": "bun run typecheck",
     "dev": "vite --host 127.0.0.1",
