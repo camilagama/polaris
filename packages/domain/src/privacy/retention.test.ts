@@ -394,6 +394,38 @@ describe("approved periods", () => {
     ).toBe("2027-05-18T10:00:00.000Z");
   });
 
+  it("keep the legal acceptance 10 years after the account is deleted, decided by the user, and blocked until the deletion event writes the date", () => {
+    const policy = retentionPolicy("legal_acceptance");
+    expect(policy.status).toBe("aprovada");
+    expect(policy.approvedOn).toBe("2026-10-19");
+    expect(policy.period).toEqual({ kind: "calendar_months", months: 120 });
+    expect(policy.review).toEqual({
+      at: "2026-10-19",
+      by: "usuário (19/10/2026)",
+      state: "decidida",
+    });
+    expect(policy.legalReview).toBe("pending");
+    expect(pendingLegalReviews()).toContain("legal_acceptance");
+    // the instant given is the deletion of the account, which a routine that does not exist yet records as `blockedUntil`:
+    // the period does not count from the acceptance, and no job may use `retentionExpiry` for this class before that routine
+    expect(policy.blockedUntil).toBe("account_deletion_event");
+    expect(activeRetentionBlocker(policy)).toBe("account_deletion_event");
+    expect(RESOLVED_RETENTION_BLOCKERS).not.toContain("account_deletion_event");
+    expect("job" in policy).toBe(false);
+    expect(blockedPurgeJobs([{ class: "legal_acceptance" }])).toEqual([
+      "legal_acceptance",
+    ]);
+    expect(() => approvedRetention("legal_acceptance")).toThrow(
+      RetentionNotApprovedError
+    );
+    expect(
+      retentionExpiry(
+        "legal_acceptance",
+        new Date("2026-10-19T10:00:00.000Z")
+      ).toISOString()
+    ).toBe("2036-10-19T10:00:00.000Z");
+  });
+
   it("leave the provider backups to the provider's own rotation, in a window of 35 days", () => {
     const policy = retentionPolicy("provider_backups");
     expect(policy.status).toBe("aprovada");

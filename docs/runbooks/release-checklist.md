@@ -149,6 +149,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: o SHA e a data da publicação do cliente com o ramo novo; o prazo de atualização do service worker e a data em que passou; o valor lido de `LEGAL_ACCEPTANCE_ENFORCED` e de `VITE_OFFLINE_RUNTIME_ENABLED` em produção (só os valores booleanos, sem segredo); o p95 acrescentado pelo controle medido no staging (alvo de até 30 ms; acima disso, cache por sessão).
 - Severidade BLOCK: **decidida** pelo Arrascaeta em 19/10/2026.
 
+### 20. Deploy de produção com `CLOUDFLARE_ENV=production` (BLOCK)
+
+- Critério: o build de `apps/web` define `LEGAL_DRAFT_BUILD=1` por padrão (`apps/web/package.json`), e esse valor só deixa passar os marcadores `[preencher: ...]` das páginas legais quando não há ambiente nomeado. O deploy de produção define `CLOUDFLARE_ENV=production` no comando de build, e com ele o guarda legal recusa o build que ainda tenha marcador ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Sem essa variável, o build sai como rascunho e a produção publicaria os marcadores.
+- Evidência: o comando ou a configuração de build do deploy com `CLOUDFLARE_ENV=production` e o resultado do build de produção do SHA candidato (o build tem de falhar enquanto houver marcador, e passar depois da revisão jurídica).
+- Severidade BLOCK: proposta, pendente de decisão do responsável.
+
 ## Veredito
 
 Ordem de decisão:
@@ -181,7 +187,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 10, 14, 15, 16, 18 e 19, já decididos (hoje 15 BLOCK e 4 WARN) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 10, 14, 15, 16, 18 e 19, já decididos (hoje 16 BLOCK e 4 WARN) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

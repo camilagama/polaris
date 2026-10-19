@@ -582,6 +582,13 @@
       "when": 1792438536831,
       "tag": "0082_entrada_bloqueio_de_login",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1792441668820,
+      "tag": "0083_entrada_aceite_legal",
+      "breakpoints": true
     }
   ]
 }
