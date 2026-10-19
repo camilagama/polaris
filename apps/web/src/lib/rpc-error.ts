@@ -1,3 +1,4 @@
+import { SESSION_ENDED_MESSAGE } from "./session-ended-text";
 /** The oRPC error code (BAD_REQUEST, CONFLICT, ...), when the error has one. */
 export function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
@@ -42,7 +43,7 @@ export function isDefiniteRpcRejection(error: unknown): boolean {
 export function readErrorMessage(error: unknown, subject: string): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para continuar.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

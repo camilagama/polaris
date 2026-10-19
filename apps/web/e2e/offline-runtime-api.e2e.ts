@@ -365,7 +365,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
 
     // session_changed: the runtime stops, the app reads the organizations again and the server says no
     await expect(
-      page.getByText("Sua sessão não está ativa. Entre novamente").first()
+      page.getByText("Sua sessão acabou. Entre de novo para continuar.").first()
     ).toBeVisible({ timeout: 20_000 });
     expect(server.pushed).toEqual([]); // a queue is never pushed for a session the server denies
     expect(await stored(page, SESSION_USER_KEY)).toBeNull();
@@ -392,6 +392,45 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     );
   });
 
+  test("sessão encerrada com duas operações na fila: 'Entrar de novo' vai a /entrar sem passar pelo Sair, e a fila continua com as mesmas duas (AC-18)", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    let signOutCalls = 0;
+    await page.route("**/api/auth/sign-out", (route) => {
+      signOutCalls += 1;
+      return route.fulfill({ body: "{}", contentType: "application/json" });
+    });
+    await openSales(page, server);
+    await queueSales(page, 2);
+    const queued = await outboxCommands(page);
+    expect(queued).toHaveLength(2);
+
+    server.sessionUser = null;
+    await page.context().setOffline(false);
+    await expect(
+      page.getByText("Sua sessão acabou. Entre de novo para continuar.").first()
+    ).toBeVisible({ timeout: 20_000 });
+    // the notice does not take the person anywhere by itself
+    expect(new URL(page.url()).pathname).toBe("/sales");
+
+    await page.getByRole("button", { name: "Entrar de novo" }).click();
+    await page.waitForURL("**/entrar?motivo=sessao&voltar=/sales");
+    await expect(
+      page.getByRole("heading", { name: "Entrar no Polaris" })
+    ).toBeVisible();
+    expect(signOutCalls).toBe(0);
+    // the work nobody else can redo is exactly where it was
+    expect(await outboxCommands(page)).toEqual(queued);
+    expect(
+      await page.evaluate(() =>
+        window.localStorage.getItem("polaris.offline.organizations")
+      )
+    ).toBeNull();
+  });
+
   test("push 401 com duas operações na fila: o lease e as coleções são apagados, a fila fica", async ({
     page,
   }) => {
@@ -408,12 +447,14 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await page.context().setOffline(false);
 
     await expect(
-      page.getByText("Sua sessão não está ativa. Entre novamente").first()
+      page.getByText("Sua sessão acabou. Entre de novo para continuar.").first()
     ).toBeVisible({ timeout: 20_000 });
     expect(await stored(page, leaseKey(user))).toBeNull();
     expect(await stored(page, SESSION_USER_KEY)).toBeNull();
     expect(await collectionFiles(page)).toBe(0);
     expect(await outboxCommands(page)).toEqual(queued);
+    // the copy of the organizations goes with the session, even if the person only closes the tab
+    expect(await stored(page, "polaris.offline.organizations")).toBeNull();
   });
 
   test("get-session 429: o app segue com o usuário lembrado e o lease próprio, sem registrar outro aparelho", async ({

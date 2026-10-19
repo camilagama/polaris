@@ -129,6 +129,11 @@ export function resolveRoute(pathname: string): ResolvedRoute {
     : { kind: "not-found", title: "Página não encontrada" };
 }
 
+/** `/entrar` is the sign-in screen: it lives outside the shell, so it is not one of the routes above. */
+export function isSignInPath(pathname: string): boolean {
+  return (pathname.replace(trailingSlashes, "") || "/") === "/entrar";
+}
+
 export function documentTitle(title: string): string {
   return `${title} · Polaris`;
 }

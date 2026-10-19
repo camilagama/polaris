@@ -31,6 +31,7 @@ import {
   formatInstant,
 } from "../lib/format";
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 /* -------------------------------------------------------------------------- */
 /* Types and constants                                                        */
@@ -486,7 +487,7 @@ export type CatalogView =
 export function loadErrorMessage(error: unknown, subject: string): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para continuar.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -1823,10 +1824,7 @@ function failure(
 function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
   switch (code) {
     case "UNAUTHORIZED":
-      return failure(
-        "unauthorized",
-        "Sua sessão não está ativa. Entre novamente e confirme a venda; os dados continuam no formulário."
-      );
+      return failure("unauthorized", SESSION_ENDED_MESSAGE);
     case "FORBIDDEN":
       return failure(
         "forbidden",

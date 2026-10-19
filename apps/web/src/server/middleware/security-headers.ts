@@ -7,8 +7,9 @@ import type { MiddlewareHandler } from "hono";
 
 /**
  * Origins the SPA shell opens beyond its own, rendered into public/_headers (the Worker does not run for
- * the shell). Empty: the app loads and connects to itself only. Turning an error reporter on adds its
- * ingest origin here, in the pull request that enables it (ADR 0090).
+ * the shell). Empty: the app loads and connects to itself only. The browser Sentry does not add its origin
+ * here: the host is part of the DSN, which stays out of the repository, so a build with `VITE_SENTRY_DSN`
+ * rewrites `_headers` in its output instead (pwa/sentry-build.ts, ADR 0098).
  */
 export const APP_SHELL_SECURITY_OPTIONS: SecurityHeadersOptions = {};
 

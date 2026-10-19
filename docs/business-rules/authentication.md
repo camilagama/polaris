@@ -55,7 +55,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 
 - Antes de encaminhar signup, login por senha, solicitação/conclusão de reset e reenvio de verificação, o Worker exige um token Turnstile de uso único validado pelo Siteverify. O servidor confere a ação esperada para a rota e o hostname de `BETTER_AUTH_BASE_URL`; o cliente não é autoridade para esses valores.
 - O token vem no header `x-turnstile-token`; não registrar nem devolver esse valor. Sem token/configuração, com token inválido, ou se a validação externa estiver indisponível, não processar a operação.
-- O login social tem limitador próprio por IP (20 por 60 segundos), que cobre também o retorno do Google e não depende da flag de proteção das rotas de senha; o excesso no retorno do Google é redirecionado ao app com um indicador de limite, não respondido em JSON. Sem o binding, 503.
+- O login social tem limitador próprio por IP (20 por 60 segundos), que cobre também o retorno do Google e não depende da flag de proteção das rotas de senha; o excesso no retorno do Google é redirecionado ao app com um indicador de limite, não respondido em JSON. Sem o binding (ou com o limitador falhando), o início responde 503 e o retorno do Google é redirecionado ao app com um indicador de indisponibilidade.
 - A CSP que libera o Turnstile acrescenta apenas `https://challenges.cloudflare.com` a `script-src` e a `frame-src`, e vale só nas rotas que usam o desafio; o resto do app não a recebe. A site key é pública e vem do Worker. O hostname e a ação continuam conferidos no servidor.
 - Aplicar um limite geral por IP nas rotas protegidas e limite menor nas rotas que podem enviar email. As chaves usam HMAC e não incluem o IP em claro.
 - Os bindings nativos Workers Rate Limiting mantêm contadores aproximados por localidade Cloudflare, não um contador global. Eles são uma camada de contenção; não tratar o resultado como quota global ou como única defesa contra abuso distribuído.
@@ -63,7 +63,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 
 ## Retorno após a entrada
 
-- O destino depois de entrar viaja dentro do `callbackURL` do app e é validado de novo na volta (forma exata no ADR 0100). Só vale caminho do próprio app, decodificado antes da validação, de até 200 caracteres, de rota conhecida, sem caracteres de controle e nunca `/entrar`, `/api` ou `/rpc`. Um valor inválido vira `/`. Um destino que não seja do app nunca vira `Location`.
+- O destino depois de entrar viaja dentro do `callbackURL` do app e é validado de novo na volta (forma exata no ADR 0100). Só vale caminho do próprio app, decodificado antes da validação, de até 200 caracteres, sem caracteres de controle e nunca `/entrar` nem um caminho que o Worker responde sozinho (`/api`, `/rpc`, `/health`, `/ready`, `/webhooks`). Um valor inválido vira `/`. Um destino que não seja do app nunca vira `Location`.
 - O login social tem `errorCallbackURL` do app. Quem criou a conta por e-mail e senha e tenta o Google recebe o erro genérico, porque o vínculo implícito continua proibido.
 
 ## Aceite dos termos e da política de privacidade

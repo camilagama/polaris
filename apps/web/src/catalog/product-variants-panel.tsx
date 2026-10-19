@@ -14,6 +14,7 @@ import {
 import { orpcClient } from "../lib/orpc";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
 import "./product-variants-panel.css";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 const optionChoices: ReadonlyArray<
   readonly [ProductVariantOptionName, string]
@@ -107,7 +108,7 @@ function rpcErrorCode(error: unknown): string | undefined {
 function variantErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar o catálogo.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
 import { type LeavePath, leaveTo } from "./leave-browser";
@@ -105,9 +106,18 @@ export function useLogout(destination: LeavePath) {
   };
 }
 
-export function LogoutControl() {
+interface LogoutControlProps {
+  /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
+  reason?: SignInReason;
+  /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
+  returnTo?: string;
+}
+
+export function LogoutControl({ reason, returnTo }: LogoutControlProps = {}) {
   const runtime = useOfflineRuntime();
-  const logout = useLogout("/");
+  const logout = useLogout(
+    reason ? logoutDestination({ reason, returnTo }) : "/"
+  );
   const { blocked, busy, message } = logout;
   if (!runtime) {
     return null;

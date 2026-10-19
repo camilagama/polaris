@@ -3,11 +3,22 @@ import { App } from "./app-shell/app";
 import "./styles.css";
 import "./styles/tokens.css";
 import "./styles/ui.css";
+import { initSentry } from "./observability/sentry";
 import {
   browserRegisterEnvironment,
   registerServiceWorker,
 } from "./pwa/register";
 import { checkForUpdatesRegularly, getUpdateStore } from "./pwa/runtime";
+
+// Error reporting is off unless the build has a Sentry DSN (ADR 0098); never blocks the first paint.
+// The guard is on the build constant, so a build without a DSN drops the SDK chunk altogether.
+if (import.meta.env.VITE_SENTRY_DSN) {
+  initSentry({
+    VITE_SENTRY_DSN: import.meta.env.VITE_SENTRY_DSN,
+    VITE_SENTRY_ENVIRONMENT: import.meta.env.VITE_SENTRY_ENVIRONMENT,
+    VITE_SENTRY_RELEASE: import.meta.env.VITE_SENTRY_RELEASE,
+  }).catch(() => undefined);
+}
 
 const rootElement = document.getElementById("root");
 

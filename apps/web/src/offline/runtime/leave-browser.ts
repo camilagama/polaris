@@ -5,19 +5,7 @@ import {
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { markSigningOut } from "../../lib/sign-out";
-
-/** Why the sign-in screen is opened: the login is only old, or the session is already gone. */
-export type SignInReason = "recente" | "sessao";
-
-/** Where the sign-in screen sends the person back to after the login. */
-const DEVICES_PATH = "/devices" as const;
-
-export type SignInPath =
-  `/entrar?motivo=${SignInReason}&voltar=${typeof DEVICES_PATH}`;
-
-export function signInPath(reason: SignInReason): SignInPath {
-  return `/entrar?motivo=${reason}&voltar=${DEVICES_PATH}`;
-}
+import type { SignInPath } from "../../lib/sign-in-path";
 
 /**
  * The session is over: the next person to open this browser must not be offered
@@ -26,6 +14,15 @@ export function signInPath(reason: SignInReason): SignInPath {
  */
 export function forgetSessionCaches(): void {
   markSigningOut();
+  clearSessionCaches();
+}
+
+/**
+ * Drops the copies a session left in the browser without marking the page as leaving: a refusal of one
+ * call does not say the person will not come back, and a screen that is signed in again (in another tab)
+ * has to be able to keep its copies anew.
+ */
+export function clearSessionCaches(): void {
   clearOrganizationsCache(browserStorage());
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());

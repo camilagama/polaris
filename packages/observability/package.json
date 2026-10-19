@@ -5,6 +5,7 @@
   "exports": {
     "./alerts": "./src/alerts.ts",
     "./logger": "./src/logger.ts",
+    "./redaction": "./src/redaction.ts",
     "./wide-event": "./src/wide-event.ts"
   },
   "scripts": {

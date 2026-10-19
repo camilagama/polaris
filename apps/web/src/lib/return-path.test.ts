@@ -10,6 +10,8 @@ describe("parseReturnPath", () => {
     "/a%2Fb",
     "/apis",
     "/rpcs",
+    "/healthy",
+    "/ready-to-go",
   ])("accepts %s", (value) => {
     expect(parseReturnPath(value)).toBe(value);
   });
@@ -53,6 +55,9 @@ describe("parseReturnPath", () => {
     ],
     ["RPC", "/rpc/sales/list"],
     ["RPC behind dot segments", "/./rpc/x"],
+    ["the health check of the Worker", "/health"],
+    ["the readiness check of the Worker", "/ready"],
+    ["the billing webhooks", "/webhooks/billing/asaas"],
     ["the sign-in page", "/entrar"],
     ["the sign-in page with a query", "/entrar?voltar=%2Fsales"],
     ["a malformed escape", "/sales%E0%A4%A"],

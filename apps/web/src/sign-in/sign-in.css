@@ -1,0 +1,190 @@
+/*
+ * The sign-in screen (DESIGN.md): one card, centred, outside the app shell. Targets are 44 px or more,
+ * nothing scrolls sideways at 360 px, and every color is a token (light and dark).
+ */
+.sign-in-root {
+  display: grid;
+  place-items: start center;
+}
+
+.sign-in-main {
+  width: min(100% - 2rem, 26rem);
+  padding: clamp(1.5rem, 8vh, 5rem) 0 3rem;
+}
+
+.sign-in-card {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.25rem, 5vw, 2rem);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 0.9rem;
+  box-shadow: var(--ui-shadow);
+}
+
+.sign-in-card h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.9rem, 7vw, 2.4rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.sign-in-brand {
+  display: inline-flex;
+  gap: 0.7rem;
+  align-items: center;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.sign-in-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ui-surface);
+  background: var(--ui-accent);
+  border-radius: 0.55rem;
+}
+
+.sign-in-live {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sign-in-support,
+.sign-in-reason,
+.sign-in-status,
+.sign-in-legal {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.sign-in-support {
+  color: var(--ui-muted);
+}
+
+.sign-in-reason {
+  padding: 0.75rem 0.9rem;
+  font-weight: 650;
+  background: var(--ui-accent-soft);
+  border-left: 0.3rem solid var(--ui-accent);
+  border-radius: 0.55rem;
+}
+
+.sign-in-alert,
+.sign-in-offline {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.9rem;
+  margin: 0;
+  line-height: 1.5;
+  background: var(--ui-danger-soft);
+  border-left: 0.3rem solid var(--ui-danger);
+  border-radius: 0.55rem;
+}
+
+.sign-in-offline {
+  background: var(--ui-warning-soft);
+  border-left-color: var(--ui-warning);
+}
+
+.sign-in-alert:focus-visible {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* an icon with a letter, so the state is never only a color (AC-31) */
+.sign-in-alert-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ui-surface);
+  background: var(--ui-danger);
+  border-radius: 50%;
+}
+
+.sign-in-offline .sign-in-alert-icon {
+  background: var(--ui-warning);
+}
+
+.sign-in-status {
+  font-weight: 650;
+}
+
+.sign-in-google {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.6rem 1rem;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ui-ink);
+  cursor: pointer;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-muted);
+  border-radius: 0.55rem;
+}
+
+.sign-in-google:hover:not(:disabled) {
+  background: var(--ui-surface-muted);
+}
+
+.sign-in-google:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.sign-in-google[aria-busy="true"]:disabled {
+  cursor: progress;
+}
+
+.sign-in-google:focus-visible,
+.sign-in-legal a:focus-visible {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: 3px;
+}
+
+.sign-in-google-logo {
+  flex: none;
+}
+
+.sign-in-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.35rem;
+  align-items: center;
+  font-size: 0.88rem;
+  color: var(--ui-muted);
+}
+
+.sign-in-legal a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--ui-accent-strong);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sign-in-google {
+    transition: background-color 120ms ease;
+  }
+}

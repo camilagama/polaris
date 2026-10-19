@@ -10,12 +10,17 @@ import {
   type CurrentOrganization,
   useOrganizationLoad,
 } from "../lib/current-organization";
+import { currentReturnPath } from "../lib/sign-in-path";
 import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
 import { LogoutControl } from "../offline/runtime/logout-control";
+import { useOfflineRuntime } from "../offline/runtime/runtime-context";
+import { leaveSessionOver } from "../offline/runtime/session-over";
+import { useSessionOver } from "../offline/runtime/session-ended";
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
+import { SessionEndedNotice } from "./session-ended-notice";
 
 interface OrganizationSwitcherProps {
   current: CurrentOrganization;
@@ -133,6 +138,29 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
   );
 }
 
+const OPENING_SIGN_IN_TEXT = "Sua sessão acabou. Abrindo a tela de entrada…";
+
+/**
+ * The session was refused. When it is the read that opens the app, nothing is on screen to protect
+ * and the app goes to `/entrar?motivo=sessao&voltar=<this page>` by itself (AC-16), without showing
+ * the protected screen with an error. Later (a refusal found while a screen is in use) it only says so.
+ */
+function SessionEndedGate({ atOpen }: { atOpen: boolean }) {
+  const runtime = useOfflineRuntime();
+  useEffect(() => {
+    if (atOpen) {
+      leaveSessionOver(runtime, currentReturnPath(window.location));
+    }
+  }, [atOpen, runtime]);
+  return atOpen ? (
+    <p className="app-status" role="status">
+      {OPENING_SIGN_IN_TEXT}
+    </p>
+  ) : (
+    <SessionEndedNotice alone />
+  );
+}
+
 function OrganizationGate({ children }: { children: ReactNode }) {
   const { load, reload } = useOrganizationLoad();
 
@@ -142,6 +170,9 @@ function OrganizationGate({ children }: { children: ReactNode }) {
         Carregando sua organização…
       </p>
     );
+  }
+  if (load.status === "session_ended") {
+    return <SessionEndedGate atOpen={load.atOpen} />;
   }
   if (load.status === "error") {
     return (
@@ -182,6 +213,10 @@ export function AppShell({
   requiresOrganization = true,
 }: AppShellProps) {
   const { load, select } = useOrganizationLoad();
+  const sessionOver = useSessionOver();
+  // the devices screen has its own panels for this (with the same button); the gate says it itself
+  const showNotice =
+    sessionOver && navId !== "devices" && load.status !== "session_ended";
   const organization: CurrentOrganization | null =
     load.status === "ready"
       ? {
@@ -198,6 +233,7 @@ export function AppShell({
       </a>
       <AppHeader navId={navId} organization={organization} />
       <main className="categories-content" id="conteudo">
+        {showNotice ? <SessionEndedNotice /> : null}
         {requiresOrganization ? (
           <OrganizationGate>{children}</OrganizationGate>
         ) : (

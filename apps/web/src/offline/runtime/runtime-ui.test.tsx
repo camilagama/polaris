@@ -6,6 +6,7 @@ import { signOfflineLease } from "../../lib/offline-lease-token";
 import type { LogoutWorkspace } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
+import { logoutDestination } from "../../lib/sign-in-path";
 import { discardAndLeave, startLogout } from "./logout-flow";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import { SyncStatusView, syncStatusLabel } from "./sync-status";
@@ -216,5 +217,54 @@ describe("logging out end to end", () => {
       })
     ).toEqual({ status: "sign_out_failed" });
     expect(leave).not.toHaveBeenCalled();
+  });
+
+  describe("with a destination (AC-43)", () => {
+    it("leaves for the sign-in screen with the reason and the destination, only after the session ended", async () => {
+      const { value } = await workspace(0);
+      const order: string[] = [];
+      const destination = logoutDestination({
+        reason: "recente",
+        returnTo: "/devices",
+      });
+      await startLogout({
+        leave: () => order.push(`leave ${destination}`),
+        signOut: () => {
+          order.push("signOut");
+          return Promise.resolve();
+        },
+        workspaces: [value],
+      });
+      expect(order).toEqual([
+        "signOut",
+        "leave /entrar?motivo=recente&voltar=/devices",
+      ]);
+    });
+
+    it.each([
+      "//evil.example",
+      "https://evil.example",
+      "/entrar",
+      "/api/auth/sign-out",
+    ])(
+      "goes to the start when the destination is not valid (%s)",
+      (returnTo) => {
+        expect(logoutDestination({ reason: "recente", returnTo })).toBe("/");
+      }
+    );
+
+    it("navigates nowhere while the queue blocks the exit", async () => {
+      const { value } = await workspace(2, () =>
+        Promise.reject(new Error("offline"))
+      );
+      const leave = vi.fn();
+      const result = await startLogout({
+        leave,
+        signOut: () => Promise.resolve(),
+        workspaces: [value],
+      });
+      expect(result.status).toBe("blocked");
+      expect(leave).not.toHaveBeenCalled();
+    });
   });
 });
