@@ -13,6 +13,7 @@ import { ExpensesPage } from "../expenses/expenses-page";
 import { InventoryPage } from "../inventory/inventory-page";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
+import { wipeLocalStore } from "../offline/local-store";
 import { purgeNamespace } from "../offline/logout-purge";
 import { localNamespace } from "../offline/namespace";
 import { openBrowserDataChannel } from "../offline/runtime/data-channel";
@@ -142,6 +143,7 @@ export function ScreensLab() {
             window.localStorage.setItem(deviceOwnerKey(deviceId), labUser());
             return Promise.resolve(deviceId);
           },
+          sessionUserId: () => Promise.resolve(labUser()),
           source: () => server,
         },
         isOnline: () => network.online,
@@ -154,6 +156,9 @@ export function ScreensLab() {
         openDataChannel: openBrowserDataChannel,
         openStores: openRuntimeStores,
         purge: purgeNamespace,
+        wipeCollections: async (namespace) => {
+          await wipeLocalStore(namespace);
+        },
       }),
     [network, server]
   );

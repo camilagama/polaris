@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import { useOrganizationLoad } from "../../lib/current-organization";
 import { orpcClient } from "../../lib/orpc";
 import { getUpdateStore } from "../../pwa/runtime";
+import { wipeLocalStore } from "../local-store";
 import { purgeNamespace } from "../logout-purge";
 import { localNamespace } from "../namespace";
 import { openBrowserDataChannel } from "./data-channel";
@@ -50,6 +51,9 @@ function createBrowserRuntime(): OfflineRuntime {
     openDataChannel: openBrowserDataChannel,
     openStores: openRuntimeStores,
     purge: purgeNamespace,
+    wipeCollections: async (namespace) => {
+      await wipeLocalStore(namespace);
+    },
   });
 }
 

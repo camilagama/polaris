@@ -1,6 +1,9 @@
 import type { PolarisRpcClient } from "@polaris/contracts";
 import type { BootstrapSource } from "../bootstrap";
-import type { RuntimeApi } from "./offline-runtime";
+import { type RuntimeApi, SessionUnreachableError } from "./offline-runtime";
+
+/** A lie-fi connection must not hold the start of the app: after this, the remembered user stands in. */
+const SESSION_LOOKUP_TIMEOUT_MS = 4000;
 
 /**
  * The runtime's window to the server, over the same RPC client the screens use:
@@ -25,6 +28,26 @@ export function createRpcRuntimeApi(client: PolarisRpcClient): RuntimeApi {
     registerDevice: async (label) => {
       const { device } = await client.device.register({ label });
       return device.id;
+    },
+    sessionUserId: async () => {
+      let response: Response;
+      try {
+        response = await fetch("/api/auth/get-session", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
+        });
+      } catch (cause) {
+        throw new SessionUnreachableError({ cause });
+      }
+      if (!response.ok) {
+        throw new Error("session_unavailable");
+      }
+      const session = (await response.json().catch((cause: unknown) => {
+        throw new Error("session_unavailable", { cause });
+      })) as { user?: { id?: unknown } } | null;
+      const id = session?.user?.id;
+      return typeof id === "string" && id !== "" ? id : null;
     },
     source: (organizationId): BootstrapSource => ({
       getCursor: async () =>
