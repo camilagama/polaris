@@ -37,6 +37,7 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 ## Banco e operações externas
 
 - Usar migrations revisadas e reproduzíveis. Não usar schema push como processo de migration de produção.
+- Migration nova precisa funcionar com o Worker da versão anterior ainda no ar (expand/contract, [ADR 0096](docs/adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)): sem `DROP COLUMN`, `RENAME`, `SET NOT NULL`, mudança de tipo ou função apagada sem o marcador `-- expand-contract: contract|janela <motivo>`. `bun run migrations:compat` confere.
 - Manter query caching SQL do Hyperdrive desabilitado para dados tenant/Admin; o gate RLS remoto precisa provar contexto transacional e reuso de conexão.
 - Para qualquer acesso via CLI Cloudflare ou Neon, siga [CLI profile policy](./docs/runbooks/cli-profile-policy.md). Não execute o CLI se não puder confirmar o perfil e a identidade permitidos; não use o plugin Neon conectado.
 - Gates de PostgreSQL: por pull request rodam no PostgreSQL 18 local ou do CI (`bun run --filter @polaris/db gates:ci`; os gates só de Neon ficam de fora). O Neon fica só para a prova antes de liberação, no fim de cada fase e quando mudam o executor, o suporte comum ou privilégios amplos, com UMA branch filha de `production` (sem `--schema-only`, que cria raiz), de nome único e apagada ao final. Ver a emenda do [ADR 0025](./docs/adr/0025-estrategia-de-testes-de-banco.md) e o [runbook do Gate 4](./docs/runbooks/gate-4-sales-core.md).
