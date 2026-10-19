@@ -392,10 +392,10 @@ function CustomerForm({
 interface CustomerCardProps {
   customer: CustomerReadModel;
   isPending: boolean;
-  /** Why archiving, restoring and anonymizing (not editing) are unavailable right now, or null. */
-  lifecycleReason: string | null;
   /** Why editing, archiving and restoring are unavailable for this customer, or null. */
   lockedReason: string | null;
+  /** Why archiving, restoring and anonymizing (not editing) are unavailable right now, or null. */
+  lifecycleReason: string | null;
   onAnonymize: (customer: CustomerReadModel) => void;
   onArchive: (customer: CustomerReadModel) => void;
   onEdit: (customer: CustomerReadModel) => void;

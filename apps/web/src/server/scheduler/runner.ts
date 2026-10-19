@@ -1,3 +1,9 @@
+import { logger, type Outcome } from "@polaris/observability/logger";
+import {
+  describeError,
+  startWideEvent,
+  type WideEvent,
+} from "@polaris/observability/wide-event";
 import type { ScheduledJobClaim } from "@polaris/db/outbox-dispatch";
 import {
   jobsOfLane,
@@ -5,12 +11,6 @@ import {
   type SchedulerLaneId,
   scheduledJob,
 } from "@polaris/domain/scheduling/scheduled-jobs";
-import { logger, type Outcome } from "@polaris/observability/logger";
-import {
-  describeError,
-  startWideEvent,
-  type WideEvent,
-} from "@polaris/observability/wide-event";
 
 /**
  * The scheduler's tick (plan PR112, ADR 0086). A Cron Trigger fires for a lane; for each job of the lane

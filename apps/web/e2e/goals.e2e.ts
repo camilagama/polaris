@@ -100,6 +100,7 @@ function percentOf(value: number, target: number): string | null {
 
 function summary(from: string, to: string) {
   return {
+    generatedAt: NOW,
     cards: {
       items: 5,
       marginPercent: "53.33",
@@ -123,7 +124,6 @@ function summary(from: string, to: string) {
       processingFees: "10.00",
       returns: "20.00",
     },
-    generatedAt: NOW,
     period: { from, to },
     quality: {
       anticipationFeesUnknown: 0,

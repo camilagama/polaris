@@ -234,11 +234,11 @@ class FakeExpenseServer {
 
   private fail(code: string, status: number) {
     return {
+      status,
       body: {
         json: { code, data: {}, defined: false, message: code, status },
         meta: [],
       },
-      status,
     };
   }
 
@@ -375,7 +375,7 @@ class FakeExpenseServer {
   }
 
   private ok(output: unknown) {
-    return { body: { json: output, meta: [] }, status: 200 };
+    return { status: 200, body: { json: output, meta: [] } };
   }
 }
 

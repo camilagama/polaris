@@ -8,9 +8,9 @@ interface ExpenseCategorySelectProps {
   disabled: boolean;
   id: string;
   invalid?: boolean | undefined;
-  onChange: (categoryId: string) => void;
   /** Text of the option that stands for no category. */
   placeholder: string;
+  onChange: (categoryId: string) => void;
   value: string;
 }
 

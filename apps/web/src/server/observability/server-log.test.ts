@@ -15,7 +15,7 @@ function logged(error: unknown) {
 }
 
 const withCode = (code: string, cause?: unknown) =>
-  Object.assign(new Error("message with ana@example.com"), { cause, code });
+  Object.assign(new Error("message with ana@example.com"), { code, cause });
 
 describe("logServerError sqlState", () => {
   afterEach(() => {

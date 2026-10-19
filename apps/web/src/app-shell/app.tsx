@@ -33,11 +33,6 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.CategoriesPage,
     }))
   ),
-  customers: lazy(() =>
-    import("../customers/customers-page").then((module) => ({
-      default: module.CustomersPage,
-    }))
-  ),
   dashboard: lazy(() =>
     import("../dashboard/dashboard-page").then((module) => ({
       default: module.DashboardPage,
@@ -46,6 +41,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
   devices: lazy(() =>
     import("../offline/runtime/devices-page").then((module) => ({
       default: module.DevicesPage,
+    }))
+  ),
+  customers: lazy(() =>
+    import("../customers/customers-page").then((module) => ({
+      default: module.CustomersPage,
     }))
   ),
   expenses: lazy(() =>

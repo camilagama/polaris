@@ -1,9 +1,9 @@
+import { logger } from "@polaris/observability/logger";
 import type {
   BillingRetryReport,
   BillingStore,
   BillingSweepReport,
 } from "@polaris/db/billing-store";
-import { logger } from "@polaris/observability/logger";
 
 export interface BillingMaintenanceReport {
   retry: BillingRetryReport;

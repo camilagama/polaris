@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import type {
   ClaimedDataExport,
   PrivacyMaintenanceClient,
@@ -13,7 +14,6 @@ import {
   exportFileName,
   FAILED_EXPORT_KEEP_HOURS,
 } from "@polaris/domain/privacy/data-export";
-import { logger } from "@polaris/observability/logger";
 import type { MediaBucketBinding } from "../environment";
 import {
   buildDataArchive,

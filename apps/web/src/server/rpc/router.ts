@@ -1,4 +1,13 @@
+import {
+  EntitlementDeniedError,
+  EntitlementLimitReachedError,
+} from "@polaris/domain/billing/entitlements";
 import { implement, ORPCError } from "@orpc/server";
+import {
+  EntitlementVariantLockedError,
+  OperationalSelectionError,
+} from "@polaris/domain/billing/operational-selection";
+import { InvalidOperationalSelectionError } from "@polaris/db/operational-selection-repository";
 import {
   type CategoryReadModel,
   type CustomerReadModel,
@@ -38,10 +47,6 @@ import {
   touchDevice,
 } from "@polaris/db/device-repository";
 import {
-  InvalidEconomicsPeriodError,
-  type readPeriodResult,
-} from "@polaris/db/economics-repository";
-import {
   getInventoryBalance,
   InvalidInventoryBalanceCursorError,
   inventoryCount,
@@ -50,7 +55,6 @@ import {
   writeOffStock,
 } from "@polaris/db/inventory-repository";
 import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
-import { InvalidOperationalSelectionError } from "@polaris/db/operational-selection-repository";
 import {
   listOrganizationsInClosure,
   recoverOrganizationClosure,
@@ -85,21 +89,12 @@ import {
 import { getSale, listSales } from "@polaris/db/sale-query-repository";
 import { confirmSale } from "@polaris/db/sale-repository";
 import { createSaleReturn } from "@polaris/db/sale-return-repository";
-import { runSyncCommand } from "@polaris/db/sync-command-repository";
 import {
   getSyncCursor,
   InvalidSyncCursorError,
   pullSyncChanges,
 } from "@polaris/db/sync-repository";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import {
-  EntitlementDeniedError,
-  EntitlementLimitReachedError,
-} from "@polaris/domain/billing/entitlements";
-import {
-  EntitlementVariantLockedError,
-  OperationalSelectionError,
-} from "@polaris/domain/billing/operational-selection";
 import {
   CategoryDeletedError,
   CategoryInUseError,
@@ -129,13 +124,6 @@ import {
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 import {
-  InvalidPublicCatalogProfileError,
-  PublicCatalogProductUnavailableError,
-  PublicCatalogProfileMissingError,
-  PublicCatalogSlugTakenError,
-  PublicCatalogVersionConflictError,
-} from "@polaris/domain/catalog/public-catalog";
-import {
   CustomerAnonymizedError,
   CustomerNotFoundError,
   CustomerVersionConflictError,
@@ -156,19 +144,26 @@ import {
   InvalidExpenseError,
 } from "@polaris/domain/expenses/expense";
 import {
+  InvalidPublicCatalogProfileError,
+  PublicCatalogProductUnavailableError,
+  PublicCatalogProfileMissingError,
+  PublicCatalogSlugTakenError,
+  PublicCatalogVersionConflictError,
+} from "@polaris/domain/catalog/public-catalog";
+import {
+  GoalLimitReachedError,
+  GoalNotActiveError,
+  GoalPausedByPlanError,
+  GoalPeriodEndedError,
+  GoalNotFoundError,
+  GoalVersionConflictError,
+  InvalidGoalError,
+} from "@polaris/domain/goals/goal";
+import {
   ExpenseRuleNotFoundError,
   ExpenseRuleVersionConflictError,
   InvalidExpenseRuleError,
 } from "@polaris/domain/expenses/recurrence";
-import {
-  GoalLimitReachedError,
-  GoalNotActiveError,
-  GoalNotFoundError,
-  GoalPausedByPlanError,
-  GoalPeriodEndedError,
-  GoalVersionConflictError,
-  InvalidGoalError,
-} from "@polaris/domain/goals/goal";
 import {
   InsufficientStockError,
   InvalidStockMovementError,
@@ -268,11 +263,18 @@ import {
   withAuthenticatedRequestContext,
 } from "../authenticated-request-context";
 import type { WorkerBindings } from "../environment";
+import {
+  InvalidEconomicsPeriodError,
+  type readPeriodResult,
+} from "@polaris/db/economics-repository";
+import type { ExpenseRepository } from "./expense-handlers";
+import type { DataExportRepository } from "./data-export-handlers";
+import type { GoalRepository } from "./goal-handlers";
+import type { PlanRepository } from "./plan-handlers";
+import type { PublicCatalogRepository } from "./public-catalog-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
-import { TenantRequestContextError } from "../request-context-error";
 import { SyncPayloadHashUnavailableError } from "../sync/payload-hash";
-import type { SyncCommandHandler } from "../sync/push";
-import { syncCommandHandlers } from "../sync/registry";
+import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
   withTenantRequestContext,
@@ -282,25 +284,23 @@ import {
   createInitialOrganization,
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
-import type { DataExportRepository } from "./data-export-handlers";
-import { createDataExportRpcHandlers } from "./data-export-handlers";
-import type { ExpenseRepository } from "./expense-handlers";
 import { createExpenseRpcHandlers } from "./expense-handlers";
-import type { GoalRepository } from "./goal-handlers";
+import { createDataExportRpcHandlers } from "./data-export-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
+import { createPlanRpcHandlers } from "./plan-handlers";
+import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
+import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
 import {
   type ClosureRepository,
   createOrganizationRpcHandlers,
 } from "./organization-handlers";
-import type { PlanRepository } from "./plan-handlers";
-import { createPlanRpcHandlers } from "./plan-handlers";
-import type { PublicCatalogRepository } from "./public-catalog-handlers";
-import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
-import { createReportRpcHandlers } from "./report-handlers";
 import { createSaleRpcHandlers } from "./sale-handlers";
 import { createSyncRpcHandlers } from "./sync-handlers";
+import { runSyncCommand } from "@polaris/db/sync-command-repository";
+import type { SyncCommandHandler } from "../sync/push";
+import { syncCommandHandlers } from "../sync/registry";
 
 export interface PolarisRpcContext {
   bindings: WorkerBindings;
@@ -323,14 +323,14 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RpcRouterDependencies {
-  anonymizeCustomerForPrivacy: typeof anonymizeCustomerForPrivacy;
   archiveCategory: typeof archiveCategory;
+  anonymizeCustomerForPrivacy: typeof anonymizeCustomerForPrivacy;
   archiveCustomer: typeof archiveCustomer;
   archivePaymentProfile: typeof archivePaymentProfile;
   archiveProduct: typeof archiveProduct;
+  closureRepository: Partial<ClosureRepository>;
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
-  closureRepository: Partial<ClosureRepository>;
   configureProductVariants: typeof configureProductVariants;
   confirmSale: typeof confirmSale;
   createCategory: typeof createCategory;
@@ -340,17 +340,20 @@ interface RpcRouterDependencies {
   createPaymentProfile: typeof createPaymentProfile;
   createProduct: typeof createProduct;
   createSaleReturn: typeof createSaleReturn;
+  expenseRepository: Partial<ExpenseRepository>;
   dataExportRepository: Partial<DataExportRepository>;
+  goalRepository: Partial<GoalRepository>;
+  planRepository: Partial<PlanRepository>;
+  publicCatalogRepository: Partial<PublicCatalogRepository>;
+  readPeriodResult: typeof readPeriodResult;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
-  expenseRepository: Partial<ExpenseRepository>;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
   getInventoryBalance: typeof getInventoryBalance;
   getProductVariants: typeof getProductVariants;
   getSale: typeof getSale;
   getSaleCustomerLink: typeof getSaleCustomerLink;
   getSyncCursor: typeof getSyncCursor;
-  goalRepository: Partial<GoalRepository>;
   inventoryCount: typeof inventoryCount;
   issueOfflineLeaseGrant: typeof issueOfflineLeaseGrant;
   listCategories: typeof listCategories;
@@ -361,11 +364,8 @@ interface RpcRouterDependencies {
   listProducts: typeof listProducts;
   listSales: typeof listSales;
   listUserOrganizations: typeof listUserOrganizations;
-  planRepository: Partial<PlanRepository>;
-  publicCatalogRepository: Partial<PublicCatalogRepository>;
   pullSyncChanges: typeof pullSyncChanges;
   readBootstrapPage: typeof readBootstrapPage;
-  readPeriodResult: typeof readPeriodResult;
   receiveStock: typeof receiveStock;
   registerDevice: typeof registerDevice;
   renameCategory: typeof renameCategory;
@@ -375,10 +375,10 @@ interface RpcRouterDependencies {
   restoreProduct: typeof restoreProduct;
   revokeDevice: typeof revokeDevice;
   runSyncCommand: typeof runSyncCommand;
+  touchDevice: typeof touchDevice;
+  syncCommandHandlers: readonly SyncCommandHandler[];
   setProductVariantListPrice: typeof setProductVariantListPrice;
   setProductVariantSku: typeof setProductVariantSku;
-  syncCommandHandlers: readonly SyncCommandHandler[];
-  touchDevice: typeof touchDevice;
   updateCustomer: typeof updateCustomer;
   updatePaymentProfile: typeof updatePaymentProfile;
   updateProduct: typeof updateProduct;
@@ -1317,15 +1317,15 @@ export function createRpcRouter(
   });
   const syncHandlers = createSyncRpcHandlers({
     commandHandlers: overrides.syncCommandHandlers ?? syncCommandHandlers,
+    defaultRunSyncCommand: runSyncCommand,
+    now: () => new Date(),
+    runSyncCommand: overrides.runSyncCommand,
     defaultGetSyncCursor: getSyncCursor,
     defaultPullSyncChanges: pullSyncChanges,
     defaultReadBootstrapPage: readBootstrapPage,
-    defaultRunSyncCommand: runSyncCommand,
     getSyncCursor: overrides.getSyncCursor,
-    now: () => new Date(),
     pullSyncChanges: overrides.pullSyncChanges,
     readBootstrapPage: overrides.readBootstrapPage,
-    runSyncCommand: overrides.runSyncCommand,
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });
@@ -1949,8 +1949,10 @@ export function createRpcRouter(
       recoverClosure: organizationHandlers.recoverClosure,
       requestClosure: organizationHandlers.requestClosure,
     },
-    paymentProfile: paymentProfileHandlers,
     plan: planHandlers,
+    publicCatalog: publicCatalogHandlers,
+    report: reportHandlers,
+    paymentProfile: paymentProfileHandlers,
     product: {
       archive: archiveProductRecord,
       configureVariants: configureProductVariantsRecord,
@@ -1963,8 +1965,6 @@ export function createRpcRouter(
       setVariantSku: setProductVariantSkuRecord,
       update: updateProductRecord,
     },
-    publicCatalog: publicCatalogHandlers,
-    report: reportHandlers,
     sale: {
       assignCustomer: saleHandlers.assignCustomer,
       cancel: saleHandlers.cancel,

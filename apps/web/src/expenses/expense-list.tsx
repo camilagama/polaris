@@ -291,8 +291,8 @@ interface ExpenseListProps {
   filters: ExpenseFilters;
   onEdit: (expense: ExpenseReadModel) => void;
   onLoadMore: () => void;
-  onRestore: (expense: ExpenseReadModel) => void;
   onRetry: () => void;
+  onRestore: (expense: ExpenseReadModel) => void;
   onVoid: (expense: ExpenseReadModel) => void;
   state: ExpenseListState;
 }

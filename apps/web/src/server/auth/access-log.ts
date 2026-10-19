@@ -1,7 +1,7 @@
-import { isIP } from "node:net";
 import { logger } from "@polaris/observability/logger";
 import { describeError, isSqlState } from "@polaris/observability/wide-event";
 import { getIp } from "better-auth/api";
+import { isIP } from "node:net";
 
 /**
  * The record of access to the application (ADR 0092): the server of authentication appends one row per login,

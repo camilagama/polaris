@@ -191,6 +191,8 @@ function summaryOf(month: string, from: string, to: string) {
     level = "no_data";
   }
   return {
+    // the server clock at the read: what the screen says it is updated until
+    generatedAt: NOW,
     cards: {
       items: sum(sales.map((sale) => sale.items)),
       marginPercent:
@@ -217,8 +219,6 @@ function summaryOf(month: string, from: string, to: string) {
       processingFees: money(processing),
       returns: money(returns),
     },
-    // the server clock at the read: what the screen says it is updated until
-    generatedAt: NOW,
     period: { from, to },
     quality: {
       anticipationFeesUnknown: unknownAnticipation,
@@ -585,7 +585,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
 
   server.networkDown = true;
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
 
   const notice = copyNotice(page);
   await expect(notice).toContainText(COPY_NOTICE);
@@ -606,7 +606,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
 
   // the connection is back: the figures of the server replace the copy
   server.networkDown = false;
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
   await expect(copyNotice(page)).toHaveCount(0);
   await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
 });
@@ -658,7 +658,7 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   );
 
   server.networkDown = false;
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
   await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
   await expect(copyNotice(page)).toHaveCount(0);
 });
@@ -691,7 +691,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
 
   // an outage of the server is not a refusal
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });

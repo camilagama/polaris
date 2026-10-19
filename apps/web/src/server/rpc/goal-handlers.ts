@@ -2,13 +2,13 @@ import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import {
   cancelGoal,
-  createGoal,
   evaluateActiveGoals,
   listGoals,
   listGoalTargetChanges,
   listPausedGoalIds,
   settleGoals,
   updateGoal,
+  createGoal,
 } from "@polaris/db/goal-repository";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
@@ -23,8 +23,8 @@ const defaultGoalRepository = {
   cancelGoal,
   createGoal,
   evaluateActiveGoals,
-  listGoals,
   listGoalTargetChanges,
+  listGoals,
   listPausedGoalIds,
   settleGoals,
   updateGoal,
@@ -45,8 +45,8 @@ const CAPABILITY = "goal:manage";
 type GoalRow = Awaited<ReturnType<GoalRepository["createGoal"]>>;
 
 interface Progress {
-  percent: string | null;
   periodEnded: boolean;
+  percent: string | null;
   reached: boolean;
   value: string;
 }
@@ -175,8 +175,8 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
             row,
             entry && entry.version === row.version
               ? {
-                  percent: entry.evaluation.percent,
                   periodEnded: entry.evaluation.periodEnded,
+                  percent: entry.evaluation.percent,
                   reached: entry.evaluation.reached,
                   value: entry.evaluation.progress,
                 }

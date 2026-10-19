@@ -12,9 +12,9 @@ import {
 } from "../lib/current-organization";
 import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
-import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { LogoutControl } from "../offline/runtime/logout-control";
 import { SyncStatus } from "../offline/runtime/sync-status";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
 
 interface OrganizationSwitcherProps {

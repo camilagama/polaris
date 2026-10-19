@@ -53,7 +53,7 @@ describe("local customers", () => {
     );
     expect(anonymized.anonymizedAt).toBe(AT);
     const ordinary = toCustomerReadModel(
-      row(8, { archivedAt: AT, email: "a@b.com" }),
+      row(8, { email: "a@b.com", archivedAt: AT }),
       ORG
     );
     expect(ordinary.anonymizedAt).toBeNull();

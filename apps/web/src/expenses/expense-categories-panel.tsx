@@ -14,8 +14,8 @@ import {
   groupCategories,
 } from "./expense-model";
 import { FeedbackMessage } from "./feedback-message";
-import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import type { ExpenseCategoriesState } from "./use-expense-categories";
+import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 
 interface ExpenseCategoriesPanelProps {
   onReload: () => Promise<void>;
@@ -330,7 +330,7 @@ export function ExpenseCategoriesPanel({
         <span className="categories-eyebrow">Organização</span>
         <span className="expense-categories-title">Categorias de despesa</span>
       </summary>
-      <div aria-busy={state.isLoading} className="expense-categories-body">
+      <div className="expense-categories-body" aria-busy={state.isLoading}>
         <FeedbackMessage feedback={feedback} />
         <label className="expense-checkbox">
           <input

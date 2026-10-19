@@ -16,13 +16,13 @@ import { type ExpenseRulesState, useExpenseRules } from "./use-expense-rules";
 interface ExpenseRulesPanelProps {
   /** Every category, archived ones included. */
   categories: readonly ExpenseCategoryReadModel[];
+  organizationId: string;
   /**
    * Called after a rule changed (or turned out stale): the page reloads the
    * expense list, because the server generates the occurrences that fell due
    * when the list is read.
    */
   onChanged: () => Promise<void>;
-  organizationId: string;
   /** The organization's today, YYYY-MM-DD. */
   today: string;
 }

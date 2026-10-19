@@ -1,16 +1,16 @@
-import assert from "node:assert/strict";
-import { type ChildProcess, spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { PolarisRpcClient } from "@polaris/contracts";
 import { createDatabase } from "@polaris/db/client";
+import { deleteOrganizationsWithAudit } from "../../../packages/db/scripts/teardown-support";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
-import { deleteOrganizationsWithAudit } from "../../../packages/db/scripts/teardown-support";
 import { createBetterAuth } from "../src/server/auth";
 
 interface TestAuthHelpers {
@@ -88,6 +88,9 @@ function hasRpcCode(error: unknown, code: string): boolean {
 
 function rpcClient(workerUrl: URL, authHeaders?: Headers): PolarisRpcClient {
   const link = new RPCLink({
+    headers: { origin: workerUrl.origin },
+    method: "POST",
+    url: new URL("/rpc", workerUrl),
     fetch: (request) => {
       if (!authHeaders) {
         return fetch(request);
@@ -98,9 +101,6 @@ function rpcClient(workerUrl: URL, authHeaders?: Headers): PolarisRpcClient {
       });
       return fetch(new Request(request, { headers: requestHeaders }));
     },
-    headers: { origin: workerUrl.origin },
-    method: "POST",
-    url: new URL("/rpc", workerUrl),
   });
   return createORPCClient(link);
 }
@@ -328,6 +328,7 @@ function workerEnvironment(
     ...environment,
     BETTER_AUTH_BASE_URL: baseURL,
     BETTER_AUTH_SECRET: secret,
+    CLOUDFLARE_INCLUDE_PROCESS_ENV: "true",
     // Local gate: one role serves auth and tenant data; production uses a dedicated auth role.
     CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_AUTH_HYPERDRIVE:
       tenantConnectionString,
@@ -335,7 +336,6 @@ function workerEnvironment(
       tenantConnectionString,
     CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_ONBOARDING_HYPERDRIVE:
       onboardingConnectionString,
-    CLOUDFLARE_INCLUDE_PROCESS_ENV: "true",
   };
 }
 
@@ -640,28 +640,28 @@ async function main() {
     console.log("gate2_worker_unverified_denial=passed");
 
     const categoryA = await clientA.category.create({
-      name: "  Escritório  ",
       organizationId: organizationA.organization.id,
+      name: "  Escritório  ",
     });
     assert.equal(categoryA.name, "Escritório");
     assert.equal(categoryA.status, "active");
     assert.equal(typeof categoryA.createdAt, "string");
     console.log("gate2_worker_category_a_create=passed");
     const sameNameInOtherOrganization = await clientB.category.create({
-      name: "Escritório",
       organizationId: organizationB.organization.id,
+      name: "Escritório",
     });
     assert.equal(sameNameInOtherOrganization.name, categoryA.name);
     console.log("gate2_worker_same_name_other_organization=passed");
     const renameConflictCategory = await clientA.category.create({
-      name: "Outro",
       organizationId: organizationA.organization.id,
+      name: "Outro",
     });
     console.log("gate2_worker_same_organization_conflict_fixture=passed");
     await assert.rejects(
       clientA.category.create({
-        name: "escritório",
         organizationId: organizationA.organization.id,
+        name: "escritório",
       }),
       (error: unknown) => hasRpcCode(error, "CONFLICT"),
       "duplicate category create in one organization must conflict"
@@ -713,8 +713,8 @@ async function main() {
     );
     await assert.rejects(
       clientA.category.create({
-        name: "Cross-tenant",
         organizationId: organizationB.organization.id,
+        name: "Cross-tenant",
       }),
       (error: unknown) => hasRpcCode(error, "FORBIDDEN"),
       "cross-tenant category create must be forbidden"
@@ -1067,8 +1067,8 @@ async function main() {
     );
     await assert.rejects(
       clientA.category.create({
-        name: "acessórios",
         organizationId: organizationA.organization.id,
+        name: "acessórios",
       }),
       (error: unknown) => hasRpcCode(error, "CONFLICT"),
       "tombstoned category name remains reserved"
@@ -1115,10 +1115,10 @@ async function main() {
       [productA.id]
     );
     assert.deepEqual(productLifecycleEvents.rows, [
-      { count: "1", event_type: "product.archived" },
-      { count: "1", event_type: "product.created" },
-      { count: "1", event_type: "product.restored" },
-      { count: "2", event_type: "product.updated" },
+      { event_type: "product.archived", count: "1" },
+      { event_type: "product.created", count: "1" },
+      { event_type: "product.restored", count: "1" },
+      { event_type: "product.updated", count: "2" },
     ]);
 
     workerGatePassed = true;

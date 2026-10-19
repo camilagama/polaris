@@ -1,3 +1,5 @@
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { OutboxEventBody } from "@polaris/domain/events/outbox";
 import {
   OUTBOX_DISPATCH_BATCH,
@@ -11,8 +13,6 @@ import {
   queueEnvelope,
   queueForEventType,
 } from "@polaris/domain/events/queue-envelope";
-import { logger } from "@polaris/observability/logger";
-import { describeError } from "@polaris/observability/wide-event";
 
 /**
  * The outbox dispatcher and sweeper (plan PR110, ADR 0084): pending event in the database → queue →

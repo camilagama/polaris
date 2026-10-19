@@ -1,4 +1,5 @@
 import type { ProductMediaReadModel } from "@polaris/db/media-repository";
+import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
 import {
   assertProductCanReceiveMedia,
   createProductMediaAsset,
@@ -9,20 +10,19 @@ import {
   reorderProductMedia,
 } from "@polaris/db/media-repository";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
 import {
   InvalidMediaCropError,
-  InvalidMediaOrderError,
   MAX_MEDIA_INPUT_BYTES,
   MAX_PRODUCT_MEDIA,
-  MEDIA_DERIVATIVE_SIZES,
   MediaImageProcessingError,
   MediaImageTooLargeError,
   MediaTransformQuotaExceededError,
-  MediaUploadCommandConflictError,
+  InvalidMediaOrderError,
+  MEDIA_DERIVATIVE_SIZES,
   mediaDerivativeKey,
-  type NormalizedMediaCropRect,
+  MediaUploadCommandConflictError,
   ProductMediaLimitError,
+  type NormalizedMediaCropRect,
   UnsupportedMediaImageError,
   validateNormalizedMediaCropRect,
 } from "@polaris/domain/catalog/media";
@@ -64,8 +64,8 @@ export interface MediaRouteDependencies {
   findMediaUploadCommand: typeof findMediaUploadCommand;
   getMediaAssetForDelivery: typeof getMediaAssetForDelivery;
   listProductMedia: typeof listProductMedia;
-  processMediaDerivative: DerivativeProcessor;
   processMediaImage: ImageProcessor;
+  processMediaDerivative: DerivativeProcessor;
   removeProductMedia: typeof removeProductMedia;
   reorderProductMedia: typeof reorderProductMedia;
   withTenantRequestContext: TenantRunner;

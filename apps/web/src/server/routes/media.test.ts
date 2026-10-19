@@ -86,15 +86,6 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
     findMediaUploadCommand: vi.fn(() => Promise.resolve(undefined)),
     getMediaAssetForDelivery: vi.fn(() => Promise.resolve(null)),
     listProductMedia: vi.fn(() => Promise.resolve([])),
-    processMediaDerivative: vi.fn(({ maxEdge }: { maxEdge: 320 | 640 }) =>
-      Promise.resolve({
-        byteLength: 4,
-        bytes: new Uint8Array([82, 73, 70, 70]),
-        contentType: "image/webp" as const,
-        height: maxEdge / 2,
-        width: maxEdge,
-      })
-    ),
     processMediaImage: vi.fn(() =>
       Promise.resolve({
         byteLength: 4,
@@ -106,6 +97,15 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
     ),
     removeProductMedia: vi.fn(() => Promise.resolve({ removed: true })),
     reorderProductMedia: vi.fn(() => Promise.resolve([mediaAsset])),
+    processMediaDerivative: vi.fn(({ maxEdge }: { maxEdge: 320 | 640 }) =>
+      Promise.resolve({
+        byteLength: 4,
+        bytes: new Uint8Array([82, 73, 70, 70]),
+        contentType: "image/webp" as const,
+        height: maxEdge / 2,
+        width: maxEdge,
+      })
+    ),
     withTenantRequestContext: vi.fn(
       ({
         operation,
@@ -684,12 +684,12 @@ describe("media upload route", () => {
     expect(logger).toHaveBeenCalledOnce();
     const [entry] = logger.mock.calls[0] ?? [];
     expect(entry).toMatchObject({
-      errorClass: "DatabaseError",
       errorCode: "23505",
+      errorClass: "DatabaseError",
       event: "server_error",
-      httpStatus: 500,
       method: "GET",
       route: "/api/products/:productId/media",
+      httpStatus: 500,
     });
     const serialized = JSON.stringify(entry);
     expect(serialized).not.toContain("ana@example.com");

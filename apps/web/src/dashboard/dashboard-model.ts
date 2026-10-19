@@ -147,10 +147,10 @@ export interface ChainRow {
   id: keyof PeriodChain;
   kind: ChainRowKind;
   label: string;
-  /** True for a negative exact amount, so a loss reads as one without relying on color. */
-  negative: boolean;
   /** What was left out of this line because it was unknown, when anything was. */
   note: string | null;
+  /** True for a negative exact amount, so a loss reads as one without relying on color. */
+  negative: boolean;
   value: string;
 }
 
