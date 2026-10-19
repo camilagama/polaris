@@ -27,9 +27,16 @@ import {
   useSessionEndedHere,
 } from "./session-ended";
 
+const SESSION_COPY_GRACE_MS = 5000;
+
 /** The session is already gone: drop the local copy that needs it (never the queue), then go to sign in. Never through "Sair". */
 function leaveSessionOver(runtime: OfflineRuntime | null): void {
-  (runtime?.dropSessionCopy() ?? Promise.resolve())
+  // a send that never answers must not trap the person on this panel: the caches are
+  // already gone and the runtime drops the copy at the next start anyway
+  const grace = new Promise<void>((resolve) => {
+    setTimeout(resolve, SESSION_COPY_GRACE_MS);
+  });
+  Promise.race([runtime?.dropSessionCopy() ?? Promise.resolve(), grace])
     .catch(() => undefined)
     .then(() => leaveTo(signInPath("sessao")));
 }
@@ -134,8 +141,12 @@ export function DevicesPage() {
   const [endOtherSessions, setEndOtherSessions] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reloadVersion, setReloadVersion] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const [focusTick, setFocusTick] = useState(0);
   const currentDeviceId = runtime?.context()?.deviceId ?? null;
   const online = snapshot?.online ?? true;
+  // without the runtime we cannot tell which row is this browser: offer no action at all
+  const knowsThisDevice = currentDeviceId !== null;
   const sessionOver = endedHere !== null;
 
   // the server says the session is over: forget the caches it left here now (the runtime
@@ -190,6 +201,13 @@ export function DevicesPage() {
     wasOnline.current = online;
   }, [online]);
 
+  // after the render that removed the confirmation, so the focus is not lost to the body
+  useEffect(() => {
+    if (focusTick > 0) {
+      headingRef.current?.focus();
+    }
+  }, [focusTick]);
+
   const handleRevoke = useCallback(
     async (id: string) => {
       setBusy(true);
@@ -197,6 +215,7 @@ export function DevicesPage() {
       setNotice(null);
       setPanel(null);
       let reload = true;
+      let closed = true;
       try {
         const result = await orpcClient.device.revoke({
           deviceId: id,
@@ -231,12 +250,18 @@ export function DevicesPage() {
           }
         } else {
           setActionError(failure.text);
-          if (!failure.uncertain) {
+          if (failure.uncertain) {
+            closed = false;
+          } else {
             setConfirming(null);
           }
         }
       } finally {
         setBusy(false);
+        // the confirmation that held the focus is gone: keep the place for keyboard and screen reader
+        if (closed) {
+          setFocusTick((tick) => tick + 1);
+        }
         if (reload) {
           setReloadVersion((version) => version + 1);
         }
@@ -272,7 +297,9 @@ export function DevicesPage() {
       <section className="categories-heading">
         <div>
           <p className="categories-eyebrow">Segurança</p>
-          <h1>Aparelhos</h1>
+          <h1 ref={headingRef} tabIndex={-1}>
+            Aparelhos
+          </h1>
           <p className="categories-intro-copy">
             Os aparelhos em que você usa o Polaris offline. Se perdeu um celular
             ou computador, revogue o aparelho: o servidor deixa de aceitar o que
@@ -323,7 +350,7 @@ export function DevicesPage() {
               confirming={confirming === row.id}
               endOtherSessions={endOtherSessions}
               key={row.id}
-              offline={!online}
+              offline={!(online && knowsThisDevice)}
               onAsk={handleAsk}
               onCancel={handleCancel}
               onChoose={setEndOtherSessions}

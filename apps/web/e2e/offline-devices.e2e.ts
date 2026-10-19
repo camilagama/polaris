@@ -338,6 +338,8 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
   ).toBeVisible();
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
+  // the confirmation is gone: the focus stays on the page, not on the body
+  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
   // the option was not ticked: the call carries false
   expect(state.revokeBodies).toHaveLength(1);
   expect(state.revokeBodies[0]?.endOtherSessions ?? false).toBe(false);
