@@ -15,6 +15,7 @@ import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
 import {
   documentTitle,
+  isSignInPath,
   type ResolvedRoute,
   type RouteId,
   resolveRoute,
@@ -97,6 +98,12 @@ const pages: Readonly<Record<RouteId, Page>> = {
   ),
 };
 
+const SignInPage = lazy(() =>
+  import("../sign-in/sign-in-page").then((module) => ({
+    default: module.SignInPage,
+  }))
+);
+
 function RouteContent({ route }: { route: ResolvedRoute }) {
   if (route.kind === "not-found") {
     return (
@@ -129,6 +136,27 @@ function UpdateSlot() {
   return store ? <UpdateBanner store={store} /> : null;
 }
 
+/**
+ * The sign-in screen has no organization, no menu and no offline runtime: nobody is signed in yet, so
+ * there is nothing to register or read. It only needs the error boundary and the update notice.
+ */
+function SignInApp() {
+  return (
+    <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
+      <UpdateSlot />
+      <Suspense
+        fallback={
+          <p className="app-status" role="status">
+            Carregando…
+          </p>
+        }
+      >
+        <SignInPage />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
 function StoreApp() {
   const route = resolveRoute(window.location.pathname);
   const { title } = route;
@@ -148,8 +176,14 @@ function StoreApp() {
   );
 }
 
-/** The legal pages are public and stand apart from the store: no organization, no offline runtime. */
+/**
+ * The legal pages and the sign-in screen are public and stand apart from the store: no organization,
+ * no menu, no offline runtime.
+ */
 export function App() {
   const legalDocument = resolveLegalRoute(window.location.pathname);
-  return legalDocument ? <LegalApp document={legalDocument} /> : <StoreApp />;
+  if (legalDocument) {
+    return <LegalApp document={legalDocument} />;
+  }
+  return isSignInPath(window.location.pathname) ? <SignInApp /> : <StoreApp />;
 }

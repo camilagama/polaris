@@ -13,6 +13,7 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import "./categories-page.css";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type CategoryListStatus = "active" | "archived" | "deleted";
 type CategoryAction = "archive" | "restore" | "delete";
@@ -49,7 +50,7 @@ function errorMessage(
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar o catálogo.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

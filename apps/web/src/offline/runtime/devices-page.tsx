@@ -25,29 +25,24 @@ import {
   signInAgainPanel,
 } from "./devices-model";
 import "./devices-page.css";
-import { forgetSessionCaches, leaveTo, signInPath } from "./leave-browser";
+import { signInPath } from "../../lib/sign-in-path";
+import { forgetSessionCaches } from "./leave-browser";
 import { useLogout } from "./logout-control";
-import type { OfflineRuntime, RuntimeSnapshot } from "./offline-runtime";
+import type { RuntimeSnapshot } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
+import { leaveSessionOver } from "./session-over";
 import {
   markSessionEndedHere,
   markSessionOver,
   useSessionEndedHere,
 } from "./session-ended";
 
-const SESSION_COPY_GRACE_MS = 5000;
-
-/** The session is already gone: drop the local copy that needs it (never the queue), then go to sign in. Never through "Sair". */
-function leaveSessionOver(runtime: OfflineRuntime | null): void {
-  // a send that never answers must not trap the person on this panel: the caches are
-  // already gone and the runtime drops the copy at the next start anyway
-  const grace = new Promise<void>((resolve) => {
-    setTimeout(resolve, SESSION_COPY_GRACE_MS);
-  });
-  Promise.race([runtime?.dropSessionCopy() ?? Promise.resolve(), grace])
-    .catch(() => undefined)
-    .then(() => leaveTo(signInPath("sessao")));
-}
+const DEVICES_PATH = "/devices";
+/** A live but old login: "Sair" with the reason `recente`, then back to this screen. */
+const DEVICES_SIGN_IN_AGAIN = signInPath({
+  reason: "recente",
+  returnTo: DEVICES_PATH,
+});
 
 interface SignInAgainProps {
   onDismiss: () => void;
@@ -57,12 +52,12 @@ interface SignInAgainProps {
 /** The revocation did not happen because the login is old or gone: the way back is to sign in. */
 function SignInAgain({ onDismiss, panel }: SignInAgainProps) {
   const runtime = useOfflineRuntime();
-  const logout = useLogout(signInPath("recente"));
+  const logout = useLogout(DEVICES_SIGN_IN_AGAIN);
   // a live but old session goes through "Sair" (the queue is protected first);
   // a dead one cannot sign out, and the queue stays where it is
   const handleSignIn = useCallback(() => {
     if (panel.kind === "session_gone") {
-      leaveSessionOver(runtime);
+      leaveSessionOver(runtime, DEVICES_PATH);
     } else {
       logout.start();
     }
@@ -116,7 +111,10 @@ function SignInAgain({ onDismiss, panel }: SignInAgainProps) {
 /** This browser's session ended with the revoked device: stays until the person acts. */
 function BrowserLeft({ keptWork }: { keptWork: boolean }) {
   const runtime = useOfflineRuntime();
-  const handleSignIn = useCallback(() => leaveSessionOver(runtime), [runtime]);
+  const handleSignIn = useCallback(
+    () => leaveSessionOver(runtime, DEVICES_PATH),
+    [runtime]
+  );
   return (
     <section
       aria-labelledby="devices-left-title"

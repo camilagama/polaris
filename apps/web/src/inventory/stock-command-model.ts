@@ -28,6 +28,7 @@ import {
   type StockTarget,
   unitsText,
 } from "./stock-target";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type ReceiveInput = Parameters<
   PolarisRpcClient["inventory"]["receiveStock"]
@@ -795,9 +796,7 @@ function stockFailure(
 function genericFailure(code: string | undefined): StockFailure {
   switch (code) {
     case "UNAUTHORIZED":
-      return stockFailure(
-        "Sua sessão não está ativa. Entre novamente para continuar; os dados continuam no formulário."
-      );
+      return stockFailure(SESSION_ENDED_MESSAGE);
     case "FORBIDDEN":
       return stockFailure(
         "Sua conta não tem permissão para alterar o estoque nesta organização."

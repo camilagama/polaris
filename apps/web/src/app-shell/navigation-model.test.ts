@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   documentTitle,
+  isSignInPath,
   NAV_ITEMS,
   OFFLINE_NAV_ITEMS,
   resolveRoute,
@@ -108,5 +109,19 @@ describe("menu items of the offline runtime", () => {
         expect(route.navId).toBe(item.id);
       }
     }
+  });
+});
+
+describe("the sign-in route", () => {
+  it("is recognised with or without a trailing slash, and only exactly", () => {
+    expect(isSignInPath("/entrar")).toBe(true);
+    expect(isSignInPath("/entrar/")).toBe(true);
+    for (const path of ["/", "/entrar/x", "/entrarr", "/sales", "/ENTRAR"]) {
+      expect(isSignInPath(path)).toBe(false);
+    }
+  });
+
+  it("is not a page of the shell: it has no menu and no organization", () => {
+    expect(resolveRoute("/entrar").kind).toBe("not-found");
   });
 });

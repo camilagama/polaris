@@ -20,6 +20,8 @@ export const hostileRedirectTargets: readonly [string, string][] = [
   ["the API", "/api/auth/sign-out"],
   ["the API with dot segments", "/sales/../api/auth/sign-out"],
   ["RPC", "/rpc/sales/list"],
+  ["the health check of the Worker", "/health"],
+  ["the readiness check of the Worker", "/ready"],
   [
     "an external host in the destination (voltar)",
     "/entrar?voltar=%2F%2Fevil.example",

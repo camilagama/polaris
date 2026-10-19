@@ -1,10 +1,11 @@
 import { rpcErrorCode } from "../lib/rpc-error";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 /** Portuguese text for a failed period result request. */
 export function periodSummaryErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para ver o resultado.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso ao resultado desta organização.";

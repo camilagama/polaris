@@ -3,7 +3,8 @@ const MAX_RETURN_PATH_LENGTH = 200;
 const MAX_CALLBACK_LENGTH = 800;
 const PLACEHOLDER_ORIGIN = "http://polaris.invalid";
 const MAX_DECODE_ROUNDS = 3;
-const sensitivePrefixes = ["/api", "/rpc"];
+// Paths the Worker answers itself (`run_worker_first`): the app never sends the person to one of them.
+const sensitivePrefixes = ["/api", "/rpc", "/health", "/ready", "/webhooks"];
 const SIGN_IN_PATH = "/entrar";
 // The characters Better Auth 1.6.23 accepts in a relative callback: a plain path and a query without
 // `( ) ! ~ * '`, which `encodeURIComponent` leaves alone. The app enforces it itself so that a hostile

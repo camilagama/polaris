@@ -14,7 +14,13 @@ const CACHE_KEY = "polaris.offline.organizations";
 
 let organizations = ORIGINAL;
 
-type Listing = "down" | "ok" | "unauthorized";
+type Listing =
+  | "down"
+  | "empty"
+  | "ok"
+  | "throttled"
+  | "unauthorized"
+  | "unavailable";
 
 /** Plays the part of the server for the one read the app makes on every start. */
 async function serveListing(page: Page, listing: () => Listing) {
@@ -23,6 +29,34 @@ async function serveListing(page: Page, listing: () => Listing) {
     const state = listing();
     if (state === "down") {
       await route.abort("internetdisconnected");
+      return;
+    }
+    if (state === "throttled" || state === "unavailable") {
+      const [status, code] =
+        state === "throttled"
+          ? [429, "TOO_MANY_REQUESTS"]
+          : [503, "SERVICE_UNAVAILABLE"];
+      await route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code,
+            data: undefined,
+            defined: false,
+            message: code,
+            status,
+          },
+          meta: [],
+        }),
+        contentType: "application/json",
+        status,
+      });
+      return;
+    }
+    if (state === "empty") {
+      await route.fulfill({
+        body: JSON.stringify({ json: { organizations: [] }, meta: [] }),
+        contentType: "application/json",
+      });
       return;
     }
     if (state === "unauthorized") {
@@ -98,16 +132,23 @@ test("quando a sessão acabou, a cópia das organizações é apagada e não é 
     await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)
   ).toContain("Loja do teste");
 
+  // the session was refused on opening: the app goes to the sign-in screen by itself (AC-16)
   listing = "unauthorized";
   await page.reload();
-  await expect(page.getByText("Sua sessão não está ativa")).toBeVisible();
+  await page.waitForURL("**/entrar?motivo=sessao&voltar=/");
+  await expect(
+    page.getByRole("heading", { name: "Entrar no Polaris" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+  ).toBeVisible();
   expect(
     await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)
   ).toBeNull();
 
   // and offline afterwards there is nothing to open from
   listing = "down";
-  await page.reload();
+  await page.goto("/");
   await expect(
     page.getByText("Não foi possível carregar suas organizações")
   ).toBeVisible();
@@ -130,4 +171,36 @@ test("aberto da cópia, lê a lista de verdade quando a rede volta", async ({
   listing = "ok";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText("Loja renomeada").first()).toBeAttached();
+});
+
+for (const refusal of ["throttled", "unavailable"] as const) {
+  test(`com a cópia no aparelho, ${refusal === "throttled" ? "429" : "503"} na abertura não leva a /entrar: o app abre da cópia (AC-11)`, async ({
+    page,
+  }) => {
+    let listing: Listing = "ok";
+    await serveListing(page, () => listing);
+    await page.goto("/");
+    await expect(page.getByText("Loja do teste").first()).toBeAttached();
+
+    listing = refusal;
+    await page.reload();
+    await expect(page.getByText("Loja do teste").first()).toBeAttached();
+    expect(new URL(page.url()).pathname).toBe("/");
+    expect(
+      await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)
+    ).toContain("Loja do teste");
+  });
+}
+
+test("o primeiro acesso de uma conta sem organização chega à tela de criar organização, sem erro (AC-9)", async ({
+  page,
+}) => {
+  await serveListing(page, () => "empty");
+  await page.goto("/");
+  await expect(page.getByText("Não foi possível")).toHaveCount(0);
+  await expect(page.getByText("Sua sessão acabou")).toHaveCount(0);
+  expect(new URL(page.url()).pathname).toBe("/");
+  await expect(
+    page.getByRole("heading", { name: "Abra a sua organização" })
+  ).toBeVisible();
 });

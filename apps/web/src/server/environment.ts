@@ -117,6 +117,8 @@ export interface WorkerBindings {
   /** The key of the HMAC that identifies an offline command's content (ADR 0079); at least 32 bytes. */
   SYNC_PAYLOAD_HASH_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
+  /** The public key of the Turnstile widget of this environment (not a secret). */
+  TURNSTILE_SITE_KEY?: string;
 }
 
 export interface ServerEnv {

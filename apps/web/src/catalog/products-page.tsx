@@ -23,6 +23,7 @@ import {
 import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import "./products-page.css";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type ProductListStatus = "active" | "archived";
 type ProductAction = "archive" | "restore";
@@ -59,7 +60,7 @@ function errorMessage(
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return "Sua sessão não está ativa. Entre novamente para acessar o catálogo.";
+    return SESSION_ENDED_MESSAGE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
