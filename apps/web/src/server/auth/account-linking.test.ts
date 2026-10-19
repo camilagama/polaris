@@ -11,6 +11,11 @@ import {
   handleSetPasswordRequest,
 } from "../auth/handler";
 import type { WorkerBindings } from "../environment";
+import {
+  hostileRedirectTargets,
+  validReturnCallbackURL,
+} from "./redirect-target-test-cases";
+import { withSocialRateLimit } from "./social-rate-limit-test-support";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
 const testBaseURL = "http://localhost";
@@ -118,13 +123,15 @@ function createAccountLinkingTestApp(
     requestId: "pr17-account-linking-test-request",
     secret: testSecret,
   });
-  const app = createServerApp({
-    authAbuseProtector: async () => undefined,
-    authHandler: (request) =>
-      new URL(request.url).pathname.endsWith("/set-password")
-        ? handleSetPasswordRequest(auth, request)
-        : auth.handler(request),
-  });
+  const app = withSocialRateLimit(
+    createServerApp({
+      authAbuseProtector: async () => undefined,
+      authHandler: (request) =>
+        new URL(request.url).pathname.endsWith("/set-password")
+          ? handleSetPasswordRequest(auth, request)
+          : auth.handler(request),
+    })
+  );
 
   return {
     app,
@@ -562,6 +569,76 @@ describe("Google and password account linking", () => {
     });
     expect(verifyIdToken).not.toHaveBeenCalled();
     expect(await findGoogleAccount(auth)).toBeNull();
+  });
+
+  describe("redirect targets of link-social (open redirect)", () => {
+    function linkGoogle(
+      app: ReturnType<typeof createAccountLinkingTestApp>["app"],
+      sessionCookie: string,
+      body: Record<string, unknown>
+    ) {
+      return app.request(
+        "/api/auth/link-social",
+        {
+          body: JSON.stringify({ provider: "google", ...body }),
+          headers: {
+            "content-type": "application/json",
+            cookie: sessionCookie,
+            origin: testBaseURL,
+          },
+          method: "POST",
+        },
+        testBindings
+      );
+    }
+
+    it("accepts the sign-in page carrying a totally encoded destination with a query", async () => {
+      const { app, verificationEmails } = createAccountLinkingTestApp();
+      stubExternalAuthServices();
+      const session = await createVerifiedPasswordSession(
+        app,
+        verificationEmails,
+        "redirect-ok@example.invalid"
+      );
+
+      const response = await linkGoogle(app, session.sessionCookie, {
+        callbackURL: validReturnCallbackURL,
+        errorCallbackURL: "/entrar?erro=google",
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { url?: string };
+      expect(new URL(body.url as string).origin).toBe(
+        "https://accounts.google.com"
+      );
+    });
+
+    describe.each(["callbackURL", "errorCallbackURL", "newUserCallbackURL"])(
+      "in %s",
+      (field) => {
+        it.each(hostileRedirectTargets)(
+          "refuses %s with 403 and no Location",
+          async (_reason, target) => {
+            vi.spyOn(console, "error").mockImplementation(() => undefined);
+            const { app, verificationEmails } = createAccountLinkingTestApp();
+            stubExternalAuthServices();
+            const session = await createVerifiedPasswordSession(
+              app,
+              verificationEmails,
+              "redirect-refused@example.invalid"
+            );
+
+            const response = await linkGoogle(app, session.sessionCookie, {
+              [field]: target,
+            });
+
+            expect(response.status).toBe(403);
+            expect(response.headers.get("location")).toBeNull();
+            expect(await response.text()).not.toContain("accounts.google.com");
+          }
+        );
+      }
+    );
   });
 
   it("requires an authenticated session before starting Google account linking", async () => {

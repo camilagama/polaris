@@ -4,7 +4,9 @@ import { type Context, Hono } from "hono";
 import {
   type AuthAbuseProtector,
   isAuthAbuseProtectionApplicable,
+  isSocialAuthRateLimitApplicable,
   protectAuthRequest,
+  protectSocialAuthRequest,
 } from "./auth/abuse-protection";
 import {
   handleBetterAuthRequest,
@@ -116,6 +118,17 @@ export function createServerApp({
         },
         503
       );
+    }
+
+    if (isSocialAuthRateLimitApplicable(context.req.raw)) {
+      const socialResponse = await protectSocialAuthRequest(
+        context.req.raw,
+        context.env,
+        context.get("requestId")
+      );
+      if (socialResponse !== undefined) {
+        return context.newResponse(socialResponse.body, socialResponse);
+      }
     }
 
     if (

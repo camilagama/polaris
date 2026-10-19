@@ -102,6 +102,11 @@
       "name": "MEDIA_UPLOAD_RATE_LIMIT",
       "namespace_id": "900019",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "AUTH_SOCIAL_RATE_LIMITER",
+      "namespace_id": "900020",
+      "simple": { "limit": 20, "period": 60 }
     }
   ],
   // The three queues of the plan and the dead-letter queue (ADR 0083, ADR 0085, runbook docs/runbooks/queues.md). Declaring them here
@@ -256,6 +261,11 @@
           "name": "MEDIA_UPLOAD_RATE_LIMIT",
           "namespace_id": "902019",
           "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "AUTH_SOCIAL_RATE_LIMITER",
+          "namespace_id": "902020",
+          "simple": { "limit": 20, "period": 60 }
         }
       ],
       "queues": {
@@ -381,6 +391,11 @@
         {
           "name": "MEDIA_UPLOAD_RATE_LIMIT",
           "namespace_id": "901019",
+          "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "AUTH_SOCIAL_RATE_LIMITER",
+          "namespace_id": "901020",
           "simple": { "limit": 20, "period": 60 }
         }
       ],

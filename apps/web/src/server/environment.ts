@@ -76,6 +76,8 @@ export interface WorkerBindings {
   AUTH_EMAIL_REPLY_TO?: string;
   AUTH_HYPERDRIVE?: HyperdriveBinding;
   AUTH_RATE_LIMITER?: RateLimitBinding;
+  /** The limiter of the Google sign-in start and callback (20 per 60 s per IP); it has no Turnstile. */
+  AUTH_SOCIAL_RATE_LIMITER?: RateLimitBinding;
   BETTER_AUTH_BASE_URL?: string;
   /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
   BILLING_HYPERDRIVE?: HyperdriveBinding;

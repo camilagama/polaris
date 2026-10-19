@@ -1794,6 +1794,16 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Gate | Concluído | `purge-functions` em `gates:ci` e `gate10` (`packages/db/scripts/verify-purge-functions-gate.ts`, comparação em `packages/db/src/purge-function-definitions.ts`): lê `pg_get_functiondef` das três funções e confere `whole_organization`, o prazo de 90 dias, as tabelas apagadas (nomes e ordem), as chaves do fato de cobrança e o único `DELETE`. Falha provada por mutação (30 dias, `audit_logs` de volta, tabela fora da lista) no banco e nos testes unitários, que também leem as migrations sem banco. |
 | Checklist de release | Concluído | Item 18 de [release-checklist.md](../docs/runbooks/release-checklist.md): o gate verde no SHA candidato (BLOCK, **decidido**). |
 
+### Fase 13 — gates de RLS e de domínio na suíte `ci` (T-122a, POL-57; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Gates na suíte `ci` | Concluído | `inventory`, `customers`, `media-upload`, `tenant-context` (`poc:tenant:verify`) e `rls` (`poc:rls:verify`) em `packages/db/scripts/run-gates.ts`. O `rls` roda a rota do PR11 num servidor local (`apps/web/scripts/verify-rls-ci-gate.ts`); o pool do Hyperdrive, o cache de SQL e a região ficam para o gate com Worker remoto. O `tenant-context` estava defasado (políticas do papel da retenção) e foi corrigido. |
+| Lista de hosts | Concluído | `packages/db/scripts/gate-hosts.ts`: Neon direto em São Paulo, ou `localhost`/`127.0.0.1` com `CI=true`; o executor valida antes de conectar (`gate-target.test.ts`: host fora da lista é recusado e nenhuma conexão é aberta); ao conectar, o executor também lê o marcador `polaris.environment` e recusa `production`, `staging` e `restore-drill` (marcador vazio é a branch descartável). O marcador de produção ainda precisa ser gravado no go-live. |
+| Só em Neon | Documentado | `gate2-runtime` e a prova de Hyperdrive: [runbook do Gate 4](../docs/runbooks/gate-4-sales-core.md#o-que-só-roda-em-neon), emenda do [ADR 0025](../docs/adr/0025-estrategia-de-testes-de-banco.md). |
+| Verificação local | Concluída (19/10/2026) | Migrations do zero num PostgreSQL 18.4 local descartável; suíte `ci` inteira (55 gates, 0 falhas, cerca de 5 min; os cinco novos somam cerca de 11 s); falha provada por mutação (`DISABLE ROW LEVEL SECURITY` em `rls_poc_operations` derruba `rls` e `tenant-context`; `NO FORCE` em `customers` derruba `customers`; `DISABLE` em `organizations` derruba `tenant-context`); `bun run check` verde. O CI ainda não rodou a suíte com os gates novos. |
+
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
@@ -1824,7 +1834,7 @@ Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisado
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | P0: ADR e documentação | Em revisão (só Markdown) | [ADR 0100](../docs/adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md); emendas dos ADRs [0017](../docs/adr/0017-politica-de-sessao-e-conta.md), [0044](../docs/adr/0044-revisao-de-seguranca-adicional.md) (o item da troca autenticada de senha fica resolvido pelo P8) e [0047](../docs/adr/0047-abrir-o-app-sem-rede.md); PR 18A do plano; [autenticação](../docs/business-rules/authentication.md) e [privacidade](../docs/business-rules/privacy.md). Nenhum código, migration nem configuração. |
-| P1: limitador social e open redirect | Pendente | `AUTH_SOCIAL_RATE_LIMITER`, 302 no callback, testes de `callbackURL` no servidor. Depende do P0. |
+| P1: limitador social e open redirect | Em revisão | `AUTH_SOCIAL_RATE_LIMITER` (20 por 60 s por IP, falha fechada) no início e no callback do Google, com 302 `/entrar?erro=limite` no callback; o servidor só aceita `callbackURL`, `errorCallbackURL`, `newUserCallbackURL` e `redirectTo` que sejam caminho do app (sem `/api`, `/rpc`, esquema, host nem caractere de controle, e com o `voltar` validado), com testes de open redirect em `sign-in/social` e `link-social`. Só servidor e `wrangler.jsonc`; a tela `/entrar` é o P3. |
 | P6: páginas legais | Pendente | Conteúdo versionado, `LEGAL_DOCUMENTS`, renderizador e travas de build. Antes do P3, para não haver link morto. |
 | P2: bloqueio de conta (db) | Pendente | Migration, gate `login-lock`, classe de retenção `auth_login_lock` e job de expurgo. Um PR de banco por vez. |
 | P3: `/entrar` só com Google | Pendente | `voltar`, motivo, "Entrar de novo", "Sair" com destino, `/api/auth-methods` e o texto único de sessão encerrada. |

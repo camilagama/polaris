@@ -15,6 +15,9 @@ interface DatabaseState {
   transactionId: string;
 }
 
+// Fixed values (organizations, seed tokens) work only because the gate database
+// is disposable: the bootstrap seeds them once into an empty database, and the
+// gate cleans up after itself. Never point this gate at a database with data.
 const seedTokens: Record<RlsPocOrganizationId, string> = {
   org_a: "seed-a",
   org_b: "seed-b",

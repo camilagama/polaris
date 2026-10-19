@@ -21,6 +21,11 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import {
+  assertAllowedGateUrl,
+  disposableHostPattern,
+  isLocalGateHost,
+} from "./gate-hosts";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -38,8 +43,6 @@ const expectedChecks = [
   "media_assets_input_fingerprint_sha256",
   "media_assets_product_link_required",
 ];
-const disposableHostPattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 const poolerPattern = /pooler/i;
 
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -293,14 +296,17 @@ async function main(): Promise<void> {
   );
 
   assert.equal(confirmation, expectedBranch);
-  const connection = new URL(connectionString);
-  const runtimeConnection = new URL(runtimeConnectionString);
+  const connection = assertAllowedGateUrl(connectionString);
+  const runtimeConnection = assertAllowedGateUrl(runtimeConnectionString);
   for (const candidate of [connection, runtimeConnection]) {
     assert.equal(candidate.protocol, "postgresql:");
     assert.equal(candidate.hostname, expectedHostname);
     assert.match(candidate.hostname, disposableHostPattern);
     assert.equal(candidate.pathname, `/${gateDatabase}`);
-    assert.equal(candidate.searchParams.get("sslmode"), "verify-full");
+    // the job's own Postgres has no TLS; every Neon endpoint is verified
+    if (!isLocalGateHost(candidate.hostname)) {
+      assert.equal(candidate.searchParams.get("sslmode"), "verify-full");
+    }
     assert.doesNotMatch(candidate.hostname, poolerPattern);
   }
   assert.equal(
