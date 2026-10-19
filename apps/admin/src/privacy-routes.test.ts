@@ -60,6 +60,7 @@ function setup(
         subject: "subject-1",
       })
     ),
+    accessLog: { read: vi.fn() },
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
       diagnostics: vi.fn(() => Promise.resolve(null)),

@@ -49,6 +49,18 @@ describe("platform capabilities", () => {
     }
   });
 
+  it("declares the access log capability, held by the owner only", () => {
+    expect(PLATFORM_CAPABILITIES as readonly string[]).toContain(
+      "access_log:read"
+    );
+    expect(hasPlatformCapability("platform_owner", "access_log:read")).toBe(
+      true
+    );
+    expect(hasPlatformCapability("somebody_else", "access_log:read")).toBe(
+      false
+    );
+  });
+
   it("raises a stable error when a role lacks the capability", () => {
     try {
       assertPlatformCapability("nobody", "platform:read");

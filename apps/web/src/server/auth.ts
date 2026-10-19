@@ -13,6 +13,14 @@ import {
 import type { GoogleOptions } from "better-auth/social-providers";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
+  type AccessLogEvent,
+  type AccessLogWriter,
+  createDatabaseAccessLogWriter,
+  guardAccessLogWriter,
+  requestIp,
+  requestIpForSessionRow,
+} from "./auth/access-log";
+import {
   normalizePassword,
   PasswordPolicyError,
   passwordPolicyErrorDetails,
@@ -69,6 +77,8 @@ type AuthSecurityAuditEventWriter = (
 type AuthorizationEpochBumper = (userId: string) => Promise<void>;
 
 interface CreateBetterAuthOptions {
+  /** Appends the record of access (ADR 0092); the default writes through `database`, none without one. */
+  accessLogWriter?: AccessLogWriter;
   auditEventWriter?: AuthSecurityAuditEventWriter;
   authorizationEpochBumper?: AuthorizationEpochBumper;
   baseURL: string;
@@ -522,7 +532,57 @@ function buildAuthSecurityAuditEvent(
   );
 }
 
+/** What the access log records for a request the audit hook sees finish, besides the sessions the database hooks see. */
+function accessLogEventFor(
+  input: AuthAuditHookInput,
+  auditEvent: AuthSecurityAuditEvent | undefined
+): { event: AccessLogEvent; userId: string | null } | undefined {
+  const { context, path } = input;
+
+  if (path === "/sign-out") {
+    // a logout without a known session has no user to record
+    return auditEvent?.eventType === "logout_succeeded" && auditEvent.actorId
+      ? { event: "logout", userId: auditEvent.actorId }
+      : undefined;
+  }
+  if (path === "/sign-in/email") {
+    const { returned } = context;
+    const failed =
+      isAPIError(returned) ||
+      (returned instanceof Response && returned.status >= 400);
+    // nobody looks a user up by e-mail on a failure: the row holds the IP and the request only
+    return failed ? { event: "login_failed", userId: null } : undefined;
+  }
+  if (auditEvent?.eventType === "google_callback_failed") {
+    // only the session this request carries, if any: `capturedLogoutActorId` is set on a sign-out, lives as long
+    // as the auth instance and belongs to no callback, and the audit event's actor may have fallen back to it
+    return {
+      event: "login_failed",
+      userId:
+        context.session?.user?.id ?? context.session?.session?.userId ?? null,
+    };
+  }
+  return undefined;
+}
+
+interface StoredSession {
+  id?: string;
+  ipAddress?: string | null;
+  token?: string;
+  userId?: string;
+}
+
+/** The session a `/get-session` answer carries, if it carries one. */
+function sessionFromGetSession(returned: unknown): StoredSession | undefined {
+  const session = asRecord(asRecord(returned)?.session);
+  if (!session || typeof session.userId !== "string") {
+    return undefined;
+  }
+  return session as StoredSession;
+}
+
 export function createBetterAuth({
+  accessLogWriter,
   auditEventWriter,
   authorizationEpochBumper,
   baseURL,
@@ -543,6 +603,20 @@ export function createBetterAuth({
           await database.insert(authSecurityAuditEvents).values(event);
         }
       : undefined);
+
+  // Without a database or a writer (the test adapter) nothing is recorded.
+  const accessLogEnabled = Boolean(accessLogWriter ?? database);
+  const writeAccessLog: AccessLogWriter = guardAccessLogWriter(
+    accessLogWriter ??
+      (database
+        ? createDatabaseAccessLogWriter(database.$client)
+        : () => Promise.resolve(false))
+  );
+  // The last IP recorded for a session by this instance (one per request in production, so it only keeps one
+  // request from recording the same change twice); the session row keeps it between requests.
+  const recordedSessionIps = new Map<string, string>();
+  // the update requests that extend a session (the daily refresh), told apart from the other updates of a session
+  const refreshing = new WeakSet<object>();
 
   // A password reset revokes every offline lease of the user (plan section 56):
   // the database function bumps the epoch of the memberships and revokes the
@@ -618,10 +692,88 @@ export function createBetterAuth({
       requestId: safeRequestId,
     });
 
+    if (accessLogEnabled) {
+      const accessEvent = accessLogEventFor(
+        {
+          body: context.body,
+          capturedLogoutActorId,
+          context: authContext,
+          params: context.params,
+          path: context.path,
+          query: context.query,
+          requestId: safeRequestId,
+        },
+        event
+      );
+      // before the audit event: a failure of that write must not leave the access unrecorded
+      if (accessEvent) {
+        await writeAccessLog({
+          ...accessEvent,
+          ip: requestIp(context.headers ?? context.request?.headers),
+          requestId: safeRequestId,
+        });
+      }
+      if (context.path === "/get-session") {
+        await recordSessionIpChange(context, authContext.returned);
+      }
+    }
+
     if (event) {
       await writeAuditEvent(event);
     }
   });
+
+  // A request from another IP than the one the session row holds is an access of its own: it is recorded when
+  // it happens, not only at the daily refresh, and the row then holds the new IP (so the next request of the
+  // same IP costs nothing). Without a record, the row is left as it was and the next request tries again: that holds
+  // for the daily refresh as well, which leaves the row with the old IP when its own record failed.
+  async function recordSessionIpChange(
+    context: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+    returned: unknown
+  ): Promise<void> {
+    const session = sessionFromGetSession(returned);
+    const headers = context.headers ?? context.request?.headers;
+    const ip = requestIp(headers);
+    const rowIp = requestIpForSessionRow(headers);
+    if (
+      !(session?.id && session.token && session.userId && ip && rowIp) ||
+      session.ipAddress === rowIp
+    ) {
+      return;
+    }
+    // the refresh of this very request may have recorded the IP already: then only the row is left to update
+    const recorded =
+      recordedSessionIps.get(session.id) === ip ||
+      (await writeAccessLog({
+        event: "session_refreshed",
+        ip,
+        requestId: safeRequestId,
+        userId: session.userId,
+      }));
+    if (!recorded) {
+      return;
+    }
+    recordedSessionIps.set(session.id, ip);
+    try {
+      await (
+        context.context as unknown as {
+          internalAdapter: {
+            updateSession: (
+              token: string,
+              data: { ipAddress: string }
+            ) => Promise<unknown>;
+          };
+        }
+      ).internalAdapter.updateSession(session.token, { ipAddress: rowIp });
+    } catch (error) {
+      logServerError({
+        error,
+        method: "GET",
+        requestId: safeRequestId,
+        route: "/api/auth/get-session",
+      });
+    }
+  }
 
   return betterAuth({
     account: {
@@ -640,6 +792,51 @@ export function createBetterAuth({
     baseURL,
     database: resolvedDatabase,
     databaseHooks: {
+      session: {
+        create: {
+          after: async (session, hookContext) => {
+            await writeAccessLog({
+              event: "login_succeeded",
+              ip: requestIp(
+                hookContext?.headers ?? hookContext?.request?.headers
+              ),
+              requestId: safeRequestId,
+              userId: session.userId,
+            });
+          },
+        },
+        update: {
+          // the session is extended once a day of use (`updateAge`): that is the daily record of access, with the
+          // IP of this request. The row takes the IP only when `/get-session` has seen the record made
+          before: (data, hookContext) => {
+            if (accessLogEnabled && data.expiresAt && hookContext) {
+              refreshing.add(hookContext);
+            }
+            return Promise.resolve();
+          },
+          after: async (session, hookContext) => {
+            if (!(session && hookContext && refreshing.delete(hookContext))) {
+              return;
+            }
+            const ip = requestIp(
+              hookContext.headers ?? hookContext.request?.headers
+            );
+            // the hooks of the update run after the ones of `/get-session`, which may have recorded this IP already
+            if (ip && recordedSessionIps.get(session.id) === ip) {
+              return;
+            }
+            const recorded = await writeAccessLog({
+              event: "session_refreshed",
+              ip,
+              requestId: safeRequestId,
+              userId: session.userId,
+            });
+            if (recorded && ip) {
+              recordedSessionIps.set(session.id, ip);
+            }
+          },
+        },
+      },
       account: {
         create: {
           before: async (data) => ({ data: { ...data, idToken: null } }),

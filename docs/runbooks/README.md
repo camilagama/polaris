@@ -19,6 +19,7 @@ Gates e provas por fase:
 - Clientes e vendas (Fase 4): [Gate 4 — núcleo de vendas](./gate-4-sales-core.md), com a execução padrão em PostgreSQL 18 local ou do CI e a prova de liberação em Neon.
 - Offline (Fase 5): [Gate 5 — offline](./gate-5-offline.md), com o checklist manual em aparelho físico (iPhone e Android) que bloqueia ligar a escrita offline.
 - Privacidade (Fase 10): [Restore de backup e deletion ledger](./deletion-ledger-restore.md), com o que ler antes de substituir um ambiente e como reaplicar as exclusões.
+- Privacidade (Fase 10, [ADR 0092](../adr/0092-registro-de-acesso-a-aplicacao.md)): [Registro de acesso de autenticação](./registro-de-acesso.md), com o fornecimento só por ordem judicial, a guarda cautelar, o horário, o sigilo da saída e o monitoramento da gravação.
 - Infraestrutura assíncrona (Fase 11): [Filas Cloudflare](./queues.md), com o que está declarado, o plano Free e o comando de criação para o responsável, e [Jobs agendados](./scheduled-jobs.md), com os crons, o estado de cada job, o log e como forçar ou desligar uma execução.
 
 Dependências: [Auditoria de dependências](./dependency-audit.md), com o procedimento do job "Dependency audit", as exceções vigentes e seus prazos de revisão.

@@ -19,6 +19,7 @@ export const PLATFORM_CAPABILITIES = Object.freeze([
   "organization:legal_hold",
   "operational_incident:read",
   "operational_incident:retry",
+  "access_log:read",
 ] as const);
 
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];

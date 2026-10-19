@@ -67,6 +67,7 @@ const ADMIN_FUNCTIONS = [
   "admin_privacy_record_scope",
   "admin_privacy_resolve",
   "admin_reactivate_organization",
+  "admin_read_auth_access_log",
   "admin_read_operational_incident",
   "admin_release_organization_legal_hold",
   "admin_retry_dead_letter",
@@ -268,6 +269,8 @@ async function run() {
         `the helpers are not the Admin role's to run: ${statement}`
       );
     }
+    // the owner of the access log is the one other role that runs Admin functions: its own reader and the two audit
+    // helpers that reader calls (the access-log gate proves exactly which)
     const closedToOthers = await owner.pool.query<{
       name: string;
       role: string;
@@ -277,7 +280,7 @@ async function run() {
          CROSS JOIN (SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris%' UNION ALL SELECT NULL) AS r
         WHERE p.pronamespace = 'public'::regnamespace
           AND left(p.proname, 6) = 'admin_'
-          AND (r.rolname IS NULL OR NOT (pg_has_role(r.rolname, 'polaris_admin_runtime', 'MEMBER') OR r.rolname = 'polaris_admin_owner'))
+          AND (r.rolname IS NULL OR NOT (pg_has_role(r.rolname, 'polaris_admin_runtime', 'MEMBER') OR r.rolname IN ('polaris_admin_owner', 'polaris_access_log_owner')))
           AND CASE WHEN r.rolname IS NULL THEN has_function_privilege('public', p.oid, 'EXECUTE')
                    ELSE has_function_privilege(r.rolname, p.oid, 'EXECUTE') END`
     );

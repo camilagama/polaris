@@ -1,4 +1,5 @@
 import { configureLogging, logger } from "@polaris/observability/logger";
+import { readAuthAccessLog } from "@polaris/db/admin-access-log-repository";
 import {
   listOperationalIncidents,
   readOperationalIncident,
@@ -129,6 +130,12 @@ async function withBillingPorts<T>(
 }
 
 const dependencies: AdminDependencies = {
+  accessLog: {
+    read: (principalId, request, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readAuthAccessLog(client, principalId, request)
+      ),
+  },
   authenticate: async (token, bindings) => {
     const teamDomain = bindings.ACCESS_TEAM_DOMAIN ?? "";
     const issuer = accessIssuer(teamDomain);

@@ -580,11 +580,12 @@ async function run() {
       [Object.keys(PURGE_TABLES_WITHOUT_TENANT_DATA)]
     );
     assert.deepEqual(withoutOrganization.rows, [
+      { has_organization: false, table_name: "auth_access_log" },
       { has_organization: false, table_name: "operational_incidents" },
       { has_organization: false, table_name: "scheduled_job_state" },
     ]);
     tests.push(
-      "every table with an organization is either removed by the purge (the dead-letter items too) or kept with a written reason, and the incident and scheduler tables have no organization"
+      "every table with an organization is either removed by the purge (the dead-letter items too) or kept with a written reason, and the access log, incident and scheduler tables have no organization"
     );
 
     // the purge owner can delete exactly the purged tables and reach nothing that must survive

@@ -57,6 +57,7 @@ function setup(
   const incidentDependencies = incidents(overrides);
   const report = vi.fn();
   const dependencies: AdminDependencies = {
+    accessLog: { read: vi.fn() },
     authenticate: vi.fn(() =>
       Promise.resolve({
         email: null,

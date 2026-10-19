@@ -97,6 +97,8 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
 export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
   Record<string, string>
 > = Object.freeze({
+  auth_access_log:
+    "Registro de acesso do Marco Civil (art. 15), por usuário e sem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo de 6 meses, com a guarda cautelar do §2º (ADR 0092 e 0081).",
   operational_incidents:
     "Uma linha por causa (contagem, datas e uma referência opaca, o ID de um evento), sem organização (ADR 0085 e 0087).",
   scheduled_job_state:

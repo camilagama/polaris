@@ -25,6 +25,8 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 - Múltiplas sessões simultâneas são permitidas. `GET /api/auth/list-sessions` lista apenas sessões do usuário autenticado; Better Auth exige sessão fresca, com `created_at` de até 24 horas, para essa operação. Um cliente que liste sessões precisa suportar nova autenticação quando necessário.
 - `POST /api/auth/revoke-session` pode revogar uma sessão somente se ela pertencer ao usuário autenticado; `POST /api/auth/sign-out` encerra a sessão atual. Reset de senha revoga todas as sessões.
 - O campo `token` retornado pela API nativa de sessões serve como identificador para revogação; autenticar ainda exige o cookie assinado. Não registrar esse campo em logs ou telemetria.
+- `session.ip_address` guarda o último IP visto na sessão, pelo IP de origem da requisição. Ele é atualizado na renovação diária e quando o IP muda; em IPv6, a linha da sessão guarda só a rede /64. Uma troca de IP é registrada como renovação de sessão no registro de acesso, e a verificação não faz consulta extra quando o IP é o mesmo. A troca de endereço dentro da mesma rede /64 não gera renovação; o login sempre grava o endereço inteiro. Se a gravação do registro falhar, a linha da sessão não muda e a próxima requisição tenta de novo.
+- Login, falha de login, saída e renovação de sessão são registrados no registro de acesso de autenticação, com as regras de guarda e sigilo de [privacidade](privacy.md). O registro nunca impede o login.
 
 A configuração segue a [documentação Better Auth de gerenciamento de sessões](https://www.better-auth.com/docs/concepts/session-management).
 ## Email transacional

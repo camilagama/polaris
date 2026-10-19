@@ -17,6 +17,10 @@ import {
 import { defaultCacheControl, securityHeaders } from "@polaris/http-security";
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
+import {
+  type AccessLogDependencies,
+  accessLogRoutes,
+} from "./access-log-routes";
 import { type IncidentDependencies, incidentRoutes } from "./incident-routes";
 import { type PrivacyDependencies, privacyRoutes } from "./privacy-routes";
 import { type SupportDependencies, supportRoutes } from "./support-routes";
@@ -59,6 +63,8 @@ export interface AdminDependencies {
       bindings: AdminBindings
     ) => Promise<AdminOrganizationPage>;
   };
+  /** The record of access to the application, read for a court order (ADR 0092). */
+  accessLog: AccessLogDependencies;
   /** Operational incidents (dead letters, outbox events past the attempt cap) and the retry of a dead event (ADR 0085). */
   incidents: IncidentDependencies;
   /** The workflow of a privacy request (ADR 0077). */
@@ -294,6 +300,14 @@ export function createAdminApp(dependencies: AdminDependencies) {
     "/",
     incidentRoutes(
       dependencies.incidents,
+      requireCapability,
+      dependencies.report
+    )
+  );
+  api.route(
+    "/",
+    accessLogRoutes(
+      dependencies.accessLog,
       requireCapability,
       dependencies.report
     )
