@@ -320,6 +320,24 @@ describe("a sale through its states", () => {
     ).rejects.toThrow("sale_needs_attention");
   });
 
+  it("a sale refused because another account's session sent it is needs_attention, not resubmittable under a new ID", async () => {
+    const { lease, outbox, sell } = await setup();
+    const { command } = await sell([{ quantity: 1, variantId: sock }]);
+    await outbox.markSending(command.commandId);
+    await outbox.reject(command.commandId, "session_changed");
+
+    expect((await pendingSales(outbox))[0]).toMatchObject({
+      code: "session_changed",
+      state: "needs_attention",
+    });
+    await expect(
+      resubmitRejectedSale(outbox, { commandId: command.commandId, lease })
+    ).rejects.toThrow("sale_needs_attention");
+    expect((await outbox.snapshot()).commands[0]?.commandId).toBe(
+      command.commandId
+    );
+  });
+
   it("a refused sale is resubmitted as a new command once the cause is fixed, keeping its time and evidence", async () => {
     const { lease, outbox, sell, server, sync } = await setup();
     const { command } = await sell([{ quantity: 4, variantId: shirt }]);
