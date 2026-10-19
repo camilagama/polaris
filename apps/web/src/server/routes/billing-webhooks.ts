@@ -1,16 +1,19 @@
-import { logger } from "@polaris/observability/logger";
-import { describeError } from "@polaris/observability/wide-event";
+import { ProviderNotConfiguredError } from "@polaris/billing/provider-port";
 import {
   type BillingStore,
   createBillingStore,
 } from "@polaris/db/billing-store";
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import { type Context, Hono } from "hono";
 import { billingProviderAdapters } from "../billing/adapters";
 import {
   type BillingProviderAdapter,
   type ParsedBillingEvent,
+  type UnresolvedBillingEvent,
   WebhookMalformedError,
   WebhookRejectedError,
+  withinRetryWindow,
 } from "../billing/provider-adapter";
 import type { ServerEnv } from "../environment";
 import {
@@ -101,6 +104,43 @@ async function readBody(context: WebhookContext): Promise<Response | string> {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
 }
 
+/**
+ * A delivery that names a resource the provider did not find when it was read
+ * back (AC-48) is not dropped silently: only its IDs are logged and, while the
+ * event is recent, the answer is a 503 so the provider sends it again. An
+ * older one is acknowledged with an error log of its IDs, so a resource that
+ * never appears cannot pause the provider's webhook; the reconciliation
+ * recovers it. Storing it as an `unresolved` row of the billing inbox,
+ * reprocessed by the hourly pass and the reconciliation, needs a migration and
+ * comes with the next database change of billing (ADR 0101).
+ */
+function answerUnresolved(
+  context: WebhookContext,
+  provider: string,
+  unresolved: readonly UnresolvedBillingEvent[]
+): Response {
+  const retry = unresolved.some((entry) => withinRetryWindow(entry.occurredAt));
+  for (const entry of unresolved) {
+    const ids = {
+      eventType: entry.eventType,
+      provider,
+      providerEventId: entry.providerEventId,
+      resourceId: entry.resourceId,
+    };
+    if (retry) {
+      logServerEvent("billing_webhook_unresolved", context, ids);
+    } else {
+      logger.error("billing_webhook_unresolved_given_up", {
+        ...ids,
+        requestId: context.get("requestId"),
+      });
+    }
+  }
+  return retry
+    ? reply(context, 503, { error: { code: "billing_resource_unresolved" } })
+    : reply(context, 200, { duplicates: 0, received: 0 });
+}
+
 /** The events of a delivery, or the answer to give when the request is not acceptable. */
 async function parseDelivery(
   context: WebhookContext,
@@ -120,9 +160,22 @@ async function parseDelivery(
       });
       return reply(context, 200, { duplicates: 0, received: 0 });
     }
-    return events;
+    const unresolved = events.filter(
+      (entry): entry is UnresolvedBillingEvent => "kind" in entry
+    );
+    if (unresolved.length > 0) {
+      return answerUnresolved(context, adapter.provider, unresolved);
+    }
+    return events as ParsedBillingEvent[];
   } catch (error: unknown) {
     const { provider } = adapter;
+    if (error instanceof ProviderNotConfiguredError) {
+      // without its secrets the adapter cannot prove or read anything: never a 200
+      logServerEvent("billing_provider_not_configured", context, { provider });
+      return reply(context, 503, {
+        error: { code: "billing_provider_not_configured" },
+      });
+    }
     if (error instanceof WebhookRejectedError) {
       // nothing about why: an attacker learns nothing from the answer
       logServerEvent("billing_webhook_rejected", context, { provider });

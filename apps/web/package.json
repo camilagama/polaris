@@ -21,6 +21,7 @@
     "@noble/hashes": "2.4.0",
     "@orpc/client": "^1.15.4",
     "@orpc/server": "^1.15.4",
+    "@polaris/billing": "workspace:*",
     "@polaris/contracts": "workspace:*",
     "@polaris/db": "workspace:*",
     "@polaris/domain": "workspace:*",
