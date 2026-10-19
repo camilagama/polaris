@@ -31,11 +31,10 @@ const tagNames = (html: string) =>
     html
       .split("<")
       .slice(1)
-      .map((part) => tagStartPattern.exec(part)?.[1]?.toLowerCase() ?? "?")
+      .flatMap((part) => tagStartPattern.exec(part)?.[1]?.toLowerCase() ?? [])
   );
 const allowedTags = new Set([
   "a",
-  "aside",
   "article",
   "button",
   "div",
@@ -167,8 +166,8 @@ describe("the markup check", () => {
 describe.each(LEGAL_DOCUMENT_IDS)("the essentials of %s (V5)", (document) => {
   const html = render(document);
   const essential = html.slice(
-    html.indexOf('<aside aria-labelledby="o-essencial"'),
-    html.indexOf("</aside>")
+    html.indexOf('<section aria-labelledby="o-essencial"'),
+    html.indexOf("</section>")
   );
 
   it("come in a box before the summary, with 4 to 6 sentences", () => {
@@ -198,7 +197,8 @@ describe.each(LEGAL_DOCUMENT_IDS)(
     const html = render(document);
 
     it("ends every numbered section with a link to the summary, and the summary has that id", () => {
-      const sections = count(html, /<section /g);
+      // every <section> but the essentials box is a numbered section
+      const sections = count(html, /<section /g) - 1;
       expect(sections).toBeGreaterThan(5);
       expect(count(html, backLinkPattern)).toBe(sections);
       expect(html).toContain('id="sumario"');

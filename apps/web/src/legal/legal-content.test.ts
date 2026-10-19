@@ -18,6 +18,7 @@ const DAY_MS = 86_400_000;
 const periodInBold = /\*\*(\d+ (?:dia|dias|meses|anos))\*\*/g;
 const outsideHttp = /https?:\/\//;
 const sentenceEnd = /[.!?]$/;
+const podemosApagar = /podemos apag|pode apag/;
 
 /** The words of a text with the bold and the line breaks flattened, for the sentences below. */
 const flat = (text: string) => text.replaceAll("**", "").replaceAll("\n", " ");
@@ -257,8 +258,15 @@ describe("the essentials box (V5)", () => {
     const at = blocks.findIndex(
       (block) => block.kind === "heading" && block.id === "o-essencial"
     );
-    const list = blocks[at + 1];
-    return list?.kind === "list" ? list.items.map(inlineText) : [];
+    const next = blocks.slice(at + 1);
+    const end = next.findIndex((block) => block.kind === "heading");
+    const list = next
+      .slice(0, end === -1 ? undefined : end)
+      .find((block) => block.kind === "list");
+    if (at === -1 || list?.kind !== "list") {
+      throw new Error(`${document}: o quadro "O essencial" não tem lista.`);
+    }
+    return list.items.map(inlineText);
   };
 
   it.each(LEGAL_DOCUMENT_IDS)(
@@ -280,8 +288,13 @@ describe("the essentials box (V5)", () => {
       expect(box).toContain("5 anos");
       expect(box).toContain("ainda não confere");
       // the conditional form of the text (AC-20): nothing is promised that the text does not promise
-      expect(box).not.toContain("apagamos automaticamente");
       expect(box).not.toContain("e-mail");
+      // any deletion in the box is in the conditional form of the text ("podemos apagar")
+      for (const item of essentialItems(document)) {
+        if (item.includes("apag")) {
+          expect(item).toMatch(podemosApagar);
+        }
+      }
     }
     expect(essentialItems("terms").join(" ")).toContain(
       "30 dias para desfazer"

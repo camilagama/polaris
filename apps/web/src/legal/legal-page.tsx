@@ -141,10 +141,10 @@ function SectionView({ section }: { section: Section }) {
   }
   if (heading.id === ESSENTIAL_SECTION_ID) {
     return (
-      <aside aria-labelledby={heading.id} className="legal-essential">
+      <section aria-labelledby={heading.id} className="legal-essential">
         <h2 id={heading.id}>{heading.text}</h2>
         {blocks.map(renderBlock)}
-      </aside>
+      </section>
     );
   }
   return (

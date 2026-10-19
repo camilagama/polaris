@@ -85,10 +85,9 @@ for (const { path, title } of pages) {
     test('o quadro "O essencial" vem antes do sumário e cada seção volta a ele', async ({
       page,
     }) => {
+      await page.setViewportSize({ height: 800, width: 360 });
       await page.goto(path);
-      const essential = page.getByRole("complementary", {
-        name: "O essencial",
-      });
+      const essential = page.getByRole("region", { name: "O essencial" });
       await expect(essential).toBeVisible();
       const summary = page.getByRole("navigation", { name: "Sumário" });
       const [essentialBox, summaryBox] = await Promise.all([

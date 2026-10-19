@@ -4,6 +4,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["CLOUDFLARE_ENV", "LEGAL_DRAFT_BUILD"],
       "outputs": []
     },
     "check": {
