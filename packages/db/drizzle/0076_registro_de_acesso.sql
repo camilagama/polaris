@@ -44,7 +44,7 @@ GRANT SELECT, INSERT ON TABLE public.auth_access_log TO polaris_access_log_owner
 CREATE FUNCTION public.auth_access_log_immutable()
 RETURNS trigger
 LANGUAGE plpgsql
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, pg_temp
 AS $function$
 BEGIN
   RAISE EXCEPTION 'the access log is append-only'
@@ -77,7 +77,7 @@ CREATE FUNCTION public.record_auth_access(p_event text, p_user text, p_ip inet, 
 RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, pg_temp
 AS $function$
 BEGIN
   IF p_event IS NULL OR p_event NOT IN ('login_succeeded', 'login_failed', 'logout', 'session_refreshed') THEN
@@ -141,7 +141,7 @@ CREATE FUNCTION public.admin_read_auth_access_log(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, pg_temp
 AS $function$
 DECLARE
   after_at timestamp with time zone;

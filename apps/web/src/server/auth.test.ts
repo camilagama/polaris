@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { app, createServerApp } from "./app";
 import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "./auth";
 import { createBetterAuth } from "./auth";
+import type { AccessLogWriter } from "./auth/access-log";
 import { createResendAuthEmailDelivery } from "./auth/email";
 import { handleBetterAuthRequest } from "./auth/handler";
 import type { WorkerBindings } from "./environment";
@@ -50,7 +51,7 @@ const testGoogleProvider: GoogleOptions = {
   verifyIdToken: async () => true,
 };
 
-function createGoogleTestApp() {
+function createGoogleTestApp(accessLogWriter?: AccessLogWriter) {
   const auditEvents: AuthSecurityAuditEvent[] = [];
   const databaseAdapter = memoryAdapter({
     account: [],
@@ -59,6 +60,7 @@ function createGoogleTestApp() {
     verification: [],
   });
   const auth = createBetterAuth({
+    ...(accessLogWriter ? { accessLogWriter } : {}),
     auditEventWriter: (event) => {
       auditEvents.push(event);
       return Promise.resolve();
@@ -1076,6 +1078,51 @@ describe("Google OAuth and security audit", () => {
       "do-not-store-this-provider-detail"
     );
     expect(JSON.stringify(auditEvents)).not.toContain("access_denied");
+  });
+
+  it("does not give a failed Google callback the user of an earlier sign-out", async () => {
+    const entries: { event: string; userId: string | null }[] = [];
+    const { app: testApp } = createGoogleTestApp((entry) => {
+      entries.push({ event: entry.event, userId: entry.userId });
+      return Promise.resolve(true);
+    });
+    stubGoogleTokenExchange();
+    const first = await beginGoogleLogin(testApp);
+    const callback = await testApp.request(
+      "/api/auth/callback/google?code=fake-code&state=" +
+        encodeURIComponent(first.state),
+      { headers: { cookie: first.cookies } },
+      testBindings
+    );
+    await testApp.request(
+      "/api/auth/sign-out",
+      {
+        headers: {
+          "cf-connecting-ip": "203.0.113.7",
+          cookie: cookieHeader(callback.headers),
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+    const second = await beginGoogleLogin(testApp);
+    await testApp.request(
+      "/api/auth/callback/google?error=access_denied&state=" +
+        encodeURIComponent(second.state),
+      {
+        headers: {
+          "cf-connecting-ip": "203.0.113.8",
+          cookie: second.cookies,
+        },
+      },
+      testBindings
+    );
+
+    expect(entries.map((entry) => entry.event)).toContain("logout");
+    expect(entries.filter((entry) => entry.event === "login_failed")).toEqual([
+      { event: "login_failed", userId: null },
+    ]);
   });
 
   it("rejects an invalid state without exchanging the code or creating a session", async () => {

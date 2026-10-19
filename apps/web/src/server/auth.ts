@@ -537,7 +537,7 @@ function accessLogEventFor(
   input: AuthAuditHookInput,
   auditEvent: AuthSecurityAuditEvent | undefined
 ): { event: AccessLogEvent; userId: string | null } | undefined {
-  const { capturedLogoutActorId, context, path } = input;
+  const { context, path } = input;
 
   if (path === "/sign-out") {
     // a logout without a known session has no user to record
@@ -554,9 +554,12 @@ function accessLogEventFor(
     return failed ? { event: "login_failed", userId: null } : undefined;
   }
   if (auditEvent?.eventType === "google_callback_failed") {
+    // only the session this request carries, if any: `capturedLogoutActorId` is set on a sign-out, lives as long
+    // as the auth instance and belongs to no callback, and the audit event's actor may have fallen back to it
     return {
       event: "login_failed",
-      userId: auditEvent.actorId ?? capturedLogoutActorId,
+      userId:
+        context.session?.user?.id ?? context.session?.session?.userId ?? null,
     };
   }
   return undefined;

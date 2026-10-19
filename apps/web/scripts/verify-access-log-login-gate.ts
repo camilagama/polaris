@@ -1,6 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
 import { configureLogging } from "@polaris/observability/logger";
 import type { BetterAuthPlugin } from "better-auth";
@@ -202,10 +202,7 @@ async function run() {
     const suffix = randomUUID().slice(0, 8);
     const email = `access-log-${suffix}@example.invalid`;
     // four hex digits, the first never zero: PostgreSQL prints the address without leading zeros
-    const block = (
-      0x10_00 +
-      (randomBytes(2).readUInt16BE() % 0xf0_00)
-    ).toString(16);
+    const block = randomInt(0x10_00, 0x1_00_00).toString(16);
     const ipOf = (n: number) => `2001:db8:${block}::${n}`;
     const requestOf = (n: number) => `alogin-${suffix}-${n}`;
 

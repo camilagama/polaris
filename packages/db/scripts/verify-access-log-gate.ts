@@ -1,6 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import {
@@ -145,10 +145,7 @@ async function run() {
 
     // an address of the documentation range, new on every run: the table is append-only, so rows of earlier runs stay
     // four hex digits, the first never zero: PostgreSQL prints the address without leading zeros
-    const block = (
-      0x10_00 +
-      (randomBytes(2).readUInt16BE() % 0xf0_00)
-    ).toString(16);
+    const block = randomInt(0x10_00, 0x1_00_00).toString(16);
     const ipOf = (n: number) => `2001:db8:${block}::${n}`;
     const userA = `gate-alog-a-${suffix}`;
     const userB = `gate-alog-b-${suffix}`;
@@ -366,10 +363,20 @@ async function run() {
       assert.equal(row.definer, true, row.signature);
       assert.deepEqual(
         row.proconfig,
-        ["search_path=pg_catalog, public"],
+        ["search_path=pg_catalog, public, pg_temp"],
         `${row.signature} fixes its search_path`
       );
     }
+    const triggerFunction = await owner.pool.query<{
+      proconfig: string[] | null;
+    }>(
+      "SELECT proconfig FROM pg_proc WHERE oid = 'public.auth_access_log_immutable()'::regprocedure"
+    );
+    assert.deepEqual(
+      triggerFunction.rows[0]?.proconfig,
+      ["search_path=pg_catalog, public, pg_temp"],
+      "the trigger function fixes its search_path"
+    );
     const allRoles = (
       await owner.pool.query<{ rolname: string }>(
         "SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\\_%' AND rolname NOT LIKE 'polaris\\_gate\\_runner\\_%' AND rolname NOT LIKE 'polaris\\_alog\\_%' ORDER BY 1"
