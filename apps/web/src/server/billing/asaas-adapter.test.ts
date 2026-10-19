@@ -424,6 +424,29 @@ describe("AC-1c and AC-48 through the route", () => {
     expect(answer.response.status).toBe(503);
   });
 
+  it("a next token shorter than the minimum is refused at the configuration, even with the current token", async () => {
+    const short = "fake-next-token";
+    const t = setup({ bindings: { ASAAS_WEBHOOK_TOKEN_NEXT: short } });
+    for (const token of [TOKEN, short]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Two sends, one after the other.
+      const { answer, response } = await t.send(body(), {
+        "asaas-access-token": token,
+      });
+      expect(response.status).toBe(503);
+      expect(JSON.parse(answer).error).toEqual({
+        code: "billing_provider_not_configured",
+      });
+    }
+    expect(t.api.urls).toEqual([]);
+    expect(t.store.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("an empty next token is no rotation: the current token still works", async () => {
+    const t = setup({ bindings: { ASAAS_WEBHOOK_TOKEN_NEXT: "" } });
+    const { response } = await t.send(body());
+    expect(response.status).toBe(200);
+  });
+
   it("only a refused key (401 or 403) raises the key alert", async () => {
     const t = setup({
       answers: { "/v3/payments/pay_fake0000000001": { status: 400 } },
@@ -441,6 +464,58 @@ describe("AC-1c and AC-48 through the route", () => {
     const { response } = await t.send(body({ event: "PAYMENT_CREATED" }));
     expect(response.status).toBe(200);
     expect(t.api.urls).toEqual([]);
+  });
+});
+
+describe("a body dated in the future is never a reason for a 503", () => {
+  const future = "2099-01-01 00:00:00";
+
+  it("stores the fact, dated at most now, and logs the case with IDs only", async () => {
+    const t = setup();
+    const { logged, response } = await t.send(body({ dateCreated: future }));
+    expect(response.status).toBe(200);
+    const [call] = t.store.recordEvent.mock.calls as unknown as [
+      [{ fact: { occurredAt: Date } }],
+    ];
+    expect(call[0].fact.occurredAt.getTime()).toBeLessThanOrEqual(Date.now());
+    // cut down to the present: never a day or a year ahead
+    expect(call[0].fact.occurredAt.getFullYear()).toBeLessThan(2099);
+    expect(t.logs.warn).toHaveBeenCalledWith("billing_webhook_date_clamped", {
+      eventType: "PAYMENT_CONFIRMED",
+      provider: "asaas",
+      providerEventId: EVENT_ID,
+    });
+    expect(logged).not.toContain("2099");
+    expectNoLeak(logged);
+  });
+
+  it("a resource not found is acknowledged with the given-up log, not held for a retry that never ends", async () => {
+    const t = setup({
+      answers: { "/v3/payments/pay_fake0000000001": { status: 404 } },
+    });
+    const { response } = await t.send(body({ dateCreated: future }));
+    expect(response.status).toBe(200);
+    expect(t.logs.error).toHaveBeenCalledWith(
+      "billing_webhook_unresolved_given_up",
+      expect.objectContaining({ providerEventId: EVENT_ID })
+    );
+  });
+
+  it("a resource out of shape is acknowledged with the alert, not a 503", async () => {
+    const t = setup({
+      answers: {
+        "/v3/payments/pay_fake0000000001": {
+          json: { ...payment(), value: "24.90" },
+          status: 200,
+        },
+      },
+    });
+    const { response } = await t.send(body({ dateCreated: future }));
+    expect(response.status).toBe(200);
+    expect(t.logs.error).toHaveBeenCalledWith(
+      "billing_provider_response_malformed",
+      expect.objectContaining({ providerEventId: EVENT_ID })
+    );
   });
 });
 

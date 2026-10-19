@@ -35,7 +35,12 @@ function webhookTokensOf(bindings: WorkerBindings): [string, string] {
   if (token.length < MIN_WEBHOOK_TOKEN_LENGTH) {
     throw new ProviderNotConfiguredError();
   }
-  return [token, bindings.ASAAS_WEBHOOK_TOKEN_NEXT ?? ""];
+  // the token of a rotation holds to the same minimum: a short one is a guess away
+  const next = bindings.ASAAS_WEBHOOK_TOKEN_NEXT ?? "";
+  if (next.length > 0 && next.length < MIN_WEBHOOK_TOKEN_LENGTH) {
+    throw new ProviderNotConfiguredError();
+  }
+  return [token, next];
 }
 
 /** The API settings, checked only once the delivery is proven to come from Asaas. */
@@ -52,15 +57,22 @@ function apiSettingsOf(bindings: WorkerBindings): {
 }
 
 /** Reads the resource back; only codes and IDs ever reach the log. */
-async function readBack(client: AsaasClient, envelope: AsaasWebhookEnvelope) {
+async function readBack(
+  client: AsaasClient,
+  envelope: AsaasWebhookEnvelope,
+  now: Date
+) {
   const ids = { provider: "asaas", providerEventId: envelope.eventId };
   try {
-    const resolved = await resolveAsaasWebhook(client, envelope);
+    const resolved = await resolveAsaasWebhook(client, envelope, now);
     return Array.isArray(resolved) ? resolved : [resolved];
   } catch (error: unknown) {
     if (error instanceof ProviderResponseMalformedError) {
       logger.error("billing_provider_response_malformed", ids);
-      if (withinRetryWindow(envelope.occurredAt)) {
+      if (
+        !envelope.dateClamped &&
+        withinRetryWindow(envelope.occurredAt, now)
+      ) {
         // a gateway page or a half answer is usually brief: Asaas sends it again
         throw error;
       }
@@ -99,9 +111,18 @@ export function createAsaasAdapter(
         throw new WebhookRejectedError();
       }
       const settings = apiSettingsOf(bindings);
-      const envelope = readAsaasWebhook(rawBody);
+      const now = new Date();
+      const envelope = readAsaasWebhook(rawBody, now);
       if (!envelope) {
         throw new WebhookMalformedError();
+      }
+      if (envelope.dateClamped) {
+        // only IDs and the event name: no date, no body
+        logger.warn("billing_webhook_date_clamped", {
+          eventType: envelope.eventType,
+          provider: "asaas",
+          providerEventId: envelope.eventId,
+        });
       }
       const client = createAsaasClient({
         apiKey: settings.apiKey,
@@ -109,7 +130,7 @@ export function createAsaasAdapter(
         fetch: options.fetch ?? ((url, init) => fetch(url, init)),
         timeoutMs: ASAAS_WEBHOOK_READ_TIMEOUT_MS,
       });
-      return await readBack(client, envelope);
+      return await readBack(client, envelope, now);
     },
     provider: "asaas",
   };

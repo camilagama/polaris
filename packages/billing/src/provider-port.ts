@@ -32,6 +32,8 @@ export interface UnresolvedProviderEvent {
   kind: "unresolved";
   /** When the provider says the event happened: an old one stops being sent back for a retry. */
   occurredAt: Date;
+  /** The provider's time was ahead of the clock and was cut down to now: it never counts as recent. */
+  occurredAtClamped?: true;
   providerEventId: string;
   /** The ID of the resource that was not found (a charge, a subscription or a Polaris reference). */
   resourceId: string;

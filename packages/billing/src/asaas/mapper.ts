@@ -28,6 +28,8 @@ import { isAsaasId, isPolarisReference } from "./ids";
 export interface AsaasPayment {
   /** The amount, as `money.md` writes it, read from the JSON text (never a float). */
   amount: string;
+  /** The day the charge was confirmed (`AAAA-MM-DD`), or null when the resource shows none. */
+  confirmedOn: string | null;
   /** The day the charge was created (`AAAA-MM-DD`). */
   createdOn: string;
   deleted: boolean;
@@ -68,6 +70,30 @@ export function asaasCycle(cycleMonths: BillingCycleMonths): string {
 
 /** São Paulo is UTC−3 all year (no daylight saving time since 2019). */
 const SAO_PAULO_OFFSET_MS = 3 * 3_600_000;
+
+/**
+ * When a confirmation happened. The day comes from the charge read back
+ * (`confirmedDate`), which a forged body cannot move: the time of the webhook
+ * is kept when it falls on that day (it orders two facts of the same day) and
+ * is held inside that day otherwise (a webhook just after midnight of a charge
+ * confirmed just before it stays on the day's last instant, not its first).
+ * Never later than `now`.
+ */
+export function confirmationTime(
+  claimed: Date,
+  confirmedOn: string | null,
+  now: Date
+): Date {
+  const latest = Math.min(claimed.getTime(), now.getTime());
+  if (confirmedOn === null) {
+    return new Date(latest);
+  }
+  const startOfDay = new Date(`${confirmedOn}T00:00:00.000-03:00`).getTime();
+  const endOfDay = startOfDay + 24 * 3_600_000 - 1;
+  return new Date(
+    Math.min(Math.max(latest, startOfDay), endOfDay, now.getTime())
+  );
+}
 
 /** Statuses of a charge that was paid at some point (a later refund or chargeback keeps it so). */
 const PAID_STATUSES: ReadonlySet<string> = new Set([
@@ -111,6 +137,11 @@ function calendarDate(value: unknown): string {
   return value;
 }
 
+/** A calendar date the resource may or may not show; anything else counts as none, never as an error. */
+function optionalCalendarDate(value: unknown): string | null {
+  return typeof value === "string" && isValidCalendarDate(value) ? value : null;
+}
+
 function flag(value: unknown): boolean {
   if (typeof value !== "boolean") {
     throw new ProviderResponseMalformedError();
@@ -131,6 +162,7 @@ export function pickAsaasPayment(raw: unknown): AsaasPayment {
   }
   return {
     amount,
+    confirmedOn: optionalCalendarDate(source.confirmedDate),
     createdOn: calendarDate(source.dateCreated),
     deleted: flag(source.deleted),
     id: source.id as string,
@@ -310,6 +342,7 @@ function chargeShows(type: string, status: string): boolean {
 /** The fact of a charge event: what the event says, if the charge read back shows it. */
 export function mapAsaasPaymentEvent(input: {
   eventType: string;
+  now: Date;
   occurredAt: Date;
   payment: AsaasPayment;
   providerEventId: string;
@@ -325,7 +358,14 @@ export function mapAsaasPaymentEvent(input: {
   }
   return [
     event(
-      chargeFact(type, payment, subscription, input.occurredAt),
+      chargeFact(
+        type,
+        payment,
+        subscription,
+        type === "charge_succeeded"
+          ? confirmationTime(input.occurredAt, payment.confirmedOn, input.now)
+          : input.occurredAt
+      ),
       input.providerEventId,
       subscription
     ),

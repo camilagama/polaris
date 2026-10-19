@@ -119,7 +119,9 @@ function answerUnresolved(
   provider: string,
   unresolved: readonly UnresolvedBillingEvent[]
 ): Response {
-  const retry = unresolved.some((entry) => withinRetryWindow(entry.occurredAt));
+  const retry = unresolved.some(
+    (entry) => !entry.occurredAtClamped && withinRetryWindow(entry.occurredAt)
+  );
   for (const entry of unresolved) {
     const ids = {
       eventType: entry.eventType,

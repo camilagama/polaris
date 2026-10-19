@@ -27,8 +27,11 @@ import {
 export interface AsaasWebhookEnvelope {
   /** The reference of a finished checkout (`CHECKOUT_PAID`), checked against the `pol_<uuid>` shape. */
   checkoutReference: string | null;
+  /** True when the body's time was ahead of the clock and `occurredAt` was cut down to the present. */
+  dateClamped: boolean;
   eventId: string;
   eventType: string;
+  /** The time the body claims, never later than the present (a body dated in the future is cut down to it). */
   occurredAt: Date;
   paymentId: string | null;
   subscriptionId: string | null;
@@ -74,6 +77,8 @@ export async function asaasTokenMatches(
 
 /** `AAAA-MM-DD hh:mm:ss`, in Brasília time (UTC−3, no daylight saving time since 2019). */
 const asaasDateTimePattern = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/;
+/** A body time this far ahead of the clock is clock skew; further than that it is cut down to the present. */
+const MAX_FUTURE_SKEW_MS = 5 * 60_000;
 const eventTypePattern = /^[A-Z][A-Z_]{0,63}$/;
 
 function nestedId(body: Record<string, unknown>, key: string): unknown {
@@ -85,7 +90,10 @@ function nestedId(body: Record<string, unknown>, key: string): unknown {
 }
 
 /** The envelope of a webhook body, or null when it is not one Asaas documents. */
-export function readAsaasWebhook(rawBody: string): AsaasWebhookEnvelope | null {
+export function readAsaasWebhook(
+  rawBody: string,
+  now = new Date()
+): AsaasWebhookEnvelope | null {
   let body: unknown;
   try {
     body = JSON.parse(rawBody);
@@ -106,12 +114,16 @@ export function readAsaasWebhook(rawBody: string): AsaasWebhookEnvelope | null {
     return null;
   }
   const time = asaasDateTimePattern.exec(dateCreated);
-  const occurredAt = time
+  const claimedAt = time
     ? new Date(`${time[1]}T${time[2]}.000-03:00`)
     : new Date(Number.NaN);
-  if (Number.isNaN(occurredAt.getTime())) {
+  if (Number.isNaN(claimedAt.getTime())) {
     return null;
   }
+  // the token does not sign the body: its time is never a reason to refuse the
+  // delivery (a 503 loop pauses the webhook), only to cut it down to now
+  const dateClamped = claimedAt.getTime() - now.getTime() > MAX_FUTURE_SKEW_MS;
+  const occurredAt = dateClamped ? now : claimedAt;
   const paymentId = nestedId(fields, "payment");
   const subscriptionId = nestedId(fields, "subscription");
   const { checkout } = fields;
@@ -123,6 +135,7 @@ export function readAsaasWebhook(rawBody: string): AsaasWebhookEnvelope | null {
     checkoutReference: isPolarisReference(checkoutReference)
       ? checkoutReference
       : null,
+    dateClamped,
     eventId: id,
     eventType: event,
     occurredAt,
@@ -148,6 +161,8 @@ function unresolved(
   return {
     eventType: envelope.eventType,
     kind: "unresolved",
+    // a cut-down date restarts at every delivery: it never counts as recent
+    ...(envelope.dateClamped ? { occurredAtClamped: true as const } : {}),
     occurredAt: envelope.occurredAt,
     providerEventId: envelope.eventId,
     resourceId,
@@ -162,7 +177,8 @@ function unresolved(
  */
 export async function resolveAsaasWebhook(
   client: AsaasClient,
-  envelope: AsaasWebhookEnvelope
+  envelope: AsaasWebhookEnvelope,
+  now = new Date()
 ): Promise<ProviderBillingEvent[] | UnresolvedProviderEvent> {
   const kind = asaasEventKind(envelope.eventType);
   const meta = {
@@ -184,6 +200,7 @@ export async function resolveAsaasWebhook(
       return mapAsaasPaymentEvent({
         ...meta,
         eventType: envelope.eventType,
+        now,
         payment,
         subscription,
       });

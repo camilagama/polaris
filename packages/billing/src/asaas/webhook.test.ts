@@ -12,6 +12,7 @@ import {
 } from "../provider-port";
 import type { AsaasClient } from "./client";
 import {
+  confirmationTime,
   pickAsaasPayment,
   pickAsaasSubscription,
   reconcileAsaasSubscription,
@@ -100,11 +101,11 @@ async function deliver(
   api = fakeApi(),
   text = JSON.stringify(body)
 ): Promise<ProviderBillingEvent[] | UnresolvedProviderEvent> {
-  const envelope = readAsaasWebhook(text);
+  const envelope = readAsaasWebhook(text, clock);
   if (!envelope) {
     throw new Error("expected a readable webhook");
   }
-  return await resolveAsaasWebhook(api.client, envelope);
+  return await resolveAsaasWebhook(api.client, envelope, clock);
 }
 
 async function factsOf(
@@ -119,6 +120,8 @@ async function factsOf(
 }
 
 const occurredAt = new Date("2026-10-26T12:15:00.000Z");
+/** The clock of the tests: after the fixtures' event time. */
+const clock = new Date("2026-10-26T13:00:00.000Z");
 /** 26/10 + 1 month, through the end of 26/11 in São Paulo. */
 const monthlyEnd = new Date("2026-11-27T03:00:00.000Z");
 
@@ -167,9 +170,10 @@ describe("AC-1a: the Asaas token, compared in constant time", () => {
 describe("the webhook envelope: only IDs, the event name and its time", () => {
   it("reads the event ID, the name, the time (Brasília) and the resource ID", () => {
     expect(
-      readAsaasWebhook(JSON.stringify(webhookBody("PAYMENT_CONFIRMED")))
+      readAsaasWebhook(JSON.stringify(webhookBody("PAYMENT_CONFIRMED")), clock)
     ).toEqual({
       checkoutReference: null,
+      dateClamped: false,
       eventId: EVENT_ID,
       eventType: "PAYMENT_CONFIRMED",
       occurredAt,
@@ -246,6 +250,110 @@ describe("the webhook envelope: only IDs, the event name and its time", () => {
       )
     ).not.toBeNull();
   });
+});
+
+describe("the time of the body is never trusted and never a reason to refuse (ADR 0101)", () => {
+  const read = (dateCreated: string) =>
+    readAsaasWebhook(
+      JSON.stringify(webhookBody("PAYMENT_CONFIRMED", { dateCreated })),
+      clock
+    );
+
+  it("a time more than 5 minutes ahead of the clock is cut down to now and flagged", () => {
+    const envelope = read("2099-01-01 00:00:00");
+    expect(envelope).toMatchObject({ dateClamped: true, occurredAt: clock });
+  });
+
+  it("a time up to 5 minutes ahead is clock skew: kept as it is", () => {
+    // 13:00Z is 10:00 in Brasília
+    const envelope = read("2026-10-26 10:05:00");
+    expect(envelope).toMatchObject({
+      dateClamped: false,
+      occurredAt: new Date("2026-10-26T13:05:00.000Z"),
+    });
+    expect(read("2026-10-26 10:05:01")).toMatchObject({ dateClamped: true });
+  });
+
+  it("a body dated in the future still gives the fact of the resource, dated at most now", async () => {
+    const facts = await factsOf(
+      webhookBody("PAYMENT_CONFIRMED", { dateCreated: "2099-01-01 00:00:00" })
+    );
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.fact).toMatchObject({
+      occurredAt: clock,
+      periodEndsAt: monthlyEnd,
+      type: "charge_succeeded",
+    });
+  });
+
+  it("an unresolved event with a body dated in the future is marked, so it is never held for a retry", async () => {
+    const api = fakeApi({ payments: [] });
+    const result = await deliver(
+      webhookBody("PAYMENT_CONFIRMED", { dateCreated: "2099-01-01 00:00:00" }),
+      api
+    );
+    expect(result).toMatchObject({
+      kind: "unresolved",
+      occurredAtClamped: true,
+    });
+  });
+
+  it("a confirmation takes its day from the charge read back, not from the body", async () => {
+    // the body claims 26/10, the charge was confirmed on 25/10
+    const api = fakeApi({
+      payments: [paymentJson({ confirmedDate: "2026-10-25" })],
+    });
+    const facts = await factsOf(webhookBody("PAYMENT_CONFIRMED"), api);
+    expect(facts[0]?.fact).toMatchObject({
+      occurredAt: new Date("2026-10-26T02:59:59.999Z"),
+    });
+  });
+
+  it("holds a webhook of just after midnight inside the day the charge was confirmed, not at its start", () => {
+    // confirmed 23:59:50 on 25/10, webhook at 00:00:05 on 26/10 (Brasília)
+    const claimed = new Date("2026-10-26T03:00:05.000Z");
+    expect(confirmationTime(claimed, "2026-10-25", clock).toISOString()).toBe(
+      "2026-10-26T02:59:59.999Z"
+    );
+    // a body claiming an earlier day than the charge shows is moved up to its start
+    expect(
+      confirmationTime(
+        new Date("2026-10-20T12:00:00.000Z"),
+        "2026-10-25",
+        clock
+      ).toISOString()
+    ).toBe("2026-10-25T03:00:00.000Z");
+  });
+
+  it("never dates a confirmation after now, even when the body is within the skew", () => {
+    const ahead = new Date(clock.getTime() + 4 * 60_000);
+    expect(confirmationTime(ahead, "2026-10-26", clock)).toEqual(clock);
+    expect(confirmationTime(ahead, null, clock)).toEqual(clock);
+  });
+
+  it("keeps the time of day of the body when it falls on the day the charge shows", () => {
+    expect(confirmationTime(occurredAt, "2026-10-26", clock).getTime()).toBe(
+      occurredAt.getTime()
+    );
+    expect(confirmationTime(occurredAt, null, clock)).toEqual(occurredAt);
+  });
+
+  it("never dates a confirmation after now, even for a day in the future", () => {
+    expect(confirmationTime(occurredAt, "2099-01-01", clock)).toEqual(clock);
+  });
+
+  it.each([
+    ["absent", null],
+    ["unreadable", "ontem"],
+    ["not text", 20_261_026],
+  ])(
+    "a charge whose confirmation date is %s keeps the body's time",
+    async (_case, confirmedDate) => {
+      const api = fakeApi({ payments: [paymentJson({ confirmedDate })] });
+      const facts = await factsOf(webhookBody("PAYMENT_CONFIRMED"), api);
+      expect(facts[0]?.fact).toMatchObject({ occurredAt });
+    }
+  );
 });
 
 describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
@@ -663,10 +771,17 @@ describe("AC-5: the period is the due date of the charge plus the cycle, never n
   it("gives the same end whatever the clock says, and on a second read", async () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date("2026-10-26T12:00:00Z"));
-      const first = await factsOf(webhookBody("PAYMENT_CONFIRMED"));
-      vi.setSystemTime(new Date("2027-03-01T12:00:00Z"));
-      const second = await factsOf(webhookBody("PAYMENT_CONFIRMED"));
+      const read = async (now: Date) => {
+        const text = JSON.stringify(webhookBody("PAYMENT_CONFIRMED"));
+        const envelope = readAsaasWebhook(text, now);
+        return await resolveAsaasWebhook(
+          fakeApi().client,
+          envelope as never,
+          now
+        );
+      };
+      const first = await read(new Date("2026-10-26T13:00:00Z"));
+      const second = await read(new Date("2027-03-01T12:00:00Z"));
       expect(second).toEqual(first);
     } finally {
       vi.useRealTimers();
@@ -802,6 +917,7 @@ describe("AC-3: no personal or card data leaves the mapper", () => {
     );
     expect(Object.keys(payment).sort()).toEqual([
       "amount",
+      "confirmedOn",
       "createdOn",
       "deleted",
       "id",
