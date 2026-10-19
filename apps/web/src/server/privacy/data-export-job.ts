@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import type {
   ClaimedDataExport,
   PrivacyMaintenanceClient,
@@ -228,16 +229,16 @@ export async function runDataExports(
       report.ready += 1;
     } catch (error: unknown) {
       const failure = failureOf(error);
-      console.warn("data_export_run_failed", {
+      logger.warn("data_export_run_failed", {
         attempt: claimed.attempt,
-        code: failure.code,
+        errorCode: failure.code,
         exportId: claimed.id,
       });
       // recording the failure can fail too (the database, or the export already finished): the next run decides
       const isFinal = await client
         .failDataExport(claimed.id, failure.code, failure.final)
         .catch(() => {
-          console.warn("data_export_failure_not_recorded", {
+          logger.warn("data_export_failure_not_recorded", {
             exportId: claimed.id,
           });
           return false;

@@ -50,8 +50,19 @@ export const opaqueIdFields = [
 
 const opaqueIdPattern = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 
+declare const opaqueIdBrand: unique symbol;
+
+/**
+ * An id-shaped string that went through `opaqueId`. `organizationId`,
+ * `actorId` and `deviceId` take this type only, so a plain `string` (an e-mail,
+ * a header the client sent, a name) does not compile into those fields. The
+ * brand is a compile-time marker: the shape check is `isOpaqueId`, and the
+ * logger repeats it at run time.
+ */
+export type OpaqueId = string & { readonly [opaqueIdBrand]: true };
+
 /** True for an id-shaped value (shape only): no `@`, no spaces, no `+`, at most 128 characters. */
-export function isOpaqueId(value: unknown): value is string {
+export function isOpaqueId(value: unknown): value is OpaqueId {
   return typeof value === "string" && opaqueIdPattern.test(value);
 }
 
@@ -62,7 +73,7 @@ export function isOpaqueId(value: unknown): value is string {
  */
 interface CanonicalFieldTypes {
   /** Who acted: the user or the platform principal. Opaque id. */
-  readonly actorId?: string;
+  readonly actorId?: OpaqueId;
   /** Attempt number of a retried delivery (1 for the first). */
   readonly attempt?: number;
   /** Id that ties the events of one business flow across requests, queues and jobs. Opaque id. */
@@ -70,7 +81,7 @@ interface CanonicalFieldTypes {
   /** Id of the offline command (ADR on idempotent commands). Opaque id. */
   readonly commandId?: string;
   /** Device that sent the command. Opaque id, never a model name or a user agent. */
-  readonly deviceId?: string;
+  readonly deviceId?: OpaqueId;
   /** Wall-clock time of the operation in milliseconds, never CPU time. */
   readonly durationMs?: number;
   /** Provider or application error code, as the provider spells it. */
@@ -94,7 +105,7 @@ interface CanonicalFieldTypes {
   /** Name of the domain command or operation, e.g. `sale.confirm`. */
   readonly operation?: string;
   /** Organization the work belongs to. Opaque id, set by the server, never taken from the client as proof. */
-  readonly organizationId?: string;
+  readonly organizationId?: OpaqueId;
   /** How it ended. */
   readonly outcome?: Outcome;
   /** Payment or e-mail provider. */

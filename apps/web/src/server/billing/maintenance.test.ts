@@ -60,8 +60,10 @@ describe("the hourly billing maintenance", () => {
       "billing_maintenance_incomplete"
     );
     expect(logged).toHaveBeenCalledWith(
-      "billing_maintenance_incomplete",
-      expect.objectContaining({ sweep: expect.objectContaining({ failed: 2 }) })
+      expect.objectContaining({
+        event: "billing_maintenance_incomplete",
+        sweep: expect.objectContaining({ failed: 2 }),
+      })
     );
     logged.mockRestore();
   });

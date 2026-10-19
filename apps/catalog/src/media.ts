@@ -35,6 +35,7 @@ export interface MediaDependencies {
     productId: string;
     slug: string;
   }) => Promise<AuthorizedMedia | null>;
+  /** `message` is a stable event name (no text from the request); `error` is reduced to class and code. */
   report: (message: string, error?: unknown) => void;
 }
 
@@ -124,7 +125,7 @@ export async function serveMedia(
   try {
     authorized = await dependencies.authorize({ assetId, productId, slug });
   } catch (error: unknown) {
-    dependencies.report("catalog media authorization failed", error);
+    dependencies.report("catalog_media_authorization_failed", error);
     return unavailable();
   }
   if (authorized === null) {
@@ -140,7 +141,7 @@ export async function serveMedia(
     const object =
       derivative ?? (await dependencies.getObject(authorized.storageKey));
     if (object === null) {
-      dependencies.report("catalog media object is missing");
+      dependencies.report("catalog_media_object_missing");
       return notFound();
     }
     const etag = `"${assetId}-${derivative ? size : "master"}"`;
@@ -163,7 +164,7 @@ export async function serveMedia(
       status: 200,
     });
   } catch (error: unknown) {
-    dependencies.report("catalog media read failed", error);
+    dependencies.report("catalog_media_read_failed", error);
     return unavailable();
   }
 }

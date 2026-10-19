@@ -9,6 +9,8 @@ import {
   type QueueEnvelope,
   queueForEventType,
 } from "@polaris/domain/events/queue-envelope";
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { ProcessingKey, ProcessingLedger } from "./processing-ledger";
 
 /**
@@ -91,10 +93,6 @@ function sqlState(error: unknown): string | undefined {
   return typeof code === "string" && code.length === 5 ? code : undefined;
 }
 
-function errorClass(error: unknown): string {
-  return error instanceof Error ? error.name : "non_error_thrown";
-}
-
 /**
  * A message refused for good goes to the dead-letter queue as a notice (never its body) and is
  * acknowledged only after the queue took the notice: if sending fails the message is retried (and, past
@@ -108,7 +106,7 @@ async function refuse(
 ): Promise<void> {
   const { deadLetters } = dependencies;
   if (!deadLetters) {
-    console.warn("queue_dead_letter_not_configured", {
+    logger.warn("queue_dead_letter_not_configured", {
       messageId: message.id,
     });
     message.ack();
@@ -117,9 +115,9 @@ async function refuse(
   try {
     await deadLetters.send(deadLetterNotice(input), { contentType: "json" });
   } catch (error: unknown) {
-    console.error("queue_dead_letter_send_failed", {
+    logger.error("queue_dead_letter_send_failed", {
       cause: input.cause,
-      errorName: errorClass(error),
+      ...describeError(error),
       messageId: message.id,
     });
     message.retry({ delaySeconds: delay });
@@ -142,7 +140,7 @@ async function processMessage(
   } catch {
     // it will not become valid: a retry would only repeat the refusal
     const cause = refusalCauseOf(message.body);
-    console.warn("queue_message_invalid", { cause, messageId: message.id });
+    logger.warn("queue_message_invalid", { cause, messageId: message.id });
     await refuse(message, dependencies, delay, {
       cause,
       messageId: message.id,
@@ -151,9 +149,9 @@ async function processMessage(
   }
   if (QUEUE_NAME.exec(queue)?.[1] !== queueForEventType(envelope.type)) {
     // a type runs only on its own queue, so a heavy handler never runs on the queue of another weight
-    console.warn("queue_message_misrouted", {
+    logger.warn("queue_message_misrouted", {
+      eventType: envelope.type,
       messageId: message.id,
-      type: envelope.type,
     });
     await refuse(message, dependencies, delay, {
       cause: "wrong_queue",
@@ -167,9 +165,9 @@ async function processMessage(
   const handler = dependencies.handlers[envelope.type];
   if (!handler) {
     // a valid type this deploy has no handler for: retried while the retries last, then the platform moves it to the dead-letter queue
-    console.warn("queue_handler_missing", {
+    logger.warn("queue_handler_missing", {
+      eventType: envelope.type,
       messageId: message.id,
-      type: envelope.type,
     });
     message.retry({ delaySeconds: delay });
     return;
@@ -189,8 +187,8 @@ async function processMessage(
       dependencies.leaseSeconds ?? DEFAULT_LEASE_SECONDS
     );
   } catch (error: unknown) {
-    console.error("queue_ledger_unavailable", {
-      errorName: errorClass(error),
+    logger.error("queue_ledger_unavailable", {
+      ...describeError(error),
       messageId: message.id,
       sqlState: sqlState(error),
     });
@@ -198,7 +196,7 @@ async function processMessage(
     return;
   }
   if (claim.result === "done") {
-    console.info("queue_message_duplicate", {
+    logger.info("queue_message_duplicate", {
       eventId: envelope.eventId,
       messageId: message.id,
     });
@@ -208,11 +206,11 @@ async function processMessage(
   if (claim.result === "unknown") {
     // the key belongs to another event, or the outbox does not hold this one (forged, or purged since):
     // it will not become known, and nothing runs on the envelope alone
-    console.warn("queue_message_unknown_event", {
+    logger.warn("queue_message_unknown_event", {
       eventId: envelope.eventId,
+      eventType: envelope.type,
       messageId: message.id,
       reason: claim.reason,
-      type: envelope.type,
     });
     message.ack();
     return;
@@ -227,14 +225,13 @@ async function processMessage(
   } catch (error: unknown) {
     await ledger.release(key, claim.token).catch(() => undefined);
     const permanent = error instanceof PermanentHandlerError;
-    console.error("queue_message_failed", {
-      code: permanent ? error.code : undefined,
+    logger.error("queue_message_failed", {
       correlationId: envelope.correlationId,
-      errorName: errorClass(error),
+      ...describeError(error),
       eventId: envelope.eventId,
+      eventType: envelope.type,
       messageId: message.id,
       permanent,
-      type: envelope.type,
     });
     if (permanent) {
       message.ack();
@@ -247,8 +244,8 @@ async function processMessage(
     await ledger.complete(key);
   } catch (error: unknown) {
     // the work is done: the retry finds the handler idempotent, and a ledger that is back records it then
-    console.error("queue_ledger_not_recorded", {
-      errorName: errorClass(error),
+    logger.error("queue_ledger_not_recorded", {
+      ...describeError(error),
       eventId: envelope.eventId,
       messageId: message.id,
     });

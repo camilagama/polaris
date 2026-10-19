@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureLogging, type LogFields, logger } from "./logger";
+import {
+  configureLogging,
+  type LogFields,
+  logger,
+  type OpaqueId,
+  opaqueId,
+} from "./logger";
 
 type Spy = ReturnType<typeof vi.spyOn>;
+
+const leakedData = /joao@example|hunter2|98888-7777/;
 
 function lastCall(spy: Spy): Record<string, unknown> {
   const call = spy.mock.calls.at(-1);
@@ -154,8 +162,9 @@ describe("logger", () => {
 
   it("drops an opaque id that holds personal data", () => {
     logger.info("leaky", {
-      actorId: "maria@example.com",
-      organizationId: "org-1",
+      // a cast gets past the brand; the shape check still drops it
+      actorId: "maria@example.com" as unknown as OpaqueId,
+      organizationId: opaqueId("org-1"),
     });
 
     const event = lastCall(info);
@@ -164,5 +173,77 @@ describe("logger", () => {
       ignoredFields: ["actorId"],
       organizationId: "org-1",
     });
+  });
+
+  it("takes an organization, actor or device only as an OpaqueId", () => {
+    const text: string = "org-1";
+    // @ts-expect-error a plain string is not an OpaqueId.
+    const organization: LogFields = { organizationId: text };
+    // @ts-expect-error a plain string is not an OpaqueId.
+    const actor: LogFields = { actorId: text };
+    // @ts-expect-error a plain string is not an OpaqueId.
+    const device: LogFields = { deviceId: text };
+    expect([organization, actor, device]).toHaveLength(3);
+
+    const minted: LogFields = {
+      actorId: opaqueId("usr-1"),
+      deviceId: opaqueId("dev_1"),
+      organizationId: opaqueId("org-1"),
+    };
+    expect(minted.organizationId).toBe("org-1");
+  });
+
+  it("makes an OpaqueId only from an id-shaped value", () => {
+    expect(opaqueId("0190b2c4-7d5a-7e2f-9a11-123456789012")).toBeDefined();
+    expect(opaqueId("maria@example.com")).toBeUndefined();
+    expect(opaqueId("two words")).toBeUndefined();
+    expect(opaqueId("+5511999998888")).toBeUndefined();
+    expect(opaqueId("a".repeat(129))).toBeUndefined();
+    expect(opaqueId(42)).toBeUndefined();
+    expect(opaqueId(undefined)).toBeUndefined();
+  });
+
+  it("runs every event through the redaction policy", () => {
+    logger.error("leaky", {
+      causes: [{ code: "x", name: "joao@example.com" }],
+      password: "hunter2",
+      note: "ligar para (11) 98888-7777",
+    });
+
+    const event = lastCall(error);
+    expect(JSON.stringify(event)).not.toMatch(leakedData);
+    expect(event).toMatchObject({ password: "[REDACTED:secret]" });
+  });
+
+  it("fails closed, and never throws, when a value cannot be read", () => {
+    const hostile = {
+      get boom(): string {
+        throw new Error("maria@example.com");
+      },
+    };
+
+    expect(() =>
+      logger.error("unreadable", hostile as unknown as LogFields)
+    ).not.toThrow();
+    expect(lastCall(error)).toMatchObject({
+      event: "unreadable",
+      redactionFailed: true,
+    });
+    expect(JSON.stringify(lastCall(error))).not.toContain("maria@example.com");
+  });
+
+  it("keeps a field named like a prototype slot as data", () => {
+    const hostile = JSON.parse('{"__proto__": {"x": 1}, "ok": 1}');
+
+    logger.info("proto", hostile);
+
+    expect(lastCall(info)).toMatchObject({ ok: 1 });
+    expect(({} as Record<string, unknown>).x).toBeUndefined();
+  });
+
+  it("masks personal data in the event name too", () => {
+    logger.info("login maria@example.com");
+
+    expect(lastCall(info).event).toBe("login [REDACTED:email]");
   });
 });

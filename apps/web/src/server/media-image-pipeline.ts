@@ -92,8 +92,10 @@ function normalizedImageFormat(format: string): string | null {
  */
 const QUOTA_EXCEEDED_CODE = 9422;
 const QUOTA_EXCEEDED_HEADER = /(?:^|[\s,;])err=9422(?:$|[\s,;])/;
-// 9422 as its own token: not inside UUIDs, versions or longer numbers.
-const QUOTA_EXCEEDED_MESSAGE = /(?<![\w.-])9422(?![\w.-])/;
+// 9422 as its own token: not inside UUIDs, versions or longer numbers, and not a
+// dimension ("9422 px", "9422 pixels", "9422x600", "9422 x 600").
+const QUOTA_EXCEEDED_MESSAGE =
+  /(?<![\w.-])9422(?![\w.-])(?!\s*(?:(?:px|pixels?)\b|x\s*\d))/i;
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") {

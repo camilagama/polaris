@@ -862,10 +862,12 @@ async function run() {
       auditBeforeRefusals,
       "a refused read writes nothing to the audit"
     );
+    // one clock reading: two readings a millisecond apart would make the window 31 days and 1 ms
+    const edgeNow = Date.now();
     const edge = await read(adminClient, operator, {
-      from: new Date(Date.now() - 31 * 24 * HOUR_MS + 60_000),
+      from: new Date(edgeNow - 31 * 24 * HOUR_MS + 60_000),
       limit: 50,
-      to: new Date(Date.now() + 60_000),
+      to: new Date(edgeNow + 60_000),
       user: userA,
     });
     assert.equal(edge.result, "ok", "31 days and a page of 50 are allowed");

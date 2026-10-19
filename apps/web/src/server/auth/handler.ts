@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import { createDatabase } from "@polaris/db/client";
 import { createBetterAuth } from "../auth";
 import {
@@ -214,7 +215,7 @@ export async function handleBetterAuthRequest(
     authConnectionString = resolveAuthConnectionString(bindings);
   } catch (error) {
     if (error instanceof AuthDatabaseNotConfiguredError) {
-      console.error({ event: "auth_database_not_configured", requestId });
+      logger.error("auth_database_not_configured", { requestId });
       return Response.json(
         { error: { code: "auth_unavailable" } },
         { status: 503 }

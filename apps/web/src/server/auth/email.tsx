@@ -1,3 +1,5 @@
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { ReactNode } from "react";
 import { render } from "react-email";
 import type { AuthEmailDelivery } from "../auth";
@@ -77,9 +79,12 @@ async function sendAuthEmail({
     }
 
     await response.body?.cancel();
-  } catch {
+  } catch (error: unknown) {
     // Keep Better Auth's generic responses identical for known/unknown addresses.
-    console.error("auth_email_delivery_failed", event);
+    logger.error("auth_email_delivery_failed", {
+      ...describeError(error),
+      kind: event,
+    });
   }
 }
 

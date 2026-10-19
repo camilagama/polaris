@@ -121,7 +121,7 @@ async function run() {
         ).rows[0]?.count
       );
     const makeCategory =
-      (outcome: "ok" | "refuse" | "crash") =>
+      (outcome: "ok" | "refuse" | "crash", actor: Tenant = tenantA) =>
       async (
         transaction: Parameters<Parameters<typeof withTenantAs>[3]>[0]
       ): Promise<SyncJson> => {
@@ -130,9 +130,9 @@ async function run() {
           transaction,
           {
             capability: "category:create",
-            organizationId: tenantA.organizationId,
+            organizationId: actor.organizationId,
             role: "owner",
-            userId: tenantA.userId,
+            userId: actor.userId,
           },
           { name: `Cat ${randomUUID()}` }
         );
@@ -314,11 +314,11 @@ async function run() {
       deviceId: randomUUID(),
     });
     assert.equal(wrongDevice.code, "wrong_device");
-    const otherPrincipal = await push({
+    const otherOrganization = await push({
       commandId: randomUUID(),
-      leaseClaims: { ...claims, sub: "someone-else" },
+      leaseClaims: { ...claims, org: tenantB.organizationId },
     });
-    assert.equal(otherPrincipal.code, "authorization_revoked");
+    assert.equal(otherOrganization.code, "authorization_revoked");
     const noCapability = await push({
       commandId: randomUUID(),
       leaseClaims: { ...claims, caps: [...claims.caps, "admin:everything"] },
@@ -331,7 +331,7 @@ async function run() {
     });
     assert.equal(unknownGrant.code, "authorization_revoked");
     tests.push(
-      "a command from another device, another principal, an unknown grant or with capabilities the role no longer has is refused with a stored authorization code and never runs"
+      "a command from another device, a lease of another organization, an unknown grant or with capabilities the role no longer has is refused with a stored authorization code and never runs"
     );
 
     // creation time against the lease window
@@ -476,11 +476,129 @@ async function run() {
       "a revoked grant or a changed authorization epoch refuses the command with a stored authorization code"
     );
 
+    // ------------------- 6b. a lease of another user is not this session's to settle
+    // B is a second owner of A's organization on the same browser: the
+    // idempotency key has no user, so a refusal stored for A's command would
+    // stick to it and reach A later.
+    const userB = randomUUID();
+    await admin.pool.query(
+      'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
+      [userB, "push gate B", `push-${userB}@example.invalid`]
+    );
+    await admin.pool.query(
+      "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
+      [tenantA.organizationId, userB]
+    );
+    const memberB: Tenant = {
+      organizationId: tenantA.organizationId,
+      userId: userB,
+    };
+    const deviceB = await registerDevice(db, userB, { label: "Caixa B" });
+    const issuedB = await withTenantAs(
+      db,
+      memberB,
+      "offline:manage",
+      (transaction, identity) =>
+        issueOfflineLeaseGrant(transaction, identity, {
+          deviceId: deviceB.id,
+        })
+    );
+    const storedFor = async (commandId: string) =>
+      (
+        await admin.pool.query(
+          "SELECT 1 FROM public.sync_commands WHERE command_id = $1",
+          [commandId]
+        )
+      ).rowCount;
+
+    const ownedByA = randomUUID();
+    const beforeSwap = executions;
+    const categoriesBeforeSwap = await categoryCount(tenantA);
+    const sentByB = await push(
+      { commandId: ownedByA },
+      makeCategory("ok"),
+      memberB
+    );
+    assert.deepEqual(sentByB, {
+      code: "session_changed",
+      replayed: false,
+      result: null,
+      status: "rejected",
+    });
+    assert.equal(await storedFor(ownedByA), 0, "nothing was stored");
+    assert.equal(executions, beforeSwap, "the command did not run");
+    assert.equal(await categoryCount(tenantA), categoriesBeforeSwap);
+    const sentByBAgain = await push(
+      { commandId: ownedByA },
+      makeCategory("ok"),
+      memberB
+    );
+    assert.equal(sentByBAgain.code, "session_changed");
+    const ownerSends = await push({ commandId: ownedByA });
+    assert.equal(ownerSends.status, "accepted", "its owner still gets it done");
+    assert.equal(ownerSends.replayed, false);
+    assert.equal(await storedFor(ownedByA), 1);
+    assert.equal(await categoryCount(tenantA), categoriesBeforeSwap + 1);
+    tests.push(
+      "a command whose lease belongs to another user answers session_changed with nothing stored and no effect, and its owner sending it afterwards is accepted"
+    );
+
+    const afterAccepted = await push(
+      { commandId: ownedByA },
+      makeCategory("ok"),
+      memberB
+    );
+    assert.equal(afterAccepted.code, "session_changed");
+    assert.equal(afterAccepted.result, null, "A's outcome is not shown to B");
+    const idTakenByA = await push(
+      {
+        commandId: ownedByA,
+        deviceId: deviceB.id,
+        leaseClaims: issuedB.claims,
+      },
+      makeCategory("ok", memberB),
+      memberB
+    );
+    assert.equal(idTakenByA.code, "command_id_reused");
+    assert.equal(idTakenByA.result, null);
+    assert.equal(idTakenByA.replayed, false);
+    assert.equal(await storedFor(ownedByA), 1, "still only A's record");
+    tests.push(
+      "another user's session never gets the stored outcome of a command ID it does not own, even with its own valid lease"
+    );
+
+    const ownByB = randomUUID();
+    const legitB = await push(
+      {
+        commandId: ownByB,
+        deviceId: deviceB.id,
+        leaseClaims: issuedB.claims,
+      },
+      makeCategory("ok", memberB),
+      memberB
+    );
+    assert.equal(legitB.status, "accepted");
+    assert.equal(legitB.replayed, false);
+    const legitBReplay = await push(
+      {
+        commandId: ownByB,
+        deviceId: deviceB.id,
+        leaseClaims: issuedB.claims,
+      },
+      makeCategory("ok", memberB),
+      memberB
+    );
+    assert.deepEqual(legitBReplay, { ...legitB, replayed: true });
+    tests.push(
+      "a legitimate command of the second user, with their own lease and device, is accepted and replays"
+    );
+
     // --------------------------------------- 7. prechecks and entitlement
     let ran = false;
+    const unsignedId = randomUUID();
     const prechecked = await push(
       {
-        commandId: randomUUID(),
+        commandId: unsignedId,
         leaseClaims: null,
         precheckFailure: "lease_invalid",
       },
@@ -491,6 +609,24 @@ async function run() {
     );
     assert.equal(prechecked.code, "lease_invalid");
     assert.equal(ran, false);
+    assert.equal(
+      await storedFor(unsignedId),
+      0,
+      "a lease without verified claims names no user: it must not take the command ID"
+    );
+    const owner = await push({ commandId: unsignedId });
+    assert.equal(owner.status, "accepted", "the owner still gets it done");
+    const badPayloadId = randomUUID();
+    const badPayload = await push({
+      commandId: badPayloadId,
+      precheckFailure: "invalid_payload",
+    });
+    assert.equal(badPayload.code, "invalid_payload");
+    assert.equal(
+      await storedFor(badPayloadId),
+      1,
+      "a refusal of the session's own command is still stored"
+    );
     const unentitledId = randomUUID();
     const unentitled = await push({
       commandId: unentitledId,
@@ -515,7 +651,7 @@ async function run() {
     });
     assert.equal(entitled.status, "accepted");
     tests.push(
-      "a precheck failure (bad lease, bad payload) is refused with a stored code, and a lost entitlement with an unstored one (retryable), before the domain command runs"
+      "a precheck failure is refused before the domain command runs: a bad payload with a stored code, a lease without verified claims without storing (the command ID stays free), and a lost entitlement without storing (retryable)"
     );
 
     // ------------------------------------------------------- 8. concurrency
@@ -600,9 +736,14 @@ async function run() {
     assert.equal(foreignLease.status, "rejected");
     assert.equal(
       foreignLease.code,
-      "authorization_revoked",
+      "session_changed",
       "another organization's lease claims authorize nothing here"
     );
+    const foreignRows = await admin.pool.query(
+      "SELECT 1 FROM public.sync_commands WHERE command_id = $1 AND organization_id = $2",
+      [firstId, tenantB.organizationId]
+    );
+    assert.equal(foreignRows.rowCount, 0, "and nothing was stored for it");
     tests.push(
       "outcomes are invisible and unforgeable across organizations, immutable even for the owner, and an accepted outcome never carries a rejection code"
     );

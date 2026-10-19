@@ -128,6 +128,44 @@ describe("the scheduled maintenance", () => {
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
 
+  it("masks personal data and secrets in a job report that grew a field, through the real logger", async () => {
+    // a report spread into the log (`{ ...report }`) carries whatever it grows
+    mocks.reconcileStagedMedia.mockResolvedValue({
+      removed: 2,
+      customerEmail: "maria@example.com",
+      detail: {
+        lines: ["cliente 123.456.789-09", { note: "ligar 11 98888-7777" }],
+      },
+      note: "de 203.0.113.9 com Bearer abcdef0123456789",
+      sessionToken: "s3cr3t-value",
+      cause: new Error("falhou para joao@example.com", {
+        cause: { password: "hunter2" },
+      }),
+    });
+
+    await expect(runScheduled(configured)).resolves.toBeUndefined();
+
+    const event = vi
+      .mocked(console.info)
+      .mock.calls.map(([entry]) => entry as Record<string, unknown>)
+      .find((entry) => entry.event === "media_staging_reconciliation_complete");
+    expect(event).toMatchObject({ removed: 2, service: "polaris-web" });
+    const json = JSON.stringify(event);
+    for (const secret of [
+      "maria@example.com",
+      "joao@example.com",
+      "123.456.789-09",
+      "98888-7777",
+      "203.0.113.9",
+      "abcdef0123456789",
+      "s3cr3t-value",
+      "hunter2",
+    ]) {
+      expect(json).not.toContain(secret);
+    }
+    expect(json).toContain("[REDACTED:");
+  });
+
   it("still runs billing when media is not configured, and reports the media failure", async () => {
     await expect(
       runScheduled({ BILLING_HYPERDRIVE: configured.BILLING_HYPERDRIVE })
@@ -796,8 +834,10 @@ describe("the queue consumer", () => {
       expect(send).not.toHaveBeenCalled();
       expect(refused.ack).toHaveBeenCalledOnce();
       expect(console.warn).toHaveBeenCalledWith(
-        "queue_dead_letter_not_configured",
-        { messageId: "m" }
+        expect.objectContaining({
+          event: "queue_dead_letter_not_configured",
+          messageId: "m",
+        })
       );
 
       // durable ledger
@@ -820,8 +860,10 @@ describe("the queue consumer", () => {
       await runQueue({}, refused);
       expect(refused.ack).toHaveBeenCalledOnce();
       expect(console.warn).toHaveBeenCalledWith(
-        "queue_dead_letter_not_configured",
-        { messageId: "m" }
+        expect.objectContaining({
+          event: "queue_dead_letter_not_configured",
+          messageId: "m",
+        })
       );
     });
   });

@@ -130,8 +130,11 @@ describe("handleDeadLetterBatch", () => {
     expect(next.ack).toHaveBeenCalledOnce();
     expect(next.retry).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
-      "queue_dead_letter_not_recorded",
-      { errorName: "Error", messageId: "dlq-1" }
+      expect.objectContaining({
+        errorClass: "Error",
+        event: "queue_dead_letter_not_recorded",
+        messageId: "dlq-1",
+      })
     );
   });
 
@@ -147,10 +150,13 @@ describe("handleDeadLetterBatch", () => {
     ]);
     expect(logged).not.toContain(SECRET);
     expect(logged).not.toContain("zq9-random-body-text");
-    expect(console.warn).toHaveBeenCalledWith("queue_dead_letter_recorded", {
-      cause: "invalid_envelope",
-      messageId: "dlq-2",
-      subject: "unknown",
-    });
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cause: "invalid_envelope",
+        event: "queue_dead_letter_recorded",
+        messageId: "dlq-2",
+        subject: "unknown",
+      })
+    );
   });
 });

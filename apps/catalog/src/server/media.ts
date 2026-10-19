@@ -1,4 +1,6 @@
 import { withPublicCatalog } from "@polaris/db/public-catalog-reader";
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import { env } from "cloudflare:workers";
 import {
   type MediaDependencies,
@@ -28,7 +30,8 @@ const dependencies: MediaDependencies = {
     const object = await env.MEDIA_BUCKET.get(key);
     return object ? { body: object.body, size: object.size } : null;
   },
-  report: (message, error) => console.error(message, error),
+  report: (message, error) =>
+    logger.error(message, error === undefined ? {} : describeError(error)),
 };
 
 export function serveCatalogMedia(request: MediaRequest): Promise<Response> {

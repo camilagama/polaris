@@ -13,5 +13,8 @@
   },
   "dependencies": {
     "evlog": "2.33.0"
+  },
+  "devDependencies": {
+    "oxc-parser": "0.150.0"
   }
 }

@@ -107,6 +107,10 @@
               "options": {
                 "patterns": [
                   {
+                    "group": ["evlog", "evlog/**"],
+                    "message": "Server code logs through @polaris/observability: evlog directly would skip the redaction policy (ADR 0089)."
+                  },
+                  {
                     "group": [
                       "react",
                       "react/**",
@@ -177,6 +181,10 @@
               "options": {
                 "patterns": [
                   {
+                    "group": ["evlog", "evlog/**"],
+                    "message": "Server code logs through @polaris/observability: evlog directly would skip the redaction policy (ADR 0089)."
+                  },
+                  {
                     "group": [
                       "@polaris/db",
                       "@polaris/db/*",
@@ -211,6 +219,10 @@
               "options": {
                 "patterns": [
                   {
+                    "group": ["evlog", "evlog/**"],
+                    "message": "Server code logs through @polaris/observability: evlog directly would skip the redaction policy (ADR 0089)."
+                  },
+                  {
                     "group": [
                       "@polaris/db",
                       "@polaris/db/*",
@@ -234,6 +246,57 @@
                 ]
               }
             }
+          }
+        }
+      }
+    },
+    {
+      // evlog is the logger's engine and runs with its own masking off (the Polaris policy masks in `emit`):
+      // only packages/observability imports it.
+      "includes": [
+        "apps/web/src/server/**",
+        "apps/web/worker/**",
+        "packages/billing/src/**",
+        "packages/http-security/src/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["evlog", "evlog/**"],
+                    "message": "Server code logs through @polaris/observability: evlog directly would skip the redaction policy (ADR 0089)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // Server code logs through @polaris/observability, whose redaction policy (ADR 0089) is the only
+      // way a value reaches the log. A direct `console.*` skips it. Not covered on purpose: CLI scripts
+      // and gates (`scripts/`, `real-devices/`), tests and e2e, and browser code (packages/ui, the catalog routes).
+      "includes": [
+        "apps/web/src/server/**",
+        "apps/web/worker/**",
+        "apps/admin/src/**",
+        "apps/catalog/src/server/**",
+        "apps/catalog/src/*.ts",
+        "apps/catalog/src/*.tsx",
+        "packages/*/src/**",
+        "!packages/ui/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
           }
         }
       }

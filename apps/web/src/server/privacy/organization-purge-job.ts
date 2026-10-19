@@ -12,7 +12,7 @@ import {
   organizationExportPrefix,
   organizationMediaPrefix,
 } from "@polaris/domain/privacy/organization-purge";
-import { logger } from "@polaris/observability/logger";
+import { logger, opaqueId } from "@polaris/observability/logger";
 import type { MediaBucketBinding } from "../environment";
 import { deleteObjectsUnderPrefix } from "./storage-prefix";
 
@@ -104,7 +104,7 @@ async function sweep(
     logger.warn("organization_purge_sweep_removed", {
       job: JOB,
       objects: late,
-      organizationId,
+      organizationId: opaqueId(organizationId),
       outcome: "partial",
     });
   }
@@ -173,7 +173,7 @@ async function purgeOne(
     const event = {
       attempt: claimed.attempt,
       job: JOB,
-      organizationId,
+      organizationId: opaqueId(organizationId),
       reason: code,
       step,
     } as const;
@@ -194,7 +194,7 @@ async function purgeOne(
       .catch(() => {
         logger.error("organization_purge_failure_not_recorded", {
           job: JOB,
-          organizationId,
+          organizationId: opaqueId(organizationId),
           outcome: "failure",
         });
       });

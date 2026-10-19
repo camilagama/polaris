@@ -134,7 +134,13 @@ describe("Resend authentication email delivery", () => {
     ).resolves.toBeUndefined();
 
     expect(loggerSpy.mock.calls).toEqual([
-      ["auth_email_delivery_failed", "password-reset"],
+      [
+        expect.objectContaining({
+          errorClass: "Error",
+          event: "auth_email_delivery_failed",
+          kind: "password-reset",
+        }),
+      ],
     ]);
     expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
       "provider detail containing sensitive account data"

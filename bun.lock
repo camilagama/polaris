@@ -34,6 +34,7 @@
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
         "@polaris/http-security": "workspace:*",
+        "@polaris/observability": "workspace:*",
         "@tanstack/react-router": "^1.170.45",
         "@tanstack/react-start": "^1.169.3",
         "react": "^19.3.0",
@@ -99,6 +100,7 @@
       "name": "@polaris/db",
       "dependencies": {
         "@polaris/domain": "workspace:*",
+        "@polaris/observability": "workspace:*",
         "drizzle-orm": "^0.45.3",
         "pg": "^8.23.1",
       },
@@ -120,6 +122,9 @@
       "name": "@polaris/observability",
       "dependencies": {
         "evlog": "2.33.0",
+      },
+      "devDependencies": {
+        "oxc-parser": "0.150.0",
       },
     },
     "packages/ui": {

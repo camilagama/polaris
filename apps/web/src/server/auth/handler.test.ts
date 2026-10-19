@@ -27,9 +27,11 @@ describe("Better Auth handler database role", () => {
     expect(await response.json()).toEqual({
       error: { code: "auth_unavailable" },
     });
-    expect(logger).toHaveBeenCalledWith({
-      event: "auth_database_not_configured",
-      requestId: "5f0f3a0e-9d63-4d7b-8a93-6f9a1f0f3a0e",
-    });
+    expect(logger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "auth_database_not_configured",
+        requestId: "5f0f3a0e-9d63-4d7b-8a93-6f9a1f0f3a0e",
+      })
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureLogging } from "./logger";
+import { configureLogging, type OpaqueId, opaqueId } from "./logger";
 import { describeError, startWideEvent, withWideEvent } from "./wide-event";
 
 type Spy = ReturnType<typeof vi.spyOn>;
@@ -41,7 +41,7 @@ describe("wide events", () => {
       { requestId: "req-1" },
       { now: clock(1000, 1250) }
     );
-    wide.set({ actorId: "usr-1", organizationId: "org-1" });
+    wide.set({ actorId: opaqueId("usr-1"), organizationId: opaqueId("org-1") });
     wide.set({ lines: 3, operation: "sale.confirm" });
 
     expect(info).not.toHaveBeenCalled();
@@ -148,7 +148,7 @@ describe("wide events", () => {
   });
 
   it("ignores an undefined value instead of erasing a field", () => {
-    const wide = startWideEvent("keep", { organizationId: "org-1" });
+    const wide = startWideEvent("keep", { organizationId: opaqueId("org-1") });
     wide.set({ organizationId: undefined });
     wide.emit();
 
@@ -167,7 +167,7 @@ describe("wide events", () => {
 
   it("drops an id field that holds an e-mail and keeps its name in ignoredFields", () => {
     const wide = startWideEvent("leaky_id");
-    wide.set({ actorId: "maria@example.com" });
+    wide.set({ actorId: "maria@example.com" as unknown as OpaqueId });
     wide.emit();
 
     const [event] = events(info);
