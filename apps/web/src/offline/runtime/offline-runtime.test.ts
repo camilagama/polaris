@@ -26,6 +26,7 @@ function memoryKeyValues(): KeyValueStore & { data: Map<string, string> } {
   const data = new Map<string, string>();
   return {
     data,
+    keys: () => [...data.keys()],
     read: (name) => data.get(name) ?? null,
     remove: (name) => {
       data.delete(name);
@@ -41,7 +42,7 @@ function world(options: { leaseHours?: number } = {}) {
   const server = new FakeCatalogServer();
   const network = { online: true };
   let clock = new Date("2026-10-14T12:00:00.000Z");
-  const calls = { issueLease: 0, push: 0, registerDevice: 0 };
+  const calls = { issueLease: 0, push: 0, registerDevice: 0, sessionUser: 0 };
   const labels: (string | null)[] = [];
   const owners = new Map<string, string>();
   const session: { signedIn: boolean; user: string } = {
@@ -163,10 +164,12 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: () =>
-      failures.sessionUser
+    sessionUserId: () => {
+      calls.sessionUser += 1;
+      return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
-        : Promise.resolve(session.signedIn ? session.user : null),
+        : Promise.resolve(session.signedIn ? session.user : null);
+    },
     source: () => server,
   };
   const make = (deviceLabel: string | null = null) =>
@@ -464,6 +467,7 @@ describe("starting", () => {
     await queueProduct(runtime, "Do primeiro usuário", 1);
 
     w.session.user = "user-2"; // somebody else signed in, in another tab
+    w.advance(0.02); // past the window in which the last confirmation is reused
     await runtime.syncNow();
 
     expect(runtime.getSnapshot()).toMatchObject({
@@ -513,6 +517,222 @@ describe("starting", () => {
     const workspaces = await second.logoutWorkspaces();
     expect(workspaces).toHaveLength(1);
     expect(workspaces[0]?.label).toBe(organizationId);
+  });
+
+  it("a server that gives no answer about the session (5xx, 429, no connection) keeps a running runtime syncing and never signs anyone out", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    w.advance(0.02);
+
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "ready",
+      reason: null,
+      sessionRefused: false,
+    });
+    expect(w.calls.push).toBe(1);
+    expect(runtime.getSnapshot().counts.pending).toBe(0);
+    expect(w.wiped).toEqual([]);
+  });
+
+  it("starts from the remembered user and the own lease when the server answers the session with 5xx, like a start with no network", async () => {
+    const w = world();
+    await w.make().start(organizationId);
+    w.failures.sessionUser = new SessionUnreachableError("session_http_500");
+    w.failures.deviceIsMine = true;
+    const runtime = w.make();
+
+    await runtime.start(organizationId);
+
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()?.organizationId).toBe(organizationId);
+    expect(w.calls.registerDevice).toBe(1);
+  });
+
+  it("a session the server refuses at start drops the remembered user", async () => {
+    const w = world();
+    await w.make().start(organizationId);
+    w.session.signedIn = false; // what a 401 or 403 becomes: no session
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "no_session",
+    });
+    expect(w.keyValues.read("polaris.offline.session-user")).toBeNull();
+  });
+
+  it("reuses the last confirmation of the session for the syncs that follow it, and looks again after the window or a trip offline", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1); // the start's own confirmation
+
+    await runtime.syncNow();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.network.online = false;
+    await runtime.syncNow();
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("sweeps the leases of the old layout of every organization at the first start, and only those", async () => {
+    const w = world();
+    w.keyValues.write("polaris.offline.lease.org-1", "old");
+    w.keyValues.write("polaris.offline.lease.org-9", "old");
+    w.keyValues.write("polaris.offline.lease.user-9.org-9", "{}");
+    w.keyValues.write("polaris.offline.other", "kept");
+
+    await w.make().start(organizationId);
+
+    expect(w.keyValues.read("polaris.offline.lease.org-1")).toBeNull();
+    expect(w.keyValues.read("polaris.offline.lease.org-9")).toBeNull();
+    expect(w.keyValues.read("polaris.offline.lease.user-9.org-9")).toBe("{}");
+    expect(w.keyValues.read("polaris.offline.other")).toBe("kept");
+  });
+
+  it("logging out with no store open still deletes the user's data, the lease, the device and the registry", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await first.stop();
+    const runtime = w.make(); // a fresh page: nothing open, but the disk holds the copy
+
+    const workspaces = await runtime.logoutWorkspaces();
+    expect(workspaces.map((workspace) => workspace.label)).toEqual([
+      organizationId,
+    ]);
+    expect(await attemptLogout(workspaces)).toEqual({ status: "ready" });
+
+    expect(w.purged).toEqual([{ discardPending: false }]);
+    expect(w.keyValues.data.size).toBe(0);
+  });
+
+  it("logging out with no store open and work queued is blocked, deletes the collections and the lease, and keeps the queue", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    await first.stop();
+    const runtime = w.make();
+
+    const outcome = await attemptLogout(await runtime.logoutWorkspaces());
+
+    expect(outcome).toMatchObject({
+      blocked: [{ reason: "offline", total: 1 }],
+      status: "blocked",
+    });
+    expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+    expect(w.purged).toEqual([]);
+    expect(
+      w.keyValues.read(`polaris.offline.lease.${userId}.${organizationId}`)
+    ).toBeNull();
+    const kept = w.stores.get(`${userId}-${organizationId}`);
+    expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
+    expect(w.keyValues.read("polaris.offline.namespaces")).toContain(userId);
+  });
+
+  it("logging out with no store open only reaches the namespaces of whoever is signed in, and names no one when the server answers nonsense", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Do primeiro usuário", 1);
+    await first.stop();
+    w.session.user = "user-2";
+    const second = w.make();
+    await second.start(organizationId);
+    await second.stop();
+
+    const runtime = w.make();
+    const workspaces = await runtime.logoutWorkspaces();
+    expect(workspaces).toHaveLength(1);
+    expect(await attemptLogout(workspaces)).toEqual({ status: "ready" });
+    expect(w.wiped).toEqual([]);
+    const kept = w.stores.get(`${userId}-${organizationId}`);
+    expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
+
+    w.failures.sessionUser = new Error("session_unavailable");
+    expect(await w.make().logoutWorkspaces()).toEqual([]);
+  });
+
+  it("logging out with no store open names no one without the server's answer, so it touches nothing: not a stale remembered user, not offline", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await first.stop();
+
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    expect(await w.make().logoutWorkspaces()).toEqual([]);
+    w.failures.sessionUser = undefined as never;
+    w.network.online = false;
+    expect(await w.make().logoutWorkspaces()).toEqual([]);
+    expect(w.wiped).toEqual([]);
+    expect(w.purged).toEqual([]);
+  });
+
+  it("a session that changed hands remembers the new user, so a later logout never reaches the first user's data", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.session.user = "user-2";
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
+  });
+
+  it("never pushes the queue on a reused session confirmation", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.session.user = "user-2"; // changed hands inside the window
+    await runtime.syncNow();
+    expect(w.calls.push).toBe(0);
+    expect(runtime.getSnapshot().reason).toBe("session_changed");
+  });
+
+  it("a start that could only use the remembered user does not open the window that reuses the session confirmation", async () => {
+    const w = world();
+    await w.make().start(organizationId);
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.failures.sessionUser = undefined as never;
+    const before = w.calls.sessionUser;
+
+    await runtime.syncNow();
+
+    expect(w.calls.sessionUser).toBe(before + 1);
+  });
+
+  it("with two organizations, one with queued work, the blocked logout still deletes the data of both and keeps the queue", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start("org-1");
+    await queueProduct(first, "Na primeira", 1);
+    await first.start("org-2");
+    await first.stop();
+
+    const outcome = await attemptLogout(await w.make().logoutWorkspaces());
+
+    expect(outcome).toMatchObject({ status: "blocked" });
+    expect(w.wiped.sort()).toEqual([`${userId}-org-1`, `${userId}-org-2`]);
+    expect(w.purged).toEqual([]);
+    const kept = w.stores.get(`${userId}-org-1`);
+    expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
   });
 
   it("is unavailable, with no data, when nobody is signed in", async () => {

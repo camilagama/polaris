@@ -22,7 +22,7 @@ Com as telas lendo do aparelho (ADR 0045 e 0046), faltava o primeiro passo de to
 ## Consequências
 
 - Um navegador compartilhado cujo dono saiu da conta sem usar "Sair" e sem sessão válida online guarda a cópia até a próxima resposta do servidor; ela traz só nome, papel e fuso de organizações, e o mesmo navegador já guarda, por usuário, o namespace local que o ADR 0044 isola do usuário seguinte.
-- A cópia da lista de organizações não é ligada a um usuário, mas ela só desenha a tela. O espaço local do dono anterior deixou de ficar aberto por falha de servidor: o runtime exige que o usuário da sessão seja o dono do lease e do namespace (emenda do ADR 0044, L6), e uma resposta do servidor que não diga quem é deixa o offline indisponível.
+- A cópia da lista de organizações não é ligada a um usuário, mas ela só desenha a tela. O espaço local do dono anterior deixou de ficar aberto por falha de servidor: o runtime exige que o usuário da sessão seja o dono do lease e do namespace (emenda do ADR 0044, L6), e só uma recusa explícita da sessão (401, 403 ou sem sessão) deixa o offline indisponível; 5xx, 429 e falha de rede contam como "sem resposta" e o início segue com o usuário lembrado e o lease próprio, como sem rede.
 - O papel guardado pode ficar defasado offline (um papel rebaixado continua desenhando as telas do papel antigo); o servidor recusa o que o papel atual não permite quando o trabalho é enviado.
 
 ## Alternativas rejeitadas

@@ -29,6 +29,13 @@ function createBrowserRuntime(): OfflineRuntime {
     deviceLabel: null,
     isOnline: () => navigator.onLine,
     keyValues: {
+      keys: () => {
+        try {
+          return Object.keys(window.localStorage);
+        } catch {
+          return [];
+        }
+      },
       read: (key) => {
         try {
           return window.localStorage.getItem(key);
