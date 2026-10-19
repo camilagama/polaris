@@ -568,6 +568,13 @@
       "when": 1792398459320,
       "tag": "0080_auditoria_sobrevive_ao_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1792425678919,
+      "tag": "0081_auditoria_seguranca_12_meses",
+      "breakpoints": true
     }
   ]
 }
