@@ -1814,3 +1814,22 @@ Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-e
 | e2e do `createRpcRuntimeApi` | Concluído | `apps/web/e2e/offline-runtime-api.e2e.ts`: o app real com o runtime ligado e o servidor interceptado (`page.route`), sem API falsa no lugar do `createRpcRuntimeApi`. Cenários: get-session 401 com duas operações na fila, `push` 401 (lease e coleções apagados, fila guardada), get-session 429 e lento, `device.check` 404 e 500 (com e sem lease próprio) e `push` com `session_changed`. Entra na matriz do [runbook do Gate 5](../docs/runbooks/gate-5-offline.md) (linha "API do runtime em navegador") e roda no job de navegador do CI. |
 | Runbook | Concluído | A frase sobre `device.check` e `session_changed` na prova final foi corrigida (a suíte de aparelho real não os carrega) e o checklist manual ganhou o item "Sessão trocada". |
 | Limites | Registrados | O servidor é interceptado, não o real: não prova API, Neon nem RLS. get-session 401 para o runtime e esquece o usuário lembrado, mas não apaga o lease nem as coleções (só a recusa do servidor a um comando ou ao lease apaga); o teste registra o comportamento atual. |
+
+### Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta e aceite legal (POL-85; P0, ADR 0100; só documentação)
+
+Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisados por arquitetura, segurança e UX e consolidados pelo Arrascaeta. Os números do ADR (0100) e das migrations podem mudar até o merge. A tela de entrada (`/entrar`) é pré-requisito para ligar a flag do modo offline e para o checklist do [Gate 5](../docs/runbooks/gate-5-offline.md); ela também deve fechar os critérios de entrada do corte de aparelhos e sessões quando o P3 for mesclado (nada disso está pronto neste PR).
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| P0: ADR e documentação | Em revisão (só Markdown) | [ADR 0100](../docs/adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md); emendas dos ADRs [0017](../docs/adr/0017-politica-de-sessao-e-conta.md), [0044](../docs/adr/0044-revisao-de-seguranca-adicional.md) (o item da troca autenticada de senha fica resolvido pelo P8) e [0047](../docs/adr/0047-abrir-o-app-sem-rede.md); PR 18A do plano; [autenticação](../docs/business-rules/authentication.md) e [privacidade](../docs/business-rules/privacy.md). Nenhum código, migration nem configuração. |
+| P1: limitador social e open redirect | Pendente | `AUTH_SOCIAL_RATE_LIMITER`, 302 no callback, testes de `callbackURL` no servidor. Depende do P0. |
+| P6: páginas legais | Pendente | Conteúdo versionado, `LEGAL_DOCUMENTS`, renderizador e travas de build. Antes do P3, para não haver link morto. |
+| P2: bloqueio de conta (db) | Pendente | Migration, gate `login-lock`, classe de retenção `auth_login_lock` e job de expurgo. Um PR de banco por vez. |
+| P3: `/entrar` só com Google | Pendente | `voltar`, motivo, "Entrar de novo", "Sair" com destino, `/api/auth-methods` e o texto único de sessão encerrada. |
+| P4: aceite legal (db) | Pendente | Migration e gate `legal-acceptance`; depois do P2 mesclado. |
+| P5: acesso sem internet vencido | Pendente | Regra de lease usável e temporizador no `exp` (emenda do ADR 0047). |
+| P7: controle de aceite | Pendente | `createAuthenticatedRequestContext`, `/aceite`, RPCs, aceite no cadastro, pausa da sync sem apagar a cópia offline. |
+| P8, P9: senha atrás da flag | Pendente, desligada | Servidor da senha (bloqueio, troca de senha, links com fragmento, e-mails) e CSP do Turnstile com as telas de senha. Só liga com domínio de envio verificado (pergunta ao usuário). |
+| P10: exclusão do não verificado (db) | Pendente | Usuário não verificado, só `credential`, sem sessão nem membership, depois de 24 horas. |
+| Limites | Registrados | Este PR não prova nada em execução: a verificação é `bun run check` e os links internos. Continuam com o usuário o domínio de envio e os dados da empresa, reembolso e foro das páginas legais (U1 a U5); a produção fica travada pelo aviso de rascunho até a revisão jurídica. |
+
