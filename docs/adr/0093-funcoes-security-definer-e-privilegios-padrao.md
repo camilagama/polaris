@@ -25,7 +25,7 @@ Uma função `SECURITY DEFINER` roda com os direitos do dono. Se o `search_path`
 - Um PR aberto que crie função `SECURITY DEFINER` sem `pg_temp` vai reprovar o gate `definer-hardening` depois que este ADR e a 0077 entrarem na `main`. Para corrigir, ao atualizar a branch: na migration que cria a função, acrescentar `SET search_path = pg_catalog, public, pg_temp` à definição (ou um `ALTER FUNCTION ... SET search_path = pg_catalog, public, pg_temp` logo depois) e `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC` seguido do `GRANT EXECUTE` ao papel que chama; renumerar a migration se o número já tiver sido usado.
 - Quem precisar de tabela temporária num papel de runtime precisa de decisão explícita (ADR), não de um `GRANT` avulso. O `poc.ts` do pacote de banco, que usa `TEMP TABLE`, só roda com o dono de um banco descartável, nunca com papel de runtime.
 - Limite conhecido do gate: o conjunto de papéis poderosos é definido por nome e atributo (a lista acima), não derivado do catálogo; um dono de objetos com outro nome, ou outro papel predefinido, não é visto. Quem criar um papel assim precisa incluí-lo no gate.
-- O banco de produção recebe a 0077 pela rotina normal de migrations; nada é feito à mão.
+- O banco de produção recebe a 0077 pela rotina normal de migrations; nada é feito à mão. O migrador tem de ser o dono do banco (`datdba`; no Neon, `neondb_owner`), o que o torna dono do schema `public` por `pg_database_owner`, e todo login do app tem de ser membro de um `polaris_*_runtime`; os dois pontos estão nos itens 3 e 15 do [checklist de release](../runbooks/release-checklist.md), com o que fazer se o bloco `DO` final da 0077 falhar.
 
 ## Alternativas consideradas
 

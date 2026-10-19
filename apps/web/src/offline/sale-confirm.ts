@@ -50,6 +50,7 @@ const ACCOUNT_REFUSALS: ReadonlySet<string> = new Set([
   "entitlement_changed",
   "invalid_creation_time",
   "lease_invalid",
+  "session_changed",
   "wrong_device",
 ]);
 

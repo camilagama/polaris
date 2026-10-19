@@ -76,6 +76,7 @@ export const SYNC_REJECTION = {
   commandTooOld: "command_too_old",
   entitlementChanged: "entitlement_changed",
   invalidCreationTime: "invalid_creation_time",
+  sessionChanged: "session_changed",
   wrongDevice: "wrong_device",
 } as const;
 
@@ -142,9 +143,10 @@ const rejected = (code: string): Omit<SyncCommandOutcome, "replayed"> => ({
 });
 
 /**
- * A refusal that depends on the plan, not on the command: it is not stored, so
- * the same command (same ID) can be sent again and succeed once the plan allows
- * it. Storing it would make the refusal permanent for that command ID.
+ * A refusal that depends on the plan or on who is sending, not on the command:
+ * it is not stored, so the same command (same ID) can be sent again and succeed
+ * once the plan allows it or its owner signs in. Storing it would make the
+ * refusal permanent for that command ID.
  */
 const notStored = (code: string): SyncCommandOutcome => ({
   ...rejected(code),
@@ -157,6 +159,40 @@ function isSameContent(stored: string, input: RunSyncCommandInput): boolean {
     stored === input.payloadHash ||
     (input.equivalentPayloadHashes ?? []).includes(stored)
   );
+}
+
+interface StoredCommand {
+  commandType: string;
+  outcomeCode: string | null;
+  outcomeResult: unknown;
+  outcomeStatus: string;
+  payloadHash: string;
+  userId: string;
+}
+
+/**
+ * What a command ID already on record answers. The record is org-wide, but its
+ * outcome belongs to the user who sent it: another user's session gets neither
+ * the outcome nor a stored refusal.
+ */
+function replayStored(
+  existing: StoredCommand,
+  identity: TenantRequestIdentity,
+  input: RunSyncCommandInput
+): SyncCommandOutcome {
+  if (
+    existing.userId !== identity.userId ||
+    !isSameContent(existing.payloadHash, input) ||
+    existing.commandType !== input.commandType
+  ) {
+    return notStored(SYNC_REJECTION.commandIdReused);
+  }
+  return {
+    code: existing.outcomeCode,
+    replayed: true,
+    result: existing.outcomeResult as SyncJson | null,
+    status: existing.outcomeStatus as SyncCommandStatus,
+  };
 }
 
 /**
@@ -193,6 +229,11 @@ function creationTimeInsideLease(
 /**
  * Runs one command inside an authorized tenant transaction.
  *
+ * - A lease issued to another user than the session (`sub` differs) is answered
+ *   `session_changed` before anything is read or stored: the idempotency key is
+ *   (organization, command ID) with no user, so a stored refusal would stick to
+ *   the command and reach its owner later. The same holds for a command ID whose
+ *   record belongs to another user (`command_id_reused`, not stored).
  * - A command ID seen before replays its stored outcome (`replayed: true`); the
  *   same ID with a different type or payload is refused with `command_id_reused`
  *   and stores nothing, so the first outcome stands.
@@ -201,6 +242,9 @@ function creationTimeInsideLease(
  *   follows from the command's own creation time. A command whose record still
  *   exists replays above, so a resend of an accepted command never turns into a
  *   refusal while the record can be read.
+ * - Without verified lease claims (bad signature) the refusal is not stored
+ *   either: nothing says whose command it is, and a stored one would take the
+ *   command ID from its owner.
  * - Otherwise the lease is revalidated (principal, grant, device, epoch,
  *   capabilities) and the creation time must fall inside the lease window; an
  *   expired lease is fine for a command made while it was valid.
@@ -217,6 +261,12 @@ export async function runSyncCommand(
   classify: (error: unknown) => string | null
 ): Promise<SyncCommandOutcome> {
   const now = input.now ?? new Date();
+  // The lease was issued to another user than the session sending it (the
+  // browser changed accounts): the command is not this session's to settle.
+  // Nothing is read or stored, so the command ID stays free for its owner.
+  if (input.leaseClaims && input.leaseClaims.sub !== identity.userId) {
+    return notStored(SYNC_REJECTION.sessionChanged);
+  }
   await lockCommand(transaction, identity.organizationId, input.commandId);
 
   const [existing] = await transaction
@@ -226,6 +276,7 @@ export async function runSyncCommand(
       outcomeResult: syncCommands.outcomeResult,
       outcomeStatus: syncCommands.outcomeStatus,
       payloadHash: syncCommands.payloadHash,
+      userId: syncCommands.userId,
     })
     .from(syncCommands)
     .where(
@@ -236,35 +287,26 @@ export async function runSyncCommand(
     )
     .limit(1);
   if (existing) {
-    if (
-      !isSameContent(existing.payloadHash, input) ||
-      existing.commandType !== input.commandType
-    ) {
-      return {
-        code: SYNC_REJECTION.commandIdReused,
-        replayed: false,
-        result: null,
-        status: "rejected",
-      };
-    }
-    return {
-      code: existing.outcomeCode,
-      replayed: true,
-      result: existing.outcomeResult as SyncJson | null,
-      status: existing.outcomeStatus as SyncCommandStatus,
-    };
+    return replayStored(existing, identity, input);
   }
 
   if (isCommandTooOld(input.createdAt, now)) {
     return notStored(SYNC_REJECTION.commandTooOld);
   }
 
-  if (input.precheckFailure || !input.leaseClaims) {
+  if (!input.leaseClaims) {
+    // Without verified claims nobody can tell whose command this is (a lease
+    // that fails its signature names no user): it must not take the command ID.
+    return notStored(
+      input.precheckFailure ?? SYNC_REJECTION.authorizationRevoked
+    );
+  }
+  if (input.precheckFailure) {
     return await record(
       transaction,
       identity,
       input,
-      rejected(input.precheckFailure ?? SYNC_REJECTION.authorizationRevoked)
+      rejected(input.precheckFailure)
     );
   }
   const claims = input.leaseClaims;

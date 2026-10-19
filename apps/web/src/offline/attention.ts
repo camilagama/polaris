@@ -28,6 +28,7 @@ type AttentionCause =
   | "profile_changed"
   | "profile_unavailable"
   | "sale_too_old"
+  | "session_changed"
   | "sku_conflict"
   | "unavailable"
   | "version_conflict";
@@ -65,6 +66,7 @@ const ACCOUNT_CAUSES: Readonly<Record<string, AttentionCause>> = {
   entitlement_changed: "entitlement_changed",
   invalid_creation_time: "authorization_revoked",
   lease_invalid: "authorization_revoked",
+  session_changed: "session_changed",
   wrong_device: "authorization_revoked",
 };
 
@@ -177,6 +179,8 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
       return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
     case "entitlement_changed":
       return "O plano desta organização não permite mais estes registros. Regularize o plano e use Tentar de novo: o registro é enviado como está. Nada foi perdido.";
+    case "session_changed":
+      return "Este registro foi feito por outra conta e foi enviado com uma conta diferente, então o servidor não o recebeu. Nada foi perdido: entre com a conta que o criou e use Tentar de novo.";
     case "authorization_revoked":
       return "O acesso deste aparelho ou desta conta mudou: foi removido, revogado ou expirou. Entre de novo com uma conta autorizada; se o acesso não voltar, este registro não poderá ser enviado.";
     default:
@@ -188,8 +192,9 @@ function actionsFor(
   cause: AttentionCause,
   kind: AttentionItem["kind"]
 ): AttentionAction[] {
-  if (cause === "entitlement_changed") {
-    // the refusal is not stored: once the plan allows it, the same command goes through
+  if (cause === "entitlement_changed" || cause === "session_changed") {
+    // the refusal is not stored: once the plan allows it (or the account that made
+    // the command signs in), the same command goes through
     return ["review_account", "retry"];
   }
   if (cause === "authorization_revoked") {
