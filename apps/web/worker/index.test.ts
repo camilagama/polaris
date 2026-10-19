@@ -4,11 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   billingClose: vi.fn(),
+  createAuthLoginLockMaintenanceClient: vi.fn(),
   createBillingStore: vi.fn(),
   createMediaCleanupClient: vi.fn(),
   createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
   dispatchOutbox: vi.fn(),
+  loginLockClose: vi.fn(),
+  loginLockExpire: vi.fn(),
   mediaClose: vi.fn(),
   outboxClose: vi.fn(),
   privacyClose: vi.fn(),
@@ -20,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   runPrivacyMaintenance: vi.fn(),
 }));
 
+vi.mock("@polaris/db/auth-login-lock-maintenance", () => ({
+  createAuthLoginLockMaintenanceClient:
+    mocks.createAuthLoginLockMaintenanceClient,
+}));
 vi.mock("@polaris/db/billing-store", () => ({
   createBillingStore: mocks.createBillingStore,
 }));
@@ -1001,6 +1008,7 @@ describe("the scheduler tick", () => {
   const everything = {
     ...configured,
     ...outbox,
+    AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
     PRIVACY_HYPERDRIVE: { connectionString: "postgresql://privacy.invalid/db" },
   };
   let state: ReturnType<typeof schedulerState>;
@@ -1027,6 +1035,10 @@ describe("the scheduler tick", () => {
     mocks.mediaClose.mockResolvedValue(undefined);
     mocks.createBillingStore.mockReturnValue({ close: mocks.billingClose });
     mocks.billingClose.mockResolvedValue(undefined);
+    mocks.createAuthLoginLockMaintenanceClient.mockReturnValue({
+      close: mocks.loginLockClose.mockResolvedValue(undefined),
+      expire: mocks.loginLockExpire.mockResolvedValue(0),
+    });
     mocks.reconcileStagedMedia.mockResolvedValue({});
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
@@ -1046,11 +1058,13 @@ describe("the scheduler tick", () => {
       ["media.maintenance", 3600, 960],
       ["billing.maintenance", 3600, 960],
       ["privacy.maintenance", 3600, 960],
+      ["auth.login_lock_expiry", 3600, 960],
     ]);
     expect(state.completeScheduledJob.mock.calls).toEqual([
       ["media.maintenance", "lease-token"],
       ["billing.maintenance", "lease-token"],
       ["privacy.maintenance", "lease-token"],
+      ["auth.login_lock_expiry", "lease-token"],
     ]);
     expect(state.releaseScheduledJob).not.toHaveBeenCalled();
     // one connection for the whole tick, closed once
@@ -1077,6 +1091,44 @@ describe("the scheduler tick", () => {
       "lease-token"
     );
     expect(mocks.reconcileStagedMedia).not.toHaveBeenCalled();
+  });
+
+  it("expires the sign-in lock rows through the authentication role and closes the connection", async () => {
+    mocks.loginLockExpire.mockResolvedValue(3);
+
+    await tick("17 * * * *", everything);
+
+    expect(mocks.createAuthLoginLockMaintenanceClient).toHaveBeenCalledWith(
+      "postgresql://auth.invalid/db"
+    );
+    expect(mocks.loginLockExpire).toHaveBeenCalledOnce();
+    expect(mocks.loginLockClose).toHaveBeenCalledOnce();
+    expect(state.completeScheduledJob).toHaveBeenCalledWith(
+      "auth.login_lock_expiry",
+      "lease-token"
+    );
+  });
+
+  it("leaves the window of the sign-in lock expiry open without the authentication role, and fails the cron when the expiry fails", async () => {
+    await tick("17 * * * *", { ...everything, AUTH_HYPERDRIVE: undefined });
+
+    expect(mocks.createAuthLoginLockMaintenanceClient).not.toHaveBeenCalled();
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "auth.login_lock_expiry",
+      "lease-token",
+      "skipped"
+    );
+
+    mocks.loginLockExpire.mockRejectedValue(new Error("expire_failed"));
+    await expect(tick("17 * * * *", everything)).rejects.toThrow(
+      "expire_failed"
+    );
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "auth.login_lock_expiry",
+      "lease-token",
+      "failed"
+    );
+    expect(mocks.loginLockClose).toHaveBeenCalled();
   });
 
   it("does not run a job that is not due or whose lease is held, and does not fail the cron", async () => {

@@ -575,6 +575,13 @@
       "when": 1792425678919,
       "tag": "0081_auditoria_seguranca_12_meses",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1792438536831,
+      "tag": "0082_entrada_bloqueio_de_login",
+      "breakpoints": true
     }
   ]
 }
