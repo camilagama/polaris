@@ -166,6 +166,91 @@ async function checkEmailSendRateLimit(
   return undefined;
 }
 
+const socialStartSuffix = "/sign-in/social";
+const socialCallbackSuffix = "/callback/google";
+const socialRateLimitedLocation = "/entrar?erro=limite";
+
+type SocialAuthStep = "callback" | "start";
+
+function socialAuthStep(request: Request): SocialAuthStep | undefined {
+  const method = request.method.toUpperCase();
+  const pathname = new URL(request.url).pathname.replace(
+    trailingSlashPattern,
+    ""
+  );
+
+  if (method === "POST" && pathname.endsWith(socialStartSuffix)) {
+    return "start";
+  }
+  // The callback comes back from Google as a GET (or a form post) and it calls Google and writes `verification`.
+  if (
+    (method === "GET" || method === "POST") &&
+    pathname.endsWith(socialCallbackSuffix)
+  ) {
+    return "callback";
+  }
+
+  return undefined;
+}
+
+export function isSocialAuthRateLimitApplicable(request: Request): boolean {
+  return socialAuthStep(request) !== undefined;
+}
+
+/**
+ * The limiter of the Google sign-in (ADR 0017): 20 requests per 60 s per IP on the start and on the
+ * callback. It has no Turnstile and does not depend on `AUTH_ABUSE_PROTECTION_ENABLED`, because Google
+ * is on while the password is off. It fails closed: no binding, no client IP or a failing binding is a 503.
+ * Over the limit, the start answers 429 JSON and the callback, which the browser navigates to,
+ * redirects to the sign-in page instead of showing JSON.
+ */
+export async function protectSocialAuthRequest(
+  request: Request,
+  bindings: WorkerBindings,
+  requestId?: string
+): Promise<Response | undefined> {
+  const step = socialAuthStep(request);
+  if (!step) {
+    return;
+  }
+
+  const secret = bindings.BETTER_AUTH_SECRET;
+  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  const limiter = bindings.AUTH_SOCIAL_RATE_LIMITER;
+  if (
+    !(secret && limiter && clientIp) ||
+    clientIp.length > 64 ||
+    invalidClientIpPattern.test(clientIp)
+  ) {
+    return jsonError(503, "auth_rate_limit_unavailable", requestId);
+  }
+
+  try {
+    const result = await limiter.limit({
+      key: await limiterKey(secret, "auth-social-ip", clientIp),
+    });
+    if (typeof result.success !== "boolean") {
+      return jsonError(503, "auth_rate_limit_unavailable", requestId);
+    }
+    if (result.success) {
+      return;
+    }
+  } catch {
+    return jsonError(503, "auth_rate_limit_unavailable", requestId);
+  }
+
+  if (step === "callback") {
+    return new Response(null, {
+      headers: {
+        "cache-control": "no-store",
+        location: socialRateLimitedLocation,
+      },
+      status: 302,
+    });
+  }
+  return jsonError(429, "auth_rate_limited", requestId);
+}
+
 export const protectAuthRequest: AuthAbuseProtector = async (
   request: Request,
   bindings: WorkerBindings,

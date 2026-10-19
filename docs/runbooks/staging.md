@@ -28,6 +28,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 1. Criar o projeto Neon Free `polaris-staging` em `aws-sa-east-1`, com PostgreSQL 18, só a branch `main` e compute de 0,25 CU com autosuspend de 5 min.
 2. Com o dono (`neondb_owner`) e a URL **direta**, sem pooler:
    - `ALTER DATABASE neondb SET polaris.environment = 'staging';`
+     (o marcador também faz o executor dos gates recusar este banco: `connectToGateTarget` recusa `production`, `staging` e `restore-drill`, mesmo que alguém aponte um gate para a URL direta daqui.)
    - `CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;` (o papel de tenant vive fora das migrations, como no CI).
 3. Aplicar as migrations do zero, sempre com **a mesma variável** no verify e no migrate, para que uma URL errada não passe no verify e migre outro banco. A URL não é escrita na linha de comando (iria para o histórico do shell): `read -rs STAGING_MIGRATOR_DATABASE_URL && export STAGING_MIGRATOR_DATABASE_URL`, e então:
 
@@ -58,7 +59,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 - Filas: `polaris-critical-staging`, `polaris-default-staging`, `polaris-media-staging` e `polaris-dlq-staging` (`wrangler queues create <nome>`). O sufixo de ambiente vai no fim: o consumidor e o tratamento da DLQ reconhecem a fila por `polaris-<fila>-<ambiente>` ([ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), e um teste confere os nomes do `wrangler.jsonc`.
 - R2: bucket privado `polaris-media-staging`. O `polaris-media` antigo da conta não é usado.
 - Hyperdrive: as 8 configurações da tabela acima, cada uma com `--caching-disabled` e `--origin-connection-limit` igual ao limite do login, apontando para o host direto do projeto `polaris-staging` (sem pooler). Com a do PR11, a conta fica com 9 das 10 do plano Free. Apagar a do PR11 é item do go-live, decidido pelo responsável.
-- Os namespaces de rate limit `902016` a `902019` já estão no `wrangler.jsonc`. São reservados no primeiro deploy.
+- Os namespaces de rate limit `902016` a `902020` já estão no `wrangler.jsonc`. São reservados no primeiro deploy.
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
 

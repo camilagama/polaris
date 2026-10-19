@@ -61,6 +61,14 @@ export interface MediaBucketBinding {
 }
 
 export interface WorkerBindings {
+  /** Asaas API key (secret): `$aact_hmlg_...` in staging, the production one only in production (ADR 0101). */
+  ASAAS_API_KEY?: string;
+  /** `https://api-sandbox.asaas.com/v3` in staging, `https://api.asaas.com/v3` in production. */
+  ASAAS_BASE_URL?: string;
+  /** The token Asaas sends in `asaas-access-token` (secret, 32 to 255 characters). */
+  ASAAS_WEBHOOK_TOKEN?: string;
+  /** The next token, accepted too while the webhook's token is rotated (secret). */
+  ASAAS_WEBHOOK_TOKEN_NEXT?: string;
   AUTH_ABUSE_PROTECTION_ENABLED?: string;
   AUTH_DATABASE_CONNECT_TIMEOUT_MS?: string;
   AUTH_EMAIL_FROM?: string;
@@ -68,6 +76,8 @@ export interface WorkerBindings {
   AUTH_EMAIL_REPLY_TO?: string;
   AUTH_HYPERDRIVE?: HyperdriveBinding;
   AUTH_RATE_LIMITER?: RateLimitBinding;
+  /** The limiter of the Google sign-in start and callback (20 per 60 s per IP); it has no Turnstile. */
+  AUTH_SOCIAL_RATE_LIMITER?: RateLimitBinding;
   BETTER_AUTH_BASE_URL?: string;
   /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
   BILLING_HYPERDRIVE?: HyperdriveBinding;

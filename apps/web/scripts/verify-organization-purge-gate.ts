@@ -597,7 +597,9 @@ async function run() {
     );
     assert.deepEqual(withoutOrganization.rows, [
       { has_organization: false, table_name: "auth_access_log" },
+      { has_organization: false, table_name: "auth_login_lock" },
       { has_organization: false, table_name: "device_sessions" },
+      { has_organization: false, table_name: "legal_acceptance" },
       { has_organization: false, table_name: "operational_incidents" },
       { has_organization: false, table_name: "scheduled_job_state" },
     ]);

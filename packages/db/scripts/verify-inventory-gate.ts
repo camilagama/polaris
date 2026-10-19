@@ -39,6 +39,7 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -49,8 +50,6 @@ const runtimeRole = "polaris_pr11_runtime";
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const poolerPattern = /pooler/i;
-const disposableHostPattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 
 type Database = ReturnType<typeof createDatabase>["db"];
 type AdminPool = ReturnType<typeof createDatabase>["pool"];
@@ -270,7 +269,7 @@ async function main(): Promise<void> {
   );
   assert.equal(confirmation, "polaris-pr31-inventory-gate");
 
-  const connection = new URL(connectionString);
+  const connection = assertAllowedGateUrl(connectionString);
   assert.equal(connection.protocol, "postgresql:");
   assert.equal(connection.pathname, `/${gateDatabase}`);
   assert.equal(connection.hostname, expectedHostname);

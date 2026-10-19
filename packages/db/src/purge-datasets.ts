@@ -88,11 +88,11 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     tenant_access_grants:
       "Acessos temporários do Admin: registro de acesso privilegiado, sem texto livre, sobrevive à organização (ADR 0072).",
     tenant_audit_event:
-      "Auditoria do tenant: sobrevive ao purge, imutável (gatilho ENABLE ALWAYS que recusa UPDATE, DELETE e TRUNCATE) e com a chave estrangeira da organização restritiva. Sai só por prazo, conforme a classe do evento (`security`: 5 anos do evento; `operational`: 6 meses depois do purge), pela função `expire_tenant_audit_events` do papel `polaris_retention_owner`, que pula a organização sob legal hold. O motivo: é o registro de quem fez o quê numa organização cujo dono pediu a exclusão, e uma apuração futura (fraude, disputa, ordem judicial) precisa dele; só IDs opacos, sem dado pessoal além do identificador do usuário (decisão de 19/10/2026, ADR 0081 emendado).",
+      "Auditoria do tenant: sobrevive ao purge, imutável (gatilho ENABLE ALWAYS que recusa UPDATE, DELETE e TRUNCATE) e com a chave estrangeira da organização restritiva. Sai só por prazo, conforme a classe do evento (`security`: 12 meses do evento; `operational`: 6 meses depois do purge), pela função `expire_tenant_audit_events` do papel `polaris_retention_owner`, que pula a organização sob legal hold. O motivo: é o registro de quem fez o quê numa organização cujo dono pediu a exclusão, e uma apuração futura (fraude, disputa, ordem judicial) precisa dele; só IDs opacos, sem dado pessoal além do identificador do usuário (decisão de 19/10/2026, ADR 0081 emendado).",
   });
 
 /**
- * Tables without an organization column (the access log, the queues, the scheduler and the link between a session
+ * Tables without an organization column (the access log, the sign-in lock, the record of legal acceptance, the queues, the scheduler and the link between a session
  * and a device): nothing of a tenant to remove (ADR 0081). The purge gate proves they still have none; a column of
  * an organization moves the table to one of the lists above.
  */
@@ -101,6 +101,10 @@ export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
 > = Object.freeze({
   auth_access_log:
     "Registro de acesso do Marco Civil (art. 15), por usuário e sem organização: sobrevive ao purge da organização e à exclusão do usuário, e só sai pelo prazo de 6 meses, com a guarda cautelar do §2º (ADR 0092 e 0081).",
+  auth_login_lock:
+    "Contador do bloqueio da entrada por senha, uma linha por e-mail digitado e sem organização: a chave é o HMAC do e-mail normalizado (nem e-mail, nem usuário, nem IP), e a linha dura no máximo 1 dia (classe `auth_login_lock`, ADR 0100).",
+  legal_acceptance:
+    "Aceite dos termos e da política de privacidade, por usuário e sem organização: a linha só acrescenta (gatilho), sobrevive ao purge da organização e à exclusão do usuário, e fica 10 anos depois da exclusão da conta (classe `legal_acceptance`, ADR 0100). Sem IP.",
   device_sessions:
     "Vínculo entre sessão e aparelho de um usuário, sem organização: some com a sessão ou com o aparelho (chave estrangeira em cascata), e a retenção é a da classe `auth_sessions`. A classe de retenção dos aparelhos (`devices`) ainda não foi decidida.",
   operational_incidents:

@@ -31,6 +31,7 @@ const approvedClosedOrganization: RetentionPolicy = {
   class: "closed_organization",
   data: ["todos os dados de uma organização closed"],
   period: { kind: "duration", ms: 15 * DAY_MS },
+  review: { state: "pendente_juridica" },
   rule: "Purge 15 dias depois do fim da janela.",
   sources: ["ADR de exemplo"],
   status: "aprovada",

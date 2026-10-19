@@ -1,5 +1,6 @@
 import { configureLogging, logger } from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
+import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
 import {
   createOutboxClient,
@@ -241,6 +242,34 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
 }
 
 /**
+ * Removes the rows of the sign-in lock untouched for a day (retention class `auth_login_lock`, ADR 0100),
+ * through the authentication role, the only one that executes the function.
+ */
+async function runLoginLockExpiry(env: WorkerBindings): Promise<JobResult> {
+  const connectionString = env.AUTH_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    // the authentication role is not provisioned in this environment yet: nothing to do
+    logger.warn("auth_login_lock_expiry_not_configured");
+    return notConfigured;
+  }
+  let client: ReturnType<typeof createAuthLoginLockMaintenanceClient>;
+  try {
+    client = createAuthLoginLockMaintenanceClient(connectionString);
+  } catch (error: unknown) {
+    return finished([error]);
+  }
+  try {
+    const removed = await client.expire();
+    logger.info("auth_login_lock_expired", { removed });
+    return finished([]);
+  } catch (error: unknown) {
+    return finished([error]);
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
+/**
  * The outbox dispatcher and sweeper (ADR 0084): sends the due events (and those whose claim ran out)
  * to their queues and marks them dispatched, then removes the consumer's old processing records. It
  * uses the connection of the tick (the outbox role also keeps the scheduler's state), which the tick
@@ -296,6 +325,7 @@ function jobHandlers(
   outbox: OutboxClient | null
 ): JobHandlers {
   return {
+    "auth.login_lock_expiry": () => runLoginLockExpiry(env),
     "billing.maintenance": () => runBillingJobs(env),
     "media.maintenance": () => runMediaMaintenance(env),
     "outbox.dispatch": () => runOutboxJobs(env, outbox),

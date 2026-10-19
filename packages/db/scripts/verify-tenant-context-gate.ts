@@ -4,7 +4,6 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { deleteOrganizationsWithAudit } from "./teardown-support";
 import {
   type CreateInitialOrganizationInDatabaseResult,
   createInitialOrganizationInDatabase,
@@ -17,6 +16,8 @@ import {
   TenantAuthorizationError,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import { deleteOrganizationsWithAudit } from "./teardown-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -39,8 +40,6 @@ const expectedPocSeeds = [
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const rollbackFailurePattern = /intentional PR23 rollback/;
 const sqlIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const neonTestHostnamePattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.[a-z0-9-]+\.sa-east-1\.aws\.neon\.tech$/;
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -259,7 +258,7 @@ async function main() {
 
   let databaseUrl: URL;
   try {
-    databaseUrl = new URL(connectionString);
+    databaseUrl = assertAllowedGateUrl(connectionString);
   } catch (error) {
     throw new Error(
       "The tenant context gate requires a valid direct Neon URL.",
@@ -271,7 +270,7 @@ async function main() {
   assert.equal(databaseUrl.hostname, expectedHostname);
   assert.equal(databaseUrl.pathname, `/${gateDatabase}`);
   assert.equal(databaseUrl.hostname.includes("-pooler"), false);
-  assert.match(databaseUrl.hostname, neonTestHostnamePattern);
+  assert.match(databaseUrl.hostname, disposableHostPattern);
 
   const { db: adminDatabase, pool: adminPool } = createDatabase(
     connectionString,
@@ -415,7 +414,7 @@ async function main() {
       "SELECT tablename AS table_name, policyname AS policy_name, cmd AS command, " +
         "roles, qual AS using_expression, with_check " +
         "FROM pg_policies WHERE schemaname = 'public' " +
-        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_privacy_owner}', '{polaris_purge_owner}') ORDER BY tablename, policyname",
+        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_privacy_owner}', '{polaris_purge_owner}', '{polaris_retention_owner}') ORDER BY tablename, policyname",
       [["memberships", "organizations", "tenant_audit_event"]]
     );
     assert.deepEqual(

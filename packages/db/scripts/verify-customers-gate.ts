@@ -20,6 +20,7 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
 import { redactedFailure } from "./sales-gate-support";
 
 const gateDatabase =
@@ -37,8 +38,6 @@ const customerEmailDuplicateIndexPattern =
   /using btree \(organization_id, lower\(email\)\) where \(email is not null\)$/;
 const customerPhoneDuplicateIndexPattern =
   /using btree \(organization_id, phone\) where \(phone is not null\)$/;
-const disposableHostPattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 
 type Database = ReturnType<typeof createDatabase>["db"];
 type AdminPool = ReturnType<typeof createDatabase>["pool"];
@@ -156,7 +155,7 @@ async function run() {
   const branch = requiredEnvironment("POLARIS_CUSTOMER_GATE_BRANCH");
   assert.equal(branch, expectedBranch);
   const adminUrl = requiredEnvironment("POLARIS_CUSTOMER_GATE_DATABASE_URL");
-  const parsedAdminUrl = new URL(adminUrl);
+  const parsedAdminUrl = assertAllowedGateUrl(adminUrl);
   assert.match(parsedAdminUrl.hostname, disposableHostPattern);
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
@@ -221,6 +220,8 @@ async function run() {
       rolsuper: false,
     });
 
+    // Membership is read from pg_auth_members: pg_has_role() answers true for
+    // a superuser, which is what the owner is on the CI Postgres (not on Neon).
     const cleanupFunctions = await admin.pool.query<{
       cleanup_can_execute: boolean;
       function_owner: string;
@@ -233,7 +234,7 @@ async function run() {
       "SELECT p.proname, owner.rolname AS function_owner, " +
         "EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS acl " +
         "WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE') AS public_can_execute, " +
-        "pg_has_role('neondb_owner', $1, 'SET') AS migration_owner_can_set, " +
+        "EXISTS (WITH RECURSIVE chain(roleid) AS (SELECT m.roleid FROM pg_auth_members m WHERE m.member = 'neondb_owner'::regrole AND m.set_option UNION SELECT m.roleid FROM pg_auth_members m JOIN chain c ON m.member = c.roleid WHERE m.set_option) SELECT 1 FROM chain WHERE roleid = $1::regrole) AS migration_owner_can_set, " +
         "pg_has_role($2, $1, 'MEMBER') AS tenant_is_cleanup_owner, " +
         "has_function_privilege($2, p.oid, 'EXECUTE') AS tenant_can_execute, " +
         "has_function_privilege($3, p.oid, 'EXECUTE') AS cleanup_can_execute " +

@@ -232,10 +232,10 @@ function world(options: { leaseHours?: number } = {}) {
     make,
     network,
     purged,
-    wiped,
     server,
     session,
     stores,
+    wiped,
   };
 }
 
@@ -1103,6 +1103,30 @@ describe("a session the server refuses", () => {
     const kept = w.stores.get(`${userId}-${organizationId}`);
     expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
     expect(w.keyValues.read("polaris.offline.namespaces")).toContain(userId);
+  });
+
+  it("a session the server ended (told by a screen, not found while sending) goes the same way as a refused one: lease and collections go now, the queue stays, and a second call does nothing", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+
+    await runtime.dropSessionCopy();
+    await runtime.dropSessionCopy();
+
+    expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+    expect(w.purged).toEqual([]);
+    expect(
+      w.keyValues.read(`polaris.offline.lease.${userId}.${organizationId}`)
+    ).toBeNull();
+    expect(runtime.context()).toBeNull();
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      sessionRefused: true,
+    });
+    const kept = w.stores.get(`${userId}-${organizationId}`);
+    expect((await kept?.outbox.snapshot())?.commands).toHaveLength(2);
   });
 
   it("a refused session with nothing queued deletes the whole namespace", async () => {

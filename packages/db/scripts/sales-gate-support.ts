@@ -14,6 +14,7 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { disposableHostPattern as gateHostPattern } from "./gate-hosts";
 
 export const runtimeRole = "polaris_pr11_runtime";
 
@@ -34,16 +35,9 @@ export function journalMigrationCount(): number {
 export const poolerPattern = /pooler/i;
 // Every stage runs against its own disposable branch (for example pr44-...-gate).
 export const gateBranchPattern = /^pr\d+-[a-z0-9-]+-gate$/;
-const neonDisposableHostPattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
-// Inside CI the target is the job's own Postgres service, so a local host is
-// accepted there (and only there: a developer machine never gets this).
-const ciDisposableHostPattern =
-  /^(?:ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech|localhost|127\.0\.0\.1)$/;
-export const disposableHostPattern =
-  process.env.CI === "true"
-    ? ciDisposableHostPattern
-    : neonDisposableHostPattern;
+// the one list of hosts a gate may connect to
+export const disposableHostPattern = gateHostPattern;
+
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 
 export type Database = ReturnType<typeof createDatabase>["db"];

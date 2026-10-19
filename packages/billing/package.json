@@ -2,9 +2,19 @@
   "name": "@polaris/billing",
   "private": true,
   "type": "module",
+  "exports": {
+    "./asaas/client": "./src/asaas/client.ts",
+    "./asaas/port": "./src/asaas/port.ts",
+    "./asaas/webhook": "./src/asaas/webhook.ts",
+    "./http": "./src/http.ts",
+    "./provider-port": "./src/provider-port.ts"
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polaris/domain": "workspace:*"
   }
 }

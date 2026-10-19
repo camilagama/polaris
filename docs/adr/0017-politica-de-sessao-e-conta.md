@@ -32,3 +32,15 @@ Registro retroativo das decisões tomadas nos PR13 a PR18 e confirmadas na revis
 - **Vínculo automático por e-mail verificado.** Reduz atrito, mas permite tomada de conta quando um provider reporta e-mail verificado de forma permissiva.
 - **Regras de composição e troca periódica de senha.** Contrariam a orientação do NIST SP 800-63B-4 e pioram a qualidade das senhas.
 - **HIBP fail-open.** Mantém o cadastro no ar durante a falha do serviço, mas aceitaria senhas comprometidas justamente quando a verificação não funciona.
+
+## Emenda (19/10/2026, [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md))
+
+O ADR 0100 registra a tela de entrada e fecha parte das pendências acima; o que ele decide ainda não está no código e vale a partir dos PRs P1 a P10 (estado em `doc/status-implementacao.md`). Sem mudar nada do que está decidido neste ADR:
+
+- **Rota e retorno.** O app ganha `/entrar`. O login social envia `callbackURL = /entrar?voltar=<destino codificado>` e `errorCallbackURL = /entrar?erro=google`, porque o Better Auth 1.6.23 recusa o destino inteiro codificado; `/entrar` valida o `voltar` de novo (caminho do app, sem caracteres de controle, `/api` nem `/rpc`, nunca `/entrar`) e um valor inválido vira `/`.
+- **Limitador do login social.** `AUTH_SOCIAL_RATE_LIMITER` (20 por 60 s por IP) cobre o início e o callback do Google e não depende de `AUTH_ABUSE_PROTECTION_ENABLED`. O 429 do início devolve JSON `auth_rate_limited`; o 429 do callback devolve **302 `/entrar?erro=limite`**; sem o binding, 503.
+- **Abuso.** O bloqueio por e-mail (5 falhas em 15 minutos travam por 15 minutos, contador no PostgreSQL) soma-se ao Turnstile e ao limite por IP nas rotas de senha. A tela diz "Entrada pausada".
+- **Troca de senha.** `change-password` e `set-password` exigem sessão de até 15 minutos; a troca revoga as outras sessões e troca a época dos leases. A pendência de rate limits em `change-password` e `verify-password` continua no checklist de go-live.
+- **E-mail e senha continua desligado** até haver domínio de envio verificado; a senha só liga pela flag, depois do P8 e do P9 do ADR 0100.
+- **Destino validado no servidor (P1).** Antes de chamar o Better Auth, o servidor recusa com 403, sem `Location`, qualquer `callbackURL`, `errorCallbackURL`, `newUserCallbackURL` ou `redirectTo` que não seja caminho do app: host, esquema, `//`, barra invertida, caractere de controle, `/api`, `/rpc`, caractere que o regex do Better Auth recusa (por exemplo `/vendas(x)`) e, em `/entrar?voltar=`, um `voltar` que também não passe. O validador é `apps/web/src/lib/return-path.ts`, o mesmo que o `/entrar` usará.
+

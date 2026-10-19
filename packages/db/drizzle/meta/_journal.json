@@ -568,6 +568,27 @@
       "when": 1792398459320,
       "tag": "0080_auditoria_sobrevive_ao_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1792425678919,
+      "tag": "0081_auditoria_seguranca_12_meses",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1792438536831,
+      "tag": "0082_entrada_bloqueio_de_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1792441668820,
+      "tag": "0083_entrada_aceite_legal",
+      "breakpoints": true
     }
   ]
 }

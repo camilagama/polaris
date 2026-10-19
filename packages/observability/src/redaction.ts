@@ -12,7 +12,9 @@
  *   token, a JWT, a URL with credentials) loses that part, whatever the key is.
  *
  * What is masked: password, cookie, token, Authorization, secret, key,
- * phone, e-mail, CPF/CNPJ, card and IP. The marker says the category
+ * phone, e-mail, CPF/CNPJ (also a payment provider's `taxID`), card (also
+ * `creditCardHolderInfo`; `creditCardToken` is a secret), the Pix key and the
+ * Pix payload (`emv`), and IP. The marker says the category
  * (`[REDACTED:email]`), never the value.
  *
  * Limits, on purpose (ADR 0089 lists them): a boolean or `null` under a
@@ -86,6 +88,8 @@ const secretWords: ReadonlySet<string> = new Set([
   "credentials",
   "csrf",
   "dsn",
+  // the Pix "copia e cola" payload: it carries the payee's name and Pix key
+  "emv",
   "hmac",
   "jwt",
   "otp",
@@ -116,6 +120,8 @@ const secretSubstrings = [
   "encryptionkey",
   "magiclink",
   "password",
+  // `pixKey`: a Pix key is a CPF, a CNPJ, an e-mail, a phone or a random key
+  "pixkey",
   "privatekey",
   "secretkey",
   "sessionid",
@@ -182,6 +188,8 @@ const piiSubstrings: readonly [string, RedactionCategory][] = [
   ["clientip", "ip"],
   ["connectingip", "ip"],
   ["creditcard", "card"],
+  // `taxID`, `taxId`, `tax_id`: the CPF or CNPJ in a payment provider's payload
+  ["taxid", "cpf"],
   ["forwardedfor", "ip"],
   ["ipaddress", "ip"],
   ["realip", "ip"],

@@ -456,6 +456,34 @@ describe("redaction of what the audit tried", () => {
       expect(redact({ [key]: "x1" })[key], key).toMatch(markerPrefix);
     }
   });
+
+  it("masks what a payment provider's payload names (ADR 0101)", () => {
+    const masked = redact({
+      creditCardHolderInfo: { cpfCnpj: "x", name: "y" },
+      creditCardToken: "plain-looking-value",
+      customer: { taxID: { taxID: "x", type: "BR:CPF" } },
+      emv: "plain-looking-value",
+      pixKey: "plain-looking-value",
+      tax_id: "x",
+      taxID: "x",
+      taxId: "x",
+    });
+    expect(masked).toEqual({
+      creditCardHolderInfo: "[REDACTED:card]",
+      creditCardToken: "[REDACTED:secret]",
+      customer: { taxID: "[REDACTED:cpf]" },
+      emv: "[REDACTED:secret]",
+      pixKey: "[REDACTED:secret]",
+      tax_id: "[REDACTED:cpf]",
+      taxID: "[REDACTED:cpf]",
+      taxId: "[REDACTED:cpf]",
+    });
+  });
+
+  it("keeps the payment provider's innocent names", () => {
+    const fields = { pixType: "x", taxRate: "2.5" };
+    expect(redact(fields)).toEqual(fields);
+  });
 });
 
 describe("redaction at depth", () => {

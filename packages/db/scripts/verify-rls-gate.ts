@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Pool } from "pg";
+import { assertAllowedGateUrl, isLocalGateHost } from "./gate-hosts";
 
 const adminConnectionString = process.env.POLARIS_RLS_ADMIN_DATABASE_URL;
 const expectedHostname = process.env.POLARIS_RLS_EXPECTED_HOSTNAME;
+const gateDatabase = process.env.POLARIS_GATE_DATABASE ?? "neondb";
+// the login of the runtime connection when it is not the role itself (the CI Postgres)
+const runtimeLogin =
+  process.env.POLARIS_GATE_RUNTIME_LOGIN ?? "polaris_pr11_runtime";
 const workerUrl =
   process.env.POLARIS_RLS_POC_URL ?? "http://127.0.0.1:8787/api/poc/rls/run";
 
@@ -84,13 +89,16 @@ async function callWorker(
 }
 
 const adminUrl = new URL(adminConnectionString);
+// refuses a host outside the list, and a URL whose `?host=` points elsewhere
+assertAllowedGateUrl(adminConnectionString);
 check(
-  !adminUrl.hostname.includes("-pooler") &&
-    adminUrl.hostname === expectedHostname &&
-    adminUrl.hostname.endsWith(".sa-east-1.aws.neon.tech"),
-  "The gate requires the direct São Paulo Neon endpoint."
+  adminUrl.hostname === expectedHostname,
+  "The gate requires the hostname it was told to expect."
 );
-assert.equal(decodeURIComponent(adminUrl.pathname.slice(1)), "neondb");
+assert.equal(decodeURIComponent(adminUrl.pathname.slice(1)), gateDatabase);
+// Hyperdrive (the pool in front of Neon) is not in the local run: the Worker
+// stand-in connects straight to Postgres, so backend reuse is not provable there.
+const viaHyperdrive = !isLocalGateHost(adminUrl.hostname);
 
 const adminPool = new Pool({ connectionString: adminConnectionString, max: 2 });
 
@@ -107,7 +115,7 @@ try {
     10
   );
   assert.equal(serverMajor, 18, "The remote database must be PostgreSQL 18.");
-  assert.equal(identity.rows[0]?.database, "neondb");
+  assert.equal(identity.rows[0]?.database, gateDatabase);
 
   const security = await adminPool.query<{
     bypassRls: boolean;
@@ -237,7 +245,7 @@ try {
     (organizations) => organizations.size === 2
   );
   check(
-    concurrentReuseProven,
+    concurrentReuseProven || !viaHyperdrive,
     "Concurrent tenant requests did not reuse a backend across org_a and org_b."
   );
 
@@ -271,12 +279,12 @@ try {
       `SELECT pid
          FROM pg_stat_activity
         WHERE application_name = $1
-          AND usename = 'polaris_pr11_runtime'
+          AND usename = $2
           AND state = 'active'
           AND query ILIKE '%pg_sleep%'
           AND pid <> pg_backend_pid()
         LIMIT 1`,
-      [applicationName]
+      [applicationName, runtimeLogin]
     );
     targetPid = activeQuery.rows[0]?.pid;
   }
@@ -318,6 +326,12 @@ try {
         WHERE organization_id = 'org_a' AND token = $1`,
       [retryToken]
     );
+    // leave the fixture as the bootstrap made it: the tenant context gate needs exactly the two seeds
+    await ownerClient.query(
+      `DELETE FROM public.rls_poc_operations
+        WHERE organization_id = 'org_a' AND token = $1`,
+      [retryToken]
+    );
     await ownerClient.query("COMMIT");
     assert.equal(operationRows.rows[0]?.count, 1);
   } catch (error) {
@@ -335,18 +349,22 @@ try {
       crossTenantRead: "passed",
       crossTenantWrite: "rejected_by_rls",
       forceRls: role.forceRls,
-      hyperdrive: "remote_binding",
+      hyperdrive: viaHyperdrive ? "remote_binding" : "not_applicable_local",
       postgresMajor: serverMajor,
-      region: "aws-sa-east-1",
+      region: viaHyperdrive ? "aws-sa-east-1" : "local",
       retryAfterTerminatedBackend: "passed",
       retryContextReapplied: "passed",
       runtimeBypassRls: role.bypassRls,
       runtimeOwnsFixture: role.runtimeOwnsTable,
-      sqlQueryCaching: "disabled_by_hyperdrive_config",
+      sqlQueryCaching: viaHyperdrive
+        ? "disabled_by_hyperdrive_config"
+        : "not_applicable_local",
       statementFailureRollback: "passed",
       transactionContext: "transaction_local",
       transactionRollback: "passed",
-      workerConnectionPooling: "reused_backend",
+      workerConnectionPooling: viaHyperdrive
+        ? "reused_backend"
+        : "not_applicable_local",
     })
   );
 } finally {
