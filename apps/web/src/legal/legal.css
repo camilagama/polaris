@@ -1,0 +1,173 @@
+/*
+ * The public legal pages (privacy policy, terms of use). Mobile first: a reading column that never
+ * scrolls sideways at 360 px, tables that become one card per row, 44 px targets in the summary.
+ * Colors come from the shared tokens, so the dark theme follows the system with no rule of its own.
+ */
+.legal-topbar {
+  display: flex;
+  align-items: center;
+  min-height: 4rem;
+  padding: 0 clamp(1rem, 4vw, 3.5rem);
+  background: var(--ui-surface);
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.legal-main {
+  width: min(100% - 2rem, 46rem);
+  padding: clamp(1.5rem, 5vw, 3.5rem) 0 4rem;
+  margin: 0 auto;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.legal-main h1 {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.6rem, 6vw, 2.2rem);
+  line-height: 1.2;
+}
+
+.legal-main h2 {
+  margin: 2.25rem 0 0.75rem;
+  font-size: 1.3rem;
+  line-height: 1.3;
+  scroll-margin-top: 1rem;
+}
+
+.legal-main p,
+.legal-main ul {
+  margin: 0 0 1rem;
+}
+
+.legal-main ul {
+  padding-left: 1.25rem;
+}
+
+.legal-main li + li {
+  margin-top: 0.4rem;
+}
+
+.legal-main a {
+  color: var(--ui-accent-strong);
+  text-underline-offset: 0.15em;
+}
+
+.legal-version {
+  color: var(--ui-muted);
+}
+
+.legal-draft {
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border: 1px solid var(--ui-warning);
+  border-radius: 0.6rem;
+}
+
+/* A marker still waiting to be filled in: only a staging build may show one. */
+.legal-marker {
+  padding: 0 0.25em;
+  font-weight: 700;
+  color: var(--ui-danger-strong);
+  background: var(--ui-danger-soft);
+  border-radius: 0.25rem;
+}
+
+.legal-summary {
+  padding: 0.5rem 1rem 0.75rem;
+  margin: 1.5rem 0 0;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 0.75rem;
+}
+
+.legal-summary h2 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 1rem;
+}
+
+.legal-summary ol {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.legal-summary a {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.25rem 0;
+}
+
+.legal-table-wrap {
+  margin: 0 0 1.25rem;
+  overflow-x: auto;
+}
+
+.legal-table {
+  width: 100%;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  border-collapse: collapse;
+}
+
+.legal-table th,
+.legal-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid var(--ui-line);
+}
+
+.legal-table th {
+  background: var(--ui-surface-muted);
+}
+
+/* Narrow screens: one card per row, each cell with the name of its column. */
+@media (max-width: 40rem) {
+  .legal-table,
+  .legal-table tbody,
+  .legal-table tr,
+  .legal-table td {
+    display: block;
+  }
+
+  .legal-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .legal-table tr {
+    margin-bottom: 0.75rem;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: 0.6rem;
+  }
+
+  .legal-table td {
+    border: 0;
+  }
+
+  .legal-table td + td {
+    border-top: 1px solid var(--ui-line);
+  }
+
+  .legal-table td:first-child {
+    font-weight: 700;
+    background: var(--ui-surface-muted);
+    border-radius: 0.6rem 0.6rem 0 0;
+  }
+
+  .legal-table td + td::before {
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--ui-muted);
+    content: attr(data-label);
+  }
+}
