@@ -12,6 +12,7 @@ import {
   isAPIError,
 } from "better-auth/api";
 import type { GoogleOptions } from "better-auth/social-providers";
+import { isSafeAuthCallbackPath } from "../lib/return-path";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
   type AccessLogEvent,
@@ -263,6 +264,33 @@ async function normalizeAndValidatePasswordRequest(
     }
 
     throw error;
+  }
+}
+
+const authRedirectFields = [
+  "callbackURL",
+  "errorCallbackURL",
+  "newUserCallbackURL",
+  "redirectTo",
+] as const;
+
+/**
+ * Better Auth only checks that a redirect target is a path of this origin. The app goes further: the
+ * target has to be a path of the app (never `/api`, `/rpc`, a host, a scheme or a control character),
+ * and the destination carried by the sign-in page in `voltar` has to be a valid return path too.
+ * A refusal is a 403 and never a redirect.
+ */
+function validateAuthRedirectTargets(context: AuthBeforeHookContext): void {
+  for (const source of [asRecord(context.body), asRecord(context.query)]) {
+    for (const field of authRedirectFields) {
+      const target = source?.[field];
+      if (target !== undefined && !isSafeAuthCallbackPath(target)) {
+        throw APIError.from("FORBIDDEN", {
+          code: "invalid_redirect_target",
+          message: "The redirect target is not a path of this app.",
+        });
+      }
+    }
   }
 }
 
@@ -651,6 +679,7 @@ export function createBetterAuth({
 
   let capturedLogoutActorId: string | null = null;
   const captureLogoutSession = createAuthMiddleware(async (context) => {
+    validateAuthRedirectTargets(context);
     await validateVerifiedAccountLinkingRequest(context);
     await normalizeAndValidatePasswordRequest(context);
 

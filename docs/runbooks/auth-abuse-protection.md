@@ -37,6 +37,18 @@ References: [Turnstile server-side validation](https://developers.cloudflare.com
 
 The general IP limiter runs before Siteverify to avoid spending verification calls after a request has exceeded its configured limit. The email-send limiter runs after a valid challenge, so an invalid token cannot consume another user's email-send allowance. A missing binding or binding error fails closed with HTTP 503; an exceeded counter returns HTTP 429.
 
+## Google sign-in limiter
+
+`AUTH_SOCIAL_RATE_LIMITER` (20 requests per 60 seconds per client IP, ADR 0017 and ADR 0100) covers `POST /api/auth/sign-in/social` and `/api/auth/callback/google`, which calls Google and writes `verification`. It has no Turnstile and does not depend on `AUTH_ABUSE_PROTECTION_ENABLED` or `EMAIL_PASSWORD_AUTH_ENABLED`: Google is on while the password is off.
+
+- The key is an HMAC of the IP with `BETTER_AUTH_SECRET` and the scope `auth-social-ip`; the start and the callback of one IP share the same counter.
+- Over the limit, the start answers HTTP 429 with the JSON `auth_rate_limited`. The callback is a browser navigation, so it answers **HTTP 302 to `/entrar?erro=limite`** instead of JSON, and the sign-in page shows the wait text, not the Google error. Both happen before Better Auth, so no state, token or session is read.
+- It fails closed: a missing binding, a missing or invalid `cf-connecting-ip`, a binding error or an unreadable answer is HTTP 503 (`auth_rate_limit_unavailable`), also on the callback.
+- Namespace ids: `900020` (local), `902020` (staging) and `901020` (production), unique among the ids of `apps/web/wrangler.jsonc`. Like the other ids, they have to be confirmed unique in the Cloudflare account before a remote deployment. After the staging deploy, read the binding back under the staging profile of the [CLI profile policy](cli-profile-policy.md) and check the 20-per-60-seconds setting.
+- The counters are local to a Cloudflare location and approximate, like the ones above. Shops behind the same IP (shared internet) share the 20, and a login spends two of them (the start and the callback).
+- The callback is a GET that any page can trigger, so a hostile page can spend the 20 of a visitor's IP for 60 seconds; the person sees the wait text and the limit lifts by itself. This is the cost of a limit by IP that ADR 0100 accepts.
+- `POST /api/auth/link-social` is not counted: it needs a verified session and the origin check, and the ADR lists only the start and the callback.
+
 ## Verification and rollback
 
 Before enabling password auth in a shared environment, verify from the deployed hostname:

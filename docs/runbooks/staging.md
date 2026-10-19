@@ -59,7 +59,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 - Filas: `polaris-critical-staging`, `polaris-default-staging`, `polaris-media-staging` e `polaris-dlq-staging` (`wrangler queues create <nome>`). O sufixo de ambiente vai no fim: o consumidor e o tratamento da DLQ reconhecem a fila por `polaris-<fila>-<ambiente>` ([ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), e um teste confere os nomes do `wrangler.jsonc`.
 - R2: bucket privado `polaris-media-staging`. O `polaris-media` antigo da conta não é usado.
 - Hyperdrive: as 8 configurações da tabela acima, cada uma com `--caching-disabled` e `--origin-connection-limit` igual ao limite do login, apontando para o host direto do projeto `polaris-staging` (sem pooler). Com a do PR11, a conta fica com 9 das 10 do plano Free. Apagar a do PR11 é item do go-live, decidido pelo responsável.
-- Os namespaces de rate limit `902016` a `902019` já estão no `wrangler.jsonc`. São reservados no primeiro deploy.
+- Os namespaces de rate limit `902016` a `902020` já estão no `wrangler.jsonc`. São reservados no primeiro deploy.
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
 

@@ -9,6 +9,11 @@ import { createBetterAuth } from "./auth";
 import type { AccessLogWriter } from "./auth/access-log";
 import { createResendAuthEmailDelivery } from "./auth/email";
 import { handleBetterAuthRequest } from "./auth/handler";
+import {
+  hostileRedirectTargets,
+  validReturnCallbackURL,
+} from "./auth/redirect-target-test-cases";
+import { withSocialRateLimit } from "./auth/social-rate-limit-test-support";
 import type { WorkerBindings } from "./environment";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
@@ -72,9 +77,11 @@ function createGoogleTestApp(accessLogWriter?: AccessLogWriter) {
     requestId: "pr14-oauth-test-request",
     secret: testSecret,
   });
-  const testApp = createServerApp({
-    authHandler: (request) => auth.handler(request),
-  });
+  const testApp = withSocialRateLimit(
+    createServerApp({
+      authHandler: (request) => auth.handler(request),
+    })
+  );
 
   return { app: testApp, auditEvents, auth };
 }
@@ -1271,6 +1278,141 @@ describe("Google OAuth and security audit", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
       error: { code: "auth_provider_unavailable" },
+    });
+  });
+});
+
+describe("redirect targets of the Google sign-in start (open redirect)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function startGoogleLogin(
+    testApp: ReturnType<typeof createGoogleTestApp>["app"],
+    body: Record<string, unknown>
+  ) {
+    return testApp.request(
+      "/api/auth/sign-in/social",
+      {
+        body: JSON.stringify({ provider: "google", ...body }),
+        headers: { "content-type": "application/json", origin: testBaseURL },
+        method: "POST",
+      },
+      testBindings
+    );
+  }
+
+  it("accepts the sign-in page carrying a totally encoded destination with a query", async () => {
+    const { app: testApp } = createGoogleTestApp();
+
+    const response = await startGoogleLogin(testApp, {
+      callbackURL: validReturnCallbackURL,
+      errorCallbackURL: "/entrar?erro=google",
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { url?: string };
+    expect(new URL(body.url as string).origin).toBe(
+      "https://accounts.google.com"
+    );
+  });
+
+  describe.each(["callbackURL", "errorCallbackURL", "newUserCallbackURL"])(
+    "in %s",
+    (field) => {
+      it.each(hostileRedirectTargets)(
+        "refuses %s with 403 and no Location",
+        async (_reason, target) => {
+          vi.spyOn(console, "error").mockImplementation(() => undefined);
+          const { app: testApp } = createGoogleTestApp();
+
+          const response = await startGoogleLogin(testApp, { [field]: target });
+
+          expect(response.status).toBe(403);
+          expect(response.headers.get("location")).toBeNull();
+          expect(response.headers.get("set-cookie")).toBeNull();
+          expect(await response.text()).not.toContain("accounts.google.com");
+        }
+      );
+    }
+  );
+
+  it.each([
+    ["the API", "/api/auth/sign-out"],
+    ["RPC", "/rpc/sales/list"],
+    ["the characters the library refuses (the '(x)' case)", "/vendas(x)"],
+    ["a dot segment that turns the path protocol-relative", "/.//evil.example"],
+    [
+      "a destination (voltar) that points to the API",
+      "/entrar?voltar=%2Fapi%2Fx",
+    ],
+  ])(
+    "refuses %s with the code of the app's own rule",
+    async (_reason, target) => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const { app: testApp } = createGoogleTestApp();
+
+      const response = await startGoogleLogin(testApp, { callbackURL: target });
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        code: "invalid_redirect_target",
+      });
+    }
+  );
+
+  describe("in the other routes that take a redirect target", () => {
+    it("refuses a hostile redirectTo when a password reset is requested", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const { app: testApp, passwordResetEmails } =
+        createEmailPasswordTestApp();
+
+      for (const redirectTo of [
+        "https://evil.example",
+        "//evil.example",
+        "/api/auth/sign-out",
+      ]) {
+        // biome-ignore lint/performance/noAwaitInLoops: one request after the other
+        const response = await testApp.request(
+          "/api/auth/request-password-reset",
+          {
+            body: JSON.stringify({
+              email: "owner@example.invalid",
+              redirectTo,
+            }),
+            headers: {
+              "content-type": "application/json",
+              origin: testBaseURL,
+            },
+            method: "POST",
+          },
+          testBindings
+        );
+
+        expect(response.status, redirectTo).toBe(403);
+        expect(response.headers.get("location")).toBeNull();
+      }
+      expect(passwordResetEmails).toHaveLength(0);
+    });
+
+    it.each([
+      "/api/auth/verify-email?token=any-token&callbackURL=https%3A%2F%2Fevil.example",
+      "/api/auth/verify-email?token=any-token&callbackURL=%2F%2Fevil.example",
+      "/api/auth/verify-email?token=any-token&callbackURL=%2Fapi%2Fauth%2Fsign-out",
+      "/api/auth/reset-password/any-token?callbackURL=https%3A%2F%2Fevil.example",
+      "/api/auth/reset-password/any-token?callbackURL=%2Frpc%2Fsales",
+    ])("refuses a hostile callbackURL in the query of %s", async (path) => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const { app: testApp } = createEmailPasswordTestApp();
+
+      const response = await testApp.request(
+        path,
+        { method: "GET" },
+        testBindings
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("location")).toBeNull();
     });
   });
 });

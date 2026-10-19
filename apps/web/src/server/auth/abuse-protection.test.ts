@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
-import { protectAuthRequest } from "./abuse-protection";
+import {
+  protectAuthRequest,
+  protectSocialAuthRequest,
+} from "./abuse-protection";
 
 const requestId = "pr16-auth-abuse-test";
 const turnstileSecret = "test-only-turnstile-secret";
 const baseURL = "https://app.example.com";
+const socialKeyPattern = /^auth-social-ip:[0-9a-f]{64}$/;
 
 function createLimiter(success = true) {
   return {
@@ -330,5 +334,272 @@ describe("auth abuse protection", () => {
       error: { code: "auth_abuse_protection_unavailable" },
     });
     expect(authHandler).not.toHaveBeenCalled();
+  });
+});
+
+describe("Google sign-in rate limit", () => {
+  const socialLimit = 20;
+  const socialBindings = (overrides: Partial<WorkerBindings> = {}) =>
+    ({
+      AUTH_SOCIAL_RATE_LIMITER: createLimiter(),
+      BETTER_AUTH_BASE_URL: baseURL,
+      BETTER_AUTH_SECRET: "test-only-better-auth-secret-32-bytes",
+      HYPERDRIVE: { connectionString: "" },
+      ...overrides,
+    }) as WorkerBindings;
+  const withoutSocialLimiter = (overrides: Partial<WorkerBindings> = {}) => {
+    const { AUTH_SOCIAL_RATE_LIMITER: _removed, ...rest } =
+      socialBindings(overrides);
+    return rest as WorkerBindings;
+  };
+
+  /** A limiter that allows `socialLimit` calls and then refuses, like the 20 per 60 s of the binding. */
+  function countingLimiter() {
+    let calls = 0;
+    return {
+      limit: vi.fn((_options: { key: string }) => {
+        calls += 1;
+        return Promise.resolve({ success: calls <= socialLimit });
+      }),
+    };
+  }
+
+  function startRequest(ip: string | null = "203.0.113.17") {
+    return new Request(`${baseURL}/api/auth/sign-in/social`, {
+      headers: {
+        ...(ip ? { "cf-connecting-ip": ip } : {}),
+        origin: baseURL,
+      },
+      method: "POST",
+    });
+  }
+
+  function callbackRequest(ip: string | null = "203.0.113.17") {
+    return new Request(
+      `${baseURL}/api/auth/callback/google?code=fake-code&state=fake-state`,
+      { headers: ip ? { "cf-connecting-ip": ip } : {}, method: "GET" }
+    );
+  }
+
+  it("lets the 20th start through and answers 429 JSON to the 21st", async () => {
+    const bindings = socialBindings({
+      AUTH_SOCIAL_RATE_LIMITER: countingLimiter(),
+    });
+
+    for (let call = 1; call <= socialLimit; call += 1) {
+      expect(
+        // biome-ignore lint/performance/noAwaitInLoops: the calls count in order against one limiter
+        await protectSocialAuthRequest(startRequest(), bindings, requestId)
+      ).toBeUndefined();
+    }
+    const refused = await protectSocialAuthRequest(
+      startRequest(),
+      bindings,
+      requestId
+    );
+
+    expect(refused?.status).toBe(429);
+    expect(refused?.headers.get("location")).toBeNull();
+    expect(await refused?.json()).toEqual({
+      error: { code: "auth_rate_limited" },
+      requestId,
+    });
+  });
+
+  it("redirects the callback over the limit to the sign-in page instead of showing JSON", async () => {
+    const bindings = socialBindings({
+      AUTH_SOCIAL_RATE_LIMITER: createLimiter(false),
+    });
+
+    const refused = await protectSocialAuthRequest(
+      callbackRequest(),
+      bindings,
+      requestId
+    );
+
+    expect(refused?.status).toBe(302);
+    expect(refused?.headers.get("location")).toBe("/entrar?erro=limite");
+    expect(refused?.headers.get("cache-control")).toBe("no-store");
+    expect(await refused?.text()).toBe("");
+  });
+
+  it("counts the start and the callback in the same bucket of the same IP", async () => {
+    const limiter = createLimiter();
+    const bindings = socialBindings({ AUTH_SOCIAL_RATE_LIMITER: limiter });
+
+    await protectSocialAuthRequest(startRequest(), bindings, requestId);
+    await protectSocialAuthRequest(callbackRequest(), bindings, requestId);
+
+    const keys = limiter.limit.mock.calls.map(([options]) => options.key);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[0]).toMatch(socialKeyPattern);
+    expect(keys[0]).not.toContain("203.0.113.17");
+  });
+
+  it("separates one IP from another", async () => {
+    const limiter = createLimiter();
+    const bindings = socialBindings({ AUTH_SOCIAL_RATE_LIMITER: limiter });
+
+    await protectSocialAuthRequest(startRequest("203.0.113.1"), bindings);
+    await protectSocialAuthRequest(startRequest("203.0.113.2"), bindings);
+
+    const [first, second] = limiter.limit.mock.calls.map(
+      ([options]) => options.key
+    );
+    expect(first).not.toBe(second);
+  });
+
+  it.each([
+    ["the start", startRequest],
+    ["the callback", callbackRequest],
+  ])(
+    "fails closed with 503 on %s when the binding is missing",
+    async (_name, build) => {
+      const response = await protectSocialAuthRequest(
+        build(),
+        withoutSocialLimiter(),
+        requestId
+      );
+
+      expect(response?.status).toBe(503);
+      expect(await response?.json()).toMatchObject({
+        error: { code: "auth_rate_limit_unavailable" },
+      });
+    }
+  );
+
+  it.each([
+    ["has no client IP", () => startRequest(null), createLimiter()],
+    [
+      "has an invalid client IP",
+      () => startRequest("1.2.3.4, 5.6.7.8"),
+      createLimiter(),
+    ],
+    [
+      "meets a limiter that throws",
+      () => startRequest(),
+      {
+        limit: vi.fn(() => Promise.reject(new Error("limiter down"))),
+      },
+    ],
+    [
+      "meets a limiter with an unreadable answer",
+      () => startRequest(),
+      { limit: vi.fn(async () => ({}) as { success: boolean }) },
+    ],
+  ])(
+    "fails closed with 503 when the request %s",
+    async (_name, build, limiter) => {
+      const response = await protectSocialAuthRequest(
+        build(),
+        socialBindings({ AUTH_SOCIAL_RATE_LIMITER: limiter }),
+        requestId
+      );
+
+      expect(response?.status).toBe(503);
+    }
+  );
+
+  it("ignores every other auth route", async () => {
+    const limiter = createLimiter(false);
+    const bindings = socialBindings({ AUTH_SOCIAL_RATE_LIMITER: limiter });
+
+    const routes: [string, string][] = [
+      ["/api/auth/get-session", "GET"],
+      ["/api/auth/sign-in/email", "POST"],
+      ["/api/auth/sign-in/social", "GET"],
+      ["/api/auth/link-social", "POST"],
+      ["/api/auth/callback/other", "GET"],
+    ];
+    for (const [path, method] of routes) {
+      // biome-ignore lint/performance/noAwaitInLoops: one request after the other, then one check of the limiter
+      const response = await protectSocialAuthRequest(
+        new Request(`${baseURL}${path}`, {
+          headers: { "cf-connecting-ip": "203.0.113.17" },
+          method,
+        }),
+        bindings,
+        requestId
+      );
+      expect(response, `${method} ${path}`).toBeUndefined();
+    }
+    expect(limiter.limit).not.toHaveBeenCalled();
+  });
+
+  describe("in the server app", () => {
+    // Google is on while the password is off: nothing here turns on the abuse protection flag.
+    const appBindings = (overrides: Partial<WorkerBindings> = {}) =>
+      socialBindings({
+        AUTH_ABUSE_PROTECTION_ENABLED: "false",
+        EMAIL_PASSWORD_AUTH_ENABLED: "false",
+        ...overrides,
+      });
+
+    it("answers 429 to the 21st start and never reaches Better Auth", async () => {
+      const authHandler = vi.fn(async () => Response.json({ reached: true }));
+      const testApp = createServerApp({ authHandler });
+      const bindings = appBindings({
+        AUTH_SOCIAL_RATE_LIMITER: countingLimiter(),
+      });
+      const call = () =>
+        testApp.request(
+          "/api/auth/sign-in/social",
+          {
+            headers: { "cf-connecting-ip": "203.0.113.17", origin: baseURL },
+            method: "POST",
+          },
+          bindings
+        );
+
+      for (let index = 0; index < socialLimit; index += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: the calls count in order against one limiter
+        expect((await call()).status).toBe(200);
+      }
+      const refused = await call();
+
+      expect(refused.status).toBe(429);
+      expect(authHandler).toHaveBeenCalledTimes(socialLimit);
+    });
+
+    it("redirects the callback over the limit with 302 and a Location, without reaching Better Auth", async () => {
+      const authHandler = vi.fn(async () => Response.json({ reached: true }));
+      const testApp = createServerApp({ authHandler });
+
+      const response = await testApp.request(
+        "/api/auth/callback/google?code=fake-code&state=fake-state",
+        { headers: { "cf-connecting-ip": "203.0.113.17" } },
+        appBindings({ AUTH_SOCIAL_RATE_LIMITER: createLimiter(false) })
+      );
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe("/entrar?erro=limite");
+      expect(authHandler).not.toHaveBeenCalled();
+    });
+
+    it("answers 503 on the start and on the callback when the binding is missing", async () => {
+      const authHandler = vi.fn(async () => Response.json({ reached: true }));
+      const testApp = createServerApp({ authHandler });
+      const { AUTH_SOCIAL_RATE_LIMITER: _removed, ...rest } = appBindings();
+      const bindings = rest as WorkerBindings;
+      const init = {
+        headers: { "cf-connecting-ip": "203.0.113.17", origin: baseURL },
+      };
+
+      const start = await testApp.request(
+        "/api/auth/sign-in/social",
+        { ...init, method: "POST" },
+        bindings
+      );
+      const callback = await testApp.request(
+        "/api/auth/callback/google?code=fake-code&state=fake-state",
+        init,
+        bindings
+      );
+
+      expect(start.status).toBe(503);
+      expect(callback.status).toBe(503);
+      expect(authHandler).not.toHaveBeenCalled();
+    });
   });
 });
