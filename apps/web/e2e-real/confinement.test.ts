@@ -161,7 +161,10 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
         const path = join(directory, entry.name);
         if (entry.isDirectory()) {
           walk(path);
-        } else if (SOURCE_FILE.test(entry.name) && !TEST_FILE.test(entry.name)) {
+        } else if (
+          SOURCE_FILE.test(entry.name) &&
+          !TEST_FILE.test(entry.name)
+        ) {
           found.push(...leaks(new Map([[path, readFileSync(path, "utf8")]])));
         }
       }

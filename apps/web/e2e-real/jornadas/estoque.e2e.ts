@@ -3,7 +3,8 @@ import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { seedProduct } from "../seed";
 
-const WRITE_OFF_ABOVE_BALANCE = /A baixa não pode ser maior que o saldo exibido \(10\)/;
+const WRITE_OFF_ABOVE_BALANCE =
+  /A baixa não pode ser maior que o saldo exibido \(10\)/;
 const CLOSE_BUTTON = /^Fechar$/;
 const UNIT_COST_12_50 = /^12\.50*$/;
 

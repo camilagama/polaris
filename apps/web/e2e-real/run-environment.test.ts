@@ -65,13 +65,17 @@ describe("the environment of an e2e run", () => {
       ...environment,
       [hyperdriveVariable("PRIVACY_HYPERDRIVE")]: undefined,
     };
-    expect(() => assertRunHyperdrives(missing, run.runId)).toThrow(PRIVACY_MISSING);
+    expect(() => assertRunHyperdrives(missing, run.runId)).toThrow(
+      PRIVACY_MISSING
+    );
     const fallback = {
       ...environment,
       [hyperdriveVariable("OUTBOX_HYPERDRIVE")]:
         "postgresql://postgres:postgres@127.0.0.1:5432/polaris",
     };
-    expect(() => assertRunHyperdrives(fallback, run.runId)).toThrow(OUTBOX_NOT_RUN_LOGIN);
+    expect(() => assertRunHyperdrives(fallback, run.runId)).toThrow(
+      OUTBOX_NOT_RUN_LOGIN
+    );
   });
 
   it("only takes the loopback as BASE_URL", () => {
@@ -105,6 +109,8 @@ describe("the environment of an e2e run", () => {
           "postgresql://u:p@localhost/x?host=db.example.com",
       })
     ).toThrow();
-    expect(() => ownerDatabaseUrl({ CI: "true" })).toThrow(DATABASE_URL_REQUIRED);
+    expect(() => ownerDatabaseUrl({ CI: "true" })).toThrow(
+      DATABASE_URL_REQUIRED
+    );
   });
 });
