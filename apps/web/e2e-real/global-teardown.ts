@@ -10,11 +10,15 @@ export default async function globalTeardown(): Promise<void> {
   const builds = new URL("../dist-e2e/", import.meta.url);
   for (const project of readdirSync(builds, { withFileTypes: true })) {
     if (project.isDirectory()) {
-      rmSync(new URL(`${project.name}/polaris_web_local/.dev.vars`, builds), { force: true });
+      rmSync(new URL(`${project.name}/polaris_web_local/.dev.vars`, builds), {
+        force: true,
+      });
     }
   }
   if (process.env.E2E_KEEP_DATABASE === "1") {
-    console.warn("E2E_KEEP_DATABASE=1: the run database and its logins were kept.");
+    console.warn(
+      "E2E_KEEP_DATABASE=1: the run database and its logins were kept."
+    );
     return;
   }
   await dropRunDatabase(ownerDatabaseUrl(), ensureRunEnvironment());

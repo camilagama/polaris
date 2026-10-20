@@ -1,6 +1,11 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { type Page, test as base, type TestInfo } from "@playwright/test";
+import {
+  expect as playwrightExpect,
+  type Page,
+  test as base,
+  type TestInfo,
+} from "@playwright/test";
 import type { PolarisRpcClient } from "@polaris/contracts";
 import { createDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
@@ -26,7 +31,16 @@ import {
 interface AuthHelpers {
   createUser: (overrides?: Record<string, unknown>) => { id: string };
   getCookies: (options: { userId: string; domain?: string }) => Promise<
-    { name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean; sameSite: "Lax" | "Strict" | "None"; expires?: number }[]
+    {
+      name: string;
+      value: string;
+      domain: string;
+      path: string;
+      httpOnly: boolean;
+      secure: boolean;
+      sameSite: "Lax" | "Strict" | "None";
+      expires?: number;
+    }[]
   >;
   getAuthHeaders: (options: { userId: string }) => Promise<Headers>;
   saveUser: (user: { id: string }) => Promise<{ id: string }>;
@@ -67,7 +81,9 @@ export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
   const link = new RPCLink({
     fetch: (request: Request) => {
       const withSession = new Headers(request.headers);
-      headers.forEach((value, key) => withSession.set(key, value));
+      for (const [key, value] of headers) {
+        withSession.set(key, value);
+      }
       withSession.set("origin", origin);
       return fetch(new Request(request, { headers: withSession }));
     },
@@ -80,7 +96,9 @@ export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
 /** The browser contexts a test opened, closed when it ends (fixture `contexts`). */
 const openContexts: import("@playwright/test").BrowserContext[] = [];
 
-let helpersPromise: Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }> | undefined;
+let helpersPromise:
+  | Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }>
+  | undefined;
 
 function authHelpers() {
   helpersPromise ??= (async () => {
@@ -95,7 +113,8 @@ function authHelpers() {
       plugins: [testUtils() as unknown as BetterAuthPlugin],
       secret: run.secret,
     });
-    const helpers = ((await auth.$context) as unknown as { test: AuthHelpers }).test;
+    const helpers = ((await auth.$context) as unknown as { test: AuthHelpers })
+      .test;
     return { close: () => pool.end(), helpers, sql: pool };
   })();
   return helpersPromise;
@@ -104,7 +123,9 @@ function authHelpers() {
 export async function createJourneyUser(
   origin: string,
   name: string
-): Promise<JourneyUser & { cookies: Awaited<ReturnType<AuthHelpers["getCookies"]>> }> {
+): Promise<
+  JourneyUser & { cookies: Awaited<ReturnType<AuthHelpers["getCookies"]>> }
+> {
   const { helpers } = await authHelpers();
   const id = uuidV5(name);
   await helpers.saveUser(
@@ -148,7 +169,14 @@ export async function openJourney(
         expires: cookie.expires ?? -1,
       })),
       origins: organizationId
-        ? [{ localStorage: [{ name: PREFERRED_ORGANIZATION_KEY, value: organizationId }], origin }]
+        ? [
+            {
+              localStorage: [
+                { name: PREFERRED_ORGANIZATION_KEY, value: organizationId },
+              ],
+              origin,
+            },
+          ]
         : [],
     },
   });
@@ -160,15 +188,19 @@ export async function openJourney(
   return { name, organizationId, page, user };
 }
 
-export const test = base.extend<{ contexts: void }, { sql: Sql }>({
+export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
   contexts: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixtures need the object pattern as first argument
     async ({}, use) => {
-      await use();
-      await Promise.all(openContexts.splice(0).map((context) => context.close()));
+      await use(undefined);
+      await Promise.all(
+        openContexts.splice(0).map((context) => context.close())
+      );
     },
     { auto: true },
   ],
   sql: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixtures need the object pattern as first argument
     async ({}, use) => {
       const { close, sql } = await authHelpers();
       await use(sql);
@@ -179,7 +211,7 @@ export const test = base.extend<{ contexts: void }, { sql: Sql }>({
   ],
 });
 
-export { expect } from "@playwright/test";
+export const expect = playwrightExpect;
 
 /** The oRPC code of a refused call ("FORBIDDEN", "NOT_FOUND", ...); fails if the call answers. */
 export async function refusedWith(call: Promise<unknown>): Promise<string> {

@@ -36,9 +36,11 @@ function annotated(test) {
 }
 
 function firstError(test) {
-  const failed = (test.results ?? []).find((result) => result.status !== "passed");
+  const failed = (test.results ?? []).find(
+    (result) => result.status !== "passed"
+  );
   const message = failed?.error?.message ?? failed?.errors?.[0]?.message ?? "";
-  return message.replace(/\u001b\[[0-9;]*m/g, "").split("\n")[0].slice(0, 200);
+  return message.replace(ANSI_COLOR, "").split("\n")[0].slice(0, 200);
 }
 
 /** The flaky tests of a Playwright JSON report and the verdict of the threshold. */
@@ -59,10 +61,14 @@ export function flakyReport(report) {
   }
   const reasons = [];
   if (flaky.length >= FLAKY_LIMIT) {
-    reasons.push(`${flaky.length} tests passed only on the retry (limit: fewer than ${FLAKY_LIMIT})`);
+    reasons.push(
+      `${flaky.length} tests passed only on the retry (limit: fewer than ${FLAKY_LIMIT})`
+    );
   }
   if (flaky.some((entry) => entry.money)) {
-    reasons.push("a money journey (sale, return/cancellation, stock) passed only on the retry");
+    reasons.push(
+      "a money journey (sale, return/cancellation, stock) passed only on the retry"
+    );
   }
   return { failed: reasons.length > 0, flaky, reasons };
 }
@@ -72,9 +78,14 @@ export function summary({ flaky, reasons }) {
   if (flaky.length === 0) {
     lines.push("Nenhum.");
   } else {
-    lines.push("| Jornada | Projeto | Teste | Primeiro erro |", "| --- | --- | --- | --- |");
+    lines.push(
+      "| Jornada | Projeto | Teste | Primeiro erro |",
+      "| --- | --- | --- | --- |"
+    );
     for (const entry of flaky) {
-      lines.push(`| ${entry.file} | ${entry.project} | ${entry.title} | ${entry.error.replaceAll("|", "\\|")} |`);
+      lines.push(
+        `| ${entry.file} | ${entry.project} | ${entry.title} | ${entry.error.replaceAll("|", "\\|")} |`
+      );
     }
   }
   if (reasons.length > 0) {
@@ -83,10 +94,14 @@ export function summary({ flaky, reasons }) {
   return `${lines.join("\n")}\n`;
 }
 
+const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
 function main() {
-  const path = process.argv[2];
+  const [, , path] = process.argv;
   if (!path) {
-    throw new Error("usage: node scripts/e2e-flaky-report.mjs <playwright json report>");
+    throw new Error(
+      "usage: node scripts/e2e-flaky-report.mjs <playwright json report>"
+    );
   }
   const result = flakyReport(JSON.parse(readFileSync(path, "utf8")));
   const text = summary(result);
@@ -99,6 +114,9 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main();
 }

@@ -7,7 +7,10 @@ describe("the calendar of the e2e journeys", () => {
     for (let minutes = 0; minutes < 24 * 60; minutes += 15) {
       const instant = start + minutes * 60_000;
       const zone = extremeTimeZone(instant);
-      expect(localDate(instant, zone), `${new Date(instant).toISOString()} ${zone}`).not.toBe(localDate(instant, "UTC"));
+      expect(
+        localDate(instant, zone),
+        `${new Date(instant).toISOString()} ${zone}`
+      ).not.toBe(localDate(instant, "UTC"));
     }
   });
 

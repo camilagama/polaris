@@ -10,8 +10,19 @@ import { createHash } from "node:crypto";
 const NAMESPACE = "5b0c2c1e-5d0a-4b8e-9a43-6f1f2b7d9e10";
 const namePattern = /^[a-z0-9-]+$/;
 
-export function journeyName(project: string, journey: string, attempt: number): string {
-  if (!(namePattern.test(project) && namePattern.test(journey) && Number.isInteger(attempt) && attempt >= 0)) {
+export function journeyName(
+  project: string,
+  journey: string,
+  attempt: number
+): string {
+  if (
+    !(
+      namePattern.test(project) &&
+      namePattern.test(journey) &&
+      Number.isInteger(attempt) &&
+      attempt >= 0
+    )
+  ) {
     throw new Error(`Refused journey name: ${project} ${journey} ${attempt}`);
   }
   return `qa-${project}-${journey}-t${attempt}`;
@@ -24,8 +35,8 @@ export function uuidV5(name: string, namespace: string = NAMESPACE): string {
     .update(name, "utf8")
     .digest();
   const bytes = hash.subarray(0, 16);
-  bytes[6] = ((bytes[6] as number) & 0x0f) | 0x50;
-  bytes[8] = ((bytes[8] as number) & 0x3f) | 0x80;
+  bytes[6] = ((bytes[6] as number) % 16) + 0x50;
+  bytes[8] = ((bytes[8] as number) % 64) + 0x80;
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

@@ -4,9 +4,12 @@
 
 /** "AAAA-MM-DD" of an instant in a time zone. */
 export function localDate(instant: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone, year: "numeric" }).format(
-    new Date(instant)
-  );
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).format(new Date(instant));
 }
 
 /**
@@ -14,9 +17,13 @@ export function localDate(instant: number, timeZone: string): string {
  * (Pago Pago) before 11:00 UTC. One of them always differs, so the "local date ≠ UTC date" class of error is
  * covered at any hour of the run.
  */
-export function extremeTimeZone(t0: number): "Pacific/Kiritimati" | "Pacific/Pago_Pago" {
+export function extremeTimeZone(
+  t0: number
+): "Pacific/Kiritimati" | "Pacific/Pago_Pago" {
   const utc = localDate(t0, "UTC");
-  return localDate(t0, "Pacific/Kiritimati") !== utc ? "Pacific/Kiritimati" : "Pacific/Pago_Pago";
+  return localDate(t0, "Pacific/Kiritimati") === utc
+    ? "Pacific/Pago_Pago"
+    : "Pacific/Kiritimati";
 }
 
 /** The first day of the month of a local date, shifted by whole months. */

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cents, moneyInput, numericCents, percentOfCents, saleTotals } from "./oracle";
+import {
+  cents,
+  moneyInput,
+  numericCents,
+  percentOfCents,
+  saleTotals,
+} from "./oracle";
 
 describe("the oracle of the e2e journeys", () => {
   it("reads money as integer cents", () => {
@@ -31,7 +37,12 @@ describe("the oracle of the e2e journeys", () => {
       ],
       ["10", "10"]
     );
-    expect(totals).toEqual({ discount: 4, discounts: [2, 2], subtotal: 15, total: 11 });
+    expect(totals).toEqual({
+      discount: 4,
+      discounts: [2, 2],
+      subtotal: 15,
+      total: 11,
+    });
     expect(percentOfCents(15, "20")).toBe(3);
   });
 });

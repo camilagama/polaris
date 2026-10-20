@@ -76,7 +76,10 @@ export function runDatabaseName(runId: string): string {
 }
 
 /** One login per binding and run: `polaris_e2e_<run>_<binding>`, lowercase. */
-export function runLoginName(runId: string, binding: HyperdriveBinding): string {
+export function runLoginName(
+  runId: string,
+  binding: HyperdriveBinding
+): string {
   return `polaris_e2e_${runId}_${binding.replace("_HYPERDRIVE", "").replace("HYPERDRIVE", "tenant").toLowerCase()}`;
 }
 
@@ -118,7 +121,9 @@ export function assertLoopbackBaseUrl(value: string): URL {
     url.protocol !== "http:" ||
     !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
   ) {
-    throw new Error("The e2e BASE_URL must be the loopback (http://127.0.0.1).");
+    throw new Error(
+      "The e2e BASE_URL must be the loopback (http://127.0.0.1)."
+    );
   }
   return url;
 }

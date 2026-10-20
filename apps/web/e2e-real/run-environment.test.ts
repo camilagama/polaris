@@ -9,6 +9,11 @@ import {
   previewEnvironment,
 } from "./run-environment";
 
+const DATABASE_URL_REQUIRED = /POLARIS_E2E_DATABASE_URL is required/;
+const LOOPBACK_ONLY = /loopback/;
+const OUTBOX_NOT_RUN_LOGIN = /OUTBOX_HYPERDRIVE is not the run login/;
+const PRIVACY_MISSING = /PRIVACY_HYPERDRIVE is missing/;
+
 const OWNER = "postgresql://owner:secret@localhost:5432/postgres";
 
 describe("the environment of an e2e run", () => {
@@ -20,16 +25,24 @@ describe("the environment of an e2e run", () => {
     expect(ensureRunEnvironment(worker)).toEqual(first);
     expect(ensureRunEnvironment(parent)).toEqual(first);
     expect(ensureRunEnvironment({})).not.toEqual(first);
-    expect(new Set(Object.values(first.passwords)).size).toBe(HYPERDRIVE_BINDINGS.length);
+    expect(new Set(Object.values(first.passwords)).size).toBe(
+      HYPERDRIVE_BINDINGS.length
+    );
   });
 
   it("gives the preview the seven bindings as the run's logins, a closed list and no environment of wrangler", () => {
     const run = ensureRunEnvironment({});
-    const environment = previewEnvironment(new URL(OWNER), run, "http://127.0.0.1:4321", true, {
-      CLOUDFLARE_ENV: "production",
-      PATH: "/bin",
-      POLARIS_E2E_DATABASE_URL: OWNER,
-    });
+    const environment = previewEnvironment(
+      new URL(OWNER),
+      run,
+      "http://127.0.0.1:4321",
+      true,
+      {
+        CLOUDFLARE_ENV: "production",
+        PATH: "/bin",
+        POLARIS_E2E_DATABASE_URL: OWNER,
+      }
+    );
     expect(() => assertRunHyperdrives(environment, run.runId)).not.toThrow();
     expect(environment.CLOUDFLARE_ENV).toBeUndefined();
     expect(environment.POLARIS_E2E_DATABASE_URL).toBeUndefined();
@@ -41,30 +54,57 @@ describe("the environment of an e2e run", () => {
 
   it("refuses a binding missing or left on the wrangler.jsonc fallback (postgres:postgres)", () => {
     const run = ensureRunEnvironment({});
-    const environment = previewEnvironment(new URL(OWNER), run, "http://127.0.0.1:4321", false, {});
-    const missing = { ...environment, [hyperdriveVariable("PRIVACY_HYPERDRIVE")]: undefined };
-    expect(() => assertRunHyperdrives(missing, run.runId)).toThrow(/PRIVACY_HYPERDRIVE is missing/);
+    const environment = previewEnvironment(
+      new URL(OWNER),
+      run,
+      "http://127.0.0.1:4321",
+      false,
+      {}
+    );
+    const missing = {
+      ...environment,
+      [hyperdriveVariable("PRIVACY_HYPERDRIVE")]: undefined,
+    };
+    expect(() => assertRunHyperdrives(missing, run.runId)).toThrow(PRIVACY_MISSING);
     const fallback = {
       ...environment,
-      [hyperdriveVariable("OUTBOX_HYPERDRIVE")]: "postgresql://postgres:postgres@127.0.0.1:5432/polaris",
+      [hyperdriveVariable("OUTBOX_HYPERDRIVE")]:
+        "postgresql://postgres:postgres@127.0.0.1:5432/polaris",
     };
-    expect(() => assertRunHyperdrives(fallback, run.runId)).toThrow(/OUTBOX_HYPERDRIVE is not the run login/);
+    expect(() => assertRunHyperdrives(fallback, run.runId)).toThrow(OUTBOX_NOT_RUN_LOGIN);
   });
 
   it("only takes the loopback as BASE_URL", () => {
     expect(assertLoopbackBaseUrl("http://127.0.0.1:4321").port).toBe("4321");
-    for (const url of ["https://polaris-web-staging.example.workers.dev", "http://10.0.0.2:4321", "https://127.0.0.1:4321"]) {
-      expect(() => assertLoopbackBaseUrl(url), url).toThrow(/loopback/);
+    for (const url of [
+      "https://polaris-web-staging.example.workers.dev",
+      "http://10.0.0.2:4321",
+      "https://127.0.0.1:4321",
+    ]) {
+      expect(() => assertLoopbackBaseUrl(url), url).toThrow(LOOPBACK_ONLY);
     }
   });
 
   it("only takes a database host of gate-hosts.ts, and the local one only with CI=true", () => {
-    expect(ownerDatabaseUrl({ CI: "true", POLARIS_E2E_DATABASE_URL: OWNER }).hostname).toBe("localhost");
-    expect(() => ownerDatabaseUrl({ POLARIS_E2E_DATABASE_URL: OWNER })).toThrow();
-    expect(() => ownerDatabaseUrl({ CI: "true", POLARIS_E2E_DATABASE_URL: "postgresql://u:p@db.example.com/x" })).toThrow();
+    expect(
+      ownerDatabaseUrl({ CI: "true", POLARIS_E2E_DATABASE_URL: OWNER }).hostname
+    ).toBe("localhost");
     expect(() =>
-      ownerDatabaseUrl({ CI: "true", POLARIS_E2E_DATABASE_URL: "postgresql://u:p@localhost/x?host=db.example.com" })
+      ownerDatabaseUrl({ POLARIS_E2E_DATABASE_URL: OWNER })
     ).toThrow();
-    expect(() => ownerDatabaseUrl({ CI: "true" })).toThrow(/POLARIS_E2E_DATABASE_URL is required/);
+    expect(() =>
+      ownerDatabaseUrl({
+        CI: "true",
+        POLARIS_E2E_DATABASE_URL: "postgresql://u:p@db.example.com/x",
+      })
+    ).toThrow();
+    expect(() =>
+      ownerDatabaseUrl({
+        CI: "true",
+        POLARIS_E2E_DATABASE_URL:
+          "postgresql://u:p@localhost/x?host=db.example.com",
+      })
+    ).toThrow();
+    expect(() => ownerDatabaseUrl({ CI: "true" })).toThrow(DATABASE_URL_REQUIRED);
   });
 });

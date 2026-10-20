@@ -17,6 +17,8 @@ import { pathToFileURL } from "node:url";
  * (ci-changed.test.mjs reads the import graph and fails if that changes), so
  * the Admin app is outside both bundles the gate exercises.
  */
+const MARKDOWN_FILE = /\.md$/;
+
 const BROWSER_IRRELEVANT = [
   /^docs\//,
   /^doc\//,
@@ -68,7 +70,7 @@ export function classifyChanges(files) {
     ),
     e2e: changed.some(
       (file) =>
-        !/\.md$/.test(file) &&
+        !MARKDOWN_FILE.test(file) &&
         E2E_RELEVANT.some((pattern) => pattern.test(file))
     ),
   };

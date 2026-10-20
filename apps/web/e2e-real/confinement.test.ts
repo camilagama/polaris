@@ -1,8 +1,23 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+
+const SETS_CLOUDFLARE_ENV = /CLOUDFLARE_ENV\s*[:=]/;
+const PASSES_PLUGINS = /\bplugins\s*:/;
+const TEST_FILE = /\.test\.tsx?$|test-cases\.ts$|test-support\.ts$/;
+const SOURCE_FILE = /\.tsx?$/;
+const E2E_SECRET_NAME = /E2E_RUN_SECRET|E2E_LOGIN_PASSWORD/;
+const NAMES_TEST_UTILS = /\btestUtils\b|test-utils/;
+const CALLS_TEST_UTILS = /\btestUtils\s*\(/;
 
 /**
  * Better Auth's `testUtils` (which mints sessions without a sign-in) and the e2e harness live only in the test
@@ -13,10 +28,22 @@ import { describe, expect, it } from "vitest";
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(appRoot, "../..");
 
-const IMPORT_MARKERS = [/\btestUtils\b/, /better-auth\/plugins(?!\/)/, /e2e-real\//, /@playwright\/test/];
-const BUNDLE_MARKERS = ['"test-utils"', "createTestCookie", "E2E_RUN_SECRET", "e2e-real/"];
-const E2E_VARIABLES = /\bE2E_(RUN_ID|RUN_SECRET|LOGIN_PASSWORD_\w+|T0)\b|POLARIS_E2E_DATABASE_URL/;
-const importPattern = /(?:import|export)\s[^"']*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
+const IMPORT_MARKERS = [
+  /\btestUtils\b/,
+  /better-auth\/plugins(?!\/)/,
+  /e2e-real\//,
+  /@playwright\/test/,
+];
+const BUNDLE_MARKERS = [
+  '"test-utils"',
+  "createTestCookie",
+  "E2E_RUN_SECRET",
+  "e2e-real/",
+];
+const E2E_VARIABLES =
+  /\bE2E_(RUN_ID|RUN_SECRET|LOGIN_PASSWORD_\w+|T0)\b|POLARIS_E2E_DATABASE_URL/;
+const importPattern =
+  /(?:import|export)\s[^"']*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
 
 /** The local files the given entry imports, transitively (relative imports; packages are checked by marker). */
 export function importGraph(entry: string): Map<string, string> {
@@ -33,8 +60,14 @@ export function importGraph(entry: string): Map<string, string> {
         continue;
       }
       const base = resolve(dirname(file), specifier);
-      const candidate = [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")].find(
-        (path) => existsSync(path) && !path.endsWith("/") && readdirSafe(path) === null
+      const candidate = [
+        base,
+        `${base}.ts`,
+        `${base}.tsx`,
+        join(base, "index.ts"),
+      ].find(
+        (path) =>
+          existsSync(path) && !path.endsWith("/") && readdirSafe(path) === null
       );
       if (candidate) {
         visit(candidate);
@@ -63,7 +96,7 @@ export function leaks(graph: Map<string, string>): string[] {
         found.push(`${relative(repositoryRoot, file)}: ${specifier}`);
       }
     }
-    if (/\btestUtils\s*\(/.test(source)) {
+    if (CALLS_TEST_UTILS.test(source)) {
       found.push(`${relative(repositoryRoot, file)}: testUtils()`);
     }
   }
@@ -75,17 +108,20 @@ export function bundleLeaks(source: string): string[] {
 }
 
 /** Names of the e2e variables in what a deploy reads: the wrangler environments and the workflows. */
-export function deployLeaks(wranglerSource: string, workflows: string[]): string[] {
+export function deployLeaks(
+  wranglerSource: string,
+  workflows: string[]
+): string[] {
   const found: string[] = [];
   const environments = wranglerSource.slice(wranglerSource.indexOf('"env"'));
   if (E2E_VARIABLES.test(environments)) {
     found.push("wrangler.jsonc env");
   }
-  if (/\btestUtils\b|test-utils/.test(wranglerSource)) {
+  if (NAMES_TEST_UTILS.test(wranglerSource)) {
     found.push("wrangler.jsonc testUtils");
   }
   for (const workflow of workflows) {
-    if (/E2E_RUN_SECRET|E2E_LOGIN_PASSWORD/.test(workflow)) {
+    if (E2E_SECRET_NAME.test(workflow)) {
       found.push("workflow");
     }
   }
@@ -125,7 +161,7 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
         const path = join(directory, entry.name);
         if (entry.isDirectory()) {
           walk(path);
-        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$|test-cases\.ts$|test-support\.ts$/.test(entry.name)) {
+        } else if (SOURCE_FILE.test(entry.name) && !TEST_FILE.test(entry.name)) {
           found.push(...leaks(new Map([[path, readFileSync(path, "utf8")]])));
         }
       }
@@ -135,12 +171,17 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
   });
 
   it("the Better Auth handler passes no plugin of its own", () => {
-    expect(readFileSync(join(appRoot, "src/server/auth/handler.ts"), "utf8")).not.toMatch(/\bplugins\s*:/);
+    expect(
+      readFileSync(join(appRoot, "src/server/auth/handler.ts"), "utf8")
+    ).not.toMatch(PASSES_PLUGINS);
   });
 
   it("the bundles of the Worker, when built, carry no marker of testUtils or of the harness", () => {
     for (const bundle of workerBundles()) {
-      expect(bundleLeaks(readFileSync(bundle, "utf8")), relative(appRoot, bundle)).toEqual([]);
+      expect(
+        bundleLeaks(readFileSync(bundle, "utf8")),
+        relative(appRoot, bundle)
+      ).toEqual([]);
     }
   });
 
@@ -149,31 +190,52 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
     expect(
       deployLeaks(
         readFileSync(join(appRoot, "wrangler.jsonc"), "utf8"),
-        (readdirSafe(workflows) ?? []).map((file) => readFileSync(join(workflows, file), "utf8"))
+        (readdirSafe(workflows) ?? []).map((file) =>
+          readFileSync(join(workflows, file), "utf8")
+        )
       )
     ).toEqual([]);
   });
 
   it("the e2e build uses the top level of wrangler.jsonc, never an environment", () => {
     for (const project of readdirSafe(join(appRoot, "dist-e2e")) ?? []) {
-      const generated = join(appRoot, "dist-e2e", project, "polaris_web_local/wrangler.json");
+      const generated = join(
+        appRoot,
+        "dist-e2e",
+        project,
+        "polaris_web_local/wrangler.json"
+      );
       if (existsSync(generated)) {
-        const config = JSON.parse(readFileSync(generated, "utf8")) as { name: string; targetEnvironment?: string };
+        const config = JSON.parse(readFileSync(generated, "utf8")) as {
+          name: string;
+          targetEnvironment?: string;
+        };
         expect(config.name, project).toBe("polaris-web-local");
         expect(config.targetEnvironment, project).toBeUndefined();
       }
     }
-    expect(readFileSync(join(appRoot, "e2e-real/run-environment.ts"), "utf8")).not.toMatch(/CLOUDFLARE_ENV\s*[:=]/);
+    expect(
+      readFileSync(join(appRoot, "e2e-real/run-environment.ts"), "utf8")
+    ).not.toMatch(SETS_CLOUDFLARE_ENV);
   });
 
   describe("control cases: each check catches a leak", () => {
     it("in the Worker's imports", () => {
       const directory = mkdtempSync(join(tmpdir(), "e2e-confinement-"));
       try {
-        writeFileSync(join(directory, "index.ts"), 'import { app } from "./app";\nexport default app;\n');
-        writeFileSync(join(directory, "app.ts"), 'import { testUtils } from "better-auth/plugins";\nexport const app = testUtils();\n');
+        writeFileSync(
+          join(directory, "index.ts"),
+          'import { app } from "./app";\nexport default app;\n'
+        );
+        writeFileSync(
+          join(directory, "app.ts"),
+          'import { testUtils } from "better-auth/plugins";\nexport const app = testUtils();\n'
+        );
         expect(leaks(importGraph(join(directory, "index.ts")))).toHaveLength(2);
-        writeFileSync(join(directory, "app.ts"), 'import { openJourney } from "../e2e-real/fixtures";\nexport const app = openJourney;\n');
+        writeFileSync(
+          join(directory, "app.ts"),
+          'import { openJourney } from "../e2e-real/fixtures";\nexport const app = openJourney;\n'
+        );
         expect(leaks(importGraph(join(directory, "index.ts")))).toHaveLength(1);
       } finally {
         rmSync(directory, { force: true, recursive: true });
@@ -181,13 +243,20 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
     });
 
     it("in a wrangler.jsonc and a workflow", () => {
-      const wrangler = '{ "name": "x", "env": { "staging": { "vars": { "E2E_RUN_SECRET": "x" } } } }';
+      const wrangler =
+        '{ "name": "x", "env": { "staging": { "vars": { "E2E_RUN_SECRET": "x" } } } }';
       expect(deployLeaks(wrangler, [])).toEqual(["wrangler.jsonc env"]);
-      expect(deployLeaks('{ "name": "x", "env": {} }', ["env:\n  E2E_LOGIN_PASSWORD_HYPERDRIVE: x"])).toEqual(["workflow"]);
+      expect(
+        deployLeaks('{ "name": "x", "env": {} }', [
+          "env:\n  E2E_LOGIN_PASSWORD_HYPERDRIVE: x",
+        ])
+      ).toEqual(["workflow"]);
     });
 
     it("in a bundle", () => {
-      expect(bundleLeaks('var p={id:"test-utils",init(){}};')).toEqual(['"test-utils"']);
+      expect(bundleLeaks('var p={id:"test-utils",init(){}};')).toEqual([
+        '"test-utils"',
+      ]);
     });
   });
 });

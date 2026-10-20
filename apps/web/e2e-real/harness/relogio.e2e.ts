@@ -1,14 +1,19 @@
 import { expect, openJourney, runT0, test } from "../fixtures";
 
 /** The page clock starts at T0 and RUNS: timers fire as in the product (no pauseAt). */
-test("o relógio parte de T0 e corre: um setTimeout de 100 ms dispara", async ({ browser }, testInfo) => {
-  const { page } = await openJourney(browser, testInfo, "relogio", { organization: false });
+test("o relógio parte de T0 e corre: um setTimeout de 100 ms dispara", async ({
+  browser,
+}, testInfo) => {
+  const { page } = await openJourney(browser, testInfo, "relogio", {
+    organization: false,
+  });
   await page.goto("/offline-poc"); // any page of the app; no data needed
   const fired = await page.evaluate(
-    () => new Promise<boolean>((resolve) => {
-      setTimeout(() => resolve(true), 100);
-      setTimeout(() => resolve(false), 5000);
-    })
+    () =>
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(true), 100);
+        setTimeout(() => resolve(false), 5000);
+      })
   );
   expect(fired).toBe(true);
   const [first, second] = await page.evaluate(async () => {

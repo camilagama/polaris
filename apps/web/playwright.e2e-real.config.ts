@@ -16,11 +16,19 @@ const inCI = Boolean(process.env.CI);
 const run = ensureRunEnvironment();
 const owner = ownerDatabaseUrl();
 const PORTS = { online: 4321, "runtime-ligado": 4322 } as const;
-const origin = (project: keyof typeof PORTS) => `http://127.0.0.1:${PORTS[project]}`;
+const origin = (project: keyof typeof PORTS) =>
+  `http://127.0.0.1:${PORTS[project]}`;
 // `E2E_RETRIES=0` for the 10 runs without retry that come before the job is required.
-const retries = process.env.E2E_RETRIES === undefined ? (inCI ? 1 : 0) : Number(process.env.E2E_RETRIES);
+const defaultRetries = inCI ? 1 : 0;
+const retries =
+  process.env.E2E_RETRIES === undefined
+    ? defaultRetries
+    : Number(process.env.E2E_RETRIES);
 
-const desktop = { ...devices["Desktop Chrome"], browserName: "chromium" as const };
+const desktop = {
+  ...devices["Desktop Chrome"],
+  browserName: "chromium" as const,
+};
 
 export default defineConfig({
   forbidOnly: inCI,
@@ -46,7 +54,11 @@ export default defineConfig({
     {
       dependencies: ["pilha"],
       name: "online",
-      testMatch: ["jornadas/*.e2e.ts", "harness/relogio.e2e.ts", "harness/chave-do-runtime.e2e.ts"],
+      testMatch: [
+        "jornadas/*.e2e.ts",
+        "harness/relogio.e2e.ts",
+        "harness/chave-do-runtime.e2e.ts",
+      ],
       use: { ...desktop, baseURL: origin("online") },
     },
     {
@@ -72,7 +84,12 @@ export default defineConfig({
   // one after another: each preview reads its own build before the next build rewrites the deploy pointer (serve.ts)
   webServer: (Object.keys(PORTS) as (keyof typeof PORTS)[]).map((project) => ({
     command: `node e2e-real/serve.ts ${project} ${PORTS[project]}`,
-    env: previewEnvironment(owner, run, origin(project), project === "runtime-ligado"),
+    env: previewEnvironment(
+      owner,
+      run,
+      origin(project),
+      project === "runtime-ligado"
+    ),
     gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5000 },
     reuseExistingServer: false,
     stdout: "ignore" as const,

@@ -3,6 +3,9 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+const COMMENT_LINE = /^\s*\/\/|\/\*/;
+const TEST_ID = /data-testid|getByTestId/;
+
 /**
  * The journeys survive a redesign (T-125a §8): roles, labels and texts only. A CSS class or id, `nth`, a chained
  * `>>` selector or XPath fails here; `data-testid` only with a comment on the line before saying why no role or
@@ -27,7 +30,7 @@ export function selectorViolations(source: string): string[] {
         found.push(`${index + 1}: ${name}`);
       }
     }
-    if (/data-testid|getByTestId/.test(line) && !/^\s*\/\/|\/\*/.test(lines[index - 1] ?? "")) {
+    if (TEST_ID.test(line) && !COMMENT_LINE.test(lines[index - 1] ?? "")) {
       found.push(`${index + 1}: data-testid without a comment`);
     }
   }
@@ -40,7 +43,9 @@ function sources(directory: string): string[] {
     if (entry.isDirectory()) {
       return sources(path);
     }
-    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [path] : [];
+    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")
+      ? [path]
+      : [];
   });
 }
 
@@ -49,18 +54,36 @@ describe("the selectors of the e2e journeys", () => {
     const files = sources(root);
     expect(files.length).toBeGreaterThan(10);
     const found = files.flatMap((file) =>
-      selectorViolations(readFileSync(file, "utf8")).map((violation) => `${relative(root, file)}:${violation}`)
+      selectorViolations(readFileSync(file, "utf8")).map(
+        (violation) => `${relative(root, file)}:${violation}`
+      )
     );
     expect(found).toEqual([]);
   });
 
   it("would catch each forbidden form (control)", () => {
-    expect(selectorViolations('page.locator(".sale-total")')).toEqual(["1: CSS class"]);
-    expect(selectorViolations("page.locator('#sale-method')")).toEqual(["1: CSS id"]);
-    expect(selectorViolations('page.getByRole("row").nth(2)')).toEqual(["1: nth"]);
-    expect(selectorViolations('page.locator("form >> button")')).toEqual(["1: chained selector"]);
-    expect(selectorViolations('page.locator("xpath=//dd")')).toEqual(["1: XPath"]);
-    expect(selectorViolations('page.getByTestId("total")')).toEqual(["1: data-testid without a comment"]);
-    expect(selectorViolations('// no role nor label here: the chart canvas\npage.getByTestId("chart")')).toEqual([]);
+    expect(selectorViolations('page.locator(".sale-total")')).toEqual([
+      "1: CSS class",
+    ]);
+    expect(selectorViolations("page.locator('#sale-method')")).toEqual([
+      "1: CSS id",
+    ]);
+    expect(selectorViolations('page.getByRole("row").nth(2)')).toEqual([
+      "1: nth",
+    ]);
+    expect(selectorViolations('page.locator("form >> button")')).toEqual([
+      "1: chained selector",
+    ]);
+    expect(selectorViolations('page.locator("xpath=//dd")')).toEqual([
+      "1: XPath",
+    ]);
+    expect(selectorViolations('page.getByTestId("total")')).toEqual([
+      "1: data-testid without a comment",
+    ]);
+    expect(
+      selectorViolations(
+        '// no role nor label here: the chart canvas\npage.getByTestId("chart")'
+      )
+    ).toEqual([]);
   });
 });

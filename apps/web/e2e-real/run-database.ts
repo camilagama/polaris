@@ -16,7 +16,9 @@ import {
  * every attempt has its own, so the append-only tables and the immutable audit never conflict.
  */
 
-const dbPackage = fileURLToPath(new URL("../../../packages/db", import.meta.url));
+const dbPackage = fileURLToPath(
+  new URL("../../../packages/db", import.meta.url)
+);
 const databasePattern = /^e2e_[a-f0-9]{12}$/;
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
@@ -74,15 +76,11 @@ export async function assertOwnerCanCreate(owner: URL): Promise<void> {
 }
 
 function migrate(url: string): void {
-  const result = spawnSync(
-    "bun",
-    ["run", "db:migrate"],
-    {
-      cwd: dbPackage,
-      encoding: "utf8",
-      env: { HOME: process.env.HOME, PATH: process.env.PATH, DATABASE_URL: url },
-    }
-  );
+  const result = spawnSync("bun", ["run", "db:migrate"], {
+    cwd: dbPackage,
+    encoding: "utf8",
+    env: { HOME: process.env.HOME, PATH: process.env.PATH, DATABASE_URL: url },
+  });
   if (result.status !== 0) {
     const tail = `${result.stdout}\n${result.stderr}`
       .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]")

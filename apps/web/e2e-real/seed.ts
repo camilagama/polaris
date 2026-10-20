@@ -19,7 +19,10 @@ export async function seedProduct(
   listPrice: string | null = null
 ): Promise<SeededVariant> {
   const product = await rpc.product.create({ name, organizationId });
-  const configuration = await rpc.product.getVariants({ id: product.id, organizationId });
+  const configuration = await rpc.product.getVariants({
+    id: product.id,
+    organizationId,
+  });
   const [variant] = configuration.variants;
   if (!variant) {
     throw new Error(`The product ${name} has no default variant.`);
@@ -73,7 +76,12 @@ export async function seedCashSale(
     })),
     occurredAt,
     organizationId,
-    payment: { anticipationRequested: false, installmentPlan: null, installments: null, method: "cash" },
+    payment: {
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method: "cash",
+    },
     paymentProfile: null,
   });
   return result.sale.id;

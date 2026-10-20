@@ -3,17 +3,35 @@ import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { seedProduct } from "../seed";
 
+const WRITE_OFF_ABOVE_BALANCE = /A baixa não pode ser maior que o saldo exibido \(10\)/;
+const CLOSE_BUTTON = /^Fechar$/;
+const UNIT_COST_12_50 = /^12\.50*$/;
+
 const ZONE = "America/Sao_Paulo";
 
 /** Journey 3: a receipt with cost raises the balance; a write-off above it is refused and the balance stays. */
-test("estoque: entrada com custo, saída maior que o saldo recusada e saldo intacto", async ({ browser, sql }, testInfo) => {
-  const journey = await openJourney(browser, testInfo, "estoque", { organization: { timezone: ZONE } });
+test("estoque: entrada com custo, saída maior que o saldo recusada e saldo intacto", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "estoque", {
+    organization: { timezone: ZONE },
+  });
   const { page } = journey;
   const organizationId = journey.organizationId as string;
-  const product = await seedProduct(journey.user.rpc, organizationId, "Caneca esmaltada", "35.00");
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Caneca esmaltada",
+    "35.00"
+  );
   const balance = async () =>
     (
-      await sql.query<{ balance: number | null; movements: number | null; count: number }>(
+      await sql.query<{
+        balance: number | null;
+        movements: number | null;
+        count: number;
+      }>(
         `SELECT (SELECT quantity FROM inventory_balances WHERE variant_id = $1) AS balance,
                 (SELECT sum(quantity_delta)::int FROM stock_movements WHERE variant_id = $1) AS movements,
                 (SELECT count(*)::int FROM stock_movements WHERE variant_id = $1) AS count`,
@@ -22,7 +40,11 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
     ).rows[0];
 
   await page.goto("/inventory");
-  await page.getByRole("button", { name: `Receber estoque de ${product.productName}, Variante padrão` }).click();
+  await page
+    .getByRole("button", {
+      name: `Receber estoque de ${product.productName}, Variante padrão`,
+    })
+    .click();
   await page.getByLabel("Quantidade recebida").fill("10");
   await page.getByLabel("Custo unitário (R$)").fill("12,50");
   await page.getByRole("button", { name: "Revisar" }).click();
@@ -34,16 +56,23 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
       [product.variantId]
     )
   ).rows;
-  expect(receipt?.unit_cost).toMatch(/^12\.50*$/);
+  expect(receipt?.unit_cost).toMatch(UNIT_COST_12_50);
   expect(receipt?.occurred_on).toBe(localDate(runT0(), ZONE));
 
   // on screen: a write-off above the balance is refused before it leaves
-  await page.getByRole("button", { name: /^Fechar$/ }).click().catch(() => undefined);
-  await page.getByRole("button", { name: `Baixar estoque de ${product.productName}, Variante padrão` }).click();
+  await page
+    .getByRole("button", { name: CLOSE_BUTTON })
+    .click()
+    .catch(() => undefined);
+  await page
+    .getByRole("button", {
+      name: `Baixar estoque de ${product.productName}, Variante padrão`,
+    })
+    .click();
   await page.getByLabel("Quantidade a baixar").fill("11");
   await page.getByLabel("Motivo da baixa").selectOption({ label: "Avariado" });
   await page.getByRole("button", { name: "Revisar" }).click();
-  await expect(page.getByText(/A baixa não pode ser maior que o saldo exibido \(10\)/)).toBeVisible();
+  await expect(page.getByText(WRITE_OFF_ABOVE_BALANCE)).toBeVisible();
 
   // and by the server, if a client sends it anyway
   await expect(

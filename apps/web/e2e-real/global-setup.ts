@@ -17,7 +17,10 @@ export default async function globalSetup(): Promise<void> {
   }
   const run = ensureRunEnvironment();
   const owner = ownerDatabaseUrl();
-  rmSync(new URL("../.e2e-state", import.meta.url), { force: true, recursive: true });
+  rmSync(new URL("../.e2e-state", import.meta.url), {
+    force: true,
+    recursive: true,
+  });
   await createRunDatabase(owner, run);
   process.env.E2E_T0 ??= String(Date.now());
 }
