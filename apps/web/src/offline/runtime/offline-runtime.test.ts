@@ -65,8 +65,16 @@ function world(options: { leaseHours?: number } = {}) {
     issueLease: [],
     push: false,
   };
+  /** The timers the runtime set (the one at the lease's exp), fired by hand. */
+  const timers: { at: number; callback: () => void; cancelled: boolean }[] = [];
   /** Makes closing the stores wait, to catch stop/start overlapping. */
-  const gates: { close?: Promise<void> | undefined } = {};
+  const gates: {
+    close?: Promise<void> | undefined;
+    /** Makes the next lease request wait, to catch what happens meanwhile. */
+    issueLease?: Promise<void> | undefined;
+    /** Opening stores fails this many more times. */
+    openStoresFailures?: number;
+  } = {};
   const keyValues = memoryKeyValues();
   const stores = new Map<string, { outbox: Outbox; writer: FakeWriter }>();
   const closed: string[] = [];
@@ -127,9 +135,12 @@ function world(options: { leaseHours?: number } = {}) {
       failures.deviceIsMine
         ? Promise.reject(new Error("server down"))
         : Promise.resolve(owners.get(deviceId) === session.user),
-    issueLease: (deviceId, org) => {
+    issueLease: async (deviceId, org) => {
       calls.issueLease += 1;
       const failure = failures.issueLease.shift();
+      const gate = gates.issueLease;
+      gates.issueLease = undefined;
+      await gate;
       return failure ? Promise.reject(failure) : issue(deviceId, org);
     },
     push: () => (input) => {
@@ -189,6 +200,10 @@ function world(options: { leaseHours?: number } = {}) {
       now: () => clock,
       openDataChannel,
       openStores: (namespace, deviceId) => {
+        if ((gates.openStoresFailures ?? 0) > 0) {
+          gates.openStoresFailures = (gates.openStoresFailures ?? 0) - 1;
+          return Promise.reject(new Error("opfs_failed"));
+        }
         const existing = stores.get(namespace.key);
         const value = existing ?? {
           outbox: new Outbox({
@@ -214,6 +229,17 @@ function world(options: { leaseHours?: number } = {}) {
         purged.push(purgeOptions);
         return Promise.resolve();
       },
+      schedule: (callback, delayMs) => {
+        const timer = {
+          at: clock.getTime() + delayMs,
+          callback,
+          cancelled: false,
+        };
+        timers.push(timer);
+        return () => {
+          timer.cancelled = true;
+        };
+      },
       wipeCollections: (namespace) => {
         wiped.push(namespace.key);
         return Promise.resolve();
@@ -226,9 +252,23 @@ function world(options: { leaseHours?: number } = {}) {
     calls,
     closed,
     failures,
+    /** Fires every live timer that is due by the clock, as the browser would. */
+    fireDueTimers: () => {
+      for (const timer of timers.splice(0)) {
+        if (timer.cancelled) {
+          continue;
+        }
+        if (timer.at <= clock.getTime()) {
+          timer.callback();
+        } else {
+          timers.push(timer);
+        }
+      }
+    },
     gates,
     keyValues,
     labels,
+    liveTimers: () => timers.filter((timer) => !timer.cancelled),
     make,
     network,
     purged,
@@ -1213,5 +1253,352 @@ describe("a session the server refuses", () => {
       lastSyncAt: null,
       leaseExpiresAt: null,
     });
+  });
+});
+
+describe("the offline access that expired (emenda do ADR 0047)", () => {
+  const leaseKeyOf = `polaris.offline.lease.${userId}.${organizationId}`;
+
+  /** Online once (device and lease), then offline with one product queued. */
+  async function queuedOffline() {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.network.online = false;
+    await queueProduct(runtime, "Camiseta", 1);
+    return { runtime, w };
+  }
+
+  async function queuedCommands(w: ReturnType<typeof world>) {
+    const stored = w.stores.get(`${userId}-${organizationId}`);
+    return (await stored?.outbox.snapshot())?.commands ?? [];
+  }
+
+  it("opening with no network and the own lease past its exp: expired, no copy, no new work, the queue counted and intact, and nothing forgotten", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    const before = await queuedCommands(w);
+    await first.stop();
+    const asked = { ...w.calls };
+
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: false,
+      counts: { pending: 1 },
+      leaseExpiresAt: "2026-10-17T12:00:00.000Z",
+      online: false,
+      phase: "expired",
+      reason: "offline_access_expired",
+      sessionRefused: false,
+    });
+    expect(runtime.context()).toBeNull();
+    expect(await queuedCommands(w)).toEqual(before);
+    // only time ran out: the device, the lease, the remembered user and the copy stay
+    expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
+    expect(w.keyValues.read(leaseKeyOf)).not.toBeNull();
+    expect(w.keyValues.read("polaris.offline.session-user")).toBe(userId);
+    expect(w.wiped).toEqual([]);
+    expect(w.purged).toEqual([]);
+    expect(w.calls).toEqual(asked);
+  });
+
+  it("without a network, a sync tries nothing (no loop) and keeps the state", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const asked = { ...w.calls };
+
+    await runtime.syncNow();
+    await runtime.syncNow();
+
+    expect(w.calls).toEqual(asked);
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 1 },
+      phase: "expired",
+    });
+    expect(w.liveTimers()).toEqual([]);
+  });
+
+  it("when the network returns, it renews by itself, opens the copy again and sends the queue", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    w.network.online = true;
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 0 },
+      leaseExpiresAt: "2026-10-20T13:00:00.000Z",
+      phase: "ready",
+      reason: null,
+    });
+    expect(runtime.context()).not.toBeNull();
+    expect(w.calls.issueLease).toBe(2);
+    expect(w.server.products.size).toBe(1);
+  });
+
+  it("a server that gives no answer (5xx, 429) to the renewal is the same as no network: expired, the device is not registered again", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    w.network.online = true;
+    w.failures.issueLease.push(
+      Object.assign(new Error("server down"), {
+        code: "INTERNAL_SERVER_ERROR",
+      }),
+      Object.assign(new Error("throttled"), { code: "TOO_MANY_REQUESTS" })
+    );
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 1 },
+      phase: "expired",
+      syncing: false,
+    });
+    expect(w.calls.registerDevice).toBe(1);
+
+    // one try per sync, and the next one works
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().phase).toBe("expired");
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.server.products.size).toBe(1);
+  });
+
+  it("a session the server refuses at the renewal goes as any refused session: the collections go, the queue stays", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const before = await queuedCommands(w);
+
+    w.network.online = true;
+    w.failures.issueLease.push(
+      Object.assign(new Error("Unauthorized"), { code: "UNAUTHORIZED" })
+    );
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "session_refused",
+      sessionRefused: true,
+    });
+    expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+    expect(w.keyValues.read(leaseKeyOf)).toBeNull();
+    expect(await queuedCommands(w)).toEqual(before);
+  });
+
+  it("with the app open, the timer at the exp ends the access at once and the queue stays; the network back renews it without a restart", async () => {
+    const { runtime, w } = await queuedOffline();
+    const before = await queuedCommands(w);
+    expect(w.liveTimers()).toHaveLength(1);
+
+    w.advance(71);
+    w.fireDueTimers();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+
+    w.advance(1);
+    const version = runtime.getSnapshot().dataVersion;
+    w.fireDueTimers();
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 1 },
+      phase: "expired",
+      reason: "offline_access_expired",
+    });
+    expect(runtime.getSnapshot().dataVersion).toBeGreaterThan(version);
+    expect(runtime.context()).toBeNull();
+    expect(await queuedCommands(w)).toEqual(before);
+
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()).not.toBeNull();
+    expect(w.server.products.size).toBe(1);
+    // a new timer at the new exp, and only that one
+    expect(w.liveTimers()).toHaveLength(1);
+    expect(w.liveTimers()[0]?.at).toBe(
+      Date.parse(runtime.getSnapshot().leaseExpiresAt ?? "")
+    );
+  });
+
+  it("a timer that has not fired yet (a tab in the background) never lets a command in after the exp, and the next sync ends the access", async () => {
+    const { runtime, w } = await queuedOffline();
+    w.advance(72);
+
+    expect(runtime.context()).toBeNull();
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 1 },
+      phase: "expired",
+    });
+  });
+
+  it("a lease renewed by a sync moves the timer to the new exp", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(65); // due for renewal
+    await runtime.syncNow();
+
+    expect(w.calls.issueLease).toBe(2);
+    expect(runtime.getSnapshot().leaseExpiresAt).toBe(
+      "2026-10-20T05:00:00.000Z"
+    );
+    expect(w.liveTimers().map((timer) => timer.at)).toEqual([
+      Date.parse("2026-10-20T05:00:00.000Z"),
+    ]);
+    w.advance(8); // past the first lease's exp, well before the new one
+    w.fireDueTimers();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+  });
+
+  it("stopping cancels the timer, so the first organization's exp does not touch the next one", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.stop();
+    expect(w.liveTimers()).toEqual([]);
+
+    w.advance(10);
+    await runtime.start("org-2");
+    w.advance(63); // past the first lease's exp, before the second one's
+    w.fireDueTimers();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()?.organizationId).toBe("org-2");
+  });
+
+  it("a renewal whose stores fail to open again goes back to the expired state, never stuck renewing, and the next sync tries again", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    w.network.online = true;
+    w.gates.openStoresFailures = 1;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 1 },
+      phase: "expired",
+      syncing: false,
+    });
+
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.server.products.size).toBe(1);
+  });
+
+  it("a renewal that fails after the stores opened closes them before going back to the expired state", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const namespaceKey = `${userId}-${organizationId}`;
+    const writer = w.stores.get(namespaceKey)?.writer;
+    if (!writer) {
+      throw new Error("no stores");
+    }
+    const readMeta = writer.readMeta.bind(writer);
+    writer.readMeta = () => {
+      writer.readMeta = readMeta;
+      return Promise.reject(new Error("opfs_read_failed"));
+    };
+    const closedBefore = w.closed.length;
+
+    w.network.online = true;
+    await runtime.syncNow();
+
+    // the expired stores, then the ones the failed open kept
+    expect(w.closed.length).toBe(closedBefore + 2);
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 1 },
+      phase: "expired",
+      syncing: false,
+    });
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().phase).toBe("ready");
+  });
+
+  it("the timer firing while a sync is renewing the lease is undone by the new lease: the screens come back in the same sync", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(65); // due for renewal
+    let release: () => void = () => undefined;
+    w.gates.issueLease = new Promise((resolve) => {
+      release = resolve;
+    });
+    const sync = runtime.syncNow();
+    await vi.waitFor(() => expect(w.calls.issueLease).toBe(2));
+
+    w.advance(8); // the first lease's exp passes while the renewal is on its way
+    w.fireDueTimers();
+    expect(runtime.getSnapshot().phase).toBe("expired");
+    expect(runtime.context()).toBeNull();
+
+    release();
+    await sync;
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "ready",
+      reason: null,
+    });
+    expect(runtime.context()).not.toBeNull();
+  });
+
+  it("renewing that fails while the old lease runs out on the way leaves the access expired, not ready on the old lease", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(71.9); // due, still usable
+    let release: () => void = () => undefined;
+    w.gates.issueLease = new Promise((resolve) => {
+      release = resolve;
+    });
+    w.failures.issueLease.push(new Error("server down"));
+    const sync = runtime.syncNow();
+    await vi.waitFor(() => expect(w.calls.issueLease).toBe(2));
+    w.advance(0.2);
+    release();
+    await sync;
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "expired",
+      syncing: false,
+    });
+    expect(runtime.context()).toBeNull();
+  });
+
+  it("a sync of the first organization whose lease arrives after the switch never touches the second one", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(65); // due for renewal
+    let release: () => void = () => undefined;
+    w.gates.issueLease = new Promise((resolve) => {
+      release = resolve;
+    });
+    const sync = runtime.syncNow();
+    await vi.waitFor(() => expect(w.calls.issueLease).toBe(2));
+
+    await runtime.start("org-2");
+    const second = runtime.getSnapshot().leaseExpiresAt;
+    release();
+    await sync;
+
+    expect(runtime.context()?.organizationId).toBe("org-2");
+    expect(runtime.getSnapshot().leaseExpiresAt).toBe(second);
+    expect(w.liveTimers().map((timer) => timer.at)).toEqual([
+      Date.parse(second ?? ""),
+    ]);
   });
 });

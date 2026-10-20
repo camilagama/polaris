@@ -1,5 +1,5 @@
 import { readUnverifiedOfflineLease } from "../../lib/offline-lease-token";
-import { rpcErrorCode } from "../../lib/rpc-error";
+import { isDefiniteRpcRejection, rpcErrorCode } from "../../lib/rpc-error";
 import type { PendingWork, PendingWorkSource } from "../../pwa/update-model";
 import {
   type BootstrapSource,
@@ -16,6 +16,7 @@ import { restorePendingProducts } from "../product-create";
 import type { LocalVariantReader } from "../sale-confirm";
 import type { LocalInventoryReader } from "../stock-commands";
 import { type PushFunction, syncOutbox } from "../sync-runner";
+import { leaseStanding, leaseTimerDelay } from "./lease-standing";
 
 /**
  * The offline runtime of the running app (Phase 5 wiring). One per signed-in
@@ -69,6 +70,14 @@ export interface RuntimeApi {
   source: (organizationId: string) => BootstrapSource;
 }
 
+/** The own lease ended and could not be renewed: the offline access expired (not a refused session). */
+class OfflineAccessExpiredError extends Error {
+  constructor(message = "offline_access_expired", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "OfflineAccessExpiredError";
+  }
+}
+
 /** The server could not be reached at all (no connection, timeout): the last known session user may stand in. */
 export class SessionUnreachableError extends Error {
   constructor(message = "session_unreachable", options?: ErrorOptions) {
@@ -110,11 +119,19 @@ export interface RuntimeDependencies {
     namespace: LocalNamespace,
     options: { discardPending: boolean }
   ) => Promise<void>;
+  /** Runs the callback after the delay and returns how to cancel it (setTimeout in the browser). */
+  schedule?: (callback: () => void, delayMs: number) => () => void;
   /** Deletes only the local collections (the OPFS file) of a namespace, keeping its queue. */
   wipeCollections: (namespace: LocalNamespace) => Promise<void>;
 }
 
-type RuntimePhase = "off" | "ready" | "starting" | "unavailable";
+/**
+ * `expired`: the session user's own lease passed its `exp` with no way to renew
+ * it (no connection, or a server that gave no answer). The queue is open only to
+ * be counted and sent once the access is renewed; the local collections are not
+ * offered to any screen and nothing new is queued (emenda do ADR 0047).
+ */
+type RuntimePhase = "expired" | "off" | "ready" | "starting" | "unavailable";
 
 export interface RuntimeSnapshot {
   /** Whether the local collections hold a complete snapshot of the organization. */
@@ -192,6 +209,11 @@ const RENEW_BEFORE_MS = 12 * 3_600_000;
 const SESSION_RECHECK_MS = 30_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
+function browserSchedule(callback: () => void, delayMs: number): () => void {
+  const timer = setTimeout(callback, delayMs);
+  return () => clearTimeout(timer);
+}
+
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
 interface RunScope {
   generation: number;
@@ -251,6 +273,8 @@ export class OfflineRuntime {
   private sessionConfirmedAt: number | null = null;
   /** Bumped by every start and stop so a late answer of an old run is dropped. */
   private generation = 0;
+  /** Cancels the timer at the lease's `exp`, while one is set. */
+  private cancelExpiryTimer: (() => void) | null = null;
 
   constructor(dependencies: RuntimeDependencies) {
     this.dependencies = dependencies;
@@ -270,7 +294,20 @@ export class OfflineRuntime {
   context(): RuntimeContext | null {
     if (
       this.snapshot.phase !== "ready" ||
-      !(this.stores && this.deviceId && this.lease && this.organizationId)
+      !(
+        this.stores &&
+        this.deviceId &&
+        this.lease &&
+        this.organizationId &&
+        this.userId
+      ) ||
+      // a timer that fires late (a tab in the background) never lets a command in after the exp
+      !this.leaseIsUsable(
+        this.lease,
+        this.userId,
+        this.organizationId,
+        this.deviceId
+      )
     ) {
       return null;
     }
@@ -490,7 +527,9 @@ export class OfflineRuntime {
   async start(organizationId: string): Promise<void> {
     if (
       this.organizationId === organizationId &&
-      (this.snapshot.phase === "starting" || this.snapshot.phase === "ready")
+      (this.snapshot.phase === "starting" ||
+        this.snapshot.phase === "ready" ||
+        this.snapshot.phase === "expired")
     ) {
       return;
     }
@@ -628,6 +667,7 @@ export class OfflineRuntime {
 
   private async closeStores() {
     const { stores } = this;
+    this.clearExpiryTimer();
     this.closeChannel();
     this.stores = null;
     this.namespace = null;
@@ -661,13 +701,29 @@ export class OfflineRuntime {
     organizationId: string,
     deviceId: string
   ): boolean {
-    const claims = readUnverifiedOfflineLease(token);
     return (
-      claims !== null &&
-      claims.sub === userId &&
-      claims.org === organizationId &&
-      claims.dev === deviceId &&
-      claims.exp * 1000 > this.now().getTime()
+      leaseStanding(
+        readUnverifiedOfflineLease(token),
+        { deviceId, organizationId, userId },
+        this.now().getTime()
+      ) === "usable"
+    );
+  }
+
+  /** The cached lease is this person's own for this device and organization, and only its `exp` passed. */
+  private leaseExpired(
+    cached: CachedLease | null,
+    userId: string,
+    organizationId: string,
+    deviceId: string
+  ): boolean {
+    return (
+      cached !== null &&
+      leaseStanding(
+        readUnverifiedOfflineLease(cached.lease),
+        { deviceId, organizationId, userId },
+        this.now().getTime()
+      ) === "expired"
     );
   }
 
@@ -811,7 +867,6 @@ export class OfflineRuntime {
     organizationId: string,
     deviceId: string
   ): Promise<string> {
-    const { api, isOnline, keyValues } = this.dependencies;
     const cached = this.cachedLease(userId, organizationId);
     const usable =
       cached &&
@@ -822,31 +877,55 @@ export class OfflineRuntime {
       !usable ||
       new Date(usable.expiresAt).getTime() - this.now().getTime() <
         RENEW_BEFORE_MS;
-    if (due && isOnline()) {
-      try {
-        const issued = await api.issueLease(deviceId, organizationId);
-        // a lease for somebody else is never kept, whatever the server said
-        if (
-          !this.leaseIsUsable(issued.lease, userId, organizationId, deviceId)
-        ) {
-          throw new Error("lease_wrong_user");
-        }
-        keyValues.write(
-          leaseKey(userId, organizationId),
-          JSON.stringify(issued)
-        );
-        return issued.lease;
-      } catch (error) {
-        if (!usable) {
-          throw error;
-        }
-        // renewing failed but the cached lease still works: keep going on it
+    const expired =
+      !usable && this.leaseExpired(cached, userId, organizationId, deviceId);
+    if (due && this.dependencies.isOnline()) {
+      const owner = { deviceId, organizationId, userId };
+      return await this.issueLease(owner, { expired, usable });
+    }
+    if (usable) {
+      return usable.lease;
+    }
+    if (expired) {
+      throw new OfflineAccessExpiredError();
+    }
+    throw new Error("no_lease_offline");
+  }
+
+  /** Asks the server for a lease; a cached one that still works stands in when that fails. */
+  private async issueLease(
+    owner: { deviceId: string; organizationId: string; userId: string },
+    cached: { expired: boolean; usable: CachedLease | null }
+  ): Promise<string> {
+    const { deviceId, organizationId, userId } = owner;
+    const { usable } = cached;
+    let issued: CachedLease;
+    try {
+      issued = await this.dependencies.api.issueLease(deviceId, organizationId);
+    } catch (error) {
+      if (usable) {
+        return usable.lease; // renewing failed but the cached lease still works: keep going on it
       }
+      if (cached.expired && !isDefiniteRpcRejection(error)) {
+        // no answer (no connection after all, 5xx, 429): the same as offline, never a refusal
+        throw new OfflineAccessExpiredError("offline_access_expired", {
+          cause: error,
+        });
+      }
+      throw error;
     }
-    if (!usable) {
-      throw new Error("no_lease_offline");
+    // a lease for somebody else is never kept, whatever the server said
+    if (!this.leaseIsUsable(issued.lease, userId, organizationId, deviceId)) {
+      if (usable) {
+        return usable.lease;
+      }
+      throw new Error("lease_wrong_user");
     }
-    return usable.lease;
+    this.dependencies.keyValues.write(
+      leaseKey(userId, organizationId),
+      JSON.stringify(issued)
+    );
+    return issued.lease;
   }
 
   private async boot(organizationId: string, generation: number) {
@@ -863,6 +942,11 @@ export class OfflineRuntime {
       const lease = await this.ensureLease(userId, organizationId, deviceId);
       await this.open(userId, organizationId, deviceId, lease, generation);
     } catch (error) {
+      if (error instanceof OfflineAccessExpiredError) {
+        // the device and the lease are this person's: only time ran out, so nothing is forgotten
+        await this.openExpired(userId, organizationId, deviceId, generation);
+        return;
+      }
       if (
         !this.dependencies.isOnline() ||
         (error instanceof Error && error.message === "no_lease_offline") ||
@@ -936,7 +1020,188 @@ export class OfflineRuntime {
       phase: "ready",
       reason: null,
     });
+    this.scheduleExpiry(claims.exp * 1000, generation);
     await this.refreshCounts();
+  }
+
+  /**
+   * The offline access expired at start: the stores of this person's namespace
+   * are opened only so the queue can be counted (and sent once renewed). The
+   * local collections are not offered to any screen, the lease is not used, and
+   * nothing is deleted.
+   */
+  private async openExpired(
+    userId: string,
+    organizationId: string,
+    deviceId: string,
+    generation: number
+  ) {
+    const cached = this.cachedLease(userId, organizationId);
+    const claims = cached ? readUnverifiedOfflineLease(cached.lease) : null;
+    const namespace = await this.dependencies.namespaceFor(
+      userId,
+      organizationId
+    );
+    const stores = await this.dependencies.openStores(namespace, deviceId);
+    if (generation !== this.generation) {
+      await stores.close();
+      return;
+    }
+    this.stores = stores;
+    this.namespace = namespace;
+    this.deviceId = deviceId;
+    this.lease = null;
+    await stores.outbox.recoverInterrupted(); // a send cut short counts as waiting, as at any start
+    this.set({
+      ...this.snapshot,
+      bootstrapped: false,
+      dataVersion: this.snapshot.dataVersion + 1,
+      leaseExpiresAt: claims ? new Date(claims.exp * 1000).toISOString() : null,
+      online: this.dependencies.isOnline(),
+      phase: "expired",
+      reason: "offline_access_expired",
+      syncing: false,
+    });
+    await this.refreshCounts();
+  }
+
+  /** A timer at the lease's `exp`: with the app open, the access ends on time, not at the next sync. */
+  private scheduleExpiry(expiresAtMs: number, generation: number) {
+    if (generation !== this.generation) {
+      return; // set for an organization that is no longer the open one
+    }
+    this.clearExpiryTimer();
+    const schedule = this.dependencies.schedule ?? browserSchedule;
+    this.cancelExpiryTimer = schedule(
+      () => {
+        this.cancelExpiryTimer = null;
+        if (generation !== this.generation) {
+          return;
+        }
+        if (expiresAtMs > this.now().getTime()) {
+          this.scheduleExpiry(expiresAtMs, generation); // the end is past what one timer holds: wait again
+          return;
+        }
+        if (!this.openLeaseEnded()) {
+          return; // the lease it was set for was replaced (a newer timer follows the new one)
+        }
+        this.expireNow();
+        if (this.dependencies.isOnline()) {
+          this.syncNow().catch(() => undefined);
+        }
+      },
+      leaseTimerDelay(expiresAtMs, this.now().getTime())
+    );
+  }
+
+  private clearExpiryTimer() {
+    this.cancelExpiryTimer?.();
+    this.cancelExpiryTimer = null;
+  }
+
+  /**
+   * The lease of the open namespace reached its `exp`: no screen reads the copy
+   * and nothing new is queued from now on. The queue stays as it is. With a
+   * network the next sync renews it (one try per sync, never a loop).
+   */
+  private expireNow() {
+    if (this.snapshot.phase !== "ready") {
+      return;
+    }
+    this.lease = null;
+    this.clearExpiryTimer();
+    this.set({
+      ...this.snapshot,
+      dataVersion: this.snapshot.dataVersion + 1,
+      phase: "expired",
+      reason: "offline_access_expired",
+      syncing: false,
+    });
+  }
+
+  /** Whether the lease the open namespace works under has reached its `exp`. */
+  private openLeaseEnded(): boolean {
+    const { deviceId, lease, organizationId, userId } = this;
+    return (
+      lease !== null &&
+      deviceId !== null &&
+      organizationId !== null &&
+      userId !== null &&
+      !this.leaseIsUsable(lease, userId, organizationId, deviceId)
+    );
+  }
+
+  /**
+   * Expired, with a network: one try to renew the lease. A new lease reopens the
+   * namespace as at start (the screens come back without a reload); no answer
+   * keeps the expired state until the next sync; a refused session goes as
+   * always (the collections are deleted, the queue stays).
+   */
+  private async renewExpired(run: RunScope): Promise<boolean> {
+    const { deviceId, organizationId } = this;
+    if (!(deviceId && organizationId)) {
+      return false;
+    }
+    this.set({ ...this.snapshot, online: true, syncing: true });
+    let lease: string;
+    try {
+      lease = await this.ensureLease(run.userId, organizationId, deviceId);
+    } catch (error) {
+      if (isSessionRefusal(error)) {
+        this.dependencies.keyValues.remove(SESSION_USER_KEY);
+        await this.dropLocalCopy(run, { forgetDevice: false });
+      } else if (run.generation === this.generation) {
+        this.set({ ...this.snapshot, syncing: false });
+      }
+      return false;
+    }
+    if (run.generation !== this.generation) {
+      return false;
+    }
+    await this.closeStores();
+    try {
+      await this.open(
+        run.userId,
+        organizationId,
+        deviceId,
+        lease,
+        run.generation
+      );
+    } catch {
+      // the lease is renewed but the stores did not open again: back to the queue alone, so the next sync tries again
+      if (run.generation === this.generation) {
+        await this.reopenExpired(run.userId, organizationId, deviceId);
+      }
+      return false;
+    }
+    return this.snapshot.phase === "ready";
+  }
+
+  /** After a failed reopening: the expired state again, or unavailable when not even the queue opens. */
+  private async reopenExpired(
+    userId: string,
+    organizationId: string,
+    deviceId: string
+  ) {
+    const { generation } = this;
+    await this.closeStores(); // a failed open may have kept its stores and channel
+    try {
+      await this.openExpired(userId, organizationId, deviceId, generation);
+    } catch (error) {
+      if (generation === this.generation) {
+        await this.closeStores();
+        this.set({
+          ...this.snapshot,
+          phase: "unavailable",
+          reason: error instanceof Error ? error.message : "start_failed",
+          syncing: false,
+        });
+      }
+      return;
+    }
+    if (generation === this.generation) {
+      this.set({ ...this.snapshot, syncing: false });
+    }
   }
 
   /**
@@ -997,6 +1262,70 @@ export class OfflineRuntime {
    * must not keep queueing into the first person's namespace. Nothing is deleted:
    * that data is still its owner's, and only the owner can open it again.
    */
+  /**
+   * The lease a sync got (cached or renewed) becomes the one the open namespace
+   * works under. False when the sync must stop: another organization opened
+   * meanwhile (the lease is not this one's), or renewing failed and the old lease
+   * ran out on the way (expired, never back to ready on it). The timer follows a
+   * new lease, and a timer that fired while the renewal was on its way is undone.
+   */
+  private adoptLease(run: RunScope, lease: string): boolean {
+    const { deviceId, organizationId } = this;
+    if (run.generation !== this.generation || !(deviceId && organizationId)) {
+      return false;
+    }
+    if (!this.leaseIsUsable(lease, run.userId, organizationId, deviceId)) {
+      this.expireNow();
+      this.set({ ...this.snapshot, syncing: false });
+      return false;
+    }
+    if (lease !== this.lease) {
+      this.lease = lease;
+      const claims = readUnverifiedOfflineLease(lease);
+      if (claims) {
+        this.set({
+          ...this.snapshot,
+          leaseExpiresAt: new Date(claims.exp * 1000).toISOString(),
+        });
+        this.scheduleExpiry(claims.exp * 1000, run.generation);
+      }
+    }
+    if (this.snapshot.phase === "expired") {
+      // the stores are still open (expiring closes nothing): the screens come back
+      this.set({
+        ...this.snapshot,
+        dataVersion: this.snapshot.dataVersion + 1,
+        phase: "ready",
+        reason: null,
+      });
+    }
+    return true;
+  }
+
+  /** Expired: offline, nothing is tried (no loop); online, the session is looked at and one renewal is tried. */
+  private async renewWhenExpired(): Promise<boolean> {
+    const { namespace, stores, userId } = this;
+    if (!(namespace && stores && userId)) {
+      return false;
+    }
+    if (!this.dependencies.isOnline()) {
+      this.sessionConfirmedAt = null;
+      this.set({ ...this.snapshot, online: false });
+      return false;
+    }
+    const run: RunScope = {
+      generation: this.generation,
+      namespace,
+      stores,
+      userId,
+    };
+    this.set({ ...this.snapshot, online: true, syncing: true });
+    if (await this.sessionChangedHands(run)) {
+      return false;
+    }
+    return await this.renewExpired(run);
+  }
+
   private async sessionChangedHands(run: RunScope): Promise<boolean> {
     const queued = (await run.stores.outbox.snapshot()).commands.length > 0;
     const sinceConfirmed =
@@ -1040,6 +1369,12 @@ export class OfflineRuntime {
   }
 
   private async runSync(): Promise<void> {
+    if (this.snapshot.phase === "ready" && this.openLeaseEnded()) {
+      this.expireNow(); // the timer has not fired yet (a tab in the background): the sync looks itself
+    }
+    if (this.snapshot.phase === "expired" && !(await this.renewWhenExpired())) {
+      return;
+    }
     const { stores, organizationId, deviceId, userId, namespace } = this;
     if (
       this.snapshot.phase !== "ready" ||
@@ -1063,7 +1398,10 @@ export class OfflineRuntime {
       return;
     }
     try {
-      this.lease = await this.ensureLease(userId, organizationId, deviceId);
+      const lease = await this.ensureLease(userId, organizationId, deviceId);
+      if (!this.adoptLease(run, lease)) {
+        return;
+      }
       const source = this.dependencies.api.source(organizationId);
       const summary = await syncOutbox({
         outbox: stores.outbox,
