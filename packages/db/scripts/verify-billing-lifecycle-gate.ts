@@ -12,6 +12,13 @@ import { Client } from "pg";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import {
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createTenantFixture,
   disposableHostPattern,
   expectSqlState,
@@ -218,36 +225,63 @@ async function run() {
     );
 
     // ------------------------------------------ 2. one row per event
-    const racing = await newTenant("lifecycle dedupe");
-    const raced = await Promise.all(
-      Array.from({ length: 8 }, () =>
-        event(
-          "fake",
-          "evt-dedupe",
-          { occurredAt: at(0), type: "charge_failed" },
-          { organizationId: racing.organizationId }
-        )
-      )
-    );
-    assert.equal(new Set(raced.map((r) => r.id)).size, 1);
-    assert.equal(raced.filter((r) => !r.duplicate).length, 1);
-    const stored = await admin.pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM public.billing_events WHERE provider = 'fake' AND provider_event_id = 'evt-dedupe'"
-    );
-    assert.equal(Number(stored.rows[0]?.count), 1);
-    const [first] = raced;
-    assert.ok(first);
-    const processedTwice = await Promise.all([
-      billing.processEvent(first.id, at(0)),
-      billing.processEvent(first.id, at(0)),
-    ]);
-    assert.deepEqual(
-      processedTwice.map((r) => r.status),
-      [processedTwice[0]?.status, processedTwice[0]?.status],
-      "processing the same event twice gives one outcome"
-    );
+    // The races below hold the contended lock first (the uncommitted unique key
+    // of the event, the row of the event), release their racers from one start
+    // barrier and fail if the database never saw them blocked on a lock
+    // (concurrency-support.ts). The store keeps 3 connections, so at most 3 of
+    // the 8 racers can be blocked at once; the rest queue in the pool.
+    const storeConnections = 3;
+    const dedupeRounds = await eachRound(async (round) => {
+      const racing = await newTenant(`lifecycle dedupe ${round}`);
+      const eventId = `evt-dedupe-${round}`;
+      const { results: racedResults } = await raceBehindLock({
+        adminUrl,
+        hold: [
+          {
+            params: [eventId],
+            sql: "INSERT INTO public.billing_events (provider, provider_event_id, fact, fact_type, occurred_at) VALUES ('fake', $1, '{}'::jsonb, 'charge_failed', now())",
+          },
+        ],
+        label: "eight deliveries of one provider event",
+        minWaiting: storeConnections,
+        racers: Array.from(
+          { length: 8 },
+          () => () =>
+            event(
+              "fake",
+              eventId,
+              { occurredAt: at(0), type: "charge_failed" },
+              { organizationId: racing.organizationId }
+            )
+        ),
+      });
+      assert.deepEqual(rejections(racedResults), []);
+      const raced = fulfilled(racedResults);
+      assert.equal(new Set(raced.map((r) => r.id)).size, 1);
+      assert.equal(raced.filter((r) => !r.duplicate).length, 1);
+      const stored = await admin.pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM public.billing_events WHERE provider = 'fake' AND provider_event_id = $1",
+        [eventId]
+      );
+      assert.equal(Number(stored.rows[0]?.count), 1);
+      const [first] = raced;
+      assert.ok(first);
+      const { results: processedResults } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("billing_events", "id", first.id)],
+        label: "two processings of one event",
+        racers: [0, 1].map(() => () => billing.processEvent(first.id, at(0))),
+      });
+      assert.deepEqual(rejections(processedResults), []);
+      const processedTwice = fulfilled(processedResults);
+      assert.deepEqual(
+        processedTwice.map((r) => r.status),
+        [processedTwice[0]?.status, processedTwice[0]?.status],
+        "processing the same event twice gives one outcome"
+      );
+    });
     tests.push(
-      "eight concurrent deliveries of one provider event store exactly one row, and processing it twice is one outcome"
+      `eight concurrent deliveries of one provider event store exactly one row, and processing it twice is one outcome (${dedupeRounds} round(s), released from a barrier with the racers seen blocked on a lock)`
     );
 
     // ---------------------------------- 3. the trial, end to end
@@ -531,49 +565,73 @@ async function run() {
     );
 
     // ----------------------------------------------- 8. concurrency
-    const concurrent = await newTenant("lifecycle concurrent");
-    await billing.attachProvider(concurrent.organizationId, "fake", "sub_E");
-    await apply(
-      "fake",
-      "evt-E-1",
-      succeeded(at(0), at(30)),
-      { providerRef: "sub_E" },
-      at(0)
-    );
-    const versionBefore = (
-      await admin.pool.query<{ version: number }>(
-        "SELECT version FROM public.organization_billing WHERE organization_id = $1",
-        [concurrent.organizationId]
-      )
-    ).rows[0]?.version as number;
-    await Promise.all([
-      apply(
+    const transitionRounds = await eachRound(async (round) => {
+      const concurrent = await newTenant(`lifecycle concurrent ${round}`);
+      await billing.attachProvider(
+        concurrent.organizationId,
         "fake",
-        "evt-E-cancel",
-        { occurredAt: at(5), type: "subscription_cancelled" },
-        { providerRef: "sub_E" },
-        at(5)
-      ),
-      apply(
+        `sub_E_${round}`
+      );
+      await apply(
         "fake",
-        "evt-E-cycle",
-        { cycleMonths: 12, occurredAt: at(5), type: "cycle_change_scheduled" },
-        { providerRef: "sub_E" },
-        at(5)
-      ),
-    ]);
-    const merged = await billing.readRecord(concurrent.organizationId);
-    assert.equal(merged?.cancelAtPeriodEnd, true);
-    assert.equal(merged?.pendingCycleMonths, 12);
-    const versionAfter = (
-      await admin.pool.query<{ version: number }>(
-        "SELECT version FROM public.organization_billing WHERE organization_id = $1",
-        [concurrent.organizationId]
-      )
-    ).rows[0]?.version as number;
-    assert.equal(versionAfter, versionBefore + 2, "no update was lost");
+        `evt-E-1-${round}`,
+        succeeded(at(0), at(30)),
+        { providerRef: `sub_E_${round}` },
+        at(0)
+      );
+      const versionBefore = (
+        await admin.pool.query<{ version: number }>(
+          "SELECT version FROM public.organization_billing WHERE organization_id = $1",
+          [concurrent.organizationId]
+        )
+      ).rows[0]?.version as number;
+      const { results: transitions } = await raceBehindLock({
+        adminUrl,
+        hold: [
+          lockRow(
+            "organization_billing",
+            "organization_id",
+            concurrent.organizationId
+          ),
+        ],
+        label: "a cancellation and a cycle change of one organization",
+        racers: [
+          () =>
+            apply(
+              "fake",
+              `evt-E-cancel-${round}`,
+              { occurredAt: at(5), type: "subscription_cancelled" },
+              { providerRef: `sub_E_${round}` },
+              at(5)
+            ),
+          () =>
+            apply(
+              "fake",
+              `evt-E-cycle-${round}`,
+              {
+                cycleMonths: 12,
+                occurredAt: at(5),
+                type: "cycle_change_scheduled",
+              },
+              { providerRef: `sub_E_${round}` },
+              at(5)
+            ),
+        ],
+      });
+      assert.deepEqual(rejections(transitions), []);
+      const merged = await billing.readRecord(concurrent.organizationId);
+      assert.equal(merged?.cancelAtPeriodEnd, true);
+      assert.equal(merged?.pendingCycleMonths, 12);
+      const versionAfter = (
+        await admin.pool.query<{ version: number }>(
+          "SELECT version FROM public.organization_billing WHERE organization_id = $1",
+          [concurrent.organizationId]
+        )
+      ).rows[0]?.version as number;
+      assert.equal(versionAfter, versionBefore + 2, "no update was lost");
+    });
     tests.push(
-      "two facts for one organization processed at the same time both take effect: the row lock serializes them and no update is lost"
+      `two facts for one organization processed at the same time both take effect: the row lock serializes them and no update is lost (${transitionRounds} round(s), released from a barrier with the racers seen blocked on the row)`
     );
 
     // ------------------------ 9. failures are recorded and retried

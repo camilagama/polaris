@@ -39,6 +39,13 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import {
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
 
 const gateDatabase =
@@ -278,6 +285,13 @@ async function main(): Promise<void> {
 
   const admin = createDatabase(connectionString, { maxConnections: 8 });
   const runtimeSessions: RuntimeSession[] = [];
+  /** Ends the sessions of a finished race round, so repeated rounds never pile up connections. */
+  const endSessions = async (sessions: RuntimeSession[]) => {
+    await Promise.all(sessions.map((session) => session.client.end()));
+    for (const session of sessions) {
+      runtimeSessions.splice(runtimeSessions.indexOf(session), 1);
+    }
+  };
   let adminRoleName: string | undefined;
   let runtimeRoleMembershipGrantAttempted = false;
 
@@ -1082,68 +1096,72 @@ async function main(): Promise<void> {
       InvalidInventoryCountInputError
     );
 
-    const raceCountProductId = await createTestProduct(
-      runtime.database,
-      fixtureA,
-      "inventory-count-race"
-    );
-    const raceCountVariantId = await getDefaultVariantId(
-      runtime.database,
-      fixtureA,
-      raceCountProductId
-    );
-    await withTenant(
-      runtime.database,
-      fixtureA,
-      "inventory:adjust",
-      (transaction, identity) =>
-        inventoryCount(transaction, identity, {
-          commandId: randomUUID(),
-          commandVersion: 1,
-          expectedVersion: 0,
-          occurredOn: "2026-10-09",
-          physicalQuantity: 6,
-          requestId: randomUUID(),
-          variantId: raceCountVariantId,
-        })
-    );
-    const countRaceSessions = await Promise.all([
-      createRuntimeSession(connectionString),
-      createRuntimeSession(connectionString),
-    ]);
-    runtimeSessions.push(...countRaceSessions);
-    const countRaceResults = await Promise.allSettled(
-      countRaceSessions.map((session) =>
-        withAuthorizedTenantTransaction(
-          session.database,
-          {
-            authenticatedUserId: fixtureA.userId,
-            capability: "inventory:adjust",
-            requestedOrganizationId: fixtureA.organizationId,
-          },
-          (transaction, identity) =>
-            inventoryCount(transaction, identity, {
-              commandId: randomUUID(),
-              commandVersion: 1,
-              expectedVersion: 1,
-              occurredOn: "2026-10-09",
-              physicalQuantity: 6,
-              requestId: randomUUID(),
-              variantId: raceCountVariantId,
-            })
-        )
-      )
-    );
-    assert.equal(
-      countRaceResults.filter((result) => result.status === "fulfilled").length,
-      1
-    );
-    const staleCountResult = countRaceResults.find(
-      (result) => result.status === "rejected"
-    );
-    assert.ok(staleCountResult && staleCountResult.status === "rejected");
-    assert.ok(staleCountResult.reason instanceof InventoryVersionConflictError);
-
+    // The races below hold the product lock first, release their racers from one
+    // start barrier and fail if the database never saw them blocked on a lock
+    // (concurrency-support.ts); each round repeats a race with fresh data.
+    await eachRound(async (round) => {
+      const raceCountProductId = await createTestProduct(
+        runtime.database,
+        fixtureA,
+        `inventory-count-race-${round}`
+      );
+      const raceCountVariantId = await getDefaultVariantId(
+        runtime.database,
+        fixtureA,
+        raceCountProductId
+      );
+      await withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          inventoryCount(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            expectedVersion: 0,
+            occurredOn: "2026-10-09",
+            physicalQuantity: 6,
+            requestId: randomUUID(),
+            variantId: raceCountVariantId,
+          })
+      );
+      const countRaceSessions = await Promise.all([
+        createRuntimeSession(connectionString),
+        createRuntimeSession(connectionString),
+      ]);
+      runtimeSessions.push(...countRaceSessions);
+      const { results: countRaceResults } = await raceBehindLock({
+        adminUrl: connectionString,
+        hold: [lockRow("products", "id", raceCountProductId)],
+        label: "two counts over the same balance version",
+        racers: countRaceSessions.map(
+          (session) => () =>
+            withAuthorizedTenantTransaction(
+              session.database,
+              {
+                authenticatedUserId: fixtureA.userId,
+                capability: "inventory:adjust",
+                requestedOrganizationId: fixtureA.organizationId,
+              },
+              (transaction, identity) =>
+                inventoryCount(transaction, identity, {
+                  commandId: randomUUID(),
+                  commandVersion: 1,
+                  expectedVersion: 1,
+                  occurredOn: "2026-10-09",
+                  physicalQuantity: 6,
+                  requestId: randomUUID(),
+                  variantId: raceCountVariantId,
+                })
+            )
+        ),
+      });
+      await endSessions(countRaceSessions);
+      assert.equal(fulfilled(countRaceResults).length, 1);
+      const [staleCountReason, ...otherStale] = rejections(countRaceResults);
+      assert.equal(otherStale.length, 0);
+      assert.ok(staleCountReason instanceof InventoryVersionConflictError);
+    });
     await assert.rejects(
       withTenant(
         runtime.database,
@@ -1205,92 +1223,97 @@ async function main(): Promise<void> {
     assert.equal(unknownCostWriteOff.balance.movingAverageCost, null);
     assert.equal(unknownCostWriteOff.movement.unitCost, null);
 
-    const concurrentProductId = await createTestProduct(
-      runtime.database,
-      fixtureA,
-      "concurrent-balance"
-    );
-    const concurrentVariantId = await getDefaultVariantId(
-      runtime.database,
-      fixtureA,
-      concurrentProductId
-    );
-    const positiveSessions = await Promise.all(
-      Array.from({ length: 8 }, () => createRuntimeSession(connectionString))
-    );
-    runtimeSessions.push(...positiveSessions);
-    const positiveResults = await Promise.allSettled(
-      positiveSessions.map((session) =>
-        withAuthorizedTenantTransaction(
-          session.database,
-          {
-            authenticatedUserId: fixtureA.userId,
-            capability: "inventory:adjust",
-            requestedOrganizationId: fixtureA.organizationId,
-          },
-          (transaction, identity) =>
-            receiveStock(transaction, identity, {
-              commandId: randomUUID(),
-              commandVersion: 1,
-              occurredOn: "2026-10-09",
-              quantity: 1,
-              requestId: randomUUID(),
-              unitCost: "10.00",
-              variantId: concurrentVariantId,
-            })
-        )
-      )
-    );
-    assert.equal(
-      positiveResults.filter((result) => result.status === "fulfilled").length,
-      8
-    );
+    await eachRound(async (round) => {
+      const concurrentProductId = await createTestProduct(
+        runtime.database,
+        fixtureA,
+        `concurrent-balance-${round}`
+      );
+      const concurrentVariantId = await getDefaultVariantId(
+        runtime.database,
+        fixtureA,
+        concurrentProductId
+      );
+      const lockConcurrent = [lockRow("products", "id", concurrentProductId)];
+      const positiveSessions = await Promise.all(
+        Array.from({ length: 8 }, () => createRuntimeSession(connectionString))
+      );
+      runtimeSessions.push(...positiveSessions);
+      const { results: positiveResults } = await raceBehindLock({
+        adminUrl: connectionString,
+        hold: lockConcurrent,
+        label: "eight receipts over one balance",
+        racers: positiveSessions.map(
+          (session) => () =>
+            withAuthorizedTenantTransaction(
+              session.database,
+              {
+                authenticatedUserId: fixtureA.userId,
+                capability: "inventory:adjust",
+                requestedOrganizationId: fixtureA.organizationId,
+              },
+              (transaction, identity) =>
+                receiveStock(transaction, identity, {
+                  commandId: randomUUID(),
+                  commandVersion: 1,
+                  occurredOn: "2026-10-09",
+                  quantity: 1,
+                  requestId: randomUUID(),
+                  unitCost: "10.00",
+                  variantId: concurrentVariantId,
+                })
+            )
+        ),
+      });
+      await endSessions(positiveSessions);
+      assert.equal(fulfilled(positiveResults).length, 8);
 
-    const negativeSessions = await Promise.all(
-      Array.from({ length: 2 }, () => createRuntimeSession(connectionString))
-    );
-    runtimeSessions.push(...negativeSessions);
-    const negativeResults = await Promise.allSettled(
-      negativeSessions.map((session) =>
-        withAuthorizedTenantTransaction(
-          session.database,
-          {
-            authenticatedUserId: fixtureA.userId,
-            capability: "inventory:adjust",
-            requestedOrganizationId: fixtureA.organizationId,
-          },
-          (transaction, identity) =>
-            writeOffStock(transaction, identity, {
-              commandId: randomUUID(),
-              commandVersion: 1,
-              occurredOn: "2026-10-09",
-              quantity: 6,
-              reasonCode: "damaged",
-              reasonNote: "concurrent gate write-off",
-              requestId: randomUUID(),
-              variantId: concurrentVariantId,
-            })
-        )
-      )
-    );
-    assert.equal(
-      negativeResults.filter((result) => result.status === "fulfilled").length,
-      1
-    );
-    const rejectedNegative = negativeResults.find(
-      (result) => result.status === "rejected"
-    );
-    assert.ok(rejectedNegative && rejectedNegative.status === "rejected");
-    assert.ok(rejectedNegative.reason instanceof InsufficientStockError);
+      const negativeSessions = await Promise.all(
+        Array.from({ length: 2 }, () => createRuntimeSession(connectionString))
+      );
+      runtimeSessions.push(...negativeSessions);
+      const { results: negativeResults } = await raceBehindLock({
+        adminUrl: connectionString,
+        hold: lockConcurrent,
+        label: "two write-offs of 6 over 8 units",
+        racers: negativeSessions.map(
+          (session) => () =>
+            withAuthorizedTenantTransaction(
+              session.database,
+              {
+                authenticatedUserId: fixtureA.userId,
+                capability: "inventory:adjust",
+                requestedOrganizationId: fixtureA.organizationId,
+              },
+              (transaction, identity) =>
+                writeOffStock(transaction, identity, {
+                  commandId: randomUUID(),
+                  commandVersion: 1,
+                  occurredOn: "2026-10-09",
+                  quantity: 6,
+                  reasonCode: "damaged",
+                  reasonNote: "concurrent gate write-off",
+                  requestId: randomUUID(),
+                  variantId: concurrentVariantId,
+                })
+            )
+        ),
+      });
+      await endSessions(negativeSessions);
+      assert.equal(fulfilled(negativeResults).length, 1);
+      const [rejectedNegative, ...otherNegative] = rejections(negativeResults);
+      assert.equal(otherNegative.length, 0);
+      assert.ok(rejectedNegative instanceof InsufficientStockError);
 
-    const concurrentBalance = await withTenant(
-      runtime.database,
-      fixtureA,
-      "inventory:adjust",
-      (transaction, identity) =>
-        getInventoryBalance(transaction, identity, concurrentVariantId)
-    );
-    assert.equal(concurrentBalance.quantity, 2);
+      const concurrentBalance = await withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          getInventoryBalance(transaction, identity, concurrentVariantId)
+      );
+      assert.equal(concurrentBalance.quantity, 2);
+    });
 
     const productB = await createTestProduct(
       runtime.database,
@@ -1694,98 +1717,109 @@ async function main(): Promise<void> {
         )
     );
 
-    const racingProductId = await createTestProduct(
-      runtime.database,
-      fixtureA,
-      "tombstone-race"
-    );
-    const racingVariantId = await getDefaultVariantId(
-      runtime.database,
-      fixtureA,
-      racingProductId
-    );
-    const [raceDeleteSession, raceInventorySession] = await Promise.all([
-      createRuntimeSession(connectionString),
-      createRuntimeSession(connectionString),
-    ]);
-    runtimeSessions.push(raceDeleteSession, raceInventorySession);
-    const raceResults = await Promise.allSettled([
-      withAuthorizedTenantTransaction(
-        raceDeleteSession.database,
-        {
-          authenticatedUserId: fixtureA.userId,
-          capability: "product:update",
-          requestedOrganizationId: fixtureA.organizationId,
-        },
+    await eachRound(async (round) => {
+      const racingProductId = await createTestProduct(
+        runtime.database,
+        fixtureA,
+        `tombstone-race-${round}`
+      );
+      const racingVariantId = await getDefaultVariantId(
+        runtime.database,
+        fixtureA,
+        racingProductId
+      );
+      const [raceDeleteSession, raceInventorySession] = await Promise.all([
+        createRuntimeSession(connectionString),
+        createRuntimeSession(connectionString),
+      ]);
+      runtimeSessions.push(raceDeleteSession, raceInventorySession);
+      const { results: raceResults } = await raceBehindLock<unknown>({
+        adminUrl: connectionString,
+        hold: [lockRow("products", "id", racingProductId)],
+        label: "tombstone of a product racing a receipt of its stock",
+        racers: [
+          () =>
+            withAuthorizedTenantTransaction(
+              raceDeleteSession.database,
+              {
+                authenticatedUserId: fixtureA.userId,
+                capability: "product:update",
+                requestedOrganizationId: fixtureA.organizationId,
+              },
+              (transaction, identity) =>
+                deleteProduct(transaction, identity, {
+                  expectedVersion: 1,
+                  id: racingProductId,
+                  requestId: randomUUID(),
+                })
+            ),
+          () =>
+            withAuthorizedTenantTransaction(
+              raceInventorySession.database,
+              {
+                authenticatedUserId: fixtureA.userId,
+                capability: "inventory:adjust",
+                requestedOrganizationId: fixtureA.organizationId,
+              },
+              (transaction, identity) =>
+                receiveStock(transaction, identity, {
+                  commandId: randomUUID(),
+                  commandVersion: 1,
+                  occurredOn: "2026-10-10",
+                  quantity: 1,
+                  requestId: randomUUID(),
+                  unitCost: "10.00",
+                  variantId: racingVariantId,
+                })
+            ),
+        ],
+      });
+      await endSessions([raceDeleteSession, raceInventorySession]);
+      const [deleteResult, receiptResult] = raceResults;
+      assert.ok(deleteResult && receiptResult);
+      assert.equal(
+        [deleteResult, receiptResult].filter(
+          (result) => result.status === "fulfilled"
+        ).length,
+        1
+      );
+      assert.equal(
+        [deleteResult, receiptResult].filter(
+          (result) => result.status === "rejected"
+        ).length,
+        1
+      );
+      const racingProduct = await withTenant(
+        runtime.database,
+        fixtureA,
+        "catalog:read",
+        async (transaction, identity) =>
+          (await listProducts(transaction, identity, { status: "all" })).find(
+            (product) => product.id === racingProductId
+          )
+      );
+      assert.ok(racingProduct);
+      const racingBalance = await withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:read",
         (transaction, identity) =>
-          deleteProduct(transaction, identity, {
-            expectedVersion: 1,
-            id: racingProductId,
-            requestId: randomUUID(),
-          })
-      ),
-      withAuthorizedTenantTransaction(
-        raceInventorySession.database,
-        {
-          authenticatedUserId: fixtureA.userId,
-          capability: "inventory:adjust",
-          requestedOrganizationId: fixtureA.organizationId,
-        },
-        (transaction, identity) =>
-          receiveStock(transaction, identity, {
-            commandId: randomUUID(),
-            commandVersion: 1,
-            occurredOn: "2026-10-10",
-            quantity: 1,
-            requestId: randomUUID(),
-            unitCost: "10.00",
-            variantId: racingVariantId,
-          })
-      ),
-    ]);
-    const [deleteResult, receiptResult] = raceResults;
-    assert.equal(
-      [deleteResult, receiptResult].filter(
-        (result) => result.status === "fulfilled"
-      ).length,
-      1
-    );
-    assert.equal(
-      [deleteResult, receiptResult].filter(
-        (result) => result.status === "rejected"
-      ).length,
-      1
-    );
-    const racingProduct = await withTenant(
-      runtime.database,
-      fixtureA,
-      "catalog:read",
-      async (transaction, identity) =>
-        (await listProducts(transaction, identity, { status: "all" })).find(
-          (product) => product.id === racingProductId
-        )
-    );
-    assert.ok(racingProduct);
-    const racingBalance = await withTenant(
-      runtime.database,
-      fixtureA,
-      "inventory:read",
-      (transaction, identity) =>
-        getInventoryBalance(transaction, identity, racingVariantId)
-    );
-    if (racingProduct.deletedAt === null) {
-      assert.equal(racingBalance.quantity, 1);
-      assert.equal(deleteResult.status, "rejected");
-      if (deleteResult.status === "rejected") {
-        assert.ok(deleteResult.reason instanceof ProductStockNotEmptyError);
+          getInventoryBalance(transaction, identity, racingVariantId)
+      );
+      if (racingProduct.deletedAt === null) {
+        assert.equal(racingBalance.quantity, 1);
+        assert.equal(deleteResult.status, "rejected");
+        if (deleteResult.status === "rejected") {
+          assert.ok(deleteResult.reason instanceof ProductStockNotEmptyError);
+        }
+      } else {
+        assert.equal(racingBalance.quantity, 0);
+        assert.equal(receiptResult.status, "rejected");
+        if (receiptResult.status === "rejected") {
+          assert.ok(receiptResult.reason instanceof ProductDeletedError);
+        }
       }
-    } else {
-      assert.equal(racingBalance.quantity, 0);
-      assert.equal(receiptResult.status, "rejected");
-      if (receiptResult.status === "rejected") {
-        assert.ok(receiptResult.reason instanceof ProductDeletedError);
-      }
-    }
+    });
     const auditCount = await admin.pool.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM public.tenant_audit_event " +
         "WHERE organization_id = $1 AND event_type = 'inventory.movement_recorded'",

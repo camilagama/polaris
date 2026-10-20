@@ -28,6 +28,8 @@ Gates e provas por fase:
 
 Testes (Fase 13): [Harness de teste dos Workers](./workers-test-harness.md), com o projeto `admin-workerd`, os alias do `pg`, o Hyperdrive em porta fechada, o guarda de host e o que o harness não prova.
 
+Testes (Fase 13): a [matriz de concorrência](../architecture/concurrency-matrix.md) lista cada corrida do sistema, a proteção, o gate que a prova e o que falta; a suíte `gates:concurrency` roda só essas corridas, repetidas (`POLARIS_CONCURRENCY_REPEAT`), num PostgreSQL 18 descartável.
+
 Dependências: [Auditoria de dependências](./dependency-audit.md), com o procedimento do job "Dependency audit", as exceções vigentes e seus prazos de revisão.
 
 A política de provas de banco (CI e PostgreSQL 18 local por pull request; Neon descartável só na prova antes de liberação, com uma branch filha de `production`) está no [ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md) e o procedimento, no [Gate 4](./gate-4-sales-core.md). O CI é desenhado para gastar poucos minutos do GitHub Actions (repositório privado; cada job é cobrado arredondado ao minuto): os checks leves são um job só, o gate de navegador roda só quando algo que ele exercita mudou e não se repete na `main`, e a auditoria só quando uma dependência mudou. Uma execução completa sob demanda existe (`workflow_dispatch`). Racional e números no [ADR 0060](../adr/0060-ci-economico-em-minutos.md). Se os jobs não iniciarem com a mensagem "pagamentos recentes falharam ou o limite de gastos precisa aumentar", é a cobrança da conta **dona do repositório** (não de quem faz o push): conferir plano, minutos usados, limite de gastos e forma de pagamento nessa conta.

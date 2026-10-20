@@ -23,6 +23,7 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
  * temporary login roles some gates need.
  */
 
+const DEFAULT_CONCURRENCY_REPEAT = "3";
 const lineBreak = /\r?\n/;
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
@@ -196,7 +197,11 @@ gates.push(
 
 /**
  * Named suites. `gate3` proves catalog, stock and private media (plan Gate 3);
- * `gate4` proves the sales core (plan Gate 4). `all` is every gate.
+ * `gate4` proves the sales core (plan Gate 4). `all` is every gate. `concurrency`
+ * is the races of the system (docs/architecture/concurrency-matrix.md): the gates
+ * whose races hold the contended lock, start together and fail if they never
+ * competed (concurrency-support.ts). Every one of them is also in `ci`, so the
+ * suite adds no job and no gate; it only runs the races alone and repeated.
  */
 const suites: Record<string, string[]> = {
   // What the CI job runs against its own Postgres 18 service: the gates that do
@@ -261,6 +266,24 @@ const suites: Record<string, string[]> = {
     "media-upload",
     "tenant-context",
     "rls",
+  ],
+  // Run it on a fresh database (the gates are not rerunnable on one that already ran them).
+  // POLARIS_CONCURRENCY_REPEAT sets the rounds of each race (default 3 here, 1 in `ci`).
+  concurrency: [
+    "sale-transaction",
+    "sale-customer-link",
+    "sale-cancellation",
+    "sale-return",
+    "inventory",
+    "offline-stock",
+    "offline-sale",
+    "sync-push",
+    "billing-lifecycle",
+    "billing-trial-claims",
+    "entitlements",
+    "admin-suspension",
+    "organization-closure",
+    "device-sessions",
   ],
   gate3: [
     "gate2-runtime",
@@ -420,6 +443,10 @@ async function main() {
     throw new Error(
       "A gate named here runs only against the CI Postgres; against Neon use its own command (poc:rls:verify)."
     );
+  }
+
+  if (named.has("concurrency") && !process.env.POLARIS_CONCURRENCY_REPEAT) {
+    process.env.POLARIS_CONCURRENCY_REPEAT = DEFAULT_CONCURRENCY_REPEAT;
   }
 
   const { admin } = await connectToGateTarget({ branch, database, url });

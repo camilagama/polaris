@@ -1833,6 +1833,16 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Verificação local | Concluída (19/10/2026) | Migrations do zero num PostgreSQL 18.4 local descartável; suíte `ci` inteira (55 gates, 0 falhas, cerca de 5 min; os cinco novos somam cerca de 11 s); falha provada por mutação (`DISABLE ROW LEVEL SECURITY` em `rls_poc_operations` derruba `rls` e `tenant-context`; `NO FORCE` em `customers` derruba `customers`; `DISABLE` em `organizations` derruba `tenant-context`); `bun run check` verde. O CI ainda não rodou a suíte com os gates novos. |
 
 
+### Fase 13 — matriz e suíte de concorrência (T-123a, POL-58; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Matriz | Concluído | [concurrency-matrix.md](../docs/architecture/concurrency-matrix.md): cada corrida com atores, recurso, proteção, gate e estado; inclui o teste grátis por pessoa e o descarte do checkout (#184) e o teto de lojas com o criar × desfazer (#188). |
+| Suíte | Concluído | `gates:concurrency` em `packages/db/scripts/run-gates.ts`: 14 gates que já estão em `gates:ci`, sem duplicar e sem job novo (custo de CI 0). |
+| Barreira e disputa | Concluído nos 14 gates | `packages/db/scripts/concurrency-support.ts`: o lock disputado é segurado, os competidores saem juntos de uma barreira e o gate falha se o banco nunca os viu bloqueados pelo segurador (`the race did not compete`); o `billing-trial-claims` §3 mantém a barreira própria que já tinha. Rodadas por `POLARIS_CONCURRENCY_REPEAT` (3 em `gates:concurrency`, 1 em `ci`, no máximo 10). |
+| Prova por remoção | Concluída por gate (20/10/2026) | Uma por gate, local e descartada; resultados na [matriz](../docs/architecture/concurrency-matrix.md#provas-por-remoção). As corridas com remoção parcial (ficou vermelho numa corrida anterior do mesmo gate) estão listadas lá como acompanhamento. |
+| Falta | Registrado | Webhook pela rota HTTP e reordenação em paralelo (T-123b); smoke sob Worker + Hyperdrive no staging (T-123c); barreira revisada nos gates de corrida que ficaram fora da suíte. |
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).

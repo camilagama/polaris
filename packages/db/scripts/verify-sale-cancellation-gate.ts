@@ -19,6 +19,14 @@ import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { getSale, listSales } from "../src/sale-query-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
+  advisoryLock,
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   confirmPlainSale,
   createSellableProduct,
   createTenantFixture,
@@ -624,73 +632,115 @@ async function run() {
     );
 
     // ----------------------------------------------------- 6. concurrency
-    const raceSale = await confirmPlainSale(rt, tenantA, [
-      { quantity: 1, variantId: a1.variantId },
-    ]);
-    const a1AfterSale = (await balance(tenantA, a1.variantId)).quantity;
-    const race = await Promise.allSettled(
-      Array.from({ length: 6 }, () =>
-        cancel(
-          tenantA,
-          { commandId: randomUUID(), saleId: raceSale.sale.id },
-          concurrentDatabase
-        )
-      )
-    );
-    assert.equal(race.filter((r) => r.status === "fulfilled").length, 1);
-    assert.ok(
-      race
-        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-        .every((r) => r.reason instanceof SaleAlreadyCancelledError),
-      "every losing cancellation is classified as already cancelled"
-    );
-    assert.equal(
-      (await balance(tenantA, a1.variantId)).quantity,
-      a1AfterSale + 1,
-      "the stock comes back once"
-    );
-    assert.equal(await cancellationCount(tenantA, raceSale.sale.id), 1);
+    // Each race holds the lock of the product first, releases its racers from
+    // one start barrier and fails if the database never saw them blocked
+    // (concurrency-support.ts); each round repeats it with fresh data.
+    // the races run in an organization of their own, so the sales they leave behind
+    // never push the sales of the other sections out of a paged listing
+    const raceTenant = await createTenantFixture(admin.pool, "race");
+    const rounds = await eachRound(async (round) => {
+      const raced = await createSellableProduct(
+        rt,
+        raceTenant,
+        `corrida ${round}`,
+        { cost: "10.00", quantity: 20 }
+      );
+      const lockRaced = [lockRow("products", "id", raced.productId)];
+      const raceSale = await confirmPlainSale(rt, raceTenant, [
+        { quantity: 1, variantId: raced.variantId },
+      ]);
+      // cancellations of one sale queue on its compensation lock (sale-locks.ts)
+      const lockCompensation = (saleId: string) => [
+        advisoryLock(`polaris.sale.compensation:${saleId}`),
+      ];
+      const racedAfterSale = (await balance(raceTenant, raced.variantId))
+        .quantity;
+      const { results: race } = await raceBehindLock({
+        adminUrl,
+        hold: lockCompensation(raceSale.sale.id),
+        label: "six cancellations of one sale",
+        racers: Array.from(
+          { length: 6 },
+          () => () =>
+            cancel(
+              raceTenant,
+              { commandId: randomUUID(), saleId: raceSale.sale.id },
+              concurrentDatabase
+            )
+        ),
+      });
+      assert.equal(fulfilled(race).length, 1);
+      assert.equal(rejections(race).length, 5);
+      assert.ok(
+        rejections(race).every(
+          (reason) => reason instanceof SaleAlreadyCancelledError
+        ),
+        "every losing cancellation is classified as already cancelled"
+      );
+      assert.equal(
+        (await balance(raceTenant, raced.variantId)).quantity,
+        racedAfterSale + 1,
+        "the stock comes back once"
+      );
+      assert.equal(await cancellationCount(raceTenant, raceSale.sale.id), 1);
 
-    const sameCommandSale = await confirmPlainSale(rt, tenantA, [
-      { quantity: 1, variantId: a1.variantId },
-    ]);
-    const sharedCommand = randomUUID();
-    const sameCommand = await Promise.all(
-      Array.from({ length: 5 }, () =>
-        cancel(
-          tenantA,
-          { commandId: sharedCommand, saleId: sameCommandSale.sale.id },
-          concurrentDatabase
-        )
-      )
-    );
-    assert.equal(sameCommand.filter((r) => !r.replayed).length, 1);
-    assert.equal(new Set(sameCommand.map((r) => r.cancellation.id)).size, 1);
-    assert.equal((await movementsOf(tenantA, sharedCommand)).length, 1);
+      const sameCommandSale = await confirmPlainSale(rt, raceTenant, [
+        { quantity: 1, variantId: raced.variantId },
+      ]);
+      const sharedCommand = randomUUID();
+      const { results: sameCommandResults } = await raceBehindLock({
+        adminUrl,
+        hold: lockCompensation(sameCommandSale.sale.id),
+        label: "five deliveries of one cancellation command",
+        racers: Array.from(
+          { length: 5 },
+          () => () =>
+            cancel(
+              raceTenant,
+              { commandId: sharedCommand, saleId: sameCommandSale.sale.id },
+              concurrentDatabase
+            )
+        ),
+      });
+      assert.deepEqual(rejections(sameCommandResults), []);
+      const sameCommand = fulfilled(sameCommandResults);
+      assert.equal(sameCommand.filter((r) => !r.replayed).length, 1);
+      assert.equal(new Set(sameCommand.map((r) => r.cancellation.id)).size, 1);
+      assert.equal((await movementsOf(raceTenant, sharedCommand)).length, 1);
 
-    const mixedSale = await confirmPlainSale(rt, tenantA, [
-      { quantity: 2, variantId: a1.variantId },
-    ]);
-    const mixed = await Promise.allSettled([
-      cancel(
-        tenantA,
-        { commandId: randomUUID(), saleId: mixedSale.sale.id },
-        concurrentDatabase
-      ),
-      ...Array.from({ length: 5 }, () =>
-        confirmPlainSale(
-          { adminPool: admin.pool, db: concurrentDatabase.db },
-          tenantA,
-          [{ quantity: 1, variantId: a1.variantId }]
-        )
-      ),
-    ]);
-    assert.ok(
-      mixed.every((result) => result.status === "fulfilled"),
-      "a cancellation and new sales over the same product never deadlock"
-    );
+      const mixedSale = await confirmPlainSale(rt, raceTenant, [
+        { quantity: 2, variantId: raced.variantId },
+      ]);
+      const { results: mixed } = await raceBehindLock<unknown>({
+        adminUrl,
+        hold: lockRaced,
+        label: "a cancellation racing five new sales of the same product",
+        racers: [
+          () =>
+            cancel(
+              raceTenant,
+              { commandId: randomUUID(), saleId: mixedSale.sale.id },
+              concurrentDatabase
+            ),
+          ...Array.from(
+            { length: 5 },
+            () => () =>
+              confirmPlainSale(
+                { adminPool: admin.pool, db: concurrentDatabase.db },
+                raceTenant,
+                [{ quantity: 1, variantId: raced.variantId }]
+              )
+          ),
+        ],
+      });
+      assert.deepEqual(
+        rejections(mixed),
+        [],
+        "a cancellation and new sales over the same product never deadlock"
+      );
+    });
     tests.push(
-      "six concurrent cancellations of one sale produce one winner and restore stock once; five deliveries of one command ID produce one cancellation; a cancellation racing new sales of the same product never deadlocks"
+      `six concurrent cancellations of one sale produce one winner and restore stock once; five deliveries of one command ID produce one cancellation; a cancellation racing new sales of the same product never deadlocks (${rounds} round(s), released from a barrier with the racers seen blocked on the lock)`
     );
 
     // ------------------------------------------- 7. database-level guards

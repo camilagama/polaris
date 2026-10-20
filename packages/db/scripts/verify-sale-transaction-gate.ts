@@ -39,6 +39,13 @@ import {
 } from "../src/sale-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createTenantFixture,
   disposableHostPattern,
   expectSqlState,
@@ -1137,136 +1144,181 @@ async function run() {
     );
 
     // ------------------------------------------------------ 8. concurrency
-    const lastUnits = await createSellableProduct(tenantA, "últimas unidades", {
-      cost: "2.00",
-      quantity: 3,
-    });
-    const race = await Promise.allSettled(
-      Array.from({ length: 8 }, () =>
-        confirm(tenantA, command(lastUnits.variantId), concurrentDatabase)
-      )
-    );
-    const raceWins = race.filter((result) => result.status === "fulfilled");
-    const raceLosses = race.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected"
-    );
-    assert.equal(raceWins.length, 3, "exactly the available units are sold");
-    assert.ok(
-      raceLosses.every(
-        (result) => result.reason instanceof InsufficientStockError
-      ),
-      "every loser fails with insufficient stock"
-    );
-    const lastBalance = await balanceOf(tenantA, lastUnits.variantId);
-    assert.equal(lastBalance.quantity, 0);
-    const lastMovements = await admin.pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM public.stock_movements WHERE organization_id = $1 AND variant_id = $2 AND movement_type = 'sale'",
-      [tenantA.organizationId, lastUnits.variantId]
-    );
-    assert.equal(lastMovements.rows[0]?.count, "3");
+    // Every race holds the contended product lock first, releases its racers
+    // from one start barrier and fails if the database never saw them blocked
+    // (concurrency-support.ts); each round repeats it with fresh data.
+    const rounds = await eachRound(async (round) => {
+      const lastUnits = await createSellableProduct(
+        tenantA,
+        `últimas unidades ${round}`,
+        { cost: "2.00", quantity: 3 }
+      );
+      const { results: race } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", lastUnits.productId)],
+        label: "8 sales of 1 unit over 3 units",
+        racers: Array.from(
+          { length: 8 },
+          () => () =>
+            confirm(tenantA, command(lastUnits.variantId), concurrentDatabase)
+        ),
+      });
+      const raceWins = race.filter((result) => result.status === "fulfilled");
+      assert.equal(raceWins.length, 3, "exactly the available units are sold");
+      assert.ok(
+        rejections(race).every(
+          (reason) => reason instanceof InsufficientStockError
+        ),
+        "every loser fails with insufficient stock"
+      );
+      const lastBalance = await balanceOf(tenantA, lastUnits.variantId);
+      assert.equal(lastBalance.quantity, 0);
+      const lastMovements = await admin.pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM public.stock_movements WHERE organization_id = $1 AND variant_id = $2 AND movement_type = 'sale'",
+        [tenantA.organizationId, lastUnits.variantId]
+      );
+      assert.equal(lastMovements.rows[0]?.count, "3");
 
-    const twoUnitProduct = await createSellableProduct(
-      tenantA,
-      "três unidades",
-      {
+      const twoUnitProduct = await createSellableProduct(
+        tenantA,
+        `três unidades ${round}`,
+        { cost: "2.00", quantity: 3 }
+      );
+      const { results: twoByTwo } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", twoUnitProduct.productId)],
+        label: "two sales of 2 units over 3 units",
+        racers: [0, 1].map(
+          () => () =>
+            confirm(
+              tenantA,
+              command(twoUnitProduct.variantId, {
+                items: [
+                  {
+                    chargedUnitPrice: "5.00",
+                    listedUnitPrice: "5.00",
+                    quantity: 2,
+                    variantId: twoUnitProduct.variantId,
+                  },
+                ],
+              }),
+              concurrentDatabase
+            )
+        ),
+      });
+      assert.equal(fulfilled(twoByTwo).length, 1);
+      assert.equal(
+        rejections(twoByTwo).filter(
+          (reason) => reason instanceof InsufficientStockError
+        ).length,
+        1,
+        "the loser fails with insufficient stock"
+      );
+      assert.equal(
+        (await balanceOf(tenantA, twoUnitProduct.variantId)).quantity,
+        1
+      );
+
+      const sharedProduct = await createSellableProduct(
+        tenantA,
+        `comando repetido ${round}`,
+        { cost: "2.00", quantity: 10 }
+      );
+      const sharedCommand = command(sharedProduct.variantId, {
+        items: [
+          {
+            chargedUnitPrice: "3.00",
+            listedUnitPrice: "3.00",
+            quantity: 2,
+            variantId: sharedProduct.variantId,
+          },
+        ],
+      });
+      const { results: sameCommandResults } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", sharedProduct.productId)],
+        label: "six deliveries of one command",
+        racers: Array.from(
+          { length: 6 },
+          () => () => confirm(tenantA, sharedCommand, concurrentDatabase)
+        ),
+      });
+      assert.deepEqual(
+        rejections(sameCommandResults),
+        [],
+        "no delivery of the same command fails"
+      );
+      const sameCommand = fulfilled(sameCommandResults);
+      assert.equal(sameCommand.filter((result) => !result.replayed).length, 1);
+      assert.equal(
+        new Set(sameCommand.map((result) => result.sale.id)).size,
+        1
+      );
+      assert.equal(
+        (await balanceOf(tenantA, sharedProduct.variantId)).quantity,
+        8
+      );
+      assert.equal(
+        (
+          await effects(
+            tenantA,
+            sharedCommand.commandId,
+            sharedCommand.requestId ?? ""
+          )
+        ).sales,
+        1
+      );
+
+      // Six sales (three per order) all queue behind the same two product locks;
+      // each holds them for a full transaction, so more would only measure how far
+      // away the database is from the machine running the gate.
+      const pairA = await createSellableProduct(tenantA, `par A ${round}`, {
         cost: "2.00",
-        quantity: 3,
-      }
-    );
-    const twoByTwo = await Promise.allSettled(
-      [0, 1].map(() =>
-        confirm(
-          tenantA,
-          command(twoUnitProduct.variantId, {
-            items: [
-              {
-                chargedUnitPrice: "5.00",
-                listedUnitPrice: "5.00",
-                quantity: 2,
-                variantId: twoUnitProduct.variantId,
-              },
-            ],
-          }),
-          concurrentDatabase
-        )
-      )
-    );
-    assert.equal(twoByTwo.filter((r) => r.status === "fulfilled").length, 1);
-    assert.equal(
-      (await balanceOf(tenantA, twoUnitProduct.variantId)).quantity,
-      1
-    );
-    tests.push(
-      "concurrent sales cannot oversell: 8 racing single-unit sales over 3 units sell exactly 3, and two 2-unit sales over 3 units sell one; the balance never goes negative"
-    );
-
-    const sharedCommand = command(productA2.variantId, {
-      items: [
-        {
-          chargedUnitPrice: "3.00",
-          listedUnitPrice: "3.00",
-          quantity: 2,
-          variantId: productA2.variantId,
-        },
-      ],
+        quantity: 10,
+      });
+      const pairB = await createSellableProduct(tenantA, `par B ${round}`, {
+        cost: "2.00",
+        quantity: 10,
+      });
+      const { results: orderedPairs } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", pairA.productId)],
+        label: "six sales listing two products in opposite order",
+        racers: Array.from(
+          { length: 6 },
+          (_, index) => () =>
+            confirm(
+              tenantA,
+              command(pairA.variantId, {
+                items: (index % 2 === 0
+                  ? [pairA.variantId, pairB.variantId]
+                  : [pairB.variantId, pairA.variantId]
+                ).map((variantId) => ({
+                  chargedUnitPrice: "1.00",
+                  listedUnitPrice: "1.00",
+                  quantity: 1,
+                  variantId,
+                })),
+              }),
+              concurrentDatabase
+            )
+        ),
+      });
+      assert.deepEqual(
+        rejections(orderedPairs).map(
+          (reason) => redactedFailure(reason).split("\n")[0]
+        ),
+        [],
+        "sales listing the same products in opposite order never deadlock"
+      );
+      assert.equal((await balanceOf(tenantA, pairA.variantId)).quantity, 4);
+      assert.equal((await balanceOf(tenantA, pairB.variantId)).quantity, 4);
     });
-    const a2Before = await balanceOf(tenantA, productA2.variantId);
-    const sameCommand = await Promise.all(
-      Array.from({ length: 6 }, () =>
-        confirm(tenantA, sharedCommand, concurrentDatabase)
-      )
-    );
-    assert.equal(sameCommand.filter((result) => !result.replayed).length, 1);
-    assert.equal(new Set(sameCommand.map((result) => result.sale.id)).size, 1);
-    assert.equal(
-      (await balanceOf(tenantA, productA2.variantId)).quantity,
-      a2Before.quantity - 2
-    );
-    assert.equal(
-      (
-        await effects(
-          tenantA,
-          sharedCommand.commandId,
-          sharedCommand.requestId ?? ""
-        )
-      ).sales,
-      1
+    tests.push(
+      `concurrent sales cannot oversell: 8 racing single-unit sales over 3 units sell exactly 3, and two 2-unit sales over 3 units sell one; the balance never goes negative (${rounds} round(s), each released from a barrier with the racers seen blocked on the lock)`
     );
     tests.push(
       "six concurrent deliveries of one command ID create one sale and one set of stock movements; the rest replay"
-    );
-
-    // Six sales (three per order) all queue behind the same two product locks;
-    // each holds them for a full transaction, so more would only measure how far
-    // away the database is from the machine running the gate.
-    const orderedPairs = await Promise.allSettled(
-      Array.from({ length: 6 }, (_, index) =>
-        confirm(
-          tenantA,
-          command(productA1.variantId, {
-            items: (index % 2 === 0
-              ? [productA1.variantId, productA2.variantId]
-              : [productA2.variantId, productA1.variantId]
-            ).map((variantId) => ({
-              chargedUnitPrice: "1.00",
-              listedUnitPrice: "1.00",
-              quantity: 1,
-              variantId,
-            })),
-          }),
-          concurrentDatabase
-        )
-      )
-    );
-    const orderedFailures = orderedPairs.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected"
-    );
-    assert.deepEqual(
-      orderedFailures.map(
-        (result) => redactedFailure(result.reason).split("\n")[0]
-      ),
-      [],
-      "sales listing the same products in opposite order never deadlock"
     );
     tests.push(
       "concurrent sales listing products in opposite order do not deadlock (locks are taken in product id order)"

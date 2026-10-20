@@ -22,6 +22,13 @@ import {
 } from "../src/sync-command-repository";
 import type { TenantRequestIdentity } from "../src/tenant-transaction";
 import {
+  eachRound,
+  fulfilled,
+  lockProductOfVariant,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createProductFixture,
   createTenantFixture,
   disposableHostPattern,
@@ -310,41 +317,69 @@ async function run() {
       "a movement dated after the organization's today is refused and changes nothing"
     );
 
-    // -- 6. two devices race: the ledger lets one count win and the other conflict
-    const racing = await Promise.all([
-      push({ baseVersion: 4, kind: "count", physicalQuantity: 20 }),
-      push({ baseVersion: 4, kind: "count", physicalQuantity: 30 }),
-    ]);
-    assert.equal(
-      racing.filter((outcome) => outcome.status === "accepted").length,
-      1
-    );
-    assert.equal(
-      racing.filter((outcome) => outcome.code === "inventory_version_conflict")
-        .length,
-      1
-    );
-    const final = await balance();
-    assert.equal(final?.version, 5);
-    assert.ok(final?.quantity === 20 || final?.quantity === 30);
-    tests.push(
-      "two counts against the same balance version racing: exactly one is accepted, the other is an inventory_version_conflict"
-    );
+    // The races hold the product lock first, release their racers from one start
+    // barrier and fail if the database never saw them blocked on a lock
+    // (concurrency-support.ts); each round repeats them on a replenished balance.
+    const lockStock = [lockProductOfVariant(variantId)];
+    const rounds = await eachRound(async () => {
+      // -- 6. two devices race: the ledger lets one count win and the other conflict
+      const baseline = await balance();
+      assert.ok(baseline);
+      const { results: racingResults } = await raceBehindLock({
+        adminUrl,
+        hold: lockStock,
+        label: "two counts over the same balance version",
+        racers: [20, 30].map(
+          (physicalQuantity) => () =>
+            push({
+              baseVersion: baseline.version,
+              kind: "count",
+              physicalQuantity,
+            })
+        ),
+      });
+      assert.deepEqual(rejections(racingResults), []);
+      const racing = fulfilled(racingResults);
+      assert.equal(
+        racing.filter((outcome) => outcome.status === "accepted").length,
+        1
+      );
+      assert.equal(
+        racing.filter(
+          (outcome) => outcome.code === "inventory_version_conflict"
+        ).length,
+        1
+      );
+      const final = await balance();
+      assert.equal(final?.version, baseline.version + 1);
+      assert.ok(final?.quantity === 20 || final?.quantity === 30);
 
-    // ---- 7. two write-offs race for the same stock: the balance never goes negative
-    const before = await balance();
-    assert.ok(before);
-    const half = Math.floor(before.quantity / 2) + 1;
-    const writers = await Promise.all([
-      push({ kind: "write_off", quantity: half }),
-      push({ kind: "write_off", quantity: half }),
-    ]);
-    const statuses = writers.map((outcome) => outcome.status).sort();
-    assert.deepEqual(statuses, ["accepted", "rejected"]);
-    assert.ok(writers.some((outcome) => outcome.code === "insufficient_stock"));
-    const after = await balance();
-    assert.equal(after?.quantity, before.quantity - half);
-    assert.ok((after?.quantity ?? -1) >= 0);
+      // ---- 7. two write-offs race for the same stock: the balance never goes negative
+      const before = await balance();
+      assert.ok(before);
+      const half = Math.floor(before.quantity / 2) + 1;
+      const { results: writerResults } = await raceBehindLock({
+        adminUrl,
+        hold: lockStock,
+        label: "two write-offs that cannot both be honoured",
+        racers: [0, 1].map(
+          () => () => push({ kind: "write_off", quantity: half })
+        ),
+      });
+      assert.deepEqual(rejections(writerResults), []);
+      const writers = fulfilled(writerResults);
+      const statuses = writers.map((outcome) => outcome.status).sort();
+      assert.deepEqual(statuses, ["accepted", "rejected"]);
+      assert.ok(
+        writers.some((outcome) => outcome.code === "insufficient_stock")
+      );
+      const after = await balance();
+      assert.equal(after?.quantity, before.quantity - half);
+      assert.ok((after?.quantity ?? -1) >= 0);
+    });
+    tests.push(
+      `two counts against the same balance version racing: exactly one is accepted, the other is an inventory_version_conflict (${rounds} round(s), released from a barrier with the racers seen blocked on the lock)`
+    );
     tests.push(
       "two write-offs that cannot both be honoured race: one is accepted, the other is insufficient_stock and the balance never goes negative"
     );

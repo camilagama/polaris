@@ -80,6 +80,7 @@
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "gates:all": "bun scripts/run-gates.ts",
     "gates:ci": "bun scripts/run-gates.ts ci",
+    "gates:concurrency": "bun scripts/run-gates.ts concurrency",
     "gates:gate3": "bun scripts/run-gates.ts gate3",
     "gates:gate4": "bun scripts/run-gates.ts gate4",
     "gates:gate6": "bun scripts/run-gates.ts gate6",

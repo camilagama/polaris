@@ -10,6 +10,13 @@ import {
   type SyncJson,
 } from "../src/sync-command-repository";
 import {
+  advisoryLock,
+  eachRound,
+  fulfilled,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createTenantFixture,
   disposableHostPattern,
   expectSqlState,
@@ -655,23 +662,39 @@ async function run() {
     );
 
     // ------------------------------------------------------- 8. concurrency
-    const racingId = randomUUID();
-    const executionsBefore = executions;
-    const racers = await Promise.all(
-      Array.from({ length: 8 }, () => push({ commandId: racingId }))
-    );
-    assert.equal(
-      executions - executionsBefore,
-      1,
-      "eight concurrent pushes of one command execute it once"
-    );
-    assert.equal(racers.filter((outcome) => outcome.replayed).length, 7);
-    assert.equal(
-      new Set(racers.map((outcome) => JSON.stringify(outcome.result))).size,
-      1
-    );
+    // The race holds the advisory lock of the command (sync-command-repository.ts)
+    // first, releases its racers from one start barrier and fails if the database
+    // never saw them blocked on it (concurrency-support.ts); each round repeats
+    // it with a new command ID.
+    const rounds = await eachRound(async () => {
+      const racingId = randomUUID();
+      const executionsBefore = executions;
+      const { results: racerResults } = await raceBehindLock({
+        adminUrl,
+        hold: [
+          advisoryLock(`sync-command:${tenantA.organizationId}:${racingId}`),
+        ],
+        label: "eight pushes of one command",
+        racers: Array.from(
+          { length: 8 },
+          () => () => push({ commandId: racingId })
+        ),
+      });
+      assert.deepEqual(rejections(racerResults), []);
+      const racers = fulfilled(racerResults);
+      assert.equal(
+        executions - executionsBefore,
+        1,
+        "eight concurrent pushes of one command execute it once"
+      );
+      assert.equal(racers.filter((outcome) => outcome.replayed).length, 7);
+      assert.equal(
+        new Set(racers.map((outcome) => JSON.stringify(outcome.result))).size,
+        1
+      );
+    });
     tests.push(
-      "eight concurrent pushes of the same command execute it exactly once and all return the same result"
+      `eight concurrent pushes of the same command execute it exactly once and all return the same result (${rounds} round(s), released from a barrier with the racers seen blocked on the lock)`
     );
 
     // ------------------------------------------------------- 9. isolation
