@@ -77,6 +77,9 @@ export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
   return createORPCClient(link);
 }
 
+/** The browser contexts a test opened, closed when it ends (fixture `contexts`). */
+const openContexts: import("@playwright/test").BrowserContext[] = [];
+
 let helpersPromise: Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }> | undefined;
 
 function authHelpers() {
@@ -149,6 +152,7 @@ export async function openJourney(
         : [],
     },
   });
+  openContexts.push(context);
   const page = await context.newPage();
   // fixed at T0 and RUNNING: timers (outbox, the 4 s get-session, the lease `exp`, debounce) advance as usual
   await page.clock.install({ time: runT0() });
@@ -156,7 +160,14 @@ export async function openJourney(
   return { name, organizationId, page, user };
 }
 
-export const test = base.extend<Record<never, never>, { sql: Sql }>({
+export const test = base.extend<{ contexts: void }, { sql: Sql }>({
+  contexts: [
+    async ({}, use) => {
+      await use();
+      await Promise.all(openContexts.splice(0).map((context) => context.close()));
+    },
+    { auto: true },
+  ],
   sql: [
     async ({}, use) => {
       const { close, sql } = await authHelpers();
