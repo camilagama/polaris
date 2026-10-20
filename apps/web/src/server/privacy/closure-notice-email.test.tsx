@@ -16,6 +16,9 @@ import {
 
 const STORE = "Loja de Teste";
 
+// what invites the owner to ask for a copy
+const COPY_INVITATION = /peça|cópia agora|guardar uma cópia|solicit/i;
+
 const base: ClosureNoticeDelivery = {
   deletableFrom: new Date("2027-01-18T03:00:00.000Z"),
   deletionDate: "2027-01-18",
@@ -128,7 +131,27 @@ describe("the content of a closure notice", () => {
         "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua organização)."
       );
       expect(body).not.toContain("terminou");
-      expect(body).not.toContain("peça a cópia agora");
+    }
+  });
+
+  it("offers the copy until D in a d7 sent again or a purge rescheduled before D: the server still takes the request", () => {
+    for (const delivery of [
+      notice({
+        dueAt: new Date("2027-01-12T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      }),
+      notice({
+        dueAt: new Date("2027-01-17T14:59:59.000Z"),
+        milestone: "rescheduled",
+        purgeFrom: new Date("2027-02-01T12:00:00.000Z"),
+      }),
+    ]) {
+      const body = bodyOf(delivery);
+      expect(body).toContain(
+        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua organização)."
+      );
+      expect(body).not.toContain("terminou");
     }
   });
 
@@ -143,8 +166,8 @@ describe("the content of a closure notice", () => {
     expect(body).toContain("até 18 de janeiro de 2027, 00:00");
   });
 
-  it("never says the time for the copy is over: D, a d7 sent again and a rescheduled purge ask for it now", () => {
-    const asked = [
+  it("says the time for the copy is over, with D and its hour, in D, a d7 sent again and a rescheduled purge", () => {
+    const over = [
       notice({
         dueAt: new Date("2027-01-18T03:00:00.000Z"),
         milestone: "deletion_day",
@@ -159,11 +182,6 @@ describe("the content of a closure notice", () => {
         reissue: 1,
       }),
       notice({
-        dueAt: new Date("2027-01-12T15:00:00.000Z"),
-        milestone: "d7",
-        reissue: 1,
-      }),
-      notice({
         dueAt: new Date("2027-01-25T12:00:00.000Z"),
         milestone: "rescheduled",
         purgeFrom: new Date("2027-02-01T12:00:00.000Z"),
@@ -171,14 +189,97 @@ describe("the content of a closure notice", () => {
       // a late d7 of the job, due on D or later, does not promise a limit already gone
       notice({ dueAt: new Date("2027-01-18T05:00:00.000Z"), milestone: "d7" }),
     ];
-    for (const delivery of asked) {
+    for (const delivery of over) {
       const body = bodyOf(delivery);
       expect(body).toContain(
-        "Se ainda não baixou seus dados, entre no painel e peça a cópia agora. Depois de apagados, não podem ser recuperados."
+        "O prazo para pedir uma cópia dos dados terminou em 18 de janeiro de 2027, 00:00 (horário da sua organização). Depois de apagados, os dados não podem ser recuperados."
       );
-      expect(body).not.toContain("terminou");
       expect(body).not.toContain("peça pelo painel até");
       expect(body.split("Depois de apagados").length).toBe(2);
+    }
+  });
+
+  it("writes the original D in the time-over text, not the new date of a purge sent again or rescheduled", () => {
+    const rescheduled = bodyOf(
+      notice({
+        dueAt: new Date("2027-02-10T12:00:00.000Z"),
+        milestone: "rescheduled",
+        purgeFrom: new Date("2027-02-17T12:00:00.000Z"),
+      })
+    );
+    expect(rescheduled).toContain(
+      "podem ser apagados a partir de 17 de fevereiro de 2027"
+    );
+    expect(rescheduled).toContain("terminou em 18 de janeiro de 2027, 00:00");
+    const sentAgain = bodyOf(
+      notice({
+        dueAt: new Date("2027-01-20T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      })
+    );
+    expect(sentAgain).toContain(
+      "podem ser apagados a partir de 27 de janeiro de 2027"
+    );
+    expect(sentAgain).toContain("terminou em 18 de janeiro de 2027, 00:00");
+  });
+
+  it("writes the hour of the end of the time in the organization's time zone", () => {
+    const body = bodyOf(
+      notice({
+        deletableFrom: new Date("2027-01-18T04:00:00.000Z"),
+        dueAt: new Date("2027-01-18T12:00:00.000Z"),
+        milestone: "deletion_day",
+        timeZone: "America/Manaus",
+      })
+    );
+    expect(body).toContain("terminou em 18 de janeiro de 2027, 00:00");
+  });
+
+  it("invites no request for a copy in any notice due at D or later, and offers it in every one due before", () => {
+    const deletableFrom = base.deletableFrom.getTime();
+    const instants = [
+      0,
+      1000,
+      60_000,
+      3_600_000,
+      86_400_000,
+      7 * 86_400_000,
+      40 * 86_400_000,
+    ].map((offset) => new Date(deletableFrom + offset));
+    for (const milestone of milestones) {
+      for (const dueAt of instants) {
+        for (const reissue of [0, 1]) {
+          const body = bodyOf(
+            notice({
+              dueAt,
+              milestone,
+              purgeFrom: new Date(dueAt.getTime() + 7 * 86_400_000),
+              reissue,
+            })
+          );
+          expect(body).not.toMatch(COPY_INVITATION);
+          expect(body).toContain(
+            "O prazo para pedir uma cópia dos dados terminou em 18 de janeiro de 2027, 00:00"
+          );
+        }
+      }
+    }
+    for (const milestone of milestones) {
+      for (const reissue of [0, 1]) {
+        const body = bodyOf(
+          notice({
+            dueAt: new Date(deletableFrom - 1000),
+            milestone,
+            purgeFrom: new Date(deletableFrom + 7 * 86_400_000),
+            reissue,
+          })
+        );
+        expect(body).toContain(
+          "peça pelo painel até 18 de janeiro de 2027, 00:00"
+        );
+        expect(body).not.toContain("terminou");
+      }
     }
   });
 

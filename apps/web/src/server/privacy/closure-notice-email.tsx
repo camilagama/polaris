@@ -95,18 +95,17 @@ export function closureNoticeContent(
   );
   const deletionDay = formatCalendarDate(delivery.deletionDate);
   const firstDay = formatCalendarDate(closureNoticeDeletionDate(delivery));
-  // The copy can be asked for until the first instant of D (`exportOpenUntil`, as `request_closed_export` refuses
-  // from it): the notices before D (the request, D minus 30 and the `d7` of the job) write that limit, 00:00 of D in the
-  // organization's calendar. The others (D, a `d7` sent again, `rescheduled`, or any notice due on D or later) never say
-  // the time is over, only to ask for it now: the text says no more than the panel, which follows the server.
+  // The copy can be asked for until the first instant of D (`exportOpenUntil`, as `request_closed_data_export` refuses
+  // from it), whatever the milestone: a notice due before D (the request, D minus 30, the `d7` of the job, or one sent
+  // again or rescheduled before D) writes that limit, 00:00 of D in the organization's calendar. A notice due on D or
+  // later (D, a `d7` sent again or a rescheduled purge after D) says the time is over, on the same D and the same
+  // format, and invites no request: the server refuses it, so the text does too.
   const beforeDeletionDay =
-    (delivery.milestone === "closure" ||
-      delivery.milestone === "d30" ||
-      (delivery.milestone === "d7" && delivery.reissue === 0)) &&
     delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
+  const copyLimit = `${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua organização)`;
   const copyLine = beforeDeletionDay
-    ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua organização).`
-    : "Se ainda não baixou seus dados, entre no painel e peça a cópia agora. Depois de apagados, não podem ser recuperados.";
+    ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${copyLimit}.`
+    : `O prazo para pedir uma cópia dos dados terminou em ${copyLimit}. Depois de apagados, os dados não podem ser recuperados.`;
   const signIn =
     "Para abrir o painel, entre no Polaris com a sua conta de dono da loja.";
   switch (delivery.milestone) {
