@@ -20,6 +20,18 @@ export function rpcErrorReason(error: unknown): string | undefined {
   return typeof reason === "string" ? reason : undefined;
 }
 
+/**
+ * The server refused the call because the user has not accepted the versions in force of the Terms of
+ * Use and of the Privacy Policy (ADR 0100). It is a FORBIDDEN with its own reason, and it is NOT a refused
+ * session: nothing local is dropped, the queue waits, and the screen offers `/aceite`.
+ */
+export function isLegalAcceptanceRefusal(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "FORBIDDEN" &&
+    rpcErrorReason(error) === "legal_acceptance_required"
+  );
+}
+
 const definiteCodes = new Set([
   "BAD_REQUEST",
   "CONFLICT",
@@ -44,6 +56,9 @@ export function readErrorMessage(error: unknown, subject: string): string {
   // the session notice says the rest; here only what did not happen
   if (code === "UNAUTHORIZED") {
     return `Não foi possível carregar ${subject}.`;
+  }
+  if (isLegalAcceptanceRefusal(error)) {
+    return `Não foi possível carregar ${subject}: falta aceitar os Termos de Uso e a Política de Privacidade.`;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

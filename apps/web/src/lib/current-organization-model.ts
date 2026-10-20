@@ -1,5 +1,5 @@
 import type { OrganizationMembershipReadModel } from "@polaris/contracts";
-import { rpcErrorCode } from "./rpc-error";
+import { isLegalAcceptanceRefusal, rpcErrorCode } from "./rpc-error";
 
 export type Organization = OrganizationMembershipReadModel;
 
@@ -186,6 +186,13 @@ export function organizationLoadAfterFailure(input: {
       load: { atOpen: input.atOpen, status: "session_ended" },
     };
   }
+  // the server answered: it is not a connection failure, so the device's copy does not stand in for it
+  if (isLegalAcceptanceRefusal(input.error)) {
+    return {
+      fromCache: false,
+      load: { atOpen: input.atOpen, status: "legal_acceptance_required" },
+    };
+  }
   if (
     input.offlineEnabled &&
     canUseCachedOrganizations(input.error) &&
@@ -209,6 +216,11 @@ export type OrganizationLoad =
   | { status: "loading" }
   /** The server refused the session. `atOpen`: nothing was on screen yet, so the app goes to the sign-in screen by itself. */
   | { atOpen: boolean; status: "session_ended" }
+  /**
+   * The user has not accepted the legal documents in force (ADR 0100). `atOpen`: nothing was on screen
+   * yet, so the app goes to `/aceite` by itself; later it only says so, and nothing local is dropped.
+   */
+  | { atOpen: boolean; status: "legal_acceptance_required" }
   | { message: string; status: "error" }
   | { status: "empty" }
   | {

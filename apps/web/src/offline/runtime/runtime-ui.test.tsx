@@ -23,6 +23,7 @@ const snapshot = (
   dataVersion: 0,
   expiredWhileOpen: false,
   lastSyncAt: null,
+  legalAcceptanceRequired: false,
   leaseExpiresAt: null,
   online: true,
   phase: "ready",

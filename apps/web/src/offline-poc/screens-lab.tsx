@@ -94,6 +94,18 @@ function recordsOn(
   return server.customers.size;
 }
 
+/** The refusal the real server sends without the legal acceptance: a FORBIDDEN with its own reason. */
+function legalAcceptanceRefusal(): Error {
+  return Object.assign(new Error("Forbidden"), {
+    code: "FORBIDDEN",
+    data: {
+      pending: [{ document: "terms", version: 1 }],
+      reason: "legal_acceptance_required",
+    },
+    status: 403,
+  });
+}
+
 export function ScreensLab() {
   const screen = useMemo(labScreen, []);
   const [userId, setUserId] = useState("user-a");
@@ -101,6 +113,9 @@ export function ScreensLab() {
   const [started, setStarted] = useState(false);
   const [message, setMessage] = useState("Laboratório fechado.");
   const network = useMemo<{ online: boolean }>(() => ({ online: true }), []);
+  // the simulated server refuses the sync for lack of the legal acceptance (ADR 0100), like the real one
+  const legal = useMemo<{ missing: boolean }>(() => ({ missing: false }), []);
+  const [legalMissing, setLegalMissing] = useState(false);
   const server = useMemo(() => newServer(screen), [screen]);
 
   const runtime = useMemo(
@@ -137,7 +152,10 @@ export function ScreensLab() {
             );
             return { expiresAt: expiresAt.toISOString(), lease };
           },
-          push: () => (input) => server.push(input),
+          push: () => (input) =>
+            legal.missing
+              ? Promise.reject(legalAcceptanceRefusal())
+              : server.push(input),
           registerDevice: () => {
             const deviceId = uuid(7001);
             window.localStorage.setItem(deviceOwnerKey(deviceId), labUser());
@@ -160,7 +178,7 @@ export function ScreensLab() {
           await wipeLocalStore(namespace);
         },
       }),
-    [network, server]
+    [legal, network, server]
   );
 
   // the screen syncs by itself: read the simulated server whenever the runtime says so
@@ -215,6 +233,19 @@ export function ScreensLab() {
     }
   }, [server]);
 
+  const handleLegal = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      legal.missing = event.currentTarget.checked;
+      setLegalMissing(event.currentTarget.checked);
+      await runtime.syncNow();
+      const { legalAcceptanceRequired, reason } = runtime.getSnapshot();
+      setMessage(
+        `Aceite: ${legalAcceptanceRequired ? "pendente" : "ok"} ${reason ?? ""}`.trim()
+      );
+    },
+    [legal, runtime]
+  );
+
   const handleUser = useCallback(
     (event: ChangeEvent<HTMLInputElement>) =>
       setUserId(event.currentTarget.value),
@@ -240,6 +271,14 @@ export function ScreensLab() {
                 type="checkbox"
               />
               Rede disponível
+            </label>
+            <label>
+              <input
+                checked={legalMissing}
+                onChange={handleLegal}
+                type="checkbox"
+              />
+              Falta aceitar os termos
             </label>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>

@@ -30,7 +30,11 @@ import {
   formatCalendarDate,
   formatInstant,
 } from "../lib/format";
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  isLegalAcceptanceRefusal,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 
 /* -------------------------------------------------------------------------- */
 /* Types and constants                                                        */
@@ -1887,6 +1891,13 @@ export function isDefiniteRejection(error: unknown): boolean {
  * `data.reason` on a 400/404/409 refines the generic per-code message.
  */
 export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
+  // a definite refusal like any FORBIDDEN, so the items stay on the screen; the shell offers `/aceite`
+  if (isLegalAcceptanceRefusal(error)) {
+    return failure(
+      "forbidden",
+      "A venda não foi registrada porque falta aceitar os Termos de Uso e a Política de Privacidade. Os itens continuam aqui."
+    );
+  }
   const code = rpcErrorCode(error);
   const byCode = definiteFailure(code);
   if (byCode) {
