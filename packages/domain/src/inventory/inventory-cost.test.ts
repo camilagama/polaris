@@ -1,4 +1,5 @@
-import { assert as fcAssert, integer, property } from "fast-check";
+import { integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   calculateMovingAverageCost,
@@ -88,7 +89,7 @@ describe("inventory cost rules", () => {
   });
 
   it("preserves the weighted-average property over generated exact-decimal cases", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 5000, min: 0 }),
         integer({ max: 5000, min: 1 }),
@@ -131,13 +132,12 @@ describe("inventory cost rules", () => {
           expect(resultingCost >= lowerBound).toBe(true);
           expect(resultingCost <= upperBound).toBe(true);
         }
-      ),
-      { numRuns: 500 }
+      )
     );
   });
 
   it("is a no-op for the cost when the received cost equals the current average (property)", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 5000, min: 1 }),
         integer({ max: 5000, min: 1 }),
@@ -153,8 +153,7 @@ describe("inventory cost rules", () => {
             })
           ).toBe(cost);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 });

@@ -1,4 +1,5 @@
-import { array, assert as fcAssert, integer, property } from "fast-check";
+import { array, integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   InvalidSaleReturnError,
@@ -268,7 +269,7 @@ describe("return invariants (property tests)", () => {
   );
 
   it("never lets cumulative returns exceed what was sold, and restocked <= returned", () => {
-    fcAssert(
+    assertProperty(
       property(
         array(quantity, { maxLength: 3, minLength: 1 }),
         attempts,
@@ -330,13 +331,12 @@ describe("return invariants (property tests)", () => {
           const totalReturned = returned.reduce((sum, value) => sum + value, 0);
           expect(restockedTotal).toBeLessThanOrEqual(totalReturned);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
   it("a rejected plan has no effect: the same facts plan the same way afterwards", () => {
-    fcAssert(
+    assertProperty(
       property(quantity, integer({ max: 80, min: 1 }), (sold, tooMany) => {
         const facts = [item(0, sold)];
         const line = {
@@ -352,13 +352,12 @@ describe("return invariants (property tests)", () => {
           planSaleReturn(facts, [{ ...line, returnedQuantity: sold }])[0]
             ?.availableBefore
         ).toBe(sold);
-      }),
-      { numRuns: 200 }
+      })
     );
   });
 
   it("returning everything in any split uses each unit exactly once", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 40, min: 1 }),
         array(integer({ max: 40, min: 1 }), { maxLength: 8, minLength: 1 }),
@@ -383,8 +382,7 @@ describe("return invariants (property tests)", () => {
           }
           expect(returned).toBeLessThanOrEqual(sold);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 });

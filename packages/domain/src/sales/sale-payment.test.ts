@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assert as fcAssert, bigInt, integer, property } from "fast-check";
+import { bigInt, integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { InvalidMoneyError, MoneyLimitError } from "../money/money";
 import { InvalidSalePaymentError, normalizeSalePayment } from "./sale-payment";
 
@@ -89,20 +90,19 @@ describe("normalizeSalePayment", () => {
   });
 
   it("normalizes generated amounts without changing their cent value", async () => {
-    await fcAssert(
+    await assertProperty(
       property(bigInt({ min: 0n, max: maxMoneyMinorUnits }), (minorUnits) => {
         const payment = normalizeSalePayment(
           { method: "bank_transfer" },
           moneyFromMinorUnits(minorUnits)
         );
         expect(payment.amount).toBe(moneyFromMinorUnits(minorUnits));
-      }),
-      { numRuns: 300 }
+      })
     );
   });
 
   it("accepts installment counts throughout PostgreSQL integer range", async () => {
-    await fcAssert(
+    await assertProperty(
       property(integer({ min: 1, max: 2_147_483_647 }), (installments) => {
         expect(
           normalizeSalePayment(
@@ -114,8 +114,7 @@ describe("normalizeSalePayment", () => {
             "10.00"
           ).installments
         ).toBe(installments);
-      }),
-      { numRuns: 300 }
+      })
     );
   });
 

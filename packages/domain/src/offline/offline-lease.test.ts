@@ -1,4 +1,5 @@
-import { assert as fcAssert, integer, property } from "fast-check";
+import { integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import { OFFLINE_GRANT_MAX_LIFETIME_MS } from "./offline-grant";
 import {
@@ -148,7 +149,7 @@ describe("offline lease window", () => {
   });
 
   it("expires at min(now + 72h, entitlement end) (property)", () => {
-    fcAssert(
+    assertProperty(
       property(integer({ max: 100 * 3_600_000, min: -3_600_000 }), (offset) => {
         const entitlementEndsAt = new Date(now.getTime() + offset);
         const issued = Math.floor(now.getTime() / 1000) * 1000;
@@ -166,8 +167,7 @@ describe("offline lease window", () => {
             }).expiresAt.getTime()
           ).toBe(expected);
         }
-      }),
-      { numRuns: 300 }
+      })
     );
   });
 });
