@@ -3,6 +3,7 @@ import {
   grantsPro,
 } from "@polaris/domain/billing/entitlements";
 import {
+  CLOSURE_DELIVERY_MILESTONES,
   CLOSURE_PURGE_GRACE_HOURS,
   CLOSURE_PURGE_MIN_NOTICE_DAYS,
   CLOSURE_PURGE_OVERDUE_DAYS,
@@ -23,7 +24,8 @@ import {
  * write the same function as a conflict: the gate `purge-functions` reads `pg_get_functiondef` of the live
  * functions and fails on any difference below. It is mandatory before a pull request that recreates
  * `admin_schedule_organization_purge`, `organization_purge_blocker`, `purge_organization_data`,
- * `schedule_closed_organization_purges` or `closed_organization_purge_wait` (the automatic schedule, ADR 0102).
+ * `schedule_closed_organization_purges`, `closed_organization_purge_wait` (the automatic schedule, ADR 0102) or
+ * `count_purges_held_back` (the alert of a purge held back).
  */
 export const PURGE_FUNCTIONS = Object.freeze([
   "admin_schedule_organization_purge",
@@ -31,6 +33,7 @@ export const PURGE_FUNCTIONS = Object.freeze([
   "purge_organization_data",
   "schedule_closed_organization_purges",
   "closed_organization_purge_wait",
+  "count_purges_held_back",
 ] as const);
 
 export type PurgeFunctionName = (typeof PURGE_FUNCTIONS)[number];
@@ -43,6 +46,7 @@ const QUOTED = /'([^']*)'/g;
 const ANY_DELETE = /\bDELETE\s+FROM\b/i;
 const ANY_EXECUTE = /\bEXECUTE\b/i;
 const RENEWAL_STATES = /billing\.state\s+IN\s*\(([^)]*)\)/i;
+const NOTICE_MILESTONES = /notice\.milestone\s+IN\s*\(([^)]*)\)/i;
 const TRUNCATE_STATEMENT = /\bTRUNCATE\b/i;
 const WHITESPACE = /\s+/g;
 const NOT_LIST_PUNCTUATION = /[\s,]/g;
@@ -54,7 +58,9 @@ const CLOSURE_PERIOD_USES: Readonly<
   Record<
     Exclude<
       PurgeFunctionName,
-      "closed_organization_purge_wait" | "schedule_closed_organization_purges"
+      | "closed_organization_purge_wait"
+      | "count_purges_held_back"
+      | "schedule_closed_organization_purges"
     >,
     number
   >
@@ -401,7 +407,24 @@ const PURGE_WAIT_USAGE = [
     "the renewal not cancelled at the provider",
     /provider_ref\s+IS\s+NOT\s+NULL[\s\S]*NOT\s+billing\.cancel_at_period_end/i,
   ],
+  [
+    "the notice delivered in the current cycle",
+    /IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+public\.closure_notices\s+AS\s+notice(?=[\s\S]*notice\.organization_id\s*=\s*p_organization)(?=[\s\S]*notice\.closure_requested_at\s*=\s*p_requested_at)[\s\S]*notice\.sent_at\s+IS\s+NOT\s+NULL[\s\S]*RETURN\s+'closure_notice_not_delivered'/i,
+  ],
 ] as const;
+
+/** The notices that prove the owner was told are the domain's (`CLOSURE_DELIVERY_MILESTONES`). */
+function noticeMilestonesDifferences(name: PurgeFunctionName, sql: string) {
+  const found = NOTICE_MILESTONES.exec(sql);
+  const listed = found
+    ? [...(found[1] ?? "").matchAll(QUOTED)].map((match) => match[1] ?? "")
+    : null;
+  return listed === null || !sameSet(listed, CLOSURE_DELIVERY_MILESTONES)
+    ? [
+        `${name}: the notices that prove the delivery must be ${show(CLOSURE_DELIVERY_MILESTONES)} (found ${show(listed ?? [])})`,
+      ]
+    : [];
+}
 
 /** The states a function reads as a live renewal are the domain's (`renewalAlive`). */
 function renewalStatesDifferences(name: PurgeFunctionName, sql: string) {
@@ -418,7 +441,10 @@ function renewalStatesDifferences(name: PurgeFunctionName, sql: string) {
 
 function purgeWaitDifferences(sql: string): string[] {
   const name = "closed_organization_purge_wait";
-  const problems = renewalStatesDifferences(name, sql);
+  const problems = [
+    ...renewalStatesDifferences(name, sql),
+    ...noticeMilestonesDifferences(name, sql),
+  ];
   for (const [label, pattern] of PURGE_WAIT_USAGE) {
     if (!pattern.test(sql)) {
       problems.push(`${name}: ${label} is gone`);
@@ -428,9 +454,9 @@ function purgeWaitDifferences(sql: string): string[] {
 }
 
 /**
- * What the purge checks again when it runs (ADR 0102, amended): the legal hold, the closure period, and the two
- * reasons the schedule waits for besides, a live temporary access of the Admin and a renewal still alive, each
- * answered by the code of `closed_organization_purge_wait`.
+ * What the purge checks again when it runs (ADR 0102, amended): the legal hold, the closure period, and the three
+ * reasons the schedule waits for besides, a live temporary access of the Admin, a renewal still alive and a notice not
+ * delivered in the current cycle, each answered by the code of `closed_organization_purge_wait`.
  */
 const BLOCKER_USAGE = [
   [
@@ -445,15 +471,49 @@ const BLOCKER_USAGE = [
     "the renewal not cancelled at the provider",
     /provider_ref\s+IS\s+NOT\s+NULL[\s\S]*NOT\s+billing\.cancel_at_period_end[\s\S]*RETURN\s+'renewal_alive'/i,
   ],
+  [
+    "the notice delivered in the current cycle",
+    /IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+public\.closure_notices\s+AS\s+notice(?=[\s\S]*notice\.organization_id\s*=\s*p_organization)(?=[\s\S]*(?:notice\.closure_requested_at\s*=\s*closure\.requested_at|closure\.requested_at\s*=\s*notice\.closure_requested_at))[\s\S]*notice\.sent_at\s+IS\s+NOT\s+NULL[\s\S]*RETURN\s+'closure_notice_not_delivered'/i,
+  ],
 ] as const;
 
 function blockerDifferences(sql: string): string[] {
   const name = "organization_purge_blocker";
-  const problems = renewalStatesDifferences(name, sql);
+  const problems = [
+    ...renewalStatesDifferences(name, sql),
+    ...noticeMilestonesDifferences(name, sql),
+  ];
   for (const [label, pattern] of BLOCKER_USAGE) {
     if (!pattern.test(sql)) {
       problems.push(`${name}: ${label} is gone`);
     }
+  }
+  return problems;
+}
+
+const HELD_BACK_USAGE = [
+  [
+    "the purge_pending organizations whose time passed",
+    /status\s*=\s*'purge_pending'[\s\S]*purged_at\s+IS\s+NULL[\s\S]*purge\.not_before\s*<=\s*pg_catalog\.now\(\)/i,
+  ],
+  [
+    "the three reasons of the blocker (access, renewal, notice not delivered)",
+    /organization_purge_blocker\s*\(\s*organization\.id\s*\)\s*IN\s*\(\s*'tenant_access_active'\s*,\s*'renewal_alive'\s*,\s*'closure_notice_not_delivered'\s*\)/i,
+  ],
+] as const;
+
+/** The count of the purges held back past their time answers the same reasons the blocker does, and deletes nothing. */
+function heldBackDifferences(sql: string): string[] {
+  const name = "count_purges_held_back";
+  const problems = HELD_BACK_USAGE.filter(
+    ([, pattern]) => !pattern.test(sql)
+  ).map(([label]) => `${name}: ${label} is gone`);
+  if (
+    ANY_DELETE.test(sql) ||
+    TRUNCATE_STATEMENT.test(sql) ||
+    ANY_EXECUTE.test(sql)
+  ) {
+    problems.push(`${name}: it deletes, truncates or runs dynamic SQL`);
   }
   return problems;
 }
@@ -481,6 +541,7 @@ export function purgeFunctionDifferences(
     closed_organization_purge_wait: withoutComments(
       definitions.closed_organization_purge_wait
     ),
+    count_purges_held_back: withoutComments(definitions.count_purges_held_back),
   };
   return [
     ...scopeDifferences(sql.admin_schedule_organization_purge),
@@ -507,5 +568,6 @@ export function purgeFunctionDifferences(
     ...scheduleClosedDifferences(sql.schedule_closed_organization_purges),
     ...purgeWaitDifferences(sql.closed_organization_purge_wait),
     ...blockerDifferences(sql.organization_purge_blocker),
+    ...heldBackDifferences(sql.count_purges_held_back),
   ];
 }

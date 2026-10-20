@@ -1058,6 +1058,55 @@ async function run() {
       "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.organization_closures'::regclass"
     );
     assert.equal(forced.rows[0]?.relforcerowsecurity, true);
+    // the notices of the closure are forced too (ADR 0102, amended): the policies bind the owner of the table, and the
+    // purge owner reads only the delivered notices that let a purge run, in four columns
+    const noticesForced = await owner.pool.query<{
+      relforcerowsecurity: boolean;
+      relrowsecurity: boolean;
+    }>(
+      "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'public.closure_notices'::regclass"
+    );
+    assert.deepEqual(noticesForced.rows[0], {
+      relforcerowsecurity: true,
+      relrowsecurity: true,
+    });
+    const noticePolicies = await owner.pool.query<{
+      policyname: string;
+      qual: string | null;
+      roles: string[];
+    }>(
+      "SELECT policyname, roles::text[] AS roles, qual FROM pg_policies WHERE schemaname = 'public' AND tablename = 'closure_notices' AND 'polaris_purge_owner' = ANY (roles::text[])"
+    );
+    assert.equal(noticePolicies.rows.length, 1);
+    assert.equal(
+      noticePolicies.rows[0]?.policyname,
+      "closure_notices_purge_owner_select_delivered"
+    );
+    const noticeQual = noticePolicies.rows[0]?.qual ?? "";
+    assert.ok(noticeQual.includes("sent_at IS NOT NULL"));
+    assert.ok(
+      noticeQual.includes("'d7'") && noticeQual.includes("'rescheduled'")
+    );
+    assert.ok(
+      !(noticeQual.includes("'closure'") || noticeQual.includes("'d30'"))
+    );
+    const purgeOwnerNoticeColumns = await owner.pool.query<{
+      column_name: string;
+      privilege_type: string;
+    }>(
+      "SELECT column_name, privilege_type FROM information_schema.column_privileges WHERE table_schema = 'public' AND table_name = 'closure_notices' AND grantee = 'polaris_purge_owner' ORDER BY column_name, privilege_type"
+    );
+    assert.deepEqual(
+      purgeOwnerNoticeColumns.rows.map(
+        (row) => `${row.column_name}:${row.privilege_type}`
+      ),
+      [
+        "closure_requested_at:SELECT",
+        "milestone:SELECT",
+        "organization_id:SELECT",
+        "sent_at:SELECT",
+      ]
+    );
     const status = await owner.pool.query<{ definition: string }>(
       "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'organizations_status_check'"
     );

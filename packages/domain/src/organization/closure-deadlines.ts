@@ -50,6 +50,25 @@ export const CLOSURE_NOTICE_MILESTONES = Object.freeze([
 
 export type ClosureNoticeMilestone = (typeof CLOSURE_NOTICE_MILESTONES)[number];
 
+/**
+ * The notices that tell the owner the data will be deleted: the one of D minus 7 days, and the new one of 7 days after
+ * a legal hold released. No store is deleted before one of them was delivered (`sent_at` filled) in the current cycle
+ * (ADR 0102, amended): the schedule waits and the run refuses with `closure_notice_not_delivered`. The database
+ * writes the same list in `closed_organization_purge_wait` and `organization_purge_blocker`, and the purge gate
+ * compares them.
+ */
+export const CLOSURE_DELIVERY_MILESTONES = Object.freeze([
+  "d7",
+  "rescheduled",
+] as const satisfies readonly ClosureNoticeMilestone[]);
+
+/**
+ * A notice still owed (neither sent, failed nor skipped) this many days after its date enters the alert of a store
+ * left behind (`closure_purge_overdue`), for the support to see the owner was not told, for example while no e-mail
+ * is configured. The database writes it in hours (`interval '72 hours'`).
+ */
+export const CLOSURE_NOTICE_OVERDUE_DAYS = 3;
+
 export const CLOSURE_PHASES = Object.freeze([
   "closing",
   "closed",

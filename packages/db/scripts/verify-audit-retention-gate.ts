@@ -812,6 +812,15 @@ async function run() {
       "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [orgE.organizationId]
     );
+    // the notice of D minus 7 days of this cycle was delivered: no store is deleted before the owner was told
+    // (ADR 0102, amended). The e-mail that delivers it is a later change, so the row is written as it would leave it.
+    await owner.pool.query(
+      `INSERT INTO public.closure_notices
+         (organization_id, closure_requested_at, milestone, due_at, user_id, sent_at)
+       SELECT organization_id, requested_at, 'd7', requested_at, requested_by_user_id, now()
+         FROM public.organization_closures WHERE organization_id = $1`,
+      [orgE.organizationId]
+    );
     await maintenance.finalizeExpiredClosures(1000);
     const before = await auditIdsOf(orgE);
     assert.ok(

@@ -42,9 +42,6 @@ function client(found: ClosureNoticeDelivery | null) {
     claimClosureNoticeDelivery: vi.fn((_notice: string, _org: string) =>
       Promise.resolve(found)
     ),
-    markClosureNoticeFailed: vi.fn(
-      (_notice: string, _org: string, _code: string) => Promise.resolve(true)
-    ),
   };
 }
 
@@ -60,7 +57,7 @@ afterEach(() => {
 });
 
 describe("the consumer of a closure notice, before the e-mail exists", () => {
-  it("reads the notice by its ID and organization and fails it closed, once, as email_not_configured", async () => {
+  it("reads the notice by its ID and organization and leaves it unresolved, neither sent nor failed, while no e-mail is configured", async () => {
     const { warn } = quiet();
     const notices = client(delivery);
 
@@ -70,17 +67,13 @@ describe("the consumer of a closure notice, before the e-mail exists", () => {
       NOTICE,
       ORG
     );
-    expect(notices.markClosureNoticeFailed).toHaveBeenCalledTimes(1);
-    expect(notices.markClosureNoticeFailed).toHaveBeenCalledWith(
-      NOTICE,
-      ORG,
-      "email_not_configured"
-    );
+    // the client the handler gets can only read: it has no way to mark the notice sent or failed
+    expect(Object.keys(notices)).toEqual(["claimClosureNoticeDelivery"]);
     expect(warn).toHaveBeenCalledWith(
       "closure_notice_not_sent",
       expect.objectContaining({
         milestone: "d7",
-        outcome: "rejected",
+        outcome: "skipped",
         reason: "email_not_configured",
       })
     );
@@ -96,7 +89,6 @@ describe("the consumer of a closure notice, before the e-mail exists", () => {
 
     await handleClosureNotice(notices, envelope());
 
-    expect(notices.markClosureNoticeFailed).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       "closure_notice_not_due",
       expect.objectContaining({ outcome: "skipped" })

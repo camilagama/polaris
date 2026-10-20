@@ -115,6 +115,7 @@ async function sweep(
  * the period, a temporary access of the Admin or a renewal alive that began after the schedule (ADR 0102, amended).
  */
 const NAMED_REFUSALS = new Set([
+  "closure_notice_not_delivered",
   "closure_period_not_elapsed",
   "legal_hold_active",
   "renewal_alive",

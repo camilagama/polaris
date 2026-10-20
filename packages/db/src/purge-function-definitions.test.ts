@@ -59,6 +59,11 @@ BEGIN
                 AND billing.state IN ('trialing', 'active', 'grace') AND NOT billing.cancel_at_period_end) THEN
     RETURN 'renewal_alive';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.closure_notices AS notice
+                   JOIN public.organization_closures AS closure ON closure.requested_at = notice.closure_requested_at
+                  WHERE notice.organization_id = p_organization AND notice.milestone IN ('d7', 'rescheduled') AND notice.sent_at IS NOT NULL) THEN
+    RETURN 'closure_notice_not_delivered';
+  END IF;
 END;
 $function$`,
     purge_organization_data: `CREATE OR REPLACE FUNCTION public.purge_organization_data(p_organization text)
@@ -98,6 +103,14 @@ BEGIN
   SELECT 1 WHERE purge.scheduled_at > pg_catalog.now() - interval '24 hours';
   SELECT 1 WHERE deadline.deletable_from + interval '720 hours' <= pg_catalog.now();
 END;`,
+    count_purges_held_back: `CREATE OR REPLACE FUNCTION public.count_purges_held_back()
+ AS $function$
+  SELECT pg_catalog.count(*)::integer FROM public.organization_purges AS purge
+    JOIN public.organizations AS organization ON organization.id = purge.organization_id
+   WHERE organization.status = 'purge_pending' AND purge.purged_at IS NULL AND purge.not_before <= pg_catalog.now()
+     AND public.organization_purge_blocker(organization.id)
+         IN ('tenant_access_active', 'renewal_alive', 'closure_notice_not_delivered')
+$function$`,
     closed_organization_purge_wait: `CREATE OR REPLACE FUNCTION public.closed_organization_purge_wait(p_organization text, p_requested_at timestamptz)
 BEGIN
   IF EXISTS (SELECT 1 FROM public.organization_legal_holds AS hold WHERE hold.organization_id = p_organization AND hold.released_at IS NULL) THEN
@@ -115,6 +128,11 @@ BEGIN
               WHERE billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
                 AND billing.state IN ('trialing', 'active', 'grace') AND NOT billing.cancel_at_period_end) THEN
     RETURN 'renewal_alive';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.closure_notices AS notice
+                  WHERE notice.organization_id = p_organization AND notice.closure_requested_at = p_requested_at
+                    AND notice.milestone IN ('d7', 'rescheduled') AND notice.sent_at IS NOT NULL) THEN
+    RETURN 'closure_notice_not_delivered';
   END IF;
 END;`,
   };
@@ -163,6 +181,93 @@ describe("purgeFunctionDifferences", () => {
         sql.replace("RETURN 'legal_hold_active';", "RETURN NULL;")
       )
     ).toEqual(["organization_purge_blocker: the legal hold in force is gone"]);
+  });
+
+  it("fails when the schedule or the purge no longer waits for the notice delivered in this cycle", () => {
+    for (const name of [
+      "organization_purge_blocker",
+      "closed_organization_purge_wait",
+    ] as const) {
+      expect(
+        mutated(name, (sql) =>
+          sql.replace("RETURN 'closure_notice_not_delivered';", "RETURN NULL;")
+        )
+      ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
+      expect(
+        mutated(name, (sql) =>
+          sql.replace("AND notice.sent_at IS NOT NULL", "")
+        )
+      ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
+      expect(
+        mutated(name, (sql) =>
+          sql.replace("'d7', 'rescheduled'", "'d7', 'rescheduled', 'closure'")
+        )
+      ).toEqual([
+        `${name}: the notices that prove the delivery must be [d7, rescheduled] (found [d7, rescheduled, closure])`,
+      ]);
+      expect(
+        mutated(name, (sql) => sql.replace("'d7', 'rescheduled'", "'d7'"))
+      ).toEqual([
+        `${name}: the notices that prove the delivery must be [d7, rescheduled] (found [d7])`,
+      ]);
+    }
+    expect(
+      mutated("closed_organization_purge_wait", (sql) =>
+        sql.replace("notice.closure_requested_at = p_requested_at", "true")
+      )
+    ).toEqual([
+      "closed_organization_purge_wait: the notice delivered in the current cycle is gone",
+    ]);
+    expect(
+      mutated("organization_purge_blocker", (sql) =>
+        sql.replace(
+          "ON closure.requested_at = notice.closure_requested_at",
+          "ON true"
+        )
+      )
+    ).toEqual([
+      "organization_purge_blocker: the notice delivered in the current cycle is gone",
+    ]);
+  });
+
+  it("fails when the count of the purges held back no longer asks the reasons of the blocker", () => {
+    expect(
+      mutated("count_purges_held_back", (sql) =>
+        sql.replace("'closure_notice_not_delivered'", "'purge_cancelled'")
+      )
+    ).toEqual([
+      "count_purges_held_back: the three reasons of the blocker (access, renewal, notice not delivered) is gone",
+    ]);
+    expect(
+      mutated("count_purges_held_back", (sql) =>
+        sql.replace("AND purge.not_before <= pg_catalog.now()", "")
+      )
+    ).toEqual([
+      "count_purges_held_back: the purge_pending organizations whose time passed is gone",
+    ]);
+    expect(
+      mutated("count_purges_held_back", (sql) =>
+        sql.replace(
+          "SELECT pg_catalog.count(*)",
+          "DELETE FROM public.sales; SELECT pg_catalog.count(*)"
+        )
+      )
+    ).toEqual([
+      "count_purges_held_back: it deletes, truncates or runs dynamic SQL",
+    ]);
+  });
+
+  it("fails when the notice is no longer the one of this organization", () => {
+    for (const name of [
+      "organization_purge_blocker",
+      "closed_organization_purge_wait",
+    ] as const) {
+      expect(
+        mutated(name, (sql) =>
+          sql.replace("notice.organization_id = p_organization AND ", "")
+        )
+      ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
+    }
   });
 
   it("fails when the automatic schedule runs sooner than D plus 48 hours or the notice of 7 days", () => {

@@ -246,10 +246,17 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           scheduledPurgesLastDay: report.scheduledPurgesLastDay,
         });
       }
-      if (report.overduePurges > 0) {
-        // closed stores still waiting a month after D with no legal hold: a person decides each one (ADR 0102)
+      if (
+        report.overduePurges > 0 ||
+        report.purgesHeldBack > 0 ||
+        report.closureNoticesOverdue > 0
+      ) {
+        // stores left behind (a month after D with no legal hold, or a purge held back past its time) and notices
+        // still owed days after their date: a person decides each one (ADR 0102)
         logger.warn("closure_purge_overdue", {
+          closureNoticesOverdue: report.closureNoticesOverdue,
           overduePurges: report.overduePurges,
+          purgesHeldBack: report.purgesHeldBack,
         });
       }
     } catch (error: unknown) {

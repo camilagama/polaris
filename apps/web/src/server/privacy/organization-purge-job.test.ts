@@ -430,8 +430,12 @@ describe("runOrganizationPurges", () => {
     expect(error).not.toHaveBeenCalled();
   });
 
-  it("logs a purge held when it runs by a temporary access or a live renewal as a refusal, with its code", async () => {
-    for (const code of ["tenant_access_active", "renewal_alive"]) {
+  it("logs a purge held when it runs by a temporary access, a live renewal or a notice not delivered as a refusal, with its code", async () => {
+    for (const code of [
+      "tenant_access_active",
+      "renewal_alive",
+      "closure_notice_not_delivered",
+    ]) {
       const { error, warn } = quiet();
       const ctx = fixture({
         onPurge: () => Promise.reject(new Error(code)),

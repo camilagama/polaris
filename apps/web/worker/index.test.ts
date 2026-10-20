@@ -351,8 +351,10 @@ describe("the scheduled maintenance", () => {
     it("warns when more than 5 stores entered the purge on their own in a day", async () => {
       const report = (scheduledPurgesLastDay: number) => ({
         closedOrganizations: 0,
+        closureNoticesOverdue: 0,
         overduePurges: 0,
         purgeSchedulingEnabled: true,
+        purgesHeldBack: 0,
         scheduledPurges: 1,
         scheduledPurgesLastDay,
       });
@@ -372,10 +374,12 @@ describe("the scheduled maintenance", () => {
     });
 
     it("warns when a closed store is still waiting 30 days after D with no legal hold", async () => {
-      const report = (overduePurges: number) => ({
+      const report = (overduePurges: number, closureNoticesOverdue = 0) => ({
         closedOrganizations: 0,
+        closureNoticesOverdue,
         overduePurges,
         purgeSchedulingEnabled: true,
+        purgesHeldBack: 0,
         scheduledPurges: 0,
         scheduledPurgesLastDay: 0,
       });
@@ -390,6 +394,45 @@ describe("the scheduled maintenance", () => {
         expect.objectContaining({
           event: "closure_purge_overdue",
           overduePurges: 2,
+        })
+      );
+    });
+
+    it("warns when a notice of the closure is still owed days after its date, with no store left behind", async () => {
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce({
+        closedOrganizations: 0,
+        closureNoticesOverdue: 3,
+        overduePurges: 0,
+        purgeSchedulingEnabled: false,
+        purgesHeldBack: 0,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+      });
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          closureNoticesOverdue: 3,
+          event: "closure_purge_overdue",
+          overduePurges: 0,
+        })
+      );
+    });
+
+    it("warns when a scheduled purge is held back past its time, with the automatic switch off", async () => {
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce({
+        closedOrganizations: 0,
+        closureNoticesOverdue: 0,
+        overduePurges: 0,
+        purgeSchedulingEnabled: false,
+        purgesHeldBack: 2,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+      });
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "closure_purge_overdue",
+          purgesHeldBack: 2,
         })
       );
     });

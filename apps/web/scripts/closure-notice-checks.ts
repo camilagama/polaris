@@ -19,7 +19,7 @@ import {
   type AutomaticPurgeContext,
   asRole,
   awayFromMidnight,
-  closedOrganization,
+  closedOrganization as closedWithDeliveredNotice,
   dbNow,
   localDayStart,
   type Pool,
@@ -39,6 +39,18 @@ import {
  */
 
 const DAY_MS = 86_400_000;
+
+/** These checks are about the notices themselves: a store starts with none, and a delivered one is a check's own work. */
+const closedOrganization = (
+  owner: Pool,
+  label: string,
+  requestedAt: Date,
+  options: { recoverUntil?: Date; zone?: string } = {}
+) =>
+  closedWithDeliveredNotice(owner, label, requestedAt, {
+    ...options,
+    notice: false,
+  });
 
 interface NoticeRow {
   closure_requested_at: Date;
@@ -383,17 +395,19 @@ async function noticeScenario(
 
   // a purge the closure period scheduled late, then held and released: the release pushes it, and the owner gets a new
   // notice of 7 days naming the new date; a release that does not push it gives none
-  const pushed = await closedOrganization(
+  const pushed = await closedWithDeliveredNotice(
     owner,
     "notice rescheduled",
     await localDayStart(owner, ZONE, -93)
   );
   await maintenance.scheduleClosedOrganizationPurges(1000);
   await record();
+  // the notice of D minus 7 days of this store was delivered in its time (the schedule waited for it), so only the
+  // milestones after it are written now
   assert.deepEqual(await milestonesOf(owner, pushed.organizationId), [
     "closure (skipped)",
     "d30 (skipped)",
-    "d7 (skipped)",
+    "d7",
     "deletion_day",
   ]);
   const holdCase = await supportCaseOf(context, pushed.organizationId);
@@ -538,9 +552,27 @@ async function noticeScenario(
   const settled = (await noticesOf(owner, seven.organizationId)).find(
     (notice) => notice.id === sevenSent.id
   );
-  assert.equal(settled?.failure_code, "email_not_configured");
-  assert.ok(settled?.failed_at);
+  // with no e-mail configured the notice is left unresolved (decision of 20/10/2026): neither sent nor failed, so the
+  // change that sends the e-mail still finds it, and the deletion keeps waiting for it
+  assert.equal(settled?.failure_code, null);
+  assert.equal(settled?.failed_at, null);
   assert.equal(settled?.sent_at, null);
+  assert.ok(
+    await maintenance.claimClosureNoticeDelivery(
+      sevenSent.id,
+      seven.organizationId
+    ),
+    "an unresolved notice is still to go out"
+  );
+  assert.equal(
+    await maintenance.markClosureNoticeFailed(
+      sevenSent.id,
+      seven.organizationId,
+      "address_refused"
+    ),
+    true,
+    "a real failure (a refused address) is settled once"
+  );
   assert.equal(
     await maintenance.claimClosureNoticeDelivery(
       sevenSent.id,
@@ -584,11 +616,11 @@ async function noticeScenario(
     "a failure is a short code, never a message"
   );
   tests.push(
-    "the consumer reads a notice by its ID and organization (milestone, owner's ID, the domain's dates, never an address), not one that is skipped, settled or of another organization; before the e-mail exists it fails it closed once as email_not_configured, and a notice sent or failed is settled for good"
+    "the consumer reads a notice by its ID and organization (milestone, owner's ID, the domain's dates, never an address), not one that is skipped, settled or of another organization; before the e-mail exists the consumer leaves it unresolved, neither sent nor failed, and a notice sent or failed is settled for good"
   );
 
   // the notices survive the purge (the real one, by the job), and nothing more is written for a purged store
-  const purged = await closedOrganization(
+  const purged = await closedWithDeliveredNotice(
     owner,
     "notice purged",
     await localDayStart(owner, ZONE, -95)
@@ -647,6 +679,87 @@ async function noticeScenario(
   ]);
   tests.push(
     "the privacy job writes the notices with CLOSURE_AUTO_PURGE_ENABLED off too (the dates are the owner's, the switch is the purge's)"
+  );
+
+  // a notice delivered lets a store be deleted (ADR 0102, amended): `mark_closure_notice_sent` takes only a notice of
+  // the cycle in course, and the purge owner reads four columns of the delivered d7 and rescheduled ones, nothing more
+  const cycle = await closedOrganization(
+    owner,
+    "notice cycle",
+    await localDayStart(owner, ZONE, -50)
+  );
+  const stale = await owner.query<{ id: string }>(
+    `INSERT INTO public.closure_notices
+       (organization_id, closure_requested_at, milestone, due_at, user_id)
+     SELECT organization_id, requested_at - interval '1 day', 'd7', requested_at - interval '1 day', requested_by_user_id
+       FROM public.organization_closures WHERE organization_id = $1
+     RETURNING id`,
+    [cycle.organizationId]
+  );
+  const staleId = stale.rows[0]?.id;
+  assert.ok(staleId);
+  assert.equal(
+    await maintenance.markClosureNoticeSent(staleId, cycle.organizationId),
+    false,
+    "a notice of another cycle is never marked sent"
+  );
+  const current = await owner.query<{ id: string }>(
+    `INSERT INTO public.closure_notices
+       (organization_id, closure_requested_at, milestone, due_at, user_id)
+     SELECT organization_id, requested_at, 'd7', requested_at, requested_by_user_id
+       FROM public.organization_closures WHERE organization_id = $1
+     RETURNING id`,
+    [cycle.organizationId]
+  );
+  const currentId = current.rows[0]?.id;
+  assert.ok(currentId);
+  assert.equal(
+    await maintenance.markClosureNoticeSent(currentId, cycle.organizationId),
+    true
+  );
+  for (const statement of [
+    "SELECT user_id FROM public.closure_notices",
+    "SELECT failure_code FROM public.closure_notices",
+    "SELECT * FROM public.closure_notices",
+    "UPDATE public.closure_notices SET sent_at = now()",
+    "DELETE FROM public.closure_notices",
+  ]) {
+    await expectSqlState(
+      () => asRole(owner, "polaris_purge_owner", statement),
+      "42501",
+      `the purge owner: ${statement}`
+    );
+  }
+  const visible = await asRole(
+    owner,
+    "polaris_purge_owner",
+    "SELECT milestone, sent_at IS NOT NULL AS sent FROM public.closure_notices"
+  );
+  assert.ok(visible.rows.length > 0);
+  for (const row of visible.rows) {
+    assert.ok(["d7", "rescheduled"].includes(row.milestone));
+    assert.equal(row.sent, true);
+  }
+  // the account of a user takes the rows of the user's notices along, with the table forced
+  const leaving = randomUUID();
+  await owner.query(
+    'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
+    [leaving, "Conta que sai", `gate-${leaving}@example.invalid`]
+  );
+  await owner.query(
+    `INSERT INTO public.closure_notices (organization_id, closure_requested_at, milestone, due_at, user_id)
+     SELECT organization_id, requested_at, 'closure', requested_at, $2
+       FROM public.organization_closures WHERE organization_id = $1`,
+    [cycle.organizationId, leaving]
+  );
+  await owner.query('DELETE FROM public."user" WHERE id = $1', [leaving]);
+  const left = await owner.query(
+    "SELECT 1 FROM public.closure_notices WHERE user_id = $1",
+    [leaving]
+  );
+  assert.equal(left.rows.length, 0);
+  tests.push(
+    "mark_closure_notice_sent takes only a notice of the cycle in course; the purge owner reads only milestone, cycle, organization and sent_at of the delivered d7 and rescheduled notices (not the user, not a failure code, no write), and deleting a user's account takes the user's notices with it under FORCE ROW LEVEL SECURITY"
   );
 
   // only the privacy runtime reaches them, and only through its functions

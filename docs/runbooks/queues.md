@@ -11,7 +11,7 @@ Em `apps/web/wrangler.jsonc` (Worker `polaris-web`):
 | Fila | Binding de envio | Consumidor | Para quê |
 | --- | --- | --- | --- |
 | `polaris-critical` | `QUEUE_CRITICAL` | 1 mensagem por vez, 1 invocação por vez, 5 tentativas, recuo 30 s | o que afeta dinheiro ou acesso; `billing.renewal_cancel_requested` (encerrar cancela a renovação, ADR 0074) |
-| `polaris-default` | `QUEUE_DEFAULT` | 1 mensagem por vez, 1 invocação por vez, 3 tentativas, recuo 30 s | o trabalho comum; `data_export.requested`; `organization.closure_notice` (aviso de um marco do encerramento, ADR 0102; até o PR do e-mail, o consumidor o marca como falho com `email_not_configured`) |
+| `polaris-default` | `QUEUE_DEFAULT` | 1 mensagem por vez, 1 invocação por vez, 3 tentativas, recuo 30 s | o trabalho comum; `data_export.requested`; `organization.closure_notice` (aviso de um marco do encerramento, ADR 0102; até o PR do e-mail, o consumidor deixa o aviso não resolvido, sem marcá-lo como falho: o PR do e-mail envia os pendentes pela tabela) |
 | `polaris-media` | `QUEUE_MEDIA` | 1 mensagem por vez, 1 invocação por vez, 3 tentativas, recuo 60 s | o que é pesado e pode esperar (nenhum evento usa ainda) |
 | `polaris-dlq` | `QUEUE_DLQ` | 1 mensagem por vez, 1 invocação por vez, 10 tentativas, recuo 60 s | a DLQ: recebe o que esgota as tentativas das três filas e o aviso do que o consumidor recusa; o consumidor dela grava o incidente operacional |
 

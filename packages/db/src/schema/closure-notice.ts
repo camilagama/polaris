@@ -26,7 +26,10 @@ const ownerRole = "polaris_privacy_owner";
  *
  * The row holds IDs and dates, never the e-mail: the address is read when the notice is sent. It survives the
  * purge of the organization (class `closure_notice`), so the owner can still read when the data was deleted, and
- * leaves with the account of its user (foreign key in cascade). No runtime role reads or writes it directly.
+ * leaves with the account of its user (foreign key in cascade). No runtime role reads or writes it directly, and the
+ * table is under FORCE ROW LEVEL SECURITY (the migration says so: the schema builder has no form for it). The purge
+ * owner reads four columns of the delivered `d7` and `rescheduled` notices, by a policy the migration writes: no store
+ * is deleted before the owner was told (ADR 0102, amended).
  */
 export const closureNotices = pgTable(
   "closure_notices",

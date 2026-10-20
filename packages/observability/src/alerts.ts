@@ -258,7 +258,8 @@ export const alertSignals = [
       events: ["closure_purge_overdue"],
     },
     threshold: { atLeast: 1, kind: "count" },
-    title: "Loja encerrada sem apagamento 30 dias depois de D, sem trava legal",
+    title:
+      "Loja encerrada parada: sem apagamento 30 dias depois de D, purge preso ou aviso sem entregar",
     windowMinutes: 1440,
   },
 ] as const satisfies readonly AlertSignal[];

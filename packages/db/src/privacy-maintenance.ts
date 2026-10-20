@@ -71,6 +71,8 @@ export interface ScheduledClosurePurges {
 export interface RecordedClosureNotices {
   /** Organizations with a milestone due and not yet recorded that this call looked at (at most the limit). */
   organizations: number;
+  /** Notices still owed (neither sent, failed nor skipped) 3 days after their date, for a store still in closure. */
+  overdue: number;
   /** Notices written to go out, each with its outbox event. */
   recorded: number;
   /** Earlier milestones written together with a later one, which go out in its place. */
@@ -154,6 +156,11 @@ export interface PrivacyMaintenanceClient {
   ) => Promise<boolean>;
   /** Marks the recovery windows that ended as closed, at most `limit` organizations; returns how many. */
   finalizeExpiredClosures: (limit: number) => Promise<number>;
+  /**
+   * How many scheduled purges are held back past their time by a live temporary access of the Admin, a renewal still
+   * alive or a notice not delivered (the legal hold is not counted), whatever the switch of the automatic purge.
+   */
+  countPurgesHeldBack: () => Promise<number>;
   /**
    * Schedules the purge of at most `limit` closed organizations whose D minus 7 local days arrived (ADR 0102),
    * skipping one under a legal hold, a live temporary access of the Admin, a cancellation of the Admin in this
@@ -343,6 +350,12 @@ export function createPrivacyMaintenanceClient(
       );
       return Number(result.rows[0]?.finalized ?? 0);
     },
+    async countPurgesHeldBack() {
+      const result = await pool.query<{ held_back: number }>(
+        "SELECT public.count_purges_held_back() AS held_back"
+      );
+      return Number(result.rows[0]?.held_back ?? 0);
+    },
     async scheduleClosedOrganizationPurges(limit) {
       const result = await pool.query<{
         scheduled: {
@@ -454,13 +467,19 @@ export function createPrivacyMaintenanceClient(
     },
     async recordClosureNotices(limit) {
       const result = await pool.query<{
-        recorded: { organizations: number; recorded: number; skipped: number };
+        recorded: {
+          organizations: number;
+          overdue: number;
+          recorded: number;
+          skipped: number;
+        };
       }>("SELECT public.record_closure_notices($1::integer) AS recorded", [
         limit,
       ]);
       const recorded = result.rows[0]?.recorded;
       return {
         organizations: Number(recorded?.organizations ?? 0),
+        overdue: Number(recorded?.overdue ?? 0),
         recorded: Number(recorded?.recorded ?? 0),
         skipped: Number(recorded?.skipped ?? 0),
       };

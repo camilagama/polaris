@@ -12,16 +12,18 @@ const NOTICE_ID =
 
 type NoticeClient = Pick<
   PrivacyMaintenanceClient,
-  "claimClosureNoticeDelivery" | "markClosureNoticeFailed"
+  "claimClosureNoticeDelivery"
 >;
 
 /**
  * The handler of `organization.closure_notice` (ADR 0102, amended). The event names a notice: the handler reads it by
  * ID and organization through the privacy role's own function (never by the envelope alone), so a duplicate, a
  * notice already settled, one of a closure the owner undid or one of an organization no longer in closure finds
- * nothing to do. No e-mail goes out yet: the notice fails closed, once and with no retry, as `email_not_configured`
- * (the design's rule for an environment without the e-mail settings), and the panel still shows the dates. Nothing
- * of the owner (address, name) is read or logged here.
+ * nothing to do. No e-mail goes out yet: with no e-mail configured the notice is left unresolved, neither sent nor
+ * failed (decision of 20/10/2026), so the change that sends the e-mail can still send the ones owed, and a notice
+ * unresolved for more than `CLOSURE_NOTICE_OVERDUE_DAYS` days enters the alert of a store left behind. The deletion
+ * waits for a delivered notice, so nothing is deleted meanwhile. The panel still shows the dates. Nothing of the
+ * owner (address, name) is read or logged here.
  */
 export async function handleClosureNotice(
   client: NoticeClient,
@@ -48,16 +50,11 @@ export async function handleClosureNotice(
     });
     return;
   }
-  await client.markClosureNoticeFailed(
-    noticeId,
-    envelope.organizationId,
-    CLOSURE_NOTICE_EMAIL_NOT_CONFIGURED
-  );
   logger.warn("closure_notice_not_sent", {
     milestone: delivery.milestone,
     noticeId: opaqueId(noticeId),
     organizationId: opaqueId(envelope.organizationId),
-    outcome: "rejected",
+    outcome: "skipped",
     reason: CLOSURE_NOTICE_EMAIL_NOT_CONFIGURED,
   });
 }
