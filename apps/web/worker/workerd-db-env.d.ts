@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/vitest-plugin/types" />
 // Types for the Workers harness with a database (`*.workerd-db.test.ts`): what `cloudflare:workers` exposes in a test.
 // biome-ignore lint/style/noNamespace: the Workers types are extended by merging into the global Cloudflare namespace
 declare namespace Cloudflare {

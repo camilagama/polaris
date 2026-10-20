@@ -120,12 +120,7 @@ function recording() {
 }
 
 async function runScheduled(cron: string, bindings: WorkerBindings) {
-  const context = createExecutionContext();
-  await worker.scheduled?.(
-    createScheduledController({ cron }),
-    bindings,
-    context
-  );
+  await worker.scheduled?.(createScheduledController({ cron }), bindings);
 }
 
 /** Delivers one batch to the Worker's own `queue` handler and returns what it acknowledged and retried. */
@@ -144,7 +139,7 @@ async function deliver(
     }))
   );
   const context = createExecutionContext();
-  await worker.queue?.(batch, bindings, context);
+  await worker.queue?.(batch, bindings);
   return getQueueResult(batch, context);
 }
 
@@ -155,6 +150,7 @@ afterEach(() => {
 describe("the fetch of the web worker", () => {
   it("answers /health and /ready with the security headers", async () => {
     for (const path of ["/health", "/ready"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: two paths, one request at a time, for a clear failure
       const response = await exports.default.fetch(`https://web.test${path}`);
       expect(response.status).toBe(200);
       expect(response.headers.get("x-content-type-options")).toBe("nosniff");
@@ -266,6 +262,7 @@ describe("the other bindings of the web worker", () => {
       env.QUEUE_DLQ,
     ]) {
       // delayed an hour: accepted by the real producer, and nothing is delivered while the test runs
+      // biome-ignore lint/performance/noAwaitInLoops: four producers, one at a time, for a clear failure
       await queue.send({ harness: "probe" }, { delaySeconds: 3600 });
     }
   });
@@ -377,9 +374,9 @@ describe("the queue handler of the web worker", () => {
     );
     expect(down.explicitAcks).toEqual([]);
     // the delay is the consumer's own (consumer.test.ts); the harness reports which message was asked back
-    expect(down.retryMessages.map((retry) => retry.msgId)).toEqual([
-      "msg-retry",
-    ]);
+    expect(
+      down.retryMessages.map((retried: { msgId: string }) => retried.msgId)
+    ).toEqual(["msg-retry"]);
     const back = await deliver(
       "polaris-default-local",
       [{ attempts: 2, body: closureNoticeRetry, id: "msg-retry" }],

@@ -174,7 +174,7 @@ async function run() {
     };
     const closureNotice = (
       organization: TenantFixture,
-      noticeId = randomUUID()
+      noticeId: string = randomUUID()
     ) =>
       outboxEvent(
         organization,

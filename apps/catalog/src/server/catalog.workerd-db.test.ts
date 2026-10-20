@@ -94,7 +94,7 @@ describe("the reads of the catalog worker", () => {
     const profile = await read((catalog) => catalog.profile(shown.slug));
     expect(profile).toMatchObject({ name: "Loja on", slug: shown.slug });
     const page = await read((catalog) => catalog.products(shown.slug));
-    expect(page?.products.map((product) => product.id)).toEqual([
+    expect(page?.products.map((summary) => summary.id)).toEqual([
       shown.productId,
     ]);
     const product = await read((catalog) =>
@@ -115,6 +115,7 @@ describe("the reads of the catalog worker", () => {
 
   it("answers the same nothing for a store that was never switched on and one that does not exist", async () => {
     for (const slug of [hidden.slug, "loja-que-nunca-existiu"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: two addresses, one read at a time, for a clear failure
       expect(await read((catalog) => catalog.profile(slug))).toBeNull();
       expect(await read((catalog) => catalog.products(slug))).toBeNull();
       expect(
