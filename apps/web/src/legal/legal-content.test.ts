@@ -1,4 +1,3 @@
-import { LEGAL_DOCUMENT_IDS } from "@polaris/domain/legal/legal-documents";
 import { CLOSURE_RECOVERY_WINDOW_DAYS } from "@polaris/domain/organization/closure";
 import {
   EXPORT_VALIDITY_HOURS,
@@ -8,6 +7,7 @@ import {
   RETENTION_POLICIES,
   type RetentionClass,
 } from "@polaris/domain/privacy/retention";
+import { LEGAL_DOCUMENT_IDS } from "@polaris/domain/legal/legal-documents";
 import { describe, expect, it } from "vitest";
 import { currentLegalText } from "./legal-content";
 import { type Block, type Inline, parseMarkdown } from "./markdown";

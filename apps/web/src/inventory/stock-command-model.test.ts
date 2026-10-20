@@ -5,8 +5,8 @@ import {
   cancelDiscardStock,
   discardLockedStock,
   editStockField,
-  firstInvalidStockField,
   isStockDraftChanged,
+  firstInvalidStockField,
   isStockLocked,
   mapStockError,
   parseUnitCost,
@@ -139,7 +139,7 @@ describe("receive validation", () => {
     for (const quantity of ["0", "1,5", "-2", "abc"]) {
       expect(
         issuesOf(filled("receive", { ...receiveFields, quantity }))[0]
-      ).toMatchObject({ empty: false, field: "quantity" });
+      ).toMatchObject({ field: "quantity", empty: false });
     }
     expect(
       issuesOf(
@@ -276,7 +276,7 @@ describe("write-off validation", () => {
     });
     expect(
       issuesOf(filled("write_off", { quantity: "6", reasonCode: "lost" }))[0]
-    ).toMatchObject({ empty: false, field: "quantity" });
+    ).toMatchObject({ field: "quantity", empty: false });
     expect(issuesOf(filled("write_off", { quantity: "1" }))[0]).toMatchObject({
       empty: true,
       field: "reasonCode",

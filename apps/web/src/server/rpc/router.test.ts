@@ -1,10 +1,10 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import { CategoryNameConflictError } from "@polaris/domain/catalog/category";
 import { describe, expect, it, vi } from "vitest";
+import { CategoryNameConflictError } from "@polaris/domain/catalog/category";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
+import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { TenantRequestContextError } from "../request-context-error";
 import { CreateInitialOrganizationError } from "../use-cases/create-initial-organization";
 import { createRpcRouter } from "./router";
@@ -24,8 +24,8 @@ function createRpcClient(router = createRpcRouter()) {
   const app = createServerApp({ rpcRouter: router });
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
-    headers: { origin: "https://polaris.example.invalid" },
     method: "POST",
+    headers: { origin: "https://polaris.example.invalid" },
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 

@@ -102,7 +102,7 @@ export function EntryLinkButton({
   href: string;
 }) {
   return (
-    <a className="sign-in-primary sign-in-link-button" href={href}>
+    <a className="sign-in-primary" href={href}>
       {children}
     </a>
   );

@@ -12,9 +12,9 @@ import type {
 } from "@polaris/db/organization-closure-repository";
 import type { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import type { RenewalCancellationStatus } from "@polaris/domain/billing/renewal-cancellation";
-import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
 import type { RenewalStatusReader } from "../billing/renewal-status";
 import type { WorkerBindings } from "../environment";
+import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
 interface OrganizationRpcContext {
@@ -56,8 +56,8 @@ function closedOrganizationReadModel(
     id: organization.id,
     milestones: {
       closure: organization.milestones.closure.toISOString(),
-      d7: organization.milestones.d7.toISOString(),
       d30: organization.milestones.d30.toISOString(),
+      d7: organization.milestones.d7.toISOString(),
       deletionDay: organization.milestones.deletionDay.toISOString(),
     },
     name: organization.name,

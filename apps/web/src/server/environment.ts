@@ -79,11 +79,10 @@ export interface WorkerBindings {
   /** The limiter of the Google sign-in start and callback (20 per 60 s per IP); it has no Turnstile. */
   AUTH_SOCIAL_RATE_LIMITER?: RateLimitBinding;
   BETTER_AUTH_BASE_URL?: string;
-  BETTER_AUTH_SECRET?: string;
-  /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
-  BILLING_HYPERDRIVE?: HyperdriveBinding;
   /** The secret (32 characters or more) the Pix payer's lock and customer keys derive from (ADR 0101, emenda do PR 6); generated once, never rotated by routine. Without it the Pix checkout answers 503. */
   BILLING_PAYER_KEY?: string;
+  /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
+  BILLING_HYPERDRIVE?: HyperdriveBinding;
   /** The origin the public catalog is served from (used only to show the organization its link). */
   CATALOG_ORIGIN?: string;
   /**
@@ -91,17 +90,18 @@ export interface WorkerBindings {
    * leaves it off. Off in every environment until the go-live.
    */
   CLOSURE_AUTO_PURGE_ENABLED?: string;
+  BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;
-  GOOGLE_CLIENT_SECRET?: string;
-  HYPERDRIVE: HyperdriveBinding;
-  IMAGES?: MediaImagesBinding;
   /**
    * `true` turns on the server control of the legal acceptance (ADR 0100): without the acceptance of the
    * versions in force, every authenticated request outside the exempt list is refused. Anything else
    * (and absent) leaves it off; the sign-up and `/aceite` record the acceptance either way.
    */
   LEGAL_ACCEPTANCE_ENFORCED?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  HYPERDRIVE: HyperdriveBinding;
+  IMAGES?: MediaImagesBinding;
   MEDIA_BUCKET?: MediaBucketBinding;
   MEDIA_CLEANUP_HYPERDRIVE?: HyperdriveBinding;
   MEDIA_UPLOAD_RATE_LIMIT?: RateLimitBinding;

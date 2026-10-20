@@ -1,8 +1,8 @@
 /* Goals panel: a collapsible section under the chain of the result */
 
 .goal-panel {
-  margin: 0 0 1.1rem;
   overflow: hidden;
+  margin: 0 0 1.1rem;
   background: var(--ui-surface);
   border: 1px solid var(--ui-line);
   border-radius: 0.9rem;
@@ -11,9 +11,9 @@
 
 .goal-panel > summary {
   display: flex;
+  min-height: 4.4rem;
   flex-direction: column;
   justify-content: center;
-  min-height: 4.4rem;
   padding: 0.9rem 1.3rem;
   cursor: pointer;
 }
@@ -45,18 +45,18 @@
 
 .goal-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem 1rem;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
   margin-bottom: 0.9rem;
 }
 
 /* Form */
 
 .goal-form-wrap {
-  margin-bottom: 1.1rem;
   overflow: hidden;
+  margin-bottom: 1.1rem;
   background: var(--ui-surface-muted);
   border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
@@ -88,9 +88,9 @@
 
 .goal-form-actions {
   display: flex;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 0.6rem;
-  justify-content: flex-end;
 }
 
 .goal-field .field-optional {
@@ -160,9 +160,9 @@
 
 .goal-card-title-row {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.6rem;
-  align-items: center;
 }
 
 .goal-card-title-row h4 {
@@ -196,10 +196,10 @@
 
 .goal-progress-text {
   display: flex;
+  margin: 0;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: 0.3rem;
-  align-items: baseline;
-  margin: 0;
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   color: var(--ui-muted);
@@ -219,9 +219,9 @@
 }
 
 .goal-bar {
+  overflow: hidden;
   height: 0.65rem;
   margin-top: 0.45rem;
-  overflow: hidden;
   background: var(--ui-surface-muted);
   border: 1px solid var(--ui-line);
   border-radius: 999px;
@@ -237,9 +237,9 @@
 
 .goal-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  align-items: center;
 }
 
 .goal-confirmation {
@@ -284,8 +284,8 @@
   padding-left: 1.2rem;
   margin: 0;
   font-size: 0.86rem;
-  font-variant-numeric: tabular-nums;
   line-height: 1.6;
+  font-variant-numeric: tabular-nums;
 }
 
 .goal-empty-state {
@@ -315,7 +315,7 @@
   }
 
   .goal-toolbar {
-    flex-direction: column;
     align-items: stretch;
+    flex-direction: column;
   }
 }

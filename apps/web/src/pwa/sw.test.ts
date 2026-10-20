@@ -184,7 +184,7 @@ async function runWorker(build: {
   const listeners: Record<string, (event: never) => void> = {};
   const stores = new Map<string, Map<string, string>>();
   const fetched: string[] = [];
-  const network: { online: boolean } = { online: true };
+  const network: { failPath?: string; online: boolean } = { online: true };
   const skipWaiting = vi.fn(() => Promise.resolve());
   const scope = {
     addEventListener: (type: string, listener: (event: never) => void) => {
@@ -216,6 +216,10 @@ async function runWorker(build: {
       const store = stores.get(name) ?? new Map<string, string>();
       stores.set(name, store);
       return Promise.resolve({
+        add: async (request: { url: string }) => {
+          const response = (await fakeFetch(request)) as { body: string };
+          store.set(keyOf(request), response.body);
+        },
         addAll: async (requests: { url: string }[]) => {
           const responses = await Promise.all(
             requests.map((request) => fakeFetch(request))
@@ -238,7 +242,7 @@ async function runWorker(build: {
   };
   const fakeFetch = (request: { url: string }) => {
     fetched.push(keyOf(request));
-    return network.online
+    return network.online && keyOf(request) !== network.failPath
       ? Promise.resolve({ body: `net:${keyOf(request)}` })
       : Promise.reject(new TypeError("offline"));
   };
@@ -327,6 +331,16 @@ describe("the worker as the browser runs it", () => {
     // the unlock page and the rest of the app keep the shell of /
     expect(await answers(["/desbloquear", "/conta/seguranca"])).toEqual(
       new Array(2).fill({ body: "net:/" })
+    );
+  });
+
+  it("installs even when the sign-in copy cannot be fetched: the copy is a bonus", async () => {
+    const worker = await runWorker(build);
+    worker.network.failPath = "/entrar";
+    await worker.run("install", {});
+    const cache = worker.stores.get(shellCacheName(build));
+    expect([...(cache?.keys() ?? [])].sort()).toEqual(
+      ["/", "/assets/index-BBB.js"].sort()
     );
   });
 

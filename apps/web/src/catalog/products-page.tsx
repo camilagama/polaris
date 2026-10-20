@@ -9,7 +9,6 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import {
   createOfflineProduct,
@@ -24,6 +23,7 @@ import {
 } from "./local-products";
 import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./products-page.css";
 
 type ProductListStatus = "active" | "archived";

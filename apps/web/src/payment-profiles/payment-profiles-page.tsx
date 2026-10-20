@@ -12,8 +12,8 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./payment-profiles-page.css";
 
 const methods = [
@@ -38,8 +38,8 @@ interface FeeDraft {
   percentage: string;
 }
 interface RuleDraft {
-  anticipationFee: FeeDraft;
   draftId: string;
+  anticipationFee: FeeDraft;
   expectedSettlementDays: string;
   installmentPlan: "merchant" | "issuer";
   installments: string;
@@ -53,8 +53,8 @@ interface ProfileDraft {
 interface FeeFieldsProps {
   id: string;
   label: string;
-  onChange: (value: FeeDraft) => void;
   value: FeeDraft;
+  onChange: (value: FeeDraft) => void;
 }
 interface RuleEditorProps {
   canRemove: boolean;

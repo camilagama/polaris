@@ -9,25 +9,25 @@ export const CLOSURE_AUTO_PURGE_ALERT_PER_DAY = 5;
 
 export interface PrivacyMaintenanceReport {
   closedOrganizations: number;
-  /** Notices still owed 3 days after their date, for a store still in closure (`closure_purge_overdue`). */
-  closureNoticesOverdue: number;
   /** Notices of a closure milestone written to go out by this run, each with its outbox event (ADR 0102, amended). */
   closureNoticesRecorded: number;
   /** Earlier milestones written skipped, because a later one was due with them (no e-mail). */
   closureNoticesSkipped: number;
+  /** Notices still owed 3 days after their date, for a store still in closure (`closure_purge_overdue`). */
+  closureNoticesOverdue: number;
   /**
    * Closed organizations still waiting 30 days after D with no legal hold (0 with the switch off): a store left
    * behind by a cancellation of the Admin, a renewal still alive, a temporary access or a notice not delivered
    * (`closure_purge_overdue`).
    */
   overduePurges: number;
-  /** Whether the automatic schedule ran: `CLOSURE_AUTO_PURGE_ENABLED` is on (ADR 0102). */
-  purgeSchedulingEnabled: boolean;
   /**
    * Scheduled purges (the closure period's or the Admin's) held back past their time by a live temporary access, a
    * renewal still alive or a notice not delivered, whatever the switch (`closure_purge_overdue`).
    */
   purgesHeldBack: number;
+  /** Whether the automatic schedule ran: `CLOSURE_AUTO_PURGE_ENABLED` is on (ADR 0102). */
+  purgeSchedulingEnabled: boolean;
   /** Organizations this run put into the purge (0 with the switch off). */
   scheduledPurges: number;
   /** Organizations the closure period put into the purge in the last 24 hours (0 with the switch off). */

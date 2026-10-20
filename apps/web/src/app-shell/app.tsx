@@ -26,6 +26,8 @@ import { NotFoundPage } from "./not-found-page";
 
 type Page = LazyExoticComponent<ComponentType>;
 
+const TRAILING_SLASHES = /\/+$/;
+
 /** Each area is its own chunk; a screen only loads when it is opened. */
 const pages: Readonly<Record<RouteId, Page>> = {
   "account-security": lazy(() =>
@@ -43,11 +45,6 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.CategoriesPage,
     }))
   ),
-  customers: lazy(() =>
-    import("../customers/customers-page").then((module) => ({
-      default: module.CustomersPage,
-    }))
-  ),
   dashboard: lazy(() =>
     import("../dashboard/dashboard-page").then((module) => ({
       default: module.DashboardPage,
@@ -56,6 +53,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
   devices: lazy(() =>
     import("../offline/runtime/devices-page").then((module) => ({
       default: module.DevicesPage,
+    }))
+  ),
+  customers: lazy(() =>
+    import("../customers/customers-page").then((module) => ({
+      default: module.CustomersPage,
     }))
   ),
   expenses: lazy(() =>
@@ -252,5 +254,13 @@ export function App() {
     return <AcceptanceApp />;
   }
   const entryPage = entryPageFor(window.location.pathname);
+  if (entryPage && TRAILING_SLASHES.test(window.location.pathname)) {
+    // the CSP of `_headers` matches the exact path: `/entrar/` would get the shell's, without the challenge
+    const { hash, pathname, search } = window.location;
+    window.location.replace(
+      `${pathname.replace(TRAILING_SLASHES, "")}${search}${hash}`
+    );
+    return null;
+  }
   return entryPage ? <SignInApp page={entryPage} /> : <StoreApp />;
 }

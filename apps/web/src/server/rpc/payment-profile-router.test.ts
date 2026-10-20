@@ -39,10 +39,10 @@ const profileRow = {
   organizationId,
   rules: [
     {
+      archivedAt: null,
       anticipationFeeFixedAmount: null,
       anticipationFeeMode: "unknown",
       anticipationFeePercentage: null,
-      archivedAt: null,
       createdAt: new Date("2026-10-11T12:00:00.000Z"),
       expectedSettlementDays: 14,
       id: ruleId,
@@ -74,8 +74,8 @@ function createRpcClient(router = createRpcRouter()) {
   const app = createServerApp({ rpcRouter: router });
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
-    headers: { origin: "https://polaris.example.invalid" },
     method: "POST",
+    headers: { origin: "https://polaris.example.invalid" },
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 
@@ -204,7 +204,7 @@ describe("payment profile RPCs", () => {
       name: "Stone",
       requestId: expect.stringMatching(requestIdPattern),
       rules: [
-        expect.objectContaining({ installments: 3, method: "credit_card" }),
+        expect.objectContaining({ method: "credit_card", installments: 3 }),
       ],
     });
   });

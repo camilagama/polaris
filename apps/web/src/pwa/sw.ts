@@ -147,10 +147,13 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         const cache = await caches.open(cacheName);
         // All or nothing: a half-cached shell is worse than none.
         await cache.addAll(
-          [...build.precache, AUTH_ENTRY_SHELL_PATH].map(
-            (path) => new Request(path, { cache: "reload" })
-          )
+          build.precache.map((path) => new Request(path, { cache: "reload" }))
         );
+        // The sign-in copy is a bonus: without it a sign-in page offline gets the shell of / (the challenge
+        // then says to reload), so a failure here never stops the worker from installing.
+        await cache
+          .add(new Request(AUTH_ENTRY_SHELL_PATH, { cache: "reload" }))
+          .catch(() => undefined);
       })()
     );
   }) as never);

@@ -190,12 +190,12 @@ describe("the data export download", () => {
     let exemptWhenCalled: boolean | undefined;
     const requests: Request[] = [];
     const t = build({
-      download: vi.fn(() => Promise.resolve(file)),
       tenant: (input) => {
         requests.push(input.request);
         exemptWhenCalled = isExemptFromLegalAcceptance(input.request);
         return Promise.resolve(file);
       },
+      download: vi.fn(() => Promise.resolve(file)),
     });
     await t.get(good);
     expect(requests).toHaveLength(1);

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { isEmailPasswordAuthEnabled } from "../auth/handler";
 import type { ServerEnv, WorkerBindings } from "../environment";
+import { isEmailPasswordAuthEnabled } from "../auth/handler";
 
 /** What the sign-in page may offer (AC-46). Public: it says which doors exist, never who is behind them. */
 export interface AuthMethods {

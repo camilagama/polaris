@@ -176,11 +176,7 @@ function ChangePasswordForm() {
       {notice?.kind === "session-ended" ? (
         <SessionEndedNotice returnTo={ACCOUNT_SECURITY_PATH} />
       ) : null}
-      <form
-        className="sign-in-form account-password-form"
-        noValidate
-        onSubmit={submit}
-      >
+      <form className="sign-in-form" noValidate onSubmit={submit}>
         <PasswordField
           autoComplete="current-password"
           error={currentError}

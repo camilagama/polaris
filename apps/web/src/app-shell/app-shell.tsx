@@ -1,4 +1,3 @@
-import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import {
   type ChangeEvent,
   type ReactNode,
@@ -11,6 +10,7 @@ import {
   type CurrentOrganization,
   useOrganizationLoad,
 } from "../lib/current-organization";
+import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import {
   legalAcceptancePath,
   useLegalAcceptanceRequired,
@@ -18,8 +18,6 @@ import {
 import { currentReturnPath } from "../lib/sign-in-path";
 import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
-import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
-import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { LogoutControl } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
@@ -29,11 +27,13 @@ import {
   useOfflineRuntime,
   useRuntimeSnapshot,
 } from "../offline/runtime/runtime-context";
-import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
+import { useSessionOver } from "../offline/runtime/session-ended";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
-import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
+import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import { SessionEndedNotice } from "./session-ended-notice";
 
 interface OrganizationSwitcherProps {

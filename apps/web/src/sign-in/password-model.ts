@@ -137,9 +137,7 @@ export function newPasswordProblem(value: string): NewPasswordProblem | null {
 }
 
 /** A password refusal of the server, as a problem of the field. */
-export function passwordPolicyProblem(
-  code: string | null
-): NewPasswordProblem | null {
+function passwordPolicyProblem(code: string | null): NewPasswordProblem | null {
   switch (code) {
     case "password_compromised":
       return "compromised";

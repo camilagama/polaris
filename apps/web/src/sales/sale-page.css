@@ -109,8 +109,8 @@
 .sale-page .sale-check input[type="checkbox"] {
   flex: none;
   width: 1.15rem;
-  height: 1.15rem;
   min-height: 1.15rem;
+  height: 1.15rem;
   padding: 0;
   accent-color: var(--ui-accent);
 }

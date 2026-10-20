@@ -423,7 +423,7 @@
   line-height: 1.5;
 }
 
-/* the box itself is a 44 px target */
+/* the box and its label: the label is the 44 px target */
 .sign-in-accept input {
   width: 1.5rem;
   height: 1.5rem;
@@ -431,8 +431,9 @@
   accent-color: var(--ui-accent-strong);
 }
 
+/* one line of 1.5 plus 1.25 rem of padding: 44 px */
 .sign-in-accept label {
-  padding: 0.55rem 0;
+  padding: 0.625rem 0;
 }
 
 .sign-in-accept a {

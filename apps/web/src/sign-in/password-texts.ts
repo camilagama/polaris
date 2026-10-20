@@ -45,7 +45,6 @@ export const PASSWORD_COMPROMISED =
 export const PASSWORD_CHECK_UNAVAILABLE =
   "Não conseguimos conferir a senha agora. Tente de novo em instantes.";
 
-export const CHALLENGE_PROMPT = "Confirme que você é uma pessoa.";
 export const CHALLENGE_CHECKING = "Confirmando que você é uma pessoa…";
 export const CHALLENGE_FAILED =
   "Não foi possível confirmar que você é uma pessoa. Tente de novo.";

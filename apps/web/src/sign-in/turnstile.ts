@@ -32,6 +32,8 @@ interface TurnstileRenderOptions {
   language: string;
   "refresh-expired": "auto" | "manual" | "never";
   sitekey: string;
+  "timeout-callback": () => void;
+  "unsupported-callback": () => void;
 }
 
 interface TurnstileApi {
@@ -47,8 +49,11 @@ declare global {
   }
 }
 
-export const TURNSTILE_SCRIPT_URL =
+const TURNSTILE_SCRIPT_URL =
   "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+
+/** Long enough for an interactive challenge, short enough that a silent widget gives the form back. */
+const CHALLENGE_TIMEOUT_MS = 60_000;
 
 let loading: Promise<TurnstileApi> | null = null;
 
@@ -78,9 +83,9 @@ function loadTurnstile(): Promise<TurnstileApi> {
   return loading;
 }
 
-export type ChallengeState = "blocked" | "checking" | "idle" | "loading";
+type ChallengeState = "blocked" | "checking" | "idle" | "loading";
 
-export class ChallengeError extends Error {
+class ChallengeError extends Error {
   readonly reason: "blocked" | "failed";
 
   constructor(reason: "blocked" | "failed") {
@@ -149,6 +154,15 @@ export function useChallenge(
           language: "pt-br",
           "refresh-expired": "manual",
           sitekey: siteKey,
+          // the person left the interactive challenge, or the browser cannot run it: the submit fails
+          "timeout-callback": () => {
+            pendingRef.current?.reject(new ChallengeError("failed"));
+            pendingRef.current = null;
+          },
+          "unsupported-callback": () => {
+            pendingRef.current?.reject(new ChallengeError("blocked"));
+            pendingRef.current = null;
+          },
         });
         setState("idle");
       })
@@ -188,7 +202,15 @@ export function useChallenge(
     }
     usedRef.current = true;
     api.execute(widget);
-    return token.finally(() => setState("idle"));
+    // a widget that never answers must not leave the button pending forever
+    const timer = setTimeout(() => {
+      pendingRef.current?.reject(new ChallengeError("failed"));
+      pendingRef.current = null;
+    }, CHALLENGE_TIMEOUT_MS);
+    return token.finally(() => {
+      clearTimeout(timer);
+      setState("idle");
+    });
   }, [siteKey]);
 
   return { containerRef, getToken, state };

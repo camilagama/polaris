@@ -80,12 +80,12 @@ export interface LocalSyncMeta {
 export interface LocalWriter {
   keys: (collection: BootstrapCollectionName) => Promise<string[]>;
   readMeta: () => Promise<LocalSyncMeta | null>;
-  /** The recent sales window, in no particular order (the screens sort). */
-  recentSalesRows: () => Promise<SaleListEntryReadModel[]>;
   remove: (
     collection: BootstrapCollectionName | "recentSales",
     keys: string[]
   ) => Promise<void>;
+  /** The recent sales window, in no particular order (the screens sort). */
+  recentSalesRows: () => Promise<SaleListEntryReadModel[]>;
   /** Replaces the recent sales window with exactly these rows. */
   replaceRecentSales: (rows: SaleListEntryReadModel[]) => Promise<void>;
   /** Every row of a collection, in no particular order (the screens sort). */

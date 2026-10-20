@@ -16,6 +16,7 @@ const PASSWORD = "uma frase longa de teste";
 const TECHNICAL =
   /\b(40[0-9]|429|50[0-9])\b|auth_|password_|_required|rate_limited|INVALID|turnstile/i;
 const TOKEN_IN_URL = /token/;
+const RESET_EXACT = /\/redefinir-senha\?x=1$/;
 const SHELL_POLICY = /\n\/\*\n {2}Content-Security-Policy: (.*)\n/;
 const AT_SIGN_IN = /\/entrar$/;
 const LOGIN_TOKEN = /^tt-login-\d+$/;
@@ -671,6 +672,11 @@ test("a entrada carrega o desafio sob a CSP do _headers, sem violação (AC-7)",
     .poll(() => callsTo(server, "/api/auth/sign-in/email").length)
     .toBe(1);
   expect(violations.filter((text) => CSP_VIOLATION.test(text))).toEqual([]);
+
+  // `/entrar/` would not match its rule in `_headers`: the app goes to the exact path first
+  await page.goto("/redefinir-senha/?x=1#token=abc");
+  await expect(page).toHaveURL(RESET_EXACT);
+  await expect(newPasswordField(page)).toBeVisible();
 
   // the unlock page keeps the shell policy: a script from the challenge origin is refused there
   expect(policyFor("/desbloquear")).not.toContain("challenges.cloudflare.com");

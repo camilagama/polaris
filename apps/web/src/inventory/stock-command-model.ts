@@ -12,6 +12,7 @@ import {
   type WriteOffReasonCode,
 } from "@polaris/domain/inventory/write-off-stock";
 import { isCalendarDate } from "../lib/dates";
+import { isDraftChanged } from "../lib/unsent-work";
 import {
   formatBrlAmount,
   formatCalendarDate,
@@ -23,7 +24,6 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
-import { isDraftChanged } from "../lib/unsent-work";
 import {
   costText,
   retarget,

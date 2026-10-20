@@ -8,8 +8,8 @@ import type {
   touchDevice,
 } from "@polaris/db/device-repository";
 import type { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
-import { isSessionFresh } from "../auth/session-policy";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
+import { isSessionFresh } from "../auth/session-policy";
 import type { WorkerBindings } from "../environment";
 import { offlineLeaseKeys, signLeaseClaims } from "../offline-lease-service";
 import type { withTenantRequestContext } from "../tenant-request-context";
