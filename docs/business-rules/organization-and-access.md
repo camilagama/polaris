@@ -48,6 +48,7 @@ Cada operação exige uma capability própria, verificada no procedimento e repe
 | `customer:anonymize` | Anonimizar um cliente por privacidade (irreversível). |
 | `organization:close` | Encerrar a organização (o pedido de encerramento, com a confirmação do nome). |
 | `organization:export` | Pedir uma cópia dos dados da organização e baixá-la ([data-export.md](privacy.md)). |
+| `billing:manage` | Iniciar a assinatura do Pro (o checkout no provedor de pagamento), com ou sem o teste grátis ([billing-and-entitlements.md](billing-and-entitlements.md)). |
 | `organization:closed_export` | Pedir a cópia dos dados de uma organização encerrada, até a data D, e baixá-la. Só o `owner`; não abre o tenant ([ADR 0078](../adr/0078-exportacao-de-dados-da-organizacao.md)). |
 | `expense:create` | Listar, criar, editar, anular e reativar despesas e gerir as categorias de despesa. Na V1 não há `expense:read`, então a leitura de despesas também exige esta capability. |
 

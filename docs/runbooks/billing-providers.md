@@ -42,8 +42,36 @@ Chave recusada (rotacionada ou revogada antes da hora) aparece no log como `bill
 | `billing_webhook_unresolved_given_up` | o mesmo, depois dos 30 minutos (200, nível erro) | reconciliar a organização do recurso; até o PR de banco seguinte o evento não fica em `billing_events` |
 | `billing_provider_response_malformed` | a API respondeu fora da forma documentada (503 por até 30 minutos, depois 200) | ver se o Asaas mudou o formato; reconciliar |
 | `billing_webhook_malformed` | entrega autêntica que o Asaas não documenta, ou recurso relido fora da forma (200) | investigar cada um |
-| `billing_trial_fact_without_claim` | um checkout pago começaria o trial de uma organização que não tem a reserva de ninguém (a pessoa levou o teste para outra loja, ou optou antes do teste por pessoa); o evento fica `unresolved` com `trial_claim_missing` em `billing_events`, a organização continua sem trial e o reprocesso horário o relê (aviso; erro na última tentativa, só IDs opacos) | localizar no Admin a organização pelo ID opaco e, no painel do Asaas, a assinatura pelo `provider_subscription_id` guardado; até a reconciliação (PR 3) decidir, não cancelar nem cobrar à mão sem o responsável |
+| `billing_trial_fact_without_claim` | um checkout pago começaria o trial de uma organização que não tem a reserva de ninguém (a pessoa levou o teste para outra loja, ou optou antes do teste por pessoa); o evento fica `unresolved` com `trial_claim_missing` em `billing_events`, a organização continua sem trial e o reprocesso horário o relê (aviso; erro na última tentativa, só IDs opacos) | nada à mão: depois das tentativas, a manutenção horária cancela no Asaas a assinatura desse checkout, antes da 1ª cobrança (ver `billing_unclaimed_trial_settled`); não cobrar sem o trial sem o responsável |
 | `billing_trial_checkout_discard_failed` | a reserva do teste mudou de loja, mas o provedor não cancelou o checkout que a anterior deixou aberto (só ID opaco e provedor) | nada urgente: se o checkout for pago, o fato acima segura o segundo trial; conferir a chave e a disponibilidade do Asaas se repetir |
+| `billing_unclaimed_trial_settled` | um trial sem reserva (`trial_claim_missing`) foi liquidado: `reason` `cancelled` (assinatura cancelada no Asaas, nada cobrado) ou `left_paid` (a mesma assinatura já dá Pro e foi mantida); só IDs, nível aviso | conferir se a pessoa precisa ser avisada; o motivo fica no ledger (`unclaimed_trial_cancelled` ou `unclaimed_trial_left_paid`) |
+| `billing_unclaimed_trial_settle_failed` | o cancelamento no Asaas falhou; o evento continua pendente e a próxima hora tenta de novo (a manutenção sai incompleta, `billing_unclaimed_trials_incomplete`) | conferir a chave e a disponibilidade do Asaas antes do 7º dia do checkout; se precisar, rodar `settle-unclaimed` do script do Gate 7 (só sandbox) ou, em produção, pedir ao responsável |
+| `billing_unclaimed_trials_not_configured` | a manutenção não liquida trials sem reserva porque faltam os segredos do Asaas | gravar os segredos do ambiente |
+| `billing_trial_setup_sweep_failed` | a varredura não devolveu a Free uma organização presa em `trial_setup` há mais de 2 horas | ver o erro pelo ID opaco; a próxima hora tenta de novo |
+| `billing_checkout_discard_failed` | o checkout foi criado, a ligação à organização falhou e o descarte no Asaas também (só ID opaco e provedor) | nada urgente: o checkout expira em 60 minutos e um pagamento dele não acha organização |
 
 - **Ligação com a organização (S1.3):** o `externalReference` do checkout não passa para a assinatura; o `providerRef` do Asaas é o **ID do checkout** e a assinatura o traz em `checkoutSession`. A API não filtra por ele: a reconciliação lista as assinaturas da mais nova para a mais antiga e filtra no cliente (ADR 0101, seção 5). Evento cuja assinatura relida não traz `checkoutSession` fica `unresolved` e vira 503 nos primeiros 30 minutos.
 O corpo do webhook, o recurso relido e o link do checkout nunca vão para o log; os registros trazem só IDs e códigos.
+
+## Gate 7 do cartão (script, só sandbox)
+
+`apps/web/scripts/gate7-asaas.ts` roda os comandos de cobrança contra o **sandbox** do Asaas e um banco de **staging** (marcador `polaris.environment = 'staging'`) ou local sem marcador. Ele recusa chave que não comece com `$aact_hmlg_`, host que não seja `api-sandbox.asaas.com` URL de banco com qualquer parâmetro além de `sslmode` e `channel_binding` (antes de conectar), `DATABASE_URL` e `BILLING_DATABASE_URL` de bancos diferentes, e banco sem o marcador `staging` gravado (`ALTER DATABASE`) fora de `localhost` sem marcador. O link do checkout vai para um arquivo novo, criado antes do checkout, com permissão `0600`, fora do repositório (também pelo caminho real); nunca para o terminal, log, PR ou relatório.
+
+```sh
+set -a; . ~/.secrets/pagamentos-sandbox.env; set +a   # valores entre aspas simples no arquivo
+export BILLING_DATABASE_URL=…  DATABASE_URL=…  BETTER_AUTH_BASE_URL=https://…
+cd apps/web
+bun run gate7:asaas checkout --organization <id> --user <id do dono> --cycle 1 --trial --link-file /tmp/gate7-link.txt
+bun run gate7:asaas wait --organization <id> --until trialing --minutes 30   # o QA conclui o checkout no navegador
+bun run gate7:asaas state --organization <id>
+bun run gate7:asaas reconcile --organization <id>
+bun run gate7:asaas refund --organization <id>
+bun run gate7:asaas cancel --organization <id>
+bun run gate7:asaas settle-unclaimed
+```
+
+- `checkout` autoriza como o RPC (membership e `billing:manage` na transação de tenant, preço de `billing_prices`) e segue a ordem trial → checkout → ligação → link. Sem `--trial`, a 1ª cobrança é hoje.
+- `state` mostra só o estado, o fim do acesso, a marca de cancelamento e se há provedor e `sub_` ligados; nunca as referências.
+- A saída é JSON de uma linha; um erro mostra só a classe e o código.
+- Apague o arquivo do link depois do teste.
+
