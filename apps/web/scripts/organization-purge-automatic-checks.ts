@@ -13,6 +13,7 @@ import {
   recordPrivacyScope,
   readSupportCase,
   releaseOrganizationLegalHold,
+  revokeTenantAccess,
   scheduleOrganizationPurge,
 } from "@polaris/db/admin-support-repository";
 import type { createDatabase } from "@polaris/db/client";
@@ -39,7 +40,7 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * runs before the later of D plus 48 hours and the schedule plus 7 days.
  */
 
-type Pool = ReturnType<typeof createDatabase>["pool"];
+export type Pool = ReturnType<typeof createDatabase>["pool"];
 
 export interface AutomaticPurgeContext {
   admin: Pool;
@@ -53,14 +54,14 @@ export interface AutomaticPurgeContext {
   runtimes: { admin: Pool; tenant: Pool };
 }
 
-const ZONE = "America/Sao_Paulo";
+export const ZONE = "America/Sao_Paulo";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 /** Every organization this scenario writes, so the checks read only their own. */
 const created: string[] = [];
 
-async function dbNow(owner: Pool): Promise<Date> {
+export async function dbNow(owner: Pool): Promise<Date> {
   const result = await owner.query<{ now: Date }>("SELECT now() AS now");
   const now = result.rows[0]?.now;
   assert.ok(now);
@@ -68,7 +69,7 @@ async function dbNow(owner: Pool): Promise<Date> {
 }
 
 /** The first instant of the local day `offset` days from today's local date in the zone, as the database counts it. */
-async function localDayStart(
+export async function localDayStart(
   owner: Pool,
   zone: string,
   offset: number
@@ -83,7 +84,7 @@ async function localDayStart(
 }
 
 /** A closed organization whose closure was requested at `requestedAt`, its recovery window over unless `recoverUntil` says otherwise. */
-async function closedOrganization(
+export async function closedOrganization(
   owner: Pool,
   label: string,
   requestedAt: Date,
@@ -117,7 +118,10 @@ async function closedOrganization(
   return tenant;
 }
 
-async function statusOf(owner: Pool, organizationId: string): Promise<string> {
+export async function statusOf(
+  owner: Pool,
+  organizationId: string
+): Promise<string> {
   const result = await owner.query<{ status: string }>(
     "SELECT status FROM public.organizations WHERE id = $1",
     [organizationId]
@@ -134,7 +138,7 @@ interface PurgeRow {
   trigger: string;
 }
 
-async function purgeRow(
+export async function purgeRow(
   owner: Pool,
   organizationId: string
 ): Promise<PurgeRow | undefined> {
@@ -160,7 +164,7 @@ async function scheduledAudit(owner: Pool, organizationId: string) {
   ).rows;
 }
 
-async function asRole(
+export async function asRole(
   owner: Pool,
   role: string,
   statement: string,
@@ -183,7 +187,7 @@ const ZONES = [ZONE, "America/Manaus", "America/New_York"];
  * Waits past local midnight when the run is about to cross it in any zone of the scenario: "today" must be the same
  * day for the whole scenario, which takes well under the 5 minutes of margin.
  */
-async function awayFromMidnight(owner: Pool) {
+export async function awayFromMidnight(owner: Pool) {
   const result = await owner.query<{ seconds: number }>(
     `SELECT min(EXTRACT(epoch FROM public.closure_local_day_start((now() AT TIME ZONE zone)::date + 1, zone) - now()))::float8 AS seconds
        FROM unnest($1::text[]) AS zone`,
@@ -200,7 +204,7 @@ async function awayFromMidnight(owner: Pool) {
  * closed organizations (moved so the schedule, which takes the whole database, does not reach them) and the lease of
  * the other purges (held so the claim, which takes the oldest due one, reaches the scenario's).
  */
-async function setAsideOthers(owner: Pool) {
+export async function setAsideOthers(owner: Pool) {
   const closures = (
     await owner.query<{
       organization_id: string;
@@ -249,7 +253,7 @@ async function setAsideOthers(owner: Pool) {
   };
 }
 
-async function acceptedDeletionCase(
+export async function acceptedDeletionCase(
   context: AutomaticPurgeContext,
   organizationId: string
 ): Promise<string> {
@@ -282,7 +286,7 @@ async function acceptedDeletionCase(
   return opened.id;
 }
 
-async function supportCaseOf(
+export async function supportCaseOf(
   context: AutomaticPurgeContext,
   organizationId: string
 ): Promise<string> {
@@ -304,7 +308,9 @@ export async function verifyAutomaticPurge(
   // closure is moved to a month ago (still closed, window over, D far ahead), and everything is put back at the end
   const restoreOthers = await setAsideOthers(context.owner);
   try {
-    return await scenario(context);
+    const tests = await scenario(context);
+    tests.push(...(await recheckScenario(context)));
+    return tests;
   } finally {
     await restoreOthers();
   }
@@ -1025,5 +1031,195 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
     "every audit event of the system has no principal and no case, so the case views of the Admin list only events with a principal; an event of the system with a case, an operator's without a principal, any other type as the system's and a purge of the closure period with an operator are refused"
   );
 
+  return tests;
+}
+
+/** A refusal of the purge by name: SQLSTATE 55000 and the code as the message, as the job writes it down. */
+async function expectPurgeRefusal(
+  operation: () => Promise<unknown>,
+  code: string,
+  label: string
+) {
+  await assert.rejects(
+    operation,
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "55000", label);
+      assert.equal((error as Error).message, code, label);
+      return true;
+    },
+    label
+  );
+}
+
+async function membershipCount(owner: Pool, organizationId: string) {
+  const result = await owner.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM public.memberships WHERE organization_id = $1",
+    [organizationId]
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+/**
+ * The purge checks again, when it runs, what the schedule waited for (ADR 0102 amended, suggestion 1 of the security
+ * review): a temporary access of the Admin opened after the schedule, or a renewal alive again after it, keeps the
+ * claim away and makes the mark before the storage and `purge_organization_data` refuse, by the codes of the schedule,
+ * with nothing removed; for a purge of the closure period and for one of the Admin alike. Once both are gone the
+ * purge runs.
+ */
+async function recheckScenario(
+  context: AutomaticPurgeContext
+): Promise<string[]> {
+  const { admin, maintenance, owner, principal } = context;
+  const tests: string[] = [];
+  const keepOthersAway = (except: string) =>
+    owner.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '1 day' WHERE organization_id <> $1 AND swept_at IS NULL",
+      [except]
+    );
+  const releaseLease = (organizationId: string) =>
+    owner.query(
+      "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+      [organizationId]
+    );
+  const renewal = (organizationId: string, alive: boolean) =>
+    owner.query(
+      `UPDATE public.organization_billing
+          SET state = 'active', access_ends_at = now() - interval '1 day', provider = 'asaas',
+              provider_ref = $2, cancel_at_period_end = $3
+        WHERE organization_id = $1`,
+      [organizationId, `sub_gate_${randomUUID().slice(0, 8)}`, !alive]
+    );
+
+  // the two paths: a purge the closure period scheduled (a late sweep, so not_before is the schedule plus 7 days), and
+  // one the Admin scheduled under an accepted deletion case (its paid access over, no renewal to cancel)
+  const requested = await localDayStart(owner, ZONE, -95);
+  const automatic = await closedOrganization(
+    owner,
+    "recheck automatic",
+    requested
+  );
+  await maintenance.scheduleClosedOrganizationPurges(1000);
+  assert.equal(
+    await statusOf(owner, automatic.organizationId),
+    "purge_pending"
+  );
+  assert.equal(
+    (await purgeRow(owner, automatic.organizationId))?.trigger,
+    "closure_period"
+  );
+  const byAdmin = await closedOrganization(owner, "recheck admin", requested);
+  await renewal(byAdmin.organizationId, false);
+  await owner.query(
+    "INSERT INTO public.organization_purge_cancellations (organization_id, support_case_id, cancelled_by, reason, scheduled_at, cancelled_at) VALUES ($1, $2, $3, 'Pausa do automático', now(), now())",
+    [
+      byAdmin.organizationId,
+      await supportCaseOf(context, byAdmin.organizationId),
+      principal,
+    ]
+  );
+  const scheduled = await scheduleOrganizationPurge(
+    admin,
+    principal,
+    await acceptedDeletionCase(context, byAdmin.organizationId),
+    byAdmin.organizationId
+  );
+  assert.equal(scheduled?.status, "purge_pending");
+  assert.equal(
+    (await purgeRow(owner, byAdmin.organizationId))?.trigger,
+    "admin"
+  );
+
+  for (const [label, tenant] of [
+    ["closure period", automatic],
+    ["Admin", byAdmin],
+  ] as const) {
+    const { organizationId } = tenant;
+    await owner.query(
+      "UPDATE public.organization_purges SET not_before = now() - interval '1 second', locked_until = NULL WHERE organization_id = $1",
+      [organizationId]
+    );
+    await keepOthersAway(organizationId);
+    const members = await membershipCount(owner, organizationId);
+    assert.ok(members > 0);
+
+    // a temporary access of the Admin opened after the schedule: the run does not take the purge
+    const caseId = await supportCaseOf(context, organizationId);
+    const access = await grantTenantAccess(admin, principal, caseId, 30);
+    assert.ok(access);
+    assert.equal(
+      await maintenance.claimOrganizationPurge(900),
+      null,
+      `${label}: the access keeps the run away`
+    );
+    // opened while a run holds the purge: the mark before the storage and the purge itself refuse, by name
+    assert.ok(await revokeTenantAccess(admin, principal, access.id));
+    const claimed = await maintenance.claimOrganizationPurge(900);
+    assert.equal(claimed?.organizationId, organizationId);
+    const reopened = await grantTenantAccess(admin, principal, caseId, 30);
+    assert.ok(reopened);
+    await expectPurgeRefusal(
+      () => maintenance.markOrganizationPurgeStorageTouched(organizationId),
+      "tenant_access_active",
+      `${label}: the storage is not touched while an access is live`
+    );
+    await expectPurgeRefusal(
+      () => maintenance.purgeOrganizationData(organizationId),
+      "tenant_access_active",
+      `${label}: the purge refuses while an access is live`
+    );
+    assert.ok(await revokeTenantAccess(admin, principal, reopened.id));
+
+    // a renewal alive again after the schedule (a provider brought it back): the same, by its code
+    await renewal(organizationId, true);
+    await expectPurgeRefusal(
+      () => maintenance.markOrganizationPurgeStorageTouched(organizationId),
+      "renewal_alive",
+      `${label}: the storage is not touched while the renewal is alive`
+    );
+    await expectPurgeRefusal(
+      () => maintenance.purgeOrganizationData(organizationId),
+      "renewal_alive",
+      `${label}: the purge refuses while the renewal is alive`
+    );
+    await releaseLease(organizationId);
+    assert.equal(
+      await maintenance.claimOrganizationPurge(900),
+      null,
+      `${label}: the live renewal keeps the run away`
+    );
+    assert.equal(await statusOf(owner, organizationId), "purge_pending");
+    assert.equal(
+      await membershipCount(owner, organizationId),
+      members,
+      `${label}: nothing was removed`
+    );
+    const touched = await owner.query<{ storage_touched_at: Date | null }>(
+      "SELECT storage_touched_at FROM public.organization_purges WHERE organization_id = $1",
+      [organizationId]
+    );
+    assert.equal(
+      touched.rows[0]?.storage_touched_at,
+      null,
+      `${label}: the storage was never marked touched`
+    );
+
+    // both gone (the renewal cancelled at the end of the period, the access revoked): the purge runs
+    await renewal(organizationId, false);
+    await releaseLease(organizationId);
+    await keepOthersAway(organizationId);
+    assert.deepEqual(
+      await runOrganizationPurges({
+        bucket: context.bucket,
+        client: maintenance,
+        now: () => new Date(),
+      }),
+      { failed: 0, purged: 1, swept: 1 },
+      `${label}: purged once nothing holds it`
+    );
+    assert.equal(await statusOf(owner, organizationId), "purged");
+  }
+  tests.push(
+    "when the purge runs it checks again what the schedule waited for: a temporary access of the Admin opened after the schedule, or a renewal alive again, keeps the run from taking it, and while a run holds it the mark before the storage and purge_organization_data refuse with tenant_access_active or renewal_alive, nothing removed and the storage untouched; for a purge of the closure period and one of the Admin alike, and it runs once both are gone"
+  );
   return tests;
 }

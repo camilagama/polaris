@@ -1,10 +1,12 @@
+import type { ClosureNoticeMilestone } from "@polaris/domain/organization/closure-deadlines";
 import { Pool } from "pg";
 
 /**
  * What the privacy role does in the background (plan PR101, PR104 and PR107, ADRs 0074, 0078,
  * 0081, 0084 and 0102). It runs under its own database role, which can execute a few functions and read
  * nothing: closing organizations whose recovery window ended, scheduling the purge of the closures that
- * reached D minus 7 days, the data exports (claim a request, record its files, finish or fail it, expire
+ * reached D minus 7 days, writing the notices of the milestones that arrived (and reading and settling one for its
+ * consumer), the data exports (claim a request, record its files, finish or fail it, expire
  * it, and send its outbox event again while it is still owed; the images of a closed organization's
  * export) and the purges scheduled by the closure period or by an operator.
  */
@@ -65,7 +67,58 @@ export interface ScheduledClosurePurges {
   overdue: number;
 }
 
+/** What one call of the notices did (ADR 0102, amended). */
+export interface RecordedClosureNotices {
+  /** Organizations with a milestone due and not yet recorded that this call looked at (at most the limit). */
+  organizations: number;
+  /** Notices written to go out, each with its outbox event. */
+  recorded: number;
+  /** Earlier milestones written together with a later one, which go out in its place. */
+  skipped: number;
+}
+
+/** What the consumer of `organization.closure_notice` reads to write the e-mail: IDs and dates, never the address. */
+export interface ClosureNoticeDelivery {
+  /** D, as the organization's calendar shows it (YYYY-MM-DD). */
+  deletionDate: string;
+  /** The first instant of D in the organization's time zone. */
+  deletableFrom: Date;
+  milestone: ClosureNoticeMilestone;
+  noticeId: string;
+  organizationId: string;
+  organizationName: string;
+  /** Only for `rescheduled`: the first instant the purge may run after the release of a legal hold. */
+  purgeFrom: Date | null;
+  recoverUntil: Date;
+  requestedAt: Date;
+  timeZone: string;
+  /** The owner it is for: the address is read from the account when it is sent. */
+  userId: string;
+}
+
+interface ClosureNoticeDeliveryRow {
+  deletableFrom: string;
+  deletionDate: string;
+  milestone: ClosureNoticeMilestone;
+  noticeId: string;
+  organizationId: string;
+  organizationName: string;
+  purgeFrom: string | null;
+  recoverUntil: string;
+  requestedAt: string;
+  timezone: string;
+  userId: string;
+}
+
 export interface PrivacyMaintenanceClient {
+  /**
+   * What the notice an event names needs to go out; null when it is not to go out (skipped, sent or failed already,
+   * of a cycle the owner undid, or of an organization no longer in closure).
+   */
+  claimClosureNoticeDelivery: (
+    noticeId: string,
+    organizationId: string
+  ) => Promise<ClosureNoticeDelivery | null>;
   /** Takes the oldest export that is waiting (or whose run stopped); null when there is none. */
   claimDataExport: (leaseSeconds: number) => Promise<ClaimedDataExport | null>;
   /** Takes the oldest due purge (or one whose second sweep did not finish); null when there is none. */
@@ -127,6 +180,17 @@ export interface PrivacyMaintenanceClient {
     organizationId: string
   ) => Promise<{ id: string; storageKey: string }[]>;
   markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
+  /** The notice will not go out, with a short code, once; whether this call changed it. */
+  markClosureNoticeFailed: (
+    noticeId: string,
+    organizationId: string,
+    code: string
+  ) => Promise<boolean>;
+  /** The notice went out, once; whether this call changed it. */
+  markClosureNoticeSent: (
+    noticeId: string,
+    organizationId: string
+  ) => Promise<boolean>;
   /**
    * The purge is about to remove its first object from the storage; from now on it cannot be cancelled.
    * Refused (`purge_not_claimed`) when this run no longer holds the purge.
@@ -153,6 +217,11 @@ export interface PrivacyMaintenanceClient {
     minAgeSeconds: number,
     limit: number
   ) => Promise<number>;
+  /**
+   * Writes the notices of at most `limit` organizations in closure whose milestone arrived (ADR 0102, amended): the
+   * latest due one goes out, with its outbox event, and earlier ones are written skipped. Idempotent.
+   */
+  recordClosureNotices: (limit: number) => Promise<RecordedClosureNotices>;
   recordDataExportFile: (file: {
     exportId: string;
     key: string;
@@ -177,6 +246,31 @@ export function createPrivacyMaintenanceClient(
     max: 1,
   });
   return {
+    async claimClosureNoticeDelivery(noticeId, organizationId) {
+      const result = await pool.query<{
+        delivery: ClosureNoticeDeliveryRow | null;
+      }>(
+        "SELECT public.claim_closure_notice_delivery($1::uuid, $2::text) AS delivery",
+        [noticeId, organizationId]
+      );
+      const row = result.rows[0]?.delivery;
+      if (!row) {
+        return null;
+      }
+      return {
+        deletableFrom: new Date(row.deletableFrom),
+        deletionDate: row.deletionDate,
+        milestone: row.milestone,
+        noticeId: row.noticeId,
+        organizationId: row.organizationId,
+        organizationName: row.organizationName,
+        purgeFrom: row.purgeFrom ? new Date(row.purgeFrom) : null,
+        recoverUntil: new Date(row.recoverUntil),
+        requestedAt: new Date(row.requestedAt),
+        timeZone: row.timezone,
+        userId: row.userId,
+      };
+    },
     async claimDataExport(leaseSeconds) {
       const result = await pool.query<{
         claimed: ClaimedDataExportRow | null;
@@ -309,6 +403,20 @@ export function createPrivacyMaintenanceClient(
       );
       return result.rows[0]?.marked === true;
     },
+    async markClosureNoticeFailed(noticeId, organizationId, code) {
+      const result = await pool.query<{ marked: boolean }>(
+        "SELECT public.mark_closure_notice_failed($1::uuid, $2::text, $3::text) AS marked",
+        [noticeId, organizationId, code]
+      );
+      return result.rows[0]?.marked === true;
+    },
+    async markClosureNoticeSent(noticeId, organizationId) {
+      const result = await pool.query<{ marked: boolean }>(
+        "SELECT public.mark_closure_notice_sent($1::uuid, $2::text) AS marked",
+        [noticeId, organizationId]
+      );
+      return result.rows[0]?.marked === true;
+    },
     async markOrganizationPurgeStorageTouched(organizationId) {
       await pool.query(
         "SELECT public.mark_organization_purge_storage_touched($1::text)",
@@ -343,6 +451,19 @@ export function createPrivacyMaintenanceClient(
         [minAgeSeconds, limit]
       );
       return Number(result.rows[0]?.rearmed ?? 0);
+    },
+    async recordClosureNotices(limit) {
+      const result = await pool.query<{
+        recorded: { organizations: number; recorded: number; skipped: number };
+      }>("SELECT public.record_closure_notices($1::integer) AS recorded", [
+        limit,
+      ]);
+      const recorded = result.rows[0]?.recorded;
+      return {
+        organizations: Number(recorded?.organizations ?? 0),
+        recorded: Number(recorded?.recorded ?? 0),
+        skipped: Number(recorded?.skipped ?? 0),
+      };
     },
     async recordDataExportFile(file) {
       await pool.query(

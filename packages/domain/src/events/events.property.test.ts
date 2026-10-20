@@ -137,6 +137,10 @@ const EVENT_MODEL: Readonly<Record<string, EventModel>> = {
     keys: { exportId: stringMatching(/^[A-Za-z0-9_-]{1,64}$/) },
     queue: "default",
   },
+  "organization.closure_notice": {
+    keys: { noticeId: stringMatching(/^[A-Za-z0-9_-]{1,64}$/) },
+    queue: "default",
+  },
 };
 const MODEL_TYPES = Object.keys(EVENT_MODEL);
 // the model's types, typed as the outbox's so an envelope can carry them (EVT-0 proves the two lists are the same)

@@ -403,19 +403,54 @@ const PURGE_WAIT_USAGE = [
   ],
 ] as const;
 
-function purgeWaitDifferences(sql: string): string[] {
-  const name = "closed_organization_purge_wait";
-  const problems: string[] = [];
+/** The states a function reads as a live renewal are the domain's (`renewalAlive`). */
+function renewalStatesDifferences(name: PurgeFunctionName, sql: string) {
   const states = RENEWAL_STATES.exec(sql);
   const listed = states
     ? [...(states[1] ?? "").matchAll(QUOTED)].map((match) => match[1] ?? "")
     : null;
-  if (listed === null || !sameSet(listed, RENEWAL_ALIVE_STATES)) {
-    problems.push(
-      `${name}: the states of a live renewal must be ${show(RENEWAL_ALIVE_STATES)} (found ${show(listed ?? [])})`
-    );
-  }
+  return listed === null || !sameSet(listed, RENEWAL_ALIVE_STATES)
+    ? [
+        `${name}: the states of a live renewal must be ${show(RENEWAL_ALIVE_STATES)} (found ${show(listed ?? [])})`,
+      ]
+    : [];
+}
+
+function purgeWaitDifferences(sql: string): string[] {
+  const name = "closed_organization_purge_wait";
+  const problems = renewalStatesDifferences(name, sql);
   for (const [label, pattern] of PURGE_WAIT_USAGE) {
+    if (!pattern.test(sql)) {
+      problems.push(`${name}: ${label} is gone`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * What the purge checks again when it runs (ADR 0102, amended): the legal hold, the closure period, and the two
+ * reasons the schedule waits for besides, a live temporary access of the Admin and a renewal still alive, each
+ * answered by the code of `closed_organization_purge_wait`.
+ */
+const BLOCKER_USAGE = [
+  [
+    "the legal hold in force",
+    /organization_legal_holds\s+AS\s+hold\s+WHERE\s+hold\.organization_id\s*=\s*p_organization\s+AND\s+hold\.released_at\s+IS\s+NULL[\s\S]*RETURN\s+'legal_hold_active'/i,
+  ],
+  [
+    "the live temporary access",
+    /tenant_access_grants[\s\S]*revoked_at\s+IS\s+NULL[\s\S]*expires_at\s*>\s*pg_catalog\.now\(\)[\s\S]*RETURN\s+'tenant_access_active'/i,
+  ],
+  [
+    "the renewal not cancelled at the provider",
+    /provider_ref\s+IS\s+NOT\s+NULL[\s\S]*NOT\s+billing\.cancel_at_period_end[\s\S]*RETURN\s+'renewal_alive'/i,
+  ],
+] as const;
+
+function blockerDifferences(sql: string): string[] {
+  const name = "organization_purge_blocker";
+  const problems = renewalStatesDifferences(name, sql);
+  for (const [label, pattern] of BLOCKER_USAGE) {
     if (!pattern.test(sql)) {
       problems.push(`${name}: ${label} is gone`);
     }
@@ -471,5 +506,6 @@ export function purgeFunctionDifferences(
     ...factKeysDifferences(sql.purge_organization_data),
     ...scheduleClosedDifferences(sql.schedule_closed_organization_purges),
     ...purgeWaitDifferences(sql.closed_organization_purge_wait),
+    ...blockerDifferences(sql.organization_purge_blocker),
   ];
 }

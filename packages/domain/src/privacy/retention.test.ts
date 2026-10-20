@@ -179,8 +179,9 @@ describe("review state", () => {
   });
 
   it("has every class decided by the user on 19/10/2026, but the one created after it", () => {
-    // the trial per person came later (ADR 0101): its period waits for the responsible person
-    const undecided = ["billing_trial_claims"];
+    // the trial per person (ADR 0101) and the notices of a closure (ADR 0102, amended) came later: their period waits
+    // for the responsible person
+    const undecided = ["billing_trial_claims", "closure_notice"];
     for (const policy of RETENTION_POLICIES) {
       if (undecided.includes(policy.class)) {
         expect(policy.review, policy.class).toEqual({

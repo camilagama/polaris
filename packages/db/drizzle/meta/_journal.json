@@ -617,6 +617,13 @@
       "when": 1792484307184,
       "tag": "0087_apagamento_automatico",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1792492235805,
+      "tag": "0088_avisos_de_encerramento",
+      "breakpoints": true
     }
   ]
 }

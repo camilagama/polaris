@@ -37,6 +37,7 @@ describe("the queues", () => {
     expect(queueForEventType("billing.renewal_cancel_requested")).toBe(
       "critical"
     );
+    expect(queueForEventType("organization.closure_notice")).toBe("default");
   });
 });
 

@@ -33,6 +33,23 @@ export const CLOSURE_PURGE_OVERDUE_DAYS = 30;
 /** The first notice before D goes out this many days before it. */
 export const CLOSURE_FIRST_NOTICE_LEAD_DAYS = 30;
 
+/**
+ * The notices of a closure (ADR 0102, amended), in the order of their dates: the request, D minus 30 and minus 7
+ * local days, D, and `rescheduled`, the new notice of 7 days when a legal hold released after the schedule pushed
+ * the purge. The privacy job writes one per closure cycle once its date arrives; of several due together only the
+ * latest goes out, the others are `skipped`. The database holds the same list (`closure_notices_milestone_allowed`),
+ * and the purge gate compares them.
+ */
+export const CLOSURE_NOTICE_MILESTONES = Object.freeze([
+  "closure",
+  "d30",
+  "d7",
+  "deletion_day",
+  "rescheduled",
+] as const);
+
+export type ClosureNoticeMilestone = (typeof CLOSURE_NOTICE_MILESTONES)[number];
+
 export const CLOSURE_PHASES = Object.freeze([
   "closing",
   "closed",

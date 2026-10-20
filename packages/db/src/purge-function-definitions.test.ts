@@ -43,7 +43,23 @@ BEGIN
 END;`,
     organization_purge_blocker: `CREATE OR REPLACE FUNCTION public.organization_purge_blocker(p_organization text)
  AS $function$
-  SELECT 1 WHERE closure.requested_at + interval '${days}' <= pg_catalog.now()
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.organization_legal_holds AS hold WHERE hold.organization_id = p_organization AND hold.released_at IS NULL) THEN
+    RETURN 'legal_hold_active';
+  END IF;
+  IF NOT EXISTS (SELECT 1 WHERE closure.requested_at + interval '${days}' <= pg_catalog.now()) THEN
+    RETURN 'closure_period_not_elapsed';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tenant_access_grants AS access_grant
+              WHERE access_grant.revoked_at IS NULL AND access_grant.expires_at > pg_catalog.now()) THEN
+    RETURN 'tenant_access_active';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.organization_billing AS billing
+              WHERE billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
+                AND billing.state IN ('trialing', 'active', 'grace') AND NOT billing.cancel_at_period_end) THEN
+    RETURN 'renewal_alive';
+  END IF;
+END;
 $function$`,
     purge_organization_data: `CREATE OR REPLACE FUNCTION public.purge_organization_data(p_organization text)
 DECLARE
@@ -118,6 +134,35 @@ function mutated(
 describe("purgeFunctionDifferences", () => {
   it("accepts functions that follow the domain", () => {
     expect(purgeFunctionDifferences(definitions())).toEqual([]);
+  });
+
+  it("fails when the purge no longer checks, when it runs, the temporary access or the renewal", () => {
+    expect(
+      mutated("organization_purge_blocker", (sql) =>
+        sql.replace("RETURN 'tenant_access_active';", "RETURN NULL;")
+      )
+    ).toEqual([
+      "organization_purge_blocker: the live temporary access is gone",
+    ]);
+    expect(
+      mutated("organization_purge_blocker", (sql) =>
+        sql.replace("AND NOT billing.cancel_at_period_end", "")
+      )
+    ).toEqual([
+      "organization_purge_blocker: the renewal not cancelled at the provider is gone",
+    ]);
+    expect(
+      mutated("organization_purge_blocker", (sql) =>
+        sql.replace("'trialing', 'active', 'grace'", "'active'")
+      )
+    ).toEqual([
+      "organization_purge_blocker: the states of a live renewal must be [trialing, active, grace] (found [active])",
+    ]);
+    expect(
+      mutated("organization_purge_blocker", (sql) =>
+        sql.replace("RETURN 'legal_hold_active';", "RETURN NULL;")
+      )
+    ).toEqual(["organization_purge_blocker: the legal hold in force is gone"]);
   });
 
   it("fails when the automatic schedule runs sooner than D plus 48 hours or the notice of 7 days", () => {

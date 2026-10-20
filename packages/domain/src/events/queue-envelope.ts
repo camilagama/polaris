@@ -33,6 +33,8 @@ const QUEUE_BY_EVENT_TYPE: Readonly<Record<OutboxEventType, QueueName>> =
     "data_export.requested": "default",
     // a renewal left alive charges the person: the queue of what costs most when late
     "billing.renewal_cancel_requested": "critical",
+    // an e-mail of a milestone: a late one is still on time for the dates it names (7 days at least)
+    "organization.closure_notice": "default",
   });
 
 export interface QueueEnvelope {

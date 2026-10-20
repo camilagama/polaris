@@ -979,6 +979,8 @@ async function run() {
     ]);
     assert.deepEqual(await columns("memberships", "SELECT"), [
       "authorization_epoch",
+      // the owner a notice of the closure is for, when the one who asked is no longer a member (ADR 0102, amended)
+      "created_at",
       "organization_id",
       "role",
       "status",
@@ -987,6 +989,17 @@ async function run() {
     assert.deepEqual(await columns("offline_grants", "SELECT"), [
       "organization_id",
       "revoked_at",
+    ]);
+    // whether a purge was claimed (ADR 0081), and when a purge of the closure period was scheduled and may run (the
+    // notice of a rescheduled purge, ADR 0102 amended)
+    assert.deepEqual(await columns("organization_purges", "SELECT"), [
+      "locked_until",
+      "not_before",
+      "organization_id",
+      "purged_at",
+      "scheduled_at",
+      "storage_touched_at",
+      "trigger",
     ]);
     await Promise.all(
       ["organizations", "memberships", "offline_grants"].map(async (table) =>
@@ -1003,6 +1016,10 @@ async function run() {
     assert.deepEqual(
       policies.rows.map((row) => row.policyname),
       [
+        // the notices of the closure milestones (ADR 0102, amended): written, read and settled by its functions
+        "closure_notices_privacy_owner_insert",
+        "closure_notices_privacy_owner_select",
+        "closure_notices_privacy_owner_update",
         "data_export_files_privacy_owner_delete",
         "data_export_files_privacy_owner_insert",
         "data_export_files_privacy_owner_select",
@@ -1014,6 +1031,8 @@ async function run() {
         "deletion_ledger_privacy_owner_select",
         // the re-arm of an export event still owed (ADR 0084)
         "event_outbox_privacy_owner_insert_closed",
+        // the event of a closure notice that goes out (ADR 0102, amended)
+        "event_outbox_privacy_owner_insert_closure_notice",
         // the cancellation of the renewal at the closure and its retry by state (ADR 0074, L4)
         "event_outbox_privacy_owner_insert_renewal_cancel",
         "event_outbox_privacy_owner_rearm",

@@ -9,6 +9,10 @@ export const CLOSURE_AUTO_PURGE_ALERT_PER_DAY = 5;
 
 export interface PrivacyMaintenanceReport {
   closedOrganizations: number;
+  /** Notices of a closure milestone written to go out by this run, each with its outbox event (ADR 0102, amended). */
+  closureNoticesRecorded: number;
+  /** Earlier milestones written skipped, because a later one was due with them (no e-mail). */
+  closureNoticesSkipped: number;
   /**
    * Closed organizations still waiting 30 days after D with no legal hold (0 with the switch off): a store left
    * behind by a cancellation of the Admin, a renewal still alive or a temporary access (`closure_purge_overdue`).
@@ -44,12 +48,16 @@ export function closureAutoPurgeVolumeHigh(
  * recovery window ended becomes closed, and then, with the switch on, a closed organization whose D minus 7
  * local days arrived has its purge scheduled (the purge itself runs later, never before D plus 48 hours). Both
  * are bounded, so a backlog is worked off over several hourly runs instead of one long one; neither moves
- * anything back nor deletes anything.
+ * anything back nor deletes anything. Last, whatever the switch, the notices of the milestones whose date
+ * arrived are written (the request, D minus 30 and minus 7, D, and a purge pushed by the release of a legal
+ * hold), after the schedule, so the notice of D minus 7 goes out with it.
  */
 export async function runPrivacyMaintenance(
   client: Pick<
     PrivacyMaintenanceClient,
-    "finalizeExpiredClosures" | "scheduleClosedOrganizationPurges"
+    | "finalizeExpiredClosures"
+    | "recordClosureNotices"
+    | "scheduleClosedOrganizationPurges"
   >,
   options: PrivacyMaintenanceOptions
 ): Promise<PrivacyMaintenanceReport> {
@@ -78,8 +86,21 @@ export async function runPrivacyMaintenance(
       }
     }
   }
+  let closureNoticesRecorded = 0;
+  let closureNoticesSkipped = 0;
+  for (let batch = 0; batch < CLOSURE_SWEEP_MAX_BATCHES; batch += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: each batch decides whether another is needed.
+    const notices = await client.recordClosureNotices(CLOSURE_SWEEP_BATCH);
+    closureNoticesRecorded += notices.recorded;
+    closureNoticesSkipped += notices.skipped;
+    if (notices.organizations < CLOSURE_SWEEP_BATCH) {
+      break;
+    }
+  }
   return {
     closedOrganizations,
+    closureNoticesRecorded,
+    closureNoticesSkipped,
     overduePurges,
     purgeSchedulingEnabled: options.autoPurgeEnabled,
     scheduledPurges,

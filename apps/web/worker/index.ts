@@ -21,6 +21,7 @@ import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
 } from "../src/server/billing/renewal-cancellation";
+import { handleClosureNotice } from "../src/server/privacy/closure-notice";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
@@ -486,6 +487,26 @@ async function handleRenewalCancelEvent(
   }
 }
 
+/**
+ * The handler of `organization.closure_notice` (ADR 0102, amended): a milestone of a closure arrived. Without the
+ * privacy role there is nothing to read, and a retry would not change it.
+ */
+async function handleClosureNoticeEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("closure_notice_not_configured");
+  }
+  const client = createPrivacyMaintenanceClient(connectionString);
+  try {
+    await handleClosureNotice(client, envelope);
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */
 const inMemoryLedger = createInMemoryProcessingLedger();
 
@@ -520,6 +541,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
       handleRenewalCancelEvent(env, envelope),
     "data_export.requested": (envelope: QueueEnvelope) =>
       handleDataExportRequested(env, envelope),
+    "organization.closure_notice": (envelope: QueueEnvelope) =>
+      handleClosureNoticeEvent(env, envelope),
   };
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {

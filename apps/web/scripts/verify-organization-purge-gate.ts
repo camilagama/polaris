@@ -57,6 +57,7 @@ import {
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
 import type { MediaBucketBinding } from "../src/server/environment";
+import { verifyClosureNotices } from "./closure-notice-checks";
 import { verifyAutomaticPurge } from "./organization-purge-automatic-checks";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import { createRequesterReader } from "../src/server/privacy/data-export-reader";
@@ -2748,6 +2749,19 @@ async function run() {
     // the purge of the closure period, scheduled on its own (ADR 0102)
     tests.push(
       ...(await verifyAutomaticPurge({
+        admin,
+        bucket,
+        concurrent: concurrentPrivacy,
+        maintenance,
+        owner: owner.pool,
+        principal,
+        runtimes: { admin, tenant: runtime.pool },
+      }))
+    );
+
+    // the notices of the closure milestones, written by the same job (ADR 0102, amended)
+    tests.push(
+      ...(await verifyClosureNotices({
         admin,
         bucket,
         concurrent: concurrentPrivacy,
