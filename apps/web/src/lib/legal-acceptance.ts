@@ -4,6 +4,9 @@ import { parseReturnPath } from "./return-path";
 /** The acceptance screen: outside the shell, like the sign-in screen and the legal pages (ADR 0100). */
 const LEGAL_ACCEPTANCE_PATH = "/aceite";
 
+// Only a base for the URL parser: what comes out is a path, never this host.
+const RETURN_BASE_ORIGIN = "http://polaris.invalid";
+
 const trailingSlashes = /\/+$/;
 const CHANNEL_NAME = "polaris:legal-acceptance";
 
@@ -30,14 +33,25 @@ export function legalAcceptancePath(returnTo?: string | undefined): string {
   return `${LEGAL_ACCEPTANCE_PATH}?voltar=${encodeForAddress(destination)}`;
 }
 
-/** Where `/aceite` goes once accepted: a valid `voltar`, otherwise the start. Never `/aceite` again. */
+/**
+ * Where `/aceite` goes once accepted: a valid `voltar`, otherwise the start. Never `/aceite` again.
+ * The result is rebuilt from the parts of a parsed URL, after checking that it stayed on this app's origin.
+ */
 export function acceptanceReturnPath(search: string): string {
   const destination = parseReturnPath(
     new URLSearchParams(search).get("voltar")
   );
-  return destination && !isLegalAcceptancePath(destination.split("?")[0] ?? "")
-    ? destination
-    : "/";
+  if (!destination) {
+    return "/";
+  }
+  const url = new URL(destination, RETURN_BASE_ORIGIN);
+  if (
+    url.origin !== RETURN_BASE_ORIGIN ||
+    isLegalAcceptancePath(url.pathname)
+  ) {
+    return "/";
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 // Module-level, like "the session is over": a call of this page was refused for lack of acceptance. It

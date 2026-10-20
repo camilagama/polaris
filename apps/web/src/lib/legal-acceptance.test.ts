@@ -57,6 +57,12 @@ describe("acceptanceReturnPath", () => {
     );
   });
 
+  it("keeps the query and the fragment of a valid voltar", () => {
+    expect(acceptanceReturnPath("?voltar=/vendas?aba=a#topo")).toBe(
+      "/vendas?aba=a#topo"
+    );
+  });
+
   it("goes to the start when voltar is missing, invalid, external or the screen itself", () => {
     for (const search of [
       "",
@@ -68,6 +74,16 @@ describe("acceptanceReturnPath", () => {
       "?voltar=/aceite",
       "?voltar=/aceite?voltar=/vendas",
       "?outro=/vendas",
+      "?voltar=javascript:alert(1)",
+      "?voltar=data:text/html,x",
+      "?voltar=/\\evil.example",
+      "?voltar=\\\\evil.example",
+      "?voltar=%2F%2Fevil.example",
+      "?voltar=/%5Cevil.example",
+      "?voltar=%20//evil.example",
+      "?voltar=%0d%0a/vendas",
+      "?voltar=/vendas%0d%0a",
+      "?voltar=/../api/x",
     ]) {
       expect(acceptanceReturnPath(search)).toBe("/");
     }
