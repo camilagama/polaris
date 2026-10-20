@@ -1541,16 +1541,27 @@ async function main() {
         ),
         null
       );
+      // attaching the reference already on the record is a repeat: nothing replaced
       assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_third_${run}`
+        ),
+        null
+      );
+      // the third checkout is open (attaching it cleared the subscription): going back to
+      // another reference names it, so the caller gives it up and no open checkout is left behind
+      assert.deepEqual(
         await billing.attachProvider(
           twice.organizationId,
           "fake",
           `chk_second_${run}`
         ),
-        null
+        { provider: "fake", providerRef: `chk_third_${run}` }
       );
       tests.push(
-        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person; and a new checkout's attachProvider names the reference it replaced (null for the first, for a repeat and for a finished checkout)"
+        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person; and a new checkout's attachProvider names the reference it replaced (null for the first, for a repeat of the current reference and for a finished checkout; the open checkout it replaced otherwise, including when going back to an earlier reference)"
       );
     }
 
