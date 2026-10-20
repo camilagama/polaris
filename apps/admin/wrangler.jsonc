@@ -33,7 +33,8 @@
   // Hyperdrive configuration with query caching disabled, using the login of the
   // Admin role (a member of polaris_admin_runtime), which reads no table and runs only the Admin functions. Caching must stay off: the audit of every read and reveal is written by the function the query calls.
   // ADMIN_BILLING_HYPERDRIVE (the billing role's login, caching off) is added per environment for the
-  // billing commands; without it they answer 503 and nothing is written (ADR 0073).
+  // billing commands and for the purge, which reads the renewal first; without it they answer 503 and
+  // nothing is written (ADR 0073, ADR 0074).
   "hyperdrive": [
     {
       "binding": "ADMIN_HYPERDRIVE",

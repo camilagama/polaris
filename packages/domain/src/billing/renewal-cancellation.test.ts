@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { BILLING_STATES } from "./entitlements";
 import {
+  billingProviderHandled,
+  checkoutOpen,
+  HANDLED_BILLING_PROVIDERS,
   RENEWAL_CANCELLATION_STATUSES,
   renewalAlive,
+  renewalBlocksPurge,
   renewalCancellationStatus,
 } from "./renewal-cancellation";
 
-const asaas = { provider: "asaas" };
-const woovi = { provider: "woovi" };
+const asaas = { provider: "asaas", providerSubscriptionId: "sub_1" };
+const asaasCheckout = { provider: "asaas", providerSubscriptionId: null };
+const woovi = { provider: "woovi", providerSubscriptionId: "sub_2" };
 const handlesAsaas = (provider: string) => provider === "asaas";
 
 describe("renewalAlive", () => {
@@ -69,15 +74,18 @@ describe("renewalCancellationStatus", () => {
     ).toBe("pending");
   });
 
-  it("is pending while a checkout opened before the closure can still become a subscription", () => {
-    expect(
-      renewalCancellationStatus(
-        { cancelAtPeriodEnd: false, state: "trial_setup" },
-        asaas,
-        handlesAsaas
-      )
-    ).toBe("pending");
-  });
+  it.each(["free", "trial_setup"] as const)(
+    "is pending in %s while a checkout opened before the closure is not given up, and cancelled once it is",
+    (state) => {
+      const record = { cancelAtPeriodEnd: false, state };
+      expect(
+        renewalCancellationStatus(record, asaasCheckout, handlesAsaas)
+      ).toBe("pending");
+      expect(
+        renewalCancellationStatus(record, asaasCheckout, handlesAsaas, true)
+      ).toBe("cancelled");
+    }
+  );
 
   it("is cancelled once the cancellation is recorded, and when nothing is left to renew", () => {
     expect(
@@ -115,5 +123,67 @@ describe("renewalCancellationStatus", () => {
         handlesAsaas
       )
     ).toBe("not_handled");
+  });
+});
+
+describe("checkoutOpen", () => {
+  it.each(["free", "free_over_limit", "trial_setup"] as const)(
+    "is open in %s with a checkout linked and no subscription matched, until it is given up",
+    (state) => {
+      const record = { cancelAtPeriodEnd: false, state };
+      expect(checkoutOpen(record, asaasCheckout, false)).toBe(true);
+      expect(checkoutOpen(record, asaasCheckout, true)).toBe(false);
+    }
+  );
+
+  it("is not open once a subscription matched, in a state that gives Pro, or without a link", () => {
+    expect(
+      checkoutOpen({ cancelAtPeriodEnd: false, state: "free" }, asaas, false)
+    ).toBe(false);
+    expect(
+      checkoutOpen(
+        { cancelAtPeriodEnd: false, state: "active" },
+        asaasCheckout,
+        false
+      )
+    ).toBe(false);
+    expect(
+      checkoutOpen({ cancelAtPeriodEnd: false, state: "free" }, null, false)
+    ).toBe(false);
+    expect(checkoutOpen(null, asaasCheckout, false)).toBe(false);
+  });
+});
+
+describe("the providers Polaris acts through", () => {
+  it("are Asaas only until Woovi has its port", () => {
+    expect(HANDLED_BILLING_PROVIDERS).toEqual(["asaas"]);
+    expect(billingProviderHandled("asaas")).toBe(true);
+    expect(billingProviderHandled("woovi")).toBe(false);
+  });
+});
+
+describe("renewalBlocksPurge", () => {
+  it("blocks while the renewal is alive at a provider Polaris cancels through", () => {
+    expect(
+      renewalBlocksPurge({ cancelAtPeriodEnd: false, state: "active" }, asaas)
+    ).toBe(true);
+  });
+
+  it("does not block once cancelled, without Pro, without a link or at a provider Polaris does not cancel through", () => {
+    expect(
+      renewalBlocksPurge({ cancelAtPeriodEnd: true, state: "active" }, asaas)
+    ).toBe(false);
+    expect(
+      renewalBlocksPurge(
+        { cancelAtPeriodEnd: false, state: "free" },
+        asaasCheckout
+      )
+    ).toBe(false);
+    expect(
+      renewalBlocksPurge({ cancelAtPeriodEnd: false, state: "active" }, null)
+    ).toBe(false);
+    expect(
+      renewalBlocksPurge({ cancelAtPeriodEnd: false, state: "active" }, woovi)
+    ).toBe(false);
   });
 });

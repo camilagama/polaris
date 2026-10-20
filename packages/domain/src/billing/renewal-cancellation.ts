@@ -26,6 +26,22 @@ export type RenewalRecord = Pick<BillingRecord, "cancelAtPeriodEnd" | "state">;
 
 export interface RenewalProviderLink {
   provider: string;
+  /** The provider's own ID of the subscription, once a fact matched it; null while only a checkout is linked. */
+  providerSubscriptionId: string | null;
+}
+
+/**
+ * The providers Polaris acts through (cancels, refunds, reconciles, gives a checkout up): the ones with an
+ * outbound port. Woovi enters with its port (cobrança PR 6, ADR 0101), and with it the list the hourly run
+ * passes to the database.
+ */
+export const HANDLED_BILLING_PROVIDERS: readonly string[] = Object.freeze([
+  "asaas",
+]);
+
+/** Whether Polaris acts through this provider at all: without its port, the renewal is the person's to cancel. */
+export function billingProviderHandled(provider: string): boolean {
+  return HANDLED_BILLING_PROVIDERS.includes(provider);
 }
 
 /**
@@ -43,20 +59,56 @@ export function renewalAlive(
 }
 
 /**
+ * Whether a checkout linked before the closure can still be paid: no subscription matched it yet (the link
+ * has no `providerSubscriptionId`), the state gives no Pro (`free`, `free_over_limit` or `trial_setup`) and
+ * the closure has not given it up at the provider yet (`discarded`, read from the billing ledger). Paid
+ * after the closure, it would charge a whole period of a closed store, or start the trial there.
+ */
+export function checkoutOpen(
+  record: RenewalRecord | null,
+  link: RenewalProviderLink | null,
+  discarded: boolean
+): boolean {
+  return Boolean(
+    record &&
+      link &&
+      link.providerSubscriptionId === null &&
+      !grantsPro(record.state) &&
+      !discarded
+  );
+}
+
+/**
+ * Whether the Admin's purge must wait: the renewal is alive at a provider Polaris cancels through. After
+ * the purge the hourly retry stops (the organization leaves the closure), and the charge would go on with
+ * nothing left in Polaris to cancel it.
+ */
+export function renewalBlocksPurge(
+  record: RenewalRecord | null,
+  link: RenewalProviderLink | null
+): boolean {
+  return Boolean(
+    link && billingProviderHandled(link.provider) && renewalAlive(record, link)
+  );
+}
+
+/**
  * The status the panel of a closed organization shows. `handles` says whether Polaris cancels through
  * that provider (it has its adapter); without one the renewal is the person's to cancel, whatever the
- * record says. A checkout opened and not paid yet (`trial_setup`) is still `pending`: it can still become
- * a subscription, and the hourly run cancels it once it does.
+ * record says. A checkout still open (`checkoutOpen`) is `pending` until the closure gives it up at the
+ * provider (`checkoutDiscarded`): until then it can still become a subscription.
  */
 export function renewalCancellationStatus(
   record: RenewalRecord | null,
   link: RenewalProviderLink | null,
-  handles: (provider: string) => boolean
+  handles: (provider: string) => boolean,
+  checkoutDiscarded = false
 ): RenewalCancellationStatus {
   if (!(record && link && handles(link.provider))) {
     return "not_handled";
   }
-  return renewalAlive(record, link) || record.state === "trial_setup"
+  return renewalAlive(record, link) ||
+    checkoutOpen(record, link, checkoutDiscarded)
     ? "pending"
     : "cancelled";
 }

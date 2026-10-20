@@ -1,12 +1,13 @@
 import { createBillingStore } from "@polaris/db/billing-store";
 import {
+  billingProviderHandled,
+  checkoutOpen,
   type RenewalCancellationStatus,
   renewalCancellationStatus,
 } from "@polaris/domain/billing/renewal-cancellation";
 import { describeError } from "@polaris/observability/wide-event";
 import { logger } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
-import { billingProviderHandled } from "./provider-ports";
 
 /**
  * What the panel of a closed organization says about its renewal (ADR 0074,
@@ -48,9 +49,19 @@ export function createRenewalStatusReader(
           store.readRecord(id),
           store.readProviderLink(id),
         ]);
+        // a checkout still open is pending until the closure gives it up (the ledger says when)
+        const discarded =
+          link && checkoutOpen(record, link, false)
+            ? await store.checkoutDiscarded(id, link)
+            : false;
         statuses.set(
           id,
-          renewalCancellationStatus(record, link, billingProviderHandled)
+          renewalCancellationStatus(
+            record,
+            link,
+            billingProviderHandled,
+            discarded
+          )
         );
       }
     } catch (error: unknown) {

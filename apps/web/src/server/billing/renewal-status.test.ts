@@ -6,27 +6,58 @@ const bindings = {
   BILLING_HYPERDRIVE: { connectionString: "postgresql://billing.invalid/db" },
 } as unknown as WorkerBindings;
 
+const subscribed = {
+  provider: "asaas",
+  providerRef: "pol_1",
+  providerSubscriptionId: "sub_1",
+};
+const checkout = {
+  provider: "asaas",
+  providerRef: "pol_2",
+  providerSubscriptionId: null,
+};
+
 const records: Record<
   string,
-  { link: { provider: string } | null; record: unknown }
+  {
+    link: {
+      provider: string;
+      providerRef: string;
+      providerSubscriptionId: string | null;
+    } | null;
+    record: unknown;
+  }
 > = {
   alive: {
-    link: { provider: "asaas" },
+    link: subscribed,
     record: { cancelAtPeriodEnd: false, state: "active" },
   },
   cancelled: {
-    link: { provider: "asaas" },
+    link: subscribed,
     record: { cancelAtPeriodEnd: true, state: "active" },
   },
+  // the closure gave this checkout up (the ledger has it)
+  discarded: {
+    link: { ...checkout, providerRef: "pol_3" },
+    record: { cancelAtPeriodEnd: false, state: "free" },
+  },
   free: { link: null, record: { cancelAtPeriodEnd: false, state: "free" } },
+  // a checkout linked before the closure and not paid, not given up yet
+  openCheckout: {
+    link: checkout,
+    record: { cancelAtPeriodEnd: false, state: "free" },
+  },
   woovi: {
-    link: { provider: "woovi" },
+    link: { ...subscribed, provider: "woovi" },
     record: { cancelAtPeriodEnd: false, state: "active" },
   },
 };
 
 function fakeStore() {
   return {
+    checkoutDiscarded: vi.fn((_id: string, link: { providerRef: string }) =>
+      Promise.resolve(link.providerRef === "pol_3")
+    ),
     close: vi.fn(() => Promise.resolve()),
     readProviderLink: vi.fn((id: string) =>
       Promise.resolve(records[id]?.link ?? null)
@@ -46,7 +77,9 @@ describe("the renewal status of closed organizations", () => {
     const statuses = await read(bindings, [
       "alive",
       "cancelled",
+      "discarded",
       "free",
+      "openCheckout",
       "woovi",
       "missing",
     ]);
@@ -55,10 +88,14 @@ describe("the renewal status of closed organizations", () => {
     expect(Object.fromEntries(statuses)).toEqual({
       alive: "pending",
       cancelled: "cancelled",
+      discarded: "cancelled",
       free: "not_handled",
       missing: "not_handled",
+      openCheckout: "pending",
       woovi: "not_handled",
     });
+    // the ledger is read only for a checkout that could still be open
+    expect(store.checkoutDiscarded).toHaveBeenCalledTimes(2);
     expect(store.close).toHaveBeenCalledTimes(1);
   });
 

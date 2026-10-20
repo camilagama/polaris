@@ -16,10 +16,7 @@ import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
 } from "../src/server/billing/maintenance";
-import {
-  billingProviderPortOf,
-  billingProviderHandled,
-} from "../src/server/billing/provider-ports";
+import { billingProviderPortOf } from "../src/server/billing/provider-ports";
 import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
@@ -41,6 +38,7 @@ import {
   PermanentHandlerError,
   type QueueBatch,
 } from "../src/server/queue/consumer";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { approvedRetention } from "@polaris/domain/privacy/retention";

@@ -84,6 +84,14 @@ export interface SupportDependencies {
     caseId: string,
     bindings: AdminBindings
   ) => Promise<{ changed: boolean; status: string } | null>;
+  /**
+   * Whether the organization's renewal is still alive at a provider Polaris cancels through (its billing
+   * record and link, read by the billing role). A failure to read throws: the purge is then refused too.
+   */
+  renewalBlocksPurge: (
+    organizationId: string,
+    bindings: AdminBindings
+  ) => Promise<boolean>;
   /** Ends a grant of the case's organization (recorded before and after). */
   revokeEntitlement: (
     principalId: string,
@@ -498,6 +506,48 @@ export function supportRoutes(
         controlCharacter(organizationId)
       ) {
         return invalid(context);
+      }
+      // billing is read only for the case's own organization: another one named is refused before any read
+      const found = await dependencies.detail(caseId, context.env);
+      if (!found) {
+        return notFound(context);
+      }
+      if (found.case.organizationId !== organizationId) {
+        throw new OrganizationPurgeRefusedError("organization_mismatch");
+      }
+      // the closure asked the provider to cancel the renewal; after the purge the hourly retry stops and
+      // nothing in Polaris could cancel it, so the purge waits for it (ADR 0074). Not knowing is a refusal too
+      let renewalAlive: boolean;
+      try {
+        renewalAlive = await dependencies.renewalBlocksPurge(
+          organizationId,
+          context.env
+        );
+      } catch (error: unknown) {
+        // the cause (a binding missing, the database) goes to the log; the operator reads only the code
+        report("admin_error", describeError(error));
+        report("organization_purge_refused", {
+          errorCode: "renewal_status_unavailable",
+        });
+        return context.json(
+          {
+            error: "renewal_status_unavailable",
+            message:
+              "Não foi possível ler a cobrança da organização para confirmar que a renovação foi cancelada. Tente de novo.",
+          },
+          503
+        );
+      }
+      if (renewalAlive) {
+        report("organization_purge_refused", { errorCode: "renewal_alive" });
+        return context.json(
+          {
+            error: "renewal_alive",
+            message:
+              'A renovação da assinatura ainda não foi cancelada no provedor: o purge espera o cancelamento (runbook billing-providers, "Purge e renovação").',
+          },
+          409
+        );
       }
       return context.json(
         await dependencies.purge(

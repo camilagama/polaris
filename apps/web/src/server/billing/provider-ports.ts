@@ -7,6 +7,7 @@ import {
   type BillingProviderPort,
   ProviderNotConfiguredError,
 } from "@polaris/billing/provider-port";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import type { WorkerBindings } from "../environment";
 
 /** A command to the provider gives up after this long (ADR 0101): the caller sees `provider_unavailable`. */
@@ -15,22 +16,6 @@ const BILLING_COMMAND_TIMEOUT_MS = 8000;
 export interface BillingPortOptions {
   fetch?: FetchLike;
   randomUuid?: () => string;
-}
-
-/** The providers Polaris acts through (cancels, refunds, reconciles): the ones with an outbound port. */
-export const HANDLED_BILLING_PROVIDERS: readonly string[] = Object.freeze([
-  "asaas",
-]);
-const HANDLED_PROVIDERS: ReadonlySet<string> = new Set(
-  HANDLED_BILLING_PROVIDERS
-);
-
-/**
- * Whether Polaris acts through this provider at all, whatever the settings of
- * this environment: without its port, the renewal is the person's to cancel.
- */
-export function billingProviderHandled(provider: string): boolean {
-  return HANDLED_PROVIDERS.has(provider);
 }
 
 /**

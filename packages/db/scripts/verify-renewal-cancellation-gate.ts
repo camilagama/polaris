@@ -1,8 +1,12 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: Probes, in order.
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { BILLING_STATES } from "@polaris/domain/billing/entitlements";
-import { renewalAlive } from "@polaris/domain/billing/renewal-cancellation";
+import {
+  checkoutOpen,
+  renewalAlive,
+} from "@polaris/domain/billing/renewal-cancellation";
+import { PURGE_BILLING_FACT_KEYS } from "../src/purge-datasets";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import {
@@ -425,6 +429,27 @@ async function run() {
       "dispatched"
     );
 
+    // the request resent long after (the Admin), once the organization subscribed again: the fact of the
+    // new subscription has an ID of its own (the request and the reference), so it applies and the record
+    // says cancelled; the same request for the same subscription stays a duplicate
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET provider_ref = $2, provider_subscription_id = NULL, cancel_at_period_end = false WHERE organization_id = $1",
+      [linked.organizationId, refOf("pol_renew_linked_again")]
+    );
+    const resent = await store.recordEvent({
+      ...cancellation,
+      fact: { occurredAt: new Date(), type: "subscription_cancelled" },
+      providerEventId: `command:cancel_renewal:${first.id}:again`,
+      providerRef: refOf("pol_renew_linked_again"),
+    });
+    assert.equal(resent.duplicate, false);
+    assert.equal((await store.processEvent(resent.id)).status, "applied");
+    assert.equal(
+      (await store.readRecord(linked.organizationId))?.cancelAtPeriodEnd,
+      true,
+      "the resent cancellation of another subscription is recorded"
+    );
+
     // a closure whose request is missing (closed before the event existed, or a checkout paid after it)
     const missing = await fixture("missing");
     await linkProvider(missing, "pol_renew_missing");
@@ -609,7 +634,114 @@ async function run() {
       );
     }
     tests.push(
-      "the retry is by state (V6), only at the providers the app lists and below 200 sends: a pending request and one dispatched less than the minimum age are left alone; one dispatched earlier is sent back to pending, the same row and key, once; the cycle's request is written when it is missing, once; nothing is asked once the cancellation is recorded (whose second delivery is a duplicate), without a provider, with a checkout not paid, on Free, for an open organization or for a closure undone; closing again after an undo has a request of its own and the old cycle is not sent again; the batch respects its limit and the arguments are checked"
+      "the retry is by state (V6), only at the providers the app lists and below 200 sends: a pending request and one dispatched less than the minimum age are left alone; one dispatched earlier is sent back to pending, the same row and key, once; the cycle's request is written when it is missing, once; nothing is asked once the cancellation is recorded (whose second delivery is a duplicate, while the same request for a subscription made again is a fact of its own that applies), without a provider, with a checkout not paid, on Free, for an open organization or for a closure undone; closing again after an undo has a request of its own and the old cycle is not sent again; the batch respects its limit and the arguments are checked"
+    );
+
+    // ------------------------------------------------- 3b. the checkout open at the closure is given up
+    const opened = await fixture("checkout open");
+    await linkProvider(opened, "pol_renew_checkout");
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET state = 'trial_setup', access_ends_at = NULL WHERE organization_id = $1",
+      [opened.organizationId]
+    );
+    await close(opened);
+    const [openedEvent] = await events(opened.organizationId);
+    assert.ok(openedEvent);
+    const openedLink = await store.readProviderLink(opened.organizationId);
+    assert.ok(openedLink);
+    assert.equal(openedLink.providerSubscriptionId, null);
+    assert.equal(
+      checkoutOpen(
+        await store.readRecord(opened.organizationId),
+        openedLink,
+        await store.checkoutDiscarded(opened.organizationId, openedLink)
+      ),
+      true,
+      "a checkout linked before the closure and not paid is open until the closure gives it up"
+    );
+    const openedBilling = await billingRow(opened.organizationId);
+    // what the consumer writes once the provider gave the checkout up, on the billing runtime; twice is once
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await store.recordCheckoutDiscarded({
+        link: openedLink,
+        organizationId: opened.organizationId,
+        requestId: openedEvent.id,
+      });
+    }
+    const ledger = (
+      await owner.pool.query<{
+        fact: Record<string, unknown>;
+        fact_type: string;
+        provider: string;
+        provider_event_id: string;
+        provider_ref: string | null;
+        state_after: string;
+        state_before: string;
+        status: string;
+      }>(
+        "SELECT provider, provider_event_id, provider_ref, fact, fact_type, status, state_before, state_after FROM public.billing_events WHERE organization_id = $1 AND fact ->> 'type' = 'checkout_discarded'",
+        [opened.organizationId]
+      )
+    ).rows;
+    assert.equal(ledger.length, 1, "the same request writes one ledger row");
+    const [discardRow] = ledger;
+    assert.ok(discardRow);
+    assert.deepEqual(
+      {
+        ...discardRow,
+        fact: Object.keys(discardRow.fact).sort(),
+      },
+      {
+        fact: ["occurredAt", "type"],
+        fact_type: "command",
+        provider: "polaris",
+        provider_event_id: `command:discard_checkout:${openedEvent.id}:${createHash("sha256").update(refOf("pol_renew_checkout")).digest("hex").slice(0, 32)}`,
+        provider_ref: refOf("pol_renew_checkout"),
+        state_after: "trial_setup",
+        state_before: "trial_setup",
+        status: "applied",
+      },
+      "a command of the ledger, the reference in its column and nothing of it in the fact"
+    );
+    for (const key of Object.keys(discardRow.fact)) {
+      assert.ok(
+        (PURGE_BILLING_FACT_KEYS as readonly string[]).includes(key),
+        `the purge keeps the key ${key} of the fact`
+      );
+    }
+    assert.equal(
+      await store.checkoutDiscarded(opened.organizationId, openedLink),
+      true
+    );
+    assert.equal(
+      checkoutOpen(
+        await store.readRecord(opened.organizationId),
+        openedLink,
+        await store.checkoutDiscarded(opened.organizationId, openedLink)
+      ),
+      false,
+      "once given up, nothing is open"
+    );
+    assert.deepEqual(
+      await billingRow(opened.organizationId),
+      openedBilling,
+      "giving the checkout up changes no billing state"
+    );
+    assert.equal(
+      await store.checkoutDiscarded(opened.organizationId, {
+        provider: "asaas",
+        providerRef: refOf("pol_renew_checkout_next"),
+      }),
+      false,
+      "another checkout of the organization is not the one given up"
+    );
+    assert.equal(
+      await store.checkoutDiscarded(linked.organizationId, openedLink),
+      false,
+      "the ledger row is the organization's own"
+    );
+    tests.push(
+      "a checkout linked before the closure and not paid (no subscription matched, no Pro) is open until the billing runtime records it given up: one command row of the ledger per request (writing it twice is one row), the reference in its column, a fact the purge keeps whole, no billing state changed; another checkout or another organization is not the one given up"
     );
 
     // ------------------------------------------------- 4. the same predicate as the domain
@@ -627,7 +759,10 @@ async function run() {
           .sort()
       );
     const domain = BILLING_STATES.filter((state) =>
-      renewalAlive({ cancelAtPeriodEnd: false, state }, { provider: "asaas" })
+      renewalAlive(
+        { cancelAtPeriodEnd: false, state },
+        { provider: "asaas", providerSubscriptionId: "sub_gate" }
+      )
     ).sort();
     assert.equal(
       listed.length,
