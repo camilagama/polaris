@@ -20,6 +20,8 @@ const dbPackage = fileURLToPath(
   new URL("../../../packages/db", import.meta.url)
 );
 const databasePattern = /^e2e_[a-f0-9]{12}$/;
+// lives outside the migrations (the CI job of the gates creates it); the run creates it only when it is missing
+const RUNTIME_ROLE = "polaris_pr11_runtime";
 
 type Pool = ReturnType<typeof createDatabase>["pool"];
 
@@ -89,19 +91,31 @@ function migrate(url: string): void {
   }
 }
 
+/** Returns whether this run created the runtime role (then the teardown drops it). */
 export async function createRunDatabase(
   owner: URL,
   run: RunEnvironment
-): Promise<void> {
+): Promise<{ createdRuntimeRole: boolean }> {
   const database = runDatabaseName(run.runId);
   await assertOwnerCanCreate(owner);
-  await withOwner(owner, "postgres", async (pool) => {
-    await pool.query(`CREATE DATABASE ${quoted(database, databasePattern)}`);
-    // the CI job creates this one before the migrations, as it lives outside them
-    await pool.query(
-      "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'polaris_pr11_runtime') THEN CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$"
-    );
-  });
+  const createdRuntimeRole = await withOwner(
+    owner,
+    "postgres",
+    async (pool) => {
+      await pool.query(`CREATE DATABASE ${quoted(database, databasePattern)}`);
+      const existing = await pool.query(
+        "SELECT 1 FROM pg_roles WHERE rolname = $1",
+        [RUNTIME_ROLE]
+      );
+      if (existing.rows.length > 0) {
+        return false;
+      }
+      await pool.query(
+        `CREATE ROLE ${RUNTIME_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS`
+      );
+      return true;
+    }
+  );
   migrate(databaseUrl(owner, database));
   await withOwner(owner, database, async (pool) => {
     for (const binding of HYPERDRIVE_BINDINGS) {
@@ -113,12 +127,17 @@ export async function createRunDatabase(
       await pool.query(`GRANT ${HYPERDRIVE_ROLES[binding]} TO ${login}`);
     }
   });
+  return { createdRuntimeRole };
 }
 
-/** Drops the run database and its logins, and fails if anything of the run is left. */
+/**
+ * Drops the run database and its logins (and the runtime role when the run created it), and fails if anything of
+ * the run is left.
+ */
 export async function dropRunDatabase(
   owner: URL,
-  run: RunEnvironment
+  run: RunEnvironment,
+  dropRuntimeRole = false
 ): Promise<void> {
   const database = runDatabaseName(run.runId);
   await withOwner(owner, "postgres", async (pool) => {
@@ -130,9 +149,12 @@ export async function dropRunDatabase(
       // biome-ignore lint/performance/noAwaitInLoops: one role at a time on one connection
       await pool.query(`DROP ROLE IF EXISTS ${login}`);
     }
+    if (dropRuntimeRole) {
+      await pool.query(`DROP ROLE IF EXISTS ${RUNTIME_ROLE}`);
+    }
     const left = await pool.query<{ name: string }>(
-      "SELECT datname AS name FROM pg_database WHERE datname = $1 UNION ALL SELECT rolname FROM pg_roles WHERE rolname LIKE $2",
-      [database, `polaris_e2e_${run.runId}_%`]
+      "SELECT datname AS name FROM pg_database WHERE datname = $1 UNION ALL SELECT rolname FROM pg_roles WHERE rolname LIKE $2 OR ($3 AND rolname = $4)",
+      [database, `polaris_e2e_${run.runId}_%`, dropRuntimeRole, RUNTIME_ROLE]
     );
     if (left.rows.length > 0) {
       throw new Error(
