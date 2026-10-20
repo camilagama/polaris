@@ -104,3 +104,52 @@ export function PasswordResetEmail({ url }: { url: string }) {
     />
   );
 }
+
+export function LoginUnlockEmail({ url }: { url: string }) {
+  return (
+    <AuthActionEmail
+      actionLabel="Liberar a entrada agora"
+      actionURL={url}
+      heading="Pausamos a entrada na sua conta"
+      notice="O link vale 1 hora e só funciona uma vez. Se não foi você, troque a senha: na tela de entrada, toque em Esqueci a senha."
+      preview="Houve várias tentativas de entrar na sua conta do Polaris."
+      purpose="Houve várias tentativas de entrar na sua conta com uma senha errada. Por segurança, a entrada com senha ficou pausada por 15 minutos. Se foi você, espere 15 minutos ou toque no botão abaixo para liberar agora."
+    />
+  );
+}
+
+export function PasswordNoticeEmail({
+  kind,
+  url,
+}: {
+  kind: "changed" | "set";
+  url: string;
+}) {
+  const what =
+    kind === "changed"
+      ? "A senha da sua conta do Polaris foi trocada."
+      : "Uma senha foi adicionada à sua conta do Polaris. Agora você também pode entrar com e-mail e senha.";
+  return (
+    <AuthActionEmail
+      actionLabel="Redefinir a senha"
+      actionURL={url}
+      heading={kind === "changed" ? "Sua senha foi trocada" : "Sua conta tem uma senha"}
+      notice="Se foi você, não precisa fazer nada."
+      preview={what}
+      purpose={`${what} Se não foi você, redefina a senha agora pelo botão abaixo.`}
+    />
+  );
+}
+
+export function ExistingAccountEmail({ url }: { url: string }) {
+  return (
+    <AuthActionEmail
+      actionLabel="Entrar no Polaris"
+      actionURL={url}
+      heading="Você já tem conta no Polaris"
+      notice="Se não foi você que tentou criar a conta, pode ignorar esta mensagem: nada mudou na sua conta."
+      preview="Este e-mail já tem conta no Polaris."
+      purpose="Alguém tentou criar uma conta no Polaris com este e-mail, mas ele já tem conta. Para entrar, use Continuar com o Google, ou e-mail e senha. Se esqueceu a senha, toque em Esqueci a senha na tela de entrada."
+    />
+  );
+}

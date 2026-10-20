@@ -19,6 +19,11 @@ import {
   type LegalDocumentId,
 } from "@polaris/domain/legal/legal-documents";
 import { isSafeAuthCallbackPath } from "../lib/return-path";
+import {
+  createDatabaseLoginLockStore,
+  type LoginLockQueryable,
+} from "./auth/login-lock";
+import { loginLockKey } from "./auth/login-lock-key";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
   type AccessLogEvent,
@@ -64,8 +69,13 @@ export interface AuthSecurityAuditEvent {
     | "google_callback_failed"
     | "google_callback_succeeded"
     | "google_login_started"
+    | "login_locked"
+    | "login_unlocked"
     | "logout_failed"
-    | "logout_succeeded";
+    | "logout_succeeded"
+    | "password_changed"
+    | "password_reset_completed"
+    | "password_set";
   outcome: "failed" | "started" | "succeeded";
   provider: "google" | null;
   requestId: string;
@@ -79,12 +89,46 @@ type PasswordResetSender = NonNullable<
 >;
 
 export interface AuthEmailDelivery {
+  /** The e-mail to an address that already has an account, when someone signs up with it (in the background). */
+  sendExistingAccount?: (input: {
+    user: { email: string; id: string };
+  }) => Promise<void>;
   sendPasswordReset: PasswordResetSender;
   sendVerificationEmail: EmailVerificationSender;
 }
-type AuthSecurityAuditEventWriter = (
+export type AuthSecurityAuditEventWriter = (
   event: AuthSecurityAuditEvent
 ) => Promise<void>;
+
+/** The writer of `auth_security_audit_event` over the authentication runtime's connection. */
+export function databaseAuditEventWriter(
+  database: PolarisDatabase
+): AuthSecurityAuditEventWriter {
+  return async (event) => {
+    await database.insert(authSecurityAuditEvents).values(event);
+  };
+}
+
+/** An audit event of the password flows: no provider and no error, only who and which request. */
+export function passwordAuditEvent(
+  eventType:
+    | "login_locked"
+    | "login_unlocked"
+    | "password_changed"
+    | "password_reset_completed"
+    | "password_set",
+  actorId: string,
+  requestId: string
+): AuthSecurityAuditEvent {
+  return {
+    actorId,
+    errorCode: null,
+    eventType,
+    outcome: "succeeded",
+    provider: null,
+    requestId,
+  };
+}
 /** Records the acceptance, at sign-up, of the version in force of one legal document. */
 type SignUpLegalAcceptanceRecorder = (entry: {
   document: LegalDocumentId;
@@ -92,6 +136,8 @@ type SignUpLegalAcceptanceRecorder = (entry: {
 }) => Promise<unknown>;
 /** Invalidates every offline lease of a user after a security event. */
 type AuthorizationEpochBumper = (userId: string) => Promise<void>;
+/** Forgets the sign-in lock of an e-mail (a password reset also unlocks, ADR 0100). */
+type LoginLockClearer = (email: string) => Promise<void>;
 
 interface CreateBetterAuthOptions {
   /** Appends the record of access (ADR 0092); the default writes through `database`, none without one. */
@@ -105,6 +151,8 @@ interface CreateBetterAuthOptions {
   googleProvider?: GoogleOptions;
   /** Records the acceptance given at sign-up; the default writes through `database`, none without one. */
   legalAcceptanceRecorder?: SignUpLegalAcceptanceRecorder;
+  /** Forgets the lock after a password reset; the default goes through `database`, none without one. */
+  loginLockClearer?: LoginLockClearer;
   plugins?: BetterAuthOptions["plugins"];
   requestId?: string;
   runInBackground?: BackgroundTaskHandler;
@@ -660,6 +708,7 @@ export function createBetterAuth({
   emailDelivery,
   googleProvider,
   legalAcceptanceRecorder,
+  loginLockClearer,
   plugins,
   requestId,
   runInBackground,
@@ -668,9 +717,14 @@ export function createBetterAuth({
   const safeRequestId = normalizeRequestId(requestId);
   const writeAuditEvent =
     auditEventWriter ??
+    (database ? databaseAuditEventWriter(database) : undefined);
+  const clearLoginLock: LoginLockClearer | undefined =
+    loginLockClearer ??
     (database
-      ? async (event: AuthSecurityAuditEvent) => {
-          await database.insert(authSecurityAuditEvents).values(event);
+      ? async (email: string) => {
+          await createDatabaseLoginLockStore(
+            database.$client as unknown as LoginLockQueryable
+          ).clear(await loginLockKey(secret, email));
         }
       : undefined);
 
@@ -968,21 +1022,41 @@ export function createBetterAuth({
           enabled: true,
           maxPasswordLength: 256,
           minPasswordLength: 1,
+          ...(emailDelivery.sendExistingAccount
+            ? { onExistingUserSignUp: emailDelivery.sendExistingAccount }
+            : {}),
           onPasswordReset: async ({ user }) => {
             // Better Auth revokes the sessions only after this hook returns, so a
             // failure here must never escape: the password is already changed and
             // the reset token consumed. Sessions are what authorize a sync, so
             // revoking them still makes every offline lease useless; the failed
-            // bump is logged for the operator to see.
-            try {
-              await bumpAuthorizationEpoch?.(user.id);
-            } catch (error) {
-              logServerError({
-                error,
-                method: "POST",
-                requestId: "password-reset",
-                route: "/api/auth/reset-password",
-              });
+            // step is logged for the operator to see. Each step runs even when
+            // the one before failed: the reset also lifts the sign-in lock of the
+            // e-mail (ADR 0100) and is audited.
+            const steps: (() => Promise<void> | undefined)[] = [
+              () => bumpAuthorizationEpoch?.(user.id),
+              () => clearLoginLock?.(user.email),
+              () =>
+                writeAuditEvent(
+                  passwordAuditEvent(
+                    "password_reset_completed",
+                    user.id,
+                    safeRequestId
+                  )
+                ),
+            ];
+            for (const step of steps) {
+              try {
+                // biome-ignore lint/performance/noAwaitInLoops: one after the other, each failure on its own
+                await step();
+              } catch (error) {
+                logServerError({
+                  error,
+                  method: "POST",
+                  requestId: safeRequestId,
+                  route: "/api/auth/reset-password",
+                });
+              }
             }
           },
           password: {

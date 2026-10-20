@@ -264,6 +264,42 @@ export async function protectSocialAuthRequest(
   return jsonError(429, "auth_rate_limited", requestId);
 }
 
+/**
+ * The limit of the routes of the links of the e-mails (`/api/login-unlock`, `/api/email-verification`,
+ * ADR 0100): the same `AUTH_RATE_LIMITER` per IP, with a scope of its own and no Turnstile (the person
+ * arrives from an e-mail). It fails closed: no binding, no client IP or a failing binding is a 503.
+ */
+export async function protectAuthLinkRequest(
+  request: Request,
+  bindings: WorkerBindings,
+  requestId?: string
+): Promise<Response | undefined> {
+  const secret = bindings.BETTER_AUTH_SECRET;
+  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  const limiter = bindings.AUTH_RATE_LIMITER;
+  if (
+    !(secret && limiter && clientIp) ||
+    clientIp.length > 64 ||
+    invalidClientIpPattern.test(clientIp)
+  ) {
+    return jsonError(503, "auth_rate_limit_unavailable", requestId);
+  }
+  try {
+    const result = await limiter.limit({
+      key: await limiterKey(secret, "auth-link-ip", clientIp),
+    });
+    if (typeof result.success !== "boolean") {
+      return jsonError(503, "auth_rate_limit_unavailable", requestId);
+    }
+    if (!result.success) {
+      return jsonError(429, "auth_rate_limited", requestId);
+    }
+  } catch {
+    return jsonError(503, "auth_rate_limit_unavailable", requestId);
+  }
+  return undefined;
+}
+
 export const protectAuthRequest: AuthAbuseProtector = async (
   request: Request,
   bindings: WorkerBindings,

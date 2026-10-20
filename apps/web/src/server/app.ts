@@ -5,11 +5,14 @@ import {
   type AuthAbuseProtector,
   isAuthAbuseProtectionApplicable,
   isSocialAuthRateLimitApplicable,
+  protectAuthLinkRequest,
   protectAuthRequest,
   protectSocialAuthRequest,
 } from "./auth/abuse-protection";
 import {
   handleBetterAuthRequest,
+  handleEmailVerificationRequest,
+  handleLoginUnlockRequest,
   isEmailPasswordAuthEnabled,
 } from "./auth/handler";
 import type { ServerEnv, WorkerBindings } from "./environment";
@@ -46,6 +49,11 @@ type AuthRequestHandler = (
 interface ServerAppOptions {
   authAbuseProtector?: AuthAbuseProtector;
   authHandler?: AuthRequestHandler;
+  /** The routes of the links of the e-mails (`/api/login-unlock`, `/api/email-verification`). */
+  authLinkHandlers?: {
+    emailVerification: AuthRequestHandler;
+    loginUnlock: AuthRequestHandler;
+  };
   rpcRouter?: typeof defaultRpcRouter;
 }
 
@@ -63,6 +71,10 @@ function backgroundTaskRunner(context: Context<ServerEnv>) {
 export function createServerApp({
   authAbuseProtector = protectAuthRequest,
   authHandler = handleBetterAuthRequest,
+  authLinkHandlers = {
+    emailVerification: handleEmailVerificationRequest,
+    loginUnlock: handleLoginUnlockRequest,
+  },
   rpcRouter = defaultRpcRouter,
 }: ServerAppOptions = {}) {
   const app = new Hono<ServerEnv>();
@@ -159,6 +171,40 @@ export function createServerApp({
   };
   app.get("/api/auth/*", authRoute);
   app.post("/api/auth/*", authRoute);
+
+  // The links of the e-mails post their token here (ADR 0100): the origin check of `/api/*`, then the
+  // limit per IP. Off (503) while the password is.
+  const authLinkRoute =
+    (handler: AuthRequestHandler) => async (context: Context<ServerEnv>) => {
+      if (!isEmailPasswordAuthEnabled(context.env)) {
+        return context.json(
+          {
+            error: { code: "auth_email_unavailable" },
+            requestId: context.get("requestId"),
+          },
+          503
+        );
+      }
+      const limited = await protectAuthLinkRequest(
+        context.req.raw,
+        context.env,
+        context.get("requestId")
+      );
+      if (limited !== undefined) {
+        return context.newResponse(limited.body, limited);
+      }
+      return await handler(
+        context.req.raw,
+        context.env,
+        context.get("requestId"),
+        backgroundTaskRunner(context)
+      );
+    };
+  app.post("/api/login-unlock", authLinkRoute(authLinkHandlers.loginUnlock));
+  app.post(
+    "/api/email-verification",
+    authLinkRoute(authLinkHandlers.emailVerification)
+  );
 
   app.route("/", authMethodsRoutes);
   app.route("/", systemRoutes);
