@@ -11,7 +11,7 @@ Este arquivo é a fonte de verdade para as invariantes de estoque. Os efeitos de
 - Um movimento preserva o UUID estável da variante. Se a variante padrão oculta já tiver qualquer movimento, a configuração inicial de opções é bloqueada; o sistema não transfere seu histórico nem sua quantidade para uma combinação presumida.
 - O ledger classifica movimentos como recebimento, baixa, ajuste de contagem, venda, cancelamento de venda ou devolução de venda. O tipo não altera a regra de quantidade: o delta é explícito, inteiro e assinado.
 - Receber, baixar, contar, vender, cancelar e devolver são commands nomeados. Não existe command público genérico de estoque nem mutation direta do saldo; nenhuma mudança de quantidade é válida sem seu movimento correspondente.
-- Decidido na revisão do checkpoint Gate 4 (13/10/2026), ainda não verificado no código: o banco passa a reconciliar saldo e ledger (por trigger deferido, de modo que a quantidade do saldo seja a soma dos deltas), e cada movimento recebe uma sequência por variante gravada sob o lock do saldo, que define a ordem de confirmação, em vez do horário de início da transação.
+- Decidido na revisão do checkpoint Gate 4 (13/10/2026) e verificado no código: o banco reconcilia saldo e ledger (por trigger deferido, de modo que a quantidade do saldo seja a soma dos deltas), e cada movimento recebe uma sequência por variante gravada sob o lock do saldo, que define a ordem de confirmação, em vez do horário de início da transação.
 - O ledger impede remoção física de variante e organização enquanto existir histórico. A política de retenção e o caminho privilegiado de purge ficam adiados para a fase de privacidade, antes do go-live.
 - Quando a validade da operação depende de vários fatos econômicos, eles são confirmados ou revertidos em conjunto.
 - Em disputa de commands offline, a primeira operação confirmada no servidor vence. A operação rejeitada permanece local para correção; não há merge silencioso.
@@ -52,7 +52,7 @@ Este arquivo é a fonte de verdade para as invariantes de estoque. Os efeitos de
   - snapshot conhecido e saldo positivo de média conhecida: a média é recalculada como em um recebimento (média ponderada exata, half-up em 6 casas);
   - snapshot conhecido e saldo positivo de média desconhecida: a média continua desconhecida;
   - snapshot desconhecido e saldo positivo: a média anterior é mantida;
-  - snapshot desconhecido e **saldo zero**: a média passa a ser desconhecida (nula). Decidido na revisão do checkpoint Gate 4 (13/10/2026), ainda não verificado no código; o comportamento anterior mantinha a média antiga, o que inventava um custo.
+  - snapshot desconhecido e **saldo zero**: a média passa a ser desconhecida (nula). Decidido na revisão do checkpoint Gate 4 (13/10/2026) e verificado no código; o comportamento anterior mantinha a média antiga, o que inventava um custo.
 - A operação nunca é bloqueada por custo e nunca assume custo zero.
 - Produto removido (tombstone) tem saldo zero e imutável. Decidido na revisão do checkpoint Gate 4 (13/10/2026) que cancelamento e devolução de venda com item desse produto são permitidos **sem movimento de estoque** para esses itens; a compensação continua registrada e auditada ([vendas](sales.md)).
 

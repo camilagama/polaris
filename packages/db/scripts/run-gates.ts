@@ -25,6 +25,8 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
 
 const DEFAULT_CONCURRENCY_REPEAT = "3";
 const lineBreak = /\r?\n/;
+// a gate line starting with this prefix goes into the final JSON of the runner, passed or not (the seed of a property gate)
+const notePrefix = "gate-note: ";
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
 interface Context {
@@ -60,6 +62,8 @@ const gates: Gate[] = [
   ["sale-return", "verify-sale-return-gate.ts"],
   ["sale-dates", "verify-sale-dates-gate.ts"],
   ["gate4", "verify-gate4-sales-core.ts"],
+  // generated sequences of stock and sale commands against an in-memory model (POLARIS_PROPERTY_RUNS)
+  ["stock-property", "verify-stock-property-gate.ts"],
   ["review-hardening", "verify-review-hardening-gate.ts"],
   ["read-models", "verify-read-models-gate.ts"],
   ["expenses", "verify-expenses-gate.ts"],
@@ -216,6 +220,7 @@ const suites: Record<string, string[]> = {
     "sale-return",
     "sale-dates",
     "gate4",
+    "stock-property",
     "review-hardening",
     "read-models",
     "expenses",
@@ -303,6 +308,7 @@ const suites: Record<string, string[]> = {
     "sale-return",
     "sale-dates",
     "gate4",
+    "stock-property",
     "customers",
     "read-models",
   ],
@@ -377,12 +383,14 @@ function runGate(
   context: Context
 ): Promise<{
   code: number;
+  notes: string[];
   seconds: number;
   tail: string[];
 }> {
   return new Promise((resolve) => {
     const started = Date.now();
     const lines: string[] = [];
+    const notes: string[] = [];
     const child = spawn(process.execPath, [`scripts/${gate.script}`], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
@@ -396,6 +404,9 @@ function runGate(
     const collect = (chunk: Buffer) => {
       for (const line of chunk.toString().split(lineBreak)) {
         if (line.trim()) {
+          if (line.startsWith(notePrefix)) {
+            notes.push(redact(line.slice(notePrefix.length)));
+          }
           lines.push(redact(line));
           if (lines.length > 400) {
             lines.shift();
@@ -410,6 +421,7 @@ function runGate(
       clearTimeout(timer);
       resolve({
         code: code ?? 1,
+        notes,
         seconds: Math.round((Date.now() - started) / 1000),
         tail: lines.slice(-14),
       });
@@ -456,7 +468,12 @@ async function main() {
   const { admin } = await connectToGateTarget({ branch, database, url });
   const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
   const password = randomBytes(24).toString("hex");
-  const results: Array<{ gate: string; seconds: number; status: string }> = [];
+  const results: Array<{
+    gate: string;
+    notes?: string[];
+    seconds: number;
+    status: string;
+  }> = [];
   try {
     await admin.query(
       `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
@@ -490,8 +507,16 @@ async function main() {
       // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
       const result = await runGate(gate, context);
       const status = result.code === 0 ? "passed" : "failed";
-      results.push({ gate: gate.name, seconds: result.seconds, status });
+      results.push({
+        gate: gate.name,
+        ...(result.notes.length > 0 ? { notes: result.notes } : {}),
+        seconds: result.seconds,
+        status,
+      });
       console.log(`    ${status} in ${result.seconds}s`);
+      for (const note of result.notes) {
+        console.log(`    note: ${note}`);
+      }
       if (result.code !== 0) {
         for (const line of result.tail) {
           console.log(`    | ${line.slice(0, 220)}`);

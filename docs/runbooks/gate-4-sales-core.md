@@ -63,6 +63,67 @@ O job `PostgreSQL 18 gates` do CI roda `gates:ci` com **1 rodada** de cada corri
 
 Mais rodadas (`POLARIS_CONCURRENCY_REPEAT=10`, o máximo) servem para investigar uma corrida que falhou de vez em quando; não são exigência.
 
+## Propriedade modelo × PostgreSQL (estoque e devolução)
+
+O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, nas suítes `ci`, `gate4` e `all`) gera com fast-check sequências de comandos nomeados (recebimento, venda, baixa, contagem, devolução e cancelamento, o estorno da venda inteira) sobre duas variantes de uma organização nova a cada sequência. Cada comando passa pelas funções reais do repositório como o papel do runtime (`FORCE RLS` e os gatilhos deferidos do commit) e por um **modelo em memória** escrito no próprio gate. O modelo não importa o domínio: a média é aritmética própria em micro-reais, meio-para-cima em 6 casas, com as regras de [estoque](../business-rules/inventory.md#custo-médio) e da [reposição](../business-rules/inventory.md#reposição-por-cancelamento-ou-devolução).
+
+**Gerador.** As quantidades são sorteadas em relação ao estado (de 1 até o que existe; o sorteio 0 leva tudo, para o saldo chegar a zero com frequência), então a maior parte dos comandos é válida. Um em oito pede de propósito mais do que há (`overdraw`), uma contagem em sete manda uma versão velha, que o saldo já deixou para trás (a anterior à atual; com o saldo na versão 0, que não tem anterior, a seguinte), e as contagens com valoração e os recebimentos sobre média desconhecida exercitam as recusas de custo; o modelo prevê o resultado de cada comando (aceito ou o código do erro). As linhas de uma devolução vão ao servidor na ordem sorteada, e o modelo repõe por posição, como o servidor. Oito sequências fixas (`examples`) rodam sempre antes das sorteadas:
+
+- a venda de custo desconhecido que volta, por cancelamento e por devolução, a um saldo zero de média já conhecida. Esse caso pede uns seis comandos numa ordem só, e o sorteio não chegou nele em 400 sequências;
+- a devolução de duas linhas da mesma variante enviadas fora da ordem de posição;
+- as bordas de grandeza, que o sorteio não alcança (recebimentos de 1 a 6 unidades e custos de uma lista de seis valores): o recebimento até o teto exato de `MAX_INVENTORY_QUANTITY` (2.147.483.647), o seguinte acima do teto e um recebimento único acima dele, ambos recusados com `inventory_quantity_limit`; a venda do teto inteiro, devolvida em partes (uma delas pedindo mais do que resta) e cancelada de volta ao teto; o teto inteiro recebido, vendido e devolvido (e reposto) numa só linha, que prova o limite inclusivo de `isQuantity` em `sale-return.ts`; e custos de 18 dígitos inteiros (aceito, inclusive na média ponderada com 2 bilhões de unidades) e de 19 (recusado com `inventory_cost_limit`).
+
+**Invariantes** (conferidos depois de cada comando, I1 e I6, e ao final, os demais):
+
+| # | Invariante |
+| --- | --- |
+| I1 | Quantidade, custo médio e versão do saldo de cada variante são os do modelo. |
+| I2 | O razão de cada variante, na ordem de `variant_sequence`, é o do modelo: tipo, delta e custo unitário de cada movimento. |
+| I3 | A quantidade do saldo é a soma dos deltas do razão e nunca é negativa. |
+| I4 | O disponível para devolver de cada item é o vendido menos o já devolvido. |
+| I5 | Uma venda é cancelada ou tem devoluções, nunca as duas; o cancelamento é único. |
+| I6 | Um comando recusado (estoque, versão, custo, disponível, venda cancelada ou com devoluções) falha com o código que o modelo prevê e não deixa rastro. |
+
+**Custo e execução.** Medido no PostgreSQL 18.4 local em 20/10/2026, de 0,5 a 0,7 s por sequência:
+
+| Quando | Sequências | Tempo |
+| --- | --- | --- |
+| Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 8 fixas | de 10 a 13 s |
+| Execução longa | `POLARIS_PROPERTY_RUNS=500` (máximo 2000, o que cabe nos 30 min em que o executor para um gate) | cerca de 5 min |
+
+A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Ela é **obrigatória** em PR que mexa em estoque, venda, devolução, cancelamento ou custo médio, e o autor registra o resultado (a semente e o `passed`) em "Verificação" do PR: 20 sequências deixam passar uma quebra comum em cerca de uma execução em cinco (medido em 20/10/2026 com 5 sementes por quebra). Quem não pode subir o PostgreSQL (tarefa fora da área `db`) diz no PR que a execução longa ficou pendente e pede a quem roda gates de banco. Ela também é BLOCK no item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block). Rode à mão num banco descartável (como em [Passos](#passos)):
+
+    CI=true POLARIS_PROPERTY_RUNS=500 bun scripts/run-gates.ts stock-property   # a partir de packages/db
+
+**Semente e reprodução.** Cada execução sorteia uma semente nova e a imprime na primeira linha (`seed=...`) e na linha `note:` do executor, que a repete no JSON final (`results[].notes`) também quando o gate passa, então o CI explora sequências diferentes a cada PR e fica registrado quais já passaram. Na falha, as últimas linhas (as que o executor mostra) trazem a **sequência mínima** em comandos concretos até o comando que falhou, o motivo e, por último, o comando que reproduz a falha:
+
+    CI=true POLARIS_PROPERTY_SEED=<semente> POLARIS_PROPERTY_PATH=<caminho> bun scripts/run-gates.ts stock-property
+
+**Reexecutar o job não limpa a falha:** a semente muda e o defeito continua, só que numa sequência que talvez o sorteio não repita. O procedimento é abrir um item (issue com a etiqueta `bots`) com a linha `replay:` e investigar a falha, e não repetir o job até passar.
+
+Uma falha ao preparar uma sequência (banco fora do ar, organização ou produto que não se cria) não é tratada como contraexemplo: o gate para sem encolher e mostra o erro. Uma queda no meio de uma sequência ainda aparece como resultado `sql:...` ou `error:...` de um comando e é encolhida como uma falha comum.
+
+**Limites.** O gate não cobre:
+
+- produto removido, plano Free (variantes não operacionais), replays e conflitos de `commandId`;
+- corridas (a suíte `gates:concurrency` cobre);
+- dinheiro: as vendas não têm perfil de pagamento nem ajustes, porque o gate olha estoque e devolução;
+- o espaço de valores do sorteio: 2 variantes, vendas e devoluções de até 2 linhas, até 16 comandos, quantidades de 1 a 6 por recebimento e seis custos. O que depende de uma grandeza fora dele (o teto de quantidade, o limite de 18 dígitos de custo) só é visto pelos exemplos fixos, e uma sequência rara e longa também depende de exemplo fixo.
+
+**Prova por quebra** (20/10/2026, local, descartada; semente 20261020):
+
+| Quebra no código | Resultado |
+| --- | --- |
+| Devolução limitada ao vendido, e não ao disponível (`planSaleReturn`) | Com 60 sequências, falhou na 39ª. A mínima recebe 1, vende 1, devolve 1 e devolve 1 de novo: o banco recusou no commit (`sql:23514`) onde o modelo esperava `sale_return_exceeds_available`. |
+| Reposição de custo desconhecido em saldo zero mantém a média antiga (o comportamento anterior à revisão do Gate 4) | Falhou no exemplo fixo (6 comandos): média `1.500000` onde o modelo diz desconhecida. Sem o exemplo fixo, 60, 150 e 400 sequências sorteadas não pegaram. O `review-hardening` cobre o mesmo caso com um cenário escrito à mão. |
+| Média truncada em vez de meio-para-cima | Com 60 sequências, falhou na 7ª. A mínima recebe 1 a 0, 1 a 0 e 4 a 1: a média ficou `0.666666` onde o modelo diz `0.666667`. |
+| Contagem que aceita versão velha (`!==` vira `<` em `inventory-repository.ts`) | Com 20 sequências, 5 sementes de 5 falharam (`I6`: o modelo espera `inventory_version_conflict`, o banco aceitou). Com a versão do futuro que o gate mandava antes, a quebra passava em 5 de 5. |
+| Teto de quantidade que recusa o valor exato (`nextQuantity > MAX` vira `>=` em `projectInventoryQuantity`) | Com 20 sequências, 5 sementes de 5 falharam, no exemplo fixo do teto exato. O sorteio nunca chega lá. |
+| Limite de custo deslocado (`whole.length > 18` vira `>= 18`, e vira `> 19`) | As duas falharam nos exemplos fixos de 18 e de 19 dígitos (o `>= 18` recusou o custo de 18 dígitos que devia ser aceito; o `> 19` aceitou, e o banco recusou com `sql:23514`, o de 19). |
+| Teto de quantidade da devolução que recusa o valor exato (`<=` vira `<` em `isQuantity`, `sale-return.ts`) | Falhou no exemplo fixo do teto devolvido numa só linha (semente 706652766, 3 comandos): o modelo espera `ok` e o servidor respondeu `invalid_sale_return`. Antes desse exemplo a quebra escapava: nenhum exemplo devolvia o teto inteiro numa só linha. |
+
+O próprio exemplo das linhas fora de ordem nasceu de um defeito do **modelo**, achado na revisão: o modelo repunha na ordem enviada, e o servidor repõe por posição. O exemplo falhou antes da correção do modelo e passa depois.
+
 ## Prova antes de liberação em Neon
 
 O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon). Ela roda **antes de uma liberação** e, como o ADR 0025 já pedia, no fim de cada fase e quando mudam o executor (`run-gates.ts`), o suporte comum dos gates (`sales-gate-support.ts`) ou os privilégios de forma ampla ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emendas da issue #115). Por pull request **não** se roda nada em Neon: o job do CI roda a suíte `ci`; o `gate2-runtime` e a prova de Hyperdrive ficam para esta prova. Um PR que mude o executor (`run-gates.ts`), o suporte comum (`sales-gate-support.ts`, `concurrency-support.ts`) ou privilégios de forma ampla **não** roda esta prova antes do merge: por decisão do Arrascaeta (POL-14, 18/10/2026), ninguém tem credencial Neon de teste no dev e não se cria branch-raiz. A mudança vira **pendência da próxima prova de release em Neon**, registrada no item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block), e essa prova a confere antes de promover. O fim de fase e a liberação rodam depois do merge, antes de fechar a fase ou de promover. Nas fases já fechadas (3 e 4), um PR que quebre o `gate2-runtime` ou o caminho Hyperdrive é pego na prova de liberação (item 4 do checklist, BLOCK): não escapa, só chega mais tarde.
@@ -97,6 +158,7 @@ O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedo
 | Dinheiro correto | Biblioteca de dinheiro (PR39), ajustes (PR40), pagamentos (PR41), perfis (PR42): decimal exato, meio-para-cima uma vez por valor. | Subtotal, desconto, frete e total devido coincidem com um oráculo independente em centavos inteiros e com as linhas persistidas; o pagamento único é igual ao total. |
 | Cancelamento correto | `poc:sales:cancellation:verify`: reposição ao custo do item, regra da média, corridas cancelamento × cancelamento e × venda, gatilho de completude. | Quantidade inteira volta ao estoque ao custo original, a venda e os movimentos originais não são editados, repetir o comando é replay, a venda cancelada mantém os totais e não aceita devolução. |
 | Devoluções corretas | `poc:sales:return:verify`: `returned ≤ disponível`, `restocked ≤ returned`, sequência aleatória contra um modelo, exclusão mútua com o cancelamento, guardas do banco. | Devolvido e reposto são separados, só o reposto movimenta estoque, devolução acima do disponível é recusada, venda com devoluções não cancela, a venda nunca é editada. |
+| Estoque e devolução sob sequências geradas | `stock-property`: sequências de recebimento, venda, baixa, contagem, devolução e cancelamento contra um modelo em memória ([seção própria](#propriedade-modelo--postgresql-estoque-e-devolução)). | (coberto pelo gate próprio) |
 | Reconciliação de cliente não altera a economia | `poc:sales:customer-link:verify`: histórico versionado, concorrência, cliente arquivado. | Atribuir, reatribuir, conflito de versão e remover (inclusive em venda cancelada) mantêm vendas, itens, ajustes, pagamentos, movimentos e saldos idênticos byte a byte. |
 | Endurecimentos da revisão do checkpoint | `poc:review-hardening:verify`: instantes `timestamptz` mesmo com fuso de sessão +14h, timeouts por transação, sequência e reconciliação razão × saldo, cancelamento com produto removido, regra da média na reposição, namespaces de commandId, datas de estoque, grants por coluna, limites, chave de mídia, roles auth × tenant, funções endurecidas. | (coberto pelo gate próprio) |
 | Datas (PR47) | `poc:sales:dates:verify`: janela retroativa no calendário da organização e tolerância de futuro (valores em [tempo e datas](../business-rules/time-and-dates.md)), data do razão = data comercial, replay e conflito de `recorded_at`. | Venda de 10 dias atrás grava o movimento na sua data comercial. |
