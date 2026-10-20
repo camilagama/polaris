@@ -47,13 +47,19 @@ import {
 const HOUR_MS = 3_600_000;
 const NOW = new Date("2026-10-20T12:00:00.000Z");
 
+// Small shared values, so a grant's limit lands exactly on a plan's limit and one either side of it
+// (a wide random range would almost never make them equal), and a limit of zero or one is common.
+const EDGE_LIMITS = [0, 1, 2, 49, 50, 51, 100] as const;
+const limitUpTo = (max: number) =>
+  oneof(integer({ max, min: 0 }), constantFrom(...EDGE_LIMITS));
+
 const planEntitlements = record({
-  "goals.active.max": integer({ max: 100, min: 0 }),
-  "images.active.max": integer({ max: 10_000, min: 0 }),
-  "images.per_product.max": integer({ max: 50, min: 0 }),
+  "goals.active.max": limitUpTo(100),
+  "images.active.max": limitUpTo(10_000),
+  "images.per_product.max": limitUpTo(50),
   "offline.write": boolean(),
   public_catalog: boolean(),
-  "variants.active.max": integer({ max: 5000, min: 0 }),
+  "variants.active.max": limitUpTo(5000),
 }) as unknown as Arbitrary<PlanEntitlements>;
 
 // A catalog that is not the real one, so the model cannot lean on the shape of the seed.
@@ -78,7 +84,7 @@ const billingFacts = tuple(
 
 const grant = tuple(
   constantFrom(...ENTITLEMENT_KEYS),
-  integer({ max: 12_000, min: 0 }),
+  limitUpTo(12_000),
   boolean(),
   offsetFromNow,
   oneof(constant(null), offsetFromNow)
@@ -255,20 +261,30 @@ describe("limits and flags (ENT-5)", () => {
         constantFrom(...LIMIT_KEYS),
         constantFrom(...FLAG_KEYS),
         integer({ max: 6000, min: 0 }),
+        boolean(),
         constantFrom(-2, -1, 0, 1, 2),
-        integer({ max: 20, min: -5 }),
-        (plans, facts, limitKey, flagKey, anyCurrent, edge, adding) => {
+        oneof(constantFrom(-1, 0, 1, 2), integer({ max: 20, min: -5 })),
+        (
+          plans,
+          facts,
+          limitKey,
+          flagKey,
+          anyCurrent,
+          nearLimit,
+          edge,
+          adding
+        ) => {
           const resolved = resolveEntitlements({
             catalog: plans,
             facts,
             now: NOW,
           });
           const limit = resolved.values[limitKey as LimitKey];
-          // half the cases sit right at the limit (one either side), where an off-by-one would show
-          const current =
-            anyCurrent % 2 === 0
-              ? anyCurrent
-              : Math.max(0, limit - Math.max(adding, 1) + edge);
+          // half the cases sit right at the limit: current + adding is limit - 2 to limit + 2 (below
+          // zero, current stops at 0), where an off-by-one would show
+          const current = nearLimit
+            ? Math.max(0, limit - Math.max(adding, 1) + edge)
+            : anyCurrent;
           const run = () =>
             assertWithinLimit(resolved, limitKey as LimitKey, current, adding);
           if (adding > 0 && current + adding > limit) {

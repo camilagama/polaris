@@ -12,7 +12,9 @@ import {
 import { describe, expect, it } from "vitest";
 import { assertProperty } from "../testing/property";
 import {
+  assertOfflineGrantWindow,
   InvalidDeviceLabelError,
+  InvalidOfflineGrantWindowError,
   MAX_DEVICE_LABEL_CODE_POINTS,
   normalizeDeviceLabel,
   offlineGrantStatus,
@@ -20,7 +22,7 @@ import {
 import {
   assertOfflineLeaseCurrent,
   buildOfflineLeaseClaims,
-  type InvalidOfflineLeaseError,
+  InvalidOfflineLeaseError,
   isOfflineLeaseClaims,
   OfflineLeaseNotAvailableError,
   parseOfflineLeaseClaims,
@@ -36,9 +38,14 @@ import {
 
 const HOUR_MS = 3_600_000;
 const SECOND_MS = 1000;
-const instant = integer({ max: 4_102_444_800_000, min: 1_000_000 }).map(
-  (ms) => new Date(ms)
-);
+const wideInstant = integer({ max: 4_102_444_800_000, min: 1_000_000 });
+// a third of the instants sit on a whole second and a third one millisecond before the next, so the
+// rounding to whole seconds is exercised at both ends
+const instant = oneof(
+  wideInstant,
+  wideInstant.map((ms) => ms - (ms % SECOND_MS)),
+  wideInstant.map((ms) => ms - (ms % SECOND_MS) + 999)
+).map((ms) => new Date(ms));
 
 const capability = oneof(
   constantFrom(
@@ -57,7 +64,30 @@ describe("offline lease (OFF-1 to OFF-3)", () => {
     assertProperty(
       property(
         instant,
-        oneof(constant(null), integer({ max: 100 * HOUR_MS, min: -HOUR_MS })),
+        oneof(
+          constant(null),
+          integer({ max: 100 * HOUR_MS, min: -HOUR_MS }),
+          // the edges: the 72-hour cap and the whole second of the end, one millisecond and one second either side
+          constantFrom(
+            -1000,
+            -999,
+            -1,
+            0,
+            1,
+            999,
+            1000,
+            1001,
+            1999,
+            2000,
+            72 * HOUR_MS - 1001,
+            72 * HOUR_MS - 1000,
+            72 * HOUR_MS - 1,
+            72 * HOUR_MS,
+            72 * HOUR_MS + 1,
+            72 * HOUR_MS + 999,
+            72 * HOUR_MS + 1000
+          )
+        ),
         uuid(),
         uuid(),
         array(capability, { maxLength: 10 }),
@@ -99,6 +129,117 @@ describe("offline lease (OFF-1 to OFF-3)", () => {
           expect(window.issuedAt.getTime() % SECOND_MS).toBe(0);
           expect(window.expiresAt.getTime() % SECOND_MS).toBe(0);
           expect(window.issuedAt.getTime()).toBeLessThanOrEqual(now.getTime());
+          // the exact lifetime: 72 hours, or less when the entitlement ends sooner (whole seconds)
+          const issuedSeconds = Math.floor(now.getTime() / SECOND_MS);
+          const endsSeconds =
+            entitlementEndsAt === null
+              ? Number.POSITIVE_INFINITY
+              : Math.floor(entitlementEndsAt.getTime() / SECOND_MS);
+          const expected = Math.min(259_200, endsSeconds - issuedSeconds);
+          expect(expected).toBeGreaterThan(0);
+          expect(claims.exp - claims.iat).toBe(expected);
+        }
+      )
+    );
+  });
+
+  it("OFF-1: the lifetime of a lease or a grant is at least one second and at most 72 hours, with the edges refused", () => {
+    assertProperty(
+      property(
+        wideInstant.map((ms) => new Date(ms - (ms % SECOND_MS))),
+        oneof(
+          integer({ max: 100 * HOUR_MS, min: -HOUR_MS }),
+          constantFrom(
+            -1000,
+            -1,
+            0,
+            1,
+            999,
+            1000,
+            1001,
+            72 * HOUR_MS - 1000,
+            72 * HOUR_MS - 1,
+            72 * HOUR_MS,
+            72 * HOUR_MS + 1,
+            72 * HOUR_MS + 999,
+            72 * HOUR_MS + 1000
+          )
+        ),
+        (issuedAt, lifetimeMs) => {
+          const expiresAt = new Date(issuedAt.getTime() + lifetimeMs);
+          // the lease counts whole seconds (the expiry is rounded down), the grant counts milliseconds
+          const wholeSeconds = Math.floor(lifetimeMs / SECOND_MS);
+          const leaseOk = wholeSeconds >= 1 && wholeSeconds <= 259_200;
+          const build = () =>
+            buildOfflineLeaseClaims({
+              capabilities: [],
+              deviceId: "11111111-1111-4111-8111-111111111111",
+              epoch: 0,
+              expiresAt,
+              grantId: "22222222-2222-4222-8222-222222222222",
+              issuedAt,
+              organizationId: "org-1",
+              userId: "user-1",
+            });
+          if (leaseOk) {
+            expect(build).not.toThrow();
+          } else {
+            expect(build).toThrow(InvalidOfflineLeaseError);
+          }
+          const grant = () => assertOfflineGrantWindow({ expiresAt, issuedAt });
+          if (lifetimeMs >= 1 && lifetimeMs <= 259_200_000) {
+            expect(grant).not.toThrow();
+          } else {
+            expect(grant).toThrow(InvalidOfflineGrantWindowError);
+          }
+        }
+      )
+    );
+  });
+
+  it("OFF-2: the lease holds at most 64 distinct capabilities of at most 64 characters, ids of at most 255, and refuses an epoch below 0 or an issue second below 1", () => {
+    const edge = (max: number) =>
+      oneof(
+        integer({ max: max + 5, min: 0 }),
+        constantFrom(0, 1, max - 1, max, max + 1)
+      );
+    assertProperty(
+      property(
+        edge(64),
+        edge(64),
+        edge(255),
+        constantFrom(-1, 0, 1),
+        constantFrom(-1, 0, 1, 2),
+        (count, capabilityLength, idLength, epoch, issuedSeconds) => {
+          // distinct capabilities: the first has exactly `capabilityLength` characters (0 is the empty one)
+          const capabilities = Array.from({ length: count }, (_, index) =>
+            index === 0 ? "c".repeat(capabilityLength) : `${index}`
+          );
+          const issuedAt = new Date(issuedSeconds * SECOND_MS);
+          const build = () =>
+            buildOfflineLeaseClaims({
+              capabilities,
+              deviceId: "11111111-1111-4111-8111-111111111111",
+              epoch,
+              expiresAt: new Date((issuedSeconds + 60) * SECOND_MS),
+              grantId: "22222222-2222-4222-8222-222222222222",
+              issuedAt,
+              organizationId: "o".repeat(idLength),
+              userId: "u".repeat(idLength),
+            });
+          const ok =
+            count <= 64 &&
+            (count === 0 ||
+              (capabilityLength >= 1 && capabilityLength <= 64)) &&
+            idLength >= 1 &&
+            idLength <= 255 &&
+            epoch >= 0 &&
+            issuedSeconds >= 1;
+          if (ok) {
+            expect(build).not.toThrow();
+          } else {
+            expect(build).toThrow(InvalidOfflineLeaseError);
+          }
         }
       )
     );
@@ -202,7 +343,10 @@ describe("offline grant (OFF-4 to OFF-5)", () => {
     assertProperty(
       property(
         instant,
-        integer({ max: 100 * HOUR_MS, min: -100 * HOUR_MS }),
+        oneof(
+          integer({ max: 100 * HOUR_MS, min: -100 * HOUR_MS }),
+          constantFrom(-1000, -1, 0, 1, 1000)
+        ),
         oneof(constant(null), instant),
         (expiresAt, nowOffset, revokedAt) => {
           const now = new Date(expiresAt.getTime() + nowOffset);
@@ -229,6 +373,9 @@ describe("offline grant (OFF-4 to OFF-5)", () => {
       "\u007f",
       "\u0085",
       "\u009f",
+      "\u001f",
+      "~",
+      "\u00a1",
       " "
     );
     const label = oneof(
@@ -242,7 +389,18 @@ describe("offline grant (OFF-4 to OFF-5)", () => {
         }),
         constantFrom("a", "😀"),
         constantFrom("", " ", "  ")
-      ).map(([length, symbol, pad]) => `${pad}${symbol.repeat(length)}${pad}`)
+      ).map(([length, symbol, pad]) => `${pad}${symbol.repeat(length)}${pad}`),
+      // a clean label of 79, 80 and 81 characters with one awkward character at the start, middle or end
+      tuple(
+        constantFrom(79, 80, 81),
+        constantFrom("a", "😀"),
+        awkward,
+        constantFrom("start", "middle", "end")
+      ).map(([length, symbol, odd, where]) => {
+        const chars = [...symbol.repeat(length)];
+        chars.splice({ end: length, middle: 40, start: 0 }[where], 0, odd);
+        return chars.join("");
+      })
     );
     assertProperty(
       property(label, (text) => {
