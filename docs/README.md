@@ -102,11 +102,29 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0076](adr/0076-teto-de-custo-e-free-tier-primeiro.md) | Teto de custo e free tier primeiro | aceito |
 | [0077](adr/0077-casos-de-privacidade.md) | Casos de privacidade: o fluxo interno de um pedido sobre dado pessoal | aceito |
 | [0078](adr/0078-exportacao-de-dados-da-organizacao.md) | Exportação de dados da organização: uma cópia a pedido do dono, feita em segundo plano | aceito |
-| [0079](adr/0079-retencao-por-classe-de-dado.md) | Retenção por classe de dado | proposto |
+| [0079](adr/0079-retencao-por-classe-de-dado.md) | Retenção por classe de dado | aceito |
 | [0080](adr/0080-ledger-minimo-de-exclusoes.md) | Ledger mínimo de exclusões para restore | aceito |
 | [0081](adr/0081-purge-completo-da-organizacao-encerrada.md) | Purge completo da organização encerrada | proposto |
 | [0082](adr/0082-outbox-transacional.md) | Outbox transacional | aceito |
 | [0083](adr/0083-filas-cloudflare-e-consumidor-idempotente.md) | Filas Cloudflare e consumidor idempotente | aceito |
 | [0084](adr/0084-despachante-e-varredor-do-outbox.md) | Despachante e varredor do outbox | aceito |
+| [0085](adr/0085-dlq-incidente-operacional-e-retry-no-admin.md) | DLQ, incidente operacional e retry no Admin | aceito |
+| [0086](adr/0086-framework-de-jobs-agendados.md) | Framework de jobs agendados | aceito |
+| [0087](adr/0087-referencia-do-provedor-em-todos-os-fatos-de-cobranca.md) | A referência do provedor em todos os fatos de cobrança | aceito |
+| [0088](adr/0088-workflows-so-quando-necessario.md) | Cloudflare Workflows: nenhum por ora; a exportação fica no consumidor da fila | aceito |
+| [0089](adr/0089-evlog-e-logger-tipado-no-backend.md) | evlog e um logger tipado no backend | aceito |
+| [0090](adr/0090-headers-de-seguranca-centralizados.md) | Headers de segurança e CSP centralizados num módulo único | aceito |
+| [0091](adr/0091-esquema-canonico-de-eventos-largos.md) | Esquema canônico de campos e eventos largos | aceito |
+| [0092](adr/0092-registro-de-acesso-a-aplicacao.md) | Registro de acesso a aplicação (Marco Civil, art. 15) | aceito |
+| [0093](adr/0093-funcoes-security-definer-e-privilegios-padrao.md) | Funções SECURITY DEFINER e privilégios padrão do banco | aceito |
+| [0094](adr/0094-tracing-e-amostragem-do-workers-observability.md) | Tracing e amostragem do Workers Observability | aceito |
+| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | proposto |
+| [0096](adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) | Migrations compatíveis com a versão anterior do Worker (expand/contract) | aceito |
+| [0097](adr/0097-staging-fixo-e-producao-em-conta-separada.md) | Staging fixo na conta atual e produção em conta separada | aceito |
+| [0098](adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md) | Sentry no navegador: só erros, sanitizado, com source maps escondidos | aceito |
+| 0099 | Reservado (backup) | reservado |
+| [0100](adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md) | Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta no banco e aceite legal registrado | aceito |
+| [0101](adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md) | Adaptador Asaas: porta de saída, releitura do recurso e período pelo vencimento original | aceito |
+| [0102](adr/0102-apagamento-automatico-da-loja-encerrada.md) | Apagamento automático da loja encerrada, sem caso de privacidade | proposto |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

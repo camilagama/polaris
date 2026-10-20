@@ -30,3 +30,7 @@ O repositório é privado, então cada job do CI consome minutos da conta dona e
 - **Rodar o gate de navegador só em um projeto (desktop):** reduziria o tempo pela metade, mas enfraquece a prova em tela de celular, que importa para um app offline-first.
 - **Usar uma ação de terceiros para detectar caminhos:** mais uma dependência com pin de commit a manter, para algo que cabe em 70 linhas testadas.
 - **Rodar tudo em `main` por segurança:** repete o que o pull request já provou sobre o mesmo código.
+
+## Emenda (20/10/2026): o repositório está público
+
+O repositório está público (o [ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md) registra 15/10/2026; a data exata fica para o responsável confirmar), e o CI não cobra mais por minuto (o Actions é gratuito em repositório público). A economia de minutos deixou de ser requisito urgente, mas a decisão acima não muda: as otimizações seguem valendo, porque o contexto original (repositório privado, minutos cobrados) volta quando o repositório voltar a ser privado. Essa volta a privado é item do go-live, a ser tratado no [checklist de go-live](../runbooks/README.md#checklist-de-go-live-cloudflare-e-neon); até lá, o tempo de execução do CI é custo de espera, e não de dinheiro.

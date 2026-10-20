@@ -1,6 +1,6 @@
 ﻿# Polaris — acompanhamento da implementação
 
-Atualizado em 19 de outubro de 2026.
+Atualizado em 20 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -1587,7 +1587,7 @@ Quarto passo da Fase 10 ([ADR 0078](../docs/adr/0078-exportacao-de-dados-da-orga
 
 ### Fase 10E — Privacidade: retenção por classe (PR105; implementação e verificações locais concluídas; gates de banco no CI)
 
-Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md), proposto; o número pode mudar).
+Quinto passo da Fase 10 ([ADR 0079](../docs/adr/0079-retencao-por-classe-de-dado.md), aceito; o número pode mudar).
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
