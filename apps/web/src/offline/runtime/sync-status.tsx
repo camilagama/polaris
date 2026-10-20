@@ -6,9 +6,14 @@ import "./sync-status.css";
  * The state of the offline work, in the header (Phase 5 wiring): whether the
  * device is online, how much is waiting to be sent and whether something needs a
  * person. A refused operation turns the chip into a link to the attention panel.
+ * The visible text is short and the whole sentence is the accessible name, so the
+ * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3).
  */
 export interface SyncStatusLabel {
   attention: boolean;
+  /** One short line for the header chip (it has to fit next to the brand and "Menu" at 360 px). */
+  short: string;
+  /** The whole sentence: the accessible name and the tooltip of the chip. */
   text: string;
   tone: "attention" | "busy" | "offline" | "ok";
 }
@@ -28,6 +33,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.phase === "unavailable") {
     return {
       attention: false,
+      short: "Só online",
       text: "Offline indisponível neste aparelho",
       tone: "offline",
     };
@@ -35,6 +41,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.phase !== "ready") {
     return {
       attention: false,
+      short: "Preparando",
       text: "Preparando o modo offline…",
       tone: "busy",
     };
@@ -42,13 +49,15 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (counts.rejected > 0) {
     return {
       attention: true,
-      text: `${plural(counts.rejected, "operação precisa", "operações precisam")} de atenção`,
+      short: `Atenção: ${counts.rejected}`,
+      text: `Atenção: ${plural(counts.rejected, "operação precisa", "operações precisam")} de atenção`,
       tone: "attention",
     };
   }
   if (!snapshot.online) {
     return {
       attention: false,
+      short: waiting > 0 ? `Offline · ${waiting}` : "Offline",
       text:
         waiting > 0
           ? `Sem conexão · ${plural(waiting, "operação guardada", "operações guardadas")}`
@@ -59,6 +68,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.reason === "sync_failed") {
     return {
       attention: false,
+      short: "Envio falhou",
       text:
         waiting > 0
           ? `Não foi possível enviar · ${plural(waiting, "operação guardada", "operações guardadas")}`
@@ -69,6 +79,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.syncing || waiting > 0) {
     return {
       attention: false,
+      short: waiting > 0 ? `Enviando ${waiting}` : "Atualizando",
       text:
         waiting > 0
           ? `Enviando ${plural(waiting, "operação", "operações")}…`
@@ -76,7 +87,12 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
       tone: "busy",
     };
   }
-  return { attention: false, text: "Tudo sincronizado", tone: "ok" };
+  return {
+    attention: false,
+    short: "Em dia",
+    text: "Tudo sincronizado",
+    tone: "ok",
+  };
 }
 
 export function SyncStatusView({ snapshot }: { snapshot: RuntimeSnapshot }) {
@@ -84,15 +100,28 @@ export function SyncStatusView({ snapshot }: { snapshot: RuntimeSnapshot }) {
   const content = (
     <>
       <span aria-hidden="true" className="sync-status-dot" />
-      <span>{label.text}</span>
+      <span aria-hidden="true" className="sync-status-short">
+        {label.short}
+      </span>
+      <span className="visually-hidden">{label.text}</span>
     </>
   );
   return label.attention ? (
-    <a className="sync-status" data-tone={label.tone} href="/attention">
+    <a
+      className="sync-status"
+      data-tone={label.tone}
+      href="/attention"
+      title={label.text}
+    >
       {content}
     </a>
   ) : (
-    <p className="sync-status" data-tone={label.tone} role="status">
+    <p
+      className="sync-status"
+      data-tone={label.tone}
+      role="status"
+      title={label.text}
+    >
       {content}
     </p>
   );

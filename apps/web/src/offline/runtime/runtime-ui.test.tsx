@@ -39,6 +39,7 @@ describe("the sync status in the header", () => {
   it("says everything is synchronized when online and nothing is waiting", () => {
     expect(syncStatusLabel(snapshot())).toEqual({
       attention: false,
+      short: "Em dia",
       text: "Tudo sincronizado",
       tone: "ok",
     });
@@ -74,7 +75,8 @@ describe("the sync status in the header", () => {
       )
     ).toEqual({
       attention: true,
-      text: "1 operação precisa de atenção",
+      short: "Atenção: 1",
+      text: "Atenção: 1 operação precisa de atenção",
       tone: "attention",
     });
   });
@@ -86,6 +88,44 @@ describe("the sync status in the header", () => {
         snapshot({ phase: "unavailable", reason: "no_lease_offline" })
       ).text
     ).toContain("indisponível");
+  });
+
+  it("has a short text for the header chip, with the whole sentence kept for the tooltip and the screen reader", () => {
+    const cases = [
+      snapshot({ counts: counts({ pending: 12 }), online: false }),
+      snapshot({ online: false }),
+      snapshot({ counts: counts({ pending: 12 }) }),
+      snapshot({ reason: "sync_failed", syncing: false }),
+      snapshot({ syncing: true }),
+      snapshot({ phase: "starting" }),
+      snapshot({ phase: "unavailable", reason: "no_lease_offline" }),
+      snapshot({ counts: counts({ rejected: 12 }) }),
+      snapshot(),
+    ];
+    for (const item of cases) {
+      const label = syncStatusLabel(item);
+      // at 360 px the chip has room for about a dozen characters
+      expect(label.short.length).toBeLessThanOrEqual(13);
+      expect(label.short.length).toBeLessThan(label.text.length);
+      const html = renderToStaticMarkup(<SyncStatusView snapshot={item} />);
+      expect(html).toContain(`title="${label.text}"`);
+      expect(html).toContain(
+        `<span class="visually-hidden">${label.text}</span>`
+      );
+      expect(html).toContain(
+        `<span aria-hidden="true" class="sync-status-short">${label.short}</span>`
+      );
+    }
+    expect(
+      syncStatusLabel(
+        snapshot({ counts: counts({ pending: 12 }), online: false })
+      ).short
+    ).toBe("Offline · 12");
+    // the name of the link to the attention page starts with the visible text
+    const attention = syncStatusLabel(
+      snapshot({ counts: counts({ rejected: 2 }) })
+    );
+    expect(attention.text.startsWith(attention.short)).toBe(true);
   });
 
   it("renders a link to the attention page only when something needs attention", () => {
@@ -100,7 +140,7 @@ describe("the sync status in the header", () => {
       />
     );
     expect(attention).toContain('href="/attention"');
-    expect(attention).toContain("2 operações precisam de atenção");
+    expect(attention).toContain("Atenção: 2 operações precisam de atenção");
   });
 });
 

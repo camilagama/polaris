@@ -55,7 +55,7 @@ Os tokens vivem como variáveis CSS `--category-*` no contêiner `.categories-pa
 
 ## Responsividade e toque
 
-- Largura mínima suportada: 360 px (o `body` tem `min-width: 320px`). Nenhuma tela foi verificada em navegador a 360 px; a verificação é pendência antes da Fase 5.
+- Largura mínima suportada: 360 px (o `body` tem `min-width: 320px`). O cabeçalho da casca (marca, chip de sincronização, "Menu" e "Sair") foi verificado a 360 px, em uma linha e nos dois temas; as demais telas não foram verificadas em navegador a 360 px, e a verificação é pendência antes da Fase 5.
 - Pontos de quebra: 560 px (topo e grades da venda em coluna), 600 px (mídia), 640 px (tabela de devolução), 760 px (catálogo, produtos, clientes e categorias: tabelas viram cartões), 900 px (venda e perfis de pagamento em uma coluna; o resumo da venda deixa de ser fixo).
 - Tabelas viram cartões em telas estreitas, com o rótulo de cada coluna repetido por `data-label`; o cabeçalho continua disponível a leitores de tela.
 - **Alvo de toque:** controles interativos devem ter pelo menos 44 px (2,75 rem) de altura. Campos de texto e seletores de formulário (2,8 rem) e abas (2,75 rem) cumprem. Ficam abaixo e devem ser corrigidos: botões primário, silencioso e de perigo (2,7 rem, 43 px), navegação superior (2,15 rem), botão de texto de perigo (2,3 rem), campo de renomear categoria (2,45 rem), campo de quantidade da devolução (2,4 rem), seletor de regra de pagamento (2,65 rem), opção de variante da mídia (2,5 rem) e as caixas de seleção e links de texto da venda.
@@ -149,7 +149,7 @@ Decidido na revisão do checkpoint Gate 4 (13/10/2026) e ainda não implementado
 
 ## Lacunas conhecidas
 
-- Nenhuma tela foi verificada em navegador a 360 px nem no iPhone nesta fase; as telas de cancelamento, devolução e datas da venda só têm testes dos modelos de visão.
+- Só o cabeçalho da casca foi verificado em navegador a 360 px; nenhuma tela foi verificada no iPhone nesta fase; as telas de cancelamento, devolução e datas da venda só têm testes dos modelos de visão.
 - Alvos de toque abaixo de 44 px listados acima; CSS compartilhado vive em `categories-page.css` e há uma cópia de tokens em perfis de pagamento.
 - Sem `ErrorBoundary`, carregamento por rota ou 404; `theme-color` fixo em claro; recorte de mídia sem `aria-valuetext`.
 - Histórico de vendas sem filtro nem busca (a paginação usa "Carregar mais"); a lista mostra o momento comercial e só o detalhe mostra as três datas.
