@@ -7,6 +7,7 @@ import {
   normalizeExportFormats,
 } from "@polaris/domain/privacy/data-export";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { hasConstraint } from "./database-refusal";
 import { recordOutboxEvent } from "./event-outbox";
 import { dataExportFiles, dataExports } from "./schema/data-export";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -50,24 +51,6 @@ function requireCapability(identity: TenantRequestIdentity) {
   if (identity.capability !== CAPABILITY) {
     throw new TenantAuthorizationError("capability_denied");
   }
-}
-
-function hasConstraint(error: unknown, constraint: string): boolean {
-  const seen = new Set<object>();
-  let current: unknown = error;
-  while (
-    typeof current === "object" &&
-    current !== null &&
-    !seen.has(current)
-  ) {
-    seen.add(current);
-    const candidate = current as { cause?: unknown; constraint?: unknown };
-    if (candidate.constraint === constraint) {
-      return true;
-    }
-    current = candidate.cause;
-  }
-  return false;
 }
 
 /** The owner asks for a copy. One at a time, and at most three a day. */
@@ -127,8 +110,18 @@ export async function listDataExports(
   identity: TenantRequestIdentity
 ): Promise<DataExportView[]> {
   requireCapability(identity);
+  // the columns by name: the tenant role does not read the lease token of a run (ADR 0081)
   const exportRows = await transaction
-    .select()
+    .select({
+      errorCode: dataExports.errorCode,
+      expiresAt: dataExports.expiresAt,
+      formats: dataExports.formats,
+      id: dataExports.id,
+      readyAt: dataExports.readyAt,
+      requestedAt: dataExports.requestedAt,
+      status: dataExports.status,
+      totalBytes: dataExports.totalBytes,
+    })
     .from(dataExports)
     .where(eq(dataExports.organizationId, identity.organizationId))
     .orderBy(desc(dataExports.requestedAt), desc(dataExports.id))

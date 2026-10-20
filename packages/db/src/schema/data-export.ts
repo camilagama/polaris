@@ -50,7 +50,17 @@ export const dataExports = pgTable(
     filesDeletedAt: timestamp("files_deleted_at", { withTimezone: true }),
     formats: text("formats").array().notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    /**
+     * Who holds the run of a closed organization's export: a new value at each claim. The reader of a closed
+     * organization reads only while the transaction names the export and this token (ADR 0081).
+     */
+    leaseToken: uuid("lease_token"),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    /**
+     * `active`: asked from inside the tenant and read as the person who asked (ADR 0078). `closed`: asked by the
+     * owner of a closed organization and read by the closed organization's reader, read-only (ADR 0081).
+     */
+    mode: text("mode").default("active").notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -80,6 +90,10 @@ export const dataExports = pgTable(
     check(
       "data_exports_formats_allowed",
       sql`cardinality(${table.formats}) BETWEEN 1 AND 3 AND ${table.formats} <@ ARRAY['json', 'csv', 'images']::text[]`
+    ),
+    check(
+      "data_exports_mode_allowed",
+      sql`${table.mode} IN ('active', 'closed')`
     ),
     check(
       "data_exports_attempts_allowed",

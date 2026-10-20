@@ -10,6 +10,8 @@ export type InitialOrganizationRepositoryErrorCode =
   | "email_not_verified"
   | "multiple_existing_organizations"
   | "organization_not_available"
+  /** Two organizations in closure and none open: the ceiling of decision L6. */
+  | "organization_limit_reached"
   | "organization_insert_failed"
   | "invalid_user_id"
   | "invalid_organization_id"
@@ -80,6 +82,7 @@ function mapWriterError(error: unknown): unknown {
     "email_not_verified",
     "multiple_existing_organizations",
     "organization_not_available",
+    "organization_limit_reached",
     "organization_insert_failed",
     "invalid_user_id",
     "invalid_organization_id",

@@ -193,6 +193,11 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
         throw error;
       }
     },
+    async hasSubscription(providerRef, providerSubscriptionId) {
+      return (
+        (await subscriptionsOf(providerRef, providerSubscriptionId)).length > 0
+      );
+    },
     async prepareSubscription(input) {
       const reference = newPolarisReference(config.randomUuid());
       const body = checkoutBody(

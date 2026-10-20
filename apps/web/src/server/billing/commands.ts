@@ -1,4 +1,8 @@
-import type { BillingProviderPort } from "@polaris/billing/provider-port";
+import {
+  type BillingProviderPort,
+  ProviderNotFoundError,
+  ProviderUnavailableError,
+} from "@polaris/billing/provider-port";
 import type {
   BillingStore,
   UnclaimedTrialEvent,
@@ -25,6 +29,7 @@ const DAY_MS = 86_400_000;
 
 export type BillingCommandErrorCode =
   | "already_subscribed"
+  | "checkout_pending_confirmation"
   | "cycle_not_offered"
   | "trial_already_used"
   | "trial_in_progress";
@@ -99,7 +104,83 @@ export interface StartCheckoutInput {
 export interface StartCheckoutDependencies {
   now?: () => Date;
   port: BillingProviderPort;
-  store: Pick<BillingStore, "attachProvider" | "readRecord" | "startTrial">;
+  store: Pick<
+    BillingStore,
+    | "attachProvider"
+    | "processEvent"
+    | "readProviderLink"
+    | "readRecord"
+    | "recordEvent"
+    | "startTrial"
+  >;
+}
+
+/**
+ * Before the organization's checkout is replaced by a new one, asks the
+ * provider whether the old one already made a subscription (it was paid and its
+ * webhook has not arrived: `provider_subscription_id` is still null). That
+ * subscription would stay alive and charge with no organization behind it, so
+ * the new checkout is refused (`checkout_pending_confirmation`) and the old
+ * facts are read into the inbox now. A provider that cannot answer refuses too
+ * (`provider_unavailable`): the swap is never made blind. Only here a provider's
+ * "not found" is an empty answer: it is what a checkout nobody paid looks like.
+ */
+async function assertOldCheckoutMadeNoSubscription(
+  dependencies: StartCheckoutDependencies,
+  input: StartCheckoutInput,
+  now: Date,
+  ids: { organizationId: ReturnType<typeof opaqueId>; provider: string }
+): Promise<void> {
+  const { port, store } = dependencies;
+  const link = await store.readProviderLink(input.organizationId);
+  if (
+    !link ||
+    link.provider !== port.provider ||
+    link.providerSubscriptionId !== null
+  ) {
+    // nothing linked, another provider's, or a subscription already matched
+    return;
+  }
+  let subscribed: boolean;
+  try {
+    subscribed = await port.hasSubscription(link.providerRef, null);
+  } catch (error: unknown) {
+    if (error instanceof ProviderNotFoundError) {
+      return;
+    }
+    logger.warn("billing_checkout_swap_check_failed", {
+      ...describeError(error),
+      ...ids,
+    });
+    // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
+    throw new ProviderUnavailableError({ cause: error });
+  }
+  if (!subscribed) {
+    return;
+  }
+  await reconcileOrganization(
+    {
+      now: () => now,
+      portFor: () => port,
+      store,
+    },
+    input.organizationId
+  ).catch((error: unknown) => {
+    // the refusal stands; the operator's reconciliation reads it again
+    logger.warn("billing_checkout_pending_reconcile_failed", {
+      ...describeError(error),
+      ...ids,
+    });
+  });
+  const reconciled = await store
+    .readRecord(input.organizationId)
+    .catch(() => null);
+  if (reconciled && grantsPro(reconciled.state)) {
+    // the old fact applied just now: the subscription is the organization's
+    throw new BillingCommandError("already_subscribed");
+  }
+  logger.warn("billing_checkout_pending_confirmation", ids);
+  throw new BillingCommandError("checkout_pending_confirmation");
 }
 
 /**
@@ -107,7 +188,9 @@ export interface StartCheckoutDependencies {
  * reserved first (with a trial), then the checkout is created at the
  * provider, then its reference is linked to the organization, and only then
  * is the link handed over, so a payment can never arrive for a checkout that
- * no organization holds. If the link fails, the checkout is given up at the
+ * no organization holds. Before any of it, a checkout of the organization that
+ * the provider already turned into a subscription (paid, webhook late) is not
+ * replaced: the new one is refused and the old facts are read in. If the link fails, the checkout is given up at the
  * provider (best effort; it expires within the hour anyway).
  */
 export async function startCardCheckout(
@@ -125,6 +208,7 @@ export async function startCardCheckout(
     // a trial running, a paid period or grace: nothing to start
     throw new BillingCommandError("already_subscribed");
   }
+  await assertOldCheckoutMadeNoSubscription(dependencies, input, now, ids);
   if (input.trial) {
     try {
       await store.startTrial(input.organizationId, input.userId, now);
@@ -219,7 +303,12 @@ export interface ReconcileReport {
  * when no webhook ever matched (the port decides).
  */
 export async function reconcileOrganization(
-  dependencies: OperatorCommandDependencies,
+  dependencies: Omit<OperatorCommandDependencies, "store"> & {
+    store: Pick<
+      BillingStore,
+      "processEvent" | "readProviderLink" | "recordEvent"
+    >;
+  },
   organizationId: string
 ): Promise<ReconcileReport> {
   const { store } = dependencies;

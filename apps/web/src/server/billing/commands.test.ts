@@ -1,6 +1,10 @@
-import type {
-  BillingProviderPort,
-  PreparedSubscription,
+import {
+  type BillingProviderPort,
+  type PreparedSubscription,
+  ProviderNotFoundError,
+  ProviderRejectedError,
+  ProviderResponseMalformedError,
+  ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import type {
   BillingStore,
@@ -54,6 +58,7 @@ function fakePort(overrides: Partial<BillingProviderPort> = {}) {
     discardCheckout: vi.fn(() => Promise.resolve("discarded" as const)),
     prepareSubscription: vi.fn(() => Promise.resolve(prepared)),
     provider: "asaas" as const,
+    hasSubscription: vi.fn(() => Promise.resolve(false)),
     readState: vi.fn(() => Promise.resolve([])),
     refundCurrentPeriod: vi.fn(() =>
       Promise.resolve("refund_requested" as const)
@@ -278,6 +283,183 @@ describe("startCardCheckout", () => {
     expect(result.handoff.url).toBe(CHECKOUT_URL);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(CHECKOUT_URL);
+  });
+
+  describe("a checkout the organization already holds, with no subscription matched yet", () => {
+    const OLD_CHECKOUT = "c6d42a6f-0000-4000-8000-0000000000aa";
+    const unconfirmed = {
+      provider: "asaas",
+      providerRef: OLD_CHECKOUT,
+      providerSubscriptionId: null,
+    };
+    const oldFact = {
+      fact: {
+        cycleMonths: 12 as const,
+        occurredAt: now,
+        type: "trial_method_ready" as const,
+      },
+      providerEventId: "reconcile:sub_old:CHECKOUT_PAID",
+      providerRef: OLD_CHECKOUT,
+      providerSubscriptionId: "sub_old",
+    };
+
+    it("paid at the provider with the webhook late: refuses the new checkout, reads the old fact in, and leaves nothing orphaned", async () => {
+      // 1: the owner pays checkout A; 2: the webhook is late; 3: checkout B is asked for
+      const warn = vi.spyOn(logger, "warn");
+      const port = fakePort({
+        hasSubscription: vi.fn(() => Promise.resolve(true)),
+        readState: vi.fn(() => Promise.resolve([oldFact])),
+      });
+      const store = fakeStore({
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+      });
+
+      await expect(
+        startCardCheckout({ now: () => now, port, store }, input)
+      ).rejects.toMatchObject({ code: "checkout_pending_confirmation" });
+
+      // asked about the old checkout, with no sub_ (the link has none)
+      expect(port.hasSubscription).toHaveBeenCalledWith(OLD_CHECKOUT, null);
+      // 4: the reference is not swapped, nothing new is created or given up
+      expect(store.attachProvider).not.toHaveBeenCalled();
+      expect(port.prepareSubscription).not.toHaveBeenCalled();
+      expect(port.discardCheckout).not.toHaveBeenCalled();
+      expect(store.startTrial).not.toHaveBeenCalled();
+      // the old fact enters through the inbox, with its sub_
+      expect(store.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fact: oldFact.fact,
+          providerEventId: oldFact.providerEventId,
+          providerRef: OLD_CHECKOUT,
+          providerSubscriptionId: "sub_old",
+        })
+      );
+      expect(store.processEvent).toHaveBeenCalledWith("ev-1", now);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(OLD_CHECKOUT);
+    });
+
+    it("says already_subscribed when the reconciliation made the old subscription the organization's", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const port = fakePort({
+        hasSubscription: vi.fn(() => Promise.resolve(true)),
+        readState: vi.fn(() => Promise.resolve([oldFact])),
+      });
+      const readRecord = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ state: "trialing" });
+      const store = fakeStore({
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+        readRecord,
+      });
+
+      await expect(
+        startCardCheckout({ now: () => now, port, store }, input)
+      ).rejects.toMatchObject({ code: "already_subscribed" });
+      expect(store.attachProvider).not.toHaveBeenCalled();
+    });
+
+    it("still refuses when the reconciliation itself fails", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const port = fakePort({
+        hasSubscription: vi.fn(() => Promise.resolve(true)),
+        readState: vi.fn(() => Promise.resolve([oldFact])),
+      });
+      const store = fakeStore({
+        processEvent: vi.fn(() => Promise.reject(new Error("db down"))),
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+      });
+
+      await expect(
+        startCardCheckout({ now: () => now, port, store }, input)
+      ).rejects.toMatchObject({ code: "checkout_pending_confirmation" });
+      expect(store.attachProvider).not.toHaveBeenCalled();
+    });
+
+    it("an old checkout that made no subscription is swapped as before, and given up", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const port = fakePort();
+      const store = fakeStore({
+        attachProvider: vi.fn(() =>
+          Promise.resolve({ provider: "asaas", providerRef: OLD_CHECKOUT })
+        ),
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+      });
+
+      await expect(
+        startCardCheckout({ now: () => now, port, store }, input)
+      ).resolves.toEqual({ handoff: { kind: "redirect", url: CHECKOUT_URL } });
+
+      expect(port.hasSubscription).toHaveBeenCalledWith(OLD_CHECKOUT, null);
+      expect(store.attachProvider).toHaveBeenCalledTimes(1);
+      expect(port.discardCheckout).toHaveBeenCalledWith(OLD_CHECKOUT);
+      expect(store.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it("a provider that does not know the old checkout (not found) counts as no subscription", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const port = fakePort({
+        hasSubscription: vi.fn(() =>
+          Promise.reject(new ProviderNotFoundError())
+        ),
+      });
+      const store = fakeStore({
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+      });
+
+      await expect(
+        startCardCheckout({ now: () => now, port, store }, input)
+      ).resolves.toBeDefined();
+      expect(store.attachProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["unavailable", new ProviderUnavailableError()],
+      ["rejected", new ProviderRejectedError(401)],
+      ["malformed", new ProviderResponseMalformedError()],
+    ])(
+      "a provider that is down or fails (%s) refuses with provider_unavailable, failing closed",
+      async (_name, failure) => {
+        vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const port = fakePort({
+          hasSubscription: vi.fn(() => Promise.reject(failure)),
+        });
+        const store = fakeStore({
+          readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+        });
+
+        await expect(
+          startCardCheckout({ now: () => now, port, store }, input)
+        ).rejects.toBeInstanceOf(ProviderUnavailableError);
+
+        expect(store.attachProvider).not.toHaveBeenCalled();
+        expect(port.prepareSubscription).not.toHaveBeenCalled();
+        expect(store.startTrial).not.toHaveBeenCalled();
+      }
+    );
+
+    it("asks nothing when there is no link, the link has a sub_, or it is another provider's", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      for (const stored of [
+        null,
+        link,
+        { ...unconfirmed, provider: "woovi" },
+      ]) {
+        const port = fakePort();
+        // biome-ignore lint/performance/noAwaitInLoops: Three cases, in order.
+        await startCardCheckout(
+          {
+            now: () => now,
+            port,
+            store: fakeStore({
+              readProviderLink: vi.fn(() => Promise.resolve(stored)),
+            }),
+          },
+          input
+        );
+        expect(port.hasSubscription).not.toHaveBeenCalled();
+      }
+    });
   });
 
   it("sends the price text, the cycle and the first charge on the day the trial ends, and no payer", async () => {

@@ -122,3 +122,16 @@ export class ClosureNotRecoverableError extends Error {
     this.name = "ClosureNotRecoverableError";
   }
 }
+
+/**
+ * The ceiling of decision L6: one open organization (active or suspended) per person. Undoing a closure is refused
+ * while an owner of the organization has another open one.
+ */
+export class AnotherOrganizationActiveError extends Error {
+  readonly code = "another_organization_active";
+
+  constructor() {
+    super("another_organization_active");
+    this.name = "AnotherOrganizationActiveError";
+  }
+}

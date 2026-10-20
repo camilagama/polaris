@@ -19,6 +19,9 @@ export const CAPABILITIES = Object.freeze([
   "organization:close",
   "organization:export",
   "billing:manage",
+  // read the closure and export a closed organization (ADR 0081): never opens the tenant, which a closed
+  // organization does not; the database functions of the closed organization check the owner themselves
+  "organization:closed_export",
   "sync:push",
   "sync:read",
   "offline:manage",

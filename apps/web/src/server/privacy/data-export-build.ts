@@ -1,7 +1,11 @@
-import { EXPORT_DATASETS } from "@polaris/db/export-datasets";
+import {
+  EXPORT_DATASETS,
+  ORGANIZATION_TABLE,
+} from "@polaris/db/export-datasets";
 import {
   describeDataset,
   type ExportImage,
+  type ExportRow,
   readDatasetPage,
   readImagePage,
 } from "@polaris/db/export-reader";
@@ -61,7 +65,8 @@ async function readTable(
   organizationId: string,
   dataset: (typeof EXPORT_DATASETS)[number],
   formats: readonly ExportFormat[],
-  room: number
+  room: number,
+  rewrite: (row: ExportRow) => ExportRow
 ): Promise<TableRead> {
   const shape = await describeDataset(transaction, dataset);
   const wantJson = formats.includes("json");
@@ -81,7 +86,8 @@ async function readTable(
       after,
       EXPORT_PAGE_ROWS
     );
-    for (const row of page.rows) {
+    for (const read of page.rows) {
+      const row = rewrite(read);
       rows += 1;
       if (wantJson) {
         const kept: Record<string, unknown> = {};
@@ -107,20 +113,18 @@ async function readTable(
   return { csvLines, jsonLines, rows, shape };
 }
 
-async function readImages(
-  transaction: TenantRequestTransaction,
-  organizationId: string
-): Promise<ExportImage[]> {
+/** One page of the organization's images after the given asset ID, oldest first. */
+export type ImagePageReader = (
+  afterAssetId: string | null,
+  pageRows: number
+) => Promise<ExportImage[]>;
+
+async function readImages(readPage: ImagePageReader): Promise<ExportImage[]> {
   const images: ExportImage[] = [];
   let afterAssetId: string | null = null;
   for (;;) {
     // biome-ignore lint/performance/noAwaitInLoops: each page starts where the one before ended.
-    const page = await readImagePage(
-      transaction,
-      organizationId,
-      afterAssetId,
-      IMAGE_PAGE
-    );
+    const page = await readPage(afterAssetId, IMAGE_PAGE);
     images.push(...page);
     // each image is a read from storage and the run has a ceiling on those: fail before any work, not in the middle
     if (images.length > MAX_EXPORT_IMAGES) {
@@ -133,15 +137,28 @@ async function readImages(
   }
 }
 
+/** How a copy is read beyond the tables of its transaction. */
+export interface CollectOptions {
+  /** The images, when the transaction does not read the storage keys (a closed organization's reader). */
+  readImagePage?: ImagePageReader;
+  /** The organization's own row as the copy holds it (a closed organization's copy does not show a scheduled purge). */
+  rewriteOrganization?: (row: ExportRow) => ExportRow;
+}
+
+const unchanged = (row: ExportRow) => row;
+
 /**
  * Reads everything the person who asked may read, in the snapshot of the transaction the caller
  * opened, and turns each table into the JSON and CSV files that were asked for (an images-only
  * copy reads no table). Only memory work happens between queries, so the transaction stays short.
+ * The images are read in the same transaction, unless the caller names another reader (a closed
+ * organization's reader does not read the storage keys: the run reads them through its lease).
  */
 export async function collectExport(
   transaction: TenantRequestTransaction,
   organizationId: string,
-  formats: readonly ExportFormat[]
+  formats: readonly ExportFormat[],
+  options: CollectOptions = {}
 ): Promise<CollectedExport> {
   const entries: CollectedExport["entries"] = [];
   const summaries: ExportDatasetSummary[] = [];
@@ -163,7 +180,10 @@ export async function collectExport(
       organizationId,
       dataset,
       formats,
-      MAX_EXPORT_DATA_BYTES - held
+      MAX_EXPORT_DATA_BYTES - held,
+      dataset.table === ORGANIZATION_TABLE
+        ? (options.rewriteOrganization ?? unchanged)
+        : unchanged
     );
     summaries.push({
       columns: table.shape.columns,
@@ -182,7 +202,11 @@ export async function collectExport(
   }
 
   const images = formats.includes("images")
-    ? await readImages(transaction, organizationId)
+    ? await readImages(
+        options.readImagePage ??
+          ((afterAssetId, pageRows) =>
+            readImagePage(transaction, organizationId, afterAssetId, pageRows))
+      )
     : [];
   return { entries, images, summaries };
 }

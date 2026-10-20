@@ -1,3 +1,4 @@
+import { withClosedExportTransaction } from "@polaris/db/closed-export-reader";
 import { createDatabase } from "@polaris/db/client";
 import type { ClaimedDataExport } from "@polaris/db/privacy-maintenance";
 import {
@@ -33,6 +34,30 @@ export function createRequesterReader(
         },
         (transaction) => operation(transaction)
       );
+    } finally {
+      await pool.end().catch(() => undefined);
+    }
+  };
+}
+
+/**
+ * Reads a closed organization's data for its export (ADR 0081): through the privacy runtime's own connection, the only
+ * role that may become the closed organization's reader, in a read-only snapshot scoped to the export and the lease
+ * this run holds. Nothing here takes a user: the reader sees the organization of the export, and only while the run
+ * holds it.
+ */
+export function createClosedExportReader(
+  connectionString: string
+): NonNullable<DataExportJobDependencies["readClosedExport"]> {
+  return async <T>(
+    claimed: ClaimedDataExport,
+    operation: (transaction: TenantRequestTransaction) => Promise<T>
+  ): Promise<T> => {
+    const { db, pool } = createDatabase(connectionString, {
+      maxConnections: 1,
+    });
+    try {
+      return await withClosedExportTransaction(db, claimed, operation);
     } finally {
       await pool.end().catch(() => undefined);
     }

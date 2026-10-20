@@ -64,6 +64,7 @@ function setup(
       })
     ),
     provider: "asaas",
+    hasSubscription: vi.fn(() => Promise.resolve(false)),
     readState: vi.fn(),
     refundCurrentPeriod: vi.fn(),
     ...options.portOverrides,
@@ -74,7 +75,10 @@ function setup(
   const store = {
     attachProvider: vi.fn(() => Promise.resolve()),
     close: vi.fn(() => Promise.resolve()),
+    processEvent: vi.fn(() => Promise.resolve({ status: "applied" })),
+    readProviderLink: vi.fn(() => Promise.resolve(null)),
     readRecord: vi.fn(() => Promise.resolve(null)),
+    recordEvent: vi.fn(() => Promise.resolve({ duplicate: false, id: "ev-1" })),
     startTrial: vi.fn(() => Promise.resolve({})),
     ...options.storeOverrides,
   };
@@ -330,6 +334,71 @@ describe("billing.startCheckout", () => {
       code: "CONFLICT",
       data: { reason: "already_subscribed" },
     });
+  });
+
+  const unconfirmedLink = {
+    provider: "asaas",
+    providerRef: "chk-old",
+    providerSubscriptionId: null,
+  };
+
+  it("answers a conflict, with a message the person can read, when the old checkout already made a subscription", async () => {
+    const fixture = setup({
+      portOverrides: {
+        hasSubscription: vi.fn(() => Promise.resolve(true)),
+        readState: vi.fn(() =>
+          Promise.resolve([
+            {
+              fact: {
+                cycleMonths: 12 as const,
+                occurredAt: new Date(),
+                type: "trial_method_ready" as const,
+              },
+              providerEventId: "reconcile:sub_1:CHECKOUT_PAID",
+              providerRef: "chk-old",
+            },
+          ])
+        ),
+      },
+      storeOverrides: {
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmedLink)),
+      },
+    });
+
+    const failure = await fixture.client.billing
+      .startCheckout(valid)
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "checkout_pending_confirmation" },
+      message: expect.stringContaining("sendo confirmado"),
+    });
+    expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+    expect(fixture.store.attachProvider).not.toHaveBeenCalled();
+    expect(fixture.store.recordEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers service unavailable when the provider cannot say whether the old checkout was paid", async () => {
+    const fixture = setup({
+      portOverrides: {
+        hasSubscription: vi.fn(() =>
+          Promise.reject(new ProviderUnavailableError())
+        ),
+      },
+      storeOverrides: {
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmedLink)),
+      },
+    });
+
+    await expect(
+      fixture.client.billing.startCheckout(valid)
+    ).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "billing_provider_unavailable" },
+    });
+    expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+    expect(fixture.store.attachProvider).not.toHaveBeenCalled();
   });
 
   it("answers service unavailable, with no word of the provider, when the provider cannot be reached", async () => {

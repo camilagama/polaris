@@ -44,6 +44,12 @@ const unavailableCodes: ReadonlySet<string> = new Set([
   "provider_unavailable",
 ]);
 
+/** What the person reads when a refusal needs more than its code (the client may show it as it is). */
+const refusalMessages: Readonly<Record<string, string>> = {
+  checkout_pending_confirmation:
+    "Seu pagamento anterior ainda está sendo confirmado. Aguarde alguns minutos e atualize a página antes de abrir um novo checkout.",
+};
+
 function billingRpcError(
   error: unknown,
   fallback: (error: unknown) => never
@@ -51,7 +57,13 @@ function billingRpcError(
   if (error instanceof BillingCommandError) {
     throw new ORPCError(
       error.code === "cycle_not_offered" ? "BAD_REQUEST" : "CONFLICT",
-      { cause: error, data: { reason: error.code } }
+      {
+        cause: error,
+        data: { reason: error.code },
+        ...(Object.hasOwn(refusalMessages, error.code)
+          ? { message: refusalMessages[error.code] }
+          : {}),
+      }
     );
   }
   const code =

@@ -51,7 +51,9 @@ export const TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
 
 export type TenantAuthorizationErrorCode =
   | "tenant_access_denied"
-  | "capability_denied";
+  | "capability_denied"
+  /** The member's organization is in closure: it only opens for its owner's closed-organization panel (ADR 0081). */
+  | "organization_closed";
 
 export class TenantAuthorizationError extends Error {
   readonly code: TenantAuthorizationErrorCode;
@@ -160,8 +162,16 @@ export function withAuthorizedTenantTransaction<T>(
         .limit(1);
 
       if (organization?.status !== "active") {
+        // the row is not visible unless active; only a member asks, so telling a closure apart reveals nothing new
+        const closed = await transaction.execute(
+          sql`SELECT 1 FROM public.closed_organization_status(${requestedOrganizationId})`
+        );
         return Promise.reject(
-          new TenantAuthorizationError("tenant_access_denied")
+          new TenantAuthorizationError(
+            closed.rows.length > 0
+              ? "organization_closed"
+              : "tenant_access_denied"
+          )
         );
       }
 

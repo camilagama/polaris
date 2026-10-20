@@ -52,7 +52,9 @@ export const EXPORT_PAGE_ROWS = 1000;
 export type ExportRefusalCode =
   | "invalid_export_request"
   | "export_already_running"
-  | "export_limit_reached";
+  | "export_limit_reached"
+  /** A closed organization's copy can no longer be asked for: past D, a purge claimed, or no longer in closure. */
+  | "closed_export_unavailable";
 
 export class InvalidExportRequestError extends Error {
   readonly code: ExportRefusalCode;

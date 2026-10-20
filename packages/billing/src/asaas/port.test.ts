@@ -662,6 +662,60 @@ describe("readState", () => {
   });
 });
 
+describe("hasSubscription", () => {
+  const listRoute =
+    (items: string[]): Route =>
+    (call) =>
+      call.url.startsWith("/subscriptions?")
+        ? { text: list(items) }
+        : undefined;
+
+  it("is true for a live subscription of the checkout even when no charge shows a fact yet", async () => {
+    const { fetch } = fakeAsaas(listRoute([subscription()]));
+    // the same subscription gives readState nothing to say: no charge of the period
+    await expect(portWith(fetch).hasSubscription(CHECKOUT_ID)).resolves.toBe(
+      true
+    );
+  });
+
+  it("is true for a subscription already deleted", async () => {
+    const { fetch } = fakeAsaas(
+      listRoute([subscription().replace('"deleted":false', '"deleted":true')])
+    );
+    await expect(portWith(fetch).hasSubscription(CHECKOUT_ID)).resolves.toBe(
+      true
+    );
+  });
+
+  it("is false for a checkout no subscription came from", async () => {
+    const { fetch } = fakeAsaas(listRoute([]));
+    await expect(portWith(fetch).hasSubscription(CHECKOUT_ID)).resolves.toBe(
+      false
+    );
+  });
+
+  it("is false when the only subscription listed belongs to another checkout", async () => {
+    const { fetch } = fakeAsaas(
+      listRoute([
+        subscription().replace(
+          CHECKOUT_ID,
+          "bbbbbbbb-0000-4000-8000-000000000002"
+        ),
+      ])
+    );
+    await expect(portWith(fetch).hasSubscription(CHECKOUT_ID)).resolves.toBe(
+      false
+    );
+  });
+
+  it("throws when the provider is down", async () => {
+    const { fetch } = fakeAsaas(() => ({ status: 503, text: "{}" }));
+    await expect(
+      portWith(fetch).hasSubscription(CHECKOUT_ID)
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+});
+
 describe("provider", () => {
   it("is asaas", () => {
     expect(portWith(fakeAsaas().fetch).provider).toBe("asaas");

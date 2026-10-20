@@ -956,6 +956,55 @@ export type OrganizationMembershipReadModel = z.infer<
   typeof organizationMembership
 >;
 
+// A closed organization as its owner reads it (ADR 0081): the phase and every date come from the server, by date
+// only, so they are the same with or without a legal hold or a scheduled purge.
+const closedOrganization = z.object({
+  canRecover: z.boolean(),
+  deletableFrom: z.string().datetime(),
+  deletionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  exportOpenUntil: z.string().datetime(),
+  id: z.string().uuid(),
+  milestones: z.object({
+    closure: z.string().datetime(),
+    d30: z.string().datetime(),
+    d7: z.string().datetime(),
+    deletionDay: z.string().datetime(),
+  }),
+  name: z.string().min(1),
+  phase: z.enum([
+    "closing",
+    "closed",
+    "deletion_scheduled",
+    "deletable",
+    "purged",
+  ]),
+  recoverUntil: z.string().datetime(),
+  requestedAt: z.string().datetime(),
+  timezone: z.string().min(1),
+});
+
+export type ClosedOrganizationReadModel = z.infer<typeof closedOrganization>;
+
+const closedDataExport = z.object({
+  errorCode: z.string().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  files: z.array(
+    z.object({
+      name: z.string().min(1),
+      ordinal: z.number().int().positive(),
+      sizeBytes: z.number().int().positive(),
+    })
+  ),
+  formats: z.array(z.enum(["json", "csv", "images"])),
+  id: z.string().uuid(),
+  // an export asked for before the closure (`active`) is listed too; only a `closed` one is downloaded here
+  mode: z.enum(["active", "closed"]),
+  readyAt: z.string().datetime().nullable(),
+  requestedAt: z.string().datetime(),
+  status: z.enum(["requested", "running", "ready", "failed", "expired"]),
+  totalBytes: z.number().int().nonnegative().nullable(),
+});
+
 const deviceReadModel = z.object({
   createdAt: z.string().datetime(),
   id: z.string().uuid(),
@@ -1478,6 +1527,23 @@ export const polarisContract = {
   // (ADR 0078). Asking is a tenant operation of the owner; the file itself is downloaded from
   // /api/data-exports/{id}/files/{ordinal}, not through RPC.
   dataExport: {
+    // A closed organization's copy (ADR 0081): the owner of an organization in closure asks for it outside the
+    // tenant (which no longer opens), until the day its data may be deleted, with a session signed in within 15
+    // minutes. Downloaded from /api/closed-exports/{id}/files/{ordinal}.
+    listClosed: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(z.object({ exports: z.array(closedDataExport) })),
+    requestClosed: oc
+      .input(
+        z.object({
+          formats: z
+            .array(z.enum(["json", "csv", "images"]))
+            .min(1)
+            .max(3),
+          organizationId: z.string().trim().min(1),
+        })
+      )
+      .output(z.object({ id: z.string().uuid() })),
     list: oc
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(
@@ -1718,6 +1784,15 @@ export const polarisContract = {
         ),
       })
     ),
+    // The owner's closed organizations (closing, closed or with the purge scheduled) and their dates, computed by the
+    // server in the organization's time zone; never a legal hold nor the status of a purge. Replaces listClosing.
+    listClosed: oc.output(
+      z.object({ organizations: z.array(closedOrganization) })
+    ),
+    // One of them; null for an organization that is not the user's or does not exist, alike.
+    closedStatus: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(z.object({ organization: closedOrganization.nullable() })),
     // Undo a closure while its recovery window is open. The leases revoked at the request stay revoked.
     recoverClosure: oc
       .input(z.object({ organizationId: z.string().trim().min(1) }))

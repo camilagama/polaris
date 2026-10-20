@@ -14,6 +14,8 @@ import {
 type Database = ReturnType<typeof createDatabase>["db"];
 
 interface DatabaseStubOptions {
+  /** Whether the closed-organization status answers a row (the member owns a closed organization). */
+  closed?: boolean;
   membership?: { role: string; status: string };
   organization?: { status: string };
 }
@@ -48,12 +50,18 @@ function createDatabaseStub(options: DatabaseStubOptions = {}) {
   let executeCalls = 0;
   const transaction = {
     execute: vi.fn(async () => {
-      // the first statement of a tenant transaction sets the timeouts; the others set contexts
-      events.push(
-        executeCalls === 0 ? "set-local-guards" : "set-local-context"
-      );
+      // the first statement of a tenant transaction sets the timeouts, the next two set contexts, and a fourth
+      // one asks whether a non-active organization is closed
+      let label = "closure-status";
+      if (executeCalls === 0) {
+        label = "set-local-guards";
+      } else if (executeCalls < 3) {
+        label = "set-local-context";
+      }
+      events.push(label);
       executeCalls += 1;
       await Promise.resolve();
+      return { rows: label === "closure-status" && options.closed ? [{}] : [] };
     }),
     select: vi.fn(() => query),
   };
@@ -197,7 +205,25 @@ describe("withAuthorizedTenantTransaction", () => {
       "membership-select",
       "set-local-context",
       "organization-select",
+      "closure-status",
     ]);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("tells a member that their organization is closed, and still runs nothing", async () => {
+    const fixture = createDatabaseStub({
+      closed: true,
+      membership: { role: "owner", status: "active" },
+    });
+    const operation = vi.fn(async () => undefined);
+
+    await expect(
+      withAuthorizedTenantTransaction(
+        fixture.database,
+        createInput({ capability: "sale:create" }),
+        operation
+      )
+    ).rejects.toMatchObject({ code: "organization_closed" });
     expect(operation).not.toHaveBeenCalled();
   });
 

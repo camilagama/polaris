@@ -106,6 +106,15 @@ export interface BillingProviderPort {
   discardCheckout: (
     checkoutId: string
   ) => Promise<"already_closed" | "discarded">;
+  /**
+   * Whether the provider already made a subscription from this reference (a
+   * checkout that was paid), live or not, whatever its charges show. A checkout
+   * nobody paid is `false`; a failure to answer throws.
+   */
+  hasSubscription: (
+    providerRef: string,
+    providerSubscriptionId?: string | null
+  ) => Promise<boolean>;
   /** Creates the subscription (or the checkout that creates it) at the provider. */
   prepareSubscription: (
     input: PrepareSubscriptionInput
@@ -129,8 +138,8 @@ export interface BillingProviderPort {
 export class ProviderUnavailableError extends Error {
   readonly code = "provider_unavailable";
 
-  constructor() {
-    super("provider_unavailable");
+  constructor(options?: ErrorOptions) {
+    super("provider_unavailable", options);
     this.name = "ProviderUnavailableError";
   }
 }
