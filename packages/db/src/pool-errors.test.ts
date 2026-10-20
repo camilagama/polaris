@@ -19,15 +19,22 @@ vi.mock("pg", () => ({
 
 const { createDatabase } = await import("./client");
 const { createBillingStore } = await import("./billing-store");
+const { createAuthLoginLockMaintenanceClient } = await import(
+  "./auth-login-lock-maintenance"
+);
+const { createOutboxClient } = await import("./outbox-dispatch");
 const { createMediaCleanupClient } = await import("./media-cleanup");
 const { createPrivacyMaintenanceClient } = await import(
   "./privacy-maintenance"
 );
 
 const factories = {
+  authLoginLockMaintenance: () =>
+    createAuthLoginLockMaintenanceClient("postgres://u:secret@h/db"),
   billingStore: () => createBillingStore("postgres://u:secret@h/db"),
   database: () => createDatabase("postgres://u:secret@h/db"),
   mediaCleanup: () => createMediaCleanupClient("postgres://u:secret@h/db"),
+  outbox: () => createOutboxClient("postgres://u:secret@h/db"),
   privacyMaintenance: () =>
     createPrivacyMaintenanceClient("postgres://u:secret@h/db"),
 };
@@ -65,7 +72,10 @@ describe("pools made per request survive a connection error after the response",
       pool?.emit("connect", client);
       expect(() => client.emit("error", socketClosed())).not.toThrow();
       expect(JSON.stringify(warn.mock.calls)).not.toMatch(leakedData);
-      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledExactlyOnceWith("database_pool_error", {
+        errorClass: "Error",
+        errorCode: "ECONNRESET",
+      });
     });
   }
 });

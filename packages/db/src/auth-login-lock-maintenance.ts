@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { guardPoolErrors } from "./pool-errors";
 
 /**
  * What the background job does to the lock of the sign-in by password (ADR 0100): it removes the rows
@@ -14,12 +15,14 @@ export interface AuthLoginLockMaintenanceClient {
 export function createAuthLoginLockMaintenanceClient(
   connectionString: string
 ): AuthLoginLockMaintenanceClient {
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 5000,
-    max: 1,
-  });
+  const pool = guardPoolErrors(
+    new Pool({
+      connectionString,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 5000,
+      max: 1,
+    })
+  );
   return {
     async close() {
       await pool.end();

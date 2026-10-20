@@ -1,5 +1,6 @@
 import { windowsMissed } from "@polaris/domain/scheduling/scheduled-jobs";
 import { Pool } from "pg";
+import { guardPoolErrors } from "./pool-errors";
 
 /**
  * What the outbox dispatcher and the queue consumer do in the database (plan PR110, ADR 0084), under
@@ -113,12 +114,14 @@ const UNKNOWN_REASONS = new Set<string>([
 ]);
 
 export function createOutboxClient(connectionString: string): OutboxClient {
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 5000,
-    max: 1,
-  });
+  const pool = guardPoolErrors(
+    new Pool({
+      connectionString,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 5000,
+      max: 1,
+    })
+  );
   return {
     async claimOutboxEvents(limit, leaseSeconds) {
       const result = await pool.query<{
