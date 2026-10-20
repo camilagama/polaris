@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import "../catalog/categories-page.css";
 import "./sale-page.css";
 import "./sale-customer-panel.css";
@@ -144,6 +145,8 @@ export function SaleCustomerPanel({
   saleId,
 }: SaleCustomerPanelProps) {
   const [state, setState] = useState(initialLinkPanelState);
+  // a customer picked and not linked yet (it is cleared when the link is saved)
+  useReportUnsentWork(state.selectedCustomerId !== "");
   const inFlight = useRef<boolean>(false);
   const linkSequence = useRef<RequestSequence>({ current: 0 });
   const customersSequence = useRef<RequestSequence>({ current: 0 });

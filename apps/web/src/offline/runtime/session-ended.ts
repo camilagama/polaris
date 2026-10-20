@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { clearSessionCaches } from "./leave-browser";
 
 /**
  * Set when the server said, in answer to "Revogar", that this browser's own
@@ -27,6 +28,15 @@ export function markSessionOver(): void {
   for (const listener of listeners) {
     listener();
   }
+}
+
+/**
+ * A call of this page was refused for lack of a session (oRPC or a plain fetch): its copies must not be
+ * offered offline, even if the person only closes the tab, and the shell offers "Entrar de novo".
+ */
+export function endSessionHere(): void {
+  clearSessionCaches();
+  markSessionOver();
 }
 
 /** Whether this page already knows the session is over, so it must not read what needs one. */

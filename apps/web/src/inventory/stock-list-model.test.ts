@@ -112,12 +112,12 @@ describe("list state", () => {
     expect(state.moreError).toContain("Não foi possível carregar");
   });
 
-  it("turns a failed first load into an error with the session message", () => {
+  it("turns a failed first load into an error that says only what failed (the notice says the rest)", () => {
     const state = stockLoadFailed(initialStockListState(), {
       code: "UNAUTHORIZED",
     });
     expect(state.status).toBe("error");
-    expect(state.error).toContain("sessão");
+    expect(state.error).toBe("Não foi possível carregar o estoque.");
   });
 
   it("pages with a cursor and never repeats a variant", () => {

@@ -32,7 +32,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
-import type { TenantRequestContextInput } from "../tenant-request-context";
+import {
+  createTenantRequestContext,
+  type TenantRequestContextInput,
+} from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -155,12 +158,15 @@ type ConfirmSale = NonNullable<
   NonNullable<Parameters<typeof createRpcRouter>[0]>["confirmSale"]
 >;
 
-function createRpcClient(router = createRpcRouter()) {
+function createRpcClient(
+  router = createRpcRouter(),
+  bindings: WorkerBindings = testBindings
+) {
   const app = createServerApp({ rpcRouter: router });
   const link = new RPCLink({
-    fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
-    method: "POST",
+    fetch: (request) => Promise.resolve(app.fetch(request, bindings)),
     headers: { origin: "https://polaris.example.invalid" },
+    method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 
@@ -339,6 +345,54 @@ describe("sale.confirm RPC", () => {
       await expect(rejection).rejects.toMatchObject({ data: undefined });
     }
   });
+
+  it.each([
+    ["no session", null],
+    ["a session without an id", { session: {}, user: { id: "u" } }],
+    [
+      "a session past its 30-day lifetime",
+      {
+        session: {
+          createdAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+          id: "s",
+        },
+        user: { id: "u" },
+      },
+    ],
+  ])(
+    "a 401 never records the sale (%s): the repository is not reached and no transaction opens",
+    async (_label, session) => {
+      const confirmSale = vi.fn<ConfirmSale>(async () => confirmedResult);
+      const runTransaction = vi.fn();
+      const getSession = vi.fn(async () => session);
+      const database = { db: {}, pool: { end: vi.fn() } };
+      const client = createRpcClient(
+        createRpcRouter({
+          confirmSale,
+          // the real tenant context, with a session lookup that refuses: what a dead session does
+          withTenantRequestContext: createTenantRequestContext({
+            createAuth: (() => ({
+              api: { getSession },
+            })) as never,
+            createDatabase: (() => database) as never,
+            withAuthorizedTenantTransaction: runTransaction as never,
+          }),
+        }),
+        {
+          ...testBindings,
+          AUTH_HYPERDRIVE: {
+            connectionString: "postgresql://auth.invalid/neondb",
+          },
+        }
+      );
+      await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+      expect(getSession).toHaveBeenCalledOnce();
+      expect(runTransaction).not.toHaveBeenCalled();
+      expect(confirmSale).not.toHaveBeenCalled();
+    }
+  );
 
   it("explains a commercial time in the future with a stable reason", async () => {
     const client = createRpcClient(

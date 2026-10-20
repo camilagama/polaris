@@ -39,8 +39,9 @@ describe("rpc error helpers", () => {
   });
 
   it("explains failed reads in Portuguese without leaking details", () => {
-    expect(readErrorMessage({ code: "UNAUTHORIZED" }, "o estoque")).toContain(
-      "sessão"
+    // only what did not happen: the sentence about the session is the notice's alone
+    expect(readErrorMessage({ code: "UNAUTHORIZED" }, "o estoque")).toBe(
+      "Não foi possível carregar o estoque."
     );
     expect(readErrorMessage({ code: "FORBIDDEN" }, "o estoque")).toContain(
       "acesso"

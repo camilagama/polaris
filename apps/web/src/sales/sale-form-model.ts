@@ -31,7 +31,6 @@ import {
   formatInstant,
 } from "../lib/format";
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 /* -------------------------------------------------------------------------- */
 /* Types and constants                                                        */
@@ -511,8 +510,9 @@ export type CatalogView =
 /** Message for a failed read of products, profiles, variants or stock. */
 export function loadErrorMessage(error: unknown, subject: string): string {
   const code = rpcErrorCode(error);
+  // the session notice says the rest; here only what did not happen
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return `Não foi possível carregar ${subject}.`;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -1849,7 +1849,7 @@ function failure(
 function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
   switch (code) {
     case "UNAUTHORIZED":
-      return failure("unauthorized", "A venda não foi confirmada.");
+      return failure("unauthorized", "A venda não foi registrada.");
     case "FORBIDDEN":
       return failure(
         "forbidden",

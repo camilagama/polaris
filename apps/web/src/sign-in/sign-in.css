@@ -190,7 +190,7 @@
   text-transform: uppercase;
 }
 
-/* side by side when they fit, one under the other at 360 px: each is a 44 px target */
+/* side by side when they fit (they do at 360 px), on two lines when they do not (320 px, zoom): each is a 44 px target */
 .sign-in-legal ul {
   display: flex;
   flex-wrap: wrap;
