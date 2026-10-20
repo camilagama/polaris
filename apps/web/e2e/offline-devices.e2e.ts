@@ -1217,3 +1217,28 @@ test("o menu oferece Aparelhos quando o runtime offline está ligado", async ({
   }
   await expect(page.getByRole("link", { name: "Aparelhos" })).toBeVisible();
 });
+
+test("a 360 px o chip é de uma linha e o menu aberto abre com a frase do estado; no desktop a frase fica no title", async ({
+  page,
+}) => {
+  await serve(page, scenario({ devices: twoDevices() }));
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.goto("/");
+  await expect(chip(page)).toContainText("Tudo sincronizado", {
+    timeout: 20_000,
+  });
+  const short = page.locator(".sync-status-short");
+  await expect(short).toHaveText("Sincronizado");
+  expect(
+    await short.evaluate((node) => node.scrollWidth <= node.clientWidth)
+  ).toBe(true);
+  const line = page.locator(".sync-status-menu-line");
+  await expect(line).toBeHidden();
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(line).toBeVisible();
+  await expect(line).toHaveText("Tudo sincronizado");
+
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await expect(line).toBeHidden();
+  await expect(chip(page)).toHaveAttribute("title", "Tudo sincronizado");
+});

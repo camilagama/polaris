@@ -7,7 +7,9 @@ import "./sync-status.css";
  * device is online, how much is waiting to be sent and whether something needs a
  * person. A refused operation turns the chip into a link to the attention panel.
  * The visible text is short and the whole sentence is the accessible name, so the
- * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3).
+ * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3). With the
+ * menu open, the same sentence is the first line of the menu (`SyncStatusMenuLine`),
+ * because a tooltip does not show on touch.
  */
 export interface SyncStatusLabel {
   attention: boolean;
@@ -33,7 +35,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.phase === "unavailable") {
     return {
       attention: false,
-      short: "Só online",
+      short: "Sem offline",
       text: "Offline indisponível neste aparelho",
       tone: "offline",
     };
@@ -89,7 +91,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   }
   return {
     attention: false,
-    short: "Em dia",
+    short: "Sincronizado",
     text: "Tudo sincronizado",
     tone: "ok",
   };
@@ -125,6 +127,34 @@ export function SyncStatusView({ snapshot }: { snapshot: RuntimeSnapshot }) {
       {content}
     </p>
   );
+}
+
+/**
+ * The whole sentence of the state as the first line of the open menu, with the colour dot of the
+ * chip. Narrow screens only (the CSS hides it from 1100 px, where the chip keeps the sentence in its
+ * `title`). It is hidden from assistive technology: the chip already says the same thing.
+ */
+export function SyncStatusMenuLineView({
+  snapshot,
+}: {
+  snapshot: RuntimeSnapshot;
+}) {
+  const label = syncStatusLabel(snapshot);
+  return (
+    <p
+      aria-hidden="true"
+      className="sync-status-menu-line"
+      data-tone={label.tone}
+    >
+      <span className="sync-status-dot" />
+      {label.text}
+    </p>
+  );
+}
+
+export function SyncStatusMenuLine() {
+  const snapshot = useRuntimeSnapshot();
+  return snapshot ? <SyncStatusMenuLineView snapshot={snapshot} /> : null;
 }
 
 /** The header chip; renders nothing when the offline runtime is not enabled. */
