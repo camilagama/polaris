@@ -47,7 +47,14 @@ function support(
       Promise.resolve({ changed: true, id: caseId, status: "closed" })
     ),
     customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
-    detail: vi.fn(() => Promise.resolve(null)),
+    // the purge confirms the organization named is the case's own (org_1)
+    detail: vi.fn(() =>
+      Promise.resolve({
+        audit: [],
+        case: { organizationId: "org_1" } as never,
+        grants: [],
+      })
+    ),
     grant: vi.fn(() =>
       Promise.resolve({
         caseId,
@@ -83,6 +90,7 @@ function support(
     reactivate: vi.fn(() =>
       Promise.resolve({ changed: true, status: "active" })
     ),
+    renewalBlocksPurge: vi.fn(() => Promise.resolve(false)),
     reveal: vi.fn(() =>
       Promise.resolve({ customerId, field: "email", value: "ana@exemplo.com" })
     ),
@@ -316,7 +324,7 @@ describe("opening and listing cases", () => {
     }
     expect((await call(`/api/support-cases/${caseId}`)).status).toBe(200);
     expect((await call("/api/support-cases/not-a-uuid")).status).toBe(404);
-    const missing = setup();
+    const missing = setup({ detail: vi.fn(() => Promise.resolve(null)) });
     expect((await missing.call(`/api/support-cases/${caseId}`)).status).toBe(
       404
     );
@@ -590,6 +598,91 @@ describe("suspension and billing commands", () => {
       ).status
     ).toBe(403);
     expect(other.support.purge).not.toHaveBeenCalled();
+  });
+
+  it("reads the renewal of the named organization before the purge, and goes on when none is alive", async () => {
+    const { send, support: calls } = setup();
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_1",
+    });
+    expect(response.status).toBe(200);
+    expect(calls.renewalBlocksPurge).toHaveBeenCalledWith("org_1", bindings);
+    expect(calls.purge).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses the purge with 409 while the renewal is still alive at a provider Polaris cancels through", async () => {
+    const {
+      dependencies,
+      send,
+      support: calls,
+    } = setup({
+      renewalBlocksPurge: vi.fn(() => Promise.resolve(true)),
+    });
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_1",
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "renewal_alive",
+      message: expect.any(String),
+    });
+    expect(calls.purge).not.toHaveBeenCalled();
+    expect(dependencies.report).toHaveBeenCalledWith(
+      "organization_purge_refused",
+      { errorCode: "renewal_alive" }
+    );
+  });
+
+  it("reads no billing of an organization that is not the case's, nor of an unknown case", async () => {
+    const { send, support: calls } = setup();
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_other",
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "organization_mismatch",
+      message: organizationPurgeRefusalMessage("organization_mismatch"),
+    });
+    const unknown = setup({ detail: vi.fn(() => Promise.resolve(null)) });
+    expect(
+      (
+        await unknown.send("POST", `/api/support-cases/${caseId}/purge`, {
+          organizationId: "org_1",
+        })
+      ).status
+    ).toBe(404);
+    for (const calls_ of [calls, unknown.support]) {
+      expect(calls_.renewalBlocksPurge).not.toHaveBeenCalled();
+      expect(calls_.purge).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses the purge when the billing of the organization cannot be read", async () => {
+    const {
+      dependencies,
+      send,
+      support: calls,
+    } = setup({
+      renewalBlocksPurge: vi.fn(() =>
+        Promise.reject(new Error("connection refused"))
+      ),
+    });
+    const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
+      organizationId: "org_1",
+    });
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toEqual({
+      error: "renewal_status_unavailable",
+      message: expect.any(String),
+    });
+    // nothing of the failure reaches the operator; its cause goes to the log
+    expect(JSON.stringify(body)).not.toContain("connection refused");
+    expect(dependencies.report).toHaveBeenCalledWith(
+      "admin_error",
+      expect.any(Object)
+    );
+    expect(calls.purge).not.toHaveBeenCalled();
   });
 
   it("answers 409 with the reason when the organization cannot be purged yet", async () => {

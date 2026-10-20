@@ -31,6 +31,8 @@ export const QUEUE_ENVELOPE_MAX_ATTEMPT = 1000;
 const QUEUE_BY_EVENT_TYPE: Readonly<Record<OutboxEventType, QueueName>> =
   Object.freeze({
     "data_export.requested": "default",
+    // a renewal left alive charges the person: the queue of what costs most when late
+    "billing.renewal_cancel_requested": "critical",
   });
 
 export interface QueueEnvelope {

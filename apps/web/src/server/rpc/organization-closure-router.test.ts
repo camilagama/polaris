@@ -280,6 +280,8 @@ const closedReadModel = {
   name: "Loja Horizonte",
   phase: "closed",
   recoverUntil: "2026-11-16T12:00:00.000Z",
+  // the test bindings have no billing role: nothing Polaris could cancel
+  renewal: "not_handled",
   requestedAt: "2026-10-16T12:00:00.000Z",
   timezone: "America/Sao_Paulo",
 };
@@ -298,6 +300,30 @@ describe("organization.listClosed", () => {
       organizations: [closedReadModel],
     });
     expect(listClosedOrganizations.mock.calls[0]?.[1]).toBe(session.user.id);
+  });
+
+  it("says each organization's renewal, as the server derived it", async () => {
+    const other = { ...closedView, id: "8c0d323b-0a1c-4f16-8f1a-1d1fc2d0d0c1" };
+    const client = createClient({
+      closureRepository: {
+        listClosedOrganizations: () => Promise.resolve([closedView, other]),
+      },
+      readRenewalStatuses: (_bindings: unknown, ids: readonly string[]) =>
+        Promise.resolve(
+          new Map([
+            [ids[0], "cancelled"],
+            [ids[1], "pending"],
+          ])
+        ),
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(client.organization.listClosed()).resolves.toEqual({
+      organizations: [
+        { ...closedReadModel, renewal: "cancelled" },
+        { ...closedReadModel, id: other.id, renewal: "pending" },
+      ],
+    });
   });
 
   it("answers 401 without a session", async () => {
@@ -331,6 +357,66 @@ describe("organization.closedStatus", () => {
       session.user.id,
       organizationId
     );
+  });
+
+  it("says the renewal the server derived from the billing record, read only after the ownership check", async () => {
+    const order: string[] = [];
+    const getClosedOrganizationStatus = vi.fn(() => {
+      order.push("status");
+      return Promise.resolve(closedView);
+    });
+    const readRenewalStatuses = vi.fn(
+      (_bindings: unknown, ids: readonly string[]) => {
+        order.push("renewal");
+        return Promise.resolve(
+          new Map(ids.map((id) => [id, "pending" as const]))
+        );
+      }
+    );
+    const client = createClient({
+      closureRepository: { getClosedOrganizationStatus },
+      readRenewalStatuses,
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(
+      client.organization.closedStatus({ organizationId })
+    ).resolves.toEqual({
+      organization: { ...closedReadModel, renewal: "pending" },
+    });
+    expect(order).toEqual(["status", "renewal"]);
+    expect(readRenewalStatuses.mock.calls[0]?.[1]).toEqual([organizationId]);
+  });
+
+  it("does not read billing for an organization that is not the user's", async () => {
+    const readRenewalStatuses = vi.fn();
+    const client = createClient({
+      closureRepository: {
+        getClosedOrganizationStatus: () => Promise.resolve(null),
+      },
+      readRenewalStatuses,
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(
+      client.organization.closedStatus({ organizationId })
+    ).resolves.toEqual({ organization: null });
+    expect(readRenewalStatuses).not.toHaveBeenCalled();
+  });
+
+  it("still opens, with the renewal unknown, when the billing record cannot be read", async () => {
+    const client = createClient({
+      closureRepository: {
+        getClosedOrganizationStatus: () => Promise.resolve(closedView),
+      },
+      readRenewalStatuses: (_bindings: unknown, ids: readonly string[]) =>
+        Promise.resolve(new Map(ids.map((id) => [id, null]))),
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(
+      client.organization.closedStatus({ organizationId })
+    ).resolves.toEqual({ organization: { ...closedReadModel, renewal: null } });
   });
 
   it("answers a null organization when the repository finds none", async () => {

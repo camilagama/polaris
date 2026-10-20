@@ -11,6 +11,8 @@ import type {
   requestOrganizationClosure,
 } from "@polaris/db/organization-closure-repository";
 import type { listUserOrganizations } from "@polaris/db/organization-membership-query";
+import type { RenewalCancellationStatus } from "@polaris/domain/billing/renewal-cancellation";
+import type { RenewalStatusReader } from "../billing/renewal-status";
 import type { WorkerBindings } from "../environment";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
 import type { withTenantRequestContext } from "../tenant-request-context";
@@ -34,13 +36,18 @@ interface OrganizationRpcDependencies {
   closureRepository: ClosureRepository;
   defaultListUserOrganizations: typeof listUserOrganizations;
   listUserOrganizations: typeof listUserOrganizations | undefined;
+  /** The renewal of each closed organization, read on the billing role after the ownership check. */
+  readRenewalStatuses: RenewalStatusReader;
   toRpcError: (error: unknown) => never;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
 
 /** What the owner reads of a closed organization: dates as ISO instants, D as a calendar date. */
-function closedOrganizationReadModel(organization: ClosedOrganizationView) {
+function closedOrganizationReadModel(
+  organization: ClosedOrganizationView,
+  renewal: RenewalCancellationStatus | null
+) {
   return {
     canRecover: organization.canRecover,
     deletableFrom: organization.deletableFrom.toISOString(),
@@ -56,6 +63,7 @@ function closedOrganizationReadModel(organization: ClosedOrganizationView) {
     name: organization.name,
     phase: organization.phase,
     recoverUntil: organization.recoverUntil.toISOString(),
+    renewal,
     requestedAt: organization.requestedAt.toISOString(),
     timezone: organization.timezone,
   };
@@ -114,42 +122,67 @@ export function createOrganizationRpcHandlers(
         .catch(dependencies.toRpcError)
   );
 
+  /** The read models, with the renewal read after the database proved the user owns each organization. */
+  const withRenewal = async (
+    bindings: WorkerBindings,
+    organizations: readonly ClosedOrganizationView[]
+  ) => {
+    const renewals = await dependencies.readRenewalStatuses(
+      bindings,
+      organizations.map((organization) => organization.id)
+    );
+    return organizations.map((organization) =>
+      closedOrganizationReadModel(
+        organization,
+        renewals.get(organization.id) ?? null
+      )
+    );
+  };
+
   const listClosed = implementContract.organization.listClosed.handler(
-    ({ context }) =>
-      dependencies
-        .withAuthenticatedRequestContext({
-          bindings: context.bindings,
-          // the user comes from the verified session: the database lists only what they own
-          operation: async (database, session) => ({
-            organizations: (
-              await closure.listClosedOrganizations(database, session.user.id)
-            ).map(closedOrganizationReadModel),
-          }),
-          request: context.request,
-        })
-        .catch(dependencies.toRpcError)
+    async ({ context }) => {
+      try {
+        const organizations =
+          await dependencies.withAuthenticatedRequestContext({
+            bindings: context.bindings,
+            // the user comes from the verified session: the database lists only what they own
+            operation: (database, session) =>
+              closure.listClosedOrganizations(database, session.user.id),
+            request: context.request,
+          });
+        return {
+          organizations: await withRenewal(context.bindings, organizations),
+        };
+      } catch (error: unknown) {
+        return dependencies.toRpcError(error);
+      }
+    }
   );
 
   const closedStatus = implementContract.organization.closedStatus.handler(
-    ({ context, input }) =>
-      dependencies
-        .withAuthenticatedRequestContext({
-          bindings: context.bindings,
-          operation: async (database, session) => {
-            const organization = await closure.getClosedOrganizationStatus(
-              database,
-              session.user.id,
-              input.organizationId
-            );
-            return {
-              organization: organization
-                ? closedOrganizationReadModel(organization)
-                : null,
-            };
-          },
-          request: context.request,
-        })
-        .catch(dependencies.toRpcError)
+    async ({ context, input }) => {
+      try {
+        const organization = await dependencies.withAuthenticatedRequestContext(
+          {
+            bindings: context.bindings,
+            operation: (database, session) =>
+              closure.getClosedOrganizationStatus(
+                database,
+                session.user.id,
+                input.organizationId
+              ),
+            request: context.request,
+          }
+        );
+        if (!organization) {
+          return { organization: null };
+        }
+        const [model] = await withRenewal(context.bindings, [organization]);
+        return { organization: model ?? null };
+      } catch (error: unknown) {
+        return dependencies.toRpcError(error);
+      }
+    }
   );
 
   const recoverClosure = implementContract.organization.recoverClosure.handler(

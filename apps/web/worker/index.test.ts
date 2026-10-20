@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
   dispatchOutbox: vi.fn(),
+  handleRenewalCancelRequested: vi.fn(),
   loginLockClose: vi.fn(),
   loginLockExpire: vi.fn(),
   mediaClose: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   privacyClose: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
+  rearmRenewalCancellations: vi.fn(),
   runBillingMaintenance: vi.fn(),
   runDataExports: vi.fn(),
   runOrganizationPurges: vi.fn(),
@@ -65,6 +67,10 @@ vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
   runUnclaimedTrialSettlement: mocks.runUnclaimedTrialSettlement,
 }));
+vi.mock("../src/server/billing/renewal-cancellation", () => ({
+  handleRenewalCancelRequested: mocks.handleRenewalCancelRequested,
+  rearmRenewalCancellations: mocks.rearmRenewalCancellations,
+}));
 
 const { default: worker } = await import("./index");
 
@@ -111,6 +117,10 @@ describe("the scheduled maintenance", () => {
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
     mocks.runUnclaimedTrialSettlement.mockResolvedValue(null);
+    mocks.rearmRenewalCancellations.mockResolvedValue({
+      inserted: 0,
+      rearmed: 0,
+    });
     mocks.createPrivacyMaintenanceClient.mockReturnValue({
       close: mocks.privacyClose,
     });
@@ -216,6 +226,38 @@ describe("the scheduled maintenance", () => {
     await expect(runScheduled(configured)).rejects.toThrow(
       "billing_maintenance_incomplete"
     );
+    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again for the renewal cancellations still owed, after the sweep and before the unclaimed trials", async () => {
+    const order: string[] = [];
+    mocks.runBillingMaintenance.mockImplementation(() => {
+      order.push("maintenance");
+      return Promise.resolve({});
+    });
+    mocks.rearmRenewalCancellations.mockImplementation(() => {
+      order.push("rearm");
+      return Promise.resolve({ inserted: 1, rearmed: 0 });
+    });
+    mocks.runUnclaimedTrialSettlement.mockImplementation(() => {
+      order.push("unclaimed");
+      return Promise.resolve(null);
+    });
+
+    await expect(runScheduled(configured)).resolves.toBeUndefined();
+    expect(order).toEqual(["maintenance", "rearm", "unclaimed"]);
+    expect(mocks.rearmRenewalCancellations).toHaveBeenCalledWith(
+      expect.objectContaining({ close: mocks.billingClose })
+    );
+  });
+
+  it("reports a failed retry of the renewal cancellations, and still settles the unclaimed trials", async () => {
+    mocks.rearmRenewalCancellations.mockRejectedValue(
+      new Error("rearm_failed")
+    );
+
+    await expect(runScheduled(configured)).rejects.toThrow("rearm_failed");
     expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
@@ -792,6 +834,85 @@ describe("the queue consumer", () => {
 
     expect(mocks.runDataExports).not.toHaveBeenCalled();
     expect(sent.ack).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the renewal cancellation of a closure", () => {
+    const renewalEvent = {
+      attempt: 1,
+      correlationId: "req-2",
+      event: { requestedAt: 1_792_457_258_261 },
+      eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a2d",
+      idempotencyKey: "billing.renewal_cancel_requested:1792457258261",
+      organizationId: "org_1",
+      type: "billing.renewal_cancel_requested",
+      version: 1,
+    };
+
+    function runCritical(env: Record<string, unknown>, sent: unknown) {
+      return worker.queue(
+        { messages: [sent], queue: "polaris-critical" } as never,
+        env as never
+      );
+    }
+
+    beforeEach(() => {
+      mocks.createBillingStore.mockReturnValue({ close: mocks.billingClose });
+      mocks.billingClose.mockResolvedValue(undefined);
+    });
+
+    it("runs on the critical queue with the billing role and acks", async () => {
+      mocks.handleRenewalCancelRequested.mockResolvedValue("cancelled");
+      const sent = message(renewalEvent);
+      await runCritical(configured, sent);
+
+      expect(mocks.createBillingStore).toHaveBeenCalledWith(
+        "postgresql://billing.invalid/db"
+      );
+      expect(mocks.handleRenewalCancelRequested).toHaveBeenCalledTimes(1);
+      const [dependencies, envelope] =
+        mocks.handleRenewalCancelRequested.mock.calls[0] ?? [];
+      expect(envelope).toMatchObject({
+        eventId: renewalEvent.eventId,
+        organizationId: "org_1",
+      });
+      // Polaris cancels through Asaas only, for now (Woovi comes with its own port)
+      expect(dependencies.handles("asaas")).toBe(true);
+      expect(dependencies.handles("woovi")).toBe(false);
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+      expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries when the provider fails, and closes the connection", async () => {
+      mocks.handleRenewalCancelRequested.mockRejectedValue(
+        Object.assign(new Error("provider_unavailable"), {
+          code: "provider_unavailable",
+        })
+      );
+      const sent = message({
+        ...renewalEvent,
+        event: { requestedAt: 1_792_457_258_262 },
+        eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a2e",
+        idempotencyKey: "billing.renewal_cancel_requested:1792457258262",
+      });
+      await runCritical(configured, sent);
+
+      expect(sent.retry).toHaveBeenCalledTimes(1);
+      expect(sent.ack).not.toHaveBeenCalled();
+      expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("acks without running where billing is not provisioned (no subscription to cancel)", async () => {
+      const sent = message({
+        ...renewalEvent,
+        event: { requestedAt: 1_792_457_258_263 },
+        eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a2f",
+        idempotencyKey: "billing.renewal_cancel_requested:1792457258263",
+      });
+      await runCritical({}, sent);
+
+      expect(mocks.handleRenewalCancelRequested).not.toHaveBeenCalled();
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("the dead-letter queue", () => {

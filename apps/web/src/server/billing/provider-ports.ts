@@ -7,6 +7,7 @@ import {
   type BillingProviderPort,
   ProviderNotConfiguredError,
 } from "@polaris/billing/provider-port";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import type { WorkerBindings } from "../environment";
 
 /** A command to the provider gives up after this long (ADR 0101): the caller sees `provider_unavailable`. */
@@ -32,7 +33,7 @@ export function billingProviderPortOf(
   provider: string,
   options: BillingPortOptions = {}
 ): BillingProviderPort {
-  if (provider !== "asaas") {
+  if (!billingProviderHandled(provider)) {
     // Woovi (Pix Automático) comes with its own port (plan PR78)
     throw new ProviderNotConfiguredError();
   }

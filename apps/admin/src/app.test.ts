@@ -43,6 +43,7 @@ function noOperations() {
     legalHold: vi.fn(() => Promise.resolve(null)),
     purge: vi.fn(() => Promise.resolve(null)),
     reactivate: vi.fn(() => Promise.resolve(null)),
+    renewalBlocksPurge: vi.fn(() => Promise.resolve(false)),
     revokeEntitlement: vi.fn(() =>
       Promise.resolve({ outcomeRecorded: true, revoked: false })
     ),

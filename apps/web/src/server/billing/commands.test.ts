@@ -25,6 +25,7 @@ import { FAKE_PAYER } from "../../../../../packages/billing/src/asaas/test-fixtu
 import {
   BillingCommandError,
   cancelRenewal,
+  cancelRenewalEventId,
   checkoutPriceOf,
   firstChargeDateOf,
   reconcileOrganization,
@@ -32,6 +33,8 @@ import {
   settleUnclaimedTrials,
   startCardCheckout,
 } from "./commands";
+
+const CANCEL_RENEWAL_EVENT_ID = /^command:cancel_renewal:req-42:[0-9a-f]{32}$/;
 
 const now = new Date("2026-10-14T12:00:00.000Z");
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -594,6 +597,34 @@ describe("startCardCheckout", () => {
     }
   );
 
+  it("refuses with the end of the paid access when the renewal was cancelled (a closure undone does not create it again)", async () => {
+    const accessEndsAt = new Date("2026-11-14T12:00:00.000Z");
+    const port = fakePort();
+    const store = fakeStore({
+      readRecord: vi.fn(() =>
+        Promise.resolve({
+          accessEndsAt,
+          cancelAtPeriodEnd: true,
+          state: "active",
+        })
+      ),
+    });
+
+    const refusal = await startCardCheckout(
+      { now: () => now, port, store },
+      input
+    ).catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(BillingCommandError);
+    expect(refusal).toMatchObject({
+      code: "renewal_cancelled_until",
+      until: accessEndsAt,
+    });
+    expect(port.prepareSubscription).not.toHaveBeenCalled();
+    expect(store.startTrial).not.toHaveBeenCalled();
+    expect(store.attachProvider).not.toHaveBeenCalled();
+  });
+
   it("starts from a record that does not give Pro", async () => {
     const store = fakeStore({
       readRecord: vi.fn(() => Promise.resolve({ state: "free" })),
@@ -892,12 +923,26 @@ describe("cancelRenewal", () => {
         fact: { occurredAt: now, type: "subscription_cancelled" },
         organizationId,
         provider: "asaas",
-        providerEventId: "command:cancel_renewal:req-42",
+        providerEventId: await cancelRenewalEventId("req-42", link.providerRef),
         providerRef: link.providerRef,
       });
       expect(store.processEvent).toHaveBeenCalledWith("ev-9", now);
     }
   );
+
+  it("names the fact by the request and the subscription, within the length of an event ID", async () => {
+    const first = await cancelRenewalEventId("req-42", "pol_a");
+    expect(first).toMatch(CANCEL_RENEWAL_EVENT_ID);
+    // the same request for the same subscription is the same fact; for another subscription, another
+    expect(await cancelRenewalEventId("req-42", "pol_a")).toBe(first);
+    expect(await cancelRenewalEventId("req-42", "pol_b")).not.toBe(first);
+    const longest = await cancelRenewalEventId(
+      "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a2d",
+      "r".repeat(128)
+    );
+    expect(longest.length).toBeLessThanOrEqual(160);
+    expect(longest).not.toContain("rrrr");
+  });
 
   it("writes nothing when there was nothing to cancel", async () => {
     const port = fakePort({

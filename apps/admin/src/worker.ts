@@ -33,6 +33,7 @@ import {
   suspendOrganization,
 } from "@polaris/db/admin-support-repository";
 import { createBillingStore } from "@polaris/db/billing-store";
+import { renewalBlocksPurge } from "@polaris/domain/billing/renewal-cancellation";
 import {
   listOrganizations,
   readOrganizationDiagnostics,
@@ -289,6 +290,19 @@ const dependencies: AdminDependencies = {
       withAdminDatabase(connectionOf(bindings), (client) =>
         reactivateOrganization(client, principalId, caseId)
       ),
+    renewalBlocksPurge: async (organizationId, bindings) => {
+      // through the billing role, as the billing commands (ADR 0073): no new grant to the Admin role
+      const store = createBillingStore(billingConnectionOf(bindings));
+      try {
+        const [record, link] = await Promise.all([
+          store.readRecord(organizationId),
+          store.readProviderLink(organizationId),
+        ]);
+        return renewalBlocksPurge(record, link);
+      } finally {
+        await store.close();
+      }
+    },
     revokeEntitlement: (principalId, caseId, grantId, bindings) =>
       withBillingPorts(bindings, (ports) =>
         revokeEntitlementCommand(ports, principalId, caseId, grantId)
