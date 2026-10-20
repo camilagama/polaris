@@ -10,6 +10,11 @@ import {
   type CurrentOrganization,
   useOrganizationLoad,
 } from "../lib/current-organization";
+import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
+import {
+  legalAcceptancePath,
+  useLegalAcceptanceRequired,
+} from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
 import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
@@ -18,12 +23,17 @@ import {
   OfflineAccessGate,
   useOfflineAccessExpired,
 } from "../offline/runtime/offline-access-expired";
-import { useOfflineRuntime } from "../offline/runtime/runtime-context";
+import {
+  useOfflineRuntime,
+  useRuntimeSnapshot,
+} from "../offline/runtime/runtime-context";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
+import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import { SessionEndedNotice } from "./session-ended-notice";
 
 interface OrganizationSwitcherProps {
@@ -166,6 +176,53 @@ function SessionEndedGate({ atOpen }: { atOpen: boolean }) {
   );
 }
 
+/**
+ * The legal acceptance is missing (ADR 0100). When it is the read that opens the app, nothing is on screen
+ * to protect and the app goes to `/aceite?voltar=<this page>` by itself; later it only shows the notice.
+ * Nothing local is dropped either way.
+ */
+function LegalAcceptanceGate({ atOpen }: { atOpen: boolean }) {
+  useEffect(() => {
+    if (atOpen) {
+      // a plain navigation, not `leaveTo`: the session and the copies of this device stay
+      window.location.assign(
+        legalAcceptancePath(currentReturnPath(window.location))
+      );
+    }
+  }, [atOpen]);
+  return atOpen ? (
+    <p className="app-status" role="status">
+      {ACCEPTANCE_OPENING_SCREEN}
+    </p>
+  ) : (
+    <LegalAcceptanceNotice />
+  );
+}
+
+/** The two legal pages are linked from every screen of the app (AC-70); they open in another tab. */
+function AppFooter() {
+  return (
+    <footer className="app-footer">
+      <ul>
+        <li>
+          <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
+            Termos de Uso
+          </a>
+        </li>
+        <li>
+          <a
+            href={LEGAL_PATHS.privacy}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Política de Privacidade
+          </a>
+        </li>
+      </ul>
+    </footer>
+  );
+}
+
 function OrganizationGate({ children }: { children: ReactNode }) {
   const { load, reload } = useOrganizationLoad();
 
@@ -178,6 +235,9 @@ function OrganizationGate({ children }: { children: ReactNode }) {
   }
   if (load.status === "session_ended") {
     return <SessionEndedGate atOpen={load.atOpen} />;
+  }
+  if (load.status === "legal_acceptance_required") {
+    return <LegalAcceptanceGate atOpen={load.atOpen} />;
   }
   if (load.status === "error") {
     return (
@@ -221,6 +281,15 @@ export function AppShell({
   const sessionOver = useSessionOver();
   // the remembered organizations only draw the screen: with the offline access expired they are hidden, not deleted
   const accessExpired = useOfflineAccessExpired();
+  const snapshot = useRuntimeSnapshot();
+  const acceptanceMissing =
+    useLegalAcceptanceRequired() ||
+    (snapshot?.legalAcceptanceRequired ?? false);
+  // the session notice comes first (there is nothing to accept without a session); the gate says it itself
+  const showAcceptanceNotice =
+    acceptanceMissing &&
+    !sessionOver &&
+    load.status !== "legal_acceptance_required";
   // the devices screen has its own panels for this (with the same button); the gate says it itself
   const showNotice =
     sessionOver && navId !== "devices" && load.status !== "session_ended";
@@ -241,6 +310,7 @@ export function AppShell({
       <AppHeader navId={navId} organization={organization} />
       <main className="categories-content" id="conteudo">
         {showNotice ? <SessionEndedNotice /> : null}
+        {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
         <OfflineAccessGate>
           {requiresOrganization ? (
             <OrganizationGate>{children}</OrganizationGate>
@@ -249,6 +319,7 @@ export function AppShell({
           )}
         </OfflineAccessGate>
       </main>
+      <AppFooter />
     </div>
   );
 }

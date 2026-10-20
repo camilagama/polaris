@@ -75,6 +75,7 @@ const publish = (
       (document): [LegalDocumentId, LegalDocumentVersion] => [
         document,
         {
+          changes: null,
           effectiveFrom,
           minAcceptedVersion: 1,
           sha256: sha256Hex(encode(texts[document])),

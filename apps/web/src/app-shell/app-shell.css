@@ -390,3 +390,38 @@
   margin: 0;
   line-height: 1.5;
 }
+
+.legal-acceptance-notice a.primary-button {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 0.3rem;
+  align-items: center;
+  min-height: 2.75rem;
+  text-decoration: none;
+}
+
+.legal-acceptance-notice-hint {
+  font-weight: 400;
+}
+
+.app-footer {
+  padding: 1rem clamp(1rem, 4vw, 2rem) 1.5rem;
+  color: var(--ui-muted);
+  font-size: 0.875rem;
+}
+
+.app-footer ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+}
