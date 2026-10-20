@@ -327,6 +327,19 @@ const fixedExamples: [Draw[]][] = [
       receive(1, 1, "7.10"),
     ],
   ],
+  // the whole ceiling received, sold and returned (and restocked) in a single line: the quantity limit is inclusive
+  [
+    [
+      receive(0, CEILING, "1.5"),
+      sellAll(0),
+      {
+        kind: "return",
+        lines: [{ amount: 0, position: 0, restockedPart: CEILING }],
+        overdraw: false,
+        sale: 0,
+      },
+    ],
+  ],
   // costs of 18 integer digits, and one of 19: the limit
   [
     [
