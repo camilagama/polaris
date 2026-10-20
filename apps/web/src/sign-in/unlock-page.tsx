@@ -4,6 +4,7 @@ import {
   EntryAlert,
   EntryFrame,
   EntryLinkButton,
+  EntryNotice,
   EntrySuccess,
   PasswordGate,
 } from "./entry-parts";
@@ -26,10 +27,21 @@ import {
   UNLOCK_TITLE,
 } from "./password-texts";
 
-function UnlockLinkFailed({ text }: { text: string }) {
+/** `neutral`: the page was opened without its link, which is an instruction and not a failure. */
+function UnlockLinkFailed({
+  neutral = false,
+  text,
+}: {
+  neutral?: boolean;
+  text: string;
+}) {
   return (
     <EntryFrame title={UNLOCK_TITLE}>
-      <EntryAlert>{text}</EntryAlert>
+      {neutral ? (
+        <EntryNotice>{text}</EntryNotice>
+      ) : (
+        <EntryAlert>{text}</EntryAlert>
+      )}
       <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
       <p className="sign-in-links">
         <a href="/esqueci-a-senha">{FORGOT_PASSWORD_LINK}</a>
@@ -105,7 +117,7 @@ export function UnlockPage() {
         token ? (
           <Unlock token={token} />
         ) : (
-          <UnlockLinkFailed text={UNLOCK_NO_LINK} />
+          <UnlockLinkFailed neutral text={UNLOCK_NO_LINK} />
         )
       }
     </PasswordGate>

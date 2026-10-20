@@ -23,13 +23,13 @@ import {
   CHANGE_BUTTON_PENDING,
   CHANGE_DONE,
   CHANGE_NO_PASSWORD,
-  CHANGE_QUEUE_NOTE,
   CHANGE_RECENT_BUTTON,
   CHANGE_RECENT_REQUIRED,
   CHANGE_SUPPORT,
   CHANGE_TITLE,
   CURRENT_PASSWORD_LABEL,
   CURRENT_PASSWORD_WRONG,
+  changePausedText,
   failureText,
   NEW_PASSWORD_LABEL,
   newPasswordText,
@@ -37,7 +37,6 @@ import {
   PAGE_UNAVAILABLE,
   PASSWORD_REQUIRED,
   PASSWORD_RULE,
-  pausedText,
   TRY_AGAIN,
 } from "./password-texts";
 
@@ -144,16 +143,23 @@ function ChangePasswordForm() {
           setCurrent("");
           setNotice({
             kind: "alert",
-            text: pausedText(Math.ceil(outcome.retryAfterSeconds / 60)),
+            text: changePausedText(Math.ceil(outcome.retryAfterSeconds / 60)),
           });
           return;
         case "no-password":
+          setCurrent("");
+          setNext("");
           setNotice({ kind: "alert", text: CHANGE_NO_PASSWORD });
           return;
         case "recent-required":
+          // the form is hidden: nothing typed stays in memory
+          setCurrent("");
+          setNext("");
           setNotice({ kind: "recent" });
           return;
         case "session-ended":
+          setCurrent("");
+          setNext("");
           setNotice({ kind: "session-ended" });
           return;
         default:
@@ -176,39 +182,42 @@ function ChangePasswordForm() {
       {notice?.kind === "session-ended" ? (
         <SessionEndedNotice returnTo={ACCOUNT_SECURITY_PATH} />
       ) : null}
-      <form className="sign-in-form" noValidate onSubmit={submit}>
-        <PasswordField
-          autoComplete="current-password"
-          error={currentError}
-          fieldRef={currentRef}
-          label={CURRENT_PASSWORD_LABEL}
-          name="current-password"
-          onChange={setCurrent}
-          onToggle={toggleCurrent}
-          value={current}
-          visible={currentVisible}
-        />
-        <PasswordField
-          autoComplete="new-password"
-          error={nextError}
-          fieldRef={nextRef}
-          hint={PASSWORD_RULE}
-          label={NEW_PASSWORD_LABEL}
-          name="new-password"
-          onChange={setNext}
-          onToggle={toggleNext}
-          value={next}
-          visible={nextVisible}
-        />
-        <button
-          aria-busy={pending}
-          className="sign-in-primary"
-          disabled={pending}
-          type="submit"
-        >
-          {pending ? CHANGE_BUTTON_PENDING : CHANGE_BUTTON}
-        </button>
-      </form>
+      {/* the login is too old: the only way on is "Entrar de novo", which signs out and clears the form */}
+      {notice?.kind === "recent" ? null : (
+        <form className="sign-in-form" noValidate onSubmit={submit}>
+          <PasswordField
+            autoComplete="current-password"
+            error={currentError}
+            fieldRef={currentRef}
+            label={CURRENT_PASSWORD_LABEL}
+            name="current-password"
+            onChange={setCurrent}
+            onToggle={toggleCurrent}
+            value={current}
+            visible={currentVisible}
+          />
+          <PasswordField
+            autoComplete="new-password"
+            error={nextError}
+            fieldRef={nextRef}
+            hint={PASSWORD_RULE}
+            label={NEW_PASSWORD_LABEL}
+            name="new-password"
+            onChange={setNext}
+            onToggle={toggleNext}
+            value={next}
+            visible={nextVisible}
+          />
+          <button
+            aria-busy={pending}
+            className="sign-in-primary"
+            disabled={pending}
+            type="submit"
+          >
+            {pending ? CHANGE_BUTTON_PENDING : CHANGE_BUTTON}
+          </button>
+        </form>
+      )}
     </>
   );
 }
@@ -236,7 +245,6 @@ export function ChangePasswordPage() {
             {CHANGE_TITLE}
           </h1>
           <p className="categories-intro-copy">{CHANGE_SUPPORT}</p>
-          <p className="categories-intro-copy">{CHANGE_QUEUE_NOTE}</p>
         </div>
       </section>
       {methods.state === "loading" ? (

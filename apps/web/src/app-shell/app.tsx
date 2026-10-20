@@ -190,9 +190,12 @@ function SignInApp({ page }: { page: EntryPageId }) {
       <UpdateSlot />
       <Suspense
         fallback={
-          <p className="app-status" role="status">
-            Carregando…
-          </p>
+          // inside `.ui-root`: its canvas color is what the page has in the dark theme, so there is no white flash
+          <div className="ui-root">
+            <p className="app-status" role="status">
+              Carregando…
+            </p>
+          </div>
         }
       >
         <EntryPage />

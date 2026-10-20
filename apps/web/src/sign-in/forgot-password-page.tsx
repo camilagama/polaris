@@ -54,6 +54,7 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
       const token = await challengeToken(challenge);
       if ("failure" in token) {
         setPending(false);
+        setSent(false);
         setAlert(failureText(token.failure, "email"));
         return;
       }
@@ -68,6 +69,8 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
         setSent(true);
         return;
       }
+      // a new refusal replaces the green line of the earlier send: the two never show together
+      setSent(false);
       setAlert(failureText(commonFailure(answer), "email"));
     },
     [challenge, email, pending]

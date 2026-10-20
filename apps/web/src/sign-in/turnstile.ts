@@ -100,6 +100,8 @@ export interface Challenge {
   containerRef: RefObject<HTMLDivElement | null>;
   /** A new token for this submit; null when the server has no challenge configured (no site key). */
   getToken: () => Promise<string | null>;
+  /** Asks the script again after a "blocked" (the person freed the site in the blocker): the page keeps what was typed. */
+  retry: () => void;
   state: ChallengeState;
 }
 
@@ -119,6 +121,7 @@ export function useChallenge(
     resolve: (token: string) => void;
   } | null>(null);
   const usedRef = useRef<boolean>(false);
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<ChallengeState>(
     siteKey ? "loading" : "idle"
   );
@@ -180,7 +183,10 @@ export function useChallenge(
       }
       widgetRef.current = null;
     };
-  }, [siteKey, action]);
+    // `attempt` makes the effect run again: a failed load is forgotten, so the script is asked for again
+  }, [siteKey, action, attempt]);
+
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
 
   const getToken = useCallback((): Promise<string | null> => {
     if (!siteKey) {
@@ -213,7 +219,7 @@ export function useChallenge(
     });
   }, [siteKey]);
 
-  return { containerRef, getToken, state };
+  return { containerRef, getToken, retry, state };
 }
 
 /** A token for this submit, or why there is none: the challenge failed, or its script could not load. */

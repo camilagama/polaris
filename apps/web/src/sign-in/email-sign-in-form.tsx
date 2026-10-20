@@ -2,6 +2,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -57,6 +58,7 @@ export function EmailSignInForm({
   siteKey: string | null;
 }) {
   const challenge = useChallenge(siteKey, "login");
+  const alertId = useId();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, toggleVisible, hide] = useReveal();
@@ -83,6 +85,7 @@ export function EmailSignInForm({
   }, [pause]);
 
   const paused = pause !== null && sameEmail(pause.email, email);
+  const incorrect = alert?.help === true;
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -135,10 +138,11 @@ export function EmailSignInForm({
           return;
         case "incorrect":
           setPending(false);
-          // the password goes, the e-mail stays, the focus goes to the e-mail (corte, "Credencial incorreta")
+          // the password goes, the e-mail stays and the focus goes to the password, the field to type again;
+          // the alert is read with both fields (UX review of the P9)
           setPassword("");
           setAlert({ help: true, text: INCORRECT_CREDENTIALS });
-          emailRef.current?.focus();
+          passwordRef.current?.focus();
           return;
         case "locked": {
           setPending(false);
@@ -184,7 +188,7 @@ export function EmailSignInForm({
         </EntryAlert>
       ) : null}
       {alert ? (
-        <EntryAlert focus={false}>
+        <EntryAlert focus={false} id={alertId}>
           {alert.text}
           {alert.help ? (
             <>
@@ -196,6 +200,7 @@ export function EmailSignInForm({
       ) : null}
       <EmailField
         autoComplete="username"
+        describedById={incorrect ? alertId : undefined}
         error={emailError}
         fieldRef={emailRef}
         label={EMAIL_LABEL}
@@ -205,6 +210,7 @@ export function EmailSignInForm({
       />
       <PasswordField
         autoComplete="current-password"
+        describedById={incorrect ? alertId : undefined}
         error={passwordError}
         fieldRef={passwordRef}
         label={PASSWORD_LABEL}

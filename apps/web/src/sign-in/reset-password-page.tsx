@@ -11,6 +11,7 @@ import {
   EntryAlert,
   EntryFrame,
   EntryLinkButton,
+  EntryNotice,
   EntrySuccess,
   PasswordField,
   PasswordGate,
@@ -25,6 +26,7 @@ import {
 import {
   ASK_NEW_LINK,
   BACK_TO_SIGN_IN,
+  CHALLENGE_BLOCKED_LINK,
   failureText,
   GO_TO_SIGN_IN,
   NEW_PASSWORD_LABEL,
@@ -77,7 +79,7 @@ function ResetPasswordForm({
       const challenged = await challengeToken(challenge);
       if ("failure" in challenged) {
         setPending(false);
-        setAlert(failureText(challenged.failure, "other"));
+        setAlert(failureText(challenged.failure, "reset"));
         return;
       }
       const outcome = resetOutcome(
@@ -102,7 +104,7 @@ function ResetPasswordForm({
           passwordRef.current?.focus();
           return;
         default:
-          setAlert(failureText(outcome.failure, "other"));
+          setAlert(failureText(outcome.failure, "reset"));
       }
     },
     [challenge, hide, password, pending, token]
@@ -136,7 +138,12 @@ function ResetPasswordForm({
           value={password}
           visible={visible}
         />
-        <ChallengeSlot challenge={challenge} />
+        {/* a reload would lose the link: the text sends the person back to the e-mail, with no retry here */}
+        <ChallengeSlot
+          blockedText={CHALLENGE_BLOCKED_LINK}
+          challenge={challenge}
+          retry={false}
+        />
         <button
           aria-busy={pending}
           className="sign-in-primary"
@@ -150,10 +157,21 @@ function ResetPasswordForm({
   );
 }
 
-function ResetLinkMissing({ text }: { text: string }) {
+/** `neutral`: the page was opened without its link, which is an instruction and not a failure. */
+function ResetLinkMissing({
+  neutral = false,
+  text,
+}: {
+  neutral?: boolean;
+  text: string;
+}) {
   return (
     <EntryFrame title={RESET_TITLE}>
-      <EntryAlert>{text}</EntryAlert>
+      {neutral ? (
+        <EntryNotice>{text}</EntryNotice>
+      ) : (
+        <EntryAlert>{text}</EntryAlert>
+      )}
       <EntryLinkButton href="/esqueci-a-senha">{ASK_NEW_LINK}</EntryLinkButton>
       <p className="sign-in-links">
         <a href="/entrar">{BACK_TO_SIGN_IN}</a>
@@ -180,7 +198,7 @@ export function ResetPasswordPage() {
         token ? (
           <ResetPasswordForm siteKey={siteKey} token={token} />
         ) : (
-          <ResetLinkMissing text={RESET_NO_LINK} />
+          <ResetLinkMissing neutral text={RESET_NO_LINK} />
         )
       }
     </PasswordGate>

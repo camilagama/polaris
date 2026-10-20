@@ -61,6 +61,12 @@ type Directives = ReadonlyArray<readonly [string, readonly string[]]>;
 const SELF = "'self'";
 /** The one origin of the Turnstile script and of its iframe. */
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+/**
+ * The one file of the Turnstile script: `script-src` names the file, not the origin, so nothing else of
+ * Cloudflare's origin runs in the page. The file redirects to a versioned copy; after a redirect a browser
+ * ignores the path of the source, so the copy loads (proved with the real script by e2e/turnstile-real.e2e.ts).
+ */
+export const TURNSTILE_SCRIPT = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /**
  * The pages that show the challenge (sign in, create an account, forgotten password, new password and the
@@ -129,12 +135,12 @@ function appShellPolicy(connect: readonly string[], img: readonly string[]) {
   ] satisfies Directives;
 }
 
-/** The shell with the challenge: its script and its iframe, and not one source more. */
+/** The shell with the challenge: its script file and its iframe origin, and not one source more. */
 function authEntryPolicy(connect: readonly string[], img: readonly string[]) {
   const directives: [string, readonly string[]][] = [];
   for (const [directive, sources] of appShellPolicy(connect, img)) {
     if (directive === "script-src") {
-      directives.push([directive, [...sources, TURNSTILE_ORIGIN]]);
+      directives.push([directive, [...sources, TURNSTILE_SCRIPT]]);
       continue;
     }
     directives.push([directive, sources]);
@@ -284,11 +290,15 @@ export function renderStaticHeadersFile(
     ),
     "",
     "# The sign-in pages with the Turnstile challenge (ADR 0100): the policy of /* is detached, then replaced.",
-    ...AUTH_ENTRY_PATHS.flatMap((path) => [
-      path,
-      "  ! Content-Security-Policy",
-      `  Content-Security-Policy: ${policyFor("auth-entry", options)}`,
-    ]),
+    "# Each page has a rule for the path with a final slash too: a rule matches the exact path, and `/entrar/`",
+    "# would otherwise get the policy of /*, without the challenge (the app also goes to the path without it).",
+    ...AUTH_ENTRY_PATHS.flatMap((path) =>
+      [path, `${path}/`].flatMap((exactPath) => [
+        exactPath,
+        "  ! Content-Security-Policy",
+        `  Content-Security-Policy: ${policyFor("auth-entry", options)}`,
+      ])
+    ),
     "",
     "# The service worker script is always revalidated, so a new build is found at once.",
     "/sw.js",

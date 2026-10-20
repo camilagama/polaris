@@ -17,6 +17,14 @@ const TECHNICAL =
   /\b(40[0-9]|429|50[0-9])\b|auth_|password_|_required|rate_limited|INVALID|turnstile/i;
 const TOKEN_IN_URL = /token/;
 const RESET_EXACT = /\/redefinir-senha\?x=1$/;
+const AUTH_ENTRY_PATHS = [
+  "/entrar",
+  "/criar-conta",
+  "/esqueci-a-senha",
+  "/redefinir-senha",
+  "/confirmar-email",
+];
+const APP_ORIGIN = "http://127.0.0.1:4173";
 const SHELL_POLICY = /\n\/\*\n {2}Content-Security-Policy: (.*)\n/;
 const AT_SIGN_IN = /\/entrar$/;
 const LOGIN_TOKEN = /^tt-login-\d+$/;
@@ -154,21 +162,45 @@ async function serve(page: Page, server: Server) {
   }
 }
 
-/** Each state at 360 and 1280 px, light and dark (V7); only when asked, and only once (desktop project). */
-async function shot(page: Page, name: string) {
+/** The transitions of the page (the buttons change color in 120 ms) are over: a capture is never taken in the middle. */
+const transitionsEnded = (page: Page) =>
+  page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !==
+            Number.POSITIVE_INFINITY
+        )
+        // a cancelled animation rejects: it is over as well
+        .map((animation) => animation.finished.catch(() => undefined))
+    )
+  );
+
+/**
+ * Each state at 360 and 1280 px, light and dark (V7), taken after the transitions; only when asked, and only
+ * once (desktop project). `narrow` adds 320 px, where a button wider than its card shows first.
+ */
+async function shot(page: Page, name: string, narrow = false) {
   if (!SHOTS || test.info().project.name !== "chromium-desktop") {
     return;
   }
   const size = page.viewportSize();
-  for (const [width, height] of [
+  const sizes: [number, number][] = [
     [360, 740],
     [1280, 800],
-  ] as const) {
+  ];
+  if (narrow) {
+    sizes.push([320, 640]);
+  }
+  for (const [width, height] of sizes) {
     // biome-ignore lint/performance/noAwaitInLoops: one size after the other on the same page
     await page.setViewportSize({ height, width });
     for (const scheme of ["light", "dark"] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: one scheme after the other on the same page
       await page.emulateMedia({ colorScheme: scheme });
+      await transitionsEnded(page);
       await page.screenshot({
         fullPage: true,
         path: `${SHOTS}/${name}-${width}-${scheme}.png`,
@@ -176,6 +208,41 @@ async function shot(page: Page, name: string) {
     }
   }
   await page.emulateMedia({ colorScheme: "light" });
+  if (size) {
+    await page.setViewportSize(size);
+  }
+}
+
+/**
+ * Nothing inside the card passes its content box, at 360 and at 320 px (P1: an `<a>` with `width: 100%`
+ * and padding was 34 px wider than its card). Measured on the boxes, not on a capture.
+ */
+async function expectFitsCard(page: Page) {
+  const size = page.viewportSize();
+  for (const width of [360, 320]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one width after the other on the same page
+    await page.setViewportSize({ height: 740, width });
+    const overflow = await page.evaluate(() => {
+      const card = document.querySelector(".sign-in-card");
+      if (!card) {
+        return ["no card"];
+      }
+      const style = getComputedStyle(card);
+      const right =
+        card.getBoundingClientRect().right -
+        Number.parseFloat(style.borderRightWidth) -
+        Number.parseFloat(style.paddingRight);
+      return [...card.querySelectorAll("a, button, input, p")]
+        .filter(
+          (element) => element.getBoundingClientRect().right > right + 0.5
+        )
+        .map(
+          (element) =>
+            `${element.tagName}.${element.className} ${element.getBoundingClientRect().right} > ${right}`
+        );
+    });
+    expect(overflow, `at ${width} px`).toEqual([]);
+  }
   if (size) {
     await page.setViewportSize(size);
   }
@@ -258,10 +325,18 @@ test.describe("entrar com e-mail e senha", () => {
     await password.fill(PASSWORD);
     // show and hide: a 44 px toggle with its state, hidden again on submit (AC-72)
     const reveal = page.getByRole("button", { name: "Mostrar senha" });
+    await expect(reveal).toHaveText("Mostrar");
+    const wide = await password.boundingBox();
+    expect(wide?.width ?? 0).toBeGreaterThanOrEqual(190);
     await reveal.click();
-    await expect(reveal).toHaveAttribute("aria-pressed", "true");
+    // the name says what the next tap does: "Mostrar senha" becomes "Ocultar senha" (P5)
+    const hide = page.getByRole("button", { name: "Ocultar senha" });
+    await expect(hide).toHaveText("Ocultar");
+    await expect(
+      page.getByRole("button", { name: "Mostrar senha" })
+    ).toHaveCount(0);
     await expect(password).toHaveAttribute("type", "text");
-    const box = await reveal.boundingBox();
+    const box = await hide.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
     expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
     await page.getByRole("button", { exact: true, name: "Entrar" }).click();
@@ -271,7 +346,18 @@ test.describe("entrar com e-mail e senha", () => {
     await expect(password).toHaveAttribute("type", "password");
     await expect(password).toHaveValue("");
     await expect(email).toHaveValue("quem@exemplo.com");
-    await expect(email).toBeFocused();
+    // the focus goes to the field that is typed again, and the alert is read with both fields
+    await expect(password).toBeFocused();
+    const alertId = await page.getByRole("alert").getAttribute("id");
+    expect(alertId).toBeTruthy();
+    await expect(email).toHaveAttribute(
+      "aria-describedby",
+      alertId ?? "no alert"
+    );
+    await expect(password).toHaveAttribute(
+      "aria-describedby",
+      alertId ?? "no alert"
+    );
     await shot(page, "entrar-credencial-incorreta");
 
     await password.fill(PASSWORD);
@@ -406,6 +492,74 @@ test.describe("entrar com e-mail e senha", () => {
   });
 });
 
+test.describe("desafio bloqueado (P2)", () => {
+  test("entrar, criar conta e esqueci a senha: a frase e 'Tentar de novo', sem recarregar o que foi digitado", async ({
+    page,
+  }) => {
+    const server = newServer({ turnstile: "blocked" });
+    await serve(page, server);
+    await page.goto("/esqueci-a-senha");
+    await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
+    await expect(page.getByRole("alert")).toContainText("Recarregue a página");
+    await shot(page, "esqueci-desafio-bloqueado");
+    // the person freed the site in the blocker: asking again loads the script, the form keeps its text
+    // still blocked: the button stays where it was, with the focus, and the alert comes back unchanged
+    const again = page.getByRole("button", { name: "Tentar de novo" });
+    await again.click();
+    await expect(again).toBeFocused();
+    await expect(again).toHaveText("Tentar de novo");
+    await expect(page.getByRole("alert")).toContainText("Recarregue a página");
+    server.turnstile = "ok";
+    await again.click();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    // the block went away with the focus on it: the focus moves to the first field of the form
+    await expect(page.getByLabel("E-mail", { exact: true })).toBeFocused();
+    await expect(
+      page.getByRole("button", { name: "Tentar de novo" })
+    ).toHaveCount(0);
+    await expect(page.getByLabel("E-mail", { exact: true })).toHaveValue(
+      "quem@exemplo.com"
+    );
+    await page.getByRole("button", { name: "Enviar o link" }).click();
+    await expect(
+      page.getByText("Se esse e-mail tiver conta, enviamos um link.", {
+        exact: false,
+      })
+    ).toBeVisible();
+
+    for (const path of ["/entrar", "/criar-conta"]) {
+      server.turnstile = "blocked";
+      // biome-ignore lint/performance/noAwaitInLoops: one page after the other in the same tab
+      await page.goto(path);
+      await expect(
+        page.getByRole("button", { name: "Tentar de novo" })
+      ).toBeVisible();
+    }
+  });
+
+  test("nova senha: manda abrir de novo o link do e-mail, nunca recarregar, e não oferece tentar de novo", async ({
+    page,
+  }) => {
+    const server = newServer({ turnstile: "blocked" });
+    await serve(page, server);
+    await page.goto("/redefinir-senha#token=tok-de-teste.123");
+    await expect(page.getByRole("alert")).toHaveText(
+      "!Não conseguimos carregar a confirmação de que você é uma pessoa. Libere este site no bloqueador de anúncios e abra de novo o link do e-mail."
+    );
+    await expect(
+      page.getByRole("button", { name: "Tentar de novo" })
+    ).toHaveCount(0);
+    await expect(page.locator("main")).not.toContainText("Recarregue");
+    // a try with the script missing says the same thing
+    await newPasswordField(page).fill(PASSWORD);
+    await page.getByRole("button", { name: "Trocar a senha" }).click();
+    await expect(page.getByRole("alert").first()).toContainText(
+      "abra de novo o link do e-mail"
+    );
+    await shot(page, "nova-senha-desafio-bloqueado");
+  });
+});
+
 test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigatório e o mesmo 'Confirme seu e-mail' (AC-47, 49, 68, 71)", async ({
   page,
 }) => {
@@ -461,7 +615,9 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
     page.getByRole("heading", { name: "Confirme seu e-mail" })
   ).toBeVisible();
   await expect(
-    page.getByText("Enviamos um link para nova@exemplo.com.")
+    page.getByText(
+      "Enviamos um e-mail para nova@exemplo.com. Abra e siga as instruções. Vale 24 horas."
+    )
   ).toBeVisible();
   const signUps = callsTo(server, "/api/auth/sign-up/email");
   expect(signUps.at(-1)?.body).toMatchObject({
@@ -470,6 +626,12 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
     password: PASSWORD,
   });
   expect(signUps.at(-1)?.turnstile).toMatch(SIGNUP_TOKEN);
+  // "e-mail" in the title never breaks into "e-" and "mail" at 360 px
+  await page.setViewportSize({ height: 740, width: 360 });
+  const wordLines = await page
+    .locator("h1 .sign-in-nobreak")
+    .evaluate((word) => word.getClientRects().length);
+  expect(wordLines).toBe(1);
   await shot(page, "criar-conta-confirme");
   await expectNoTechnicalText(page);
 });
@@ -501,6 +663,8 @@ test("esqueci a senha: a resposta igual exista ou não a conta (AC-49, AC-51)", 
   await expect(page.getByRole("alert")).toContainText(
     "Você pediu e-mails demais. Espere alguns minutos."
   );
+  // the green line of the first send goes away when a new result arrives
+  await expect(page.getByText("Se esse e-mail tiver conta")).toHaveCount(0);
   await shot(page, "esqueci-limite");
 });
 
@@ -537,7 +701,8 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
       "href",
       "/entrar"
     );
-    await shot(page, "nova-senha-trocada");
+    await expectFitsCard(page);
+    await shot(page, "nova-senha-trocada", true);
     await expect(page.locator("main")).not.toContainText("tok-de-teste");
   });
 
@@ -559,15 +724,19 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(page.getByRole("alert")).toContainText(
       "Este link venceu ou já foi usado. Peça outro."
     );
-    await shot(page, "nova-senha-link-vencido");
+    await expectFitsCard(page);
+    await shot(page, "nova-senha-link-vencido", true);
     await page.reload();
-    await expect(page.getByRole("alert")).toContainText(
+    // opened without its link: an instruction in a neutral panel, not a red failure
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("status")).toContainText(
       "toque no link que enviamos por e-mail"
     );
     await expect(
       page.getByRole("link", { name: "Pedir outro link" })
     ).toBeVisible();
-    await shot(page, "nova-senha-sem-link");
+    await expectFitsCard(page);
+    await shot(page, "nova-senha-sem-link", true);
   });
 
   test("confirmar e-mail: confirmado, vencido com reenvio, e a tela de espera", async ({
@@ -585,7 +754,8 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     });
     // no challenge on a page that does not need one yet
     expect(server.urlAtTurnstile).toEqual([]);
-    await shot(page, "confirmar-email-confirmado");
+    await expectFitsCard(page);
+    await shot(page, "confirmar-email-confirmado", true);
 
     server.answers["/api/email-verification"] = {
       body: { error: { code: "verification_link_expired" } },
@@ -597,9 +767,13 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(page.getByText("Este link venceu. Peça outro.")).toBeVisible();
     await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
+    // an address typed here gets the same answer with or without an account: no "Reenviamos" (P4)
     await expect(
-      page.getByText("Reenviamos. Olhe também o spam.")
+      page.getByText(
+        "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam."
+      )
     ).toBeVisible();
+    await expect(page.getByText("Reenviamos.")).toHaveCount(0);
     await shot(page, "confirmar-email-vencido-reenviado");
   });
 
@@ -619,7 +793,8 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
       token: "user.tok",
     });
     expect(server.urlAtTurnstile).toEqual([]);
-    await shot(page, "desbloquear-liberado");
+    await expectFitsCard(page);
+    await shot(page, "desbloquear-liberado", true);
 
     server.answers["/api/login-unlock"] = {
       body: { error: { code: "unlock_link_invalid" } },
@@ -633,7 +808,8 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(
       page.getByRole("link", { name: "Esqueci a senha" })
     ).toBeVisible();
-    await shot(page, "desbloquear-link-invalido");
+    await expectFitsCard(page);
+    await shot(page, "desbloquear-link-invalido", true);
   });
 });
 
@@ -658,7 +834,11 @@ test("a entrada carrega o desafio sob a CSP do _headers, sem violação (AC-7)",
   });
   await page.route("**/*", async (route) => {
     const request: Request = route.request();
-    if (request.resourceType() !== "document") {
+    // the app's documents only: the iframe of the challenge keeps the policy Cloudflare sends with it
+    if (
+      request.resourceType() !== "document" ||
+      !request.url().startsWith(APP_ORIGIN)
+    ) {
       await route.fallback();
       return;
     }
@@ -694,6 +874,13 @@ test("a entrada carrega o desafio sob a CSP do _headers, sem violação (AC-7)",
   expect(policyFor("/entrar")).toContain(
     "frame-src https://challenges.cloudflare.com"
   );
+  // the same rule for the path with the final slash, so even that first load has the challenge policy
+  for (const path of AUTH_ENTRY_PATHS) {
+    expect(policyFor(path)).toContain(
+      "frame-src https://challenges.cloudflare.com"
+    );
+    expect(policyFor(`${path}/`)).toBe(policyFor(path));
+  }
 });
 
 test.describe("trocar senha dentro do app (AC-57, V8)", () => {
@@ -791,6 +978,38 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     await expect(
       page.getByRole("button", { name: "Entrar de novo" })
     ).toBeVisible();
+    await expect(page.getByLabel("Senha atual")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { exact: true, name: "Trocar senha" })
+    ).toHaveCount(0);
     await shot(page, "trocar-senha-login-antigo");
+  });
+
+  test("pausa por tentativas: diz o que fazer nesta tela, não na da entrada (P3)", async ({
+    page,
+  }) => {
+    const server = newServer({
+      answers: {
+        "/api/auth/change-password": {
+          body: {
+            error: { code: "auth_login_locked" },
+            retryAfterSeconds: 840,
+          },
+          status: 429,
+        },
+      },
+    });
+    await openAccount(page, server);
+    await page.getByLabel("Senha atual").fill("errada errada errada");
+    await newPasswordField(page).fill(PASSWORD);
+    await page
+      .getByRole("button", { exact: true, name: "Trocar senha" })
+      .click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "!Muitas tentativas com a senha atual. Espere 14 minutos e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada."
+    );
+    await expect(page.locator("main")).not.toContainText("Pausamos");
+    await expectNoTechnicalText(page);
+    await shot(page, "trocar-senha-pausada");
   });
 });

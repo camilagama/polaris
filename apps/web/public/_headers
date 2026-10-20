@@ -15,21 +15,38 @@
   X-Frame-Options: DENY
 
 # The sign-in pages with the Turnstile challenge (ADR 0100): the policy of /* is detached, then replaced.
+# Each page has a rule for the path with a final slash too: a rule matches the exact path, and `/entrar/`
+# would otherwise get the policy of /*, without the challenge (the app also goes to the path without it).
 /entrar
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+/entrar/
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 /criar-conta
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+/criar-conta/
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 /esqueci-a-senha
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+/esqueci-a-senha/
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 /redefinir-senha
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+/redefinir-senha/
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 /confirmar-email
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+/confirmar-email/
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com/turnstile/v0/api.js; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' data:; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 # The service worker script is always revalidated, so a new build is found at once.
 /sw.js

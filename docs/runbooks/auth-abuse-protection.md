@@ -72,3 +72,10 @@ Before enabling password auth in a shared environment, verify from the deployed 
 To roll back email/password access, set `EMAIL_PASSWORD_AUTH_ENABLED=false`. Setting `AUTH_ABUSE_PROTECTION_ENABLED=false` while email/password auth is enabled blocks the protected operations by design.
 
 Before production activation, update the privacy notice and review Cloudflare's applicable terms/data-processing settings for Turnstile. The authentication UI is not part of PR16, so do not enable these routes for users until the widget integration is delivered.
+
+## Prova do Turnstile real sob a CSP (sem segredo)
+
+`apps/web/e2e/turnstile-real.e2e.ts` abre as cinco rotas que carregam o desafio (`/entrar`, `/criar-conta`, `/esqueci-a-senha`, `/redefinir-senha`, `/confirmar-email`) com o script real da Cloudflare, a chave de site de teste `1x00000000000000000000AA` (pública, sempre passa) e a CSP de `public/_headers`, ouvindo `securitypolicyviolation`: zero violações, e o token chega no `x-turnstile-token`. O servidor do app é interceptado; nada de segredo nem de Siteverify.
+
+- Precisa de rede até `challenges.cloudflare.com`. Sem ela o teste é pulado com o motivo escrito; com `TURNSTILE_REAL=1` a falta de rede é falha (é a forma de rodar como job manual: `TURNSTILE_REAL=1 bunx playwright test --config playwright.offline-poc.config.ts e2e/turnstile-real.e2e.ts` em `apps/web`).
+- Rode também quando mudar o perfil `auth-entry`, a versão do script ou a lista de rotas do desafio.

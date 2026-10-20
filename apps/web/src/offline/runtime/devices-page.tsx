@@ -45,8 +45,12 @@ const DEVICES_SIGN_IN_AGAIN = signInPath({
   returnTo: DEVICES_PATH,
 });
 
-/** "Trocar senha" lives beside the devices, and only with the password on (ADR 0100, AC-46). */
-function ChangePasswordLink() {
+/**
+ * "Trocar senha" lives under the devices, in a "Segurança" section of its own, as a 44 px secondary button
+ * (UX review of the P9: a text link in a paragraph was a 26 px target nobody found). Only with the password
+ * on (ADR 0100, AC-46).
+ */
+function SecuritySection() {
   const [passwordOn, setPasswordOn] = useState(false);
   useEffect(() => {
     let current = true;
@@ -62,9 +66,20 @@ function ChangePasswordLink() {
     };
   }, []);
   return passwordOn ? (
-    <p className="categories-intro-copy">
-      <a href="/conta/seguranca">Trocar senha</a>
-    </p>
+    <section
+      aria-labelledby="device-security-title"
+      className="device-security"
+    >
+      <h2 className="device-security-title" id="device-security-title">
+        Segurança
+      </h2>
+      <a
+        className="secondary-button device-security-button"
+        href="/conta/seguranca"
+      >
+        Trocar senha
+      </a>
+    </section>
   ) : null;
 }
 
@@ -482,7 +497,6 @@ export function DevicesPage() {
             ou computador, revogue o aparelho: o servidor deixa de aceitar o que
             ele enviar.
           </p>
-          <ChangePasswordLink />
         </div>
       </section>
       {online ? null : (
@@ -493,27 +507,30 @@ export function DevicesPage() {
       {endedHere ? (
         <BrowserLeft keptWork={endedHere.keptWork} />
       ) : (
-        <ListSection
-          actionError={actionError}
-          busy={busy}
-          confirming={confirming}
-          devices={devices}
-          endOtherSessions={endOtherSessions}
-          loadFailed={loadFailed}
-          loading={loading}
-          notice={notice}
-          offline={!(online && knowsThisDevice)}
-          onAsk={handleAsk}
-          onCancel={handleCancel}
-          onChoose={setEndOtherSessions}
-          onDismiss={handleDismiss}
-          online={online}
-          onRetry={handleRetry}
-          onRevoke={handleRevokeEvent}
-          panel={panel}
-          recognition={recognition}
-          rows={rows}
-        />
+        <>
+          <ListSection
+            actionError={actionError}
+            busy={busy}
+            confirming={confirming}
+            devices={devices}
+            endOtherSessions={endOtherSessions}
+            loadFailed={loadFailed}
+            loading={loading}
+            notice={notice}
+            offline={!(online && knowsThisDevice)}
+            onAsk={handleAsk}
+            onCancel={handleCancel}
+            onChoose={setEndOtherSessions}
+            onDismiss={handleDismiss}
+            online={online}
+            onRetry={handleRetry}
+            onRevoke={handleRevokeEvent}
+            panel={panel}
+            recognition={recognition}
+            rows={rows}
+          />
+          <SecuritySection />
+        </>
       )}
     </div>
   );

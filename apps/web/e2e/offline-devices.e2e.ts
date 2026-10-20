@@ -316,10 +316,77 @@ async function queueCustomers(page: Page, count: number) {
   await page.context().setOffline(false);
 }
 
+const transitionsEnded = (page: Page) =>
+  page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !==
+            Number.POSITIVE_INFINITY
+        )
+        // a cancelled animation rejects: it is over as well
+        .map((animation) => animation.finished.catch(() => undefined))
+    )
+  );
+
 async function openDevices(page: Page, state: Scenario) {
   await serve(page, state);
   await page.goto("/devices");
 }
+
+test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' como botão de 44 px (P6)", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await page.route("**/api/auth-methods", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        emailPassword: true,
+        google: true,
+        turnstileSiteKey: null,
+      }),
+      contentType: "application/json",
+    })
+  );
+  await openDevices(page, state);
+
+  const list = page.getByRole("list", { name: "Aparelhos" });
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  const section = page.getByRole("region", { name: "Segurança" });
+  const link = section.getByRole("link", { name: "Trocar senha" });
+  await expect(link).toHaveAttribute("href", "/conta/seguranca");
+  const box = await link.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // after the list, not in the paragraph of the heading
+  const listBox = await list.boundingBox();
+  expect(box?.y ?? 0).toBeGreaterThan(
+    (listBox?.y ?? 0) + (listBox?.height ?? 0)
+  );
+  await expect(
+    page.locator(".categories-heading").getByRole("link")
+  ).toHaveCount(0);
+  const shots = process.env.T166_SHOTS;
+  if (shots && test.info().project.name === "chromium-desktop") {
+    for (const [width, height] of [
+      [360, 740],
+      [1280, 800],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one size after the other on the same page
+      await page.setViewportSize({ height, width });
+      for (const scheme of ["light", "dark"] as const) {
+        // biome-ignore lint/performance/noAwaitInLoops: one scheme after the other on the same page
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsEnded(page);
+        await page.screenshot({
+          fullPage: true,
+          path: `${shots}/aparelhos-seguranca-${width}-${scheme}.png`,
+        });
+      }
+    }
+  }
+});
 
 test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opção", async ({
   page,

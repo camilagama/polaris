@@ -13,7 +13,10 @@ export const EMAIL_LABEL = "E-mail";
 export const PASSWORD_LABEL = "Senha";
 export const NEW_PASSWORD_LABEL = "Nova senha";
 export const CURRENT_PASSWORD_LABEL = "Senha atual";
-export const SHOW_PASSWORD = "Mostrar senha";
+export const SHOW_PASSWORD = "Mostrar";
+export const HIDE_PASSWORD = "Ocultar";
+export const SHOW_PASSWORD_LABEL = "Mostrar senha";
+export const HIDE_PASSWORD_LABEL = "Ocultar senha";
 
 export const SIGN_IN_SUPPORT_BOTH =
   "Entre com sua conta do Google ou com e-mail e senha.";
@@ -50,6 +53,9 @@ export const CHALLENGE_FAILED =
   "Não foi possível confirmar que você é uma pessoa. Tente de novo.";
 export const CHALLENGE_BLOCKED =
   "Não conseguimos carregar a confirmação de que você é uma pessoa. Recarregue a página. Se usa um bloqueador de anúncios, libere este site.";
+/** `/redefinir-senha`: a reload would lose the link (the token lives in memory only), so it never says "recarregue". */
+export const CHALLENGE_BLOCKED_LINK =
+  "Não conseguimos carregar a confirmação de que você é uma pessoa. Libere este site no bloqueador de anúncios e abra de novo o link do e-mail.";
 
 export const UNAVAILABLE =
   "Não conseguimos fazer isso agora. Tente de novo em instantes.";
@@ -63,11 +69,19 @@ export const PAGE_LOADING = "Carregando…";
 export const PAGE_UNAVAILABLE =
   "Não conseguimos abrir esta página agora. Tente de novo em instantes.";
 export const TRY_AGAIN = "Tentar de novo";
+export const TRYING_AGAIN = "Tentando…";
+
+const minutesText = (minutes: number) =>
+  minutes === 1 ? "1 minuto" : `${minutes} minutos`;
 
 /** The lock of the e-mail (AC-62, V4): the word of the unlock e-mail, the minutes rounded up. */
 export function pausedText(minutes: number): string {
-  const wait = minutes === 1 ? "1 minuto" : `${minutes} minutos`;
-  return `Pausamos a entrada com senha deste e-mail por muitas tentativas. Espere ${wait} ou toque em Esqueci a senha. Se a conta tem um e-mail, enviamos a ele um link para liberar agora.`;
+  return `Pausamos a entrada com senha deste e-mail por muitas tentativas. Espere ${minutesText(minutes)} ou toque em Esqueci a senha. Se a conta tem um e-mail, enviamos a ele um link para liberar agora.`;
+}
+
+/** The same lock seen from "Trocar senha": the person is inside, there is no "Esqueci a senha" on this screen. */
+export function changePausedText(minutes: number): string {
+  return `Muitas tentativas com a senha atual. Espere ${minutesText(minutes)} e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada.`;
 }
 export const PAUSED_BUTTON_HINT = "O botão Entrar volta quando a pausa acabar.";
 
@@ -85,13 +99,18 @@ export const HAVE_ACCOUNT = "Já tem conta?";
 
 export const CONFIRM_TITLE = "Confirme seu e-mail";
 export const CONFIRM_PAGE_TITLE = "Confirmar e-mail";
+/** Neutral on purpose: an e-mail of "you already have an account" has no confirmation link. */
 export function confirmSentText(email: string | null): string {
-  return `Enviamos um link para ${email ?? "o seu e-mail"}. Abra o e-mail e toque no link para continuar. O link vale 24 horas.`;
+  return `Enviamos um e-mail para ${email ?? "o seu e-mail"}. Abra e siga as instruções. Vale 24 horas.`;
 }
 export const CONFIRM_NOT_ARRIVED = "Não chegou?";
 export const RESEND_BUTTON = "Reenviar e-mail";
 export const RESEND_BUTTON_PENDING = "Reenviando…";
+/** The address came from the sign-up form kept in memory: the server really sent it. */
 export const RESENT = "Reenviamos. Olhe também o spam.";
+/** The address was typed here: the server answers the same whether or not it has an account (AC-49). */
+export const RESENT_TYPED =
+  "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam.";
 export const RESEND_ASK_EMAIL = "Digite seu e-mail para receber outro link.";
 export const CONFIRM_GOOGLE_WAY =
   "Também pode entrar com o Google, se o e-mail for de uma conta do Google.";
@@ -136,8 +155,6 @@ export const UNLOCK_NO_LINK =
 export const CHANGE_TITLE = "Trocar senha";
 export const CHANGE_SUPPORT =
   "Ao trocar a senha, os outros aparelhos saem da sua conta e vão pedir a senha de novo. Este aparelho continua.";
-export const CHANGE_QUEUE_NOTE =
-  "O que outro aparelho guardou para enviar continua guardado nele até alguém entrar de novo nele.";
 export const CHANGE_BUTTON = "Trocar senha";
 export const CHANGE_BUTTON_PENDING = "Trocando…";
 export const CHANGE_DONE =
@@ -152,11 +169,11 @@ export const CHANGE_RECENT_BUTTON = "Entrar de novo";
 /** The line of a refusal every form shares; the e-mail forms say "e-mails demais" for the limit. */
 export function failureText(
   failure: "blocked" | CommonFailure,
-  form: "email" | "other" | "sign-in"
+  form: "email" | "other" | "reset" | "sign-in"
 ): string {
   switch (failure) {
     case "blocked":
-      return CHALLENGE_BLOCKED;
+      return form === "reset" ? CHALLENGE_BLOCKED_LINK : CHALLENGE_BLOCKED;
     case "challenge":
       return CHALLENGE_FAILED;
     case "hibp_unavailable":

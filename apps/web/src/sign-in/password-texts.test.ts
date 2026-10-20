@@ -5,6 +5,8 @@ const texts = await import("./password-texts");
 
 const TECHNICAL =
   /\b(40[0-9]|429|50[0-9])\b|auth_|password_|_required|_failed|rate_limited|UNAUTHORIZED|INVALID|token|turnstile|HIBP|\bHTTP\b|erro=/i;
+const TOUCH_OR_PAUSED = /toque|Pausamos/;
+const RELOAD = /recarregue/i;
 const ACCOUNT_LOCKED = /conta (foi )?bloqueada|bloqueamos/i;
 
 const everyText = (): string[] => [
@@ -13,6 +15,8 @@ const everyText = (): string[] => [
   ),
   texts.pausedText(1),
   texts.pausedText(15),
+  texts.changePausedText(1),
+  texts.changePausedText(15),
   texts.confirmSentText(null),
   texts.confirmSentText("quem@exemplo.com"),
   ...(
@@ -24,7 +28,7 @@ const everyText = (): string[] => [
       "unavailable",
     ] as const
   ).flatMap((failure) =>
-    (["email", "other", "sign-in"] as const).map((form) =>
+    (["email", "other", "reset", "sign-in"] as const).map((form) =>
       texts.failureText(failure, form)
     )
   ),
@@ -47,6 +51,40 @@ describe("the password screen texts", () => {
     for (const text of everyText()) {
       expect(text).not.toMatch(ACCOUNT_LOCKED);
     }
+  });
+
+  it("tell 'Trocar senha' what to do with the screen it has: no 'Esqueci a senha' to touch, no 'entrada' (P3)", () => {
+    expect(texts.changePausedText(15)).toBe(
+      "Muitas tentativas com a senha atual. Espere 15 minutos e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada."
+    );
+    expect(texts.changePausedText(1)).toContain("Espere 1 minuto e");
+    expect(texts.changePausedText(15)).not.toMatch(TOUCH_OR_PAUSED);
+  });
+
+  it("never tell /redefinir-senha to reload: the link lives in memory and a reload loses it (P2)", () => {
+    expect(texts.failureText("blocked", "reset")).toBe(
+      texts.CHALLENGE_BLOCKED_LINK
+    );
+    expect(texts.CHALLENGE_BLOCKED_LINK).toContain("abra de novo o link");
+    expect(texts.CHALLENGE_BLOCKED_LINK).not.toMatch(RELOAD);
+    expect(texts.failureText("blocked", "sign-in")).toContain("Recarregue");
+  });
+
+  it("neither the intro nor the resend promise a link or a send the server cannot know (P4)", () => {
+    expect(texts.confirmSentText("quem@exemplo.com")).toBe(
+      "Enviamos um e-mail para quem@exemplo.com. Abra e siga as instruções. Vale 24 horas."
+    );
+    expect(texts.RESENT_TYPED).toBe(
+      "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam."
+    );
+    expect(texts.RESENT).toBe("Reenviamos. Olhe também o spam.");
+  });
+
+  it("name the toggle by what it does to the field, short on the button and whole for the reader (P5)", () => {
+    expect(texts.SHOW_PASSWORD).toBe("Mostrar");
+    expect(texts.HIDE_PASSWORD).toBe("Ocultar");
+    expect(texts.SHOW_PASSWORD_LABEL).toBe("Mostrar senha");
+    expect(texts.HIDE_PASSWORD_LABEL).toBe("Ocultar senha");
   });
 
   it("say the size rule before typing, with the numbers the server applies (AC-47)", () => {

@@ -7,6 +7,7 @@ import {
   type SecurityProfile,
   securityHeaders,
   TURNSTILE_ORIGIN,
+  TURNSTILE_SCRIPT,
 } from "./index";
 
 const PROFILES: readonly SecurityProfile[] = [
@@ -79,8 +80,8 @@ describe("the headers of every profile", () => {
         // the one foreign origin of the platform: the challenge on the sign-in pages (asserted exactly below)
         if (
           profile === "auth-entry" &&
-          source === TURNSTILE_ORIGIN &&
-          (directive === "script-src" || directive === "frame-src")
+          ((directive === "script-src" && source === TURNSTILE_SCRIPT) ||
+            (directive === "frame-src" && source === TURNSTILE_ORIGIN))
         ) {
           continue;
         }
@@ -246,8 +247,10 @@ describe("the policy of the sign-in pages with the challenge", () => {
     expect(changed.sort()).toEqual(["frame-src", "script-src"]);
     expect(entry.get("script-src")).toEqual([
       ...(shell.get("script-src") ?? []),
-      TURNSTILE_ORIGIN,
+      TURNSTILE_SCRIPT,
     ]);
+    // the file, not the origin: no other script of Cloudflare's origin may run in the page
+    expect(entry.get("script-src")).not.toContain(TURNSTILE_ORIGIN);
     expect(shell.get("frame-src")).toBeUndefined();
     expect(entry.get("frame-src")).toEqual([TURNSTILE_ORIGIN]);
     expect(entry.get("form-action")).toEqual(["'self'"]);
@@ -337,13 +340,15 @@ describe("the static headers file", () => {
     const entryPolicy =
       securityHeaders("auth-entry")["Content-Security-Policy"];
 
-    for (const path of AUTH_ENTRY_PATHS) {
+    // each page twice: a rule matches the exact path, so `/entrar/` needs its own
+    for (const path of AUTH_ENTRY_PATHS.flatMap((page) => [page, `${page}/`])) {
       expect(file).toContain(
         `\n${path}\n  ! Content-Security-Policy\n  Content-Security-Policy: ${entryPolicy}\n`
       );
     }
+    // script-src and frame-src of each of the two rules
     expect(file.split(TURNSTILE_ORIGIN)).toHaveLength(
-      AUTH_ENTRY_PATHS.length * 2 + 1
+      AUTH_ENTRY_PATHS.length * 2 * 2 + 1
     );
     for (const path of ["/aceite", "/desbloquear", "/conta/seguranca"]) {
       expect(file).not.toContain(`\n${path}\n`);
