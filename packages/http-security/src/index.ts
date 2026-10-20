@@ -131,16 +131,18 @@ function appShellPolicy(connect: readonly string[], img: readonly string[]) {
 
 /** The shell with the challenge: its script and its iframe, and not one source more. */
 function authEntryPolicy(connect: readonly string[], img: readonly string[]) {
-  return appShellPolicy(connect, img).flatMap(([directive, sources]) =>
-    directive === "script-src"
-      ? [[directive, [...sources, TURNSTILE_ORIGIN]] as const]
-      : directive === "connect-src"
-        ? [
-            [directive, sources] as const,
-            ["frame-src", [TURNSTILE_ORIGIN]] as const,
-          ]
-        : [[directive, sources] as const]
-  ) satisfies Directives;
+  const directives: [string, readonly string[]][] = [];
+  for (const [directive, sources] of appShellPolicy(connect, img)) {
+    if (directive === "script-src") {
+      directives.push([directive, [...sources, TURNSTILE_ORIGIN]]);
+      continue;
+    }
+    directives.push([directive, sources]);
+    if (directive === "connect-src") {
+      directives.push(["frame-src", [TURNSTILE_ORIGIN]]);
+    }
+  }
+  return directives satisfies Directives;
 }
 
 /** A response that is data, not a page: it may load nothing and cannot be framed or submit forms. */

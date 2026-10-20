@@ -309,21 +309,25 @@ describe("the worker as the browser runs it", () => {
     const worker = await runWorker(build);
     await worker.run("install", {});
     worker.network.online = false;
-    for (const path of ["/entrar", "/redefinir-senha", "/confirmar-email/"]) {
-      expect(
-        await worker.run("fetch", {
-          request: { method: "GET", mode: "navigate", url: `${origin}${path}` },
-        })
-      ).toEqual({ body: "net:/entrar" });
-    }
+    const answers = async (paths: string[]) =>
+      Promise.all(
+        paths.map((path) =>
+          worker.run("fetch", {
+            request: {
+              method: "GET",
+              mode: "navigate",
+              url: `${origin}${path}`,
+            },
+          })
+        )
+      );
+    expect(
+      await answers(["/entrar", "/redefinir-senha", "/confirmar-email/"])
+    ).toEqual(new Array(3).fill({ body: "net:/entrar" }));
     // the unlock page and the rest of the app keep the shell of /
-    for (const path of ["/desbloquear", "/conta/seguranca"]) {
-      expect(
-        await worker.run("fetch", {
-          request: { method: "GET", mode: "navigate", url: `${origin}${path}` },
-        })
-      ).toEqual({ body: "net:/" });
-    }
+    expect(await answers(["/desbloquear", "/conta/seguranca"])).toEqual(
+      new Array(2).fill({ body: "net:/" })
+    );
   });
 
   it("lists the same sign-in pages as the headers file", () => {

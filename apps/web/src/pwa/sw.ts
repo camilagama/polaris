@@ -37,6 +37,7 @@ export const SHELL_CACHE_PREFIX = "polaris-shell-";
 const SHELL_PATH = "/";
 /** The same shell under the policy of the sign-in pages (`auth-entry` in `public/_headers`). */
 const AUTH_ENTRY_SHELL_PATH = "/entrar";
+const TRAILING_SLASHES = /\/+$/;
 /** `AUTH_ENTRY_PATHS` of @polaris/http-security (this script is bundled alone; a test keeps them equal). */
 export const AUTH_ENTRY_PATHS: readonly string[] = [
   "/entrar",
@@ -68,7 +69,7 @@ function isWorkerPath(pathname: string): boolean {
 /** The cached copy a navigation falls back to when the network does not answer. */
 export function offlineShellFor(url: string): string {
   const { pathname } = new URL(url);
-  return AUTH_ENTRY_PATHS.includes(pathname.replace(/\/+$/, ""))
+  return AUTH_ENTRY_PATHS.includes(pathname.replace(TRAILING_SLASHES, ""))
     ? AUTH_ENTRY_SHELL_PATH
     : SHELL_PATH;
 }

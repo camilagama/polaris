@@ -298,6 +298,9 @@ describe("Resend authentication email delivery", () => {
   });
 });
 
+const FALLBACK_LINK_BREAKS_ANYWHERE =
+  /<p[^>]*overflow-wrap:anywhere[^>]*>Se o botão não funcionar/;
+
 describe("the layout of the e-mails with a link token", () => {
   // tokens of the real size: a verification JWT, a reset token and an unlock token (`<user>.<32 bytes>`)
   const links = {
@@ -313,9 +316,7 @@ describe("the layout of the e-mails with a link token", () => {
       render(<LoginUnlockEmail url={links.unlock} />),
     ]);
     for (const page of html) {
-      expect(page).toMatch(
-        /<p[^>]*overflow-wrap:anywhere[^>]*>Se o botão não funcionar/
-      );
+      expect(page).toMatch(FALLBACK_LINK_BREAKS_ANYWHERE);
       expect(page).toContain("padding:14px 20px");
     }
   });
