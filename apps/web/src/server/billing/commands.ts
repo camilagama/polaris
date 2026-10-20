@@ -278,10 +278,10 @@ async function openCheckout<K extends CheckoutHandoff["kind"]>(
       }
       throw error;
     }
-    if (prepared.customerAlignment === "updated") {
-      // the audit of the change of the payer's name or e-mail at the provider: the operator's
-      // log only (the tenant never sees which of the three it was), and no personal data
-      logger.info("billing_payer_customer_updated", ids);
+    if (prepared.customerAlignment === "created") {
+      // the audit of the payer's customer created at the provider: the operator's log only
+      // (the tenant never sees which of the two it was), and no personal data
+      logger.info("billing_payer_customer_created", ids);
     }
     return { handoff: prepared.handoff, prepared, replaced };
   };
@@ -337,9 +337,9 @@ export interface PixPayer {
 
 /**
  * Every Pix checkout answers no sooner than this (ADR 0101, emenda do PR 6):
- * every path makes the same calls (the customers, the subscriptions, the
- * question to the database), but only `updated` makes one more (the update),
- * and the time of the answer would otherwise tell it apart.
+ * every path reads the payer's customer once, but only `created` makes one
+ * more call (the creation) and a refusal one fewer (no subscription), and the
+ * time of the answer would otherwise tell them apart.
  */
 export const PIX_CHECKOUT_MINIMUM_MS = 3000;
 
@@ -347,7 +347,7 @@ export interface StartPixCheckoutDependencies
   extends Omit<StartCheckoutDependencies, "store"> {
   /** A monotonic clock in ms (`performance.now`); a test gives its own. */
   elapsedMs?: () => number;
-  /** The server's secret the payer's lock key is derived from (`BETTER_AUTH_SECRET`); never sent anywhere. */
+  /** The server's secret the payer's lock and customer keys are derived from (`BETTER_AUTH_SECRET`); never sent anywhere. */
   payerLockSecret: string;
   sleep?: (ms: number) => Promise<void>;
   store: StartCheckoutDependencies["store"] &
@@ -357,16 +357,15 @@ export interface StartPixCheckoutDependencies
 const textEncoder = new TextEncoder();
 
 /**
- * The key of the payer's lock: 8 hex digits of an HMAC-SHA-256 of the
- * document, keyed by a key derived from the server's secret. The lock never
- * carries the document, and without the key nobody can pick another document
- * that shares a victim's lock to keep it busy; two documents that share one
- * only wait for each other.
+ * An HMAC-SHA-256 of the document, keyed by a key derived from the server's
+ * secret under `label`: each use has a key of its own, and the secret itself
+ * never keys anything here.
  */
-export async function payerLockKey(
+async function payerTag(
   secret: string,
+  label: string,
   taxId: string
-): Promise<string> {
+): Promise<Uint8Array> {
   if (secret.length < 32) {
     throw new TypeError("payer_lock_secret_too_short");
   }
@@ -382,15 +381,46 @@ export async function payerLockKey(
       ),
       textEncoder.encode(text)
     );
-  // a key of its own, derived from the secret: the secret itself never keys anything else here
-  const derived = await sign(
-    textEncoder.encode(secret),
-    "polaris.billing.payer-lock.v1"
+  const derived = await sign(textEncoder.encode(secret), label);
+  return new Uint8Array(await sign(derived, taxId));
+}
+
+const hexOf = (bytes: Uint8Array) =>
+  [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/**
+ * The key of the payer's lock: 8 hex digits of the payer's tag
+ * (`polaris.billing.payer-lock.v1`). The lock never carries the document, and
+ * without the key nobody can pick another document that shares a victim's
+ * lock to keep it busy; two documents that share one only wait for each other.
+ */
+export async function payerLockKey(
+  secret: string,
+  taxId: string
+): Promise<string> {
+  const tag = await payerTag(secret, "polaris.billing.payer-lock.v1", taxId);
+  return hexOf(tag.slice(0, 4));
+}
+
+/**
+ * The payer's customer key at Woovi (`correlationID`): `polaris-payer-` and 32
+ * hex digits of the payer's tag (`polaris.billing.payer-customer.v1`). The
+ * customer is created and read by it, so the document never goes into a URL
+ * and no list of the account is read (ADR 0101, emenda do PR 6). It changes
+ * with the secret: after a rotation, a customer created before is not found by
+ * its key and its creation is refused (the document already has one), which
+ * answers `payer_not_accepted` until support sorts it out (runbook).
+ */
+export async function payerCustomerKey(
+  secret: string,
+  taxId: string
+): Promise<string> {
+  const tag = await payerTag(
+    secret,
+    "polaris.billing.payer-customer.v1",
+    taxId
   );
-  const tag = new Uint8Array(await sign(derived, taxId));
-  return [...tag.slice(0, 4)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return `polaris-payer-${hexOf(tag.slice(0, 16))}`;
 }
 
 /** The refusals about the payer's data, all answered the same (never which one, never why). */
@@ -416,12 +446,13 @@ function pixRefusalOf(error: unknown): BillingCommandError | null {
  * Starts the Pix Automático checkout (Woovi): journey 2 with the trial (the
  * payer only authorizes; the first charge is on the day the trial ends),
  * journey 3 without (the first charge is paid on approval, today). The
- * customer of the CPF or CNPJ is aligned and the subscription created and
- * linked under the payer's lock, so two checkouts of one document never run
- * that at the same time. The answer is the same whatever Woovi held for the
- * document (`absent`, `matches`, `updated`), and no sooner than
- * `PIX_CHECKOUT_MINIMUM_MS`; a refusal about the payer's data is one generic
- * code. The tax ID never reaches a log.
+ * payer's customer is read by its key (`payerCustomerKey`) or created, and the
+ * subscription created and linked, under the payer's lock, so two checkouts
+ * of one document never run that at the same time. The answer is the same
+ * whatever Woovi held for the document (`created`, `matches`), and no sooner
+ * than `PIX_CHECKOUT_MINIMUM_MS`; a refusal about the payer's data (a customer
+ * with another name or e-mail included) is one generic code. The tax ID never
+ * reaches a log.
  */
 export async function startPixCheckout(
   dependencies: StartPixCheckoutDependencies,
@@ -443,6 +474,10 @@ export async function startPixCheckout(
       dependencies.payerLockSecret,
       payer.taxId
     );
+    const customerKey = await payerCustomerKey(
+      dependencies.payerLockSecret,
+      payer.taxId
+    );
     const handoff = await openCheckout(dependencies, input, {
       kind: "pix_authorization",
       prepare: (firstChargeOn) =>
@@ -450,8 +485,12 @@ export async function startPixCheckout(
           amount: input.amount,
           cycleMonths: input.cycleMonths,
           firstChargeOn,
-          organizationId: input.organizationId,
-          payer: { email: payer.email, name: payer.name, taxId: payer.taxId },
+          payer: {
+            customerKey,
+            email: payer.email,
+            name: payer.name,
+            taxId: payer.taxId,
+          },
           trial: input.trial,
         }),
       serialize: (operation) =>

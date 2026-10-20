@@ -9,8 +9,8 @@ import {
 } from "../provider-port";
 import {
   isTaxIdDigits,
-  isWooviCustomerCorrelationId,
   isWooviGlobalId,
+  isWooviPayerCorrelationId,
   type WooviGlobalIdKind,
 } from "./ids";
 
@@ -42,37 +42,37 @@ export interface WooviClientConfig {
 
 export interface WooviClient {
   cancelSubscription: (subscriptionId: string) => Promise<unknown>;
+  /**
+   * `POST /api/v1/customer`: creates the payer's customer under Polaris's own
+   * `correlationID` (an HMAC of the document, never the document). Woovi keeps
+   * one customer per CPF or CNPJ and refuses (400) a second one with another
+   * key (sandbox, 20/10/2026).
+   */
+  createCustomer: (customer: {
+    correlationId: string;
+    email: string;
+    name: string;
+    taxId: string;
+  }) => Promise<unknown>;
   createSubscription: (body: string) => Promise<unknown>;
   /**
-   * The customer with this CPF or CNPJ, or null when Woovi has none. Read from
-   * the whole list of customers (`GET /api/v1/customer`, at most 1000), never
-   * from a URL that carries the document: `?taxID=` and `/customer/{taxID}`
-   * would put the CPF in the request's URL, which the platform's traces of
-   * outbound requests may keep (ADR 0101, emenda do PR 6). Only an entry with
-   * this exact tax ID counts, and more than one is not an answer to trust.
+   * `GET /api/v1/customer/{correlationID}`: the customer Polaris created under
+   * this key, or null when there is none. One read, never a list: the key is
+   * an HMAC of the document, so the URL carries no CPF (ADR 0101, emenda do
+   * PR 6). Woovi answers an unknown key with 400 `Cliente não encontrado`
+   * (sandbox, 20/10/2026), the only answer read as "none": any other 400 is a
+   * rejection and a 404 (a wrong route) is `ProviderNotFoundError`.
    */
-  findCustomerByTaxId: (taxId: string) => Promise<unknown>;
+  getCustomer: (correlationId: string) => Promise<unknown>;
   getInstallment: (installmentId: string) => Promise<unknown>;
   getSubscription: (subscriptionId: string) => Promise<unknown>;
   listSubscriptionInstallments: (subscriptionId: string) => Promise<unknown[]>;
-  /**
-   * Every subscription of the account, newest first, at most 1000 (ten pages):
-   * Woovi's list takes no filter by customer (sandbox, 20/10/2026: `customer`,
-   * `taxID` and `status` are ignored), so whoever needs one customer's filters
-   * here. More than that is not an answer to trust, and throws.
-   */
-  listSubscriptions: () => Promise<unknown[]>;
   /**
    * `POST /api/v1/refund`: gives back a Pix received, named by its
    * `endToEndId`, in full. The `correlationID` is Polaris's and makes a repeat
    * the same refund at Woovi.
    */
   refundPix: (body: string) => Promise<unknown>;
-  /** `PATCH /api/v1/customer/{correlationID}` with the name and the e-mail; the tax ID never changes. */
-  updateCustomer: (
-    correlationId: string,
-    fields: { email: string; name: string }
-  ) => Promise<unknown>;
 }
 
 /**
@@ -108,6 +108,41 @@ function globalIdPath(kind: WooviGlobalIdKind, id: string): string {
   return encodeURIComponent(id);
 }
 
+/**
+ * The key of a customer Polaris created, refused unless it has the shape of
+ * one (`isWooviPayerCorrelationId`): a key of any other shape, a CPF among
+ * them, never reaches the URL.
+ */
+function customerPath(correlationId: string): string {
+  if (!isWooviPayerCorrelationId(correlationId)) {
+    throw new TypeError("invalid_customer_key");
+  }
+  return encodeURIComponent(correlationId);
+}
+
+/** Woovi's answer to a customer key it does not know: 400 with this exact error. */
+function customerNotFound({
+  status,
+  text,
+}: {
+  status: number;
+  text: string;
+}): boolean {
+  if (status !== 400) {
+    return false;
+  }
+  try {
+    const answer: unknown = JSON.parse(text);
+    return (
+      typeof answer === "object" &&
+      answer !== null &&
+      (answer as Record<string, unknown>).error === "Cliente não encontrado"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new ProviderResponseMalformedError();
@@ -130,11 +165,12 @@ function unwrap(answer: unknown, key: string, required: boolean): unknown {
 export function createWooviClient(config: WooviClientConfig): WooviClient {
   const base = checkedBaseUrl(config.baseUrl, config.appId);
 
-  async function call(
+  /** The status and the text of a request; a failure to reach Woovi is an outage. */
+  async function request(
     method: FetchInit["method"],
     path: string,
     body?: string
-  ): Promise<unknown> {
+  ): Promise<{ status: number; text: string }> {
     const init: FetchInit = {
       headers: {
         accept: "application/json",
@@ -150,17 +186,18 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
     if (body !== undefined) {
       init.body = body;
     }
-    let status: number;
-    let text: string;
     try {
       const response = await config.fetch(`${base}${path}`, init);
-      ({ status } = response);
-      text = await response.text();
+      return { status: response.status, text: await response.text() };
     } catch {
       // timeout, abort or network: nothing of the cause is kept (it may echo the URL)
       // biome-ignore lint/style/useErrorCause: The cause stays out on purpose.
       throw new ProviderUnavailableError();
     }
+  }
+
+  /** The parsed answer of a 2xx; any other status is the error of its kind. */
+  function answerOf({ status, text }: { status: number; text: string }) {
     if (status === 404) {
       throw new ProviderNotFoundError();
     }
@@ -177,6 +214,14 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
       // biome-ignore lint/style/useErrorCause: The cause would carry the provider's text.
       throw new ProviderUnavailableError();
     }
+  }
+
+  async function call(
+    method: FetchInit["method"],
+    path: string,
+    body?: string
+  ): Promise<unknown> {
+    return answerOf(await request(method, path, body));
   }
 
   /** Reads a list page by page; a short page is the last one, whatever `pageInfo` says. */
@@ -211,30 +256,39 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
         "PUT",
         `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/cancel`
       ),
+    createCustomer: async (customer) => {
+      customerPath(customer.correlationId);
+      if (!isTaxIdDigits(customer.taxId)) {
+        throw new TypeError("invalid_tax_id");
+      }
+      return unwrap(
+        await call(
+          "POST",
+          "/api/v1/customer",
+          JSON.stringify({
+            correlationID: customer.correlationId,
+            email: customer.email,
+            name: customer.name,
+            taxID: customer.taxId,
+          })
+        ),
+        "customer",
+        true
+      );
+    },
     createSubscription: async (body) =>
       unwrap(
         await call("POST", "/api/v1/subscriptions", body),
         "subscription",
         true
       ),
-    async findCustomerByTaxId(taxId) {
-      if (!isTaxIdDigits(taxId)) {
-        throw new TypeError("invalid_tax_id");
+    async getCustomer(correlationId) {
+      const path = `/api/v1/customer/${customerPath(correlationId)}`;
+      const answer = await request("GET", path);
+      if (customerNotFound(answer)) {
+        return null;
       }
-      const same = (await listAll("/api/v1/customer", "customers")).filter(
-        (entry) => {
-          const { taxID } = record(entry);
-          return (
-            typeof taxID === "object" &&
-            taxID !== null &&
-            (taxID as Record<string, unknown>).taxID === taxId
-          );
-        }
-      );
-      if (same.length > 1) {
-        throw new ProviderResponseMalformedError();
-      }
-      return same[0] ?? null;
+      return unwrap(answerOf(answer), "customer", true);
     },
     getInstallment: async (installmentId) =>
       unwrap(
@@ -259,23 +313,7 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
         `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/installments`,
         "installments"
       ),
-    listSubscriptions: async () =>
-      listAll("/api/v1/subscriptions", "subscriptions"),
     refundPix: async (body) =>
       unwrap(await call("POST", "/api/v1/refund", body), "refund", false),
-    async updateCustomer(correlationId, fields) {
-      if (!isWooviCustomerCorrelationId(correlationId)) {
-        throw new ProviderResponseMalformedError();
-      }
-      return unwrap(
-        await call(
-          "PATCH",
-          `/api/v1/customer/${encodeURIComponent(correlationId)}`,
-          JSON.stringify({ email: fields.email, name: fields.name })
-        ),
-        "customer",
-        true
-      );
-    },
   };
 }

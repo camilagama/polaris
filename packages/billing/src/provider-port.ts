@@ -61,17 +61,18 @@ export interface PrepareSubscriptionInput {
   /** The day of the first charge, `AAAA-MM-DD` in America/Sao_Paulo (the end of the trial, or today). */
   firstChargeOn: string;
   /**
-   * The organization the subscription is for, from the server's context. Pix
-   * Automático needs it to tell the payer's other organizations from this one
-   * (`alignWooviCustomer`); the card checkout does not read it.
-   */
-  organizationId?: string;
-  /**
    * The payer, never stored by Polaris. The card checkout takes none of it (the
    * payer types it on the provider's page) and refuses a tax ID; Pix
-   * Automático needs the name, the CPF or CNPJ and the e-mail.
+   * Automático needs the name, the CPF or CNPJ, the e-mail and the key of the
+   * payer's customer at the provider (`customerKey`, an HMAC of the document
+   * made by the server).
    */
-  payer?: { email: string; name: string; taxId?: string };
+  payer?: {
+    customerKey?: string;
+    email: string;
+    name: string;
+    taxId?: string;
+  };
   /**
    * Whether the first charge comes after a trial. Pix Automático picks its
    * journey by it (2, `ONLY_RECURRENCY`, with; 3, `PAYMENT_ON_APPROVAL`,
@@ -94,11 +95,12 @@ export interface PreparedSubscription {
   /** The provider's ID of what was created (the hosted checkout), kept to cancel it if the link fails. */
   checkoutId: string;
   /**
-   * Pix Automático: what Woovi held for the payer's document before
-   * (`alignWooviCustomer`). For the operator's audit log only, with no
-   * personal data; never returned to the tenant, in any form.
+   * Pix Automático: whether the payer's customer was created at Woovi now or
+   * was already there with the same data (`alignWooviCustomer`). For the
+   * operator's audit log only, with no personal data; never returned to the
+   * tenant, in any form.
    */
-  customerAlignment?: "absent" | "matches" | "updated";
+  customerAlignment?: "created" | "matches";
   /** What the client needs to finish at the provider. Never logged. */
   handoff: CheckoutHandoff;
   /**

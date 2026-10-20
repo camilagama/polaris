@@ -67,7 +67,8 @@ function fakeApi(
   const client: WooviClient = {
     cancelSubscription: vi.fn(),
     createSubscription: vi.fn(),
-    findCustomerByTaxId: vi.fn(),
+    createCustomer: vi.fn(),
+    getCustomer: vi.fn(),
     getInstallment: vi.fn((id: string) =>
       answer(
         `installment:${id}`,
@@ -81,9 +82,7 @@ function fakeApi(
       )
     ),
     listSubscriptionInstallments: vi.fn(),
-    listSubscriptions: vi.fn(),
     refundPix: vi.fn(),
-    updateCustomer: vi.fn(),
   };
   return { calls, client };
 }

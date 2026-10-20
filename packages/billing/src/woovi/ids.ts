@@ -63,18 +63,16 @@ export function wooviLogId(kind: WooviGlobalIdKind, value: string): string {
     : `${TYPE_NAMES[kind]}:?`;
 }
 
-/** A Woovi customer's `correlationID`: the key of `PATCH /api/v1/customer/{id}`. */
-const customerCorrelationIdPattern = /^[A-Za-z\d_.:-]{1,100}$/;
+/**
+ * The `correlationID` of a payer's customer, as Polaris creates it:
+ * `polaris-payer-` and 32 hex digits of an HMAC of the CPF or CNPJ (ADR 0101,
+ * emenda do PR 6). It goes into the URL of `GET /api/v1/customer/{id}`, so no
+ * other shape is accepted: never a document, never a path step.
+ */
+const payerCorrelationIdPattern = /^polaris-payer-[\da-f]{32}$/;
 
-const dotsOnly = /^\.+$/;
-
-export function isWooviCustomerCorrelationId(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    customerCorrelationIdPattern.test(value) &&
-    // `.` and `..` survive `encodeURIComponent` and would be read as a path step
-    !dotsOnly.test(value)
-  );
+export function isWooviPayerCorrelationId(value: unknown): value is string {
+  return typeof value === "string" && payerCorrelationIdPattern.test(value);
 }
 
 const digitsOnly = /^\d+$/;

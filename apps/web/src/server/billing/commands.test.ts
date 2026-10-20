@@ -7,10 +7,7 @@ import {
   ProviderResponseMalformedError,
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
-import {
-  WooviCustomerHeldError,
-  WooviCustomerMismatchError,
-} from "@polaris/billing/woovi/customer";
+import { WooviCustomerMismatchError } from "@polaris/billing/woovi/customer";
 import type {
   BillingStore,
   UnclaimedTrialEvent,
@@ -34,6 +31,7 @@ import {
   checkoutPriceOf,
   firstChargeDateOf,
   PIX_CHECKOUT_MINIMUM_MS,
+  payerCustomerKey,
   payerLockKey,
   reconcileOrganization,
   refundCurrentPeriod,
@@ -45,6 +43,7 @@ import {
 
 const CANCEL_RENEWAL_EVENT_ID = /^command:cancel_renewal:req-42:[0-9a-f]{32}$/;
 const EIGHT_HEX = /^[\da-f]{8}$/;
+const PAYER_CUSTOMER_KEY = /^polaris-payer-[\da-f]{32}$/;
 
 const now = new Date("2026-10-14T12:00:00.000Z");
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -846,8 +845,10 @@ describe("startPixCheckout", () => {
       amount: "249.00",
       cycleMonths: 12,
       firstChargeOn: "2026-10-21",
-      organizationId,
-      payer: PAYER,
+      payer: {
+        ...PAYER,
+        customerKey: await payerCustomerKey(SECRET, PAYER.taxId),
+      },
       trial: true,
     });
     expect(store.attachProvider).toHaveBeenCalledWith(
@@ -990,7 +991,7 @@ describe("startPixCheckout", () => {
           async (request: PrepareSubscriptionInput) => {
             const turn = prepares;
             prepares += 1;
-            order.push(`prepare:${request.organizationId}`);
+            order.push(`prepare:${request.payer?.name}`);
             await gates[turn]?.promise;
             return pixPrepared;
           }
@@ -1000,7 +1001,7 @@ describe("startPixCheckout", () => {
       const tails = new Map<string, Promise<unknown>>();
       const store = fakeStore({
         attachProvider: vi.fn((org: string) => {
-          order.push(`attach:${org}`);
+          order.push(`attach:${org === "org-1" ? "payer-1" : "payer-2"}`);
           return Promise.resolve(null);
         }),
         withPayerLock: vi.fn(
@@ -1026,17 +1027,19 @@ describe("startPixCheckout", () => {
       const first = startPix(dependencies, {
         ...pixInput,
         organizationId: "org-1",
+        payer: { ...PAYER, name: "payer-1" },
       });
       const second = startPix(dependencies, {
         ...pixInput,
         organizationId: "org-2",
+        payer: { ...PAYER, name: "payer-2" },
       });
       await settle();
       // only one of them is inside; the other waits at the lock with nothing created
       expect(order).toHaveLength(1);
       const [firstPrepare] = order;
-      const winner = firstPrepare === "prepare:org-1" ? "org-1" : "org-2";
-      const loser = winner === "org-1" ? "org-2" : "org-1";
+      const winner = firstPrepare === "prepare:payer-1" ? "payer-1" : "payer-2";
+      const loser = winner === "payer-1" ? "payer-2" : "payer-1";
 
       firstGate.release();
       await settle();
@@ -1127,6 +1130,76 @@ describe("startPixCheckout", () => {
       );
     });
 
+    describe("payerCustomerKey", () => {
+      it("is polaris-payer- and 32 hex digits, the same for the same secret and document", async () => {
+        const key = await payerCustomerKey(SECRET, PAYER.taxId);
+        expect(key).toMatch(PAYER_CUSTOMER_KEY);
+        expect(key).toBe(await payerCustomerKey(SECRET, PAYER.taxId));
+      });
+
+      it("does not carry the document", async () => {
+        for (const taxId of [PAYER.taxId, "11222333000181"]) {
+          // biome-ignore lint/performance/noAwaitInLoops: Two cases, in order.
+          const key = await payerCustomerKey(SECRET, taxId);
+          expect(key).not.toContain(taxId);
+          expect(key).toMatch(PAYER_CUSTOMER_KEY);
+        }
+      });
+
+      it("changes with the document and with the secret", async () => {
+        const key = await payerCustomerKey(SECRET, PAYER.taxId);
+        expect(await payerCustomerKey(SECRET, OTHER_TAX_ID)).not.toBe(key);
+        expect(await payerCustomerKey("b".repeat(32), PAYER.taxId)).not.toBe(
+          key
+        );
+      });
+
+      it("has its own label: it is not the 8 hex digits of the lock key", async () => {
+        const lockKey = await payerLockKey(SECRET, PAYER.taxId);
+        const key = await payerCustomerKey(SECRET, PAYER.taxId);
+        expect(lockKey).toMatch(EIGHT_HEX);
+        expect(key).not.toBe(lockKey);
+        expect(key.startsWith(`polaris-payer-${lockKey}`)).toBe(false);
+        expect(key).not.toContain(lockKey);
+      });
+
+      it("refuses a secret shorter than 32 characters", async () => {
+        await expect(
+          payerCustomerKey("a".repeat(31), PAYER.taxId)
+        ).rejects.toBeInstanceOf(TypeError);
+        await expect(
+          payerCustomerKey("a".repeat(32), PAYER.taxId)
+        ).resolves.toMatch(PAYER_CUSTOMER_KEY);
+      });
+
+      it("startPixCheckout gives the port that key as payer.customerKey, and no organization", async () => {
+        const port = wooviPort();
+
+        await startPix(
+          {
+            now: () => now,
+            port,
+            store: recordingStore([]),
+            ...timing(0, 3000),
+          },
+          pixInput
+        );
+
+        expect(port.prepareSubscription).toHaveBeenCalledTimes(1);
+        const [request] =
+          vi.mocked(port.prepareSubscription).mock.calls[0] ?? [];
+        expect(request?.payer?.customerKey).toBe(
+          await payerCustomerKey(SECRET, PAYER.taxId)
+        );
+        expect(request?.payer).toMatchObject({
+          email: PAYER.email,
+          name: PAYER.name,
+          taxId: PAYER.taxId,
+        });
+        expect(request).not.toHaveProperty("organizationId");
+      });
+    });
+
     it("asks again, inside the lock and before creating anything, whether the old checkout made a subscription", async () => {
       const oldLink = {
         provider: "woovi",
@@ -1183,9 +1256,9 @@ describe("startPixCheckout", () => {
 
   describe("the answer does not tell what Woovi held", () => {
     it.each([
-      ["absent", undefined],
+      ["unreported", undefined],
+      ["created", "created"],
       ["matches", "matches"],
-      ["updated", "updated"],
     ] as const)(
       "customer %s: the same handoff only, and never sooner than 3000 ms",
       async (_name, alignment) => {
@@ -1285,15 +1358,11 @@ describe("startPixCheckout", () => {
   });
 
   describe("a refusal about the payer's data", () => {
-    it.each([
-      ["held by another organization", () => new WooviCustomerHeldError()],
-      [
-        "a customer that would not take the update",
-        () => new WooviCustomerMismatchError(),
-      ],
-    ])("%s: payer_not_accepted, nothing linked", async (_name, make) => {
+    it("WooviCustomerMismatchError is payer_not_accepted, nothing linked", async () => {
       const port = wooviPort({
-        prepareSubscription: vi.fn(() => Promise.reject(make())),
+        prepareSubscription: vi.fn(() =>
+          Promise.reject(new WooviCustomerMismatchError())
+        ),
       });
       const store = recordingStore([]);
 
@@ -1310,33 +1379,28 @@ describe("startPixCheckout", () => {
       expect(store.attachProvider).not.toHaveBeenCalled();
     });
 
-    it("is the very same refusal for both causes", async () => {
-      const messages: string[] = [];
-      for (const make of [
-        () => new WooviCustomerHeldError(),
-        () => new WooviCustomerMismatchError(),
-      ]) {
-        const port = wooviPort({
-          prepareSubscription: vi.fn(() => Promise.reject(make())),
-        });
-        // biome-ignore lint/performance/noAwaitInLoops: Two cases, in order.
-        const error = await startPix(
-          {
-            now: () => now,
-            port,
-            store: recordingStore([]),
-            ...timing(0, 3000),
-          },
-          pixInput
-        ).then(
-          () => {
-            throw new Error("expected a refusal");
-          },
-          (caught: unknown) => caught as BillingCommandError
-        );
-        messages.push(`${error.name}:${error.code}:${error.message}`);
+    it("the refusal says nothing of the customer: no document, e-mail or name in it", async () => {
+      const port = wooviPort({
+        prepareSubscription: vi.fn(() =>
+          Promise.reject(new WooviCustomerMismatchError())
+        ),
+      });
+
+      const refusal = (await startPix(
+        {
+          now: () => now,
+          port,
+          store: recordingStore([]),
+          ...timing(0, 3000),
+        },
+        pixInput
+      ).catch((error: unknown) => error)) as BillingCommandError;
+
+      expect(refusal).toBeInstanceOf(BillingCommandError);
+      const shown = `${refusal.name} ${refusal.code} ${refusal.message}`;
+      for (const value of [PAYER.taxId, PAYER.email, PAYER.name]) {
+        expect(shown).not.toContain(value);
       }
-      expect(messages[0]).toBe(messages[1]);
     });
   });
 
@@ -1369,12 +1433,12 @@ describe("startPixCheckout", () => {
       }
     }
 
-    it("logs billing_payer_customer_updated, with no personal data, only when the customer was updated", async () => {
+    it("logs billing_payer_customer_created, with no personal data, only when the customer was created", async () => {
       const port = wooviPort({
         prepareSubscription: vi.fn(() =>
           Promise.resolve({
             ...pixPrepared,
-            customerAlignment: "updated" as const,
+            customerAlignment: "created" as const,
           })
         ),
       });
@@ -1389,18 +1453,18 @@ describe("startPixCheckout", () => {
         pixInput
       );
 
-      const updated = loggerSpies.flatMap((spy) =>
+      const created = loggerSpies.flatMap((spy) =>
         spy.mock.calls.filter(
-          ([event]: unknown[]) => event === "billing_payer_customer_updated"
+          ([event]: unknown[]) => event === "billing_payer_customer_created"
         )
       );
-      expect(updated).toHaveLength(1);
-      expect(JSON.stringify(updated)).not.toContain("alignment");
+      expect(created).toHaveLength(1);
+      expect(JSON.stringify(created)).not.toContain("alignment");
       assertNoPersonalData(everythingLogged());
     });
 
-    it.each(["absent", "matches"] as const)(
-      "does not log the update when the customer was %s",
+    it.each(["unreported", "matches"] as const)(
+      "does not log the creation when the customer was %s",
       async (alignment) => {
         const port = wooviPort({
           prepareSubscription: vi.fn(() =>
@@ -1424,7 +1488,7 @@ describe("startPixCheckout", () => {
         );
 
         expect(everythingLogged()).not.toContain(
-          "billing_payer_customer_updated"
+          "billing_payer_customer_created"
         );
         assertNoPersonalData(everythingLogged());
       }
@@ -1432,7 +1496,7 @@ describe("startPixCheckout", () => {
 
     it("logs no personal data on a refusal, nor on a failure that quotes the payer", async () => {
       for (const failure of [
-        new WooviCustomerHeldError(),
+        new WooviCustomerMismatchError(),
         new Error(
           `failed for ${PAYER.taxId} ${PAYER.email} ${PAYER.name} ${EMV}`
         ),

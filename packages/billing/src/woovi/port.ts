@@ -6,11 +6,12 @@ import {
   type BillingProviderPort,
   type CheckoutHandoff,
   type PrepareSubscriptionInput,
+  ProviderNotConfiguredError,
   ProviderNotFoundError,
   ProviderResponseMalformedError,
 } from "../provider-port";
 import { createWooviClient, type WooviClient } from "./client";
-import { alignWooviCustomer, liveSubscriptionsOfTaxId } from "./customer";
+import { alignWooviCustomer } from "./customer";
 import { isWooviGlobalId } from "./ids";
 import {
   pickWooviEndToEndId,
@@ -54,21 +55,14 @@ export interface WooviPortConfig {
   appId: string;
   baseUrl: string;
   fetch: FetchLike;
-  /**
-   * Whether one of these Woovi subscriptions (live ones of the payer's CPF or
-   * CNPJ, possibly none) is linked to an organization other than
-   * `organizationId` in Polaris. It matters only when the payer's name or
-   * e-mail differ from the
-   * customer Woovi holds, but asked on every checkout, so the calls do not
-   * tell the paths apart; true refuses and a failure throws, both with the
-   * customer kept as it is. Without it, no customer is ever updated.
-   */
-  heldByAnotherOrganization?: (
-    organizationId: string,
-    subscriptionIds: readonly string[]
-  ) => Promise<boolean>;
   /** A fresh UUID v4 per subscription (`crypto.randomUUID`). */
   randomUuid: () => string;
+  /**
+   * Whether `refundCurrentPeriod` may call Woovi. Off until the refund of an
+   * installment is proven in the sandbox (S3.2, Gate 7): off, it throws
+   * `ProviderNotConfiguredError` and calls nothing.
+   */
+  refundEnabled?: boolean;
   timeoutMs: number;
 }
 
@@ -172,17 +166,23 @@ function pickCreated(raw: unknown): {
   };
 }
 
-/** The payer with what Pix Automático needs; the CPF or CNPJ is checked by the customer lookup. */
+/** The payer with what Pix Automático needs; the CPF or CNPJ and the key are checked by the customer lookup. */
 function payerOf(input: PrepareSubscriptionInput): {
+  correlationId: string;
   email: string;
   name: string;
   taxId: string;
 } {
   const { payer } = input;
-  if (!payer?.taxId) {
+  if (!(payer?.taxId && payer.customerKey)) {
     throw new TypeError("payer_required_for_pix");
   }
-  return { email: payer.email, name: payer.name, taxId: payer.taxId };
+  return {
+    correlationId: payer.customerKey,
+    email: payer.email,
+    name: payer.name,
+    taxId: payer.taxId,
+  };
 }
 
 export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
@@ -264,20 +264,11 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
     },
     async prepareSubscription(input) {
       const payer = payerOf(input);
-      const { organizationId } = input;
-      if (!organizationId) {
-        throw new TypeError("organization_required_for_pix");
-      }
       const reference = newPolarisReference(config.randomUuid());
       const body = subscriptionBody(input, payer, reference);
-      // every path reads the same lists and asks the same question, whatever Woovi holds for
-      // the document: only the update itself differs (ADR 0101, emenda do PR 6)
-      const live = await liveSubscriptionsOfTaxId(client, payer.taxId);
-      const held = config.heldByAnotherOrganization;
-      const heldElsewhere = held ? await held(organizationId, live) : true;
-      const customerAlignment = await alignWooviCustomer(client, payer, {
-        mayUpdate: () => Promise.resolve(!heldElsewhere),
-      });
+      // one read of the payer's customer by its key (and its creation when there is none);
+      // never a list of the account (ADR 0101, emenda do PR 6)
+      const customerAlignment = await alignWooviCustomer(client, payer);
       const created = pickCreated(await client.createSubscription(body));
       return {
         checkoutId: created.id,
@@ -298,6 +289,10 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       return reconcileWooviSubscription({ installments, now, subscription });
     },
     async refundCurrentPeriod(providerRef, now, providerSubscriptionId) {
+      if (config.refundEnabled !== true) {
+        // the refund of an installment is not proven in the sandbox yet (S3.2): nothing is called
+        throw new ProviderNotConfiguredError();
+      }
       const subscription = await subscriptionOf(
         providerRef,
         providerSubscriptionId

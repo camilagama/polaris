@@ -1650,7 +1650,7 @@ async function main() {
       );
     }
 
-    // ------------- 13. Pix checkout (cobrança PR 6): the payer's lock, the subscription held elsewhere, the hourly list
+    // ------------- 13. Pix checkout (cobrança PR 6): the payer's lock, the hourly list
     {
       const pix = randomUUID().slice(0, 8);
       const pixHolder = await newTenant("pix holder");
@@ -1662,53 +1662,9 @@ async function main() {
         "woovi",
         linkedRef
       );
-      assert.equal(
-        await billing.providerSubscriptionHeldElsewhere(
-          asker.organizationId,
-          "woovi",
-          [`pix_other_${pix}`, linkedRef]
-        ),
-        true,
-        "a reference linked to another organization is held elsewhere"
-      );
-      assert.equal(
-        await billing.providerSubscriptionHeldElsewhere(
-          pixHolder.organizationId,
-          "woovi",
-          [linkedRef]
-        ),
-        false,
-        "the organization's own link is not elsewhere"
-      );
-      assert.equal(
-        await billing.providerSubscriptionHeldElsewhere(
-          asker.organizationId,
-          "asaas",
-          [linkedRef]
-        ),
-        false,
-        "only the same provider counts"
-      );
-      assert.equal(
-        await billing.providerSubscriptionHeldElsewhere(
-          asker.organizationId,
-          "woovi",
-          []
-        ),
-        false
-      );
       await admin.pool.query(
         "UPDATE public.organization_billing SET provider_subscription_id = $2 WHERE organization_id = $1",
         [pixHolder.organizationId, storedSubscription]
-      );
-      assert.equal(
-        await billing.providerSubscriptionHeldElsewhere(
-          asker.organizationId,
-          "woovi",
-          [storedSubscription]
-        ),
-        true,
-        "the stored subscription ID counts too"
       );
 
       // the hourly list: a link that may still change access, or one written in the last 8 days
@@ -1822,7 +1778,7 @@ async function main() {
         )
       );
       tests.push(
-        "Pix checkout (cobrança PR 6): a Woovi subscription linked to another organization (by reference or stored subscription ID) is held elsewhere, never the organization's own, another provider's or an empty list; the hourly reconciliation lists a link that may still change access whatever its age and one on Free only for 8 days, of that provider and within its limit; the payer's lock serializes the same key, leaves another key alone, is released by an operation that throws and refuses a key that is not 8 hex digits"
+        "Pix checkout (cobrança PR 6): the hourly reconciliation lists a link that may still change access whatever its age and one on Free only for 8 days, of that provider and within its limit; the payer's lock serializes the same key, leaves another key alone, is released by an operation that throws and refuses a key that is not 8 hex digits"
       );
     }
 

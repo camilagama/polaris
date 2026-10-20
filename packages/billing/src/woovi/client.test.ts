@@ -21,7 +21,7 @@ const PRODUCTION_URL = "https://api.woovi.com";
 const PERSONAL_BODY =
   '{"error":"Cliente maria@example.com CPF 52998224725 recusado"}';
 const CPF = "52998224725";
-const OTHER_CPF = "11144477735";
+const PAYER_KEY = "polaris-payer-0123456789abcdef0123456789abcdef";
 const UNENCODED = /[=+/]/;
 
 interface Call {
@@ -349,179 +349,191 @@ describe("createWooviClient errors", () => {
   );
 });
 
-describe("findCustomerByTaxId", () => {
-  const listed = (...taxIds: string[]) =>
-    ok(
-      JSON.stringify({
-        customers: taxIds.map((taxID, index) => ({
-          correlationID: `c-${index}`,
-          name: "N",
-          taxID: { taxID, type: "BR:CPF" },
-        })),
-        pageInfo: { hasNextPage: false, limit: 100, skip: 0 },
-      })
-    );
-
-  it("reads the list filtered by the tax ID and keeps the exact match", async () => {
-    const { calls, fetch } = recorder(() => listed("11144477735", CPF));
-    expect(await clientWith(fetch).findCustomerByTaxId(CPF)).toEqual({
-      correlationID: "c-1",
-      name: "N",
-      taxID: { taxID: CPF, type: "BR:CPF" },
-    });
-    expect(calls[0]?.url).toBe(
-      `${SANDBOX_URL}/api/v1/customer?skip=0&limit=100`
-    );
-    expect(calls[0]?.init.method).toBe("GET");
-    // the tax ID is never in a URL (traces may keep it)
-    for (const call of calls) {
-      expect(call.url).not.toContain(CPF);
-    }
+describe("getCustomer", () => {
+  const customer = () => ({
+    correlationID: PAYER_KEY,
+    email: "maria@example.com",
+    name: "Maria",
+    taxID: { taxID: CPF, type: "BR:CPF" },
   });
 
-  it("reads the whole list page by page and finds the customer on a later one", async () => {
-    const customer = (taxID: string) => ({
-      correlationID: "c-late",
-      name: "N",
-      taxID: { taxID, type: "BR:CPF" },
-    });
-    const { calls, fetch } = recorder((_call, index) =>
-      ok(
-        JSON.stringify({
-          customers:
-            index === 0
-              ? Array.from({ length: 100 }, () => customer(OTHER_CPF))
-              : [customer(CPF)],
-        })
-      )
-    );
-
-    expect(await clientWith(fetch).findCustomerByTaxId(CPF)).toMatchObject({
-      correlationID: "c-late",
-    });
-    expect(calls.map((call) => call.url.slice(SANDBOX_URL.length))).toEqual([
-      "/api/v1/customer?skip=0&limit=100",
-      "/api/v1/customer?skip=100&limit=100",
-    ]);
-    for (const call of calls) {
-      expect(call.url).not.toContain(CPF);
-    }
-  });
-
-  it("more than ten full pages are not an answer to trust", async () => {
+  it("reads one customer by its key and unwraps { customer }", async () => {
     const { calls, fetch } = recorder(() =>
-      ok(
-        JSON.stringify({
-          customers: Array.from({ length: 100 }, () => ({
-            correlationID: "c-x",
-            name: "N",
-            taxID: { taxID: OTHER_CPF, type: "BR:CPF" },
-          })),
-        })
-      )
+      ok(JSON.stringify({ customer: customer() }))
     );
-    const error = await failureOf(() =>
-      clientWith(fetch).findCustomerByTaxId(CPF)
-    );
-    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
-    expect(calls).toHaveLength(10);
-    for (const call of calls) {
-      expect(call.url).not.toContain(CPF);
+    expect(await clientWith(fetch).getCustomer(PAYER_KEY)).toEqual(customer());
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.url).toBe(`${SANDBOX_URL}/api/v1/customer/${PAYER_KEY}`);
+    // the tax ID is never in a URL (traces may keep it)
+    expect(calls[0]?.url).not.toContain(CPF);
+  });
+
+  it("an answer without { customer } is malformed", async () => {
+    for (const text of ["{}", "[]", "null", '{"customer":[]}']) {
+      const { fetch } = recorder(() => ok(text));
+      // biome-ignore lint/performance/noAwaitInLoops: One call per answer.
+      const error = await failureOf(() =>
+        clientWith(fetch).getCustomer(PAYER_KEY)
+      );
+      expect(error).toBeInstanceOf(ProviderResponseMalformedError);
     }
   });
 
-  it("an empty list, or one without this tax ID, means there is no such customer", async () => {
-    expect(
-      await clientWith(recorder(() => listed()).fetch).findCustomerByTaxId(CPF)
-    ).toBeNull();
-    expect(
-      await clientWith(
-        recorder(() => listed("11144477735")).fetch
-      ).findCustomerByTaxId(CPF)
-    ).toBeNull();
+  it("a 400 `Cliente não encontrado` is an absent customer", async () => {
+    const { calls, fetch } = recorder(() => ({
+      status: 400,
+      text: '{"error":"Cliente não encontrado"}',
+    }));
+    expect(await clientWith(fetch).getCustomer(PAYER_KEY)).toBeNull();
+    expect(calls).toHaveLength(1);
   });
 
-  it("two customers with the same tax ID is not an answer to trust", async () => {
-    const { fetch } = recorder(() => listed(CPF, CPF));
-    const error = await failureOf(() =>
-      clientWith(fetch).findCustomerByTaxId(CPF)
+  it("a 404 is a wrong route, never an absent customer", async () => {
+    const { fetch } = recorder(() => ({ status: 404, text: PERSONAL_BODY }));
+    await expect(clientWith(fetch).getCustomer(PAYER_KEY)).rejects.toThrow(
+      ProviderNotFoundError
     );
-    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
   });
 
-  it("a 400 is a rejection, never an absent customer", async () => {
-    const { fetch } = recorder(() => ({ status: 400, text: PERSONAL_BODY }));
-    const error = await failureOf(() =>
-      clientWith(fetch).findCustomerByTaxId(CPF)
-    );
-    expect(error).toBeInstanceOf(ProviderRejectedError);
-    expect(JSON.stringify(error)).not.toContain(CPF);
-  });
+  it.each([
+    ["another error text", '{"error":"Outro erro"}'],
+    ["personal data", PERSONAL_BODY],
+    ["a body that is not JSON", "<html>"],
+    ["an empty body", ""],
+    ["a body that is null", "null"],
+    ["an error that is not text", '{"error":["Cliente não encontrado"]}'],
+  ])(
+    "a 400 with %s is a rejection, never an absent customer",
+    async (_name, text) => {
+      const { fetch } = recorder(() => ({ status: 400, text }));
+      const error = await failureOf(() =>
+        clientWith(fetch).getCustomer(PAYER_KEY)
+      );
+      expect(error).toBeInstanceOf(ProviderRejectedError);
+      expect((error as ProviderRejectedError).status).toBe(400);
+      expect(JSON.stringify(error)).not.toContain(CPF);
+    }
+  );
 
-  it("a 401 is a rejection, not an absent customer", async () => {
-    const { fetch } = recorder(() => ({ status: 401, text: PERSONAL_BODY }));
+  it("the absence is only a 400 or a 404: a 401 is a rejection", async () => {
+    const { fetch } = recorder(() => ({
+      status: 401,
+      text: '{"error":"Cliente não encontrado"}',
+    }));
     const error = await failureOf(() =>
-      clientWith(fetch).findCustomerByTaxId(CPF)
+      clientWith(fetch).getCustomer(PAYER_KEY)
     );
     expect(error).toBeInstanceOf(ProviderRejectedError);
     expect((error as ProviderRejectedError).status).toBe(401);
   });
 
-  it.each(["529.982.247-25", "../x", "", "123"])(
-    "refuses the tax ID %j before the network",
-    async (taxId) => {
-      const { calls, fetch } = recorder(() => ok());
+  it.each([500, 503, 429])(
+    "a %i is an outage, not an absent customer",
+    async (status) => {
+      const { fetch } = recorder(() => ({ status, text: PERSONAL_BODY }));
       const error = await failureOf(() =>
-        settled(() => clientWith(fetch).findCustomerByTaxId(taxId))
+        clientWith(fetch).getCustomer(PAYER_KEY)
       );
-      expect(error).toBeInstanceOf(TypeError);
-      expect(calls).toHaveLength(0);
+      expect(error).toBeInstanceOf(ProviderUnavailableError);
     }
   );
 
-  it("a 400 elsewhere is still a rejection", async () => {
-    const { fetch } = recorder(() => ({ status: 400, text: PERSONAL_BODY }));
+  it.each([
+    ["a CPF", CPF],
+    ["a CNPJ", "11222333000181"],
+    ["a path step", ".."],
+    ["a path", "../x"],
+    ["a plain key", "cust-1"],
+    ["a key with a path", `${PAYER_KEY}/x`],
+    ["a key with a query", `${PAYER_KEY}?x=1`],
+    ["an empty key", ""],
+  ])("refuses %s as the key before the network", async (_name, key) => {
+    const { calls, fetch } = recorder(() => ok());
     const error = await failureOf(() =>
-      clientWith(fetch).getSubscription(SUBSCRIPTION_ID)
+      settled(() => clientWith(fetch).getCustomer(key))
     );
-    expect(error).toBeInstanceOf(ProviderRejectedError);
-    expect((error as ProviderRejectedError).status).toBe(400);
+    expect(error).toBeInstanceOf(TypeError);
+    expect((error as TypeError).message).toBe("invalid_customer_key");
+    expect(calls).toHaveLength(0);
   });
 });
 
-describe("updateCustomer", () => {
-  it("sends a PATCH with only the name and the e-mail", async () => {
-    const { calls, fetch } = recorder(() =>
-      ok(JSON.stringify({ customer: { correlationID: "cust-1", name: "Ana" } }))
-    );
-    await clientWith(fetch).updateCustomer("cust-1", {
-      email: "ana@example.com",
-      name: "Ana",
-    });
-    const [call] = calls;
-    expect(call?.init.method).toBe("PATCH");
-    expect(call?.url).toBe(`${SANDBOX_URL}/api/v1/customer/cust-1`);
-    expect(call?.init.headers["content-type"]).toBe("application/json");
-    expect(JSON.parse(call?.init.body ?? "")).toEqual({
-      email: "ana@example.com",
-      name: "Ana",
-    });
+describe("createCustomer", () => {
+  const input = {
+    correlationId: PAYER_KEY,
+    email: "maria@example.com",
+    name: "Maria",
+    taxId: CPF,
+  };
+  const created = () => ({
+    correlationID: PAYER_KEY,
+    email: input.email,
+    name: input.name,
+    taxID: { taxID: CPF, type: "BR:CPF" },
   });
 
-  it("refuses a correlation ID that could change the path, before the network", async () => {
+  it("posts the key, e-mail, name and tax ID, and unwraps { customer }", async () => {
+    const { calls, fetch } = recorder(() =>
+      ok(JSON.stringify({ customer: created() }))
+    );
+    expect(await clientWith(fetch).createCustomer(input)).toEqual(created());
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call?.init.method).toBe("POST");
+    expect(call?.url).toBe(`${SANDBOX_URL}/api/v1/customer`);
+    expect(call?.init.headers["content-type"]).toBe("application/json");
+    expect(JSON.parse(call?.init.body ?? "")).toEqual({
+      correlationID: PAYER_KEY,
+      email: input.email,
+      name: input.name,
+      taxID: CPF,
+    });
+    // the tax ID goes in the body, never in the URL
+    expect(call?.url).not.toContain(CPF);
+  });
+
+  it("an answer without { customer } is malformed", async () => {
+    const { fetch } = recorder(() => ok("{}"));
+    const error = await failureOf(() =>
+      clientWith(fetch).createCustomer(input)
+    );
+    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+  });
+
+  it("a 400 is a rejection carrying nothing of the answer", async () => {
+    const { fetch } = recorder(() => ({ status: 400, text: PERSONAL_BODY }));
+    const error = await failureOf(() =>
+      clientWith(fetch).createCustomer(input)
+    );
+    expect(error).toBeInstanceOf(ProviderRejectedError);
+    expect((error as ProviderRejectedError).status).toBe(400);
+    const shown = `${error.message} ${JSON.stringify(error)} ${String(error.cause)}`;
+    expect(shown).not.toContain(CPF);
+    expect(shown).not.toContain("maria@example.com");
+  });
+
+  it("a 5xx is an outage", async () => {
+    const { fetch } = recorder(() => ({ status: 503, text: PERSONAL_BODY }));
+    const error = await failureOf(() =>
+      clientWith(fetch).createCustomer(input)
+    );
+    expect(error).toBeInstanceOf(ProviderUnavailableError);
+  });
+
+  it.each([
+    ["a CPF as the key", { correlationId: CPF }],
+    ["a path step as the key", { correlationId: ".." }],
+    ["a plain key", { correlationId: "cust-1" }],
+    ["a tax ID with punctuation", { taxId: "529.982.247-25" }],
+    ["a tax ID of the wrong length", { taxId: "5299822472" }],
+    ["an empty tax ID", { taxId: "" }],
+  ])("refuses %s before the network", async (_name, override) => {
     const { calls, fetch } = recorder(() => ok());
-    for (const id of ["../x", "a/b", "", "a?b"]) {
-      // biome-ignore lint/performance/noAwaitInLoops: One call per ID.
-      const error = await failureOf(() =>
-        settled(() =>
-          clientWith(fetch).updateCustomer(id, {
-            email: "a@example.com",
-            name: "A",
-          })
-        )
-      );
-      expect(error).toBeInstanceOf(ProviderResponseMalformedError);
-    }
+    const error = await failureOf(() =>
+      settled(() => clientWith(fetch).createCustomer({ ...input, ...override }))
+    );
+    expect(error).toBeInstanceOf(TypeError);
     expect(calls).toHaveLength(0);
   });
 });
@@ -563,51 +575,6 @@ describe("listSubscriptionInstallments", () => {
     const error = await failureOf(() =>
       clientWith(fetch).listSubscriptionInstallments(SUBSCRIPTION_ID)
     );
-    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
-  });
-});
-
-describe("listSubscriptions", () => {
-  const page = (count: number) =>
-    JSON.stringify({
-      pageInfo: { hasNextPage: true, skip: 0 },
-      subscriptions: Array.from({ length: count }, (_, index) => ({
-        n: index,
-      })),
-    });
-
-  it("a short page is the last one", async () => {
-    const { calls, fetch } = recorder(() => ok(page(3)));
-    expect(await clientWith(fetch).listSubscriptions()).toHaveLength(3);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.init.method).toBe("GET");
-    expect(calls[0]?.url).toBe(
-      `${SANDBOX_URL}/api/v1/subscriptions?skip=0&limit=100`
-    );
-  });
-
-  it("reads 100 by 100 until a short page", async () => {
-    const { calls, fetch } = recorder((_call, index) =>
-      ok(page(index < 2 ? 100 : 5))
-    );
-    expect(await clientWith(fetch).listSubscriptions()).toHaveLength(205);
-    expect(calls.map((call) => call.url.slice(SANDBOX_URL.length))).toEqual([
-      "/api/v1/subscriptions?skip=0&limit=100",
-      "/api/v1/subscriptions?skip=100&limit=100",
-      "/api/v1/subscriptions?skip=200&limit=100",
-    ]);
-  });
-
-  it("more than ten full pages are not an answer to trust", async () => {
-    const { calls, fetch } = recorder(() => ok(page(100)));
-    const error = await failureOf(() => clientWith(fetch).listSubscriptions());
-    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
-    expect(calls).toHaveLength(10);
-  });
-
-  it("refuses a page without the list", async () => {
-    const { fetch } = recorder(() => ok('{"pageInfo":{}}'));
-    const error = await failureOf(() => clientWith(fetch).listSubscriptions());
     expect(error).toBeInstanceOf(ProviderResponseMalformedError);
   });
 });

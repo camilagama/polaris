@@ -124,6 +124,12 @@ export interface WorkerBindings {
   /** `https://api.woovi-sandbox.com` in staging, `https://api.woovi.com` in production. */
   WOOVI_BASE_URL?: string;
   /**
+   * `"true"` turns on the refund command for Woovi; anything else keeps it off
+   * (the default) until the refund of an installment is proven in the sandbox
+   * (S3.2, Gate 7).
+   */
+  WOOVI_REFUND_ENABLED?: string;
+  /**
    * Woovi's public keys that sign webhooks (`x-webhook-signature`), pinned: one
    * SPKI key as base64 of its DER, or two separated by a comma during a
    * rotation (public, not a secret).

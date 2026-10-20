@@ -264,18 +264,6 @@ export interface BillingStore {
     limit: number,
     now?: Date
   ) => Promise<string[]>;
-  /**
-   * Whether one of these provider subscriptions belongs to an organization
-   * other than `organizationId`: linked on its record, by the reference or the
-   * subscription ID (both indexed). Only IDs are compared. A subscription no
-   * record links any more (its checkout was replaced) is not seen: the swap
-   * cancels a checkout not approved and refuses one that made a subscription.
-   */
-  providerSubscriptionHeldElsewhere: (
-    organizationId: string,
-    provider: string,
-    subscriptionIds: readonly string[]
-  ) => Promise<boolean>;
   /** Processes events that were received but not applied, and retries failed and unresolved ones. */
   retryPending: (now?: Date, limit?: number) => Promise<BillingRetryReport>;
   /** Ends a grant now (or, if it has not started, as soon as it could); ending one twice is one ending. */
@@ -1533,24 +1521,6 @@ export function createBillingStore(
           now
         );
       });
-    },
-    async providerSubscriptionHeldElsewhere(
-      organizationId,
-      provider,
-      subscriptionIds
-    ) {
-      if (subscriptionIds.length === 0) {
-        return false;
-      }
-      const found = await pool.query<{ held: boolean }>(
-        `SELECT EXISTS (
-             SELECT 1 FROM public.organization_billing
-              WHERE provider = $1 AND organization_id <> $2
-                AND (provider_ref = ANY($3::text[]) OR provider_subscription_id = ANY($3::text[]))
-           ) AS held`,
-        [provider, organizationId, [...subscriptionIds]]
-      );
-      return found.rows[0]?.held === true;
     },
     async readProviderLink(organizationId) {
       const result = await pool.query<{

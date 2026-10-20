@@ -8,21 +8,57 @@ import { createWooviPort } from "./port";
 /**
  * Against the real Woovi SANDBOX, only when asked for
  * (`WOOVI_SANDBOX_INTEGRATION=1` with `WOOVI_APP_ID` and
- * `WOOVI_BASE_URL=https://api.woovi-sandbox.com` in the environment). It aligns
- * the test customer (CPF de teste), creates one Pix Automático subscription
- * that starts in 7 days and cancels it, reads resources that do not exist, and
- * runs the port of the checkout (PR 6): journey 2 and journey 3, each given up
- * (`discardCheckout`) or cancelled (`cancelRenewal`) at once. Nothing is
- * printed: no AppID, no `emv`, no tax ID, no resource.
+ * `WOOVI_BASE_URL=https://api.woovi-sandbox.com` in the environment). Each run
+ * makes its own payer: a random `polaris-payer-<32 hex>` key and a random valid
+ * test CPF, so no run meets the customer of another. It reads a key Woovi does
+ * not know, creates the customer, reads it back by the key, creates one Pix
+ * Automático subscription that starts in 7 days and cancels it, reads resources
+ * that do not exist, and runs the port of the checkout (PR 6): journey 2 and
+ * journey 3, each given up (`discardCheckout`) or cancelled (`cancelRenewal`)
+ * at once. No refund is called. Nothing is printed: no AppID, no `emv`, no tax
+ * ID, no resource.
  */
 const enabled =
   process.env.WOOVI_SANDBOX_INTEGRATION === "1" &&
   Boolean(process.env.WOOVI_APP_ID) &&
   process.env.WOOVI_BASE_URL === "https://api.woovi-sandbox.com";
 
-/** The test CPF used by the spikes; never a real person's. */
-const TEST_CPF = "52998224725";
+/**
+ * A valid CPF (check digits computed) made at random for this run. It may be
+ * someone's: it only ever goes to the sandbox, and nothing of it is printed.
+ * Each run leaves a customer there (Woovi has no route to delete one).
+ */
+function randomTestCpf(): string {
+  for (;;) {
+    const digits = Array.from({ length: 9 }, () =>
+      Math.floor(Math.random() * 10)
+    );
+    // 111.111.111-11 and the like pass the check but Woovi refuses them
+    if (digits.every((digit) => digit === digits[0])) {
+      continue;
+    }
+    for (const length of [9, 10]) {
+      const sum = digits
+        .slice(0, length)
+        .reduce(
+          (total, digit, index) => total + digit * (length + 1 - index),
+          0
+        );
+      const rest = (sum * 10) % 11;
+      digits.push(rest === 10 ? 0 : rest);
+    }
+    return digits.join("");
+  }
+}
+
+/** A key of the shape Polaris makes (`polaris-payer-` and 32 hex), random for this run. */
+const randomPayerKey = () =>
+  `polaris-payer-${crypto.randomUUID().replaceAll("-", "")}`;
+
+const TEST_CPF = randomTestCpf();
+const PAYER_KEY = randomPayerKey();
 const PAYER = {
+  correlationId: PAYER_KEY,
   email: "pagadora-teste-polaris@example.com",
   name: "Pagadora Teste Polaris",
   taxId: TEST_CPF,
@@ -52,13 +88,25 @@ const sevenDaysLater = () => {
 };
 
 describe.skipIf(!enabled)("Woovi sandbox", () => {
-  it("aligns the customer by CPF, then creates and cancels a Pix Automático subscription", async () => {
+  it("looks the customer up by its key, creates it, then finds it again", async () => {
     const woovi = client();
-    expect(["absent", "matches", "updated"]).toContain(
+    // a key Woovi does not know is an absent customer, not an error
+    expect(await woovi.getCustomer(randomPayerKey())).toBeNull();
+    expect(await woovi.getCustomer(PAYER_KEY)).toBeNull();
+
+    expect(await alignWooviCustomer(woovi, PAYER)).toBe("created");
+    expect(await woovi.getCustomer(PAYER_KEY)).toMatchObject({
+      correlationID: PAYER_KEY,
+    });
+    // created: a second pass finds the same key, document, name and e-mail
+    expect(await alignWooviCustomer(woovi, PAYER)).toBe("matches");
+  }, 60_000);
+
+  it("creates and cancels a Pix Automático subscription for the customer", async () => {
+    const woovi = client();
+    expect(["created", "matches"]).toContain(
       await alignWooviCustomer(woovi, PAYER)
     );
-    // aligned: a second pass finds the same name and e-mail
-    expect(await alignWooviCustomer(woovi, PAYER)).toBe("matches");
 
     const created = pickWooviSubscription(
       await woovi.createSubscription(
@@ -115,27 +163,28 @@ describe.skipIf(!enabled)("Woovi sandbox", () => {
       appId: process.env.WOOVI_APP_ID ?? "",
       baseUrl: process.env.WOOVI_BASE_URL ?? "",
       fetch: (url: string, init: RequestInit) => fetch(url, init),
-      // the test customer is shared by every run: it is never another organization's
-      heldByAnotherOrganization: () => Promise.resolve(false),
       randomUuid: () => crypto.randomUUID(),
       timeoutMs: 8000,
     });
-    const organizationId = `sandbox-${crypto.randomUUID()}`;
+    // the port gets the payer's key from the server; this run's customer may already exist
+    const payer = {
+      customerKey: PAYER_KEY,
+      email: PAYER.email,
+      name: PAYER.name,
+      taxId: PAYER.taxId,
+    };
 
     const trial = await port.prepareSubscription({
       amount: "24.90",
       cycleMonths: 1,
       firstChargeOn: sevenDaysLater(),
-      organizationId,
-      payer: PAYER,
+      payer,
       trial: true,
     });
     try {
       expect(trial.providerRef).toBe(trial.checkoutId);
       expect(trial.handoff.kind).toBe("pix_authorization");
-      expect(["absent", "matches", "updated"]).toContain(
-        trial.customerAlignment
-      );
+      expect(["created", "matches"]).toContain(trial.customerAlignment);
       // not approved: nothing was subscribed yet
       expect(await port.hasSubscription(trial.providerRef)).toBe(false);
     } finally {
@@ -147,8 +196,7 @@ describe.skipIf(!enabled)("Woovi sandbox", () => {
       amount: "249.00",
       cycleMonths: 12,
       firstChargeOn: todayInSaoPaulo(),
-      organizationId,
-      payer: PAYER,
+      payer,
       trial: false,
     });
     try {

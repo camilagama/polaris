@@ -143,7 +143,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
         }
         const payerLockSecret = context.bindings.BETTER_AUTH_SECRET ?? "";
         if (input.method === "pix_automatic" && payerLockSecret.length < 32) {
-          // the payer's lock is keyed by the server's secret
+          // the payer's lock and customer key are keyed by the server's secret
           throw new ORPCError("SERVICE_UNAVAILABLE", {
             data: { reason: "billing_not_configured" },
           });
@@ -157,14 +157,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
             ),
         });
         try {
-          const port = portOf(context.bindings, provider, {
-            heldByAnotherOrganization: (organizationId, subscriptionIds) =>
-              store.providerSubscriptionHeldElsewhere(
-                organizationId,
-                provider,
-                subscriptionIds
-              ),
-          });
+          const port = portOf(context.bindings, provider);
           const checkout = {
             ...authorized,
             cycleMonths: input.cycleMonths,

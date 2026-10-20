@@ -7,10 +7,7 @@ import {
   type BillingProviderPort,
   ProviderNotConfiguredError,
 } from "@polaris/billing/provider-port";
-import {
-  createWooviPort,
-  type WooviPortConfig,
-} from "@polaris/billing/woovi/port";
+import { createWooviPort } from "@polaris/billing/woovi/port";
 import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import type { WorkerBindings } from "../environment";
 
@@ -19,13 +16,6 @@ const BILLING_COMMAND_TIMEOUT_MS = 8000;
 
 export interface BillingPortOptions {
   fetch?: FetchLike;
-  /**
-   * Pix Automático only: whether a live Woovi subscription of the payer's
-   * document belongs to another organization (the store's
-   * `providerSubscriptionHeldElsewhere`). Without it, the payer's customer
-   * at Woovi is never updated.
-   */
-  heldByAnotherOrganization?: WooviPortConfig["heldByAnotherOrganization"];
   randomUuid?: () => string;
 }
 
@@ -36,6 +26,7 @@ export type BillingPortBindings = Pick<
   | "BETTER_AUTH_BASE_URL"
   | "WOOVI_APP_ID"
   | "WOOVI_BASE_URL"
+  | "WOOVI_REFUND_ENABLED"
 >;
 
 function asaasPortOf(
@@ -80,10 +71,9 @@ function wooviPortOf(
       appId,
       baseUrl,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
-      ...(options.heldByAnotherOrganization
-        ? { heldByAnotherOrganization: options.heldByAnotherOrganization }
-        : {}),
       randomUuid: options.randomUuid ?? (() => crypto.randomUUID()),
+      // off until the refund of an installment is proven in the sandbox (S3.2, Gate 7)
+      refundEnabled: bindings.WOOVI_REFUND_ENABLED === "true",
       timeoutMs: BILLING_COMMAND_TIMEOUT_MS,
     });
   } catch {

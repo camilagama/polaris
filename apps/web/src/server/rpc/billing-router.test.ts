@@ -13,6 +13,7 @@ import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
 const EIGHT_HEX = /^[\da-f]{8}$/;
+const PAYER_CUSTOMER_KEY = /^polaris-payer-[\da-f]{32}$/;
 const requestedOrganizationId = "organization-the-client-claims";
 const serverOrganizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const sessionUserId = "verified-session-user";
@@ -77,7 +78,6 @@ function setup(
     attachProvider: vi.fn(() => Promise.resolve()),
     close: vi.fn(() => Promise.resolve()),
     processEvent: vi.fn(() => Promise.resolve({ status: "applied" })),
-    providerSubscriptionHeldElsewhere: vi.fn(() => Promise.resolve(false)),
     readProviderLink: vi.fn(() => Promise.resolve(null)),
     readRecord: vi.fn(() => Promise.resolve(null)),
     recordEvent: vi.fn(() => Promise.resolve({ duplicate: false, id: "ev-1" })),
@@ -571,21 +571,26 @@ describe("billing.startCheckout by Pix Automático", () => {
     });
 
     expect(fixture.capabilities).toEqual(["billing:manage"]);
+    // the port is asked for with the bindings only: no option carries a question about the organization
     expect(fixture.providerPortOf).toHaveBeenCalledWith(
       billingBindings,
-      "woovi",
-      expect.objectContaining({
-        heldByAnotherOrganization: expect.any(Function),
-      })
+      "woovi"
     );
     expect(fixture.port.prepareSubscription).toHaveBeenCalledWith(
       expect.objectContaining({
         amount: "249.00",
-        organizationId: serverOrganizationId,
-        payer: PAYER,
+        payer: expect.objectContaining({
+          customerKey: expect.stringMatching(PAYER_CUSTOMER_KEY),
+          email: PAYER.email,
+          name: PAYER.name,
+          taxId: PAYER.taxId,
+        }),
         trial: true,
       })
     );
+    expect(
+      vi.mocked(fixture.port.prepareSubscription).mock.calls[0]?.[0]
+    ).not.toHaveProperty("organizationId");
     expect(fixture.store.attachProvider).toHaveBeenCalledWith(
       serverOrganizationId,
       "woovi",
@@ -594,39 +599,6 @@ describe("billing.startCheckout by Pix Automático", () => {
     expect(fixture.store.close).toHaveBeenCalledTimes(1);
     // the answer waits for the minimum time (here, the instant sleep the test gave)
     expect(fixture.pixTiming.sleep).toHaveBeenCalledWith(3000);
-  });
-
-  it("asks the store whether the subscriptions belong to another organization, as the server's organization", async () => {
-    const fixture = wooviSetup({
-      storeOverrides: {
-        providerSubscriptionHeldElsewhere: vi.fn(() => Promise.resolve(true)),
-      },
-    });
-    await fixture.client.billing.startCheckout(pix);
-
-    const [, , options] = fixture.providerPortOf.mock.calls[0] as unknown as [
-      unknown,
-      unknown,
-      {
-        heldByAnotherOrganization: (
-          organizationId: string,
-          ids: string[]
-        ) => Promise<boolean>;
-      },
-    ];
-    await expect(
-      options.heldByAnotherOrganization(serverOrganizationId, [
-        "sub_1",
-        "sub_2",
-      ])
-    ).resolves.toBe(true);
-
-    expect(
-      fixture.store.providerSubscriptionHeldElsewhere
-    ).toHaveBeenCalledWith(serverOrganizationId, "woovi", ["sub_1", "sub_2"]);
-    expect(
-      JSON.stringify(fixture.store.providerSubscriptionHeldElsewhere.mock.calls)
-    ).not.toContain(requestedOrganizationId);
   });
 
   it.each([
