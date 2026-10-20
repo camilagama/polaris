@@ -464,12 +464,61 @@ describe("refundCurrentPeriod", () => {
 });
 
 describe("discardCheckout", () => {
+  // the shape of the sandbox answers (19/10/2026): 200 with CANCELED, then a 400 for the same checkout
+  const cancelled = `{"id":"${CHECKOUT_ID}","status":"CANCELED"}`;
+  const alreadyCancelled =
+    '{"errors":[{"code":"invalid_action","description":"Checkout já cancelado."}]}';
+
   it("posts to /checkouts/<uuid>/cancel", async () => {
-    const { calls, fetch } = fakeAsaas(() => ({ text: "{}" }));
-    await portWith(fetch).discardCheckout(CHECKOUT_ID);
+    const { calls, fetch } = fakeAsaas(() => ({ text: cancelled }));
+    await expect(portWith(fetch).discardCheckout(CHECKOUT_ID)).resolves.toBe(
+      "discarded"
+    );
     expect(calls).toHaveLength(1);
     expect(calls[0]?.method).toBe("POST");
     expect(calls[0]?.url).toBe(`/checkouts/${CHECKOUT_ID}/cancel`);
+  });
+
+  it("is safe to repeat: a checkout cancelled before is already_closed", async () => {
+    let answered = 0;
+    const { calls, fetch } = fakeAsaas(() => {
+      answered += 1;
+      return answered === 1
+        ? { text: cancelled }
+        : { status: 400, text: alreadyCancelled };
+    });
+    const port = portWith(fetch);
+    await expect(port.discardCheckout(CHECKOUT_ID)).resolves.toBe("discarded");
+    await expect(port.discardCheckout(CHECKOUT_ID)).resolves.toBe(
+      "already_closed"
+    );
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a checkout the provider does not know is already_closed", async () => {
+    const { fetch } = fakeAsaas(() => ({ status: 404, text: "{}" }));
+    await expect(portWith(fetch).discardCheckout(CHECKOUT_ID)).resolves.toBe(
+      "already_closed"
+    );
+  });
+
+  it("a refused key or an outage still throws, for the caller to log", async () => {
+    const refused = fakeAsaas(() => ({ status: 401, text: "{}" }));
+    await expect(
+      portWith(refused.fetch).discardCheckout(CHECKOUT_ID)
+    ).rejects.toMatchObject({ code: "provider_rejected", status: 401 });
+    const down = fakeAsaas(() => ({ status: 503, text: "{}" }));
+    await expect(
+      portWith(down.fetch).discardCheckout(CHECKOUT_ID)
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+
+  it("never sends an ID that is not a checkout's", async () => {
+    const { calls, fetch } = fakeAsaas(() => ({ text: cancelled }));
+    await expect(
+      portWith(fetch).discardCheckout("../payments/pay_1")
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -494,6 +543,7 @@ describe("readState", () => {
     expect(events[0]?.providerRef).toBe(CHECKOUT_ID);
     expect(events[0]?.providerSubscriptionId).toBe("sub_abc123");
     expect(events[0]?.fact).toEqual({
+      amount: { currency: "BRL", value: "24.90" },
       cycleMonths: 1,
       occurredAt: now,
       periodEndsAt: new Date("2026-11-20T03:00:00.000Z"),
@@ -607,5 +657,119 @@ describe("readState", () => {
 describe("provider", () => {
   it("is asaas", () => {
     expect(portWith(fakeAsaas().fetch).provider).toBe("asaas");
+  });
+});
+
+describe("a stored subscription ID (sub_) is read directly, never by the list scan", () => {
+  const SUB = "sub_abc123";
+  const OTHER_CHECKOUT = "bbbbbbbb-0000-4000-8000-000000000002";
+  const now = new Date("2026-10-20T12:00:00.000Z");
+  const isList = (call: Call) => call.url.startsWith("/subscriptions?");
+  const isDirect = (call: Call) =>
+    call.method === "GET" && call.url === `/subscriptions/${SUB}`;
+
+  /** The provider: the direct read answers `direct`, the list answers the subscription. */
+  const provider = (
+    direct: { status?: number; text: string },
+    listed: unknown[] = [subscription()]
+  ): Route[] => [
+    (call) => (isDirect(call) ? direct : undefined),
+    (call) =>
+      call.method === "DELETE" ? { text: '{"deleted":true}' } : undefined,
+    (call) =>
+      call.method === "POST"
+        ? { text: '{"status":"REFUND_REQUESTED"}' }
+        : undefined,
+    (call) =>
+      call.url.startsWith(`/subscriptions/${SUB}/payments`)
+        ? { text: list([payment()]) }
+        : undefined,
+    (call) => (isList(call) ? { text: list(listed) } : undefined),
+  ];
+
+  const ofAnotherCheckout = subscription().replace(CHECKOUT_ID, OTHER_CHECKOUT);
+
+  const operations = {
+    cancelRenewal: (fetch: FetchLike, sub?: string) =>
+      portWith(fetch).cancelRenewal(CHECKOUT_ID, sub),
+    readState: (fetch: FetchLike, sub?: string) =>
+      portWith(fetch).readState(CHECKOUT_ID, now, sub),
+    refundCurrentPeriod: (fetch: FetchLike, sub?: string) =>
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, now, sub),
+  };
+
+  describe.each(Object.entries(operations))("%s", (_name, run) => {
+    it("with a matching sub_ reads only GET /subscriptions/{sub}: an old subscription beyond the newest 1000 is found, the list is never called", async () => {
+      // the list would not find it (empty), the direct read does
+      const { calls, fetch } = fakeAsaas(
+        ...provider({ text: subscription() }, [])
+      );
+      await run(fetch, SUB);
+      expect(calls.some(isDirect)).toBe(true);
+      expect(calls.some(isList)).toBe(false);
+    });
+
+    it("with a sub_ of another checkout falls back to the list scan", async () => {
+      const { calls, fetch } = fakeAsaas(
+        ...provider({ text: ofAnotherCheckout })
+      );
+      await run(fetch, SUB);
+      expect(calls.some(isDirect)).toBe(true);
+      expect(calls.some(isList)).toBe(true);
+    });
+
+    it("with a sub_ the provider does not know (404) falls back to the list scan", async () => {
+      const { calls, fetch } = fakeAsaas(
+        ...provider({ status: 404, text: "{}" })
+      );
+      await run(fetch, SUB);
+      expect(calls.some(isList)).toBe(true);
+    });
+
+    it("with a sub_ and the provider answering 5xx is unavailable, with no list call", async () => {
+      const { calls, fetch } = fakeAsaas(
+        ...provider({ status: 503, text: "{}" })
+      );
+      await expect(run(fetch, SUB)).rejects.toBeInstanceOf(
+        ProviderUnavailableError
+      );
+      expect(calls.some(isList)).toBe(false);
+    });
+
+    it("without the ID reads the list scan, as before, and never the direct read", async () => {
+      const { calls, fetch } = fakeAsaas(...provider({ text: subscription() }));
+      await run(fetch);
+      expect(calls.some(isList)).toBe(true);
+      expect(calls.some(isDirect)).toBe(false);
+    });
+  });
+
+  it("cancelRenewal with a matching sub_ deletes exactly that subscription", async () => {
+    const { calls, fetch } = fakeAsaas(...provider({ text: subscription() }));
+    await expect(operations.cancelRenewal(fetch, SUB)).resolves.toBe(
+      "cancelled"
+    );
+    expect(
+      calls.filter((call) => call.method === "DELETE").map((call) => call.url)
+    ).toEqual([`/subscriptions/${SUB}`]);
+  });
+
+  it("cancelRenewal never deletes a sub_ of another checkout when the list has none of this checkout", async () => {
+    const { calls, fetch } = fakeAsaas(
+      (call) => (isDirect(call) ? { text: ofAnotherCheckout } : undefined),
+      (call) => (isList(call) ? { text: list([]) } : undefined)
+    );
+    await expect(operations.cancelRenewal(fetch, SUB)).resolves.toBe(
+      "nothing_to_cancel"
+    );
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+  });
+
+  it("readState with a matching sub_ still gives the charge fact", async () => {
+    const { fetch } = fakeAsaas(...provider({ text: subscription() }));
+    const events = await operations.readState(fetch, SUB);
+    expect(events.map((entry) => entry.fact.type)).toEqual([
+      "charge_succeeded",
+    ]);
   });
 });

@@ -5,6 +5,7 @@ import {
 } from "@polaris/domain/billing/facts";
 import { paidPeriodEndsAt } from "@polaris/domain/billing/provider-period";
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
+import { Money } from "@polaris/domain/money/money";
 import { moneyFromJsonNumber } from "../json";
 import {
   type ProviderBillingEvent,
@@ -323,6 +324,11 @@ function ownsCharge(
   );
 }
 
+/** An amount above zero (`pickAsaasPayment` already normalized it as `money.md` writes it). */
+function isPositiveAmount(amount: string): boolean {
+  return Money.from(amount).minorUnits > 0n;
+}
+
 function chargeFact(
   type:
     | "charge_disputed"
@@ -338,9 +344,21 @@ function chargeFact(
     return { occurredAt, type };
   }
   const periodEndsAt = chargePeriodEndsAt(payment, subscription);
+  // the amount the charge moved, read from the JSON text (the fiscal record; Asaas
+  // charges in BRL). A charge of no value keeps its fact without one: the fact is
+  // what moves access, and the amount is optional
+  const amount = isPositiveAmount(payment.amount)
+    ? { amount: { currency: "BRL" as const, value: payment.amount } }
+    : {};
   return type === "charge_succeeded"
-    ? { cycleMonths: cycleOf(subscription), occurredAt, periodEndsAt, type }
-    : { occurredAt, periodEndsAt, type };
+    ? {
+        ...amount,
+        cycleMonths: cycleOf(subscription),
+        occurredAt,
+        periodEndsAt,
+        type,
+      }
+    : { ...amount, occurredAt, periodEndsAt, type };
 }
 
 /**

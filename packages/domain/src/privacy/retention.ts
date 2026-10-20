@@ -34,6 +34,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "inventory_ledger",
   "expenses_and_goals",
   "billing_events",
+  "billing_trial_claims",
   "sync_commands",
   "sync_change_log",
   "data_exports",
@@ -340,6 +341,20 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     review: USER_APPROVED_REVIEW,
     rule: "O runtime nunca apaga uma linha do razão: é uma restrição de quem pode apagar, não um prazo. O purge da organização mantém os eventos e pseudonimiza o pagador: o fato fica só com valores, datas, tipos e referências opacas, e `provider_ref` e `provider_event_id` continuam e ainda localizam o pagador no provedor, pelo prazo fiscal (até 31/12 do 5º ano após o fato gerador); fiscalização em curso ou legal hold bloqueiam o expurgo desse prazo, que nenhum job executa hoje; o motivo das concessões vira texto fixo (decisão do responsável de 18/10/2026, ADR 0081).",
     sources: ["ADR 0062", "ADR 0066", "ADR 0081"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "billing_trial_claims",
+    data: [
+      "billing_trial_claims (o teste grátis de cada pessoa: usuário, organização em que foi reservado ou usado, quando foi reservado e quando foi consumido)",
+    ],
+    period: { kind: "undecided" },
+    proposed:
+      "Enquanto a conta do usuário existir: a linha sobrevive ao purge da organização (antiabuso: apagar a loja não devolve o trial) e sai com a exclusão da conta, pela chave estrangeira em cascata (decisão do Arrascaeta de 19/10/2026, V1 do Filipe Luís, ADR 0101). Nenhum job a apaga.",
+    review: { state: "pendente_juridica" },
+    rule: "O teste grátis vale uma vez por pessoa. A reserva é feita quando a pessoa opta pelo trial e é consumida quando o meio de renovação fica pronto; abandonar o checkout não a consome. A linha guarda só identificadores e datas, sem dado do pagador, e fica fora da exportação do tenant e da leitura do tenant. Quem apaga a conta e cria outra ganha outro trial (risco aceito no ADR 0101).",
+    sources: ["ADR 0101", "docs/business-rules/billing-and-entitlements.md"],
     status: "proposta",
   },
   {

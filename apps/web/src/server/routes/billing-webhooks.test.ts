@@ -150,6 +150,42 @@ const delivery = (...facts: [string, BillingFact][]) =>
   });
 
 describe("the billing webhook route", () => {
+  it("stores the provider's subscription ID with the event, and none when the adapter gives none", async () => {
+    const t = setup();
+
+    const response = await t.send("/webhooks/billing/fake", {
+      body: JSON.stringify({
+        events: [
+          {
+            fact: charged,
+            providerEventId: "evt-sub",
+            providerRef: "chk_1",
+            providerSubscriptionId: "sub_000005135291",
+          },
+          { fact: failed, providerEventId: "evt-none", providerRef: "chk_1" },
+        ],
+      }),
+      headers: signed,
+    });
+
+    expect(response.status).toBe(200);
+    expect(t.store.recordEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        providerEventId: "evt-sub",
+        providerSubscriptionId: "sub_000005135291",
+      })
+    );
+    expect(t.store.recordEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        providerEventId: "evt-none",
+        providerSubscriptionId: null,
+      })
+    );
+    await Promise.all(t.background);
+  });
+
   it("stores each event once and answers before processing them, then processes the new ones in order", async () => {
     const t = setup();
 

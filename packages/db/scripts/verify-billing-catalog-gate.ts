@@ -130,12 +130,11 @@ async function run() {
       prices.map((price) => [price.id, price.intervalMonths, price.amount]),
       [
         ["pro_monthly", 1, "24.90"],
-        ["pro_semiannual", 6, "124.50"],
         ["pro_annual", 12, "249.00"],
       ]
     );
     tests.push(
-      "the seeded Free/Pro catalog and the three Pro prices equal the domain's initial catalog and PRODUCT.md"
+      "the seeded Free/Pro catalog and the live Pro prices (monthly and annual; the semiannual one is off since migration 0084, Q12) equal the domain's initial catalog and PRODUCT.md"
     );
 
     // ----------------------------------- 2. the runtime only reads it

@@ -844,6 +844,8 @@ async function run() {
         ...PAYER_FACT,
         // a kept key whose value is not a plain value goes too (a nested payer)
         transition: { payer: PAYER_FACT.customerName },
+        amount: "24.90",
+        currency: "BRL",
         cycleMonths: 1,
         occurredAt: "2026-09-01T12:00:00.000Z",
         periodEndsAt: "2026-10-01T12:00:00.000Z",
@@ -866,6 +868,11 @@ async function run() {
         `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
          VALUES ($1, 'variants.active.max', 3000, $2, 'admin:gate', now() - interval '1 day', now() + interval '2 days')`,
         [tenant.organizationId, `${GRANT_REASON} ${suffix}`]
+      );
+      // the owner's trial was used here (the trial per person, ADR 0101)
+      await owner.pool.query(
+        "INSERT INTO public.billing_trial_claims (user_id, organization_id, reserved_at, consumed_at) VALUES ($1, $2, '2026-08-01T12:00:00Z', '2026-08-01T12:05:00Z')",
+        [tenant.userId, tenant.organizationId]
       );
       return { assetId, storageKey };
     };
@@ -2270,7 +2277,10 @@ async function run() {
     const charge = billingAfter.rows.find(
       (row) => row.fact_type === "charge_succeeded"
     );
+    // the amount and its currency stay: they are the fiscal record (migration 0084)
     assert.deepEqual(charge?.fact, {
+      amount: "24.90",
+      currency: "BRL",
       cycleMonths: 1,
       occurredAt: "2026-09-01T12:00:00.000Z",
       periodEndsAt: "2026-10-01T12:00:00.000Z",
@@ -2298,8 +2308,28 @@ async function run() {
       subscriptionBefore.rows,
       "organization_billing.provider_ref stays"
     );
+    // the owner's trial claim outlives the purge (anti-abuse): a new store does not get a new trial
+    assert.deepEqual(
+      (
+        await owner.pool.query(
+          "SELECT user_id, organization_id, consumed_at = '2026-08-01T12:05:00Z'::timestamptz AS consumed_as_stored FROM public.billing_trial_claims WHERE organization_id = $1",
+          [target.organizationId]
+        )
+      ).rows,
+      [
+        {
+          consumed_as_stored: true,
+          organization_id: target.organizationId,
+          user_id: target.userId,
+        },
+      ],
+      "the trial claim survives the purge"
+    );
     tests.push(
-      "the billing events of the purged organization stay, every one, pseudonymized: values, dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
+      "the owner's trial claim survives the purge of the organization, as it was (the trial is once per person)"
+    );
+    tests.push(
+      "the billing events of the purged organization stay, every one, pseudonymized: values (the amount and its currency included), dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
     );
 
     // the entitlement grants stay (key, value, dates, who gave it) and lose the reason the operator typed

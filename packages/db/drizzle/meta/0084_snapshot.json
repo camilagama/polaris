@@ -1,5 +1,5 @@
 {
-  "id": "04797235-3fad-403b-abd2-30e9881b2171",
+  "id": "c28b32ea-20a7-4e70-9395-5aea32de881b",
   "prevId": "d6191eec-9725-4634-ba8c-1fffd526625c",
   "version": "7",
   "dialect": "postgresql",
@@ -678,6 +678,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "provider_subscription_id": {
+          "name": "provider_subscription_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "received_at": {
           "name": "received_at",
           "type": "timestamp with time zone",
@@ -759,7 +765,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"billing_events\".\"status\" IN ('received', 'failed')",
+          "where": "\"billing_events\".\"status\" IN ('received', 'failed', 'unresolved')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -796,17 +802,21 @@
           "name": "billing_events_provider_ref_length",
           "value": "\"billing_events\".\"provider_ref\" IS NULL OR char_length(\"billing_events\".\"provider_ref\") BETWEEN 1 AND 128"
         },
+        "billing_events_provider_subscription_length": {
+          "name": "billing_events_provider_subscription_length",
+          "value": "\"billing_events\".\"provider_subscription_id\" IS NULL OR char_length(\"billing_events\".\"provider_subscription_id\") BETWEEN 1 AND 128"
+        },
         "billing_events_fact_type_allowed": {
           "name": "billing_events_fact_type_allowed",
           "value": "\"billing_events\".\"fact_type\" IN ('trial_method_ready', 'charge_succeeded', 'charge_failed', 'subscription_cancelled', 'cycle_change_scheduled', 'charge_refunded', 'charge_disputed', 'dispute_reversed', 'time_elapsed', 'command')"
         },
         "billing_events_status_allowed": {
           "name": "billing_events_status_allowed",
-          "value": "\"billing_events\".\"status\" IN ('received', 'applied', 'ignored', 'failed')"
+          "value": "\"billing_events\".\"status\" IN ('received', 'applied', 'ignored', 'failed', 'unresolved')"
         },
         "billing_events_outcome_allowed": {
           "name": "billing_events_outcome_allowed",
-          "value": "\"billing_events\".\"outcome_code\" IS NULL OR \"billing_events\".\"outcome_code\" IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error')"
+          "value": "\"billing_events\".\"outcome_code\" IS NULL OR \"billing_events\".\"outcome_code\" IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error', 'trial_claim_missing')"
         },
         "billing_events_fact_is_small_object": {
           "name": "billing_events_fact_is_small_object",
@@ -992,6 +1002,101 @@
           "value": "\"billing_prices\".\"plan_id\" <> 'free'"
         }
       },
+      "isRLSEnabled": true
+    },
+    "public.billing_trial_claims": {
+      "name": "billing_trial_claims",
+      "schema": "",
+      "columns": {
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved_at": {
+          "name": "reserved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "billing_trial_claims_organization_idx": {
+          "name": "billing_trial_claims_organization_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "billing_trial_claims_organization_id_organizations_id_fk": {
+          "name": "billing_trial_claims_organization_id_organizations_id_fk",
+          "tableFrom": "billing_trial_claims",
+          "tableTo": "organizations",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "billing_trial_claims_user_id_user_id_fk": {
+          "name": "billing_trial_claims_user_id_user_id_fk",
+          "tableFrom": "billing_trial_claims",
+          "tableTo": "user",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "billing_trial_claims_billing_runtime_select": {
+          "name": "billing_trial_claims_billing_runtime_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_billing_runtime"],
+          "using": "true"
+        },
+        "billing_trial_claims_billing_runtime_insert": {
+          "name": "billing_trial_claims_billing_runtime_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_billing_runtime"],
+          "withCheck": "true"
+        },
+        "billing_trial_claims_billing_runtime_update": {
+          "name": "billing_trial_claims_billing_runtime_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_billing_runtime"],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "public.entitlement_grants": {
@@ -1326,6 +1431,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "provider_subscription_id": {
+          "name": "provider_subscription_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "revoked_cancel_at_period_end": {
           "name": "revoked_cancel_at_period_end",
           "type": "boolean",
@@ -1398,6 +1509,28 @@
           ],
           "isUnique": true,
           "where": "\"organization_billing\".\"provider_ref\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_billing_provider_subscription_unique": {
+          "name": "organization_billing_provider_subscription_unique",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_subscription_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"organization_billing\".\"provider_subscription_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1477,6 +1610,10 @@
         "organization_billing_provider_coherent": {
           "name": "organization_billing_provider_coherent",
           "value": "\n        (\"organization_billing\".\"provider\" IS NULL AND \"organization_billing\".\"provider_ref\" IS NULL)\n        OR (\n          \"organization_billing\".\"provider\" ~ '^[a-z][a-z0-9_]{1,31}$'\n          AND char_length(\"organization_billing\".\"provider_ref\") BETWEEN 1 AND 128\n        )\n      "
+        },
+        "organization_billing_provider_subscription_coherent": {
+          "name": "organization_billing_provider_subscription_coherent",
+          "value": "\"organization_billing\".\"provider_subscription_id\" IS NULL OR (\"organization_billing\".\"provider_ref\" IS NOT NULL AND char_length(\"organization_billing\".\"provider_subscription_id\") BETWEEN 1 AND 128)"
         }
       },
       "isRLSEnabled": true
@@ -2136,24 +2273,11 @@
           "notNull": true,
           "default": "uuidv7()"
         },
-        "lease_token": {
-          "name": "lease_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "locked_until": {
           "name": "locked_until",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "mode": {
-          "name": "mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
         },
         "organization_id": {
           "name": "organization_id",
@@ -2312,10 +2436,6 @@
         "data_exports_formats_allowed": {
           "name": "data_exports_formats_allowed",
           "value": "cardinality(\"data_exports\".\"formats\") BETWEEN 1 AND 3 AND \"data_exports\".\"formats\" <@ ARRAY['json', 'csv', 'images']::text[]"
-        },
-        "data_exports_mode_allowed": {
-          "name": "data_exports_mode_allowed",
-          "value": "\"data_exports\".\"mode\" IN ('active', 'closed')"
         },
         "data_exports_attempts_allowed": {
           "name": "data_exports_attempts_allowed",

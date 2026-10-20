@@ -1,11 +1,13 @@
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
 import type { FetchLike } from "../http";
 import { AMOUNT_PLACEHOLDER, stringifyWithAmount } from "../json";
-import type {
-  BillingProviderPort,
-  CheckoutReturnUrls,
-  PrepareSubscriptionInput,
-  ProviderBillingEvent,
+import {
+  type BillingProviderPort,
+  type CheckoutReturnUrls,
+  type PrepareSubscriptionInput,
+  type ProviderBillingEvent,
+  ProviderNotFoundError,
+  ProviderRejectedError,
 } from "../provider-port";
 import { createAsaasClient } from "./client";
 import { newPolarisReference } from "./ids";
@@ -108,8 +110,39 @@ function checkoutBody(
 export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
   const client = createAsaasClient(config);
 
-  /** `providerRef` is the checkout's ID: the subscription it created carries it as `checkoutSession`. */
-  async function subscriptionsOf(providerRef: string) {
+  /**
+   * The subscription a checkout created. `providerRef` is the checkout's ID, and
+   * the subscription carries it as `checkoutSession`. With the stored `sub_` the
+   * subscription is read directly (any age); it counts only while it is still
+   * that checkout's (a reference attached since gives the list instead), and a
+   * stored ID the provider no longer knows falls back to the list too. Without
+   * it (no webhook matched yet), the newest subscriptions are listed.
+   *
+   * The checkout is checked twice on purpose (defense): the client keeps only
+   * the subscriptions whose `checkoutSession` is the checkout's, and
+   * `subscriptionsOfCheckout` checks each one again before any fact or command
+   * uses it, so neither a bug in the client nor a provider that starts
+   * filtering differently can hand over another checkout's subscription.
+   */
+  async function subscriptionsOf(
+    providerRef: string,
+    providerSubscriptionId: string | null | undefined
+  ) {
+    if (providerSubscriptionId) {
+      try {
+        const stored = subscriptionsOfCheckout(
+          [await client.getSubscription(providerSubscriptionId)],
+          providerRef
+        );
+        if (stored.length > 0) {
+          return stored;
+        }
+      } catch (error: unknown) {
+        if (!(error instanceof ProviderNotFoundError)) {
+          throw error;
+        }
+      }
+    }
     return subscriptionsOfCheckout(
       await client.listSubscriptionsByCheckout(providerRef),
       providerRef
@@ -122,8 +155,11 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
   }
 
   return {
-    async cancelRenewal(providerRef) {
-      const subscriptions = await subscriptionsOf(providerRef);
+    async cancelRenewal(providerRef, providerSubscriptionId) {
+      const subscriptions = await subscriptionsOf(
+        providerRef,
+        providerSubscriptionId
+      );
       const live = subscriptions.filter((entry) => !entry.deleted);
       if (subscriptions.length === 0) {
         return "nothing_to_cancel";
@@ -138,7 +174,24 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       return "cancelled";
     },
     async discardCheckout(checkoutId) {
-      await client.cancelCheckout(checkoutId);
+      try {
+        await client.cancelCheckout(checkoutId);
+        return "discarded";
+      } catch (error: unknown) {
+        // a checkout cancelled before answers 400 to a second cancel, and one Asaas
+        // does not know answers 404 (sandbox, 19/10/2026): nothing is left to give up.
+        // The ID is checked before the call, so a 400 is not a malformed one; an
+        // expired or paid checkout was not measured and is read the same way (the
+        // fact paid without a reservation still starts no trial). A refused key
+        // (401, 403) or an outage still throws
+        if (
+          error instanceof ProviderRejectedError &&
+          (error.status === 400 || error.status === 404)
+        ) {
+          return "already_closed";
+        }
+        throw error;
+      }
     },
     async prepareSubscription(input) {
       const reference = newPolarisReference(config.randomUuid());
@@ -156,9 +209,12 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       };
     },
     provider: "asaas",
-    async readState(providerRef, now) {
+    async readState(providerRef, now, providerSubscriptionId) {
       const events: ProviderBillingEvent[] = [];
-      for (const subscription of await subscriptionsOf(providerRef)) {
+      for (const subscription of await subscriptionsOf(
+        providerRef,
+        providerSubscriptionId
+      )) {
         // biome-ignore lint/performance/noAwaitInLoops: One subscription per reference, in practice.
         const payments = await chargesOf(subscription.id);
         events.push(
@@ -167,9 +223,12 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       }
       return events;
     },
-    async refundCurrentPeriod(providerRef, now) {
+    async refundCurrentPeriod(providerRef, now, providerSubscriptionId) {
       // read first: a refund of a charge that is not paid is a 400 whose text says nothing usable
-      for (const subscription of await subscriptionsOf(providerRef)) {
+      for (const subscription of await subscriptionsOf(
+        providerRef,
+        providerSubscriptionId
+      )) {
         const charge = refundableCharge(
           // biome-ignore lint/performance/noAwaitInLoops: One subscription per reference, in practice.
           await chargesOf(subscription.id),

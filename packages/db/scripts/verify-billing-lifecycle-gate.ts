@@ -251,7 +251,11 @@ async function run() {
     );
 
     // ---------------------------------- 3. the trial, end to end
-    const trial = await billing.startTrial(tenantA.organizationId, at(0));
+    const trial = await billing.startTrial(
+      tenantA.organizationId,
+      tenantA.userId,
+      at(0)
+    );
     assert.equal(trial.state, "trial_setup");
     await billing.attachProvider(tenantA.organizationId, "fake", "sub_A");
     // while the trial is only being set up the reference can still change
@@ -280,7 +284,7 @@ async function run() {
     assert.equal(repeated.status, "ignored");
     assert.equal(repeated.outcomeCode, "not_applicable");
     await assert.rejects(
-      () => billing.startTrial(tenantA.organizationId, at(1)),
+      () => billing.startTrial(tenantA.organizationId, tenantA.userId, at(1)),
       (error: unknown) =>
         error instanceof InvalidBillingTransitionError ||
         error instanceof RejectedBillingEventError
@@ -673,11 +677,16 @@ async function run() {
 
     // a subscription at the provider can be replaced when none is live, never while one is
     const restarting = await newTenant("lifecycle restart");
-    await billing.startTrial(restarting.organizationId, at(0));
+    await billing.startTrial(
+      restarting.organizationId,
+      restarting.userId,
+      at(0)
+    );
     await billing.attachProvider(restarting.organizationId, "fake", "sub_old");
     await billing.attachProvider(restarting.organizationId, "fake", "sub_new");
     const secondStart = await billing.startTrial(
       restarting.organizationId,
+      restarting.userId,
       at(1)
     );
     assert.equal(
@@ -1172,7 +1181,14 @@ async function run() {
     );
 
     // the same on a trial: the trial runs, and the first charge cannot convert it
-    const trialRefund = await attachedFree("lifecycle trial refund", "sub_E2");
+    // (the person opts in first: a trial without a reservation does not start)
+    const trialRefund = await newTenant("lifecycle trial refund");
+    await billing.startTrial(
+      trialRefund.organizationId,
+      trialRefund.userId,
+      at(0)
+    );
+    await billing.attachProvider(trialRefund.organizationId, "fake", "sub_E2");
     await apply(
       "fake",
       "evt-E2-ready",
@@ -1492,7 +1508,7 @@ async function run() {
         fact: { cycleMonths: 1, occurredAt: at(1), type: "trial_method_ready" },
         prepare: async (label, ref) => {
           const tenant = await newTenant(label);
-          await billing.startTrial(tenant.organizationId, at(0));
+          await billing.startTrial(tenant.organizationId, tenant.userId, at(0));
           await billing.attachProvider(tenant.organizationId, "fake", ref);
           return tenant;
         },

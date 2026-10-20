@@ -19,7 +19,7 @@ export interface ClaimedDataExport {
   requestedBy: string;
 }
 
-/** What a claim answers, before it is checked: a database before 0084 has no mode and no token. */
+/** What a claim answers, before it is checked: a database before 0085 has no mode and no token. */
 interface ClaimedDataExportRow {
   attempt: number;
   formats: string[];

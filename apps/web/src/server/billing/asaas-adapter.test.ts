@@ -241,6 +241,7 @@ describe("AC-1a: the token, in constant time, with no reason given", () => {
     expect(JSON.parse(answer)).toMatchObject({ duplicates: 0, received: 1 });
     expect(t.store.recordEvent).toHaveBeenCalledWith({
       fact: {
+        amount: { currency: "BRL", value: "24.90" },
         cycleMonths: 1,
         occurredAt: expect.any(Date),
         periodEndsAt: new Date("2026-11-27T03:00:00.000Z"),
@@ -249,6 +250,7 @@ describe("AC-1a: the token, in constant time, with no reason given", () => {
       provider: "asaas",
       providerEventId: EVENT_ID,
       providerRef: REF,
+      providerSubscriptionId: "sub_fake0000000001",
     });
   });
 
