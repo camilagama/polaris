@@ -1,0 +1,171 @@
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import { type Page, test as base, type TestInfo } from "@playwright/test";
+import type { PolarisRpcClient } from "@polaris/contracts";
+import { createDatabase } from "@polaris/db/client";
+import type { BetterAuthPlugin } from "better-auth";
+import { testUtils } from "better-auth/plugins";
+import { createBetterAuth } from "../src/server/auth";
+import { PREFERRED_ORGANIZATION_KEY } from "../src/lib/current-organization-model";
+import { journeyName, uuidV5 } from "./journey-names";
+import { databaseUrl } from "./run-database";
+import {
+  ensureRunEnvironment,
+  ownerDatabaseUrl,
+  runDatabaseName,
+} from "./run-environment";
+
+/**
+ * The fixture of the journeys (T-125a): one user, one organization and one browser context per test and attempt.
+ * The session is made here, in Node, with Better Auth's `testUtils` and the run secret (the same the preview signs
+ * with); the Worker never loads `testUtils` (e2e-real/confinement.test.ts). The data of a journey enters through
+ * the Worker's own commands (`rpc`), never by SQL; `sql` is the owner connection of the run database, for the
+ * oracle only (it ignores RLS, so it never proves isolation).
+ */
+
+interface AuthHelpers {
+  createUser: (overrides?: Record<string, unknown>) => { id: string };
+  getCookies: (options: { userId: string; domain?: string }) => Promise<
+    { name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean; sameSite: "Lax" | "Strict" | "None"; expires?: number }[]
+  >;
+  getAuthHeaders: (options: { userId: string }) => Promise<Headers>;
+  saveUser: (user: { id: string }) => Promise<{ id: string }>;
+}
+
+type Sql = ReturnType<typeof createDatabase>["pool"];
+
+export interface JourneyUser {
+  id: string;
+  name: string;
+  headers: Headers;
+  rpc: PolarisRpcClient;
+}
+
+export interface Journey {
+  /** `qa-<project>-<journey>-t<attempt>` */
+  name: string;
+  user: JourneyUser;
+  organizationId: string | undefined;
+  page: Page;
+}
+
+export interface JourneyOptions {
+  /** Creates the organization through `organization.createInitial` (the onboarding journey does it on screen). */
+  organization?: { timezone: string } | false;
+}
+
+/** The instant of the run, captured once by the global setup. */
+export function runT0(): number {
+  const value = Number(process.env.E2E_T0);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("E2E_T0 is missing: the global setup sets it.");
+  }
+  return value;
+}
+
+export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
+  const link = new RPCLink({
+    fetch: (request: Request) => {
+      const withSession = new Headers(request.headers);
+      headers.forEach((value, key) => withSession.set(key, value));
+      withSession.set("origin", origin);
+      return fetch(new Request(request, { headers: withSession }));
+    },
+    method: "POST",
+    url: new URL("/rpc", origin),
+  });
+  return createORPCClient(link);
+}
+
+let helpersPromise: Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }> | undefined;
+
+function authHelpers() {
+  helpersPromise ??= (async () => {
+    const run = ensureRunEnvironment();
+    const { db, pool } = createDatabase(
+      databaseUrl(ownerDatabaseUrl(), runDatabaseName(run.runId)),
+      { maxConnections: 2 }
+    );
+    const auth = createBetterAuth({
+      baseURL: "http://127.0.0.1",
+      database: db,
+      plugins: [testUtils() as unknown as BetterAuthPlugin],
+      secret: run.secret,
+    });
+    const helpers = ((await auth.$context) as unknown as { test: AuthHelpers }).test;
+    return { close: () => pool.end(), helpers, sql: pool };
+  })();
+  return helpersPromise;
+}
+
+export async function createJourneyUser(
+  origin: string,
+  name: string
+): Promise<JourneyUser & { cookies: Awaited<ReturnType<AuthHelpers["getCookies"]>> }> {
+  const { helpers } = await authHelpers();
+  const id = uuidV5(name);
+  await helpers.saveUser(
+    helpers.createUser({
+      email: `${name}@e2e.invalid`,
+      emailVerified: true,
+      id,
+      name,
+    })
+  );
+  const headers = await helpers.getAuthHeaders({ userId: id });
+  const cookies = await helpers.getCookies({
+    domain: new URL(origin).hostname,
+    userId: id,
+  });
+  return { cookies, headers, id, name, rpc: rpcClient(origin, headers) };
+}
+
+export async function openJourney(
+  browser: import("@playwright/test").Browser,
+  testInfo: TestInfo,
+  journey: string,
+  options: JourneyOptions = {}
+): Promise<Journey> {
+  const origin = String(testInfo.project.use.baseURL);
+  const name = journeyName(testInfo.project.name, journey, testInfo.retry);
+  const user = await createJourneyUser(origin, name);
+  let organizationId: string | undefined;
+  if (options.organization !== false) {
+    const created = await user.rpc.organization.createInitial({
+      name,
+      timezone: options.organization?.timezone ?? "America/Sao_Paulo",
+    });
+    organizationId = created.organization.id;
+  }
+  const context = await browser.newContext({
+    baseURL: origin,
+    storageState: {
+      cookies: user.cookies.map((cookie) => ({
+        ...cookie,
+        expires: cookie.expires ?? -1,
+      })),
+      origins: organizationId
+        ? [{ localStorage: [{ name: PREFERRED_ORGANIZATION_KEY, value: organizationId }], origin }]
+        : [],
+    },
+  });
+  const page = await context.newPage();
+  // fixed at T0 and RUNNING: timers (outbox, the 4 s get-session, the lease `exp`, debounce) advance as usual
+  await page.clock.install({ time: runT0() });
+  console.log(`journey ${name} (T0 ${new Date(runT0()).toISOString()})`);
+  return { name, organizationId, page, user };
+}
+
+export const test = base.extend<Record<never, never>, { sql: Sql }>({
+  sql: [
+    async ({}, use) => {
+      const { close, sql } = await authHelpers();
+      await use(sql);
+      helpersPromise = undefined;
+      await close();
+    },
+    { auto: true, scope: "worker" },
+  ],
+});
+
+export { expect } from "@playwright/test";
