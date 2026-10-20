@@ -10,6 +10,7 @@
     "./provider-port": "./src/provider-port.ts",
     "./woovi/client": "./src/woovi/client.ts",
     "./woovi/customer": "./src/woovi/customer.ts",
+    "./woovi/port": "./src/woovi/port.ts",
     "./woovi/signature": "./src/woovi/signature.ts",
     "./woovi/webhook": "./src/woovi/webhook.ts"
   },

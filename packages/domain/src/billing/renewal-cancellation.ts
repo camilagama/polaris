@@ -32,11 +32,12 @@ export interface RenewalProviderLink {
 
 /**
  * The providers Polaris acts through (cancels, refunds, reconciles, gives a checkout up): the ones with an
- * outbound port. Woovi enters with its port (cobrança PR 6, ADR 0101), and with it the list the hourly run
- * passes to the database.
+ * outbound port: Asaas (cartão) and Woovi (Pix Automático, cobrança PR 6, ADR 0101). The hourly run passes
+ * this list to the database, and the Admin's purge lock reads it.
  */
 export const HANDLED_BILLING_PROVIDERS: readonly string[] = Object.freeze([
   "asaas",
+  "woovi",
 ]);
 
 /** Whether Polaris acts through this provider at all: without its port, the renewal is the person's to cancel. */

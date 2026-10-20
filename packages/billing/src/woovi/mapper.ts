@@ -247,7 +247,14 @@ function event(
   providerEventId: string,
   subscription: WooviSubscription
 ): ProviderBillingEvent {
-  return { fact, providerEventId, providerRef: subscription.id };
+  // the subscription is the reference itself: stored on the record by the first
+  // fact that matches, so the commands treat it as a subscription made (ADR 0101)
+  return {
+    fact,
+    providerEventId,
+    providerRef: subscription.id,
+    providerSubscriptionId: subscription.id,
+  };
 }
 
 function chargeSucceeded(
@@ -452,4 +459,104 @@ export function reconcileWooviSubscription(input: {
     );
   }
   return events;
+}
+
+/** São Paulo's calendar day at `now`. */
+function saoPauloToday(now: Date): string {
+  return new Date(now.getTime() - SAO_PAULO_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * The installment that paid the period in force at `now`: the latest paid one
+ * of this subscription charged by today, whose period has not ended. Null when
+ * there is none (nothing to refund). Never an earlier one (ADR 0101, AC-46).
+ */
+export function refundableInstallment(
+  installments: readonly WooviInstallment[],
+  subscription: WooviSubscription,
+  now: Date
+): WooviInstallment | null {
+  if (!isPolarisSubscription(subscription)) {
+    return null;
+  }
+  const today = saoPauloToday(now);
+  const latest = installments
+    .filter(
+      (installment) =>
+        installment.subscriptionId === subscription.id &&
+        installment.chargeOn <= today
+    )
+    .sort(
+      (left, right) =>
+        left.chargeOn.localeCompare(right.chargeOn) ||
+        left.id.localeCompare(right.id)
+    )
+    .at(-1);
+  if (
+    !(latest && isPaid(latest)) ||
+    paidPeriodEndsAt(latest.chargeOn, cycleOf(subscription)).getTime() <=
+      now.getTime()
+  ) {
+    return null;
+  }
+  return latest;
+}
+
+/**
+ * The `correlationID` of the refund Polaris asks for one installment (desenho
+ * t088): the subscription's and the installment's `globalID`. The same refund
+ * asked twice carries the same one, and the fact the command writes uses it as
+ * its event ID.
+ */
+export function wooviRefundCorrelationId(
+  subscription: WooviSubscription,
+  installment: WooviInstallment
+): string {
+  return `refund:${subscription.id}:${installment.id}`;
+}
+
+/** The fact of a refund Polaris asked for: the period the installment paid, and its amount. */
+export function wooviRefundEvent(input: {
+  installment: WooviInstallment;
+  occurredAt: Date;
+  subscription: WooviSubscription;
+}): ProviderBillingEvent {
+  const { installment, occurredAt, subscription } = input;
+  const paid = chargeSucceeded(installment, subscription, occurredAt);
+  if (paid.type !== "charge_succeeded") {
+    throw new ProviderResponseMalformedError();
+  }
+  return event(
+    {
+      ...(paid.amount ? { amount: paid.amount } : {}),
+      occurredAt,
+      periodEndsAt: paid.periodEndsAt,
+      type: "charge_refunded",
+    },
+    wooviRefundCorrelationId(subscription, installment),
+    subscription
+  );
+}
+
+const endToEndIdPattern = /^[A-Za-z\d]{32}$/;
+
+/**
+ * The Pix `endToEndId` of a paid installment, the key of its refund. Woovi's
+ * documentation puts it in the recurring charge (`cobr.endToEndId`); it is not
+ * on the allowlist of the facts and is read only for the refund. Not proven
+ * on a real installment yet (S3.2): another shape throws.
+ */
+export function pickWooviEndToEndId(raw: unknown): string {
+  const source = record(raw);
+  const cobr =
+    source.cobr === undefined || source.cobr === null
+      ? {}
+      : record(source.cobr);
+  const value = cobr.endToEndId ?? source.endToEndId;
+  if (typeof value !== "string" || !endToEndIdPattern.test(value)) {
+    throw new ProviderResponseMalformedError();
+  }
+  return value;
 }

@@ -62,11 +62,14 @@ export const AMOUNT_PLACEHOLDER = "\u0000polaris-amount\u0000";
 
 /**
  * Serializes a request body whose one `AMOUNT_PLACEHOLDER` must go out as a
- * JSON number: the positive decimal text of `amount` is written as is.
+ * JSON number: the positive decimal text of `amount` is written as is (Asaas,
+ * `"24.90"` → `24.90`), or as integer cents with `unit: "cents"` (Woovi,
+ * `"24.90"` → `2490`). Never through `number`.
  */
 export function stringifyWithAmount(
   body: Record<string, unknown>,
-  amount: string
+  amount: string,
+  unit: "cents" | "decimal" = "decimal"
 ): string {
   const money = Money.from(amount);
   if (money.minorUnits <= 0n) {
@@ -77,5 +80,8 @@ export function stringifyWithAmount(
   if (text.split(quoted).length !== 2) {
     throw new Error("amount_placeholder_misplaced");
   }
-  return text.replace(quoted, money.toString());
+  return text.replace(
+    quoted,
+    unit === "cents" ? money.minorUnits.toString() : money.toString()
+  );
 }

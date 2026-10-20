@@ -22,6 +22,7 @@
 | [`outbox-parado`](#outbox-parado) | `scheduled_job_run` do `outbox.dispatch` | 180 min | ausência | critical | sim |
 | [`outbox-falhando`](#outbox-falhando) | `outbox_send_failed`, `outbox_event_unsendable` | 120 min | 1 | warning | não |
 | [`cobranca-reconcile`](#cobranca-reconcile) | `billing_maintenance_incomplete` e outros | 180 min | 3 | critical | sim |
+| [`pix-cadastros-por-loja`](#pix-cadastros-por-loja) | `billing_payer_customer_created` | 60 min | 5 | warning | não |
 | [`erros-de-banco`](#erros-de-banco) | `server_error` com `sqlState` e outros | 15 min | 3 | critical | sim |
 | [`agendador-falhando`](#agendador-falhando) | `scheduled_job_claim_failed` e outros | 180 min | 2 | warning | não |
 | [`r2-e-midia`](#r2-e-midia) | `media_removed_asset_failed` e outros | 60 min | 1 | warning | não |
@@ -92,6 +93,16 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 **Como confirmar.** Workers Logs: os cinco eventos, por `errorClass`/`errorCode`, `provider` e `sqlState`; veja também o `scheduled_job_run` de `billing.maintenance`. Uma só falha é retentada no tick seguinte; três em três horas é falha persistente (é o limiar).
 
 **O que fazer.** Com `sqlState` ou erro de conexão, siga [erros-de-banco](#erros-de-banco). Com erro de provedor, confira o painel de homologação ou produção do provedor (o responsável) e a assinatura do webhook. Não reprocesse pagamento à mão sem registrar: o efeito é de dinheiro e de acesso (use os comandos de cobrança do Admin). Nunca cole segredo do provedor em log ou chat.
+
+<a id="pix-cadastros-por-loja"></a>
+
+### pix-cadastros-por-loja — muitos documentos novos no Pix (olhar por loja)
+
+**O que significa.** O evento `billing_payer_customer_created` (nível info, só `organizationId` opaco e `provider`) sai a cada documento novo que um checkout Pix cadastra na Woovi. Uma loja que cadastra muitos documentos distintos em pouco tempo pode estar pré-cadastrando CPFs de terceiros com nome e e-mail seus, o que trava o Pix dessas pessoas até o suporte corrigir (ADR 0101, emenda do PR 6). Sem limite de taxa próprio do checkout (condição do Gate 7), este é o único sinal.
+
+**Como confirmar.** Workers Logs: `event = "billing_payer_customer_created"`, agrupe por `organizationId`. **O sinal é global** (o registro não agrupa por loja: conta os eventos da plataforma, 5 em 60 min, e aparece só no resumo diário); o corte por loja é à mão, nesta consulta. O que importa é uma só loja: **3 ou mais numa hora, ou 10 ou mais em 24 horas, de uma mesma `organizationId`**, é padrão suspeito (uma loja legítima tem um pagador, raramente dois). Veja também `billing_pix_checkout_refused` da mesma loja. O evento não guarda documento, nome nem e-mail. **Limite conhecido:** o evento sai depois de o cliente e a assinatura serem ligados; um cliente criado na Woovi e seguido de falha antes disso não gera o evento (o `billing_pix_checkout_refused` e os erros do checkout cobrem esse caso em parte).
+
+**O que fazer.** Avise o responsável com o `organizationId`; a decisão de bloquear a loja ou de limitar o Pix é dele (Admin, sem entrar no tenant). Não procure o documento: o Polaris não o guarda. Quem pedir correção de um cliente da Woovi passa pela confirmação do titular do documento do [runbook de provedores](./billing-providers.md).
 
 <a id="erros-de-banco"></a>
 

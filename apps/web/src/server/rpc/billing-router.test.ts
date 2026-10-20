@@ -8,10 +8,13 @@ import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
+import { payerLockKey } from "../billing/commands";
 import type { WorkerBindings } from "../environment";
 import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
+const EIGHT_HEX = /^[\da-f]{8}$/;
+const PAYER_CUSTOMER_KEY = /^polaris-payer-[\da-f]{32}$/;
 const requestedOrganizationId = "organization-the-client-claims";
 const serverOrganizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const sessionUserId = "verified-session-user";
@@ -20,6 +23,7 @@ const CHECKOUT_URL = "https://sandbox.asaas.com/checkoutSession/show?id=abc";
 const baseBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
+  BILLING_PAYER_KEY: "b".repeat(32),
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   ONBOARDING_HYPERDRIVE: {
     connectionString: "postgresql://onboarding.invalid/neondb",
@@ -56,6 +60,7 @@ function setup(
   const port = {
     cancelRenewal: vi.fn(),
     discardCheckout: vi.fn(() => Promise.resolve("discarded")),
+    hasSubscription: vi.fn(() => Promise.resolve(false)),
     prepareSubscription: vi.fn(() =>
       Promise.resolve({
         checkoutId: "chk-1",
@@ -64,7 +69,6 @@ function setup(
       })
     ),
     provider: "asaas",
-    hasSubscription: vi.fn(() => Promise.resolve(false)),
     readState: vi.fn(),
     refundCurrentPeriod: vi.fn(),
     ...options.portOverrides,
@@ -80,6 +84,9 @@ function setup(
     readRecord: vi.fn(() => Promise.resolve(null)),
     recordEvent: vi.fn(() => Promise.resolve({ duplicate: false, id: "ev-1" })),
     startTrial: vi.fn(() => Promise.resolve({})),
+    withPayerLock: vi.fn((_bucket: string, operation: () => Promise<unknown>) =>
+      operation()
+    ),
     ...options.storeOverrides,
   };
   const createBillingStore = vi.fn(
@@ -99,8 +106,18 @@ function setup(
       });
     }
   );
+  // the Pix answer waits 3 s at least; the test's clock never moves and its sleep is instant
+  const pixTiming = {
+    elapsedMs: vi.fn(() => 0),
+    sleep: vi.fn((_ms: number) => Promise.resolve()),
+  };
   const router = createRpcRouter({
-    billing: { createBillingStore, listBillingPrices, providerPortOf },
+    billing: {
+      createBillingStore,
+      listBillingPrices,
+      pixTiming,
+      providerPortOf,
+    },
     withTenantRequestContext,
   } as unknown as Overrides);
   const app = createServerApp({ rpcRouter: router });
@@ -116,6 +133,7 @@ function setup(
     client: createORPCClient(link) as unknown as BillingClient,
     createBillingStore,
     listBillingPrices,
+    pixTiming,
     port,
     providerPortOf,
     requested,
@@ -263,7 +281,8 @@ describe("billing.startCheckout", () => {
     });
 
     it.each([
-      ["a method that is not the card", { method: "pix_automatic" }],
+      ["a Pix Automático with no payer", { method: "pix_automatic" }],
+      ["a method Polaris does not offer", { method: "boleto" }],
       ["a cycle that does not exist", { cycleMonths: 3 }],
       ["no trial answer", { trial: undefined }],
     ])("refuses %s", async (_label, change) => {
@@ -510,5 +529,249 @@ describe("billing.startCheckout", () => {
 
     expect(failure).toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
     expect(JSON.stringify(failure)).not.toContain("secret internals");
+  });
+});
+
+const PAYER = {
+  email: "pagador.pix@example.com",
+  name: "Pagador Pix de Teste",
+  taxId: "52998224725",
+};
+const EMV = "00020126580014br.gov.bcb.pix0136SECRET-EMV6304ABCD";
+const AUTH_URL = "https://woovi-sandbox.com/pay/authorization";
+const pix = {
+  cycleMonths: 12,
+  method: "pix_automatic",
+  organizationId: requestedOrganizationId,
+  payer: PAYER,
+  trial: true,
+};
+
+function wooviSetup(options: Parameters<typeof setup>[0] = {}) {
+  return setup({
+    ...options,
+    portOverrides: {
+      prepareSubscription: vi.fn(() =>
+        Promise.resolve({
+          checkoutId: "woovi-chk-1",
+          handoff: { emv: EMV, kind: "pix_authorization", url: AUTH_URL },
+          providerRef: "woovi-ref-1",
+        })
+      ),
+      provider: "woovi",
+      ...options.portOverrides,
+    } as Partial<BillingProviderPort>,
+  });
+}
+
+describe("billing.startCheckout by Pix Automático", () => {
+  it("accepts a valid payer, asks for the Woovi port, and hands the Pix over", async () => {
+    const fixture = wooviSetup();
+
+    await expect(fixture.client.billing.startCheckout(pix)).resolves.toEqual({
+      handoff: { emv: EMV, kind: "pix_authorization", url: AUTH_URL },
+    });
+
+    expect(fixture.capabilities).toEqual(["billing:manage"]);
+    // the port is asked for with the bindings only: no option carries a question about the organization
+    expect(fixture.providerPortOf).toHaveBeenCalledWith(
+      billingBindings,
+      "woovi"
+    );
+    expect(fixture.port.prepareSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: "249.00",
+        payer: expect.objectContaining({
+          customerKey: expect.stringMatching(PAYER_CUSTOMER_KEY),
+          email: PAYER.email,
+          name: PAYER.name,
+          taxId: PAYER.taxId,
+        }),
+        trial: true,
+      })
+    );
+    expect(
+      vi.mocked(fixture.port.prepareSubscription).mock.calls[0]?.[0]
+    ).not.toHaveProperty("organizationId");
+    expect(fixture.store.attachProvider).toHaveBeenCalledWith(
+      serverOrganizationId,
+      "woovi",
+      "woovi-ref-1"
+    );
+    expect(fixture.store.close).toHaveBeenCalledTimes(1);
+    // the answer waits for the minimum time (here, the instant sleep the test gave)
+    expect(fixture.pixTiming.sleep).toHaveBeenCalledWith(3000);
+  });
+
+  it.each([
+    ["no payer", { payer: undefined }],
+    [
+      "a tax ID with wrong check digits",
+      { payer: { ...PAYER, taxId: "52998224724" } },
+    ],
+    [
+      "a tax ID with punctuation",
+      { payer: { ...PAYER, taxId: "529.982.247-25" } },
+    ],
+    [
+      "a tax ID of one repeated digit, punctuated",
+      { payer: { ...PAYER, taxId: "111.111.111-11" } },
+    ],
+    [
+      "a tax ID of one repeated digit",
+      { payer: { ...PAYER, taxId: "11111111111" } },
+    ],
+    [
+      "a tax ID of the wrong length",
+      { payer: { ...PAYER, taxId: "5299822472" } },
+    ],
+    [
+      "an extra key in the payer",
+      { payer: { ...PAYER, phone: "11999999999" } },
+    ],
+    [
+      "a payer with no e-mail",
+      { payer: { name: PAYER.name, taxId: PAYER.taxId } },
+    ],
+    ["a tax ID outside the payer, besides it", { taxId: PAYER.taxId }],
+  ])(
+    "refuses %s with 400, before anything is called",
+    async (_label, change) => {
+      const fixture = wooviSetup();
+
+      await expect(
+        fixture.client.billing.startCheckout({ ...pix, ...change })
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      expect(fixture.withTenantRequestContext).not.toHaveBeenCalled();
+      expect(fixture.listBillingPrices).not.toHaveBeenCalled();
+      expect(fixture.createBillingStore).not.toHaveBeenCalled();
+      expect(fixture.providerPortOf).not.toHaveBeenCalled();
+      expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["missing", undefined],
+    ["shorter than 32 characters", "a".repeat(31)],
+  ])(
+    "answers service unavailable (billing_not_configured) when BILLING_PAYER_KEY is %s (the session secret does not stand in), before the store and the port",
+    async (_label, secret) => {
+      const fixture = wooviSetup({
+        bindings: { ...billingBindings, BILLING_PAYER_KEY: secret as never },
+      });
+
+      await expect(
+        fixture.client.billing.startCheckout(pix)
+      ).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "billing_not_configured" },
+      });
+
+      expect(fixture.createBillingStore).not.toHaveBeenCalled();
+      expect(fixture.providerPortOf).not.toHaveBeenCalled();
+      expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+    }
+  );
+
+  it("answers service unavailable when BILLING_PAYER_KEY is the session secret reused", async () => {
+    const fixture = wooviSetup({
+      bindings: {
+        ...billingBindings,
+        BILLING_PAYER_KEY: billingBindings.BETTER_AUTH_SECRET as never,
+      },
+    });
+
+    await expect(
+      fixture.client.billing.startCheckout(pix)
+    ).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "billing_not_configured" },
+    });
+    expect(fixture.createBillingStore).not.toHaveBeenCalled();
+  });
+
+  it("keys the payer's lock with BILLING_PAYER_KEY (not the session secret), never putting the document in it", async () => {
+    const fixture = wooviSetup();
+
+    await fixture.client.billing.startCheckout(pix);
+
+    const calls = fixture.store.withPayerLock.mock.calls as unknown as [
+      string,
+      unknown,
+    ][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toMatch(EIGHT_HEX);
+    expect(calls[0]?.[0]).toBe(await payerLockKey("b".repeat(32), PAYER.taxId));
+    expect(calls[0]?.[0]).not.toBe(
+      await payerLockKey("a".repeat(32), PAYER.taxId)
+    );
+  });
+
+  it("does not ask the card checkout for the secret", async () => {
+    const fixture = setup({
+      bindings: { ...billingBindings, BILLING_PAYER_KEY: undefined as never },
+    });
+
+    await expect(fixture.client.billing.startCheckout(valid)).resolves.toEqual({
+      handoff: { kind: "redirect", url: CHECKOUT_URL },
+    });
+  });
+
+  it("refuses the card with a payer, before anything is called", async () => {
+    const fixture = setup();
+
+    await expect(
+      fixture.client.billing.startCheckout({ ...valid, payer: PAYER })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(fixture.withTenantRequestContext).not.toHaveBeenCalled();
+    expect(fixture.providerPortOf).not.toHaveBeenCalled();
+  });
+
+  it("answers a conflict with payer_not_accepted and a message in Portuguese, saying nothing of why", async () => {
+    const refusal = Object.assign(new Error("payer_data_mismatch"), {
+      code: "payer_data_mismatch",
+    });
+    const fixture = wooviSetup({
+      portOverrides: {
+        prepareSubscription: vi.fn(() => Promise.reject(refusal)),
+      },
+    });
+
+    const failure = await fixture.client.billing
+      .startCheckout(pix)
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "payer_not_accepted" },
+      message: expect.stringContaining(
+        "Não foi possível iniciar o Pix Automático"
+      ),
+    });
+    expect(JSON.stringify(failure)).not.toContain(PAYER.taxId);
+    expect(fixture.store.attachProvider).not.toHaveBeenCalled();
+    expect(fixture.store.close).toHaveBeenCalledTimes(1);
+    expect(fixture.pixTiming.sleep).toHaveBeenCalledWith(3000);
+  });
+
+  it("answers a conflict with checkout_in_progress when the payer's lock times out", async () => {
+    const fixture = wooviSetup({
+      storeOverrides: {
+        withPayerLock: vi.fn(() =>
+          Promise.reject(Object.assign(new Error("lock"), { code: "55P03" }))
+        ),
+      },
+    });
+
+    await expect(
+      fixture.client.billing.startCheckout(pix)
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "checkout_in_progress" },
+      message: expect.stringContaining("em andamento"),
+    });
+    expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
   });
 });

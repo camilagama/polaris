@@ -53,7 +53,7 @@ describe.skipIf(!enabled)("Asaas sandbox", () => {
       expect(prepared.providerRef).toBe(prepared.checkoutId);
       expect(prepared.checkoutId).toMatch(UUID);
       expect(prepared.handoff.kind).toBe("redirect");
-      expect(new URL(prepared.handoff.url).hostname).toMatch(ASAAS_HOST);
+      expect(new URL(prepared.handoff.url ?? "").hostname).toMatch(ASAAS_HOST);
     } finally {
       // the checkout is cancelled even if an expectation fails
       expect(await port.discardCheckout(prepared.checkoutId)).toBe("discarded");

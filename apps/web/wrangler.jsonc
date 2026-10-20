@@ -14,6 +14,8 @@
   "vars": {
     "EMAIL_PASSWORD_AUTH_ENABLED": "false",
     "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+    // the Woovi refund command stays off until the refund of an installment is proven (S3.2, Gate 7)
+    "WOOVI_REFUND_ENABLED": "false",
     // the automatic purge of a closed organization (ADR 0102): off until the go-live
     "CLOSURE_AUTO_PURGE_ENABLED": "false"
   },
@@ -194,6 +196,7 @@
         "POLARIS_ENVIRONMENT": "staging",
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "BETTER_AUTH_BASE_URL": "https://polaris-web-staging.PLACEHOLDER-workers-subdomain.workers.dev",
         "CATALOG_ORIGIN": "https://polaris-catalog-staging.PLACEHOLDER-workers-subdomain.workers.dev",
@@ -328,6 +331,7 @@
         "POLARIS_ENVIRONMENT": "production",
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",

@@ -79,6 +79,8 @@ export interface WorkerBindings {
   /** The limiter of the Google sign-in start and callback (20 per 60 s per IP); it has no Turnstile. */
   AUTH_SOCIAL_RATE_LIMITER?: RateLimitBinding;
   BETTER_AUTH_BASE_URL?: string;
+  /** The secret (32 characters or more) the Pix payer's lock and customer keys derive from (ADR 0101, emenda do PR 6); generated once, never rotated by routine. Without it the Pix checkout answers 503. */
+  BILLING_PAYER_KEY?: string;
   /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
   BILLING_HYPERDRIVE?: HyperdriveBinding;
   /** The origin the public catalog is served from (used only to show the organization its link). */
@@ -128,6 +130,12 @@ export interface WorkerBindings {
   WOOVI_APP_ID?: string;
   /** `https://api.woovi-sandbox.com` in staging, `https://api.woovi.com` in production. */
   WOOVI_BASE_URL?: string;
+  /**
+   * `"true"` turns on the refund command for Woovi; anything else keeps it off
+   * (the default) until the refund of an installment is proven in the sandbox
+   * (S3.2, Gate 7).
+   */
+  WOOVI_REFUND_ENABLED?: string;
   /**
    * Woovi's public keys that sign webhooks (`x-webhook-signature`), pinned: one
    * SPKI key as base64 of its DER, or two separated by a comma during a

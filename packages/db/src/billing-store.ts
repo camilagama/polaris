@@ -249,6 +249,21 @@ export interface BillingStore {
   ) => Promise<{ duplicate: boolean; id: string }>;
   /** The unclaimed trials past their retries, oldest first (see `UnclaimedTrialEvent`). */
   listUnclaimedTrials: (limit?: number) => Promise<UnclaimedTrialEvent[]>;
+  /**
+   * The organizations linked to `provider` that the hourly reconciliation reads
+   * (ADR 0101, emenda do PR 6): a subscription that may still change access
+   * (`trial_setup`, `trialing`, `active`, `grace`), or any link written in the
+   * last 8 days (a Pix Automático without trial waits on Free for its first
+   * charge). At most `limit`: first the ones a lost webhook hurts most (a trial
+   * setup or a link of the last 8 days), then the others in an order that
+   * changes every hour, so a batch smaller than the list still reaches every
+   * organization in a few hours.
+   */
+  listReconcilableOrganizations: (
+    provider: string,
+    limit: number,
+    now?: Date
+  ) => Promise<string[]>;
   /** Processes events that were received but not applied, and retries failed and unresolved ones. */
   retryPending: (now?: Date, limit?: number) => Promise<BillingRetryReport>;
   /** Ends a grant now (or, if it has not started, as soon as it could); ending one twice is one ending. */
@@ -294,6 +309,37 @@ export interface BillingStore {
    * that ended, and trial setups abandoned (no checkout can still be finished).
    */
   sweepDue: (now?: Date, limit?: number) => Promise<BillingSweepReport>;
+  /**
+   * Runs `operation` while holding the payer's lock (ADR 0101, emenda do PR 6):
+   * two Pix checkouts of the same CPF or CNPJ never align the customer and
+   * create the subscription at the same time. `key` is a keyed digest of the
+   * document (8 hex digits), never the document: without the server's key it
+   * cannot be aimed at, and two documents that share it only wait for each
+   * other. The lock is a transaction-scoped advisory lock on its own
+   * connection; waiting longer than 10 s fails with SQLSTATE 55P03, and the
+   * transaction ends if it sits idle for 60 s (a Worker stopped mid-way never
+   * keeps it).
+   */
+  withPayerLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+}
+
+/** The key of the payer's lock: 8 hex digits of a keyed digest of the document. */
+const payerLockKeyPattern = /^[\da-f]{8}$/;
+
+/** Takes the payer's lock on `client`, inside its transaction, then runs `operation` on the pool's other connections. */
+async function holdPayerLock<T>(
+  client: PoolClient,
+  key: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  await client.query("SET LOCAL lock_timeout = '10s'");
+  // a Worker stopped while it holds the lock must not keep it: the server ends the transaction
+  await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
+  await client.query(
+    "SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended($1, 0))",
+    [`polaris.billing.payer:${key}`]
+  );
+  return await operation();
 }
 
 interface BillingRow {
@@ -1593,6 +1639,23 @@ export function createBillingStore(
       }
       return report;
     },
+    async listReconcilableOrganizations(provider, limit, now = new Date()) {
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+        throw new RangeError("invalid_limit");
+      }
+      const hour = Math.floor(now.getTime() / 3_600_000);
+      const found = await pool.query<{ organization_id: string }>(
+        `SELECT organization_id FROM public.organization_billing
+          WHERE provider = $1 AND provider_ref IS NOT NULL
+            AND (state IN ('trial_setup', 'trialing', 'active', 'grace')
+              OR updated_at > $2::timestamptz - interval '8 days')
+          ORDER BY (state = 'trial_setup' OR updated_at > $2::timestamptz - interval '8 days') DESC,
+                   md5(organization_id || ':' || $4::text), organization_id
+          LIMIT $3`,
+        [provider, now, limit, String(hour)]
+      );
+      return found.rows.map((row) => row.organization_id);
+    },
     async listUnclaimedTrials(limit = 50) {
       const found = await pool.query<{
         id: string;
@@ -1617,6 +1680,22 @@ export function createBillingStore(
         providerRef: row.provider_ref,
         providerSubscriptionId: row.provider_subscription_id,
       }));
+    },
+    async withPayerLock(key, operation) {
+      if (!payerLockKeyPattern.test(key)) {
+        throw new TypeError("invalid_payer_lock_key");
+      }
+      return await inTransaction(pool, async (client) => {
+        // the connection sits idle while the operation runs on others: if the server ends it
+        // (the idle timeout below, a network cut), its error event must not go unhandled
+        const ignore = () => undefined;
+        client.on("error", ignore);
+        try {
+          return await holdPayerLock(client, key, operation);
+        } finally {
+          client.off("error", ignore);
+        }
+      });
     },
     async settleUnclaimedTrial(eventId, cancel, now = new Date()) {
       if (!uuidPattern.test(eventId)) {

@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { BILLING_STATES } from "@polaris/domain/billing/entitlements";
 import {
   checkoutOpen,
+  HANDLED_BILLING_PROVIDERS,
   renewalAlive,
 } from "@polaris/domain/billing/renewal-cancellation";
 import { PURGE_BILLING_FACT_KEYS } from "../src/purge-datasets";
@@ -555,7 +556,9 @@ async function run() {
     );
     assert.equal(afterReclose[1]?.status, "pending");
 
-    // a provider Polaris does not cancel through is the person's: never asked again, unless the app lists it
+    // a provider Polaris does not cancel through is the person's: never asked again, unless the app lists it.
+    // Woovi is listed since its outbound port (cobrança PR 6): the list the app passes asks it again (L4)
+    assert.ok(HANDLED_BILLING_PROVIDERS.includes("woovi"));
     const woovi = await fixture("woovi");
     await owner.pool.query(
       "UPDATE public.organization_billing SET provider = 'woovi', provider_ref = $2 WHERE organization_id = $1",
@@ -566,14 +569,14 @@ async function run() {
     assert.ok(wooviEvent);
     await dispatched(wooviEvent.id, 7200);
     assert.deepEqual(
-      await rearm(),
+      await rearm(3600, 1000, ["asaas"]),
       { inserted: 0, rearmed: 0 },
       "a provider not listed is not asked again"
     );
     assert.deepEqual(
-      await rearm(3600, 1000, ["asaas", "woovi"]),
+      await rearm(3600, 1000, HANDLED_BILLING_PROVIDERS),
       { inserted: 0, rearmed: 1 },
-      "the day its adapter exists, the app lists it"
+      "Woovi, listed by the app, is asked again while its renewal is alive"
     );
 
     // an event sent 200 times is left to the incident: it does not cycle until the purge

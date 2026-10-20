@@ -1,5 +1,7 @@
 import {
   type BillingProviderPort,
+  type CheckoutHandoff,
+  type PreparedSubscription,
   ProviderNotFoundError,
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
@@ -30,8 +32,10 @@ const DAY_MS = 86_400_000;
 
 export type BillingCommandErrorCode =
   | "already_subscribed"
+  | "checkout_in_progress"
   | "checkout_pending_confirmation"
   | "cycle_not_offered"
+  | "payer_not_accepted"
   | "renewal_cancelled_until"
   | "trial_already_used"
   | "trial_in_progress";
@@ -195,19 +199,25 @@ async function assertOldCheckoutMadeNoSubscription(
 }
 
 /**
- * Starts the card checkout. The order is the point (AC-6): the trial is
- * reserved first (with a trial), then the checkout is created at the
- * provider, then its reference is linked to the organization, and only then
- * is the link handed over, so a payment can never arrive for a checkout that
- * no organization holds. Before any of it, a checkout of the organization that
- * the provider already turned into a subscription (paid, webhook late) is not
- * replaced: the new one is refused and the old facts are read in. If the link fails, the checkout is given up at the
- * provider (best effort; it expires within the hour anyway).
+ * The order is the point (AC-6): the trial is reserved first (with a trial),
+ * then the subscription or the checkout is created at the provider, then its
+ * reference is linked to the organization, and only then is the handoff
+ * returned, so a payment can never arrive for something no organization
+ * holds. Before any of it, a checkout of the organization that the provider
+ * already turned into a subscription (paid, webhook late) is not replaced:
+ * the new one is refused and the old facts are read in. If the link fails,
+ * what was created is given up at the provider (best effort). `serialize`
+ * wraps the creation and the link (Pix: the payer's lock).
  */
-export async function startCardCheckout(
+async function openCheckout<K extends CheckoutHandoff["kind"]>(
   dependencies: StartCheckoutDependencies,
-  input: StartCheckoutInput
-): Promise<{ handoff: { kind: "redirect"; url: string } }> {
+  input: StartCheckoutInput,
+  options: {
+    kind: K;
+    prepare: (firstChargeOn: string) => Promise<PreparedSubscription>;
+    serialize?: <T>(operation: () => Promise<T>) => Promise<T>;
+  }
+): Promise<Extract<CheckoutHandoff, { kind: K }>> {
   const { port, store } = dependencies;
   const now = dependencies.now?.() ?? new Date();
   const ids = {
@@ -234,39 +244,50 @@ export async function startCardCheckout(
       throw trialRefusalOf(error) ?? error;
     }
   }
-  const prepared = await port.prepareSubscription({
-    amount: input.amount,
-    cycleMonths: input.cycleMonths,
-    firstChargeOn: firstChargeDateOf(now, input.trial),
-  });
-  const { handoff } = prepared;
-  let replaced: Awaited<ReturnType<typeof store.attachProvider>> = null;
-  try {
-    if (handoff.kind !== "redirect") {
-      // the card is typed on the provider's page: anything else is not this checkout
-      throw new Error("billing_unexpected_handoff");
+  const createAndLink = async () => {
+    if (options.serialize) {
+      // asked again under the lock: another checkout of the organization with the same
+      // document may have been linked and approved while this one waited for it
+      await assertOldCheckoutMadeNoSubscription(dependencies, input, now, ids);
     }
-    replaced = await store.attachProvider(
-      input.organizationId,
-      port.provider,
-      prepared.providerRef
-    );
-  } catch (error: unknown) {
-    await port.discardCheckout(prepared.checkoutId).catch((discard) => {
-      logger.warn("billing_checkout_discard_failed", {
-        ...describeError(discard),
-        ...ids,
+    const prepared = await options.prepare(firstChargeDateOf(now, input.trial));
+    let replaced: Awaited<ReturnType<typeof store.attachProvider>> = null;
+    try {
+      if (prepared.handoff.kind !== options.kind) {
+        // the card is typed on the provider's page, the Pix is authorized in the bank: anything else is not this checkout
+        throw new Error("billing_unexpected_handoff");
+      }
+      replaced = await store.attachProvider(
+        input.organizationId,
+        port.provider,
+        prepared.providerRef
+      );
+    } catch (error: unknown) {
+      await port.discardCheckout(prepared.checkoutId).catch((discard) => {
+        logger.warn("billing_checkout_discard_failed", {
+          ...describeError(discard),
+          ...ids,
+        });
       });
-    });
-    if (
-      error instanceof Error &&
-      error.message === "billing_provider_already_attached"
-    ) {
-      // a subscription became live in between
-      throw new BillingCommandError("already_subscribed", { cause: error });
+      if (
+        error instanceof Error &&
+        error.message === "billing_provider_already_attached"
+      ) {
+        // a subscription became live in between
+        throw new BillingCommandError("already_subscribed", { cause: error });
+      }
+      throw error;
     }
-    throw error;
-  }
+    if (prepared.customerAlignment === "created") {
+      // the audit of the payer's customer created at the provider: the operator's log only
+      // (the tenant never sees which of the two it was), and no personal data
+      logger.info("billing_payer_customer_created", ids);
+    }
+    return { handoff: prepared.handoff, prepared, replaced };
+  };
+  const { handoff, prepared, replaced } = options.serialize
+    ? await options.serialize(createAndLink)
+    : await createAndLink();
   if (
     replaced &&
     replaced.provider === port.provider &&
@@ -286,7 +307,213 @@ export async function startCardCheckout(
     cycleMonths: input.cycleMonths,
     trial: input.trial,
   });
+  return handoff as Extract<CheckoutHandoff, { kind: K }>;
+}
+
+/** Starts the card checkout (Asaas, hosted page): nothing of the payer is sent. */
+export async function startCardCheckout(
+  dependencies: StartCheckoutDependencies,
+  input: StartCheckoutInput
+): Promise<{ handoff: { kind: "redirect"; url: string } }> {
+  const handoff = await openCheckout(dependencies, input, {
+    kind: "redirect",
+    prepare: (firstChargeOn) =>
+      dependencies.port.prepareSubscription({
+        amount: input.amount,
+        cycleMonths: input.cycleMonths,
+        firstChargeOn,
+      }),
+  });
   return { handoff: { kind: "redirect", url: handoff.url } };
+}
+
+/** The payer of a Pix Automático: never stored by Polaris, never logged. */
+export interface PixPayer {
+  email: string;
+  name: string;
+  /** CPF or CNPJ, digits only (the contract checks the digits). */
+  taxId: string;
+}
+
+/**
+ * Every Pix checkout answers no sooner than this (ADR 0101, emenda do PR 6):
+ * every path reads the payer's customer once, but only `created` makes one
+ * more call (the creation) and a refusal one fewer (no subscription), and the
+ * time of the answer would otherwise tell them apart.
+ */
+export const PIX_CHECKOUT_MINIMUM_MS = 3000;
+
+export interface StartPixCheckoutDependencies
+  extends Omit<StartCheckoutDependencies, "store"> {
+  /** A monotonic clock in ms (`performance.now`); a test gives its own. */
+  elapsedMs?: () => number;
+  /** The secret the payer's lock and customer keys are derived from (`BILLING_PAYER_KEY`, its own, never the session secret); never sent anywhere. */
+  payerKey: string;
+  sleep?: (ms: number) => Promise<void>;
+  store: StartCheckoutDependencies["store"] &
+    Pick<BillingStore, "withPayerLock">;
+}
+
+const textEncoder = new TextEncoder();
+
+/**
+ * An HMAC-SHA-256 of the document, keyed by a key derived from the server's
+ * secret under `label`: each use has a key of its own, and the secret itself
+ * never keys anything here.
+ */
+async function payerTag(
+  secret: string,
+  label: string,
+  taxId: string
+): Promise<Uint8Array> {
+  if (secret.length < 32) {
+    throw new TypeError("payer_lock_secret_too_short");
+  }
+  const sign = async (key: BufferSource, text: string) =>
+    crypto.subtle.sign(
+      "HMAC",
+      await crypto.subtle.importKey(
+        "raw",
+        key,
+        { hash: "SHA-256", name: "HMAC" },
+        false,
+        ["sign"]
+      ),
+      textEncoder.encode(text)
+    );
+  const derived = await sign(textEncoder.encode(secret), label);
+  return new Uint8Array(await sign(derived, taxId));
+}
+
+const hexOf = (bytes: Uint8Array) =>
+  [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/**
+ * The key of the payer's lock: 8 hex digits of the payer's tag
+ * (`polaris.billing.payer-lock.v1`). The lock never carries the document, and
+ * without the key nobody can pick another document that shares a victim's
+ * lock to keep it busy; two documents that share one only wait for each other.
+ */
+export async function payerLockKey(
+  secret: string,
+  taxId: string
+): Promise<string> {
+  const tag = await payerTag(secret, "polaris.billing.payer-lock.v1", taxId);
+  return hexOf(tag.slice(0, 4));
+}
+
+/**
+ * The payer's customer key at Woovi (`correlationID`): `polaris-payer-` and 32
+ * hex digits of the payer's tag (`polaris.billing.payer-customer.v1`). The
+ * customer is created and read by it, so the document never goes into a URL
+ * and no list of the account is read (ADR 0101, emenda do PR 6). It changes
+ * with the secret (`BILLING_PAYER_KEY`, never rotated by routine): after a
+ * rotation, a customer created before is not found by its key and its creation
+ * is refused (the document already has one), which answers `payer_not_accepted`
+ * until support sorts it out (runbook).
+ */
+export async function payerCustomerKey(
+  secret: string,
+  taxId: string
+): Promise<string> {
+  const tag = await payerTag(
+    secret,
+    "polaris.billing.payer-customer.v1",
+    taxId
+  );
+  return `polaris-payer-${hexOf(tag.slice(0, 16))}`;
+}
+
+/** The refusals about the payer's data, all answered the same (never which one, never why). */
+const payerRefusalCodes: ReadonlySet<string> = new Set(["payer_data_mismatch"]);
+
+function pixRefusalOf(error: unknown): BillingCommandError | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : "";
+  if (payerRefusalCodes.has(code)) {
+    return new BillingCommandError("payer_not_accepted", { cause: error });
+  }
+  if (code === "55P03") {
+    // another checkout of the same document (or of its bucket) holds the lock for too long
+    return new BillingCommandError("checkout_in_progress", { cause: error });
+  }
+  return null;
+}
+
+/**
+ * Starts the Pix Automático checkout (Woovi): journey 2 with the trial (the
+ * payer only authorizes; the first charge is on the day the trial ends),
+ * journey 3 without (the first charge is paid on approval, today). The
+ * payer's customer is read by its key (`payerCustomerKey`) or created, and the
+ * subscription created and linked, under the payer's lock, so two checkouts
+ * of one document never run that at the same time. The answer is the same
+ * whatever Woovi held for the document (`created`, `matches`), and no sooner
+ * than `PIX_CHECKOUT_MINIMUM_MS`; a refusal about the payer's data (a customer
+ * with another name or e-mail included) is one generic code. The tax ID never
+ * reaches a log.
+ */
+export async function startPixCheckout(
+  dependencies: StartPixCheckoutDependencies,
+  input: StartCheckoutInput & { payer: PixPayer }
+): Promise<{
+  handoff: { emv: string; kind: "pix_authorization"; url: string | null };
+}> {
+  const elapsed = dependencies.elapsedMs ?? (() => performance.now());
+  const sleep =
+    dependencies.sleep ??
+    ((ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
+      }));
+  const started = elapsed();
+  const { payer } = input;
+  try {
+    const lockKey = await payerLockKey(dependencies.payerKey, payer.taxId);
+    const customerKey = await payerCustomerKey(
+      dependencies.payerKey,
+      payer.taxId
+    );
+    const handoff = await openCheckout(dependencies, input, {
+      kind: "pix_authorization",
+      prepare: (firstChargeOn) =>
+        dependencies.port.prepareSubscription({
+          amount: input.amount,
+          cycleMonths: input.cycleMonths,
+          firstChargeOn,
+          payer: {
+            customerKey,
+            email: payer.email,
+            name: payer.name,
+            taxId: payer.taxId,
+          },
+          trial: input.trial,
+        }),
+      serialize: (operation) =>
+        dependencies.store.withPayerLock(lockKey, operation),
+    });
+    return {
+      handoff: { emv: handoff.emv, kind: handoff.kind, url: handoff.url },
+    };
+  } catch (error: unknown) {
+    const refusal = pixRefusalOf(error);
+    if (refusal) {
+      logger.warn("billing_pix_checkout_refused", {
+        organizationId: opaqueId(input.organizationId),
+        provider: dependencies.port.provider,
+        reason: refusal.code,
+      });
+      throw refusal;
+    }
+    throw error;
+  } finally {
+    const rest = PIX_CHECKOUT_MINIMUM_MS - (elapsed() - started);
+    if (rest > 0) {
+      await sleep(rest);
+    }
+  }
 }
 
 export interface OperatorCommandDependencies {
@@ -375,22 +602,45 @@ export async function reconcileOrganization(
   return report;
 }
 
-/** Refunds in full the charge of the period in force; the fact comes back by webhook or reconciliation. */
+/**
+ * Refunds in full the charge of the period in force. The fact comes back by
+ * webhook or reconciliation (Asaas), or the port answers it and it is written
+ * here (Woovi: its refund event names no subscription).
+ */
 export async function refundCurrentPeriod(
   dependencies: OperatorCommandDependencies,
   organizationId: string
 ): Promise<"nothing_to_refund" | "not_linked" | "refund_requested"> {
+  const { store } = dependencies;
   const now = dependencies.now?.() ?? new Date();
-  const link = await dependencies.store.readProviderLink(organizationId);
+  const link = await store.readProviderLink(organizationId);
   if (!link) {
     return "not_linked";
   }
   const port = dependencies.portFor(link.provider);
-  const result = await port.refundCurrentPeriod(
+  const outcome = await port.refundCurrentPeriod(
     link.providerRef,
     now,
     link.providerSubscriptionId
   );
+  let result: "nothing_to_refund" | "refund_requested";
+  if (typeof outcome === "string") {
+    result = outcome;
+  } else {
+    // the provider's refund sends no webhook tied to the subscription (Woovi): the fact is
+    // written now, through the inbox, under the refund's own ID (a repeat is a duplicate)
+    const { event } = outcome;
+    const stored = await store.recordEvent({
+      fact: event.fact,
+      organizationId,
+      provider: port.provider,
+      providerEventId: event.providerEventId,
+      providerRef: event.providerRef,
+      providerSubscriptionId: event.providerSubscriptionId ?? null,
+    });
+    await store.processEvent(stored.id, now);
+    result = outcome.kind;
+  }
   logger.info("billing_refund_command", {
     organizationId: opaqueId(organizationId),
     provider: port.provider,

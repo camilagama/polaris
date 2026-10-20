@@ -9,8 +9,8 @@ import {
 } from "../provider-port";
 import {
   isTaxIdDigits,
-  isWooviCustomerCorrelationId,
   isWooviGlobalId,
+  isWooviPayerCorrelationId,
   type WooviGlobalIdKind,
 } from "./ids";
 
@@ -42,24 +42,37 @@ export interface WooviClientConfig {
 
 export interface WooviClient {
   cancelSubscription: (subscriptionId: string) => Promise<unknown>;
+  /**
+   * `POST /api/v1/customer`: creates the payer's customer under Polaris's own
+   * `correlationID` (an HMAC of the document, never the document). Woovi keeps
+   * one customer per CPF or CNPJ and refuses (400) a second one with another
+   * key (sandbox, 20/10/2026).
+   */
+  createCustomer: (customer: {
+    correlationId: string;
+    email: string;
+    name: string;
+    taxId: string;
+  }) => Promise<unknown>;
   createSubscription: (body: string) => Promise<unknown>;
   /**
-   * The customer with this CPF or CNPJ, or null when Woovi has none. Read from
-   * the list filtered by tax ID (`GET /api/v1/customer?taxID=`), not from
-   * `GET /api/v1/customer/{taxID}`: that one answers an unknown customer with a
-   * 400 (sandbox, 20/10/2026), which says nothing a refusal of another cause
-   * would not. The list is checked again here: only an entry with this exact
-   * tax ID counts, and more than one is not an answer to trust.
+   * `GET /api/v1/customer/{correlationID}`: the customer Polaris created under
+   * this key, or null when there is none. One read, never a list: the key is
+   * an HMAC of the document, so the URL carries no CPF (ADR 0101, emenda do
+   * PR 6). Woovi answers an unknown key with 400 `Cliente não encontrado`
+   * (sandbox, 20/10/2026), the only answer read as "none": any other 400 is a
+   * rejection and a 404 (a wrong route) is `ProviderNotFoundError`.
    */
-  findCustomerByTaxId: (taxId: string) => Promise<unknown>;
+  getCustomer: (correlationId: string) => Promise<unknown>;
   getInstallment: (installmentId: string) => Promise<unknown>;
   getSubscription: (subscriptionId: string) => Promise<unknown>;
   listSubscriptionInstallments: (subscriptionId: string) => Promise<unknown[]>;
-  /** `PATCH /api/v1/customer/{correlationID}` with the name and the e-mail; the tax ID never changes. */
-  updateCustomer: (
-    correlationId: string,
-    fields: { email: string; name: string }
-  ) => Promise<unknown>;
+  /**
+   * `POST /api/v1/refund`: gives back a Pix received, named by its
+   * `endToEndId`, in full. The `correlationID` is Polaris's and makes a repeat
+   * the same refund at Woovi.
+   */
+  refundPix: (body: string) => Promise<unknown>;
 }
 
 /**
@@ -95,6 +108,41 @@ function globalIdPath(kind: WooviGlobalIdKind, id: string): string {
   return encodeURIComponent(id);
 }
 
+/**
+ * The key of a customer Polaris created, refused unless it has the shape of
+ * one (`isWooviPayerCorrelationId`): a key of any other shape, a CPF among
+ * them, never reaches the URL.
+ */
+function customerPath(correlationId: string): string {
+  if (!isWooviPayerCorrelationId(correlationId)) {
+    throw new TypeError("invalid_customer_key");
+  }
+  return encodeURIComponent(correlationId);
+}
+
+/** Woovi's answer to a customer key it does not know: 400 with this exact error. */
+function customerNotFound({
+  status,
+  text,
+}: {
+  status: number;
+  text: string;
+}): boolean {
+  if (status !== 400) {
+    return false;
+  }
+  try {
+    const answer: unknown = JSON.parse(text);
+    return (
+      typeof answer === "object" &&
+      answer !== null &&
+      (answer as Record<string, unknown>).error === "Cliente não encontrado"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new ProviderResponseMalformedError();
@@ -117,11 +165,12 @@ function unwrap(answer: unknown, key: string, required: boolean): unknown {
 export function createWooviClient(config: WooviClientConfig): WooviClient {
   const base = checkedBaseUrl(config.baseUrl, config.appId);
 
-  async function call(
+  /** The status and the text of a request; a failure to reach Woovi is an outage. */
+  async function request(
     method: FetchInit["method"],
     path: string,
     body?: string
-  ): Promise<unknown> {
+  ): Promise<{ status: number; text: string }> {
     const init: FetchInit = {
       headers: {
         accept: "application/json",
@@ -137,17 +186,18 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
     if (body !== undefined) {
       init.body = body;
     }
-    let status: number;
-    let text: string;
     try {
       const response = await config.fetch(`${base}${path}`, init);
-      ({ status } = response);
-      text = await response.text();
+      return { status: response.status, text: await response.text() };
     } catch {
       // timeout, abort or network: nothing of the cause is kept (it may echo the URL)
       // biome-ignore lint/style/useErrorCause: The cause stays out on purpose.
       throw new ProviderUnavailableError();
     }
+  }
+
+  /** The parsed answer of a 2xx; any other status is the error of its kind. */
+  function answerOf({ status, text }: { status: number; text: string }) {
     if (status === 404) {
       throw new ProviderNotFoundError();
     }
@@ -166,40 +216,79 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
     }
   }
 
+  async function call(
+    method: FetchInit["method"],
+    path: string,
+    body?: string
+  ): Promise<unknown> {
+    return answerOf(await request(method, path, body));
+  }
+
+  /** Reads a list page by page; a short page is the last one, whatever `pageInfo` says. */
+  async function listAll(path: string, key: string): Promise<unknown[]> {
+    const items: unknown[] = [];
+    const separator = path.includes("?") ? "&" : "?";
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const answer = record(
+        // biome-ignore lint/performance/noAwaitInLoops: Pages are read one after the other.
+        await call(
+          "GET",
+          `${path}${separator}skip=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`
+        )
+      );
+      const list = answer[key];
+      if (!Array.isArray(list)) {
+        throw new ProviderResponseMalformedError();
+      }
+      items.push(...list);
+      // (the documented example of an empty list says `hasNextPage: true`)
+      if (list.length < PAGE_SIZE) {
+        return items;
+      }
+    }
+    // more than a list Polaris reads can have: not an answer to trust
+    throw new ProviderResponseMalformedError();
+  }
+
   return {
     cancelSubscription: async (subscriptionId) =>
       call(
         "PUT",
         `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/cancel`
       ),
+    createCustomer: async (customer) => {
+      customerPath(customer.correlationId);
+      if (!isTaxIdDigits(customer.taxId)) {
+        throw new TypeError("invalid_tax_id");
+      }
+      return unwrap(
+        await call(
+          "POST",
+          "/api/v1/customer",
+          JSON.stringify({
+            correlationID: customer.correlationId,
+            email: customer.email,
+            name: customer.name,
+            taxID: customer.taxId,
+          })
+        ),
+        "customer",
+        true
+      );
+    },
     createSubscription: async (body) =>
       unwrap(
         await call("POST", "/api/v1/subscriptions", body),
         "subscription",
         true
       ),
-    async findCustomerByTaxId(taxId) {
-      if (!isTaxIdDigits(taxId)) {
-        throw new TypeError("invalid_tax_id");
+    async getCustomer(correlationId) {
+      const path = `/api/v1/customer/${customerPath(correlationId)}`;
+      const answer = await request("GET", path);
+      if (customerNotFound(answer)) {
+        return null;
       }
-      const { customers } = record(
-        await call("GET", `/api/v1/customer?taxID=${taxId}`)
-      );
-      if (!Array.isArray(customers)) {
-        throw new ProviderResponseMalformedError();
-      }
-      const same = customers.filter((entry) => {
-        const { taxID } = record(entry);
-        return (
-          typeof taxID === "object" &&
-          taxID !== null &&
-          (taxID as Record<string, unknown>).taxID === taxId
-        );
-      });
-      if (same.length > 1) {
-        throw new ProviderResponseMalformedError();
-      }
-      return same[0] ?? null;
+      return unwrap(answerOf(answer), "customer", true);
     },
     getInstallment: async (installmentId) =>
       unwrap(
@@ -219,44 +308,12 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
         "subscription",
         true
       ),
-    async listSubscriptionInstallments(subscriptionId) {
-      const path = `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/installments`;
-      const items: unknown[] = [];
-      for (let page = 0; page < MAX_PAGES; page += 1) {
-        const answer = record(
-          // biome-ignore lint/performance/noAwaitInLoops: Pages are read one after the other.
-          await call(
-            "GET",
-            `${path}?skip=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`
-          )
-        );
-        const { installments } = answer;
-        if (!Array.isArray(installments)) {
-          throw new ProviderResponseMalformedError();
-        }
-        items.push(...installments);
-        // a short page is the last one, whatever `pageInfo` says (the documented
-        // example of an empty list says `hasNextPage: true`)
-        if (installments.length < PAGE_SIZE) {
-          return items;
-        }
-      }
-      // more installments than a subscription of Polaris can have: not an answer to trust
-      throw new ProviderResponseMalformedError();
-    },
-    async updateCustomer(correlationId, fields) {
-      if (!isWooviCustomerCorrelationId(correlationId)) {
-        throw new ProviderResponseMalformedError();
-      }
-      return unwrap(
-        await call(
-          "PATCH",
-          `/api/v1/customer/${encodeURIComponent(correlationId)}`,
-          JSON.stringify({ email: fields.email, name: fields.name })
-        ),
-        "customer",
-        true
-      );
-    },
+    listSubscriptionInstallments: async (subscriptionId) =>
+      listAll(
+        `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/installments`,
+        "installments"
+      ),
+    refundPix: async (body) =>
+      unwrap(await call("POST", "/api/v1/refund", body), "refund", false),
   };
 }

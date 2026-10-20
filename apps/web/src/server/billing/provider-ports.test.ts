@@ -1,4 +1,7 @@
-import { ProviderNotConfiguredError } from "@polaris/billing/provider-port";
+import {
+  ProviderNotConfiguredError,
+  ProviderNotFoundError,
+} from "@polaris/billing/provider-port";
 import { describe, expect, it, vi } from "vitest";
 import { billingProviderPortOf } from "./provider-ports";
 
@@ -9,7 +12,7 @@ const valid = {
 };
 
 describe("billingProviderPortOf", () => {
-  it.each(["woovi", "unknown", ""])(
+  it.each(["unknown", "Woovi", ""])(
     "refuses the provider %j, which has no port here",
     (provider) => {
       expect(() => billingProviderPortOf(valid, provider)).toThrow(
@@ -90,5 +93,89 @@ describe("billingProviderPortOf", () => {
     expect(new URL(body.callback.successUrl).origin).toBe(
       "https://app.example.test"
     );
+  });
+
+  describe("Woovi (Pix Automático, cobrança PR 6)", () => {
+    const woovi = {
+      ...valid,
+      WOOVI_APP_ID: "fake-app-id",
+      WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+    };
+
+    it("builds the Woovi port from its settings", () => {
+      expect(billingProviderPortOf(woovi, "woovi").provider).toBe("woovi");
+    });
+
+    it.each(["WOOVI_APP_ID", "WOOVI_BASE_URL"] as const)(
+      "refuses to build it without %s",
+      (missing) => {
+        expect(() =>
+          billingProviderPortOf({ ...woovi, [missing]: undefined }, "woovi")
+        ).toThrow(ProviderNotConfiguredError);
+      }
+    );
+
+    it.each([
+      "https://api.woovi.com.evil.example",
+      "http://api.woovi-sandbox.com",
+      "https://api.woovi-sandbox.com/api/v1",
+    ])("refuses the host %s", (baseUrl) => {
+      expect(() =>
+        billingProviderPortOf({ ...woovi, WOOVI_BASE_URL: baseUrl }, "woovi")
+      ).toThrow(ProviderNotConfiguredError);
+    });
+
+    describe("the refund (WOOVI_REFUND_ENABLED)", () => {
+      const SUBSCRIPTION_ID = btoa(
+        "PaymentSubscription:0123456789abcdef01234567"
+      );
+      const refundWith = async (refundFlag: string | undefined) => {
+        const fetchFake = vi.fn(() =>
+          Promise.resolve(new Response("{}", { status: 404 }))
+        );
+        const port = billingProviderPortOf(
+          {
+            ...woovi,
+            ...(refundFlag === undefined
+              ? {}
+              : { WOOVI_REFUND_ENABLED: refundFlag }),
+          },
+          "woovi",
+          { fetch: fetchFake }
+        );
+        const error = await port
+          .refundCurrentPeriod(
+            SUBSCRIPTION_ID,
+            new Date("2026-10-28T15:00:00Z")
+          )
+          .then(
+            () => null,
+            (caught: unknown) => caught
+          );
+        return { calls: fetchFake.mock.calls.length, error };
+      };
+
+      it.each([
+        ["absent", undefined],
+        ["false", "false"],
+        ["empty", ""],
+        ["True", "True"],
+        ["1", "1"],
+      ])(
+        "is off when it is %s: not configured, and Woovi is not called",
+        async (_name, flag) => {
+          const { calls, error } = await refundWith(flag);
+          expect(error).toBeInstanceOf(ProviderNotConfiguredError);
+          expect(calls).toBe(0);
+        }
+      );
+
+      it('is on only when it is exactly "true": the port reaches Woovi', async () => {
+        const { calls, error } = await refundWith("true");
+        // the fake answers 404 to the read of the subscription: it got that far
+        expect(error).toBeInstanceOf(ProviderNotFoundError);
+        expect(calls).toBe(1);
+      });
+    });
   });
 });

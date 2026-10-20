@@ -16,14 +16,15 @@ const mocks = vi.hoisted(() => ({
   mediaClose: vi.fn(),
   outboxClose: vi.fn(),
   privacyClose: vi.fn(),
+  rearmRenewalCancellations: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
-  rearmRenewalCancellations: vi.fn(),
   runBillingMaintenance: vi.fn(),
   runDataExports: vi.fn(),
   runOrganizationPurges: vi.fn(),
   runPrivacyMaintenance: vi.fn(),
   runUnclaimedTrialSettlement: vi.fn(),
+  runWooviReconciliation: vi.fn(),
 }));
 
 vi.mock("@polaris/db/auth-login-lock-maintenance", () => ({
@@ -69,6 +70,7 @@ vi.mock("../src/server/media-reconciler", () => ({
 vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
   runUnclaimedTrialSettlement: mocks.runUnclaimedTrialSettlement,
+  runWooviReconciliation: mocks.runWooviReconciliation,
 }));
 vi.mock("../src/server/billing/renewal-cancellation", () => ({
   handleRenewalCancelRequested: mocks.handleRenewalCancelRequested,
@@ -120,6 +122,7 @@ describe("the scheduled maintenance", () => {
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
     mocks.runUnclaimedTrialSettlement.mockResolvedValue(null);
+    mocks.runWooviReconciliation.mockResolvedValue(null);
     mocks.rearmRenewalCancellations.mockResolvedValue({
       inserted: 0,
       rearmed: 0,
@@ -243,13 +246,22 @@ describe("the scheduled maintenance", () => {
       order.push("rearm");
       return Promise.resolve({ inserted: 1, rearmed: 0 });
     });
+    mocks.runWooviReconciliation.mockImplementation(() => {
+      order.push("woovi");
+      return Promise.resolve({
+        applied: 0,
+        failed: 0,
+        organizations: 0,
+        truncated: false,
+      });
+    });
     mocks.runUnclaimedTrialSettlement.mockImplementation(() => {
       order.push("unclaimed");
       return Promise.resolve(null);
     });
 
     await expect(runScheduled(configured)).resolves.toBeUndefined();
-    expect(order).toEqual(["maintenance", "rearm", "unclaimed"]);
+    expect(order).toEqual(["maintenance", "rearm", "woovi", "unclaimed"]);
     expect(mocks.rearmRenewalCancellations).toHaveBeenCalledWith(
       expect.objectContaining({ close: mocks.billingClose })
     );
@@ -261,6 +273,22 @@ describe("the scheduled maintenance", () => {
     );
 
     await expect(runScheduled(configured)).rejects.toThrow("rearm_failed");
+    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles Woovi every hour on the billing connection, and a failure makes the run incomplete without stopping the rest (ADR 0101, PR 6)", async () => {
+    mocks.runWooviReconciliation.mockRejectedValue(
+      new Error("billing_woovi_reconcile_incomplete")
+    );
+
+    await expect(runScheduled(configured)).rejects.toThrow(
+      "billing_woovi_reconcile_incomplete"
+    );
+    expect(mocks.runWooviReconciliation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ close: mocks.billingClose })
+    );
     expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
@@ -945,9 +973,10 @@ describe("the queue consumer", () => {
         eventId: renewalEvent.eventId,
         organizationId: "org_1",
       });
-      // Polaris cancels through Asaas only, for now (Woovi comes with its own port)
+      // Polaris cancels through Asaas and, since its outbound port (cobrança PR 6), Woovi
       expect(dependencies.handles("asaas")).toBe(true);
-      expect(dependencies.handles("woovi")).toBe(false);
+      expect(dependencies.handles("woovi")).toBe(true);
+      expect(dependencies.handles("stripe")).toBe(false);
       expect(sent.ack).toHaveBeenCalledTimes(1);
       expect(mocks.billingClose).toHaveBeenCalledTimes(1);
     });

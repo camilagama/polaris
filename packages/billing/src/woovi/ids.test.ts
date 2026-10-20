@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   isTaxIdDigits,
-  isWooviCustomerCorrelationId,
   isWooviGlobalId,
+  isWooviPayerCorrelationId,
   wooviLogId,
 } from "./ids";
 import {
@@ -82,21 +82,35 @@ describe("isTaxIdDigits", () => {
   });
 });
 
-describe("isWooviCustomerCorrelationId", () => {
-  it("accepts a plain key and refuses anything that could change a path", () => {
-    expect(isWooviCustomerCorrelationId("cust-fake_0001.a:b")).toBe(true);
-    for (const bad of [
-      "",
-      ".",
-      "..",
-      "a/b",
-      "../x",
-      "a b",
-      "a?b",
-      "a".repeat(101),
-      1,
-    ]) {
-      expect(isWooviCustomerCorrelationId(bad)).toBe(false);
-    }
+describe("isWooviPayerCorrelationId", () => {
+  it("accepts polaris-payer- and 32 lower-case hex digits", () => {
+    expect(
+      isWooviPayerCorrelationId(
+        "polaris-payer-0123456789abcdef0123456789abcdef"
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["a dot", "."],
+    ["a path step", ".."],
+    ["a path", "../x"],
+    ["a CPF", "52998224725"],
+    ["a CNPJ", "11222333000181"],
+    ["a plain key", "cust-fake_0001.a:b"],
+    ["the prefix alone", "polaris-payer-"],
+    ["31 hex digits", `polaris-payer-${"a".repeat(31)}`],
+    ["33 hex digits", `polaris-payer-${"a".repeat(33)}`],
+    ["upper-case hex", `polaris-payer-${"A".repeat(32)}`],
+    ["non-hex digits", `polaris-payer-${"g".repeat(32)}`],
+    ["a path after the key", `polaris-payer-${"a".repeat(32)}/x`],
+    ["a query after the key", `polaris-payer-${"a".repeat(32)}?x=1`],
+    ["a line break after the key", `polaris-payer-${"a".repeat(32)}\n`],
+    ["a prefix before the key", `x-polaris-payer-${"a".repeat(32)}`],
+    ["a number", 1],
+    ["null", null],
+  ])("refuses %s", (_name, value) => {
+    expect(isWooviPayerCorrelationId(value)).toBe(false);
   });
 });
