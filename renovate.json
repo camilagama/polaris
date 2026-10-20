@@ -3,6 +3,8 @@
   "extends": ["config:recommended"],
   "dependencyDashboard": true,
   "automerge": false,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
   "packageRules": [
     {
       "description": "Group TanStack packages",
