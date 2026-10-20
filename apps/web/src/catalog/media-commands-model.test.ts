@@ -4,6 +4,7 @@ import {
   describeMediaFailure,
   imageActionAvailability,
   imageActionLabel,
+  isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   movedAssetOrder,
   movedNotice,
@@ -204,6 +205,18 @@ describe("describeMediaFailure", () => {
     expect(isMediaSessionEnded(http("session_required", 401))).toBe(true);
     expect(isMediaSessionEnded(http("forbidden", 403))).toBe(false);
     expect(isMediaSessionEnded(new TypeError("Failed to fetch"))).toBe(false);
+  });
+
+  it("asks for the legal acceptance, not for a permission, when the acceptance is pending", () => {
+    const pending = http("legal_acceptance_required", 403);
+    expect(isMediaLegalAcceptanceRequired(pending)).toBe(true);
+    expect(isMediaSessionEnded(pending)).toBe(false);
+    expect(isMediaLegalAcceptanceRequired(http("forbidden", 403))).toBe(false);
+    expect(describeMediaFailure("upload", pending)).toEqual({
+      message:
+        "Para continuar, leia e aceite os termos de uso e a política de privacidade.",
+      reloadList: false,
+    });
   });
 
   it("turns a network error into a try-again message", () => {

@@ -175,8 +175,22 @@ export function isMediaSessionEnded(error: unknown): boolean {
   );
 }
 
+/** True when the media request waits for the legal acceptance (the shell then shows the fixed notice with `/aceite`). */
+export function isMediaLegalAcceptanceRequired(error: unknown): boolean {
+  return (
+    error instanceof MediaUploadHttpError &&
+    error.code === "legal_acceptance_required"
+  );
+}
+
 function codeMessage(code: string): MediaFailure | null {
   switch (code) {
+    case "legal_acceptance_required":
+      return {
+        message:
+          "Para continuar, leia e aceite os termos de uso e a política de privacidade.",
+        reloadList: false,
+      };
     case "forbidden":
     case "tenant_access_denied":
       return {

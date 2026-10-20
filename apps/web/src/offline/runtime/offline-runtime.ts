@@ -1,5 +1,9 @@
 import { readUnverifiedOfflineLease } from "../../lib/offline-lease-token";
-import { isDefiniteRpcRejection, rpcErrorCode } from "../../lib/rpc-error";
+import {
+  isDefiniteRpcRejection,
+  isLegalAcceptanceRefusal,
+  rpcErrorCode,
+} from "../../lib/rpc-error";
 import type { PendingWork, PendingWorkSource } from "../../pwa/update-model";
 import {
   type BootstrapSource,
@@ -149,6 +153,12 @@ export interface RuntimeSnapshot {
    */
   expiredWhileOpen: boolean;
   lastSyncAt: string | null;
+  /**
+   * The server refused the last call for lack of the legal acceptance (ADR 0100). It is not a refused
+   * session: the collections, the lease and the queue stay as they are, nothing is rejected, and the
+   * sync tries again at its usual moments; it clears once a sync goes through.
+   */
+  legalAcceptanceRequired: boolean;
   leaseExpiresAt: string | null;
   online: boolean;
   phase: RuntimePhase;
@@ -266,6 +276,7 @@ export class OfflineRuntime {
     dataVersion: 0,
     expiredWhileOpen: false,
     lastSyncAt: null,
+    legalAcceptanceRequired: false,
     leaseExpiresAt: null,
     online: true,
     phase: "off",
@@ -348,6 +359,10 @@ export class OfflineRuntime {
         await this.syncNow();
         if (this.snapshot.reason === "sync_failed") {
           throw new Error("sync_failed");
+        }
+        // the queue was not sent: an update must not take it for done
+        if (this.snapshot.legalAcceptanceRequired) {
+          throw new Error("legal_acceptance_required");
         }
       },
     };
@@ -556,10 +571,14 @@ export class OfflineRuntime {
     } catch (error) {
       if (generation === this.generation) {
         await this.closeStores();
+        // without the legal acceptance nothing is forgotten: the device, the lease and the namespace stay
+        const legal = isLegalAcceptanceRefusal(error);
+        const failure = error instanceof Error ? error.message : "start_failed";
         this.set({
           ...this.snapshot,
+          legalAcceptanceRequired: legal,
           phase: "unavailable",
-          reason: error instanceof Error ? error.message : "start_failed",
+          reason: legal ? "legal_acceptance_required" : failure,
         });
       }
     }
@@ -583,6 +602,7 @@ export class OfflineRuntime {
       expiredWhileOpen: false,
       lastSyncAt: null,
       leaseExpiresAt: null,
+      legalAcceptanceRequired: false,
       phase: "off",
       reason: null,
       renewalRefused: false,
@@ -776,7 +796,11 @@ export class OfflineRuntime {
     }
     try {
       return await this.dependencies.api.deviceIsMine(deviceId);
-    } catch {
+    } catch (error) {
+      // the server answered, and the device is fine: it only waits for the acceptance, never forget it
+      if (isLegalAcceptanceRefusal(error)) {
+        throw error;
+      }
       return this.leaseProvesDevice(deviceId, userId);
     }
   }
@@ -966,7 +990,9 @@ export class OfflineRuntime {
       if (
         !this.dependencies.isOnline() ||
         (error instanceof Error && error.message === "no_lease_offline") ||
-        isPlanRefusal(error)
+        isPlanRefusal(error) ||
+        // the device is not somebody else's: the server only waits for the acceptance
+        isLegalAcceptanceRefusal(error)
       ) {
         throw error;
       }
@@ -1167,7 +1193,16 @@ export class OfflineRuntime {
     try {
       lease = await this.ensureLease(run.userId, organizationId, deviceId);
     } catch (error) {
-      if (isSessionRefusal(error)) {
+      if (isLegalAcceptanceRefusal(error)) {
+        // not a refused session, and not a refusal for good: the acceptance renews it at the next sync
+        if (run.generation === this.generation) {
+          this.set({
+            ...this.snapshot,
+            legalAcceptanceRequired: true,
+            syncing: false,
+          });
+        }
+      } else if (isSessionRefusal(error)) {
         this.dependencies.keyValues.remove(SESSION_USER_KEY);
         await this.dropLocalCopy(run, { forgetDevice: false });
       } else if (run.generation === this.generation) {
@@ -1456,12 +1491,28 @@ export class OfflineRuntime {
         bootstrapped: true,
         dataVersion: this.snapshot.dataVersion + 1,
         lastSyncAt: this.now().toISOString(),
+        legalAcceptanceRequired: false,
         reason: null,
         sessionRefused: false,
         syncing: false,
       });
       this.channel?.post();
     } catch (error) {
+      // before the session refusal (it is a FORBIDDEN too): only the sync pauses. The batch went back to
+      // waiting, nothing was rejected, and the collections, the lease and the device stay (ADR 0100)
+      if (isLegalAcceptanceRefusal(error)) {
+        this.set({
+          ...this.snapshot,
+          dataVersion: this.snapshot.dataVersion + 1,
+          legalAcceptanceRequired: true,
+          reason: "legal_acceptance_required",
+          sessionRefused: false,
+          syncing: false,
+        });
+        this.channel?.post();
+        await this.refreshCounts();
+        return;
+      }
       if (isSessionRefusal(error)) {
         this.dependencies.keyValues.remove(SESSION_USER_KEY);
         await this.dropLocalCopy(run, { forgetDevice: false });

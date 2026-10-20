@@ -17,7 +17,10 @@
     // the Woovi refund command stays off until the refund of an installment is proven (S3.2, Gate 7)
     "WOOVI_REFUND_ENABLED": "false",
     // the automatic purge of a closed organization (ADR 0102): off until the go-live
-    "CLOSURE_AUTO_PURGE_ENABLED": "false"
+    "CLOSURE_AUTO_PURGE_ENABLED": "false",
+    // the server control of the legal acceptance (ADR 0100): off until the client that pauses the sync
+    // on it is published and the service worker had time to update every device (release checklist)
+    "LEGAL_ACCEPTANCE_ENFORCED": "false"
   },
   "main": "./worker/index.ts",
   // Structured logger output (see src/server/observability).
@@ -198,6 +201,7 @@
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
+        "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://polaris-web-staging.PLACEHOLDER-workers-subdomain.workers.dev",
         "CATALOG_ORIGIN": "https://polaris-catalog-staging.PLACEHOLDER-workers-subdomain.workers.dev",
         "OFFLINE_LEASE_KEY_ID": "staging-1"
@@ -333,6 +337,7 @@
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
+        "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
         "OFFLINE_LEASE_KEY_ID": "production-1"

@@ -3,6 +3,7 @@ import { DataExportUnavailableError } from "@polaris/domain/privacy/data-export"
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerEnv, WorkerBindings } from "../environment";
+import { isExemptFromLegalAcceptance } from "../legal-acceptance";
 import { TenantRequestContextError } from "../request-context-error";
 import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createDataExportRoutes } from "./data-exports";
@@ -166,5 +167,38 @@ describe("the data export download", () => {
         }).get(good)
       ).status
     ).toBe(403);
+  });
+
+  it("answers 403 legal_acceptance_required (not 401 or 503) while the legal acceptance is pending", async () => {
+    const response = await build({
+      tenant: () =>
+        Promise.reject(
+          new TenantRequestContextError("legal_acceptance_required", [
+            { document: "terms", version: 1 },
+          ])
+        ),
+    }).get(good);
+    expect(response.status).toBe(403);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "legal_acceptance_required" },
+      requestId: "req-1",
+    });
+  });
+
+  it("marks the download exempt from the legal acceptance control before the request context runs", async () => {
+    let exemptWhenCalled: boolean | undefined;
+    const requests: Request[] = [];
+    const t = build({
+      tenant: (input) => {
+        requests.push(input.request);
+        exemptWhenCalled = isExemptFromLegalAcceptance(input.request);
+        return Promise.resolve(file);
+      },
+      download: vi.fn(() => Promise.resolve(file)),
+    });
+    await t.get(good);
+    expect(requests).toHaveLength(1);
+    expect(exemptWhenCalled).toBe(true);
   });
 });

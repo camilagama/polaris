@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   findPendingMarkers,
   formatEffectiveFrom,
+  isLegalDocumentId,
   LEGAL_DOCUMENT_IDS,
   LEGAL_DOCUMENTS,
   LEGAL_PATHS,
   legalVersionLine,
+  pendingLegalDocuments,
 } from "./legal-documents";
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
@@ -77,5 +79,51 @@ describe("pending markers", () => {
   it("ignores ordinary brackets and an empty text", () => {
     expect(findPendingMarkers("[1] e [outro]")).toEqual([]);
     expect(findPendingMarkers("")).toEqual([]);
+  });
+});
+
+describe("the documents still to accept", () => {
+  const documents = {
+    privacy: { ...LEGAL_DOCUMENTS.privacy, minAcceptedVersion: 2, version: 3 },
+    terms: { ...LEGAL_DOCUMENTS.terms, minAcceptedVersion: 1, version: 2 },
+  };
+
+  it("asks for both documents from someone who accepted nothing", () => {
+    expect(pendingLegalDocuments({})).toEqual(["terms", "privacy"]);
+    expect(pendingLegalDocuments({}, documents)).toEqual(["terms", "privacy"]);
+  });
+
+  it("asks only for a document below its floor, not for one below the version in force (L5)", () => {
+    expect(pendingLegalDocuments({ privacy: 1, terms: 1 }, documents)).toEqual([
+      "privacy",
+    ]);
+    expect(pendingLegalDocuments({ privacy: 2, terms: 1 }, documents)).toEqual(
+      []
+    );
+  });
+
+  it("lets through someone who accepted the versions in force", () => {
+    expect(
+      pendingLegalDocuments({
+        privacy: LEGAL_DOCUMENTS.privacy.version,
+        terms: LEGAL_DOCUMENTS.terms.version,
+      })
+    ).toEqual([]);
+  });
+
+  it("says what changed for every version after the first (L5)", () => {
+    for (const document of LEGAL_DOCUMENT_IDS) {
+      const { changes, version } = LEGAL_DOCUMENTS[document];
+      if (version > 1) {
+        expect(changes?.trim()).toBeTruthy();
+      }
+    }
+  });
+
+  it("recognizes only the two documents", () => {
+    expect(isLegalDocumentId("terms")).toBe(true);
+    expect(isLegalDocumentId("privacy")).toBe(true);
+    expect(isLegalDocumentId("cookies")).toBe(false);
+    expect(isLegalDocumentId(1)).toBe(false);
   });
 });

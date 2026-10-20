@@ -1,0 +1,92 @@
+/*
+ * The acceptance screen (DESIGN.md): the card of the sign-in screen, kept minimal until the redesign
+ * restyles it. Targets are 44 px or more, nothing scrolls sideways at 360 px, every color is a token.
+ */
+.acceptance-documents {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.acceptance-documents p {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.acceptance-document-title {
+  font-weight: 700;
+}
+
+.acceptance-document-version {
+  font-size: 0.9rem;
+  color: var(--ui-muted);
+}
+
+.acceptance-changes {
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.4rem;
+  background: var(--ui-warning-soft);
+  border-left: 0.25rem solid var(--ui-warning);
+  border-radius: 0.5rem;
+}
+
+.acceptance-changes-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.acceptance-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.acceptance-check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.acceptance-check input {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin: 0.1rem 0 0;
+  accent-color: var(--ui-accent);
+}
+
+.acceptance-check label {
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+/* a link is content-box by default and a button border-box: without this the link is 64 px and "Continuar" 44 */
+.acceptance-continue {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: stretch;
+  min-height: 2.75rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.acceptance-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  padding: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  list-style: none;
+}
+
+.acceptance-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--ui-accent-strong);
+}

@@ -12,6 +12,7 @@ import {
 } from "@polaris/domain/expenses/expense";
 import { RECURRENCE_FREQUENCIES } from "@polaris/domain/expenses/recurrence";
 import { GOAL_KINDS } from "@polaris/domain/goals/goal";
+import { LEGAL_DOCUMENT_IDS } from "@polaris/domain/legal/legal-documents";
 import { PAYMENT_FEE_MODES } from "@polaris/domain/sales/payment-profile";
 import { SALE_PAYMENT_METHODS } from "@polaris/domain/sales/sale-payment";
 import { z } from "zod";
@@ -1233,7 +1234,55 @@ export const billingStartCheckoutInput = z.discriminatedUnion("method", [
     .strict(),
 ]);
 
+const legalDocumentId = z.enum(LEGAL_DOCUMENT_IDS);
+const legalAcceptanceStatus = z.object({
+  pending: z.array(
+    z.object({
+      changes: z.string().nullable(),
+      document: legalDocumentId,
+      effectiveFrom: z.string().nullable(),
+      version: z.number().int().positive(),
+    })
+  ),
+});
+
 export const polarisContract = {
+  // The acceptance of the Terms of Use and of the Privacy Policy (ADR 0100). Per user, never per
+  // organization: the server reads the session. Both are exempt from the acceptance control, so
+  // that a user who still has to accept can read and accept.
+  account: {
+    // Records the acceptance of the versions in force (origin `reaceite`); the text hash and the
+    // instant are the server's. A version that is not the one in force is a CONFLICT with reason
+    // `legal_version_mismatch`: the screen reads the status again. Accepting again is idempotent.
+    acceptLegal: oc
+      .input(
+        z
+          .object({
+            documents: z
+              .array(
+                z
+                  .object({
+                    document: legalDocumentId,
+                    version: z.number().int().positive().max(1000),
+                  })
+                  .strict()
+              )
+              .min(1)
+              .max(LEGAL_DOCUMENT_IDS.length)
+              .refine(
+                (items) =>
+                  new Set(items.map((item) => item.document)).size ===
+                  items.length,
+                { message: "duplicate_legal_document" }
+              ),
+          })
+          .strict()
+      )
+      .output(legalAcceptanceStatus),
+    // The documents still to accept: those whose highest accepted version is below the floor of the
+    // server's constant, each with the version in force and what changed from the previous one.
+    legalStatus: oc.output(legalAcceptanceStatus),
+  },
   category: {
     archive: oc
       .input(

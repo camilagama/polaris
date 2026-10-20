@@ -29,6 +29,7 @@
 | [`cota-de-transformacao`](#cota-de-transformacao) | `media_transform_quota_exceeded` | 60 min | 1 | warning | não |
 | [`rejeicao-no-sync`](#rejeicao-no-sync) | `sync_push_command_rejected` | 15 min | 10 | warning | não |
 | [`registro-de-acesso`](#registro-de-acesso) | `auth_access_log_write_failed` | 15 min | 3 | critical | sim |
+| [`aceite-no-cadastro`](#aceite-no-cadastro) | `legal_acceptance_signup_record_failed` | 24 h | 1 | warning | não |
 | [`apagamento-automatico`](#apagamento-automatico) | `closure_auto_purge_volume_high` | 24 h | 1 | critical | sim |
 | [`loja-encerrada-parada`](#loja-encerrada-parada) | `closure_purge_overdue` | 24 h | 1 | warning | não |
 
@@ -163,6 +164,16 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 **Como confirmar.** Workers Logs: o evento, por `reason` e `sqlState`. Leitura do `reason` (detalhe no [runbook do registro de acesso](./registro-de-acesso.md)): `error` é falha do banco (confira o `sqlState`; `42501` é privilégio revogado, trate como incidente); `timeout` é o banco que não respondeu em cerca de 300 ms (lento ou acordando; a linha pode ter entrado depois); `writer_threw` (o gravador lançou exceção), `unexpected_result` (resposta que o código não conhece), `invalid_event`, `invalid_user`, `invalid_ip` e `invalid_request` são defeito de código. A requisição sem IP é outro evento, `auth_access_log_skipped`, descrito no mesmo runbook.
 
 **O que fazer.** Siga [erros-de-banco](#erros-de-banco) se o banco está com problema; depois registre a janela da lacuna (início e fim, quantidade de eventos) conforme o runbook do registro de acesso, porque o período sem registro precisa ser conhecido. Não tente refazer o registro à mão; a correção de um defeito de código é um commit, não uma alteração na tabela.
+
+<a id="aceite-no-cadastro"></a>
+
+### aceite-no-cadastro — aceite dos termos não gravado no cadastro
+
+**O que significa.** A conta foi criada pelo cadastro com e-mail, mas a gravação do aceite dos Termos de Uso e da Política de Privacidade falhou ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). O evento é `legal_acceptance_signup_record_failed` (nível `error`), com `errorClass`, `sqlState` (quando é do banco) e `requestId`; nunca o usuário nem o e-mail. O cadastro não falha: a pessoa entra normalmente.
+
+**Como confirmar.** Workers Logs: o evento, por `sqlState` e `errorClass`. `42501` é privilégio revogado nas funções de aceite (trate como incidente de banco); `57014` ou timeout é banco lento; sem `sqlState`, com `LegalAcceptanceRecordError`, a função recusou a linha (defeito de código).
+
+**O que fazer.** Com a flag `LEGAL_ACCEPTANCE_ENFORCED` ligada, nada se perde: o controle pede o aceite no primeiro acesso autenticado da pessoa. Com a flag desligada, a pessoa fica sem prova de aceite até a flag ligar, então corrija a causa (siga [erros-de-banco](#erros-de-banco) se for do banco) antes de ligar a flag. Não grave o aceite à mão: a pessoa o dá na tela `/aceite`.
 
 <a id="apagamento-automatico"></a>
 

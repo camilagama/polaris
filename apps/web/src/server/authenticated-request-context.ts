@@ -7,6 +7,13 @@ import {
 } from "./auth/auth-database";
 import { isSessionPastAbsoluteExpiration } from "./auth/session-policy";
 import type { WorkerBindings } from "./environment";
+import {
+  isExemptFromLegalAcceptance,
+  isLegalAcceptanceEnforced,
+  type LegalAcceptanceQueryable,
+  pendingLegalAcceptance,
+  readAcceptedLegalVersions,
+} from "./legal-acceptance";
 import { TenantRequestContextError } from "./request-context-error";
 
 type Database = ReturnType<typeof createHyperdriveDatabase>["db"];
@@ -55,15 +62,54 @@ export interface AuthenticatedRequestContextDependencies {
     secret: string;
   }) => SessionAuth;
   createDatabase: typeof createHyperdriveDatabase;
+  readAcceptedLegalVersions?: typeof readAcceptedLegalVersions;
 }
 
 export interface AuthenticatedRequestContextInput<T> {
   bindings: WorkerBindings;
   operation: (
     database: Database,
-    session: AuthenticatedRequestSession
+    session: AuthenticatedRequestSession,
+    /** The authentication connection: the only one that may read and record the legal acceptance. */
+    authConnection: LegalAcceptanceQueryable
   ) => Promise<T>;
   request: Request;
+}
+
+/**
+ * The single control of the legal acceptance (ADR 0100): every RPC, the sync, the leases and the
+ * authenticated `/api/*` routes come through the request context. Only the exempt procedures and routes
+ * skip it, and only with `LEGAL_ACCEPTANCE_ENFORCED=true` does it refuse anyone.
+ */
+async function assertLegalAcceptance(input: {
+  bindings: WorkerBindings;
+  connection: LegalAcceptanceQueryable;
+  readAccepted: typeof readAcceptedLegalVersions;
+  request: Request;
+  userId: string;
+}): Promise<void> {
+  if (
+    !isLegalAcceptanceEnforced(input.bindings) ||
+    isExemptFromLegalAcceptance(input.request)
+  ) {
+    return;
+  }
+  let pending: ReturnType<typeof pendingLegalAcceptance>;
+  try {
+    pending = pendingLegalAcceptance(
+      await input.readAccepted(input.connection, input.userId)
+    );
+  } catch (error) {
+    // fails closed: an unreadable record never lets the request through
+    logger.error("legal_acceptance_unavailable", {
+      errorClass: error instanceof Error ? error.name : "unknown",
+    });
+    // biome-ignore lint/style/useErrorCause: The database detail is logged above and must not reach clients.
+    throw new TenantRequestContextError("authentication_unavailable");
+  }
+  if (pending.length > 0) {
+    throw new TenantRequestContextError("legal_acceptance_required", pending);
+  }
 }
 
 export function createAuthenticatedRequestContext(
@@ -73,6 +119,8 @@ export function createAuthenticatedRequestContext(
   const authFactory =
     overrides.createAuth ??
     ((options) => createBetterAuth(options) as SessionAuth);
+  const readAccepted =
+    overrides.readAcceptedLegalVersions ?? readAcceptedLegalVersions;
 
   return async function runAuthenticatedRequestContext<T>(
     input: AuthenticatedRequestContextInput<T>
@@ -130,6 +178,15 @@ export function createAuthenticatedRequestContext(
       if (isSessionPastAbsoluteExpiration(session.session.createdAt)) {
         throw new TenantRequestContextError("session_required");
       }
+      const authConnection =
+        authDatabase.pool as unknown as LegalAcceptanceQueryable;
+      await assertLegalAcceptance({
+        bindings: input.bindings,
+        connection: authConnection,
+        readAccepted,
+        request: input.request,
+        userId: session.user.id,
+      });
 
       if (tenantConnectionString !== authConnectionString) {
         tenantDatabase = databaseFactory(
@@ -140,7 +197,8 @@ export function createAuthenticatedRequestContext(
 
       return await input.operation(
         (tenantDatabase ?? authDatabase).db,
-        session
+        session,
+        authConnection
       );
     } finally {
       await Promise.all([authDatabase.pool.end(), tenantDatabase?.pool.end()]);

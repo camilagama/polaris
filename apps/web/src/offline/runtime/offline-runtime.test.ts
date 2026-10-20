@@ -52,12 +52,16 @@ function world(options: { leaseHours?: number } = {}) {
   const failures: {
     /** The server cannot say whose a device is (down, timed out). */
     deviceIsMine: boolean;
+    /** What asking whose a device is throws, if anything (wins over `deviceIsMine`). */
+    deviceIsMineError?: Error;
     /** What asking who is signed in throws, if anything. */
     sessionUser?: Error;
     issueLease: Error[];
     push: boolean;
     /** The oRPC code the failing push carries (UNAUTHORIZED, FORBIDDEN...), if any. */
-    pushCode?: string;
+    pushCode?: string | undefined;
+    /** The `data` the failing push carries (the domain reason), if any. */
+    pushData?: Record<string, unknown> | undefined;
     /** The server answers every pushed command as rejected, with this code. */
     rejectCode?: string | undefined;
   } = {
@@ -131,10 +135,14 @@ function world(options: { leaseHours?: number } = {}) {
     };
   };
   const api: RuntimeApi = {
-    deviceIsMine: (deviceId) =>
-      failures.deviceIsMine
+    deviceIsMine: (deviceId) => {
+      if (failures.deviceIsMineError) {
+        return Promise.reject(failures.deviceIsMineError);
+      }
+      return failures.deviceIsMine
         ? Promise.reject(new Error("server down"))
-        : Promise.resolve(owners.get(deviceId) === session.user),
+        : Promise.resolve(owners.get(deviceId) === session.user);
+    },
     issueLease: async (deviceId, org) => {
       calls.issueLease += 1;
       const failure = failures.issueLease.shift();
@@ -151,6 +159,9 @@ function world(options: { leaseHours?: number } = {}) {
             ...(failures.pushCode === undefined
               ? {}
               : { code: failures.pushCode }),
+            ...(failures.pushData === undefined
+              ? {}
+              : { data: failures.pushData }),
           })
         );
       }
@@ -1702,5 +1713,204 @@ describe("the offline access that expired (emenda do ADR 0047)", () => {
     expect(w.liveTimers().map((timer) => timer.at)).toEqual([
       Date.parse(second ?? ""),
     ]);
+  });
+});
+
+/** The refusal the server gives for lack of the legal acceptance (ADR 0100), shaped like the oRPC one. */
+function legalRefusal(): Error {
+  return Object.assign(new Error("legal acceptance required"), {
+    code: "FORBIDDEN",
+    data: {
+      pending: [{ document: "terms", version: 2 }],
+      reason: "legal_acceptance_required",
+    },
+    status: 403,
+  });
+}
+
+describe("a server that waits for the legal acceptance", () => {
+  const scope = `${userId}-${organizationId}`;
+  const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+  function refuseAcceptance(w: ReturnType<typeof world>) {
+    w.failures.push = true;
+    w.failures.pushCode = "FORBIDDEN";
+    w.failures.pushData = {
+      pending: [{ document: "terms", version: 2 }],
+      reason: "legal_acceptance_required",
+    };
+  }
+
+  async function commandsOf(w: ReturnType<typeof world>) {
+    const kept = w.stores.get(scope);
+    return (await kept?.outbox.snapshot())?.commands ?? [];
+  }
+
+  it("pauses the sync: the queue waits, nothing is rejected or deleted, and the session is not refused", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+    const device = w.keyValues.read("polaris.offline.device");
+    const lease = w.keyValues.read(leaseKeyName);
+    expect(device).not.toBeNull();
+    expect(lease).not.toBeNull();
+
+    refuseAcceptance(w);
+    await runtime.syncNow();
+
+    expect(w.calls.push).toBeGreaterThan(0);
+    const commands = await commandsOf(w);
+    expect(commands.map((c) => c.status)).toEqual(["pending", "pending"]);
+    expect(commands.map((c) => c.commandId)).toEqual([uuid(101), uuid(102)]);
+    expect(runtime.getSnapshot().counts).toMatchObject({
+      pending: 2,
+      rejected: 0,
+      sending: 0,
+    });
+    expect(w.wiped).toEqual([]);
+    expect(w.purged).toEqual([]);
+    expect(w.keyValues.read(leaseKeyName)).toBe(lease);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    expect(w.keyValues.read("polaris.offline.namespaces")).toContain(userId);
+    expect(runtime.context()).not.toBeNull();
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: true,
+      legalAcceptanceRequired: true,
+      phase: "ready",
+      reason: "legal_acceptance_required",
+      sessionRefused: false,
+      syncing: false,
+    });
+  });
+
+  it("sends the same two commands at the next sync that the server accepts, and the pause ends", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+    refuseAcceptance(w);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().legalAcceptanceRequired).toBe(true);
+
+    w.failures.push = false;
+    w.failures.pushCode = undefined;
+    w.failures.pushData = undefined;
+    await runtime.syncNow();
+
+    expect(w.server.products.size).toBe(2);
+    expect(await commandsOf(w)).toEqual([]);
+    expect(runtime.getSnapshot()).toMatchObject({
+      legalAcceptanceRequired: false,
+      phase: "ready",
+      reason: null,
+      sessionRefused: false,
+    });
+    expect(runtime.getSnapshot().counts).toMatchObject({
+      pending: 0,
+      rejected: 0,
+    });
+    expect(w.wiped).toEqual([]);
+    expect(w.purged).toEqual([]);
+  });
+
+  it("contrast: a FORBIDDEN without the acceptance reason, or with another one, is still a refused session", async () => {
+    for (const data of [undefined, { reason: "something_else" }]) {
+      const w = world();
+      const runtime = w.make();
+      // biome-ignore lint/performance/noAwaitInLoops: each shape is tried on its own world
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      w.failures.push = true;
+      w.failures.pushCode = "FORBIDDEN";
+      w.failures.pushData = data;
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        legalAcceptanceRequired: false,
+        sessionRefused: true,
+      });
+      expect(w.wiped).toEqual([scope]);
+      expect(w.keyValues.read(leaseKeyName)).toBeNull();
+    }
+  });
+
+  it("at start, keeps the remembered device when asking whose it is gets the acceptance refusal", async () => {
+    const w = world();
+    await w.make().start(organizationId);
+    const device = w.keyValues.read("polaris.offline.device");
+    const lease = w.keyValues.read(leaseKeyName);
+    const registered = w.calls.registerDevice;
+    const issued = w.calls.issueLease;
+
+    w.failures.deviceIsMineError = legalRefusal();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(w.calls.registerDevice).toBe(registered);
+    expect(w.calls.issueLease).toBe(issued);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    expect(w.keyValues.read(leaseKeyName)).toBe(lease);
+    expect(w.wiped).toEqual([]);
+    expect(w.purged).toEqual([]);
+    expect(runtime.getSnapshot()).toMatchObject({
+      legalAcceptanceRequired: true,
+      phase: "unavailable",
+      reason: "legal_acceptance_required",
+      sessionRefused: false,
+    });
+  });
+
+  it("at start with no lease in cache, a refused lease keeps the device, registers nothing again and deletes nothing", async () => {
+    const w = world();
+    await w.make().start(organizationId);
+    const device = w.keyValues.read("polaris.offline.device");
+    const registered = w.calls.registerDevice;
+    w.keyValues.remove(leaseKeyName);
+
+    w.failures.issueLease.push(legalRefusal());
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(w.calls.registerDevice).toBe(registered);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    expect(w.wiped).toEqual([]);
+    expect(w.purged).toEqual([]);
+    expect(runtime.getSnapshot()).toMatchObject({
+      legalAcceptanceRequired: true,
+      phase: "unavailable",
+      reason: "legal_acceptance_required",
+      sessionRefused: false,
+    });
+    expect(runtime.context()).toBeNull();
+
+    // once accepted, the next start opens normally with the same device
+    const later = w.make();
+    await later.start(organizationId);
+    expect(later.getSnapshot()).toMatchObject({
+      legalAcceptanceRequired: false,
+      phase: "ready",
+      reason: null,
+    });
+    expect(w.calls.registerDevice).toBe(registered);
+  });
+
+  it("the work source of an update throws while the sync is stopped by the acceptance, and not after it goes through", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    refuseAcceptance(w);
+
+    await expect(runtime.workSource().sync()).rejects.toThrow(
+      "legal_acceptance_required"
+    );
+
+    w.failures.push = false;
+    w.failures.pushCode = undefined;
+    w.failures.pushData = undefined;
+    await expect(runtime.workSource().sync()).resolves.toBeUndefined();
   });
 });

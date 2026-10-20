@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
   listProductMedia,
   prepareMediaUploadFile,
@@ -35,6 +36,7 @@ import {
   type ImageActionAvailability,
   imageActionAvailability,
   imageActionLabel,
+  isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   type MediaFailure,
   type MediaFailureContext,
@@ -134,6 +136,9 @@ function mediaFailure(
   if (isMediaSessionEnded(error)) {
     // media calls are plain fetches, not oRPC: tell the shell here that the session is over, as the oRPC client does
     endSessionHere();
+  } else if (isMediaLegalAcceptanceRequired(error)) {
+    // not a refused session: the shell shows the fixed notice with `/aceite`, as the oRPC client does
+    markLegalAcceptanceRequired();
   }
   return describeMediaFailure(context, error);
 }

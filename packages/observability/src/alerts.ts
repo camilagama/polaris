@@ -250,6 +250,17 @@ export const alertSignals = [
     windowMinutes: 15,
   },
   {
+    id: "aceite-no-cadastro",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["legal_acceptance_signup_record_failed"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Aceite dos termos não gravado no cadastro",
+    windowMinutes: 1440,
+  },
+  {
     id: "apagamento-automatico",
     notify: "wake",
     severity: "critical",

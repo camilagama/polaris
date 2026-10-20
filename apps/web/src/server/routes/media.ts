@@ -51,7 +51,10 @@ import {
   logServerErrorFromContext,
   logServerEvent,
 } from "../observability/server-log";
-import { TenantRequestContextError } from "../request-context-error";
+import {
+  requestContextErrorStatus,
+  TenantRequestContextError,
+} from "../request-context-error";
 import { withTenantRequestContext } from "../tenant-request-context";
 
 type TenantRunner = typeof withTenantRequestContext;
@@ -387,7 +390,7 @@ function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
     return processing;
   }
   if (error instanceof TenantRequestContextError) {
-    const status = error.code === "session_required" ? 401 : 503;
+    const status = requestContextErrorStatus(error.code);
     if (status === 503) {
       logServerErrorFromContext(context, error, status);
     }

@@ -5,7 +5,7 @@ import type {
 } from "@polaris/contracts";
 import { type ChangeEvent, type FormEvent, useCallback, useState } from "react";
 import { orpcClient } from "../lib/orpc";
-import { rpcErrorCode } from "../lib/rpc-error";
+import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   listPriceFieldText,
@@ -37,6 +37,10 @@ function variantLabel(variant: VariantReadModel, index: number): string {
 }
 
 function priceErrorMessage(error: unknown): string {
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   if (code === "CONFLICT") {
     return "O produto mudou. Atualize as variantes antes de tentar novamente.";

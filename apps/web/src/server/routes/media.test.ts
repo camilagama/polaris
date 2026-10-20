@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
 import { requestIdMiddleware } from "../middleware/request-id";
+import { TenantRequestContextError } from "../request-context-error";
 import { createMediaRoutes, type MediaRouteDependencies } from "./media";
 
 const organizationId = "org/with space";
@@ -728,6 +729,57 @@ describe("media removal and order routes", () => {
       expect.objectContaining({ organizationId }),
       expect.objectContaining({ assetId: imageId, productId })
     );
+  });
+
+  it("answers 403 legal_acceptance_required while the legal acceptance is pending, without running the removal", async () => {
+    const { app, bindings, dependencies } = createTestApp({
+      withTenantRequestContext: vi.fn(() =>
+        Promise.reject(
+          new TenantRequestContextError("legal_acceptance_required", [
+            { document: "terms", version: 1 },
+          ])
+        )
+      ),
+    } as unknown as Partial<MediaRouteDependencies>);
+
+    const response = await app.fetch(
+      new Request(`${mediaUrl}/${imageId}`, {
+        headers: { "x-organization-id": organizationId },
+        method: "DELETE",
+      }),
+      bindings
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "legal_acceptance_required" },
+    });
+    expect(dependencies.removeProductMedia).not.toHaveBeenCalled();
+  });
+
+  it("answers 401 without a session and 503 when authentication is unavailable (the statuses did not change)", async () => {
+    for (const [code, status] of [
+      ["session_required", 401],
+      ["authentication_unavailable", 503],
+    ] as const) {
+      const { app, bindings } = createTestApp({
+        withTenantRequestContext: vi.fn(() =>
+          Promise.reject(new TenantRequestContextError(code))
+        ),
+      } as unknown as Partial<MediaRouteDependencies>);
+      // biome-ignore lint/performance/noAwaitInLoops: One request at a time.
+      const response = await app.fetch(
+        new Request(`${mediaUrl}/${imageId}`, {
+          headers: { "x-organization-id": organizationId },
+          method: "DELETE",
+        }),
+        bindings
+      );
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code },
+      });
+    }
   });
 
   it("answers 404 for malformed ids and 400 for a missing organization before opening a transaction", async () => {

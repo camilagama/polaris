@@ -26,6 +26,7 @@ const snapshot = (
   dataVersion: 0,
   expiredWhileOpen: false,
   lastSyncAt: null,
+  legalAcceptanceRequired: false,
   leaseExpiresAt: "2026-10-17T12:00:00.000Z",
   online: false,
   phase: "expired",

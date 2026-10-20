@@ -3,6 +3,7 @@ import {
   clearLegacyOrganizationId,
   LEGACY_ORGANIZATION_KEY,
   type Organization,
+  organizationLoadAfterFailure,
   organizationLoadErrorMessage,
   organizationLoadFromList,
   PREFERRED_ORGANIZATION_KEY,
@@ -144,5 +145,56 @@ describe("organizationLoadErrorMessage", () => {
     expect(organizationLoadErrorMessage(new TypeError("x"))).toContain(
       "conexão"
     );
+  });
+});
+
+describe("organizationLoadAfterFailure and the legal acceptance", () => {
+  const refusal = {
+    code: "FORBIDDEN",
+    data: { reason: "legal_acceptance_required" },
+    status: 403,
+  };
+  const input = (error: unknown, atOpen: boolean) => ({
+    atOpen,
+    cached: [alpha, beta],
+    error,
+    offlineEnabled: true,
+    preferredId: beta.id,
+  });
+
+  it("says the acceptance is missing, at open or later, and never opens from the cached copy", () => {
+    for (const atOpen of [true, false]) {
+      expect(organizationLoadAfterFailure(input(refusal, atOpen))).toEqual({
+        fromCache: false,
+        load: { atOpen, status: "legal_acceptance_required" },
+      });
+    }
+  });
+
+  it("does not use the copy even with the offline runtime off", () => {
+    expect(
+      organizationLoadAfterFailure({
+        ...input(refusal, true),
+        offlineEnabled: false,
+      }).load.status
+    ).toBe("legal_acceptance_required");
+  });
+
+  it("a FORBIDDEN without the reason is still an error", () => {
+    const outcome = organizationLoadAfterFailure(
+      input({ code: "FORBIDDEN" }, true)
+    );
+    expect(outcome.fromCache).toBe(false);
+    expect(outcome.load.status).toBe("error");
+  });
+
+  it("a refused session is still a refused session, and a connection failure still opens the copy", () => {
+    expect(
+      organizationLoadAfterFailure(input({ code: "UNAUTHORIZED" }, true)).load
+    ).toEqual({ atOpen: true, status: "session_ended" });
+    const offline = organizationLoadAfterFailure(
+      input(new TypeError("Failed to fetch"), true)
+    );
+    expect(offline.fromCache).toBe(true);
   });
 });

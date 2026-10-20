@@ -1,4 +1,8 @@
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 
 export type PublicCatalogAction = "load" | "products" | "profile" | "switch";
 
@@ -25,6 +29,18 @@ function fallback(action: PublicCatalogAction): string {
 
 /** Portuguese text for a failed public catalog request. */
 export function publicCatalogErrorMessage(
+  error: unknown,
+  action: PublicCatalogAction
+): string {
+  return (
+    legalAcceptanceMessage(
+      error,
+      action === "load" ? "o catálogo público" : undefined
+    ) ?? publicCatalogRefusalMessage(error, action)
+  );
+}
+
+function publicCatalogRefusalMessage(
   error: unknown,
   action: PublicCatalogAction
 ): string {

@@ -5,7 +5,11 @@ import {
   MAX_CANCELLATION_NOTE_CODE_POINTS,
   normalizeCancelSaleCommand,
 } from "@polaris/domain/sales/sale-cancellation";
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 import { isDefiniteRejection } from "./sale-form-model";
 
 type CancelSaleRequest = Parameters<PolarisRpcClient["sale"]["cancel"]>[0];
@@ -220,6 +224,10 @@ export function mapOperationError(
 ): OperationFailure {
   if (!isDefiniteRejection(error)) {
     return operationFailure(unknownMessage, { unknownOutcome: true });
+  }
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return operationFailure(unaccepted);
   }
   const code = rpcErrorCode(error);
   const refinable =

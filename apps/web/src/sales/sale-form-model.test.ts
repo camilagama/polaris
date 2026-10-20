@@ -971,6 +971,22 @@ describe("server errors", () => {
     expect(notFound.refreshData).toBe(true);
   });
 
+  it("a refusal for lack of the legal acceptance keeps the items and says what is missing", () => {
+    const refused = mapSaleSubmitError({
+      code: "FORBIDDEN",
+      data: { reason: "legal_acceptance_required" },
+      status: 403,
+    });
+    expect(refused.kind).toBe("forbidden");
+    expect(refused.discardAttempt).toBe(false);
+    expect(refused.message).toContain("Termos de Uso");
+    expect(refused.message).toContain("Os itens continuam aqui");
+    // a plain FORBIDDEN keeps the permission message
+    const plain = mapSaleSubmitError({ code: "FORBIDDEN" });
+    expect(plain.message).toContain("permissão");
+    expect(plain.message).not.toContain("Termos de Uso");
+  });
+
   it("explains a conflict generically and asks to refresh data", () => {
     const conflict = mapSaleSubmitError({ code: "CONFLICT" });
     expect(conflict.kind).toBe("conflict");

@@ -13,6 +13,11 @@ export type LegalDocumentId = (typeof LEGAL_DOCUMENT_IDS)[number];
 
 export interface LegalDocumentVersion {
   /**
+   * What changed from the previous version, in two or three lines for the acceptance screen;
+   * `null` only for the first version, which has nothing to compare with.
+   */
+  changes: string | null;
+  /**
    * The day (YYYY-MM-DD, Brasília) the version came into force; `null` while it is only a draft
    * and the day is still to be filled in at publication.
    */
@@ -28,12 +33,14 @@ export const LEGAL_DOCUMENTS: Readonly<
   Record<LegalDocumentId, LegalDocumentVersion>
 > = Object.freeze({
   privacy: Object.freeze({
+    changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
     sha256: "ece2c5effc521484059d69dc56f9a1d53ac1362049cdae230d0d591ec2bfb5d4",
     version: 1,
   }),
   terms: Object.freeze({
+    changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
     sha256: "4c20fc3f0dd3ae768845de318134c92e20e0864923c0fab69cf85f2df1ef495c",
@@ -86,4 +93,34 @@ export function legalVersionLine(
       ? LEGAL_PENDING_EFFECTIVE_FROM
       : formatEffectiveFrom(effectiveFrom)
   }.`;
+}
+
+/** The highest version of each document a user accepted; a document never accepted is absent. */
+export type AcceptedLegalVersions = Readonly<
+  Partial<Record<LegalDocumentId, number>>
+>;
+
+/**
+ * The documents a user still has to accept before using the app (ADR 0100): those whose highest
+ * accepted version is below `minAcceptedVersion`. Raising only the version in force asks nobody
+ * again; raising the floor does. In the order of `LEGAL_DOCUMENT_IDS`.
+ */
+export function pendingLegalDocuments(
+  accepted: AcceptedLegalVersions,
+  documents: Readonly<
+    Record<LegalDocumentId, LegalDocumentVersion>
+  > = LEGAL_DOCUMENTS
+): LegalDocumentId[] {
+  return LEGAL_DOCUMENT_IDS.filter(
+    (document) =>
+      (accepted[document] ?? 0) < documents[document].minAcceptedVersion
+  );
+}
+
+/** Whether a value names one of the legal documents. */
+export function isLegalDocumentId(value: unknown): value is LegalDocumentId {
+  return (
+    typeof value === "string" &&
+    (LEGAL_DOCUMENT_IDS as readonly string[]).includes(value)
+  );
 }

@@ -13,6 +13,7 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./categories-page.css";
 
 type CategoryListStatus = "active" | "archived" | "deleted";
@@ -48,6 +49,13 @@ function errorMessage(
   error: unknown,
   action?: CategoryAction | "create" | "rename"
 ): string {
+  const unaccepted = legalAcceptanceMessage(
+    error,
+    action === undefined ? "as categorias" : undefined
+  );
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     return action === undefined
