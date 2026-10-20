@@ -75,3 +75,34 @@ bun run gate7:asaas settle-unclaimed
 - A saída é JSON de uma linha; um erro mostra só a classe e o código.
 - Apague o arquivo do link depois do teste.
 
+## Woovi (Pix Automático)
+
+| Nome no Worker `polaris-web` | Tipo | Staging | Produção |
+|---|---|---|---|
+| `WOOVI_APP_ID` | secret | AppID do sandbox | AppID de produção |
+| `WOOVI_BASE_URL` | var | `https://api.woovi-sandbox.com` | `https://api.woovi.com` |
+| `WOOVI_WEBHOOK_PUBLIC_KEYS` | var (pública) | chave pública da Woovi | a mesma chave (a Woovi usa uma chave só para todos os webhooks) |
+
+- **Trava de ambiente:** o cliente só fala com os dois hosts acima, por HTTPS e sem caminho. O AppID da Woovi **não diz** de que ambiente é (diferente do prefixo do Asaas), então a trava é só o host: nunca grave o AppID de produção no staging nem o contrário. Sem `WOOVI_APP_ID`, `WOOVI_BASE_URL` ou `WOOVI_WEBHOOK_PUBLIC_KEYS`, ou com chave ilegível, a rota responde 503 `billing_provider_not_configured`, nunca 200.
+- **Chave pública:** leia em `GET https://api.woovi.com/api/v1/webhook/public-keys` (sem autenticação; o sandbox responde a mesma em `api.woovi-sandbox.com`), copie o campo `key` e grave em `WOOVI_WEBHOOK_PUBLIC_KEYS` só o conteúdo entre `-----BEGIN PUBLIC KEY-----` e `-----END PUBLIC KEY-----`, sem quebras de linha (PEM inteiro também é aceito). Confira o `key_identifier` (SHA-256 do DER) com o da resposta. O Worker **não busca** a chave em tempo de execução.
+- **Conferência de ambiente (à mão, a cada configuração ou rotação):** no staging, `WOOVI_BASE_URL` é `https://api.woovi-sandbox.com` e o AppID é o do sandbox; o `https://api.woovi.com` e o AppID de produção só no Worker de produção. Nenhum script confere isso hoje.
+- **Limite de taxa:** antes da cobrança real, criar no Cloudflare uma regra de limite por IP no caminho `/webhooks/billing/woovi` (a chave de assinatura é comum a todas as contas Woovi; um corpo assinado de outra conta, reenviado em volume, gasta leituras na API e enche o log de erro).
+- **Registrar o webhook** no painel da Woovi (API/Plugins, Novo webhook): URL `https://<domínio>/webhooks/billing/woovi`, eventos `PIX_AUTOMATIC_APPROVED`, `PIX_AUTOMATIC_REJECTED`, `PIX_AUTOMATIC_COBR_COMPLETED` e `PIX_AUTOMATIC_COBR_REJECTED`. O segredo HMAC do webhook não é usado (o Polaris confere só `x-webhook-signature`). Se o painel mandar uma entrega de teste no cadastro, ela é respondida com 401 (sem assinatura válida) ou 200 sem fato (assinada, mas sem evento conhecido); confira no Gate 7 qual dos dois acontece.
+
+### Rotação
+
+- **AppID:** crie o novo no painel, grave em `WOOVI_APP_ID`, implante, confira que uma entrega responde 200 e apague o antigo. AppID recusado aparece como `billing_provider_rejected` (401 ou 403) e a rota responde 503.
+- **Chave pública da Woovi:** quando a Woovi publicar a nova chave (a lista passa a ter duas), grave as duas em `WOOVI_WEBHOOK_PUBLIC_KEYS`, separadas por vírgula, e implante; quando a antiga sair da lista, deixe só a nova.
+
+### O que os registros dizem (Woovi)
+
+| Evento no log | Significado | Ação |
+|---|---|---|
+| `billing_webhook_rejected` | assinatura ausente ou inválida (401) | conferir a chave fixada; repetido sem motivo é tentativa de terceiro |
+| `billing_webhook_unresolved_given_up` | assinatura válida, mas a releitura não achou o recurso (200, nível erro, só IDs; o `resourceId` vem decodificado, `PaymentSubscription:<24 hex>`) | em geral é entrega de outra conta Woovi; se for desta conta, reconciliar a organização |
+| `billing_provider_response_malformed` | a API respondeu fora da forma documentada (200) | ver se a Woovi mudou o formato; reconciliar |
+| `billing_provider_rejected` | o AppID foi recusado (503) | rotação fora de ordem ou AppID revogado |
+| `billing_webhook_fact_event_malformed` | entrega assinada de um evento que daria fato (`eventType` no log), mas sem `globalID` válido onde a documentação diz (200) | a Woovi pode ter mudado o formato: comparar com a entrega no painel e reconciliar |
+| `billing_webhook_state_not_shown` | entrega assinada de um evento de pagamento ou de cancelamento (`eventType`) cuja releitura não mostra o estado que o nome anuncia (200, nível erro, só códigos e IDs decodificados: `resourceId`, `subscriptionLogId`, `subscriptionStatus`, `authorization`, `journey`, `installmentStatus`, `charge`) | um pagamento real pode ter ficado sem fato: até a reconciliação ser ligada, abrir a assinatura (`subscriptionLogId` ou `resourceId`) no painel da Woovi, e, se a parcela está paga (ou a autorização cancelada), reconciliar a organização dona do `providerRef`; só se o painel não mostrar pagamento nem cancelamento, é corpo forjado ou leitura adiantada e não há nada a fazer (a Woovi não reenvia: a resposta foi 200) |
+
+O corpo do webhook, o recurso relido, o `emv` e o link de pagamento nunca vão para o log. A troca de ciclo no Pix Automático exige nova autorização do pagador (cancelar e criar outra assinatura), e a contestação (MED) não gera fato na V1 (ADR 0101, emenda Woovi).

@@ -10,7 +10,7 @@ export interface FetchResponseLike {
 export interface FetchInit {
   body?: string;
   headers: Record<string, string>;
-  method: "DELETE" | "GET" | "POST" | "PUT";
+  method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
   redirect: "manual";
   signal: AbortSignal;
 }

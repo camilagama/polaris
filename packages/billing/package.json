@@ -7,7 +7,11 @@
     "./asaas/port": "./src/asaas/port.ts",
     "./asaas/webhook": "./src/asaas/webhook.ts",
     "./http": "./src/http.ts",
-    "./provider-port": "./src/provider-port.ts"
+    "./provider-port": "./src/provider-port.ts",
+    "./woovi/client": "./src/woovi/client.ts",
+    "./woovi/customer": "./src/woovi/customer.ts",
+    "./woovi/signature": "./src/woovi/signature.ts",
+    "./woovi/webhook": "./src/woovi/webhook.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

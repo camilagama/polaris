@@ -14,7 +14,10 @@
  * What is masked: password, cookie, token, Authorization, secret, key,
  * phone, e-mail, CPF/CNPJ (also a payment provider's `taxID`), card (also
  * `creditCardHolderInfo`; `creditCardToken` is a secret), the Pix key and the
- * Pix payload (`emv`), and IP. The marker says the category
+ * Pix payload (`emv`), the payer of a payment provider's payload (the whole
+ * `customer`, `payer`, `holder`, `debitParty`, `creditParty` and `address`
+ * objects: name, document, contact, address and bank account; and the payment
+ * link of an authorization), and IP. The marker says the category
  * (`[REDACTED:email]`), never the value.
  *
  * Limits, on purpose (ADR 0089 lists them): a boolean or `null` under a
@@ -34,6 +37,7 @@ type RedactionCategory =
   | "cpf"
   | "email"
   | "ip"
+  | "person"
   | "phone"
   | "secret";
 
@@ -120,6 +124,11 @@ const secretSubstrings = [
   "encryptionkey",
   "magiclink",
   "password",
+  // `paymentLink`, `paymentLinkUrl`, `paymentLinkID`: the payer's page of a Pix authorization
+  "paymentlink",
+  // `brCode`, `qrCodeImage`: the same Pix payload as `emv`
+  "brcode",
+  "qrcodeimage",
   // `pixKey`: a Pix key is a CPF, a CNPJ, an e-mail, a phone or a random key
   "pixkey",
   "privatekey",
@@ -131,6 +140,28 @@ const secretSubstrings = [
   "token",
   "verificationcode",
 ];
+/**
+ * A whole key that names a person in a payment provider's payload (Woovi:
+ * `customer`, `payer`, `holder`, `debitParty`, `creditParty`, `address`): the
+ * object goes as a whole, because its `name` is the person's and a key-by-key
+ * policy would keep it. `customerId` and `ipAddress` are other keys.
+ */
+const personWholeKeys: ReadonlySet<string> = new Set([
+  "address",
+  "addresses",
+  "creditparty",
+  "customer",
+  "customername",
+  "customers",
+  "debitparty",
+  "endereco",
+  "holder",
+  "holdername",
+  "holders",
+  "payer",
+  "payername",
+  "payers",
+]);
 /** A whole key that is just `key` or `session` is a secret; `objectKey` and `idempotencyKey` are not. */
 const secretWholeKeys: ReadonlySet<string> = new Set(["key", "session"]);
 /** Last word that makes a number a count or a size, never the secret itself. */
@@ -222,6 +253,9 @@ function categoryOfKey(key: string): RedactionCategory | undefined {
     secretSubstrings.some((part) => squashed.includes(part))
   ) {
     return "secret";
+  }
+  if (personWholeKeys.has(squashed)) {
+    return "person";
   }
   const substring = piiSubstrings.find(([part]) => squashed.includes(part));
   const category =

@@ -1189,7 +1189,7 @@ Primeiro PR da cobrança real (desenho t088 e spikes t092, consolidados em 19/10
 | Decisões | Registradas | [ADR 0101](../docs/adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md) (número provisório): porta comum em `packages/billing`; o fato vem do recurso relido, nunca do corpo; allowlist de chaves; `periodEndsAt` = `originalDueDate` + ciclo; valor lido pelo texto-fonte do JSON; o ID do checkout (`checkoutSession`) como `providerRef`, porque o `externalReference` não passa para a assinatura (S1.3); URLs de retorno montadas no servidor. |
 | Código | Concluído | `packages/billing` (porta, cliente com trava de ambiente, mapeador, webhook, JSON exato); `packages/domain/src/billing/provider-period.ts`; adaptador `asaas` registrado; rota responde 503 a recurso não achado (AC-48, só IDs no log) e a provedor sem segredo; redação ganha `taxID`, `pixKey`, `emv`, `creditCardHolderInfo` e `creditCardToken`. |
 | Testes | Concluídos | Unidade do mapeador (uma linha por evento da tabela, AC-1c, AC-2 lado Asaas, AC-3, AC-5 com bordas de calendário), do cliente (AC-12), da porta (AC-42), do JSON e da redação; adaptador atrás da rota real (AC-1a, AC-48, 503 e alerta); teste opcional contra o sandbox (checkout criado e cancelado, 404 na releitura). |
-| Limites | Registrados | A linha `unresolved` em `billing_events` exige migration (PR de banco seguinte); até lá o 404 depende do reenvio do Asaas. O S1.3 (checkout concluído por uma pessoa) decide o campo do `providerRef` e é condição do merge. `charge_disputed` e `dispute_reversed` seguem a documentação (AC-17). Woovi continua 404 (PR78). O `sub_` guardado entrou na migration 0084 (seção seguinte). |
+| Limites | Registrados | A linha `unresolved` em `billing_events` exige migration (PR de banco seguinte); até lá o 404 depende do reenvio do Asaas. O S1.3 (checkout concluído por uma pessoa) decide o campo do `providerRef` e é condição do merge. `charge_disputed` e `dispute_reversed` seguem a documentação (AC-17). A Woovi responde desde o PR 5 (seção própria). O `sub_` guardado entrou na migration 0084 (seção seguinte). |
 
 ### Cobrança PR 2 — teste grátis por pessoa, `sub_` guardado e valor dos fatos (migration 0084; implementação e verificações locais concluídas; revisão e publicação: ver PR)
 
@@ -1217,6 +1217,17 @@ Branch `feat/billing-checkout-asaas`, sobre o PR 2. Sem migration. Decisões na 
 | Gate 7 | Script pronto | `apps/web/scripts/gate7-asaas.ts` (`bun run gate7:asaas`), só sandbox e banco de staging ou local; o link vai para arquivo `0600` fora do repositório. Não rodado: o staging não existe ainda (P50). |
 | Testes | Concluídos | Unidade dos comandos (ordem prepare → attach → handoff, descarte, recusas, preço, espião de logger sem link nem dado do pagador), da fábrica da porta, da manutenção, do worker, do router (entrada estrita, capability, erros), da guarda do script e da redação na fixture de reembolso. Os gates PostgreSQL rodam no CI (a varredura nova entra no `sweepDue` que os gates `billing-lifecycle`, `entitlement-grants` e `operational-selection` já chamam). |
 | Limites | Registrados | Sem tela de assinatura; Pix Automático é do PR 6; L4 e o 404 da releitura como `unresolved` seguem para o PR 4. |
+
+### Cobrança PR 5 — adaptador Woovi, Pix Automático (POL-36; implementação e verificações locais concluídas; revisão e publicação: ver PR)
+
+Entrada da Woovi. Branch `feat/billing-woovi-entrada`, sem migration e sem comando: o checkout por Pix, o cancelamento e o reembolso pela porta são do PR 6. As decisões estão na emenda Woovi do [ADR 0101](../docs/adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md).
+
+| Subetapa | Status | Evidência / dependência |
+|---|---|---|
+| Código | Concluído | `packages/billing/src/woovi` (IDs com regex, decodificação e `encodeURIComponent`; assinatura RSA-SHA256 sobre os bytes brutos com chave fixada; cliente com trava de host; mapeador com allowlist; releitura; cliente por CPF antes de criar a assinatura); adaptador `woovi` registrado na rota; redação dos objetos de pessoa do payload da Woovi. |
+| Spike S3 | Parcial | Feito pela API no sandbox em 20/10/2026 (cliente por CPF, atualização, reaproveitamento do cliente, criação com data ISO, releitura codificada, 404, cancelamento idempotente, chave pública). O S3.2 (parcela paga e reembolso) precisa de pessoa no painel (P51). |
+| Decisões | Registradas | Q6: contestação (MED) é lista vazia na V1; AC-23: troca de ciclo exige nova autorização. |
+| Limites | Registrados | O reembolso da Woovi é lista vazia até o PR 6 e o S3.2; o 404 da releitura é aceito com log de erro (o corpo não tem horário do evento); o AppID não tem marca de ambiente e a trava é só o host. |
 
 ### PR82 — Free acima do limite: variantes operacionais (implementação, gates, revisão independente e verificações locais concluídos; publicação: ver PR)
 
