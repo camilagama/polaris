@@ -180,3 +180,13 @@ export const test = base.extend<{ contexts: void }, { sql: Sql }>({
 });
 
 export { expect } from "@playwright/test";
+
+/** The oRPC code of a refused call ("FORBIDDEN", "NOT_FOUND", ...); fails if the call answers. */
+export async function refusedWith(call: Promise<unknown>): Promise<string> {
+  try {
+    await call;
+  } catch (error) {
+    return String((error as { code?: unknown }).code ?? "no code");
+  }
+  throw new Error("The call was expected to be refused, and it answered.");
+}
