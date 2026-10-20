@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { guardPoolErrors } from "./pool-errors";
 
 /**
  * What the privacy role does in the background (plan PR101, PR104 and PR107, ADRs 0074, 0078,
@@ -170,12 +171,14 @@ export interface PrivacyMaintenanceClient {
 export function createPrivacyMaintenanceClient(
   connectionString: string
 ): PrivacyMaintenanceClient {
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 5000,
-    max: 1,
-  });
+  const pool = guardPoolErrors(
+    new Pool({
+      connectionString,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 5000,
+      max: 1,
+    })
+  );
   return {
     async claimDataExport(leaseSeconds) {
       const result = await pool.query<{
