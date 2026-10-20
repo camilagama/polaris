@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type BillingState,
   grantsPro,
@@ -84,6 +84,14 @@ export interface BillingSweepReport {
   failed: number;
   scanned: number;
   transitioned: number;
+}
+
+/** What one hourly pass of the retry by state did to the renewal cancellations owed by closures (ADR 0074, L4). */
+export interface RenewalCancellationRearmReport {
+  /** Events written for a closure that had none (closed before the event existed, or a checkout paid after it). */
+  inserted: number;
+  /** Events dispatched a while ago sent back to pending: the renewal is still alive. */
+  rearmed: number;
 }
 
 export interface BillingRetryReport {
@@ -177,6 +185,14 @@ export interface BillingStore {
     provider: string,
     providerRef: string
   ) => Promise<ReplacedProviderReference | null>;
+  /**
+   * Whether the closure already gave up, at the provider, the checkout this
+   * link names (the ledger row `recordCheckoutDiscarded` wrote for it).
+   */
+  checkoutDiscarded: (
+    organizationId: string,
+    link: Pick<BillingProviderLink, "provider" | "providerRef">
+  ) => Promise<boolean>;
   close: () => Promise<void>;
   /**
    * Gives an organization a temporary entitlement (plan PR85): more than its plan,
@@ -198,6 +214,35 @@ export interface BillingStore {
     organizationId: string
   ) => Promise<BillingProviderLink | null>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
+  /**
+   * The retry by state of the renewal cancellations the closures asked for
+   * (ADR 0074, L4): every organization in closure whose renewal is still alive
+   * at a provider of `providers` (the ones Polaris cancels through) gets its
+   * cycle's `billing.renewal_cancel_requested` written, or sent again when it
+   * was dispatched at least `minAgeSeconds` ago (and fewer than 200 times).
+   * Never a new key for the same cycle; a pending event is left to the dispatcher.
+   */
+  rearmRenewalCancellations: (
+    minAgeSeconds: number,
+    limit: number,
+    providers: readonly string[]
+  ) => Promise<RenewalCancellationRearmReport>;
+  /**
+   * Writes in the billing ledger that the checkout the link names was given up
+   * at the provider at the closure (ADR 0074, L4): a `command` row of the
+   * organization, `checkout_discarded`, with the checkout's reference in its
+   * column and `command:discard_checkout:<requestId>:<digest of the reference>`
+   * as its ID, so the same request for the same checkout written twice is one row. It changes no state (an abandoned trial
+   * setup still ends by the sweep).
+   */
+  recordCheckoutDiscarded: (
+    input: {
+      link: Pick<BillingProviderLink, "provider" | "providerRef">;
+      organizationId: string;
+      requestId: string;
+    },
+    now?: Date
+  ) => Promise<void>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
     input: RecordBillingEventInput
@@ -776,6 +821,8 @@ async function writeLedger(
     factType: "command" | "time_elapsed";
     organizationId: string;
     providerEventId: string;
+    /** The provider's reference the command acted on, kept in its column (never in the fact). */
+    providerRef?: string;
     stateAfter: BillingState;
     stateBefore: BillingState;
   },
@@ -783,8 +830,8 @@ async function writeLedger(
 ): Promise<void> {
   await client.query(
     `INSERT INTO public.billing_events
-       (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, state_before, state_after, attempts, processed_at)
-     VALUES ('polaris', $1, $2, $3::jsonb, $4, $5, 'applied', $6, $7, 1, $5)
+       (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, state_before, state_after, attempts, processed_at, provider_ref)
+     VALUES ('polaris', $1, $2, $3::jsonb, $4, $5, 'applied', $6, $7, 1, $5, $8)
      ON CONFLICT (provider, provider_event_id) DO NOTHING`,
     [
       entry.providerEventId,
@@ -794,6 +841,7 @@ async function writeLedger(
       now,
       entry.stateBefore,
       entry.stateAfter,
+      entry.providerRef ?? null,
     ]
   );
 }
@@ -1398,6 +1446,36 @@ export function createBillingStore(
         throw error;
       }
     },
+    async checkoutDiscarded(organizationId, link) {
+      // the reference is the checkout's own (for Asaas, its ID): one provider's references never name another's
+      const result = await pool.query(
+        `SELECT 1 FROM public.billing_events
+          WHERE provider = 'polaris' AND organization_id = $1 AND fact_type = 'command'
+            AND fact ->> 'type' = 'checkout_discarded' AND provider_ref = $2
+          LIMIT 1`,
+        [organizationId, link.providerRef]
+      );
+      return result.rows.length > 0;
+    },
+    async recordCheckoutDiscarded(input, now = new Date()) {
+      await inTransaction(pool, async (client) => {
+        const row = await lockRecord(client, input.organizationId);
+        await writeLedger(
+          client,
+          {
+            fact: { occurredAt: now.toISOString(), type: "checkout_discarded" },
+            factType: "command",
+            organizationId: input.organizationId,
+            // one row per request and checkout; the reference goes in as a digest (the ID has a bounded length)
+            providerEventId: `command:discard_checkout:${input.requestId}:${createHash("sha256").update(input.link.providerRef).digest("hex").slice(0, 32)}`,
+            providerRef: input.link.providerRef,
+            stateAfter: row.state as BillingState,
+            stateBefore: row.state as BillingState,
+          },
+          now
+        );
+      });
+    },
     async readProviderLink(organizationId) {
       const result = await pool.query<{
         provider: string | null;
@@ -1423,6 +1501,19 @@ export function createBillingStore(
       );
       const [row] = result.rows;
       return row ? toRecord(row) : null;
+    },
+    async rearmRenewalCancellations(minAgeSeconds, limit, providers) {
+      const result = await pool.query<{
+        result: RenewalCancellationRearmReport;
+      }>(
+        "SELECT public.rearm_renewal_cancellations($1::integer, $2::integer, $3::text[]) AS result",
+        [minAgeSeconds, limit, [...providers]]
+      );
+      const report = result.rows[0]?.result;
+      return {
+        inserted: Number(report?.inserted ?? 0),
+        rearmed: Number(report?.rearmed ?? 0),
+      };
     },
     async recordEvent(input) {
       const fact = serializeBillingFact(input.fact);

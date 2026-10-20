@@ -93,6 +93,7 @@ O purge continua só manual (agendado pelo Admin): nenhum job o agenda, e as dec
     - `recovery_window_open`: a janela de recuperação não acabou.
     - `tenant_access_active`: há acesso temporário vigente à organização.
     - `paid_access_running`: a cobrança está `trialing`, `active` ou `grace` com acesso vigente (um trial pode virar cobrança).
+    - `renewal_alive` (da rota do Admin, antes da função; emenda de 20/10/2026 do [ADR 0074](0074-encerramento-de-organizacao.md)): a renovação ainda está viva num provedor pelo qual o Polaris cancela. Se o billing não puder ser lido, a rota recusa com 503 `renewal_status_unavailable`.
     - `privacy_case_required`: o caso é de suporte comum, sem fluxo de privacidade.
     - `privacy_case_not_deletion`: o caso de privacidade não é de exclusão (acesso, correção, portabilidade, oposição, restrição ou outro).
     - `privacy_requester_not_owner`: quem pediu não é o dono da organização.

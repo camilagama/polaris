@@ -56,8 +56,36 @@ describe("outboxEvent", () => {
     );
   });
 
-  it("knows only the types the tenant runtime may write", () => {
-    expect(OUTBOX_EVENT_TYPES).toEqual(["data_export.requested"]);
+  it("knows only the types a database policy lets a command write", () => {
+    expect(OUTBOX_EVENT_TYPES).toEqual([
+      "data_export.requested",
+      "billing.renewal_cancel_requested",
+    ]);
+  });
+
+  it("takes the closure cycle of a renewal cancellation as an integer, and nothing beside it", () => {
+    const renewal = {
+      event: { requestedAt: 1_792_457_258_261 },
+      idempotencyKey: outboxIdempotencyKey(
+        "billing.renewal_cancel_requested",
+        "1792457258261"
+      ),
+      organizationId: "org_1",
+      type: "billing.renewal_cancel_requested",
+    };
+    expect(outboxEvent(renewal).event).toEqual({
+      requestedAt: 1_792_457_258_261,
+    });
+    for (const event of [
+      { requestedAt: 1.5 },
+      { requestedAt: 1_792_457_258_261, subscriptionId: "sub_123" },
+      { organizationId: "org_1" },
+      {},
+    ]) {
+      expect(() => outboxEvent({ ...renewal, event })).toThrow(
+        InvalidOutboxEventError
+      );
+    }
   });
 
   it.each([

@@ -336,6 +336,31 @@ describe("billing.startCheckout", () => {
     });
   });
 
+  it("answers a conflict with the date the paid access ends when the renewal was cancelled", async () => {
+    const fixture = setup({
+      storeOverrides: {
+        readRecord: vi.fn(() =>
+          Promise.resolve({
+            accessEndsAt: new Date("2026-11-14T12:00:00.000Z"),
+            cancelAtPeriodEnd: true,
+            state: "active",
+          })
+        ),
+      },
+    });
+
+    await expect(
+      fixture.client.billing.startCheckout(valid)
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: {
+        reason: "renewal_cancelled_until",
+        until: "2026-11-14T12:00:00.000Z",
+      },
+    });
+    expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+  });
+
   const unconfirmedLink = {
     provider: "asaas",
     providerRef: "chk-old",
