@@ -18,3 +18,7 @@ test-results/
 
 local.log
 browserstack.err
+
+# e2e na pilha real (T-125a): builds por projeto e estado de sessão
+apps/web/dist-e2e/
+apps/web/.e2e-state/

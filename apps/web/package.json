@@ -10,6 +10,7 @@
     "gate7:asaas": "bun scripts/gate7-asaas.ts",
     "preview": "vite preview --host 127.0.0.1",
     "test:auth-gate": "bun scripts/test-better-auth-gate.ts",
+    "test:e2e-real": "playwright test --config playwright.e2e-real.config.ts",
     "test:gate2-worker": "bun scripts/test-gate2-worker.ts",
     "test:offline-browser": "playwright test --config playwright.offline-poc.config.ts && playwright test --config playwright.pwa.config.ts",
     "test:offline-poc": "playwright test --config playwright.offline-poc.config.ts",

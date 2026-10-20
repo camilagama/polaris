@@ -2,14 +2,17 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022"],
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "vite.config.ts",
     "vite.offline.config.ts",
     "playwright.offline-poc.config.ts",
+    "playwright.e2e-real.config.ts",
     "playwright.pwa.config.ts",
     "vite.pwa.config.ts",
+    "e2e-real/**/*.ts",
     "e2e-pwa/**/*.ts",
     "e2e/**/*.ts",
     "real-devices/**/*.ts",

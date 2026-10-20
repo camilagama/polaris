@@ -1918,6 +1918,15 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Custo | Medido | O gate leva 4 s; o job `database` ficou em 3 min 03 s contra 3 min 02 s da `main`; sem job novo nem mudança de workflow. |
 | Defeito do Admin | Registrado, não corrigido | O pool de `createBillingStore` não tem ouvinte de `error`; ao fechá-lo depois de cada comando de cobrança, o driver emite um erro não tratado ("This socket has been closed."). A config de teste deixa passar só esse erro, e o gate imprime uma nota. Detalhes no [runbook do harness](../docs/runbooks/workers-test-harness.md). |
 
+### Fase 13 — jornadas e2e na pilha real local (T-125a, POL-60; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Pilha | Concluída (local) | `apps/web/playwright.e2e-real.config.ts` e `apps/web/e2e-real/`: dois builds de produção servidos por `vite preview` (chave do runtime offline desligada e ligada), banco `e2e_<run>` migrado do zero, um login por Hyperdrive (os 7) e sessão de teste pelo `testUtils` só no Node. Runbook: [e2e-real](../docs/runbooks/e2e-real.md). |
+| Jornadas | Concluídas (local) | Onboarding, produto, estoque, cliente, venda (oráculo em centavos, casos a–e de arredondamento, duplo toque), devolução e cancelamento, despesa; isolamento pela `/rpc` e pela RLS com controle; cliente e venda também com a chave ligada. As provas por remoção e as 10 execuções sem retry estão registradas no PR e em `apps/web/e2e-real/medicoes/`. |
+| Job de CI | Pendente | O trecho do job `e2e-real` vai no PR para o responsável aplicar no `ci.yml`; a saída `e2e` do `scripts/ci-changed.mjs` já existe. Obrigatório só depois das 10 execuções sem retry. |
+| Propostas futuras | Registradas | Venda offline na pilha real, AC-10 (sessão expirada com operações na fila) e troca de usuário no mesmo navegador, no projeto `runtime-ligado`; AC-10 primeiro. |
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).
