@@ -356,4 +356,12 @@ test("uma recusa por aceite com a tela em uso não navega: mostra o aviso fixo c
   ).toHaveCount(0);
   expect(new URL(page.url()).pathname).toBe("/categories");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
+  // the error beside the button says what is missing, never "sua conta não tem acesso"
+  await expect(page.getByRole("alert")).toContainText(
+    "Não foi feito: falta aceitar os Termos de Uso e a Política de Privacidade."
+  );
+  await expect(page.getByText("Sua conta não tem acesso")).toHaveCount(0);
+  await expect(
+    notice.getByText("(abre em outra aba; o que você digitou fica nesta)")
+  ).toBeVisible();
 });

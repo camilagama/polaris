@@ -62,7 +62,9 @@
   cursor: pointer;
 }
 
+/* a link is content-box by default and a button border-box: without this the link is 64 px and "Continuar" 44 */
 .acceptance-continue {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
