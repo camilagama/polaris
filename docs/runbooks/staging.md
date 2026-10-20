@@ -20,7 +20,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 ## Alvo seguro
 
 - Workers `polaris-web-staging` e `polaris-catalog-staging`. O Admin **não** é implantado no staging.
-- Projeto Neon `polaris-staging`, com o marcador `polaris.environment = 'staging'`. Nunca o projeto dos gates (`green-tooth-16857010`), que nunca recebe dado real.
+- Projeto Neon `polaris-staging`, com o marcador `polaris.environment = 'staging'`. Nunca o projeto dos gates (`<id do projeto Neon dos gates>`), que nunca recebe dado real.
 - O topo de cada `wrangler.jsonc` é só local: um deploy sem `--env staging` (ou sem `CLOUDFLARE_ENV=staging` na build) falha.
 
 ## 1. Banco (responsável)

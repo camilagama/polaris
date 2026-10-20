@@ -4,8 +4,8 @@ Este runbook cobre o staging, os derivados privados e a limpeza de masters órf�
 
 ## Identidades e recursos
 
-- Antes de usar Neon CLI, siga [CLI profile policy](./cli-profile-policy.md): somente perfil `junior-pessoal`, identidade `juniordiniz56@gmail.com`, e confirme o projeto/branch descartável. Não use o plugin/conector Neon.
-- Antes de usar Cloudflare CLI, confirme o perfil `junior-pessoal` e a identidade `contato.juniordiniz@gmail.com`; passe `--profile junior-pessoal` em cada comando.
+- Antes de usar Neon CLI, siga [CLI profile policy](./cli-profile-policy.md): somente perfil `junior-pessoal`, identidade `<e-mail do responsável no Neon>`, e confirme o projeto/branch descartável. Não use o plugin/conector Neon.
+- Antes de usar Cloudflare CLI, confirme o perfil `junior-pessoal` e a identidade `<e-mail do responsável no Cloudflare>`; passe `--profile junior-pessoal` em cada comando.
 - O bucket `polaris-media` permanece privado. Não habilite domínio público nem cache CDN para masters ou derivados.
 - A Worker binding `MEDIA_CLEANUP_HYPERDRIVE` usa uma credencial login dedicada, membro apenas de `polaris_media_cleanup_runtime`. O grupo recebe somente EXECUTE em `claim_media_storage_key_for_cleanup(text)`; a role tenant `polaris_pr11_runtime` não recebe esse EXECUTE.
 - `MEDIA_CLEANUP_HYPERDRIVE` é separada da Hyperdrive tenant e mantém query caching desabilitado. Limite de conexões recomendado para o cron é 5. A Worker falha se o binding ou o bucket estiver ausente.

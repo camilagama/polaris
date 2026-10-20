@@ -78,15 +78,15 @@ O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedo
 
 ### Passos
 
-1. Criar a branch filha e o banco (descarte a saída: o comando `neon branches create` imprime a connection string). **Sem `--schema-only`.**
+1. Criar a branch filha e o banco (descarte a saída: o comando `neon branches create` imprime a connection string). **Sem `--schema-only`.** Antes, exporte `NEON_PROJECT_ID` com o ID do projeto Neon dos gates, lido fora do repositório (ver a [política de perfis de CLI](./cli-profile-policy.md#identificadores-pessoais-fora-do-versionamento)).
 
-       neon branches create --name pr900-release-gate --parent production --expires-at <agora+24h, UTC, hora cheia> --project-id green-tooth-16857010 --profile junior-pessoal > /dev/null
-       neon databases create --name polaris_pr900_gate --owner-name neondb_owner --branch pr900-release-gate --project-id green-tooth-16857010 --profile junior-pessoal > /dev/null
+       neon branches create --name pr900-release-gate --parent production --expires-at <agora+24h, UTC, hora cheia> --project-id "$NEON_PROJECT_ID" --profile junior-pessoal > /dev/null
+       neon databases create --name polaris_pr900_gate --owner-name neondb_owner --branch pr900-release-gate --project-id "$NEON_PROJECT_ID" --profile junior-pessoal > /dev/null
 
 2. Em um processo que obtenha a URL direta (sem pooler) com `neon connection-string ... --database-name polaris_pr900_gate --role-name neondb_owner --profile junior-pessoal`, exporte somente neste processo `DATABASE_URL`, `POLARIS_GATE_DATABASE_URL`, `POLARIS_GATE_BRANCH` e `POLARIS_GATE_DATABASE`. Confirme que o host tem o formato `ep-…sa-east-1.aws.neon.tech`, sem `pooler`.
 3. Aplicar as migrations do zero no banco novo (a role `polaris_pr11_runtime` já existe: vem da `production`; ver o checklist de go-live): `bun run --filter @polaris/db db:migrate`.
 4. Rodar o executor sem `CI=true` (a trava de host exige o endpoint Neon): `bun run --filter @polaris/db gates:all` para a prova de liberação. Aqui rodam também os quatro gates que o CI não cobre.
-5. Limpar o ambiente do processo (todas as variáveis acima) e apagar a branch própria, mesmo se um gate falhou: `neon branches delete pr900-release-gate --project-id green-tooth-16857010 --profile junior-pessoal`. Confira com `neon branches list` que ela sumiu e registre o nome e a data na evidência (sem connection string).
+5. Limpar o ambiente do processo (todas as variáveis acima) e apagar a branch própria, mesmo se um gate falhou: `neon branches delete pr900-release-gate --project-id "$NEON_PROJECT_ID" --profile junior-pessoal`. Confira com `neon branches list` que ela sumiu e registre o nome e a data na evidência (sem connection string).
 
 ## O que prova cada propriedade
 
