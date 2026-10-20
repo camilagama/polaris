@@ -334,6 +334,59 @@ export function mapWooviInstallmentEvent(input: {
   return [];
 }
 
+/** The codes of a resource that should have given a fact and did not; only codes, never a person's data. */
+export interface WooviStateNotShown {
+  authorization?: string;
+  charge?: string;
+  installmentStatus?: string;
+  journey?: string;
+  subscriptionStatus: string;
+}
+
+/**
+ * Whether an event of Polaris's subscription that mapped to no fact should
+ * have: the resource read back does not show the state its name announces (a
+ * paid installment, a rejected charge, a cancelled authorization). Consistent
+ * reading may only be late, so the caller logs it and answers 200, and the
+ * reconciliation reads the state; a forged body is never refused in a loop.
+ * Not a loss, so null: a subscription that is not Polaris's, a journey 3
+ * approval (its fact is `COBR_COMPLETED`) and a cancelled installment's
+ * rejection (cancelling is not a failure).
+ */
+export function wooviStateNotShown(input: {
+  eventType: string;
+  installment?: WooviInstallment;
+  subscription: WooviSubscription;
+}): WooviStateNotShown | null {
+  const { eventType, installment, subscription } = input;
+  if (!isPolarisSubscription(subscription)) {
+    return null;
+  }
+  if (
+    eventType === "PIX_AUTOMATIC_APPROVED" &&
+    subscription.journey === "PAYMENT_ON_APPROVAL"
+  ) {
+    return null;
+  }
+  if (
+    eventType === "PIX_AUTOMATIC_COBR_REJECTED" &&
+    installment?.status === "CANCELED"
+  ) {
+    return null;
+  }
+  return {
+    ...(subscription.authorization === null
+      ? {}
+      : { authorization: subscription.authorization }),
+    ...(installment?.charge ? { charge: installment.charge } : {}),
+    ...(installment === undefined
+      ? {}
+      : { installmentStatus: installment.status }),
+    ...(subscription.journey === null ? {} : { journey: subscription.journey }),
+    subscriptionStatus: subscription.status,
+  };
+}
+
 /**
  * The facts the provider's state implies, for the reconciliation (Q8): the same
  * reading as the webhook's, with the same IDs (`<event>:<globalID>`), so a fact

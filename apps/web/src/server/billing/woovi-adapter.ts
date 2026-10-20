@@ -13,10 +13,9 @@ import {
   wooviSignatureMatches,
 } from "@polaris/billing/woovi/signature";
 import {
-  readWooviWebhook,
+  inspectWooviWebhook,
   resolveWooviWebhook,
   type WooviWebhookEnvelope,
-  wooviRefusedFactEvent,
 } from "@polaris/billing/woovi/webhook";
 import { logger } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
@@ -44,11 +43,11 @@ function apiSettingsOf(bindings: WorkerBindings): {
 
 /** The envelope of an authentic body, or `WebhookMalformedError` (with the event's name logged when it would give a fact). */
 function envelopeOf(rawBody: string): WooviWebhookEnvelope {
-  const envelope = readWooviWebhook(rawBody);
+  const { envelope, refusedFactEvent: eventType } =
+    inspectWooviWebhook(rawBody);
   if (envelope) {
     return envelope;
   }
-  const eventType = wooviRefusedFactEvent(rawBody);
   if (eventType !== null) {
     // an event that would give a fact, without a resource ID in the documented
     // place: a charge may be lost until the reconciliation reads it
@@ -69,7 +68,17 @@ async function readBack(client: WooviClient, envelope: WooviWebhookEnvelope) {
     ...(envelope.logId === null ? {} : { resourceId: envelope.logId }),
   };
   try {
-    const resolved = await resolveWooviWebhook(client, envelope);
+    const resolved = await resolveWooviWebhook(
+      client,
+      envelope,
+      new Date(),
+      (shown) => {
+        // an event that names a payment or a cancellation, answered 200 because
+        // the read back does not show it (yet): never a 503, a forged body would
+        // become a loop of redeliveries; the reconciliation reads the state
+        logger.error("billing_webhook_state_not_shown", { ...ids, ...shown });
+      }
+    );
     return Array.isArray(resolved) ? resolved : [resolved];
   } catch (error: unknown) {
     if (error instanceof ProviderResponseMalformedError) {

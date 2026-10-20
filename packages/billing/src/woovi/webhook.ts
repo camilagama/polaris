@@ -11,7 +11,9 @@ import {
   pickWooviInstallment,
   pickWooviSubscription,
   wooviEventId,
+  type WooviStateNotShown,
   wooviEventKind,
+  wooviStateNotShown,
 } from "./mapper";
 
 /**
@@ -34,50 +36,59 @@ export interface WooviWebhookEnvelope {
 
 const eventTypePattern = /^[A-Z][A-Z_:]{0,63}$/;
 
-/** The envelope of a body already proven to come from Woovi, or null when it is not one Woovi documents. */
-export function readWooviWebhook(rawBody: string): WooviWebhookEnvelope | null {
+/**
+ * What one pass over an authentic body gives: its envelope, or null when it is
+ * not one Woovi documents; and, then, the name of the event when it would give
+ * a fact (its `globalID` missing or of another shape), so the log says which
+ * kind of event may have been lost. Only the name, already checked against its
+ * pattern.
+ */
+export interface WooviWebhookReading {
+  envelope: WooviWebhookEnvelope | null;
+  refusedFactEvent: string | null;
+}
+
+export function inspectWooviWebhook(rawBody: string): WooviWebhookReading {
+  const refused = (refusedFactEvent: string | null): WooviWebhookReading => ({
+    envelope: null,
+    refusedFactEvent,
+  });
   let body: unknown;
   try {
     body = JSON.parse(rawBody);
   } catch {
-    return null;
+    return refused(null);
   }
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    return null;
+    return refused(null);
   }
   const { event, globalID } = body as Record<string, unknown>;
   if (typeof event !== "string" || !eventTypePattern.test(event)) {
-    return null;
+    return refused(null);
   }
   const kind = wooviEventKind(event);
   if (kind === "ignored") {
-    return { eventType: event, logId: null, resourceId: null };
+    return {
+      envelope: { eventType: event, logId: null, resourceId: null },
+      refusedFactEvent: null,
+    };
   }
   // an event that needs a resource must name one of that kind
   return isWooviGlobalId(kind, globalID)
     ? {
-        eventType: event,
-        logId: wooviLogId(kind, globalID),
-        resourceId: globalID,
+        envelope: {
+          eventType: event,
+          logId: wooviLogId(kind, globalID),
+          resourceId: globalID,
+        },
+        refusedFactEvent: null,
       }
-    : null;
+    : refused(event);
 }
 
-/**
- * The name of an event that would give a fact, read from a body that
- * `readWooviWebhook` refused (its `globalID` missing or of another shape), so
- * the log says which kind of event was lost. Only the name, already checked
- * against its pattern; null for anything else.
- */
-export function wooviRefusedFactEvent(rawBody: string): string | null {
-  try {
-    const { event } = JSON.parse(rawBody) as Record<string, unknown>;
-    return typeof event === "string" && wooviEventKind(event) !== "ignored"
-      ? event
-      : null;
-  } catch {
-    return null;
-  }
+/** The envelope of a body already proven to come from Woovi, or null when it is not one Woovi documents. */
+export function readWooviWebhook(rawBody: string): WooviWebhookEnvelope | null {
+  return inspectWooviWebhook(rawBody).envelope;
 }
 
 function unresolved(
@@ -104,17 +115,30 @@ function unresolved(
 }
 
 /**
+ * An event that should have given a fact and did not (see
+ * `wooviStateNotShown`): the codes of what the read back shows, and the
+ * decoded ID of the subscription it ties to when there is one. Never a body or
+ * a person's data.
+ */
+export type WooviStateNotShownReport = Partial<WooviStateNotShown> & {
+  subscriptionLogId?: string;
+};
+
+/**
  * Reads back the resource the event names and maps it. A resource the API does
  * not find (404) is an `unresolved` event, never a dropped one (AC-48); an API
  * that is down or refuses the AppID throws, so the delivery is answered with a
  * 503 and Woovi sends it again. The time of the fact is `now`: Woovi's body
  * says when the installment or the subscription was created, not when the
- * event happened.
+ * event happened. An event that maps to no fact although the resource should
+ * show one is still answered with no events, and reported to `onStateNotShown`
+ * so the caller leaves a trace of a payment that may be lost.
  */
 export async function resolveWooviWebhook(
   client: WooviClient,
   envelope: WooviWebhookEnvelope,
-  now = new Date()
+  now = new Date(),
+  onStateNotShown: (report: WooviStateNotShownReport) => void = () => undefined
 ): Promise<ProviderBillingEvent[] | UnresolvedProviderEvent> {
   const kind = wooviEventKind(envelope.eventType);
   if (kind === "ignored" || envelope.resourceId === null) {
@@ -130,18 +154,28 @@ export async function resolveWooviWebhook(
         await client.getSubscription(missing.id)
       );
       if (subscription.id !== envelope.resourceId) {
+        onStateNotShown({});
         return [];
       }
-      return mapWooviSubscriptionEvent({
+      const events = mapWooviSubscriptionEvent({
         eventType: envelope.eventType,
         occurredAt: now,
         subscription,
       });
+      const notShown =
+        events.length === 0
+          ? wooviStateNotShown({ eventType: envelope.eventType, subscription })
+          : null;
+      if (notShown) {
+        onStateNotShown(notShown);
+      }
+      return events;
     }
     const installment = pickWooviInstallment(
       await client.getInstallment(missing.id)
     );
     if (installment.id !== envelope.resourceId) {
+      onStateNotShown({});
       return [];
     }
     // the subscription comes from the installment read back, never from the body
@@ -149,12 +183,27 @@ export async function resolveWooviWebhook(
     const subscription = pickWooviSubscription(
       await client.getSubscription(missing.id)
     );
-    return mapWooviInstallmentEvent({
+    const events = mapWooviInstallmentEvent({
       eventType: envelope.eventType,
       installment,
       occurredAt: now,
       subscription,
     });
+    const notShown =
+      events.length === 0
+        ? wooviStateNotShown({
+            eventType: envelope.eventType,
+            installment,
+            subscription,
+          })
+        : null;
+    if (notShown) {
+      onStateNotShown({
+        ...notShown,
+        subscriptionLogId: wooviLogId("subscription", subscription.id),
+      });
+    }
+    return events;
   } catch (error: unknown) {
     if (error instanceof ProviderNotFoundError) {
       return unresolved(envelope, missing, now);

@@ -530,6 +530,114 @@ describe("what happens when the read back does not give the resource", () => {
     expectNoLeak(answer, logged);
   });
 
+  it.each([
+    [
+      "a payment the installment read back does not show as paid",
+      paidBody(),
+      {
+        [INSTALLMENT_PATH]: {
+          json: installment({ cobr: { status: "ACTIVE" }, status: "ACTIVE" }),
+          status: 200,
+        },
+      },
+      {
+        authorization: "APPROVED",
+        charge: "ACTIVE",
+        installmentStatus: "ACTIVE",
+        journey: "ONLY_RECURRENCY",
+        subscriptionLogId: SUBSCRIPTION_LOG_ID,
+        subscriptionStatus: "ACTIVE",
+      },
+      "PIX_AUTOMATIC_COBR_COMPLETED",
+      "PaymentSubscriptionInstallment:6b1b2c3d4e5f60718293a4c7",
+    ],
+    [
+      "a rejection the subscription read back does not show",
+      JSON.stringify({
+        event: "PIX_AUTOMATIC_REJECTED",
+        globalID: SUBSCRIPTION_ID,
+      }),
+      {},
+      {
+        authorization: "APPROVED",
+        journey: "ONLY_RECURRENCY",
+        subscriptionStatus: "ACTIVE",
+      },
+      "PIX_AUTOMATIC_REJECTED",
+      SUBSCRIPTION_LOG_ID,
+    ],
+  ] as [
+    string,
+    string,
+    Record<string, Answer>,
+    Record<string, string>,
+    string,
+    string,
+  ][])(
+    "%s is answered 200 with the state-not-shown log, only codes and IDs",
+    async (_case, body, answers, codes, eventType, resourceId) => {
+      const t = setup({ answers });
+      const { answer, logged, response } = await t.send(body);
+      expect(response.status).toBe(200);
+      expect(JSON.parse(answer)).toMatchObject({ duplicates: 0, received: 0 });
+      expect(t.store.recordEvent).not.toHaveBeenCalled();
+      expect(t.logs.error).toHaveBeenCalledWith(
+        "billing_webhook_state_not_shown",
+        {
+          ...codes,
+          eventType,
+          provider: "woovi",
+          resourceId,
+        }
+      );
+      expectNoLeak(answer, logged);
+    }
+  );
+
+  it("an approval of the journey that pays on approval is not an error", async () => {
+    const t = setup({
+      answers: {
+        [SUBSCRIPTION_PATH]: {
+          json: {
+            subscription: subscription({}, { journey: "PAYMENT_ON_APPROVAL" }),
+          },
+          status: 200,
+        },
+      },
+    });
+    const { response } = await t.send(approvedBody());
+    expect(response.status).toBe(200);
+    expect(t.logs.error).not.toHaveBeenCalledWith(
+      "billing_webhook_state_not_shown",
+      expect.anything()
+    );
+  });
+
+  it("a resource read back with another ID is answered 200 with the same log", async () => {
+    const t = setup({
+      answers: {
+        [SUBSCRIPTION_PATH]: {
+          json: {
+            subscription: subscription({
+              globalID: btoa("PaymentSubscription:6a1b2c3d4e5f60718293a4b6"),
+            }),
+          },
+          status: 200,
+        },
+      },
+    });
+    const { response } = await t.send(approvedBody());
+    expect(response.status).toBe(200);
+    expect(t.logs.error).toHaveBeenCalledWith(
+      "billing_webhook_state_not_shown",
+      {
+        eventType: "PIX_AUTOMATIC_APPROVED",
+        provider: "woovi",
+        resourceId: SUBSCRIPTION_LOG_ID,
+      }
+    );
+  });
+
   it("a resource the API does not find is acknowledged with the given-up log and the decoded ID", async () => {
     const t = setup({ answers: { [SUBSCRIPTION_PATH]: { status: 404 } } });
     const { answer, logged, response } = await t.send(approvedBody());

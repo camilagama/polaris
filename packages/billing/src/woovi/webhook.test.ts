@@ -34,7 +34,12 @@ import {
   subscriptionJson,
   subscriptionWebhookBody,
 } from "./test-fixtures";
-import { readWooviWebhook, resolveWooviWebhook } from "./webhook";
+import {
+  inspectWooviWebhook,
+  readWooviWebhook,
+  resolveWooviWebhook,
+  type WooviStateNotShownReport,
+} from "./webhook";
 
 type Resource = Record<string, unknown>;
 
@@ -1034,5 +1039,133 @@ describe("reconcileWooviSubscription", () => {
         ),
       })
     ).toEqual([]);
+  });
+});
+
+describe("an event whose fact the resource read back does not show", () => {
+  async function reports(body: Resource, api = fakeApi()) {
+    const found: WooviStateNotShownReport[] = [];
+    const envelope = readWooviWebhook(JSON.stringify(body));
+    if (!envelope) {
+      throw new Error("expected a readable webhook");
+    }
+    const result = await resolveWooviWebhook(api.client, envelope, clock, (r) =>
+      found.push(r)
+    );
+    return { found, result };
+  }
+
+  it.each([
+    [
+      "COBR_COMPLETED of an installment not paid",
+      completed(),
+      fakeApi({
+        installments: [
+          installmentOf({ status: "ACTIVE" }, { status: "ACTIVE" }),
+        ],
+      }),
+    ],
+    [
+      "COBR_REJECTED of an installment still being tried",
+      failed(),
+      fakeApi({
+        installments: [
+          installmentOf({ status: "ACTIVE" }, { status: "FAILED_TRY" }),
+        ],
+      }),
+    ],
+    ["REJECTED of a subscription still approved", rejected(), fakeApi()],
+    [
+      "APPROVED of a subscription still being created",
+      approved(),
+      fakeApi({
+        subscriptions: [subscriptionOf({}, { status: "CREATED" })],
+      }),
+    ],
+  ])("%s is reported, with no events", async (_name, body, api) => {
+    const { found, result } = await reports(body, api);
+    expect(result).toEqual([]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.subscriptionStatus).toBeDefined();
+  });
+
+  it.each([
+    [
+      "an approval of the journey that pays on approval",
+      approved(),
+      fakeApi({
+        subscriptions: [subscriptionOf({}, { journey: "PAYMENT_ON_APPROVAL" })],
+      }),
+    ],
+    [
+      "the rejection of a cancelled installment",
+      failed(),
+      fakeApi({
+        installments: [installmentOf({ status: "CANCELED" })],
+      }),
+    ],
+    [
+      "an event of a subscription that is not Polaris's",
+      completed(),
+      fakeApi({ subscriptions: [subscriptionOf({ frequency: "WEEKLY" })] }),
+    ],
+    ["an event that gives a fact", completed(), fakeApi()],
+    [
+      "an event Polaris does not use",
+      installmentWebhookBody("PIX_AUTOMATIC_COBR_CREATED"),
+      fakeApi(),
+    ],
+  ])("%s is not reported", async (_name, body, api) => {
+    const { found } = await reports(body, api);
+    expect(found).toEqual([]);
+  });
+
+  it("the payment of a cancelled installment is reported: a paid charge announced is not a cancellation", async () => {
+    const { found } = await reports(
+      completed(),
+      fakeApi({ installments: [installmentOf({ status: "CANCELED" })] })
+    );
+    expect(found).toHaveLength(1);
+  });
+
+  it("carries codes and the decoded subscription ID, nothing else", async () => {
+    const { found } = await reports(
+      completed(),
+      fakeApi({
+        installments: [
+          installmentOf({ status: "ACTIVE" }, { status: "ACTIVE" }),
+        ],
+      })
+    );
+    expect(found).toEqual([
+      {
+        authorization: "APPROVED",
+        charge: "ACTIVE",
+        installmentStatus: "ACTIVE",
+        journey: "ONLY_RECURRENCY",
+        subscriptionLogId: SUBSCRIPTION_LOG_ID,
+        subscriptionStatus: "ACTIVE",
+      },
+    ]);
+  });
+});
+
+describe("inspectWooviWebhook", () => {
+  it("names the event of a body that would give a fact but has no valid globalID", () => {
+    expect(
+      inspectWooviWebhook(JSON.stringify({ event: "PIX_AUTOMATIC_APPROVED" }))
+    ).toEqual({ envelope: null, refusedFactEvent: "PIX_AUTOMATIC_APPROVED" });
+  });
+
+  it.each([
+    ["not JSON", "{nope"],
+    ["an array", "[]"],
+    [
+      "an event without a fact",
+      JSON.stringify({ event: "PIX_AUTOMATIC_COBR_CREATED" }),
+    ],
+    ["an event name out of pattern", JSON.stringify({ event: "approved" })],
+  ])("names nothing for %s", (_name, text) => {
+    expect(inspectWooviWebhook(text).refusedFactEvent).toBeNull();
   });
 });
