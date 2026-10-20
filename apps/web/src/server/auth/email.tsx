@@ -52,11 +52,7 @@ async function tokenIdempotencyKey(
  * address bar and sends the token in the body of a POST. The `url` Better Auth builds (the token in the
  * path or the query of a Worker route) is never used.
  */
-function appTokenURL(
-  appBaseURL: string,
-  path: string,
-  token: string
-): string {
+function appTokenURL(appBaseURL: string, path: string, token: string): string {
   const url = new URL(path, appBaseURL);
   url.hash = `token=${encodeURIComponent(token)}`;
   return url.toString();

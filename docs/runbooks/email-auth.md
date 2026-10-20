@@ -12,4 +12,12 @@ A validação e o hash/verify normalizam NFC. O hasher mantém os parâmetros Sc
 4. `EMAIL_PASSWORD_AUTH_ENABLED` está definido como `false` no Wrangler local. Mantenha-o desligado até o PR16 habilitar rate limiting e Turnstile e até o sender estar configurado.
 5. Antes de enviar a usuários reais, revise a política de privacidade e os termos/DPA do Resend: o provider processará destinatários, links de verificação/reset e metadados de entrega.
 
+## E-mails e links do P8
+
+Com a flag ligada, o Worker envia estes e-mails. Os de verificação e de redefinição levam o link para a página do app com o token no fragmento (`/confirmar-email#token=` e `/redefinir-senha#token=`); o de desbloqueio leva a `/desbloquear#token=`. O link do Better Auth, com o token no caminho ou na consulta, nunca é usado. Os de "você já tem conta" (`/entrar`), de aviso de troca ou definição de senha (`/esqueci-a-senha`) não têm token.
+
+- Chave de idempotência por tipo e token (SHA-256), e no caso de "você já tem conta" por usuário e dia.
+- O e-mail de desbloqueio sai em segundo plano, só para conta com senha, uma vez por trava.
+- Falha do Resend: o Worker registra `auth_email_delivery_failed` com o tipo do e-mail, a classe do erro, sem endereço, token nem corpo, e a resposta da tela não muda.
+
 Os testes usam callbacks fake e fetch mockado. Não enviam mensagens reais. O PR15 não adiciona outbox/Cloudflare Queue nem webhooks duráveis; a proposta inicial de entrega durável fica adiada para hardening pré-go-live. A entrega direta idempotente pode ser tentada novamente, mas não é uma outbox persistente.

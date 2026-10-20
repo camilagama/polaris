@@ -13,6 +13,7 @@ import {
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import { loginLockKey } from "./login-lock-key";
 import {
+  createMemoryLoginLockStore,
   createPasswordTestAuth,
   createVerifiedPasswordUser,
   jsonRequest,
@@ -25,136 +26,13 @@ const MINUTE = 60 * 1000;
 const START = new Date("2026-10-20T12:00:00.000Z");
 const BASE64URL_43 = /^[A-Za-z0-9_-]{43}$/;
 const HEX_64 = /^[0-9a-f]{64}$/;
-const wrongPassword = "uma senha errada, bem comprida também";
-
-interface LockRow {
-  attempts: number;
-  lockedUntil: number | null;
-  tokenExpiresAt: number | null;
-  tokenSha: string | null;
-  windowStartedAt: number;
-}
-
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
     ""
   );
 }
 
-/**
- * The store in memory, after the six functions of migration 0082: 5 failures in 15 minutes lock the key
- * for 15 minutes, and the attempt is reserved (counted) before the password is checked.
- */
-function createMemoryLoginLockStore() {
-  const rows = new Map<string, LockRow>();
-
-  const beginNow = (key: string): LoginLockAttempt => {
-    const now = Date.now();
-    let row = rows.get(key);
-    if (row?.lockedUntil !== null && row?.lockedUntil !== undefined) {
-      if (row.lockedUntil > now) {
-        return {
-          allowed: false,
-          newlyLocked: false,
-          retryAfterSeconds: Math.ceil((row.lockedUntil - now) / 1000),
-        };
-      }
-      rows.delete(key);
-      row = undefined;
-    }
-    if (!row) {
-      rows.set(key, {
-        attempts: 1,
-        lockedUntil: null,
-        tokenExpiresAt: null,
-        tokenSha: null,
-        windowStartedAt: now,
-      });
-    } else if (row.windowStartedAt + 15 * MINUTE <= now) {
-      Object.assign(row, {
-        attempts: 1,
-        tokenExpiresAt: null,
-        tokenSha: null,
-        windowStartedAt: now,
-      });
-    } else if (row.attempts >= 5) {
-      Object.assign(row, {
-        lockedUntil: now + 15 * MINUTE,
-        tokenExpiresAt: null,
-        tokenSha: null,
-      });
-      return { allowed: false, newlyLocked: true, retryAfterSeconds: 900 };
-    } else {
-      row.attempts += 1;
-    }
-    return { allowed: true, newlyLocked: false, retryAfterSeconds: 0 };
-  };
-  const begin = vi.fn((key: string) => Promise.resolve(beginNow(key)));
-  const failedNow = (key: string) => {
-    const now = Date.now();
-    const row = rows.get(key);
-    if (
-      !row ||
-      row.attempts < 5 ||
-      (row.lockedUntil !== null && row.lockedUntil > now)
-    ) {
-      return false;
-    }
-    Object.assign(row, {
-      lockedUntil: now + 15 * MINUTE,
-      tokenExpiresAt: null,
-      tokenSha: null,
-    });
-    return true;
-  };
-  const failed = vi.fn((key: string) => Promise.resolve(failedNow(key)));
-  const clear = vi.fn((key: string) => {
-    rows.delete(key);
-    return Promise.resolve();
-  });
-  const issueUnlockNow = (key: string, tokenSha256: Uint8Array) => {
-    const now = Date.now();
-    const row = rows.get(key);
-    if (
-      !row ||
-      row.lockedUntil === null ||
-      row.lockedUntil <= now ||
-      row.tokenSha !== null
-    ) {
-      return false;
-    }
-    row.tokenSha = hex(tokenSha256);
-    row.tokenExpiresAt = now + 60 * MINUTE;
-    return true;
-  };
-  const issueUnlock = vi.fn((key: string, tokenSha256: Uint8Array) =>
-    Promise.resolve(issueUnlockNow(key, tokenSha256))
-  );
-  const unlockNow = (tokenSha256: Uint8Array) => {
-    const now = Date.now();
-    for (const row of rows.values()) {
-      if (
-        row.tokenSha === hex(tokenSha256) &&
-        (row.tokenExpiresAt ?? 0) > now
-      ) {
-        if (row.lockedUntil !== null && row.lockedUntil > now) {
-          Object.assign(row, {
-            attempts: 0,
-            lockedUntil: null,
-            windowStartedAt: now,
-          });
-        }
-        return "unlocked" as const;
-      }
-    }
-    return "invalid" as const;
-  };
-  const unlock = vi.fn((tokenSha256: Uint8Array) =>
-    Promise.resolve(unlockNow(tokenSha256))
-  );
-  const store: LoginLockStore = { begin, clear, failed, issueUnlock, unlock };
-  return { begin, clear, failed, issueUnlock, rows, store, unlock };
-}
+const wrongPassword = "uma senha errada, bem comprida também";
 
 async function setup(emailVerified = true) {
   stubPwnedPasswordRange();

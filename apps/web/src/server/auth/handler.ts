@@ -32,12 +32,15 @@ import {
   createDatabaseLoginLockStore,
   handleEmailSignInWithLock,
   isEmailSignInRequest,
+  loginLockedResponse,
+  responseErrorCode,
   type LoginLockQueryable,
   type LoginLockStore,
   newUnlockToken,
   sha256,
   unlockTokenUserId,
 } from "./login-lock";
+import { loginLockKey } from "./login-lock-key";
 import type { BackgroundTaskHandler } from "./security-options";
 import {
   isSessionFresh,
@@ -168,6 +171,12 @@ function jsonError(status: number, code: string): Response {
 export interface PasswordChangeEffects {
   /** Invalidates every offline lease of the user (`bump_user_authorization_epoch`). */
   bumpAuthorizationEpoch: (userId: string) => Promise<unknown>;
+  /** The sign-in lock: a wrong current password counts on the counter of the session's e-mail. */
+  loginLock?: {
+    secret: string;
+    sendUnlock: (email: string, key: string) => Promise<void>;
+    store: LoginLockStore;
+  };
   requestId: string;
   runInBackground: (task: Promise<unknown>) => void;
   /** The e-mail that tells the owner of the account a password changed or was added. */
@@ -262,6 +271,61 @@ async function bumpEpochAfterPasswordChange(
 }
 
 /**
+ * A change of password checks the current password, so it spends an attempt of the sign-in lock of the
+ * session's e-mail (the same counter as the sign-in). The policy of the new password runs first, so a
+ * refused new password never spends one.
+ */
+async function reserveChangePasswordAttempt(
+  effects: PasswordChangeEffects,
+  email: string,
+  newPassword: string
+): Promise<{ key?: string } | { response: Response }> {
+  const { loginLock } = effects;
+  if (!loginLock) {
+    return {};
+  }
+  try {
+    await validateNewPassword(newPassword);
+  } catch (error) {
+    if (error instanceof PasswordPolicyError) {
+      return { response: passwordPolicyResponse(error) };
+    }
+    throw error;
+  }
+  const key = await loginLockKey(loginLock.secret, email);
+  const attempt = await loginLock.store.begin(key);
+  if (!attempt.allowed) {
+    if (attempt.newlyLocked) {
+      effects.runInBackground(loginLock.sendUnlock(email, key));
+    }
+    return { response: loginLockedResponse(attempt.retryAfterSeconds) };
+  }
+  return { key };
+}
+
+/** A change that went through forgets the e-mail; a wrong current password counts as a failure. */
+async function settleChangePasswordAttempt(
+  effects: PasswordChangeEffects,
+  email: string,
+  key: string | undefined,
+  response: Response
+): Promise<void> {
+  const { loginLock } = effects;
+  if (!loginLock || key === undefined) {
+    return;
+  }
+  if (response.ok) {
+    await loginLock.store.clear(key);
+  } else if (
+    response.status === 400 &&
+    (await responseErrorCode(response)) === "INVALID_PASSWORD" &&
+    (await loginLock.store.failed(key))
+  ) {
+    effects.runInBackground(loginLock.sendUnlock(email, key));
+  }
+}
+
+/**
  * The change of the password of a signed-in person (ADR 0044, item "baixo"; ADR 0100, T-b; AC-57).
  * Better Auth checks the current password and the policy runs in its `before` hook; here it always
  * revokes the other sessions (Better Auth then opens a new session for this device, with a new cookie),
@@ -285,6 +349,16 @@ export async function handleChangePasswordRequest(
     return jsonError(400, "invalid_request_body");
   }
 
+  const { user } = checked.session;
+  const reserved = await reserveChangePasswordAttempt(
+    effects,
+    user.email,
+    body.newPassword
+  );
+  if ("response" in reserved) {
+    return reserved.response;
+  }
+
   const response = await auth.handler(
     new Request(request.url, {
       body: JSON.stringify({
@@ -296,11 +370,16 @@ export async function handleChangePasswordRequest(
       method: "POST",
     })
   );
+  await settleChangePasswordAttempt(
+    effects,
+    user.email,
+    reserved.key,
+    response
+  );
   if (!response.ok) {
     return response;
   }
 
-  const { user } = checked.session;
   await bumpEpochAfterPasswordChange(effects, user.id);
   await recordPasswordEvent(
     effects,
@@ -390,17 +469,21 @@ export async function handleSetPasswordRequest(
     return response;
   } catch (error) {
     if (error instanceof PasswordPolicyError) {
-      const details = passwordPolicyErrorDetails(error);
-      return Response.json(
-        {
-          error: { code: details.code, message: details.message },
-        },
-        { status: details.status }
-      );
+      return passwordPolicyResponse(error);
     }
 
     throw error;
   }
+}
+
+function passwordPolicyResponse(error: PasswordPolicyError): Response {
+  const details = passwordPolicyErrorDetails(error);
+  return Response.json(
+    {
+      error: { code: details.code, message: details.message },
+    },
+    { status: details.status }
+  );
 }
 
 interface AuthRuntime {
@@ -499,7 +582,10 @@ function openAuthRuntime(
     secret,
   });
 
-  return {
+  const store = createDatabaseLoginLockStore(
+    pool as unknown as LoginLockQueryable
+  );
+  const opened: { runtime: AuthRuntime } = {
     runtime: {
       auth,
       async close() {
@@ -518,6 +604,12 @@ function openAuthRuntime(
       effects: {
         bumpAuthorizationEpoch: (userId) =>
           bumpUserAuthorizationEpoch(db, userId),
+        loginLock: {
+          secret,
+          sendUnlock: (email, key) =>
+            sendLoginUnlock(opened.runtime, email, key),
+          store,
+        },
         requestId: safeRequestId,
         runInBackground: background,
         ...(delivery
@@ -528,11 +620,10 @@ function openAuthRuntime(
       pool: pool as unknown as LoginLockQueryable,
       requestId: safeRequestId,
       runInBackground: background,
-      store: createDatabaseLoginLockStore(
-        pool as unknown as LoginLockQueryable
-      ),
+      store,
     },
   };
+  return opened;
 }
 
 /**

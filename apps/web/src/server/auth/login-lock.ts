@@ -147,7 +147,9 @@ async function typedEmail(request: Request): Promise<string | undefined> {
     : undefined;
 }
 
-async function errorCode(response: Response): Promise<string | undefined> {
+export async function responseErrorCode(
+  response: Response
+): Promise<string | undefined> {
   const body: unknown = await response
     .clone()
     .json()
@@ -214,7 +216,7 @@ export async function handleEmailSignInWithLock(
   if (
     response.ok ||
     (response.status === 403 &&
-      (await errorCode(response)) === "EMAIL_NOT_VERIFIED")
+      (await responseErrorCode(response)) === "EMAIL_NOT_VERIFIED")
   ) {
     await options.store.clear(key);
   } else if (response.status === 401 && (await options.store.failed(key))) {
