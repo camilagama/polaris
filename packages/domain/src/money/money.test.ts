@@ -91,8 +91,8 @@ describe("Money", () => {
     ).toThrow(MoneyLimitError);
   });
 
-  it("adds exact cents for all generated signed values", async () => {
-    await assertProperty(
+  it("adds exact cents for all generated signed values", () => {
+    assertProperty(
       property(
         bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
         bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
@@ -106,8 +106,8 @@ describe("Money", () => {
     );
   });
 
-  it("subtracts a discount without floating-point conversion", async () => {
-    await assertProperty(
+  it("subtracts a discount without floating-point conversion", () => {
+    assertProperty(
       property(
         tuple(
           bigInt({ max: PROPERTY_MAX_CENTS, min: 0n }),
@@ -127,8 +127,8 @@ describe("Money", () => {
     );
   });
 
-  it("multiplies exact cents by an integer quantity", async () => {
-    await assertProperty(
+  it("multiplies exact cents by an integer quantity", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000_000_000_000n, min: -1_000_000_000_000_000n }),
         integer({ max: 1000, min: 1 }),
@@ -157,8 +157,8 @@ describe("Money", () => {
 });
 
 describe("DecimalAmount", () => {
-  it("adds mixed-scale intermediate decimals exactly", async () => {
-    await assertProperty(
+  it("adds mixed-scale intermediate decimals exactly", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000n, min: -1_000_000n }),
         bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
@@ -174,8 +174,8 @@ describe("DecimalAmount", () => {
     );
   });
 
-  it("subtracts mixed-scale intermediate decimals exactly", async () => {
-    await assertProperty(
+  it("subtracts mixed-scale intermediate decimals exactly", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000n, min: -1_000_000n }),
         bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
@@ -191,8 +191,8 @@ describe("DecimalAmount", () => {
     );
   });
 
-  it("multiplies exact intermediate values by a positive quantity", async () => {
-    await assertProperty(
+  it("multiplies exact intermediate values by a positive quantity", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
         integer({ max: 1000, min: 1 }),
@@ -223,8 +223,8 @@ describe("DecimalAmount", () => {
     );
   });
 
-  it("rounds generated three-place values half-up to cents", async () => {
-    await assertProperty(
+  it("rounds generated three-place values half-up to cents", () => {
+    assertProperty(
       property(
         bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
         (milliUnits) => {
@@ -254,8 +254,8 @@ describe("Percentage", () => {
     expect(() => Percentage.from("-1")).toThrow(InvalidPercentageError);
   });
 
-  it("applies percentage points exactly before rounding", async () => {
-    await assertProperty(
+  it("applies percentage points exactly before rounding", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000_000_000n, min: -1_000_000_000_000n }),
         bigInt({ max: 1_000_000_000n, min: 0n }),

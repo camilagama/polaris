@@ -175,8 +175,8 @@ describe("calculateSaleAdjustments", () => {
     }
   });
 
-  it("sums negotiated item prices and quantities exactly", async () => {
-    await assertProperty(
+  it("sums negotiated item prices and quantities exactly", () => {
+    assertProperty(
       property(
         array(
           tuple(
@@ -205,8 +205,8 @@ describe("calculateSaleAdjustments", () => {
     );
   });
 
-  it("applies matching percent adjustments to the same subtotal", async () => {
-    await assertProperty(
+  it("applies matching percent adjustments to the same subtotal", () => {
+    assertProperty(
       property(
         bigInt({ min: 0n, max: 1_000_000_000_000n }),
         bigInt({ min: 0n, max: 100_000_000n }),

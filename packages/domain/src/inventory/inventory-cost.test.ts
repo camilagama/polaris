@@ -1,6 +1,10 @@
-import { integer, property } from "fast-check";
+import { constantFrom, integer, oneof, property } from "fast-check";
 import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
+import {
+  InvalidStockMovementError,
+  InventoryQuantityLimitError,
+} from "./inventory";
 import {
   calculateMovingAverageCost,
   InvalidUnitCostError,
@@ -132,7 +136,8 @@ describe("inventory cost rules", () => {
           expect(resultingCost >= lowerBound).toBe(true);
           expect(resultingCost <= upperBound).toBe(true);
         }
-      )
+      ),
+      { minRuns: 500 }
     );
   });
 
@@ -236,5 +241,35 @@ describe("restockMovingAverageCost", () => {
         restockedUnitCost: "10.000000",
       })
     ).toBeNull();
+  });
+
+  it("accepts quantities from 0 and 1 up to 2147483647 and refuses past it, at every edge (property)", () => {
+    // literals, not MAX_INVENTORY_QUANTITY: moving the limit in the code must turn this red
+    const max = 2_147_483_647;
+    const current = constantFrom(-1, 0, 1, 2, max - 1, max, max + 1);
+    const received = constantFrom(-1, 0, 1, 2, max - 1, max, max + 1);
+    assertProperty(
+      property(current, received, (currentQuantity, receivedQuantity) => {
+        const run = () =>
+          calculateMovingAverageCost({
+            currentAverageCost: currentQuantity === 0 ? null : "5.000000",
+            currentQuantity,
+            receivedQuantity,
+            unitCost: "5.000000",
+          });
+        if (
+          currentQuantity < 0 ||
+          currentQuantity > max ||
+          receivedQuantity < 1 ||
+          receivedQuantity > max
+        ) {
+          expect(run).toThrow(InvalidStockMovementError);
+        } else if (currentQuantity + receivedQuantity > max) {
+          expect(run).toThrow(InventoryQuantityLimitError);
+        } else {
+          expect(run()).toBe("5.000000");
+        }
+      })
+    );
   });
 });

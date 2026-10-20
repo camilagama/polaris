@@ -1,4 +1,4 @@
-import { array, integer, property } from "fast-check";
+import { array, constantFrom, integer, property } from "fast-check";
 import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
@@ -383,6 +383,68 @@ describe("return invariants (property tests)", () => {
           expect(returned).toBeLessThanOrEqual(sold);
         }
       )
+    );
+  });
+});
+
+describe("the quantity limits of a return (property, at the edges)", () => {
+  // literals, not MAX_INVENTORY_QUANTITY: moving the limit in the code must turn these red
+  const MAX = 2_147_483_647;
+  const edges = constantFrom(-1, 0, 1, 2, MAX - 1, MAX, MAX + 1, 1.5);
+  const isQuantity = (value: number, minimum: number) =>
+    Number.isInteger(value) && value >= minimum && value <= MAX;
+
+  it("accepts a line exactly when position is 0 to 2147483647, returned 1 to 2147483647, and restocked 0 up to the returned", () => {
+    assertProperty(
+      property(edges, edges, edges, (position, returned, restocked) => {
+        const items = [
+          {
+            position,
+            restockedQuantity: restocked,
+            returnedQuantity: returned,
+          },
+        ];
+        const valid =
+          isQuantity(position, 0) &&
+          isQuantity(returned, 1) &&
+          isQuantity(restocked, 0) &&
+          restocked <= returned;
+        if (valid) {
+          expect(normalizeReturnSaleCommand(command({ items })).items).toEqual(
+            items
+          );
+        } else {
+          expect(() => normalizeReturnSaleCommand(command({ items }))).toThrow(
+            InvalidSaleReturnError
+          );
+        }
+      })
+    );
+  });
+
+  it("plans a line exactly when its quantities are inside the limits and the sale still has them to return", () => {
+    assertProperty(
+      property(edges, edges, (returned, restocked) => {
+        const facts = [item(0, MAX)];
+        const line = {
+          position: 0,
+          restockedQuantity: restocked,
+          returnedQuantity: returned,
+        };
+        const shapeOk =
+          isQuantity(returned, 1) &&
+          isQuantity(restocked, 0) &&
+          restocked <= returned;
+        if (!shapeOk) {
+          expect(() => planSaleReturn(facts, [line])).toThrow(
+            InvalidSaleReturnError
+          );
+        } else {
+          expect(planSaleReturn(facts, [line])[0]?.returnedQuantity).toBe(
+            returned
+          );
+        }
+      })
     );
   });
 });
