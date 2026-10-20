@@ -173,7 +173,7 @@ O controle de aceite legal do servidor (`LEGAL_ACCEPTANCE_ENFORCED`, [ADR 0100](
 
 ## Rollback ou forward-fix
 
-Os gates não alteram recursos persistentes: use apenas a branch descartável própria e apague-a ao final (`neon branches delete <nome> --project-id green-tooth-16857010 --profile junior-pessoal`). Uma falha de gate é corrigida com um commit novo; nunca com reset ou force-push.
+Os gates não alteram recursos persistentes: use apenas a branch descartável própria e apague-a ao final (`neon branches delete <nome> --project-id "$NEON_PROJECT_ID" --profile junior-pessoal`). Uma falha de gate é corrigida com um commit novo; nunca com reset ou force-push.
 
 ## Escalonamento
 
