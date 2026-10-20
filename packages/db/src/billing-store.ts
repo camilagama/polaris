@@ -86,6 +86,14 @@ export interface BillingSweepReport {
   transitioned: number;
 }
 
+/** What one hourly pass of the retry by state did to the renewal cancellations owed by closures (ADR 0074, L4). */
+export interface RenewalCancellationRearmReport {
+  /** Events written for a closure that had none (closed before the event existed, or a checkout paid after it). */
+  inserted: number;
+  /** Events dispatched a while ago sent back to pending: the renewal is still alive. */
+  rearmed: number;
+}
+
 export interface BillingRetryReport {
   failed: number;
   processed: number;
@@ -198,6 +206,17 @@ export interface BillingStore {
     organizationId: string
   ) => Promise<BillingProviderLink | null>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
+  /**
+   * The retry by state of the renewal cancellations the closures asked for
+   * (ADR 0074, L4): every organization in closure whose renewal is still alive
+   * gets its cycle's `billing.renewal_cancel_requested` written, or sent again
+   * when it was dispatched at least `minAgeSeconds` ago. Never a new key for the
+   * same cycle; a pending event is left to the dispatcher.
+   */
+  rearmRenewalCancellations: (
+    minAgeSeconds: number,
+    limit: number
+  ) => Promise<RenewalCancellationRearmReport>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
     input: RecordBillingEventInput
@@ -1423,6 +1442,19 @@ export function createBillingStore(
       );
       const [row] = result.rows;
       return row ? toRecord(row) : null;
+    },
+    async rearmRenewalCancellations(minAgeSeconds, limit) {
+      const result = await pool.query<{
+        result: RenewalCancellationRearmReport;
+      }>(
+        "SELECT public.rearm_renewal_cancellations($1::integer, $2::integer) AS result",
+        [minAgeSeconds, limit]
+      );
+      const report = result.rows[0]?.result;
+      return {
+        inserted: Number(report?.inserted ?? 0),
+        rearmed: Number(report?.rearmed ?? 0),
+      };
     },
     async recordEvent(input) {
       const fact = serializeBillingFact(input.fact);

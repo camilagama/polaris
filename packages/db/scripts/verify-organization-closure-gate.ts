@@ -1008,13 +1008,18 @@ async function run() {
         "deletion_ledger_privacy_owner_select",
         // the re-arm of an export event still owed (ADR 0084)
         "event_outbox_privacy_owner_insert_closed",
+        // the cancellation of the renewal at the closure and its retry by state (ADR 0074, L4)
+        "event_outbox_privacy_owner_insert_renewal_cancel",
         "event_outbox_privacy_owner_rearm",
+        "event_outbox_privacy_owner_rearm_renewal_cancel",
         "event_outbox_privacy_owner_select",
+        "event_outbox_privacy_owner_select_renewal_cancel",
         "media_assets_privacy_owner_select_closed",
         "memberships_privacy_owner_select",
         "memberships_privacy_owner_update",
         "offline_grants_privacy_owner_select",
         "offline_grants_privacy_owner_update",
+        "organization_billing_privacy_owner_select",
         "organization_closures_privacy_owner_insert",
         "organization_closures_privacy_owner_select",
         "organization_closures_privacy_owner_update",

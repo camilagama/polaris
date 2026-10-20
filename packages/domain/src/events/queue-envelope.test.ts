@@ -33,6 +33,10 @@ describe("the queues", () => {
 
   it("route every event type to one of them", () => {
     expect(queueForEventType("data_export.requested")).toBe("default");
+    // a renewal left alive charges the person: the critical queue
+    expect(queueForEventType("billing.renewal_cancel_requested")).toBe(
+      "critical"
+    );
   });
 });
 

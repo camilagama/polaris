@@ -31,17 +31,27 @@ export type BillingCommandErrorCode =
   | "already_subscribed"
   | "checkout_pending_confirmation"
   | "cycle_not_offered"
+  | "renewal_cancelled_until"
   | "trial_already_used"
   | "trial_in_progress";
 
-/** A refusal the person can act on; the code goes to the client as the reason. */
+/**
+ * A refusal the person can act on; the code goes to the client as the reason.
+ * `until` is the end of the paid access, for `renewal_cancelled_until`: a new
+ * subscription starts only after it (the client shows the date).
+ */
 export class BillingCommandError extends Error {
   readonly code: BillingCommandErrorCode;
+  readonly until: Date | null;
 
-  constructor(code: BillingCommandErrorCode, options?: ErrorOptions) {
+  constructor(
+    code: BillingCommandErrorCode,
+    options?: ErrorOptions & { until?: Date }
+  ) {
     super(code, options);
     this.name = "BillingCommandError";
     this.code = code;
+    this.until = options?.until ?? null;
   }
 }
 
@@ -205,6 +215,13 @@ export async function startCardCheckout(
   };
   const record = await store.readRecord(input.organizationId);
   if (record && grantsPro(record.state)) {
+    if (record.cancelAtPeriodEnd && record.accessEndsAt) {
+      // the renewal was cancelled (a closure, even one undone, or the operator): the subscription is not
+      // created again (B8), and a new one waits for the end of the access already paid for (ADR 0074)
+      throw new BillingCommandError("renewal_cancelled_until", {
+        until: record.accessEndsAt,
+      });
+    }
     // a trial running, a paid period or grace: nothing to start
     throw new BillingCommandError("already_subscribed");
   }

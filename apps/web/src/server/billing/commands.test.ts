@@ -594,6 +594,34 @@ describe("startCardCheckout", () => {
     }
   );
 
+  it("refuses with the end of the paid access when the renewal was cancelled (a closure undone does not create it again)", async () => {
+    const accessEndsAt = new Date("2026-11-14T12:00:00.000Z");
+    const port = fakePort();
+    const store = fakeStore({
+      readRecord: vi.fn(() =>
+        Promise.resolve({
+          accessEndsAt,
+          cancelAtPeriodEnd: true,
+          state: "active",
+        })
+      ),
+    });
+
+    const refusal = await startCardCheckout(
+      { now: () => now, port, store },
+      input
+    ).catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(BillingCommandError);
+    expect(refusal).toMatchObject({
+      code: "renewal_cancelled_until",
+      until: accessEndsAt,
+    });
+    expect(port.prepareSubscription).not.toHaveBeenCalled();
+    expect(store.startTrial).not.toHaveBeenCalled();
+    expect(store.attachProvider).not.toHaveBeenCalled();
+  });
+
   it("starts from a record that does not give Pro", async () => {
     const store = fakeStore({
       readRecord: vi.fn(() => Promise.resolve({ state: "free" })),

@@ -123,6 +123,7 @@
     "poc:admin-support:verify": "bun scripts/verify-admin-support-gate.ts",
     "poc:admin-suspension:verify": "bun scripts/verify-admin-suspension-gate.ts",
     "poc:organization-closure:verify": "bun scripts/verify-organization-closure-gate.ts",
+    "poc:renewal-cancellation:verify": "bun scripts/verify-renewal-cancellation-gate.ts",
     "poc:closed-organization-readonly:verify": "bun scripts/verify-closed-organization-readonly-gate.ts",
     "poc:customer-anonymization:verify": "bun scripts/verify-customer-anonymization-gate.ts",
     "poc:data-export:verify": "bun scripts/verify-data-export-gate.ts",

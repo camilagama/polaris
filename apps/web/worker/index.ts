@@ -16,6 +16,14 @@ import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
 } from "../src/server/billing/maintenance";
+import {
+  billingProviderPortOf,
+  billingProviderHandled,
+} from "../src/server/billing/provider-ports";
+import {
+  handleRenewalCancelRequested,
+  rearmRenewalCancellations,
+} from "../src/server/billing/renewal-cancellation";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
@@ -143,6 +151,13 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
       retry: { ...report.retry },
       sweep: { ...report.sweep },
     });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
+    // after the sweep, which ends what time ended: a closed organization whose renewal is still alive asks again
+    const rearmed = await rearmRenewalCancellations(store);
+    logger.info("billing_renewal_cancel_rearm_complete", { ...rearmed });
   } catch (error: unknown) {
     failures.push(error);
   }
@@ -424,6 +439,34 @@ async function handleDataExportRequested(
   }
 }
 
+/**
+ * The handler of `billing.renewal_cancel_requested` (ADR 0074, L4): the closure asked to cancel the renewal.
+ * Without the billing role there is no subscription to cancel here, and a retry would not change it. A
+ * provider without its settings, or one that fails, throws: the queue retries, then the dead-letter queue.
+ */
+async function handleRenewalCancelEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("billing_not_configured");
+  }
+  const store = createBillingStore(connectionString);
+  try {
+    await handleRenewalCancelRequested(
+      {
+        handles: billingProviderHandled,
+        portFor: (provider) => billingProviderPortOf(env, provider),
+        store,
+      },
+      envelope
+    );
+  } finally {
+    await quietly(() => store.close());
+  }
+}
+
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */
 const inMemoryLedger = createInMemoryProcessingLedger();
 
@@ -454,6 +497,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     return;
   }
   const handlers = {
+    "billing.renewal_cancel_requested": (envelope: QueueEnvelope) =>
+      handleRenewalCancelEvent(env, envelope),
     "data_export.requested": (envelope: QueueEnvelope) =>
       handleDataExportRequested(env, envelope),
   };

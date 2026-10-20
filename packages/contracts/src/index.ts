@@ -979,6 +979,9 @@ const closedOrganization = z.object({
     "purged",
   ]),
   recoverUntil: z.string().datetime(),
+  // the renewal of the subscription, derived by the server from the billing record (ADR 0074, L4):
+  // not_handled (no provider, or one Polaris does not cancel through), pending or cancelled
+  renewal: z.enum(["not_handled", "pending", "cancelled"]),
   requestedAt: z.string().datetime(),
   timezone: z.string().min(1),
 });

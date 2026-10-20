@@ -550,12 +550,16 @@ async function run() {
       [
         ["DELETE", ["polaris_purge_owner"]],
         ["INSERT", [runtimeRole]],
-        // the request of a closed organization's copy, through the privacy owner's function (ADR 0081)
+        // the request of a closed organization's copy (ADR 0081) and the cancellation of the renewal at the
+        // closure (ADR 0074), through the privacy owner's functions
+        ["INSERT", ["polaris_privacy_owner"]],
         ["INSERT", ["polaris_privacy_owner"]],
         ["SELECT", ["polaris_outbox_owner"]],
         ["SELECT", ["polaris_privacy_owner"]],
+        ["SELECT", ["polaris_privacy_owner"]],
         ["SELECT", ["polaris_purge_owner"]],
         ["UPDATE", ["polaris_outbox_owner"]],
+        ["UPDATE", ["polaris_privacy_owner"]],
         ["UPDATE", ["polaris_privacy_owner"]],
       ],
       "the tenant only inserts (and the privacy owner, for a closed organization's copy); reads and updates are the owners' (dispatcher and re-arm), through their functions; only the purge owner deletes (ADR 0081)"

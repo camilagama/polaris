@@ -17,6 +17,17 @@ export interface BillingPortOptions {
   randomUuid?: () => string;
 }
 
+/** The providers Polaris acts through (cancels, refunds, reconciles): the ones with an outbound port. */
+const HANDLED_PROVIDERS: ReadonlySet<string> = new Set(["asaas"]);
+
+/**
+ * Whether Polaris acts through this provider at all, whatever the settings of
+ * this environment: without its port, the renewal is the person's to cancel.
+ */
+export function billingProviderHandled(provider: string): boolean {
+  return HANDLED_PROVIDERS.has(provider);
+}
+
 /**
  * The outbound port of a provider, built from the Worker's settings, or
  * `ProviderNotConfiguredError` when a secret or a setting is missing. The
@@ -32,7 +43,7 @@ export function billingProviderPortOf(
   provider: string,
   options: BillingPortOptions = {}
 ): BillingProviderPort {
-  if (provider !== "asaas") {
+  if (!billingProviderHandled(provider)) {
     // Woovi (Pix Automático) comes with its own port (plan PR78)
     throw new ProviderNotConfiguredError();
   }
