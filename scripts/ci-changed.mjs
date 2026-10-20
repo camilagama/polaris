@@ -26,6 +26,22 @@ const BROWSER_IRRELEVANT = [
   /^apps\/web\/(src\/server|worker|scripts)\//,
 ];
 
+/**
+ * What the e2e journeys on the real local stack (T-125a, job `e2e-real`) exercise: the whole web app (client,
+ * server and Worker), the packages it bundles, the lockfile and runtime versions, and the workflow and scripts of
+ * the job. Prose, the Admin app and the public catalog never run in it.
+ */
+const E2E_RELEVANT = [
+  /^apps\/web\//,
+  /^packages\//,
+  /^bun\.lock$/,
+  /^package\.json$/,
+  /^\.bun-version$/,
+  /^\.node-version$/,
+  /^\.github\/workflows\//,
+  /^scripts\/(ci-changed|e2e-flaky-report)\.mjs$/,
+];
+
 /** Files that can change which dependencies are installed. */
 const DEPENDENCY_FILES = [
   /(^|\/)package\.json$/,
@@ -40,7 +56,7 @@ const DEPENDENCY_FILES = [
  */
 export function classifyChanges(files) {
   if (files === null) {
-    return { browser: true, dependencies: true };
+    return { browser: true, dependencies: true, e2e: true };
   }
   const changed = files.filter(Boolean);
   return {
@@ -49,6 +65,11 @@ export function classifyChanges(files) {
     ),
     dependencies: changed.some((file) =>
       DEPENDENCY_FILES.some((pattern) => pattern.test(file))
+    ),
+    e2e: changed.some(
+      (file) =>
+        !/\.md$/.test(file) &&
+        E2E_RELEVANT.some((pattern) => pattern.test(file))
     ),
   };
 }
@@ -71,7 +92,7 @@ function changedFiles() {
 function main() {
   const manual = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
   const result = manual
-    ? { browser: true, dependencies: true }
+    ? { browser: true, dependencies: true, e2e: true }
     : classifyChanges(changedFiles());
   const lines = Object.entries(result).map(
     ([name, value]) => `${name}=${value}`

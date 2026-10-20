@@ -123,6 +123,7 @@ describe("which CI jobs a change affects", () => {
     expect(classifyChanges(null)).toEqual({
       browser: true,
       dependencies: true,
+      e2e: true,
     });
   });
 
@@ -134,7 +135,7 @@ describe("which CI jobs a change affects", () => {
         "DESIGN.md",
         "",
       ])
-    ).toEqual({ browser: false, dependencies: false });
+    ).toEqual({ browser: false, dependencies: false, e2e: false });
   });
 
   it("skips the browser gate for the database package, whose code the web client never bundles", () => {
@@ -144,7 +145,7 @@ describe("which CI jobs a change affects", () => {
         "packages/db/scripts/verify-x-gate.ts",
         "packages/db/drizzle/0051_x.sql",
       ])
-    ).toEqual({ browser: false, dependencies: false });
+    ).toEqual({ browser: false, dependencies: false, e2e: true });
   });
 
   it("skips the browser gate for the web app's server, Worker and gate scripts, which it never runs", () => {
@@ -155,7 +156,7 @@ describe("which CI jobs a change affects", () => {
         "apps/web/worker/index.ts",
         "apps/web/scripts/verify-offline-e2e-gate.ts",
       ])
-    ).toEqual({ browser: false, dependencies: false });
+    ).toEqual({ browser: false, dependencies: false, e2e: true });
     // the client next to them is still covered
     expect(
       classifyChanges([
@@ -204,10 +205,11 @@ describe("which CI jobs a change affects", () => {
         "apps/admin/wrangler.jsonc",
         "apps/admin/package.json",
       ])
-    ).toEqual({ browser: false, dependencies: true });
+    ).toEqual({ browser: false, dependencies: true, e2e: false });
     expect(classifyChanges(["apps/admin/src/app.ts"])).toEqual({
       browser: false,
       dependencies: false,
+      e2e: false,
     });
   });
 
@@ -222,6 +224,34 @@ describe("which CI jobs a change affects", () => {
       "bun.lock",
     ]) {
       expect(classifyChanges([file]).browser).toBe(true);
+    }
+  });
+
+  it("runs the e2e journeys for the web app, its packages, the lockfile and the job, never for prose, the Admin or the catalog", () => {
+    for (const file of [
+      "apps/web/src/sales/sale-page.tsx",
+      "apps/web/src/server/rpc/router.ts",
+      "apps/web/worker/index.ts",
+      "apps/web/e2e-real/jornadas/venda.e2e.ts",
+      "apps/web/wrangler.jsonc",
+      "packages/db/drizzle/0089_x.sql",
+      "packages/contracts/src/index.ts",
+      "packages/domain/src/money/money.ts",
+      "bun.lock",
+      ".node-version",
+      ".github/workflows/ci.yml",
+      "scripts/e2e-flaky-report.mjs",
+    ]) {
+      expect(classifyChanges(["docs/a.md", file]).e2e, file).toBe(true);
+    }
+    for (const file of [
+      "docs/runbooks/e2e-real.md",
+      "apps/web/e2e-real/README.md",
+      "apps/admin/src/app.ts",
+      "apps/catalog/src/x.ts",
+      "doc/status-implementacao.md",
+    ]) {
+      expect(classifyChanges([file]).e2e, file).toBe(false);
     }
   });
 
