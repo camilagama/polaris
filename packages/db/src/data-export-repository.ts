@@ -110,8 +110,18 @@ export async function listDataExports(
   identity: TenantRequestIdentity
 ): Promise<DataExportView[]> {
   requireCapability(identity);
+  // the columns by name: the tenant role does not read the lease token of a run (ADR 0081)
   const exportRows = await transaction
-    .select()
+    .select({
+      errorCode: dataExports.errorCode,
+      expiresAt: dataExports.expiresAt,
+      formats: dataExports.formats,
+      id: dataExports.id,
+      readyAt: dataExports.readyAt,
+      requestedAt: dataExports.requestedAt,
+      status: dataExports.status,
+      totalBytes: dataExports.totalBytes,
+    })
     .from(dataExports)
     .where(eq(dataExports.organizationId, identity.organizationId))
     .orderBy(desc(dataExports.requestedAt), desc(dataExports.id))

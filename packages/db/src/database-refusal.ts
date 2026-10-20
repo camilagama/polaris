@@ -51,3 +51,21 @@ export function hasConstraint(error: unknown, constraint: string): boolean {
   }
   return false;
 }
+
+/** The SQLSTATE of the error or of the first of its causes that has one. */
+export function sqlStateOf(error: unknown): string | undefined {
+  const visited = new Set<object>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      return;
+    }
+    visited.add(current);
+    const candidate = current as { cause?: unknown; code?: unknown };
+    if (typeof candidate.code === "string" && candidate.code.length === 5) {
+      return candidate.code;
+    }
+    current = candidate.cause;
+  }
+  return;
+}

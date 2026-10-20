@@ -14,6 +14,7 @@ import {
   exportFileName,
   FAILED_EXPORT_KEEP_HOURS,
 } from "@polaris/domain/privacy/data-export";
+import type { ExportRow } from "@polaris/db/export-reader";
 import type { MediaBucketBinding } from "../environment";
 import {
   buildDataArchive,
@@ -138,7 +139,18 @@ function readFor(
   return (operation) => readClosedExport(claimed, operation);
 }
 
-/** The images of a closed export, through the lease of the run that holds it. */
+/**
+ * A closed organization's copy shows it as closed even once its purge is scheduled: the owner never learns of a
+ * schedule (nor of a legal hold) from the copy, as from the panel (ADR 0081).
+ */
+function closedOrganizationRow(row: ExportRow): ExportRow {
+  return row.status === "purge_pending" ? { ...row, status: "closed" } : row;
+}
+
+/**
+ * The images of a closed export, through the lease of the run that holds it. They are listed on the privacy
+ * connection, not in the reader's snapshot: the organization is closed, so nothing of the tenant writes in between.
+ */
 function closedImagePages(
   client: ExportClient,
   exportId: string,
@@ -180,10 +192,27 @@ async function buildAndStore(
       claimed.organizationId,
       formats,
       claimed.mode === "closed" && claimed.leaseToken
-        ? closedImagePages(client, claimed.id, claimed.leaseToken)
+        ? {
+            readImagePage: closedImagePages(
+              client,
+              claimed.id,
+              claimed.leaseToken
+            ),
+            rewriteOrganization: closedOrganizationRow,
+          }
         : undefined
     )
   );
+  // the reader of a closed organization reads nothing (and raises nothing) once its scope no longer holds: a copy
+  // without the organization's own row is never stored, it is tried again
+  if (
+    claimed.mode === "closed" &&
+    collected.summaries.length > 0 &&
+    collected.summaries.find((summary) => summary.name === "organizacao")
+      ?.rows !== 1
+  ) {
+    throw new Error("closed_export_scope_lost");
+  }
 
   const store = async (file: {
     bytes: Uint8Array;
@@ -314,12 +343,13 @@ export async function runDataExports(
         });
       if (isFinal) {
         report.failed += 1;
-        // nothing of a failed export is kept
-        await deleteObjectsUnderPrefix(
-          bucket,
-          exportObjectPrefix(claimed.organizationId, claimed.id)
-        ).catch(() => undefined);
       }
+      // nothing of a failed run is kept, final or not: a run tried again starts from nothing anyway, and an export
+      // whose record is gone (its organization purged in the middle) would never be swept otherwise
+      await deleteObjectsUnderPrefix(
+        bucket,
+        exportObjectPrefix(claimed.organizationId, claimed.id)
+      ).catch(() => undefined);
     }
   }
   return report;

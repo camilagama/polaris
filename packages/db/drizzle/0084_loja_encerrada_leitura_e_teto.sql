@@ -3,9 +3,12 @@
 -- amended, decision L6). Expand only (ADR 0096): two new columns with a default, a new role, new functions, new
 -- policies and grants; three functions are recreated with the same signature (`claim_data_export`,
 -- `claim_data_export_by_id`, `recover_organization_closure`), plus `create_initial_organization` and the trigger
--- function of `data_export_files`. The previous Worker keeps working: it never asks for a closed export, the claims
--- answer what they answered (two more keys it does not read), and the ceiling only refuses what it refused before or
--- what did not exist (a second organization next to a closed one).
+-- function of `data_export_files`. The previous Worker keeps working: the claims answer what they answered (two more
+-- keys it does not read), the tenant runtime reads its requests by column (every column but the new lease token; the
+-- previous Worker names its columns), and the ceiling only refuses what it refused before or what did not exist (a
+-- second organization next to a closed one). During a rolling deploy a previous Worker that claims a closed export
+-- reads it as the person who asked, which the tenant refuses: the export fails for good (`export_not_authorized`, one of
+-- the owner's three a day). Ask for closed exports only once the previous Worker is gone.
 --
 -- 1. The owner of a closed organization (`closing`, `closed`, `purge_pending`) reads its state and asks for a copy
 --    through functions of the privacy owner (ADR 0093) that check the owner themselves; the tenant policies
@@ -44,6 +47,10 @@ GRANT polaris_closed_export_reader TO polaris_privacy_runtime WITH INHERIT FALSE
 -- what the privacy owner needs besides what it had: the organization's time zone (the dates), the closed request
 -- (only its four columns, only `closed`), the lease token of a claim, the outbox event of a closed request, whether
 -- a purge was claimed, and the images of an organization in closure (the keys of a closed export's images)
+-- the tenant runtime reads its requests column by column, every column but the lease token of a run (the previous
+-- Worker names its columns, none of them new)
+REVOKE SELECT ON TABLE public.data_exports FROM polaris_pr11_runtime;--> statement-breakpoint
+GRANT SELECT (attempts, error_code, expires_at, files_deleted_at, formats, id, locked_until, mode, organization_id, ready_at, requested_at, requested_by_user_id, started_at, status, total_bytes) ON TABLE public.data_exports TO polaris_pr11_runtime;--> statement-breakpoint
 GRANT SELECT (timezone) ON TABLE public.organizations TO polaris_privacy_owner;--> statement-breakpoint
 GRANT INSERT (organization_id, requested_by_user_id, formats, mode) ON TABLE public.data_exports TO polaris_privacy_owner;--> statement-breakpoint
 GRANT UPDATE (lease_token) ON TABLE public.data_exports TO polaris_privacy_owner;--> statement-breakpoint
@@ -480,22 +487,30 @@ SET search_path = pg_catalog, public, pg_temp
 AS $function$
 DECLARE
   picked public.data_exports;
+  started jsonb;
 BEGIN
   IF p_lease_seconds IS NULL OR p_lease_seconds < 30 OR p_lease_seconds > 3600 THEN
     RAISE EXCEPTION 'invalid_lease' USING ERRCODE = '22023';
   END IF;
-  SELECT export_row.* INTO picked
-    FROM public.data_exports AS export_row
-   WHERE ((export_row.status = 'requested' AND (export_row.locked_until IS NULL OR export_row.locked_until <= pg_catalog.now()))
-          OR (export_row.status = 'running' AND export_row.locked_until <= pg_catalog.now()))
-     AND export_row.attempts < 3
-   ORDER BY export_row.requested_at, export_row.id
-   LIMIT 1
-     FOR UPDATE OF export_row SKIP LOCKED;
-  IF NOT FOUND THEN
-    RETURN NULL;
-  END IF;
-  RETURN public.start_data_export_run(picked, p_lease_seconds);
+  -- a closed export that may no longer start fails at once; the next request in line is taken instead (a few at most)
+  FOR attempt IN 1..10 LOOP
+    SELECT export_row.* INTO picked
+      FROM public.data_exports AS export_row
+     WHERE ((export_row.status = 'requested' AND (export_row.locked_until IS NULL OR export_row.locked_until <= pg_catalog.now()))
+            OR (export_row.status = 'running' AND export_row.locked_until <= pg_catalog.now()))
+       AND export_row.attempts < 3
+     ORDER BY export_row.requested_at, export_row.id
+     LIMIT 1
+       FOR UPDATE OF export_row SKIP LOCKED;
+    IF NOT FOUND THEN
+      RETURN NULL;
+    END IF;
+    started := public.start_data_export_run(picked, p_lease_seconds);
+    IF started IS NOT NULL THEN
+      RETURN started;
+    END IF;
+  END LOOP;
+  RETURN NULL;
 END;
 $function$;--> statement-breakpoint
 -- the queue consumer takes the one export its event names, by ID and organization, under the same rules (0071)

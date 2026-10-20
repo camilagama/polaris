@@ -11,6 +11,7 @@ vi.mock("@polaris/db/export-datasets", () => ({
     { name: "alfa", table: "alfa_table" },
     { name: "beta", omit: ["segredo"], table: "beta_table" },
   ],
+  ORGANIZATION_TABLE: "alfa_table",
 }));
 vi.mock("@polaris/db/export-reader", () => reader);
 
@@ -152,6 +153,20 @@ describe("collecting an export", () => {
     await expect(
       collectExport(transaction, "org_1", ["images"])
     ).rejects.toBeInstanceOf(ExportTooLargeError);
+  });
+});
+
+describe("the organization's own row", () => {
+  it("is rewritten only in the organization's table, when the caller asks", async () => {
+    setUp(1);
+    const collected = await collectExport(transaction, "org_1", ["json"], {
+      rewriteOrganization: (row) => ({ ...row, nome: "reescrito" }),
+    });
+    const files = Object.fromEntries(
+      collected.entries.map((entry) => [entry.name, decoder.decode(entry.bytes)])
+    );
+    expect(files["data/alfa.json"]).toContain('"nome":"reescrito"');
+    expect(files["data/beta.json"]).not.toContain("reescrito");
   });
 });
 

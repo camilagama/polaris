@@ -1173,6 +1173,11 @@ async function run() {
         `${table} is out of the reader's reach`
       );
     }
+    const [tokenReach] = await ownerQuery<{ allowed: boolean }>(
+      "SELECT has_column_privilege($1, 'public.data_exports', 'lease_token', 'SELECT') AS allowed",
+      [runtimeRole]
+    );
+    assert.equal(tokenReach?.allowed, false, "the tenant runtime does not read the lease token of a run");
     const executable = await ownerQuery<{ signature: string }>(
       `SELECT p.oid::regprocedure::text AS signature FROM pg_proc p
         WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege($1, p.oid, 'EXECUTE')

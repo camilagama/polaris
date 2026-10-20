@@ -145,11 +145,23 @@ describe("the export of a closed organization", () => {
         _transaction: unknown,
         _organizationId: string,
         _formats: string[],
-        readImages?: (after: string | null, rows: number) => Promise<unknown[]>
+        options?: {
+          readImagePage?: (
+            after: string | null,
+            rows: number
+          ) => Promise<unknown[]>;
+          rewriteOrganization?: (row: object) => object;
+        }
       ) => ({
         entries: [{ bytes: new Uint8Array([1]), name: "data/a.json" }],
-        images: readImages ? await readImages(null, 500) : [],
-        summaries: [{ columns: ["id"], name: "a", rows: 1 }],
+        images: options?.readImagePage
+          ? await options.readImagePage(null, 500)
+          : [],
+        rewritten: [
+          options?.rewriteOrganization?.({ id: "o", status: "purge_pending" }),
+          options?.rewriteOrganization?.({ id: "o", status: "closing" }),
+        ],
+        summaries: [{ columns: ["id"], name: "organizacao", rows: 1 }],
       })
     );
     const f = fixture({
@@ -170,6 +182,31 @@ describe("the export of a closed organization", () => {
       null,
       500
     );
+    // a scheduled purge does not show in the copy
+    expect((await collect.mock.results[0]?.value)?.rewritten).toEqual([
+      { id: "o", status: "closed" },
+      { id: "o", status: "closing" },
+    ]);
+  });
+
+  it("never stores a copy without the organization's own row (the reader's scope no longer held), and tries again", async () => {
+    const collect = vi.fn(() =>
+      Promise.resolve({
+        entries: [{ bytes: new Uint8Array([1]), name: "data/a.json" }],
+        images: [],
+        summaries: [{ columns: ["id"], name: "organizacao", rows: 0 }],
+      })
+    );
+    const f = fixture({ claims: [closedClaim, null], collect });
+    const report = await runDataExports(f.deps);
+    expect(report.ready).toBe(0);
+    expect(f.client.failDataExport).toHaveBeenCalledWith(
+      exportId,
+      "export_failed",
+      false
+    );
+    expect(f.client.recordDataExportFile).not.toHaveBeenCalled();
+    expect([...f.objects.keys()]).toEqual([]);
   });
 
   it("fails for good, keeping nothing, when the job has no reader for it", async () => {

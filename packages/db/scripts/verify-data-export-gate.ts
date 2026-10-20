@@ -838,8 +838,29 @@ async function run() {
       ).rows.map((r) => r.column_name);
     assert.deepEqual(
       await privileges("polaris_pr11_runtime", "data_exports"),
-      ["SELECT"],
-      "the tenant role reads the table; it inserts only the named columns"
+      [],
+      "the tenant role holds no table-wide privilege; it reads and inserts only the named columns"
+    );
+    assert.deepEqual(
+      await columns("polaris_pr11_runtime", "data_exports", "SELECT"),
+      [
+        "attempts",
+        "error_code",
+        "expires_at",
+        "files_deleted_at",
+        "formats",
+        "id",
+        "locked_until",
+        "mode",
+        "organization_id",
+        "ready_at",
+        "requested_at",
+        "requested_by_user_id",
+        "started_at",
+        "status",
+        "total_bytes",
+      ],
+      "every column but the lease token of a run (ADR 0081)"
     );
     assert.deepEqual(
       await columns("polaris_pr11_runtime", "data_exports", "INSERT"),

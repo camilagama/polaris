@@ -10,7 +10,7 @@ import {
 } from "@polaris/domain/privacy/data-export";
 import { sql } from "drizzle-orm";
 import type { DataExportDownload } from "./data-export-repository";
-import { hasConstraint, raised } from "./database-refusal";
+import { hasConstraint, raised, sqlStateOf } from "./database-refusal";
 import { TenantAuthorizationError } from "./tenant-transaction";
 import { withUserTransaction } from "./user-transaction";
 
@@ -25,6 +25,7 @@ type Database = Parameters<typeof withUserTransaction>[0];
 
 const ACCESS_DENIED = "42501";
 const NOT_IN_STATE = "55000";
+const LOCK_NOT_AVAILABLE = "55P03";
 const ONE_IN_FLIGHT = "data_exports_one_in_flight_unique";
 const DAILY_LIMIT = "data_exports_daily_limit";
 const UUID =
@@ -194,7 +195,11 @@ export function requestClosedDataExport(
           // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks it.
           throw new TenantAuthorizationError("tenant_access_denied");
         }
-        if (raised(error, NOT_IN_STATE, "closed_export_unavailable")) {
+        if (
+          raised(error, NOT_IN_STATE, "closed_export_unavailable") ||
+          // the organization's row is held by a purge that is removing it: the copy can no longer be asked for
+          sqlStateOf(error) === LOCK_NOT_AVAILABLE
+        ) {
           // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks it.
           throw new InvalidExportRequestError("closed_export_unavailable");
         }
