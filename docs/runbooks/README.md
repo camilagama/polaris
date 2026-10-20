@@ -95,6 +95,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 
 ### Integração e ambiente
 
+- [ ] **Visibilidade do repositório.** O repositório está público (ADR 0076: 15/10/2026, a confirmar) e o CI não cobra por minuto; a volta a privado é item do go-live. Ao voltar, conferir plano, minutos e limite de gastos da conta dona do repositório, porque o CI volta a ser cobrado ([ADR 0060](../adr/0060-ci-economico-em-minutos.md), emenda de 20/10/2026).
 - [ ] Estratégia de integração da cadeia de PRs executada por fase, com autorização do responsável, CI verde e gates reexecutados ([ADR 0023](../adr/0023-integracao-da-cadeia-de-prs.md)).
 - [ ] **Segredo do lease offline** (`OFFLINE_LEASE_SECRET`, mínimo 32 bytes aleatórios, e `OFFLINE_LEASE_KEY_ID`) criado em cada ambiente antes de ligar o offline; rotação com `OFFLINE_LEASE_PREVIOUS_SECRET` e `OFFLINE_LEASE_PREVIOUS_KEY_ID` ([ADR 0029](../adr/0029-lease-de-autorizacao-offline.md)). Sem o segredo, `offline.issueLease` responde 503 e não grava nada.
 - [ ] **Segredo do hash de comandos offline** (`SYNC_PAYLOAD_HASH_SECRET`, mínimo 32 bytes aleatórios, distinto do segredo do lease) criado em cada ambiente **antes** do deploy da versão que o usa ([ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)). Sem ele, ou com um curto, `sync.push` responde 503 e não grava nada (o trabalho fica na fila do aparelho). Rotação: o valor anterior vai para `SYNC_PAYLOAD_HASH_PREVIOUS_SECRET` enquanto um comando antigo puder ser reenviado; não fazer rollback para uma versão sem o HMAC com comandos em voo.
