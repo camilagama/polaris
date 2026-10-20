@@ -2,10 +2,10 @@ import type { BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
 import { vi } from "vitest";
-import type { LoginLockAttempt, LoginLockStore } from "./login-lock";
 import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "../auth";
 import { createBetterAuth } from "../auth";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import type { LoginLockAttempt, LoginLockStore } from "./login-lock";
 
 /** Support of the tests of the password flows (ADR 0100): Better Auth over the memory adapter, no database. */
 export const testSecret = "test-only-better-auth-secret-32-bytes";

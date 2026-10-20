@@ -1,6 +1,6 @@
-import { logger } from "@polaris/observability/logger";
 import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
 import { createDatabase } from "@polaris/db/client";
+import { logger } from "@polaris/observability/logger";
 import { isAPIError } from "better-auth/api";
 import {
   type AuthSecurityAuditEventWriter,
@@ -14,16 +14,16 @@ import {
   validateNewPassword,
 } from "../auth/password-policy";
 import type { WorkerBindings } from "../environment";
-import {
-  AuthDatabaseNotConfiguredError,
-  resolveAuthConnectionString,
-} from "./auth-database";
 import { logServerError } from "../observability/server-log";
 import {
   createDatabaseAccessLogWriter,
   guardAccessLogWriter,
   requestIp,
 } from "./access-log";
+import {
+  AuthDatabaseNotConfiguredError,
+  resolveAuthConnectionString,
+} from "./auth-database";
 import {
   createResendAuthEmailDelivery,
   type PasswordAuthEmailDelivery,
@@ -32,11 +32,11 @@ import {
   createDatabaseLoginLockStore,
   handleEmailSignInWithLock,
   isEmailSignInRequest,
-  loginLockedResponse,
-  responseErrorCode,
   type LoginLockQueryable,
   type LoginLockStore,
+  loginLockedResponse,
   newUnlockToken,
+  responseErrorCode,
   sha256,
   unlockTokenUserId,
 } from "./login-lock";
@@ -645,7 +645,7 @@ function openAuthRuntime(
         loginLock: {
           secret,
           sendUnlock: (email, key) =>
-            sendLoginUnlock(opened.runtime, email, key),
+            sendLoginUnlock(unlockSenderOf(opened.runtime), email, key),
           store,
         },
         requestId: safeRequestId,
@@ -669,15 +669,33 @@ function openAuthRuntime(
  * whether the e-mail has an account). Only an account with a password gets it, once per lock: the token
  * is stored first, and only a stored token is sent. The lock is audited with the account's ID.
  */
-async function sendLoginUnlock(
-  runtime: AuthRuntime,
+export interface LoginUnlockSender {
+  auth: BetterAuthInstance;
+  requestId: string;
+  send?: PasswordAuthEmailDelivery["sendLoginUnlock"];
+  store: Pick<LoginLockStore, "issueUnlock">;
+  writeAuditEvent: AuthSecurityAuditEventWriter;
+}
+
+function unlockSenderOf(runtime: AuthRuntime): LoginUnlockSender {
+  return {
+    auth: runtime.auth,
+    requestId: runtime.requestId,
+    ...(runtime.delivery ? { send: runtime.delivery.sendLoginUnlock } : {}),
+    store: runtime.store,
+    writeAuditEvent: runtime.effects.writeAuditEvent,
+  };
+}
+
+export async function sendLoginUnlock(
+  sender: LoginUnlockSender,
   email: string,
   key: string
 ): Promise<void> {
-  if (!runtime.delivery) {
+  if (!sender.send) {
     return;
   }
-  const context = await runtime.auth.$context;
+  const context = await sender.auth.$context;
   const found = await context.internalAdapter.findUserByEmail(
     email.toLowerCase(),
     { includeAccounts: true }
@@ -692,12 +710,12 @@ async function sendLoginUnlock(
     return;
   }
   const token = newUnlockToken(found.user.id);
-  if (!(await runtime.store.issueUnlock(key, await sha256(token)))) {
+  if (!(await sender.store.issueUnlock(key, await sha256(token)))) {
     return;
   }
-  await runtime.delivery.sendLoginUnlock({ to: found.user.email, token });
-  await runtime.effects.writeAuditEvent(
-    passwordAuditEvent("login_locked", found.user.id, runtime.requestId)
+  await sender.send({ to: found.user.email, token });
+  await sender.writeAuditEvent(
+    passwordAuditEvent("login_locked", found.user.id, sender.requestId)
   );
 }
 
@@ -752,6 +770,13 @@ export async function handleBetterAuthRequest(
         createDatabaseAccessLogWriter(runtime.pool)
       );
       return await handleEmailSignInWithLock(request, {
+        onSettleError: (error) =>
+          logServerError({
+            error,
+            method: "POST",
+            requestId: runtime.requestId,
+            route: "/api/auth/sign-in/email",
+          }),
         recordRefusal: () =>
           writeAccessLog({
             event: "login_failed",
@@ -761,14 +786,8 @@ export async function handleBetterAuthRequest(
           }),
         runInBackground: runtime.runInBackground,
         secret,
-        sendUnlock: (email, key) => sendLoginUnlock(runtime, email, key),
-        onSettleError: (error) =>
-          logServerError({
-            error,
-            method: "POST",
-            requestId: runtime.requestId,
-            route: "/api/auth/sign-in/email",
-          }),
+        sendUnlock: (email, key) =>
+          sendLoginUnlock(unlockSenderOf(runtime), email, key),
         signIn: (signInRequest) => auth.handler(signInRequest),
         store: runtime.store,
       });

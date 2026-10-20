@@ -4,20 +4,22 @@ import {
   handleChangePasswordRequest,
   handleSetPasswordRequest,
   type PasswordChangeEffects,
+  sendLoginUnlock,
   unlockWithToken,
   verifyEmailWithToken,
 } from "./handler";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import { newUnlockToken, sha256 } from "./login-lock";
 import { loginLockKey } from "./login-lock-key";
-import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import {
   authTestHelpers,
-  createMemoryLoginLockStore,
   cookieHeader,
+  createMemoryLoginLockStore,
   createPasswordTestAuth,
   createVerifiedPasswordUser,
   hasSessionCookie,
   jsonRequest,
+  type PasswordTestAuth,
   sessionOf,
   signInCookie,
   stubPwnedPasswordRange,
@@ -1150,5 +1152,289 @@ describe("change of the password and the sign-in lock (same counter)", {
     expect(ctx.begin).not.toHaveBeenCalled();
     expect(ctx.failed).not.toHaveBeenCalled();
     expect(ctx.clear).not.toHaveBeenCalled();
+  });
+});
+
+describe("settling of the change of password when the lock store fails", () => {
+  beforeEach(() => {
+    useFakeClock();
+    stubPwnedPasswordRange();
+    silenceLogs();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function setupWithLock() {
+    const parts = createPasswordTestAuth();
+    const email = "troca-store@example.invalid";
+    const user = await createVerifiedPasswordUser(parts.auth, email);
+    const cookie = await signInCookie(parts.auth, email);
+    const memory = createMemoryLoginLockStore();
+    const bump = vi.fn((_userId: string) => Promise.resolve());
+    const fx = createEffects(parts.auditEvents, bump);
+    fx.effects.loginLock = {
+      secret: testSecret,
+      sendUnlock: () => Promise.resolve(),
+      store: memory.store,
+    };
+    const change = (currentPassword: string) =>
+      handleChangePasswordRequest(
+        parts.auth,
+        jsonRequest(
+          "/api/auth/change-password",
+          { currentPassword, newPassword },
+          { cookie }
+        ),
+        fx.effects
+      );
+    return { ...parts, ...memory, bump, change, fx, user };
+  }
+
+  it("a clear that throws after the change leaves the 200, the bump, the audit and the notice", async () => {
+    const ctx = await setupWithLock();
+    ctx.clear.mockRejectedValueOnce(new Error("lock store down"));
+
+    const response = await ctx.change(testPassword);
+
+    expect(response.status).toBe(200);
+    expect(ctx.bump).toHaveBeenCalledWith(ctx.user.id);
+    expect(ctx.auditEvents.map((event) => event.eventType)).toContain(
+      "password_changed"
+    );
+    expect(ctx.fx.sendPasswordNotice).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed that throws after a wrong current password still answers the 400 of Better Auth", async () => {
+    const ctx = await setupWithLock();
+    ctx.failed.mockRejectedValueOnce(new Error("lock store down"));
+
+    const response = await ctx.change("a senha atual que não é esta, nada");
+
+    expect(response.status).toBe(400);
+    expect(ctx.bump).not.toHaveBeenCalled();
+    expect(ctx.auditEvents).toEqual([]);
+  });
+});
+
+describe("set-password revokes the other sessions and the leases", () => {
+  beforeEach(() => {
+    useFakeClock();
+    stubPwnedPasswordRange();
+    silenceLogs();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function setup() {
+    const parts = createPasswordTestAuth();
+    const helpers = await authTestHelpers(parts.auth);
+    const email = "set-revoga@example.invalid";
+    const user = await helpers.saveUser(
+      helpers.createUser({ email, emailVerified: true })
+    );
+    const current = await helpers.login({ userId: user.id });
+    const other = await helpers.login({ userId: user.id });
+    const bump = vi.fn((_userId: string) => Promise.resolve());
+    const fx = createEffects(parts.auditEvents, bump);
+    return { ...parts, bump, current, email, fx, other, user };
+  }
+
+  it("after the success the other session falls, this one stays, the epoch changes, and the audit and notice happen", async () => {
+    const ctx = await setup();
+
+    const response = await handleSetPasswordRequest(
+      ctx.auth,
+      jsonRequest(
+        "/api/auth/set-password",
+        { newPassword: testPassword },
+        ctx.current.headers
+      ),
+      ctx.fx.effects
+    );
+
+    expect(response.status).toBe(200);
+    const currentCookie = ctx.current.headers.get("cookie") ?? "";
+    const otherCookie = ctx.other.headers.get("cookie") ?? "";
+    expect(await sessionOf(ctx.auth, otherCookie)).toBeNull();
+    expect(await sessionOf(ctx.auth, currentCookie)).toMatchObject({
+      user: { id: ctx.user.id },
+    });
+    expect(ctx.bump).toHaveBeenCalledTimes(1);
+    expect(ctx.bump).toHaveBeenCalledWith(ctx.user.id);
+    expect(ctx.auditEvents.map((event) => event.eventType)).toEqual([
+      "password_set",
+    ]);
+    expect(ctx.fx.sendPasswordNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "set", to: ctx.email })
+    );
+  });
+
+  it("a refused password (policy) revokes nothing and does not bump", async () => {
+    const ctx = await setup();
+
+    const response = await handleSetPasswordRequest(
+      ctx.auth,
+      jsonRequest(
+        "/api/auth/set-password",
+        { newPassword: "curta" },
+        ctx.current.headers
+      ),
+      ctx.fx.effects
+    );
+
+    expect(response.status).toBe(400);
+    expect(
+      await sessionOf(ctx.auth, ctx.other.headers.get("cookie") ?? "")
+    ).not.toBeNull();
+    expect(ctx.bump).not.toHaveBeenCalled();
+  });
+
+  it("without effects the old behavior stands: no revocation, no bump", async () => {
+    const ctx = await setup();
+
+    const response = await handleSetPasswordRequest(
+      ctx.auth,
+      jsonRequest(
+        "/api/auth/set-password",
+        { newPassword: testPassword },
+        ctx.current.headers
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      await sessionOf(ctx.auth, ctx.other.headers.get("cookie") ?? "")
+    ).not.toBeNull();
+    expect(ctx.bump).not.toHaveBeenCalled();
+  });
+});
+
+describe("the unlock e-mail of a new lock (sendLoginUnlock)", () => {
+  beforeEach(() => {
+    stubPwnedPasswordRange();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function sender(auth: PasswordTestAuth) {
+    const send = vi.fn((_input: { to: string; token: string }) =>
+      Promise.resolve()
+    );
+    const issueUnlock = vi.fn((_key: string, _sha: Uint8Array) =>
+      Promise.resolve(true)
+    );
+    const audits: AuthSecurityAuditEvent[] = [];
+    return {
+      audits,
+      issueUnlock,
+      send,
+      value: {
+        auth,
+        requestId: "unlock-test-request",
+        send,
+        store: { issueUnlock },
+        writeAuditEvent: (event: AuthSecurityAuditEvent) => {
+          audits.push(event);
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  it("sends to a verified account with a password, stores only the hash and audits login_locked (AC-64)", async () => {
+    const { auth } = createPasswordTestAuth();
+    const user = await createVerifiedPasswordUser(
+      auth,
+      "travada@example.invalid"
+    );
+    const unlock = sender(auth);
+    const key = await loginLockKey(testSecret, "travada@example.invalid");
+
+    await sendLoginUnlock(unlock.value, "Travada@Example.invalid", key);
+
+    expect(unlock.send).toHaveBeenCalledTimes(1);
+    const sent = unlock.send.mock.calls[0]?.[0];
+    expect(sent?.to).toBe("travada@example.invalid");
+    expect(sent?.token.startsWith(`${user.id}.`)).toBe(true);
+    expect(unlock.issueUnlock).toHaveBeenCalledWith(
+      key,
+      await sha256(sent?.token ?? "")
+    );
+    expect(unlock.audits).toEqual([
+      expect.objectContaining({ actorId: user.id, eventType: "login_locked" }),
+    ]);
+  });
+
+  it("sends nothing to an account whose e-mail was never verified", async () => {
+    const { auth } = createPasswordTestAuth();
+    await auth.handler(
+      jsonRequest("/api/auth/sign-up/email", {
+        email: "nao-verificada@example.invalid",
+        legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+        name: "Pessoa",
+        password: testPassword,
+      })
+    );
+    const unlock = sender(auth);
+
+    await sendLoginUnlock(
+      unlock.value,
+      "nao-verificada@example.invalid",
+      await loginLockKey(testSecret, "nao-verificada@example.invalid")
+    );
+
+    expect(unlock.issueUnlock).not.toHaveBeenCalled();
+    expect(unlock.send).not.toHaveBeenCalled();
+    expect(unlock.audits).toEqual([]);
+  });
+
+  it("sends nothing to an e-mail without an account or without a password", async () => {
+    const { auth } = createPasswordTestAuth();
+    const helpers = await authTestHelpers(auth);
+    await helpers.saveUser(
+      helpers.createUser({
+        email: "so-google@example.invalid",
+        emailVerified: true,
+      })
+    );
+    const unlock = sender(auth);
+
+    for (const email of [
+      "so-google@example.invalid",
+      "ninguem@example.invalid",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one case after the other
+      await sendLoginUnlock(
+        unlock.value,
+        email,
+        await loginLockKey(testSecret, email)
+      );
+    }
+
+    expect(unlock.issueUnlock).not.toHaveBeenCalled();
+    expect(unlock.send).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the lock already has a token (one e-mail per lock)", async () => {
+    const { auth } = createPasswordTestAuth();
+    await createVerifiedPasswordUser(auth, "segunda@example.invalid");
+    const unlock = sender(auth);
+    unlock.issueUnlock.mockResolvedValue(false);
+
+    await sendLoginUnlock(
+      unlock.value,
+      "segunda@example.invalid",
+      await loginLockKey(testSecret, "segunda@example.invalid")
+    );
+
+    expect(unlock.send).not.toHaveBeenCalled();
+    expect(unlock.audits).toEqual([]);
   });
 });

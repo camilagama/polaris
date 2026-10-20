@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import {
   createDatabaseLoginLockStore,
   handleEmailSignInWithLock,
@@ -8,7 +9,6 @@ import {
   sha256,
   unlockTokenUserId,
 } from "./login-lock";
-import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import { loginLockKey } from "./login-lock-key";
 import {
   createMemoryLoginLockStore,
@@ -381,6 +381,151 @@ describe("sign-in lock by password (AC-62, AC-63, AC-65)", () => {
 
     expect(JSON.stringify(ctx.begin.mock.calls)).not.toContain("example");
     expect(JSON.stringify(ctx.failed.mock.calls)).not.toContain("example");
+  });
+});
+
+describe("the media type of the sign-in with the lock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(START);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function build(
+    contentType: string | undefined,
+    body: string,
+    overrides: Partial<Parameters<typeof handleEmailSignInWithLock>[1]> = {}
+  ) {
+    const memory = createMemoryLoginLockStore();
+    const signIn = vi.fn((_request: Request) =>
+      Promise.resolve(Response.json({ ok: true }, { status: 200 }))
+    );
+    const request = new Request("http://localhost/api/auth/sign-in/email", {
+      body,
+      headers: contentType ? { "content-type": contentType } : {},
+      method: "POST",
+    });
+    const run = () =>
+      handleEmailSignInWithLock(request, {
+        recordRefusal: () => Promise.resolve(),
+        runInBackground: () => undefined,
+        secret: testSecret,
+        sendUnlock: () => Promise.resolve(),
+        signIn,
+        store: memory.store,
+        ...overrides,
+      });
+    return { ...memory, run, signIn };
+  }
+
+  it.each([
+    [
+      "form-urlencoded",
+      "application/x-www-form-urlencoded",
+      "email=ana%40example.invalid&password=qualquer",
+    ],
+    ["multipart", "multipart/form-data; boundary=x", "--x--"],
+    [
+      "text/plain with a JSON body",
+      "text/plain",
+      '{"email":"a@b.c","password":"x"}',
+    ],
+    ["no content type", undefined, '{"email":"a@b.c","password":"x"}'],
+  ])(
+    "a %s POST answers 415 and reaches neither the signIn nor the store",
+    async (_name, contentType, body) => {
+      const ctx = build(contentType, body);
+
+      const response = await ctx.run();
+
+      expect(response.status).toBe(415);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toEqual({
+        error: { code: "unsupported_media_type" },
+      });
+      expect(ctx.signIn).not.toHaveBeenCalled();
+      expect(ctx.begin).not.toHaveBeenCalled();
+      expect(ctx.failed).not.toHaveBeenCalled();
+      expect(ctx.clear).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    "application/json",
+    "application/json; charset=utf-8",
+    "Application/JSON ; charset=UTF-8",
+  ])("accepts %s and counts the attempt", async (contentType) => {
+    const ctx = build(
+      contentType,
+      '{"email":"a@example.invalid","password":"x"}'
+    );
+
+    const response = await ctx.run();
+
+    expect(response.status).toBe(200);
+    expect(ctx.signIn).toHaveBeenCalledTimes(1);
+    expect(ctx.begin).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the Better Auth response and calls onSettleError when clear throws after a success", async () => {
+    const onSettleError = vi.fn();
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}',
+      { onSettleError }
+    );
+    const boom = new Error("clear down");
+    ctx.clear.mockRejectedValueOnce(boom);
+
+    const response = await ctx.run();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(onSettleError).toHaveBeenCalledTimes(1);
+    expect(onSettleError).toHaveBeenCalledWith(boom);
+  });
+
+  it("answers the 401 and calls onSettleError when failed throws", async () => {
+    const onSettleError = vi.fn();
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}',
+      { onSettleError }
+    );
+    ctx.signIn.mockResolvedValueOnce(
+      Response.json({ code: "INVALID_EMAIL_OR_PASSWORD" }, { status: 401 })
+    );
+    const boom = new Error("failed down");
+    ctx.failed.mockRejectedValueOnce(boom);
+
+    const response = await ctx.run();
+
+    expect(response.status).toBe(401);
+    expect(onSettleError).toHaveBeenCalledWith(boom);
+  });
+
+  it("does not need onSettleError: a failing store still returns the response", async () => {
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}'
+    );
+    ctx.clear.mockRejectedValueOnce(new Error("clear down"));
+
+    expect((await ctx.run()).status).toBe(200);
+  });
+
+  it("a failing begin is not swallowed (the sign-in fails closed)", async () => {
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}'
+    );
+    ctx.begin.mockRejectedValueOnce(new Error("begin down"));
+
+    await expect(ctx.run()).rejects.toThrow("begin down");
+    expect(ctx.signIn).not.toHaveBeenCalled();
   });
 });
 

@@ -101,6 +101,30 @@ describe("Better Auth handler database role", () => {
       });
     });
 
+    it.each([
+      ["with the password on", passwordBindings],
+      [
+        "with the password off",
+        { ...passwordBindings, EMAIL_PASSWORD_AUTH_ENABLED: "false" },
+      ],
+    ])(
+      "POST /verify-password answers 404 not_found %s, before any database",
+      async (_name, bindings) => {
+        const response = await handleBetterAuthRequest(
+          new Request(`${origin}/api/auth/verify-password`, {
+            body: JSON.stringify({ password: "x" }),
+            headers: { "content-type": "application/json", origin },
+            method: "POST",
+          }),
+          bindings,
+          "req-1"
+        );
+
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: { code: "not_found" } });
+      }
+    );
+
     it("does not close other GET routes (get-session goes on to the database)", async () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
 

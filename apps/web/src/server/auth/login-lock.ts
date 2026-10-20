@@ -162,15 +162,15 @@ export async function responseErrorCode(
 }
 
 export interface EmailSignInLockOptions {
+  /** A failure of the lock after Better Auth answered: logged, never in the answer. */
+  onSettleError?: (error: unknown) => void;
   /** Records the refused attempt in the access log (`login_failed`, no user). */
   recordRefusal: () => Promise<unknown>;
   /** Runs a task after the response (Worker `waitUntil`), so its time never reaches the answer. */
   runInBackground: (task: Promise<unknown>) => void;
+  secret: string;
   /** Sends the unlock e-mail, if the e-mail has an account; runs in the background. */
   sendUnlock: (email: string, key: string) => Promise<void>;
-  secret: string;
-  /** A failure of the lock after Better Auth answered: logged, never in the answer. */
-  onSettleError?: (error: unknown) => void;
   signIn: (request: Request) => Promise<Response>;
   store: LoginLockStore;
 }
