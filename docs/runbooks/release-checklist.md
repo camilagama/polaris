@@ -64,7 +64,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   | [#191](https://github.com/camilagama/polaris/pull/191) (POL-58) | `run-gates.ts` (suíte `concurrency`) e `concurrency-support.ts` (barreira de largada e observador de bloqueio) usados por 14 gates de `gates:all` | O observador lê `pg_stat_activity` e `pg_blocking_pids` de outros papéis, o que exige superusuário ou `pg_read_all_stats`. Confirmar que o `neondb_owner` enxerga os papéis de login dos gates; se não enxergar, os 14 gates falham aqui com a mensagem de dono sem acesso ao observador (não com "não competiu"), e a correção é do suporte, não dos gates. |
   | T-124b | `run-gates.ts`: o gate `stock-property` entrou nas suítes `ci`, `gate4` e `all`, e o executor passou a repetir no JSON final as linhas `gate-note:` do gate | Que o `stock-property` passa em Neon com o papel de login temporário próprio (como os outros gates de venda). Também confere que o resumo do executor traz `notes` com a semente (o executor passou a repetir no JSON final as linhas `gate-note:` dos gates). A execução longa tem linha própria acima. |
 
-- Evidência: o resumo de cada gate (`"status": "passed"`), o nome da branch, a data e a confirmação de que a branch foi apagada, mais o resultado de `gates:concurrency` e a baixa das pendências acima. Sem connection string.
+- Evidência: o resumo de cada gate (`"status": "passed"`), o nome da branch, a data e a confirmação de que a branch foi apagada, mais o resultado de `gates:concurrency`, a semente e o `passed` da execução longa do `stock-property` e a baixa das pendências acima. Sem connection string.
 
 ### 5. Pendências de ambiente do go-live (BLOCK)
 

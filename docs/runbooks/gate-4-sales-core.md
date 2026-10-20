@@ -91,7 +91,7 @@ O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, na
 | Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 7 fixas | de 10 a 13 s |
 | Execução longa | `POLARIS_PROPERTY_RUNS=500` (máximo 2000, o que cabe nos 30 min em que o executor para um gate) | cerca de 5 min |
 
-A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Ela é **obrigatória** em PR que mexa em estoque, venda, devolução, cancelamento ou custo médio, e o autor registra o resultado (a semente e o `passed`) em "Verificação" do PR: 20 sequências deixam passar uma quebra comum em cerca de uma execução em cinco. Ela também é BLOCK no item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block). Rode à mão num banco descartável (como em [Passos](#passos)):
+A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Ela é **obrigatória** em PR que mexa em estoque, venda, devolução, cancelamento ou custo médio, e o autor registra o resultado (a semente e o `passed`) em "Verificação" do PR: 20 sequências deixam passar uma quebra comum em cerca de uma execução em cinco (medido em 20/10/2026 com 5 sementes por quebra). Quem não pode subir o PostgreSQL (tarefa fora da área `db`) diz no PR que a execução longa ficou pendente e pede a quem roda gates de banco. Ela também é BLOCK no item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block). Rode à mão num banco descartável (como em [Passos](#passos)):
 
     CI=true POLARIS_PROPERTY_RUNS=500 bun scripts/run-gates.ts stock-property   # a partir de packages/db
 
@@ -99,7 +99,7 @@ A execução longa não tem job: nenhum workflow novo foi criado, e um agendamen
 
     CI=true POLARIS_PROPERTY_SEED=<semente> POLARIS_PROPERTY_PATH=<caminho> bun scripts/run-gates.ts stock-property
 
-**Reexecutar o job não limpa a falha:** a semente muda e o defeito continua, só que numa sequência que talvez o sorteio não repita. O procedimento é abrir o item com a linha `replay:` (issue com a etiqueta `bots`, pelo Arrascaeta), e não repetir o job até passar.
+**Reexecutar o job não limpa a falha:** a semente muda e o defeito continua, só que numa sequência que talvez o sorteio não repita. O procedimento é abrir um item (issue com a etiqueta `bots`) com a linha `replay:` e investigar a falha, e não repetir o job até passar.
 
 Uma falha ao preparar uma sequência (banco fora do ar, organização ou produto que não se cria) não é tratada como contraexemplo: o gate para sem encolher e mostra o erro. Uma queda no meio de uma sequência ainda aparece como resultado `sql:...` ou `error:...` de um comando e é encolhida como uma falha comum.
 
@@ -117,8 +117,8 @@ Uma falha ao preparar uma sequência (banco fora do ar, organização ou produto
 | Devolução limitada ao vendido, e não ao disponível (`planSaleReturn`) | Com 60 sequências, falhou na 39ª. A mínima recebe 1, vende 1, devolve 1 e devolve 1 de novo: o banco recusou no commit (`sql:23514`) onde o modelo esperava `sale_return_exceeds_available`. |
 | Reposição de custo desconhecido em saldo zero mantém a média antiga (o comportamento anterior à revisão do Gate 4) | Falhou no exemplo fixo (6 comandos): média `1.500000` onde o modelo diz desconhecida. Sem o exemplo fixo, 60, 150 e 400 sequências sorteadas não pegaram. O `review-hardening` cobre o mesmo caso com um cenário escrito à mão. |
 | Média truncada em vez de meio-para-cima | Com 60 sequências, falhou na 7ª. A mínima recebe 1 a 0, 1 a 0 e 4 a 1: a média ficou `0.666666` onde o modelo diz `0.666667`. |
-| Contagem que aceita versão velha (`!==` vira `<` em `inventory-repository.ts`) | 5 sementes de 5 falharam (`I6`: o modelo espera `inventory_version_conflict`, o banco aceitou). Com a versão do futuro que o gate mandava antes, a quebra passava em 5 de 5. |
-| Teto de quantidade que recusa o valor exato (`nextQuantity > MAX` vira `>=` em `projectInventoryQuantity`) | 5 sementes de 5 falharam, no exemplo fixo do teto exato. O sorteio nunca chega lá. |
+| Contagem que aceita versão velha (`!==` vira `<` em `inventory-repository.ts`) | Com 20 sequências, 5 sementes de 5 falharam (`I6`: o modelo espera `inventory_version_conflict`, o banco aceitou). Com a versão do futuro que o gate mandava antes, a quebra passava em 5 de 5. |
+| Teto de quantidade que recusa o valor exato (`nextQuantity > MAX` vira `>=` em `projectInventoryQuantity`) | Com 20 sequências, 5 sementes de 5 falharam, no exemplo fixo do teto exato. O sorteio nunca chega lá. |
 | Limite de custo deslocado (`whole.length > 18` vira `>= 18`, e vira `> 19`) | As duas falharam nos exemplos fixos de 18 e de 19 dígitos (o `>= 18` recusou o custo de 18 dígitos que devia ser aceito; o `> 19` aceitou, e o banco recusou com `sql:23514`, o de 19). |
 
 O próprio exemplo das linhas fora de ordem nasceu de um defeito do **modelo**, achado na revisão: o modelo repunha na ordem enviada, e o servidor repõe por posição. O exemplo falhou antes da correção do modelo e passa depois.
