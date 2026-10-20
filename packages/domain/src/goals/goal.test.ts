@@ -1,4 +1,5 @@
 import fc from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import { type PeriodResult, periodResult } from "../economics/sale-economics";
 import {
@@ -196,7 +197,7 @@ describe("evaluateGoal and settleGoal", () => {
   });
 
   it("a completed goal stays completed when the numbers later fall (property)", () => {
-    fc.assert(
+    assertProperty(
       fc.property(fc.integer({ max: 5000, min: 0 }), (later) => {
         // once completed the status never asks to change, whatever the new result is
         expect(
@@ -210,7 +211,7 @@ describe("evaluateGoal and settleGoal", () => {
   });
 
   it("the percent is the exact ratio to one place (property)", () => {
-    fc.assert(
+    assertProperty(
       fc.property(
         fc.integer({ max: 100_000, min: 1 }),
         fc.integer({ max: 100_000, min: 1 }),

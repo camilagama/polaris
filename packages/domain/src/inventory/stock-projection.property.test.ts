@@ -1,11 +1,5 @@
-import {
-  array,
-  assert as fcAssert,
-  integer,
-  oneof,
-  property,
-  tuple,
-} from "fast-check";
+import { array, integer, oneof, property, tuple } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   InsufficientStockError,
@@ -30,7 +24,7 @@ const commandArbitrary = oneof(
 
 describe("stock projection (property)", () => {
   it("never goes negative and equals the sum of the accepted deltas", () => {
-    fcAssert(
+    assertProperty(
       property(array(commandArbitrary, { maxLength: 60 }), (commands) => {
         let balance = 0;
         let ledgerSum = 0;
@@ -56,8 +50,7 @@ describe("stock projection (property)", () => {
           expect(balance).toBeGreaterThanOrEqual(0);
           expect(balance).toBe(ledgerSum);
         }
-      }),
-      { numRuns: 300 }
+      })
     );
   });
 

@@ -1,4 +1,5 @@
-import { array, assert as fcAssert, integer, property } from "fast-check";
+import { array, integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   InvalidSaleReturnError,
@@ -268,7 +269,7 @@ describe("return invariants (property tests)", () => {
   );
 
   it("never lets cumulative returns exceed what was sold, and restocked <= returned", () => {
-    fcAssert(
+    assertProperty(
       property(
         array(quantity, { maxLength: 3, minLength: 1 }),
         attempts,
@@ -330,13 +331,12 @@ describe("return invariants (property tests)", () => {
           const totalReturned = returned.reduce((sum, value) => sum + value, 0);
           expect(restockedTotal).toBeLessThanOrEqual(totalReturned);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
   it("a rejected plan has no effect: the same facts plan the same way afterwards", () => {
-    fcAssert(
+    assertProperty(
       property(quantity, integer({ max: 80, min: 1 }), (sold, tooMany) => {
         const facts = [item(0, sold)];
         const line = {
@@ -352,13 +352,12 @@ describe("return invariants (property tests)", () => {
           planSaleReturn(facts, [{ ...line, returnedQuantity: sold }])[0]
             ?.availableBefore
         ).toBe(sold);
-      }),
-      { numRuns: 200 }
+      })
     );
   });
 
   it("returning everything in any split uses each unit exactly once", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 40, min: 1 }),
         array(integer({ max: 40, min: 1 }), { maxLength: 8, minLength: 1 }),
@@ -383,8 +382,77 @@ describe("return invariants (property tests)", () => {
           }
           expect(returned).toBeLessThanOrEqual(sold);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
+  });
+});
+
+describe("the quantity limits of a return (every edge)", () => {
+  // literals, not MAX_INVENTORY_QUANTITY: moving the limit in the code must turn these red.
+  // Every combination of edges is run, not a draw, so a moved limit is caught on every run.
+  const MAX = 2_147_483_647;
+  const edges = [-1, 0, 1, 2, MAX - 1, MAX, MAX + 1, 1.5];
+  const isQuantity = (value: number, minimum: number) =>
+    Number.isInteger(value) && value >= minimum && value <= MAX;
+
+  it("accepts a line exactly when position is 0 to 2147483647, returned 1 to 2147483647, and restocked 0 up to the returned", () => {
+    for (const position of edges) {
+      for (const returned of edges) {
+        for (const restocked of edges) {
+          const items = [
+            {
+              position,
+              restockedQuantity: restocked,
+              returnedQuantity: returned,
+            },
+          ];
+          const label = `position ${position}, returned ${returned}, restocked ${restocked}`;
+          const valid =
+            isQuantity(position, 0) &&
+            isQuantity(returned, 1) &&
+            isQuantity(restocked, 0) &&
+            restocked <= returned;
+          if (valid) {
+            expect(
+              normalizeReturnSaleCommand(command({ items })).items,
+              label
+            ).toEqual(items);
+          } else {
+            expect(
+              () => normalizeReturnSaleCommand(command({ items })),
+              label
+            ).toThrow(InvalidSaleReturnError);
+          }
+        }
+      }
+    }
+  });
+
+  it("plans a line exactly when its quantities are inside the limits and the sale still has them to return", () => {
+    for (const returned of edges) {
+      for (const restocked of edges) {
+        const facts = [item(0, MAX)];
+        const line = {
+          position: 0,
+          restockedQuantity: restocked,
+          returnedQuantity: returned,
+        };
+        const label = `returned ${returned}, restocked ${restocked}`;
+        const shapeOk =
+          isQuantity(returned, 1) &&
+          isQuantity(restocked, 0) &&
+          restocked <= returned;
+        if (shapeOk) {
+          expect(
+            planSaleReturn(facts, [line])[0]?.returnedQuantity,
+            label
+          ).toBe(returned);
+        } else {
+          expect(() => planSaleReturn(facts, [line]), label).toThrow(
+            InvalidSaleReturnError
+          );
+        }
+      }
+    }
   });
 });

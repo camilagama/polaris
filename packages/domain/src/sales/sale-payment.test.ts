@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assert as fcAssert, bigInt, integer, property } from "fast-check";
+import { bigInt, constantFrom, integer, oneof, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { InvalidMoneyError, MoneyLimitError } from "../money/money";
 import { InvalidSalePaymentError, normalizeSalePayment } from "./sale-payment";
 
@@ -88,23 +89,53 @@ describe("normalizeSalePayment", () => {
     ).toThrow(MoneyLimitError);
   });
 
-  it("normalizes generated amounts without changing their cent value", async () => {
-    await fcAssert(
-      property(bigInt({ min: 0n, max: maxMoneyMinorUnits }), (minorUnits) => {
-        const payment = normalizeSalePayment(
-          { method: "bank_transfer" },
-          moneyFromMinorUnits(minorUnits)
-        );
-        expect(payment.amount).toBe(moneyFromMinorUnits(minorUnits));
-      }),
-      { numRuns: 300 }
+  it("normalizes generated amounts without changing their cent value, up to the largest amount", () => {
+    assertProperty(
+      property(
+        oneof(
+          bigInt({ min: 0n, max: maxMoneyMinorUnits }),
+          constantFrom(0n, 1n, maxMoneyMinorUnits - 1n, maxMoneyMinorUnits)
+        ),
+        (minorUnits) => {
+          const payment = normalizeSalePayment(
+            { method: "bank_transfer" },
+            moneyFromMinorUnits(minorUnits)
+          );
+          expect(payment.amount).toBe(moneyFromMinorUnits(minorUnits));
+        }
+      )
     );
   });
 
-  it("accepts installment counts throughout PostgreSQL integer range", async () => {
-    await fcAssert(
-      property(integer({ min: 1, max: 2_147_483_647 }), (installments) => {
-        expect(
+  it("refuses an amount past the largest one, however far", () => {
+    assertProperty(
+      property(
+        oneof(
+          bigInt({ min: maxMoneyMinorUnits + 1n, max: 10n ** 30n }),
+          constantFrom(maxMoneyMinorUnits + 1n, maxMoneyMinorUnits + 2n)
+        ),
+        (minorUnits) => {
+          expect(() =>
+            normalizeSalePayment(
+              { method: "bank_transfer" },
+              moneyFromMinorUnits(minorUnits)
+            )
+          ).toThrow(MoneyLimitError);
+        }
+      )
+    );
+  });
+
+  it("accepts installment counts throughout PostgreSQL integer range, and refuses 0 and the one past it", () => {
+    // literals: moving the limit (or `>` to `>=`) in the code must turn this red
+    const max = 2_147_483_647;
+    const counts = oneof(
+      integer({ min: 1, max }),
+      constantFrom(-1, 0, 1, 2, max - 1, max, max + 1, max + 2, 1.5)
+    );
+    assertProperty(
+      property(counts, (installments) => {
+        const run = () =>
           normalizeSalePayment(
             {
               installmentPlan: "merchant",
@@ -112,10 +143,17 @@ describe("normalizeSalePayment", () => {
               method: "credit_card",
             },
             "10.00"
-          ).installments
-        ).toBe(installments);
-      }),
-      { numRuns: 300 }
+          );
+        if (
+          Number.isInteger(installments) &&
+          installments >= 1 &&
+          installments <= max
+        ) {
+          expect(run().installments).toBe(installments);
+        } else {
+          expect(run).toThrow(InvalidSalePaymentError);
+        }
+      })
     );
   });
 

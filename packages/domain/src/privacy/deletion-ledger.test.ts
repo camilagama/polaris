@@ -99,6 +99,28 @@ describe("deletionLedgerEntry", () => {
     ).toThrow(InvalidDeletionLedgerEntryError);
   });
 
+  it("refuses an ID that is not text instead of turning it into text", () => {
+    for (const value of [123, 12_345, true, {}, ["abc"], 10n]) {
+      expect(() =>
+        deletionLedgerEntry({
+          ...customerEntry,
+          organizationId: value,
+        } as never)
+      ).toThrow(InvalidDeletionLedgerEntryError);
+      expect(() =>
+        deletionLedgerEntry({
+          entityId: value,
+          entityType: "organization",
+          operation: "purge",
+          organizationId: value,
+        } as never)
+      ).toThrow(InvalidDeletionLedgerEntryError);
+      expect(() =>
+        deletionLedgerEntry({ ...customerEntry, privacyCaseId: value } as never)
+      ).toThrow(InvalidDeletionLedgerEntryError);
+    }
+  });
+
   it("refuses a case that is not a UUID", () => {
     expect(() =>
       deletionLedgerEntry({ ...customerEntry, privacyCaseId: "caso 1" })

@@ -1,4 +1,5 @@
 import fc from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import { dashboardCards, resultQuality } from "./period-summary";
 import {
@@ -131,7 +132,7 @@ describe("dashboardCards", () => {
   });
 
   it("the margin percent matches the exact ratio for any amounts (property)", () => {
-    fc.assert(
+    assertProperty(
       fc.property(
         fc.integer({ max: 1_000_000, min: 1 }),
         fc.integer({ max: 1_000_000, min: 0 }),
