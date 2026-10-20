@@ -33,7 +33,10 @@ test("os 7 bindings do wrangler.jsonc chegam a cada preview como os logins do ru
     new URL("../../wrangler.jsonc", import.meta.url),
     "utf8"
   );
-  const topLevel = wrangler.slice(0, wrangler.indexOf('"env"'));
+  const topLevel = wrangler.slice(
+    wrangler.indexOf('"hyperdrive"'),
+    wrangler.indexOf('"images"')
+  );
   expect(
     [...topLevel.matchAll(BINDING)].map((match) => match[1]).sort()
   ).toEqual([...HYPERDRIVE_BINDINGS].sort());
