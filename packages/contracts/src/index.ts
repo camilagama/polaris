@@ -1149,15 +1149,89 @@ const bootstrapPageOutput = z.discriminatedUnion("collection", [
 
 export type BootstrapPageReadModel = z.infer<typeof bootstrapPageOutput>;
 
-/** The Pro cycles the checkout may offer; a cycle with no active price is refused by the server. */
-export const billingStartCheckoutInput = z
-  .object({
-    cycleMonths: z.union([z.literal(1), z.literal(6), z.literal(12)]),
-    method: z.literal("card"),
-    organizationId: z.string().trim().min(1),
-    trial: z.boolean(),
-  })
-  .strict();
+/** The check digits of a CPF (11 digits) or a CNPJ (14 digits), digits only. */
+function hasTaxIdCheckDigits(value: string): boolean {
+  const digits = [...value].map(Number);
+  if (new Set(digits).size === 1) {
+    // 000.000.000-00 and the like pass the arithmetic and are not documents
+    return false;
+  }
+  const checkDigit = (body: number[], weights: number[]) => {
+    const sum = body.reduce(
+      (total, digit, index) => total + digit * (weights[index] ?? 0),
+      0
+    );
+    const rest = sum % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+  if (digits.length === 11) {
+    const first = checkDigit(digits.slice(0, 9), [10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    const second = checkDigit(
+      digits.slice(0, 10),
+      [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+    );
+    return digits[9] === first && digits[10] === second;
+  }
+  const first = checkDigit(
+    digits.slice(0, 12),
+    [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  );
+  const second = checkDigit(
+    digits.slice(0, 13),
+    [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  );
+  return digits[12] === first && digits[13] === second;
+}
+
+const billingCheckoutCycle = z.union([
+  z.literal(1),
+  z.literal(6),
+  z.literal(12),
+]);
+
+/** No control, format (zero-width, bidirectional) or unassigned characters: the name shows in the payer's bank. */
+const payerNamePattern = /^[^\p{C}]+$/u;
+
+/**
+ * The Pro cycles the checkout may offer; a cycle with no active price is
+ * refused by the server. The card sends nothing of the payer (it is typed on
+ * the provider's page); Pix Automático needs the payer's name, CPF or CNPJ
+ * (digits only) and e-mail, which go to Woovi and are never stored by Polaris.
+ */
+export const billingStartCheckoutInput = z.discriminatedUnion("method", [
+  z
+    .object({
+      cycleMonths: billingCheckoutCycle,
+      method: z.literal("card"),
+      organizationId: z.string().trim().min(1),
+      trial: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      cycleMonths: billingCheckoutCycle,
+      method: z.literal("pix_automatic"),
+      organizationId: z.string().trim().min(1),
+      payer: z
+        .object({
+          email: z.string().trim().email().max(254),
+          name: z
+            .string()
+            .trim()
+            .normalize("NFC")
+            .min(2)
+            .max(120)
+            .regex(payerNamePattern),
+          taxId: z
+            .string()
+            .regex(/^(?:\d{11}|\d{14})$/)
+            .refine(hasTaxIdCheckDigits),
+        })
+        .strict(),
+      trial: z.boolean(),
+    })
+    .strict(),
+]);
 
 export const polarisContract = {
   category: {
@@ -1483,17 +1557,28 @@ export const polarisContract = {
   },
   billing: {
     // Starts the Pro subscription at the payment provider (ADR 0101): the
-    // provider's hosted page, where the payer types the card. Only the owner
-    // (`billing:manage`); the organization is the server's. The input is strict:
-    // a card number, a tax ID or any other key is refused, because the card path
-    // sends Polaris nothing of the payer. The price, the dates and the return
-    // URLs are the server's. The link is the payer's alone and is never logged.
+    // provider's hosted page, where the payer types the card, or the Pix
+    // Automático authorization at Woovi. Only the owner (`billing:manage`); the
+    // organization is the server's. The input is strict: a card number, or a
+    // tax ID or payer on the card, is refused, because the card path sends
+    // Polaris nothing of the payer. The price, the dates and the return URLs are
+    // the server's. The link and the Pix payload are the payer's alone and are
+    // never logged.
     startCheckout: oc.input(billingStartCheckoutInput).output(
       z.object({
-        handoff: z.object({
-          kind: z.literal("redirect"),
-          url: z.string().url(),
-        }),
+        handoff: z.discriminatedUnion("kind", [
+          z.object({
+            kind: z.literal("redirect"),
+            url: z.string().url(),
+          }),
+          // Pix Automático: the "copia e cola" of the authorization and Woovi's page, when it gave one;
+          // no QR is drawn by Polaris (a QR library is a decision of its own, plan PR80)
+          z.object({
+            emv: z.string().min(1).max(1024),
+            kind: z.literal("pix_authorization"),
+            url: z.string().url().nullable(),
+          }),
+        ]),
       })
     ),
   },

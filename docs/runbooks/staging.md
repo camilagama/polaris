@@ -20,7 +20,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 ## Alvo seguro
 
 - Workers `polaris-web-staging` e `polaris-catalog-staging`. O Admin **não** é implantado no staging.
-- Projeto Neon `polaris-staging`, com o marcador `polaris.environment = 'staging'`. Nunca o projeto dos gates (`green-tooth-16857010`), que nunca recebe dado real.
+- Projeto Neon `polaris-staging`, com o marcador `polaris.environment = 'staging'`. Nunca o projeto dos gates (`<id do projeto Neon dos gates>`), que nunca recebe dado real.
 - O topo de cada `wrangler.jsonc` é só local: um deploy sem `--env staging` (ou sem `CLOUDFLARE_ENV=staging` na build) falha.
 
 ## 1. Banco (responsável)
@@ -85,7 +85,7 @@ O login por senha fica desligado (`EMAIL_PASSWORD_AUTH_ENABLED: "false"`), e a v
 
 ## 5. Segredos do Worker `polaris-web-staging` (responsável)
 
-`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SYNC_PAYLOAD_HASH_SECRET` e `OFFLINE_LEASE_SECRET`, com `wrangler secret put <NOME> --env staging`. Os `*_PREVIOUS_*` ficam vazios até a primeira rotação. Nenhum segredo de staging é reaproveitado na produção. As chaves de sandbox do Asaas e da Woovi só entram no Gate 7. O catálogo não tem segredo.
+`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SYNC_PAYLOAD_HASH_SECRET`, `OFFLINE_LEASE_SECRET` e `BILLING_PAYER_KEY` (a chave do pagador do Pix, 32 caracteres ou mais, gerada uma vez e nunca rodada por rotina: ver o [runbook de provedores](./billing-providers.md)), com `wrangler secret put <NOME> --env staging`. Os `*_PREVIOUS_*` ficam vazios até a primeira rotação. Nenhum segredo de staging é reaproveitado na produção. As chaves de sandbox do Asaas e da Woovi só entram no Gate 7. O catálogo não tem segredo.
 
 ## 6. GitHub (responsável)
 

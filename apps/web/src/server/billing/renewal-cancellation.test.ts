@@ -5,6 +5,7 @@ import {
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import type { BillingStore } from "@polaris/db/billing-store";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import { queueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PermanentHandlerError } from "../queue/consumer";
@@ -67,12 +68,6 @@ function fakeStore(record: Record<string, unknown> | null = alive) {
       (_organization: string, given: { providerRef: string }) =>
         Promise.resolve([...discarded.values()].includes(given.providerRef))
     ),
-    recordCheckoutDiscarded: vi.fn(
-      (input: { link: { providerRef: string }; requestId: string }) => {
-        discarded.set(input.requestId, input.link.providerRef);
-        return Promise.resolve();
-      }
-    ),
     processEvent: vi.fn((id: string) => {
       if (state.record) {
         state.record = { ...state.record, cancelAtPeriodEnd: true };
@@ -86,6 +81,12 @@ function fakeStore(record: Record<string, unknown> | null = alive) {
     }),
     readProviderLink: vi.fn(() => Promise.resolve(state.linked)),
     readRecord: vi.fn(() => Promise.resolve(state.record)),
+    recordCheckoutDiscarded: vi.fn(
+      (input: { link: { providerRef: string }; requestId: string }) => {
+        discarded.set(input.requestId, input.link.providerRef);
+        return Promise.resolve();
+      }
+    ),
     recordEvent: vi.fn((input: { providerEventId: string }) => {
       const known = stored.get(input.providerEventId);
       if (known) {
@@ -128,7 +129,7 @@ function fakePort(
 function dependencies(
   store: BillingStore,
   port: BillingProviderPort,
-  handles = (provider: string) => provider === "asaas"
+  handles: (provider: string) => boolean = (provider) => provider === "asaas"
 ) {
   return {
     handles,
@@ -511,6 +512,101 @@ describe("handleRenewalCancelRequested", () => {
   });
 });
 
+describe("handleRenewalCancelRequested with Woovi", () => {
+  const wooviSubscription = {
+    provider: "woovi",
+    providerRef: "woovi-sub-ref-0001",
+    providerSubscriptionId: "woovi-sub-0001",
+  };
+  const wooviCheckout = {
+    provider: "woovi",
+    providerRef: "woovi-sub-ref-0002",
+    providerSubscriptionId: null,
+  };
+
+  function wooviPort(
+    cancel?: BillingProviderPort["cancelRenewal"],
+    discard?: BillingProviderPort["discardCheckout"]
+  ) {
+    const port = fakePort(cancel, discard);
+    Object.assign(port, { provider: "woovi" });
+    return port;
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("is a provider the domain says Polaris cancels through", () => {
+    expect(billingProviderHandled("woovi")).toBe(true);
+  });
+
+  it("gives up a Pix checkout still open (no subscription matched, trial_setup), and records it", async () => {
+    const { discarded, state, store } = fakeStore({
+      accessEndsAt: null,
+      cancelAtPeriodEnd: false,
+      state: "trial_setup",
+    });
+    state.linked = wooviCheckout;
+    const port = wooviPort();
+
+    await expect(
+      handleRenewalCancelRequested(
+        dependencies(store, port, billingProviderHandled),
+        envelope()
+      )
+    ).resolves.toBe("checkout_discarded");
+
+    expect(port.discardCheckout).toHaveBeenCalledWith(
+      wooviCheckout.providerRef
+    );
+    expect(store.recordCheckoutDiscarded).toHaveBeenCalledWith(
+      { link: wooviCheckout, organizationId, requestId: EVENT_ID },
+      now
+    );
+    expect([...discarded.values()]).toEqual([wooviCheckout.providerRef]);
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(store.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("cancels a live Woovi subscription and writes subscription_cancelled with provider woovi", async () => {
+    const { state, store } = fakeStore();
+    state.linked = wooviSubscription;
+    const port = wooviPort();
+
+    await expect(
+      handleRenewalCancelRequested(
+        dependencies(store, port, billingProviderHandled),
+        envelope()
+      )
+    ).resolves.toBe("cancelled");
+
+    expect(port.cancelRenewal).toHaveBeenCalledWith(
+      wooviSubscription.providerRef,
+      wooviSubscription.providerSubscriptionId
+    );
+    expect(store.recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fact: { occurredAt: now, type: "subscription_cancelled" },
+        organizationId,
+        provider: "woovi",
+        providerEventId: await cancelRenewalEventId(
+          EVENT_ID,
+          wooviSubscription.providerRef
+        ),
+        providerRef: wooviSubscription.providerRef,
+      })
+    );
+    expect(store.processEvent).toHaveBeenCalledWith("ev-1", now);
+    expect(state.record).toMatchObject({ cancelAtPeriodEnd: true });
+  });
+});
+
 describe("rearmRenewalCancellations", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -532,7 +628,7 @@ describe("rearmRenewalCancellations", () => {
       RENEWAL_CANCEL_REARM_MIN_AGE_SECONDS,
       RENEWAL_CANCEL_REARM_BATCH,
       // only the providers Polaris cancels through: another is the person's to cancel
-      ["asaas"]
+      ["asaas", "woovi"]
     );
     expect(RENEWAL_CANCEL_REARM_MIN_AGE_SECONDS).toBe(3600);
     expect(warn).toHaveBeenCalledWith(

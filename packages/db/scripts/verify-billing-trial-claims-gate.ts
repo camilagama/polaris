@@ -1650,6 +1650,138 @@ async function main() {
       );
     }
 
+    // ------------- 13. Pix checkout (cobrança PR 6): the payer's lock, the hourly list
+    {
+      const pix = randomUUID().slice(0, 8);
+      const pixHolder = await newTenant("pix holder");
+      const asker = await newTenant("pix asker");
+      const linkedRef = `pix_ref_${pix}`;
+      const storedSubscription = `pix_sub_${pix}`;
+      await billing.attachProvider(
+        pixHolder.organizationId,
+        "woovi",
+        linkedRef
+      );
+      await admin.pool.query(
+        "UPDATE public.organization_billing SET provider_subscription_id = $2 WHERE organization_id = $1",
+        [pixHolder.organizationId, storedSubscription]
+      );
+
+      // the hourly list: a link that may still change access, or one written in the last 8 days
+      const listed = async (when: Date) =>
+        new Set(
+          await billing.listReconcilableOrganizations("woovi", 1000, when)
+        );
+      const checkedAt = new Date();
+      assert.ok(
+        (await listed(checkedAt)).has(pixHolder.organizationId),
+        "a fresh link on Free is read (a Pix without trial waits for its first charge)"
+      );
+      assert.ok(!(await listed(checkedAt)).has(asker.organizationId));
+      await admin.pool.query(
+        "UPDATE public.organization_billing SET updated_at = $2 WHERE organization_id = $1",
+        [
+          pixHolder.organizationId,
+          new Date(checkedAt.getTime() - 9 * 86_400_000),
+        ]
+      );
+      assert.ok(
+        !(await listed(checkedAt)).has(pixHolder.organizationId),
+        "an old link on Free is not read any more"
+      );
+      await admin.pool.query(
+        "UPDATE public.organization_billing SET state = 'active', access_ends_at = $2, cycle_months = 1 WHERE organization_id = $1",
+        [
+          pixHolder.organizationId,
+          new Date(checkedAt.getTime() + 20 * 86_400_000),
+        ]
+      );
+      assert.ok(
+        (await listed(checkedAt)).has(pixHolder.organizationId),
+        "a live subscription is read whatever its age"
+      );
+      assert.ok(
+        !new Set(
+          await billing.listReconcilableOrganizations("asaas", 1000, checkedAt)
+        ).has(pixHolder.organizationId),
+        "only the provider asked for"
+      );
+      assert.equal(
+        (await billing.listReconcilableOrganizations("woovi", 1, checkedAt))
+          .length,
+        1,
+        "never more than the limit"
+      );
+      await Promise.all(
+        [0, 1001, 1.5].map((limit) =>
+          assert.rejects(() =>
+            billing.listReconcilableOrganizations("woovi", limit, checkedAt)
+          )
+        )
+      );
+
+      // the payer's lock: the same key waits, another key does not
+      const order: string[] = [];
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let entered: () => void = () => undefined;
+      const inside = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const first = billing.withPayerLock("0a1b2c3d", async () => {
+        order.push("first in");
+        entered();
+        await held;
+        order.push("first out");
+      });
+      await inside;
+      const waiting = billing.withPayerLock("0a1b2c3d", () => {
+        order.push("second in");
+        return Promise.resolve();
+      });
+      await billing.withPayerLock("ffffffff", () => {
+        order.push("other key");
+        return Promise.resolve();
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.deepEqual(
+        order,
+        ["first in", "other key"],
+        "the same key waits for the lock; another key goes on"
+      );
+      release();
+      await Promise.all([first, waiting]);
+      assert.deepEqual(order, [
+        "first in",
+        "other key",
+        "first out",
+        "second in",
+      ]);
+      // an operation that throws releases the lock (the transaction rolls back)
+      await assert.rejects(() =>
+        billing.withPayerLock("0a1b2c3d", () =>
+          Promise.reject(new Error("pix gate operation"))
+        )
+      );
+      assert.equal(
+        await billing.withPayerLock("0a1b2c3d", () => Promise.resolve("again")),
+        "again"
+      );
+      await Promise.all(
+        ["", "0A1B2C3D", "0a1b", "0a1b2c3d4", "zzzzzzzz"].map((bucket) =>
+          assert.rejects(
+            () => billing.withPayerLock(bucket, () => Promise.resolve()),
+            TypeError
+          )
+        )
+      );
+      tests.push(
+        "Pix checkout (cobrança PR 6): the hourly reconciliation lists a link that may still change access whatever its age and one on Free only for 8 days, of that provider and within its limit; the payer's lock serializes the same key, leaves another key alone, is released by an operation that throws and refuses a key that is not 8 hex digits"
+      );
+    }
+
     console.log(
       JSON.stringify(
         {

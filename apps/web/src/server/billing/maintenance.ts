@@ -1,13 +1,23 @@
-import { ProviderNotConfiguredError } from "@polaris/billing/provider-port";
+import {
+  ProviderNotConfiguredError,
+  ProviderNotFoundError,
+} from "@polaris/billing/provider-port";
 import type {
   BillingRetryReport,
   BillingStore,
   BillingSweepReport,
 } from "@polaris/db/billing-store";
-import { logger } from "@polaris/observability/logger";
-import type { WorkerBindings } from "../environment";
-import { settleUnclaimedTrials, type UnclaimedTrialsReport } from "./commands";
-import { billingProviderPortOf } from "./provider-ports";
+import { logger, opaqueId } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
+import {
+  reconcileOrganization,
+  settleUnclaimedTrials,
+  type UnclaimedTrialsReport,
+} from "./commands";
+import {
+  type BillingPortBindings,
+  billingProviderPortOf,
+} from "./provider-ports";
 
 export interface BillingMaintenanceReport {
   retry: BillingRetryReport;
@@ -55,10 +65,7 @@ export async function runBillingMaintenance(
  * settings it does nothing and says so; a failure makes the run incomplete.
  */
 export async function runUnclaimedTrialSettlement(
-  bindings: Pick<
-    WorkerBindings,
-    "ASAAS_API_KEY" | "ASAAS_BASE_URL" | "BETTER_AUTH_BASE_URL"
-  >,
+  bindings: BillingPortBindings,
   store: Pick<BillingStore, "listUnclaimedTrials" | "settleUnclaimedTrial">,
   now: Date = new Date()
 ): Promise<UnclaimedTrialsReport | null> {
@@ -79,6 +86,108 @@ export async function runUnclaimedTrialSettlement(
   if (report.failed > 0) {
     logger.error("billing_unclaimed_trials_incomplete", { ...report });
     throw new Error("billing_unclaimed_trials_incomplete");
+  }
+  return report;
+}
+
+/**
+ * Organizations reconciled with Woovi per hourly run: the trial setups and the
+ * links of the last 8 days first, then the others in an order that changes
+ * every hour. Two or three calls each, well inside a Worker's subrequests.
+ */
+const WOOVI_RECONCILE_BATCH = 200;
+
+export interface WooviReconcileReport {
+  applied: number;
+  failed: number;
+  /** Organizations whose subscription Woovi does not know (404): logged, not a failure. */
+  notFound: number;
+  organizations: number;
+  /** More organizations were due than the batch takes: the next run goes on. */
+  truncated: boolean;
+}
+
+/**
+ * The hourly reconciliation with Woovi (ADR 0101, emenda do PR 6): a condition
+ * before the first Woovi subscription, because a webhook answered 200 without a
+ * fact (a read back that found nothing, a body out of its documented shape, a
+ * state not shown yet) is only caught here. Every organization linked to Woovi
+ * whose subscription may still change access is read at the provider
+ * (`readState`, `reconcileWooviSubscription`) and its facts go through the same
+ * inbox as the webhooks (`reconcileOrganization`): the same IDs, so a fact that
+ * came by webhook is a duplicate. Without Woovi's settings it does nothing and
+ * says so; one organization that fails never hides the others, and makes the
+ * run incomplete.
+ */
+export async function runWooviReconciliation(
+  bindings: BillingPortBindings,
+  store: Pick<
+    BillingStore,
+    | "listReconcilableOrganizations"
+    | "processEvent"
+    | "readProviderLink"
+    | "recordEvent"
+  >,
+  now: Date = new Date()
+): Promise<WooviReconcileReport | null> {
+  try {
+    billingProviderPortOf(bindings, "woovi");
+  } catch (error: unknown) {
+    if (error instanceof ProviderNotConfiguredError) {
+      logger.warn("billing_woovi_reconcile_not_configured");
+      return null;
+    }
+    throw error;
+  }
+  const due = await store.listReconcilableOrganizations(
+    "woovi",
+    WOOVI_RECONCILE_BATCH + 1,
+    now
+  );
+  const organizations = due.slice(0, WOOVI_RECONCILE_BATCH);
+  const report: WooviReconcileReport = {
+    applied: 0,
+    failed: 0,
+    notFound: 0,
+    organizations: organizations.length,
+    truncated: due.length > WOOVI_RECONCILE_BATCH,
+  };
+  for (const organizationId of organizations) {
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: One organization at a time, so Woovi is never flooded.
+      const reconciled = await reconcileOrganization(
+        {
+          now: () => now,
+          portFor: (provider) => billingProviderPortOf(bindings, provider),
+          store,
+        },
+        organizationId
+      );
+      report.applied += reconciled.applied;
+      report.failed += reconciled.failed;
+    } catch (error: unknown) {
+      if (error instanceof ProviderNotFoundError) {
+        // Woovi has no such subscription (a link of another account, or one long gone): nothing
+        // to read, and not a failure that would leave every hourly run incomplete
+        report.notFound += 1;
+        logger.warn("billing_woovi_reconcile_not_found", {
+          organizationId: opaqueId(organizationId),
+        });
+        continue;
+      }
+      report.failed += 1;
+      logger.error("billing_woovi_reconcile_failed", {
+        ...describeError(error),
+        organizationId: opaqueId(organizationId),
+      });
+    }
+  }
+  if (report.truncated) {
+    logger.warn("billing_woovi_reconcile_truncated", { ...report });
+  }
+  if (report.failed > 0) {
+    logger.error("billing_woovi_reconcile_incomplete", { ...report });
+    throw new Error("billing_woovi_reconcile_incomplete");
   }
   return report;
 }

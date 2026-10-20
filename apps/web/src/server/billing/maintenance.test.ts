@@ -1,8 +1,10 @@
+import { ProviderNotFoundError } from "@polaris/billing/provider-port";
 import type { BillingStore } from "@polaris/db/billing-store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
+  runWooviReconciliation,
 } from "./maintenance";
 
 const now = new Date("2026-10-14T12:00:00.000Z");
@@ -195,6 +197,187 @@ describe("the hourly settling of unclaimed trials", () => {
       expect.objectContaining({
         event: "billing_unclaimed_trials_incomplete",
         failed: 1,
+      })
+    );
+  });
+});
+
+describe("the hourly reconciliation with Woovi", () => {
+  const woovi = {
+    BETTER_AUTH_BASE_URL: "https://app.example.test",
+    WOOVI_APP_ID: "fake",
+    WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+  };
+
+  function wooviStore(
+    organizations: string[],
+    readProviderLink: (organizationId: string) => Promise<null> = () =>
+      Promise.resolve(null)
+  ) {
+    return {
+      listReconcilableOrganizations: vi.fn(() =>
+        Promise.resolve(organizations)
+      ),
+      processEvent: vi.fn(),
+      readProviderLink: vi.fn(readProviderLink),
+      recordEvent: vi.fn(),
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(["WOOVI_APP_ID", "WOOVI_BASE_URL"] as const)(
+    "does nothing and says so when %s is missing",
+    async (missing) => {
+      const warned = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const waiting = wooviStore(["org-1"]);
+
+      const report = await runWooviReconciliation(
+        { ...woovi, [missing]: undefined },
+        waiting,
+        now
+      );
+
+      expect(report).toBeNull();
+      expect(waiting.listReconcilableOrganizations).not.toHaveBeenCalled();
+      expect(waiting.readProviderLink).not.toHaveBeenCalled();
+      expect(warned).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "billing_woovi_reconcile_not_configured",
+        })
+      );
+    }
+  );
+
+  it("asks for the Woovi organizations of one batch plus one, and reads each of them", async () => {
+    const waiting = wooviStore(["org-1", "org-2", "org-3"]);
+
+    await expect(runWooviReconciliation(woovi, waiting, now)).resolves.toEqual({
+      applied: 0,
+      failed: 0,
+      notFound: 0,
+      organizations: 3,
+      truncated: false,
+    });
+
+    expect(waiting.listReconcilableOrganizations).toHaveBeenCalledWith(
+      "woovi",
+      201,
+      now
+    );
+    expect(waiting.readProviderLink.mock.calls).toEqual([
+      ["org-1"],
+      ["org-2"],
+      ["org-3"],
+    ]);
+  });
+
+  it("reports zeros when nothing is due", async () => {
+    const waiting = wooviStore([]);
+
+    await expect(runWooviReconciliation(woovi, waiting, now)).resolves.toEqual({
+      applied: 0,
+      failed: 0,
+      notFound: 0,
+      organizations: 0,
+      truncated: false,
+    });
+    expect(waiting.readProviderLink).not.toHaveBeenCalled();
+  });
+
+  it("reads every organization even when one fails, then reports itself as incomplete", async () => {
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const waiting = wooviStore(["org-1", "org-2", "org-3"], (organizationId) =>
+      organizationId === "org-2"
+        ? Promise.reject(new Error("database down"))
+        : Promise.resolve(null)
+    );
+
+    await expect(runWooviReconciliation(woovi, waiting, now)).rejects.toThrow(
+      "billing_woovi_reconcile_incomplete"
+    );
+
+    expect(waiting.readProviderLink).toHaveBeenCalledTimes(3);
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "billing_woovi_reconcile_failed" })
+    );
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "billing_woovi_reconcile_incomplete",
+        failed: 1,
+        notFound: 0,
+        organizations: 3,
+      })
+    );
+  });
+
+  it("counts an organization Woovi does not know as not found: a warning, never a failure", async () => {
+    const warned = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const waiting = wooviStore(["org-1", "org-2", "org-3"], (organizationId) =>
+      organizationId === "org-2"
+        ? Promise.reject(new ProviderNotFoundError())
+        : Promise.resolve(null)
+    );
+
+    await expect(runWooviReconciliation(woovi, waiting, now)).resolves.toEqual({
+      applied: 0,
+      failed: 0,
+      notFound: 1,
+      organizations: 3,
+      truncated: false,
+    });
+
+    expect(waiting.readProviderLink).toHaveBeenCalledTimes(3);
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "billing_woovi_reconcile_not_found" })
+    );
+  });
+
+  it("still fails the run for another error next to a not found one", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const waiting = wooviStore(["org-1", "org-2"], (organizationId) =>
+      Promise.reject(
+        organizationId === "org-1"
+          ? new ProviderNotFoundError()
+          : new Error("database down")
+      )
+    );
+
+    await expect(runWooviReconciliation(woovi, waiting, now)).rejects.toThrow(
+      "billing_woovi_reconcile_incomplete"
+    );
+  });
+
+  it("takes only 200 when more are due, marks it truncated and warns", async () => {
+    const warned = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const ids = Array.from({ length: 201 }, (_, index) => `org-${index}`);
+    const waiting = wooviStore(ids);
+
+    await expect(runWooviReconciliation(woovi, waiting, now)).resolves.toEqual({
+      applied: 0,
+      failed: 0,
+      notFound: 0,
+      organizations: 200,
+      truncated: true,
+    });
+
+    expect(waiting.readProviderLink).toHaveBeenCalledTimes(200);
+    expect(waiting.readProviderLink).not.toHaveBeenCalledWith("org-200");
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "billing_woovi_reconcile_truncated",
+        truncated: true,
       })
     );
   });

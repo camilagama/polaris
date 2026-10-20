@@ -141,8 +141,8 @@ O gate PR42 passou com 24 cenários em PostgreSQL `18.6`, branch schema-only `pr
 Antes de qualquer CLI:
 
 1. Leia [`cli-profile-policy.md`](../docs/runbooks/cli-profile-policy.md).
-2. Neon CLI exclusivamente com perfil `junior-pessoal`, confirme `juniordiniz56@gmail.com` por `neon me --profile junior-pessoal`.
-3. Cloudflare CLI exclusivamente com perfil `junior-pessoal`, confirme `contato.juniordiniz@gmail.com`.
+2. Neon CLI exclusivamente com perfil `junior-pessoal`, confirme `<e-mail do responsável no Neon>` por `neon me --profile junior-pessoal`.
+3. Cloudflare CLI exclusivamente com perfil `junior-pessoal`, confirme `<e-mail do responsável no Cloudflare>`.
 4. **Não usar plugin/conector Neon.** Não imprimir ou gravar connection strings, tokens ou passwords; mantenha a URL do gate apenas na memória/ambiente do processo e remova as variáveis ao terminar.
 5. O gate atual espera `POLARIS_SALES_GATE_BRANCH` e `POLARIS_SALES_GATE_DATABASE_URL`; `POLARIS_SALES_GATE_DATABASE` é opcional (default `neondb`). Atualize o gate de PR43 para validar o nome da branch descartável de PR43.
 

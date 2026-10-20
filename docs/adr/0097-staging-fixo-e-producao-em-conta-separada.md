@@ -34,7 +34,7 @@ Os itens 3, 14, 15 e 16 do [release-checklist](../runbooks/release-checklist.md)
 
 ### Banco (decisão)
 
-- O staging tem um projeto Neon Free próprio (`polaris-staging`), com dados só sintéticos. O projeto dos gates (`green-tooth-16857010`, branch `production`) não é usado como staging.
+- O staging tem um projeto Neon Free próprio (`polaris-staging`), com dados só sintéticos. O projeto dos gates (`<id do projeto Neon dos gates>`, branch `production`) não é usado como staging.
 - O projeto dos gates **nunca recebe dado real**. Isso fecha a ressalva da emenda de 18/10/2026 do [ADR 0025](0025-estrategia-de-testes-de-banco.md): a prova de liberação em branch filha de `production` continua válida, porque a `production` dos gates não guarda dado de cliente.
 - **Decisão:** no go-live, a produção fica numa organização ou projeto Neon separado, na conta de produção. A chave de API do staging não alcança a produção.
 
