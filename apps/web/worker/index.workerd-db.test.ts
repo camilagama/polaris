@@ -48,8 +48,8 @@ interface Organization {
 }
 
 interface Fixture {
-  /** The login of each Hyperdrive and the group role it belongs to. */
-  logins: Record<Binding, { group: string; login: string }>;
+  /** The login of each Hyperdrive and every role it is meant to belong to (its own group, and what that group itself includes). */
+  logins: Record<Binding, { groups: string[]; login: string }>;
   organizations: { a: Organization; b: Organization };
   /** Events the outbox holds, made by the gate. */
   events: Record<
@@ -66,17 +66,6 @@ interface Fixture {
 }
 
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
-const GROUPS = [
-  "polaris_admin_runtime",
-  "polaris_auth_runtime",
-  "polaris_billing_runtime",
-  "polaris_catalog_runtime",
-  "polaris_media_cleanup_runtime",
-  "polaris_onboarding_runtime",
-  "polaris_outbox_runtime",
-  "polaris_pr11_runtime",
-  "polaris_privacy_runtime",
-] as const;
 const HYPERDRIVES: Binding[] = [
   "AUTH_HYPERDRIVE",
   "BILLING_HYPERDRIVE",
@@ -119,6 +108,17 @@ function recording() {
   };
 }
 
+/** The events the Worker logged (`event` and its fields), read from the console: what a job or a consumer decided. */
+function loggedEvents() {
+  const spies = (["debug", "error", "info", "log", "warn"] as const).map(
+    (level) => vi.spyOn(console, level).mockImplementation(() => undefined)
+  );
+  return () =>
+    spies.flatMap((spy) =>
+      spy.mock.calls.map(([entry]) => entry as Record<string, unknown>)
+    );
+}
+
 async function runScheduled(cron: string, bindings: WorkerBindings) {
   await worker.scheduled?.(createScheduledController({ cron }), bindings);
 }
@@ -157,11 +157,13 @@ describe("the fetch of the web worker", () => {
     }
   });
 
-  it("refuses a call to the API without a session before it reaches the database", async () => {
+  it("refuses a real procedure of the API without a session", async () => {
     const response = await exports.default.fetch(
-      "https://web.test/rpc/anything",
+      "https://web.test/rpc/category/create",
       {
-        body: "{}",
+        body: JSON.stringify({
+          json: { name: "Camisas", organizationId: "org-1" },
+        }),
         headers: {
           "content-type": "application/json",
           origin: "https://web.test",
@@ -169,16 +171,39 @@ describe("the fetch of the web worker", () => {
         method: "POST",
       }
     );
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(response.status).toBeLessThan(500);
+    expect(response.status).toBe(401);
+  });
+
+  it("refuses a state-changing request from another origin, before any procedure", async () => {
+    const response = await exports.default.fetch(
+      "https://web.test/rpc/category/create",
+      {
+        body: JSON.stringify({
+          json: { name: "Camisas", organizationId: "org-1" },
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: "https://evil.example",
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("answers a visitor without a cookie that there is no session, through the authentication role", async () => {
+    const response = await exports.default.fetch(
+      "https://web.test/api/auth/get-session",
+      { headers: { origin: "https://web.test" } }
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toBeNull();
   });
 
   it("does not run the sign-in without its secret (fails closed, never unconfigured)", async () => {
-    const response = await exports.default.fetch(
-      "https://web.test/api/auth/get-session",
-      {
-        headers: { origin: "https://web.test" },
-      }
+    const response = await worker.fetch(
+      new Request("https://web.test/api/auth/get-session"),
+      bindingsWith({ BETTER_AUTH_SECRET: undefined })
     );
     expect(response.status).toBe(503);
   });
@@ -193,14 +218,26 @@ describe("the Hyperdrive bindings of the web worker", () => {
         maxConnections: 1,
       });
       try {
-        const { rows } = await pool.query<{ login: string; groups: string[] }>(
-          `SELECT current_user AS login,
-                ARRAY(SELECT g FROM unnest($1::text[]) AS g WHERE pg_has_role(current_user, g, 'member') ORDER BY g) AS groups`,
-          [GROUPS]
+        const { rows } = await pool.query<{
+          flags: boolean[];
+          groups: string[];
+          login: string;
+        }>(
+          `WITH RECURSIVE granted(role_id) AS (
+             SELECT oid FROM pg_roles WHERE rolname = current_user
+             UNION
+             SELECT member.roleid FROM pg_auth_members AS member JOIN granted ON member.member = granted.role_id
+           )
+           SELECT current_user AS login,
+                  ARRAY(SELECT rolname::text FROM pg_roles JOIN granted ON granted.role_id = pg_roles.oid
+                         WHERE rolname <> current_user AND rolname NOT LIKE 'pg\\_%' ORDER BY rolname) AS groups,
+                  (SELECT ARRAY[rolsuper, rolbypassrls, rolcreaterole, rolcreatedb] FROM pg_roles WHERE rolname = current_user) AS flags`
         );
         expect(rows[0]?.login).toBe(expected.login);
-        // exactly the group of the binding: a binding wired to the wrong login would show another one, or two
-        expect(rows[0]?.groups).toEqual([expected.group]);
+        // every role it belongs to, however far: exactly the roles of the binding (a binding wired to the wrong
+        // login, or a login that gained another group or an owner role, would show)
+        expect(rows[0]?.groups).toEqual(expected.groups);
+        expect(rows[0]?.flags).toEqual([false, false, false, false]);
       } finally {
         await pool.end();
       }
@@ -278,42 +315,67 @@ describe("the other bindings of the web worker", () => {
 });
 
 describe("the scheduled handler of the web worker", () => {
-  it("the outbox lane sends the pending events to the queue of their type, and the gate finds them dispatched", async () => {
+  it("the outbox lane sends the pending events to the queue of their type, once per window", async () => {
     const critical = recording();
     const standard = recording();
     const media = recording();
-    await runScheduled(
-      "19 * * * *",
-      bindingsWith({
-        QUEUE_CRITICAL: critical.producer,
-        QUEUE_DEFAULT: standard.producer,
-        QUEUE_MEDIA: media.producer,
-      })
-    );
+    const events = loggedEvents();
+    const bindings = bindingsWith({
+      QUEUE_CRITICAL: critical.producer,
+      QUEUE_DEFAULT: standard.producer,
+      QUEUE_MEDIA: media.producer,
+    });
+    await runScheduled("19 * * * *", bindings);
     const { dispatchExport, dispatchRenewal } = fixture.events;
     expect(standard.sent).toEqual([{ ...dispatchExport, attempt: 1 }]);
     expect(critical.sent).toEqual([{ ...dispatchRenewal, attempt: 1 }]);
     expect(media.sent).toEqual([]);
+    expect(
+      events().filter((entry) => entry.event === "outbox_dispatch_complete")
+    ).toHaveLength(1);
+
+    // the same window again: the lease is refused, so the dispatcher does not even run
+    await runScheduled("19 * * * *", bindings);
+    const skipped = events().filter(
+      (entry) => entry.event === "scheduled_job_skipped"
+    );
+    expect(skipped.map((entry) => entry.job)).toEqual(["outbox.dispatch"]);
+    expect(
+      events().filter((entry) => entry.event === "outbox_dispatch_complete")
+    ).toHaveLength(1);
+    expect(standard.sent).toHaveLength(1);
+    expect(critical.sent).toHaveLength(1);
   });
 
   it("the maintenance lane runs its four jobs, and one that cannot reach its database fails alone", async () => {
+    const events = loggedEvents();
     // the sign-in lock's database is down: its job fails, the other three finish, and the cron shows the failure
     await expect(
       runScheduled("17 * * * *", bindingsWith({ AUTH_HYPERDRIVE: CLOSED }))
     ).rejects.toThrow();
+    expect(
+      events().filter((entry) => entry.event === "scheduled_job_skipped")
+    ).toEqual([]);
+    expect(
+      events().map((entry) => entry.event),
+      JSON.stringify(events().filter((entry) => entry.outcome === "failure"))
+    ).toContain("billing_maintenance_complete");
     // the next tick finds only that job owed (the others covered their window) and it finishes
     await expect(
       runScheduled("17 * * * *", bindingsWith())
     ).resolves.toBeUndefined();
-  });
-
-  it("a tick of the lane does nothing twice in the same window", async () => {
-    const standard = recording();
-    await runScheduled(
-      "19 * * * *",
-      bindingsWith({ QUEUE_DEFAULT: standard.producer })
-    );
-    expect(standard.sent).toEqual([]);
+    const skipped = events()
+      .filter((entry) => entry.event === "scheduled_job_skipped")
+      .map((entry) => entry.job)
+      .sort();
+    expect(skipped).toEqual([
+      "billing.maintenance",
+      "media.maintenance",
+      "privacy.maintenance",
+    ]);
+    expect(
+      events().filter((entry) => entry.event === "auth_login_lock_expired")
+    ).toHaveLength(1);
   });
 });
 
@@ -324,40 +386,72 @@ describe("the queue handler of the web worker", () => {
     closureNoticeRetry,
     closureNoticeWrongQueue,
   } = fixture.events;
-  const deadLetters = recording();
-  const bindings = () => bindingsWith({ QUEUE_DLQ: deadLetters.producer });
 
-  it("processes an event the outbox holds, and acknowledges a second delivery without processing it again", async () => {
+  /** The notices the consumer sends to the dead-letter queue for a message it refuses for good, with what it answered. */
+  async function refusals() {
+    const deadLetters = recording();
+    const bindings = bindingsWith({ QUEUE_DLQ: deadLetters.producer });
+    const invalid = await deliver(
+      "polaris-default-local",
+      [{ body: { not: "an envelope" }, id: "msg-invalid" }],
+      bindings
+    );
+    // a valid event on the queue of another weight
+    const misrouted = await deliver(
+      "polaris-critical-local",
+      [{ body: closureNoticeWrongQueue, id: "msg-misrouted" }],
+      bindings
+    );
+    return { deadLetters: deadLetters.sent, invalid, misrouted };
+  }
+
+  it("processes an event the outbox holds, and a second delivery of it is acknowledged without running the handler again", async () => {
+    const events = loggedEvents();
     const first = await deliver(
       "polaris-default-local",
       [{ body: closureNoticeDone, id: "msg-done" }],
-      bindings()
+      bindingsWith()
     );
     expect(first.explicitAcks).toEqual(["msg-done"]);
     expect(first.retryMessages).toEqual([]);
+    const handled = () =>
+      events().filter((entry) => entry.event === "closure_notice_not_due");
+    expect(handled()).toHaveLength(1);
     const second = await deliver(
       "polaris-default-local",
       [{ attempts: 2, body: closureNoticeDone, id: "msg-done-again" }],
-      bindings()
+      bindingsWith()
     );
     expect(second.explicitAcks).toEqual(["msg-done-again"]);
+    expect(handled()).toHaveLength(1);
+    expect(
+      events().filter((entry) => entry.event === "queue_message_duplicate")
+    ).toHaveLength(1);
   });
 
   it("acknowledges and drops an event the outbox does not hold (nothing runs on the envelope alone)", async () => {
+    const deadLetters = recording();
+    const events = loggedEvents();
     const result = await deliver(
       "polaris-default-local",
       [{ body: fixture.forged, id: "msg-forged" }],
-      bindings()
+      bindingsWith({ QUEUE_DLQ: deadLetters.producer })
     );
     expect(result.explicitAcks).toEqual(["msg-forged"]);
     expect(deadLetters.sent).toEqual([]);
+    expect(
+      events().filter((entry) => entry.event === "closure_notice_not_due")
+    ).toEqual([]);
+    expect(
+      events().filter((entry) => entry.event === "queue_message_unknown_event")
+    ).toHaveLength(1);
   });
 
   it("acknowledges a failure a retry cannot fix, and lets the key go", async () => {
     const result = await deliver(
       "polaris-default-local",
       [{ body: closureNoticePermanent, id: "msg-permanent" }],
-      bindings()
+      bindingsWith()
     );
     expect(result.explicitAcks).toEqual(["msg-permanent"]);
     expect(result.retryMessages).toEqual([]);
@@ -367,10 +461,7 @@ describe("the queue handler of the web worker", () => {
     const down = await deliver(
       "polaris-default-local",
       [{ body: closureNoticeRetry, id: "msg-retry" }],
-      bindingsWith({
-        PRIVACY_HYPERDRIVE: CLOSED,
-        QUEUE_DLQ: deadLetters.producer,
-      })
+      bindingsWith({ PRIVACY_HYPERDRIVE: CLOSED })
     );
     expect(down.explicitAcks).toEqual([]);
     // the delay is the consumer's own (consumer.test.ts); the harness reports which message was asked back
@@ -380,37 +471,25 @@ describe("the queue handler of the web worker", () => {
     const back = await deliver(
       "polaris-default-local",
       [{ attempts: 2, body: closureNoticeRetry, id: "msg-retry" }],
-      bindings()
+      bindingsWith()
     );
     expect(back.explicitAcks).toEqual(["msg-retry"]);
     expect(back.retryMessages).toEqual([]);
   });
 
   it("sends a notice to the dead-letter queue for a message it refuses for good, and acknowledges it", async () => {
-    const result = await deliver(
-      "polaris-default-local",
-      [{ body: { not: "an envelope" }, id: "msg-invalid" }],
-      bindings()
-    );
-    expect(result.explicitAcks).toEqual(["msg-invalid"]);
-    expect(result.retryMessages).toEqual([]);
-    expect(deadLetters.sent).toHaveLength(1);
-    expect(deadLetters.sent[0]).toMatchObject({
+    const { deadLetters, invalid, misrouted } = await refusals();
+    expect(invalid.explicitAcks).toEqual(["msg-invalid"]);
+    expect(invalid.retryMessages).toEqual([]);
+    expect(misrouted.explicitAcks).toEqual(["msg-misrouted"]);
+    expect(misrouted.retryMessages).toEqual([]);
+    expect(deadLetters).toHaveLength(2);
+    expect(deadLetters[0]).toMatchObject({
       cause: "invalid_envelope",
       kind: "polaris.dead_letter",
       messageId: "msg-invalid",
     });
-  });
-
-  it("refuses a valid event that arrives on the queue of another weight", async () => {
-    const result = await deliver(
-      "polaris-critical-local",
-      [{ body: closureNoticeWrongQueue, id: "msg-misrouted" }],
-      bindings()
-    );
-    expect(result.explicitAcks).toEqual(["msg-misrouted"]);
-    expect(deadLetters.sent).toHaveLength(2);
-    expect(deadLetters.sent[1]).toMatchObject({
+    expect(deadLetters[1]).toMatchObject({
       cause: "wrong_queue",
       eventId: closureNoticeWrongQueue.eventId,
       type: "organization.closure_notice",
@@ -418,22 +497,21 @@ describe("the queue handler of the web worker", () => {
   });
 
   it("turns each notice of the dead-letter queue into an incident, and acknowledges it only after", async () => {
+    const { deadLetters } = await refusals();
     const result = await deliver(
       "polaris-dlq-local",
-      deadLetters.sent.map((body, index) => ({
-        body,
-        id: `msg-dead-${index}`,
-      })),
-      bindings()
+      deadLetters.map((body, index) => ({ body, id: `msg-dead-${index}` })),
+      bindingsWith()
     );
     expect(result.explicitAcks).toEqual(["msg-dead-0", "msg-dead-1"]);
     expect(result.retryMessages).toEqual([]);
   });
 
   it("keeps a notice for retry when the database that records it is down", async () => {
+    const { deadLetters } = await refusals();
     const result = await deliver(
       "polaris-dlq-local",
-      [{ body: deadLetters.sent[0], id: "msg-dead-down" }],
+      [{ body: deadLetters[0], id: "msg-dead-down" }],
       bindingsWith({ OUTBOX_HYPERDRIVE: CLOSED })
     );
     expect(result.explicitAcks).toEqual([]);

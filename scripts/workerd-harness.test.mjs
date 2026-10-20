@@ -227,6 +227,29 @@ describe("workerd harness discovery", () => {
     }
   });
 
+  it("lists, in each database project, every Hyperdrive binding of the app's wrangler file (one that is not listed would keep the app's own connection string, outside the guard)", () => {
+    const BINDING = /"binding":\s*"(\w*HYPERDRIVE)"/g;
+    const LISTED = /(?<!\w)(\w*HYPERDRIVE)(?!\w)/g;
+    for (const app of ["web", "catalog"]) {
+      const wrangler = readFileSync(
+        join(root, "apps", app, "wrangler.jsonc"),
+        "utf8"
+      );
+      const config = readFileSync(
+        join(root, "apps", app, "vitest.workers-db.config.ts"),
+        "utf8"
+      );
+      const declared = new Set(
+        [...wrangler.matchAll(BINDING)].map(([, name]) => name)
+      );
+      const listed = new Set(
+        [...config.matchAll(LISTED)].map(([, name]) => name)
+      );
+      expect(declared.size).toBeGreaterThan(0);
+      expect(listed, app).toEqual(declared);
+    }
+  });
+
   it("keeps the database projects out of `bun run test` and the node project away from both", () => {
     expect(rootConfig).not.toContain("workers-db");
     expect(rootConfig).toContain('"**/*.workerd.test.ts"');

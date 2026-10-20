@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createDatabase } from "../src/client";
 import { isLocalGateHost } from "./gate-hosts";
+import { assertDisposableEnvironment } from "./gate-target";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -28,15 +29,24 @@ const expectedDatabase =
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
 
-/** The Hyperdrive binding of the Worker, the group role its login belongs to, and a prefix for the login's name. */
+/**
+ * The Hyperdrive binding of the Worker, the group role its login is granted, and a prefix for the login's name. The
+ * roles the login ends up in, however far, are the group and what the group itself includes: only the privacy role
+ * includes another (the reader of a closed organization's export, ADR 0081), and the test fails on any other.
+ */
 const BINDINGS = [
-  ["AUTH_HYPERDRIVE", "polaris_auth_runtime", "auth"],
-  ["BILLING_HYPERDRIVE", "polaris_billing_runtime", "billing"],
-  ["HYPERDRIVE", runtimeRole, "tenant"],
-  ["MEDIA_CLEANUP_HYPERDRIVE", "polaris_media_cleanup_runtime", "media"],
-  ["ONBOARDING_HYPERDRIVE", "polaris_onboarding_runtime", "onboarding"],
-  ["OUTBOX_HYPERDRIVE", "polaris_outbox_runtime", "outbox"],
-  ["PRIVACY_HYPERDRIVE", "polaris_privacy_runtime", "privacy"],
+  ["AUTH_HYPERDRIVE", "polaris_auth_runtime", "auth", []],
+  ["BILLING_HYPERDRIVE", "polaris_billing_runtime", "billing", []],
+  ["HYPERDRIVE", runtimeRole, "tenant", []],
+  ["MEDIA_CLEANUP_HYPERDRIVE", "polaris_media_cleanup_runtime", "media", []],
+  ["ONBOARDING_HYPERDRIVE", "polaris_onboarding_runtime", "onboarding", []],
+  ["OUTBOX_HYPERDRIVE", "polaris_outbox_runtime", "outbox", []],
+  [
+    "PRIVACY_HYPERDRIVE",
+    "polaris_privacy_runtime",
+    "privacy",
+    ["polaris_closed_export_reader"],
+  ],
 ] as const;
 const MAINTENANCE_JOBS = [
   "auth.login_lock_expiry",
@@ -78,6 +88,8 @@ async function run() {
   const tests: string[] = [];
 
   try {
+    // a database marked as staging, production or restore drill is refused, also when the gate runs outside the runner
+    await assertDisposableEnvironment(owner.pool);
     const server = await owner.pool.query<{
       database_name: string;
       server_version: string;
@@ -95,25 +107,29 @@ async function run() {
     assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
 
     // ------------------------------------------------- what the earlier gates left behind must not reach the Worker
-    // their events and exports would be claimed by the dispatcher and the privacy job, and a lane that ran already covers its window
+    // their events, exports and billing events would be claimed by the dispatcher and the jobs, and a lane that ran already covers its window
     await owner.pool.query(
       "UPDATE public.event_outbox SET status = 'dispatched', locked_until = NULL, dispatched_at = now() WHERE status = 'pending'"
     );
     await owner.pool.query(
       "UPDATE public.data_exports SET status = 'failed', error_code = 'gate_cleanup', locked_until = NULL WHERE status IN ('requested', 'running')"
     );
+    // the billing gates leave provider events received or failed: the billing job would retry them, and fail on what no longer has its fixtures
+    await owner.pool.query(
+      "UPDATE public.billing_events SET status = 'ignored', outcome_code = 'not_applicable', processed_at = now() WHERE status IN ('received', 'failed', 'unresolved')"
+    );
     await owner.pool.query("DELETE FROM public.scheduled_job_state");
 
     // ------------------------------------------------- fixtures
-    const loginsByBinding: Record<string, { group: string; login: string }> =
+    const loginsByBinding: Record<string, { groups: string[]; login: string }> =
       {};
     const urls: Record<string, string> = {};
-    for (const [binding, group, prefix] of BINDINGS) {
+    for (const [binding, group, prefix, included] of BINDINGS) {
       // biome-ignore lint/performance/noAwaitInLoops: one login at a time, for a clear failure
       const url = await logins.login(group, `polaris_wkw_${prefix}`);
       urls[`POLARIS_WEB_WORKER_${binding}_URL`] = url;
       loginsByBinding[binding] = {
-        group,
+        groups: [...included, group].sort(),
         login: decodeURIComponent(new URL(url).username),
       };
     }
@@ -232,6 +248,12 @@ async function run() {
       "organization.closure_notice"
     );
 
+    // the maintenance lane writes events of its own (the notices of closures the earlier gates left): only what existed before counts
+    const startedAt = (
+      await owner.pool.query<{ at: Date }>("SELECT clock_timestamp() AS at")
+    ).rows[0]?.at;
+    assert.ok(startedAt);
+
     // ------------------------------------------------- the Worker, through its own handlers
     const result = await runWorkerdVitest("vitest.web-worker.config.ts", {
       ...urls,
@@ -249,7 +271,11 @@ async function run() {
           ? result.lines
           : result.digest;
       for (const line of shown) {
-        console.error(line.slice(0, 220));
+        console.error(
+          process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
+            ? line
+            : line.slice(0, 220)
+        );
       }
       throw new Error(
         "The Web Worker suite failed inside workerd (the lines above)."
@@ -277,15 +303,16 @@ async function run() {
       Number(
         (
           await owner.pool.query<{ n: string }>(
-            "SELECT count(*)::text AS n FROM public.event_outbox WHERE status = 'pending'"
+            "SELECT count(*)::text AS n FROM public.event_outbox WHERE status = 'pending' AND created_at < $1",
+            [startedAt]
           )
         ).rows[0]?.n
       ),
       0,
-      "nothing is left pending"
+      "nothing that existed before the run is left pending"
     );
     tests.push(
-      "the outbox lane dispatched the two pending events and left nothing pending"
+      "the outbox lane dispatched the two pending events and left nothing pending that existed before"
     );
 
     const jobs = await owner.pool.query<{

@@ -5,8 +5,9 @@ import type { AdminPool } from "./sales-gate-support";
 import { temporaryRuntimeUrl } from "./sales-gate-support";
 
 /**
- * What the gates of the Workers harness (`admin-worker`, `web-worker`, `catalog-worker`) share: the temporary
+ * What the gates of the Workers harness with a database (`web-worker`, `catalog-worker`) share: the temporary
  * database logins, and the Vitest run of a root config inside `workerd` with only the environment it needs.
+ * (`admin-worker` predates it and keeps its own copy.)
  */
 export const repositoryRoot = fileURLToPath(
   new URL("../../..", import.meta.url)
@@ -20,7 +21,7 @@ const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 export interface TemporaryLogins {
   /** A login that is a member of `group`; returns the URL the Worker's Hyperdrive will carry. */
   login: (group: string, prefix: string) => Promise<string>;
-  /** Drops every login this object made; one that fails to go must not leave the others. */
+  /** Drops every login this object made; one that fails to go must not leave the others, and is named. */
   drop: () => Promise<void>;
 }
 
@@ -32,13 +33,14 @@ export function temporaryLogins(
   return {
     async drop() {
       for (const [role, group] of made) {
-        // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-        await owner.pool
-          .query(`REVOKE "${group}" FROM "${role}"`)
-          .catch(() => undefined);
-        await owner.pool
-          .query(`DROP ROLE IF EXISTS "${role}"`)
-          .catch(() => undefined);
+        try {
+          // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
+          await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+          await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
+        } catch {
+          // the login has a random password and the database is disposable, but a leftover is said, never silent
+          console.error(`gate cleanup: the login ${role} was not dropped`);
+        }
       }
     },
     async login(group, prefix) {
@@ -94,13 +96,18 @@ export function runWorkerdVitest(
         }
       }
     };
-    child.stdout.on("data", collect);
-    child.stderr.on("data", collect);
     const timer = setTimeout(() => {
       if (child.pid !== undefined) {
         process.kill(-child.pid, "SIGKILL");
       }
     }, VITEST_TIMEOUT_MS);
+    child.on("error", () => {
+      // the process did not start (no `bun` on the path): the gate fails and still drops its logins
+      clearTimeout(timer);
+      resolve({ code: 1, digest: ["the Vitest process did not start"], lines });
+    });
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
     child.on("close", (code) => {
       clearTimeout(timer);
       resolve({

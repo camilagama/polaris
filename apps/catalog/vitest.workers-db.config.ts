@@ -6,7 +6,7 @@ import { harnessHyperdrives } from "../../scripts/workerd-harness.mjs";
  * The Catalog Worker's server side, real, inside workerd, against the PostgreSQL of the `database` job (T-121b).
  * Started only by the `catalog-worker` gate (vitest.catalog-worker.config.ts at the root), which makes the login of
  * the public catalog role and the fixtures and hands them over through the environment; started alone it stops.
- * The wrangler file of the app is read as it is (its Hyperdrive, its bucket, its origin variable), and only the
+ * The wrangler file of the app is read as it is (its Hyperdrive and its bucket); the origin variable it leaves to each environment is given here, and only the
  * connection string is replaced, through the host guard.
  */
 function requiredEnvironment(name: string): string {

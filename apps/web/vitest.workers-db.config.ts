@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineProject } from "vitest/config";
 import { harnessHyperdrives } from "../../scripts/workerd-harness.mjs";
@@ -39,6 +40,10 @@ export default defineProject({
     cloudflareTest({
       miniflare: {
         bindings: {
+          // the origin the Worker accepts a state-changing request from, and a signing secret made at start-up (nothing
+          // stored): without them the Worker refuses every such request and every sign-in, as a deploy without them would
+          BETTER_AUTH_BASE_URL: "https://web.test",
+          BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
           TEST_WEB_FIXTURE: requiredEnvironment("POLARIS_WEB_WORKER_FIXTURE"),
         },
         // every connection goes through the host guard: loopback or the job's service, and only with CI=true

@@ -61,7 +61,7 @@ const TEXT_FILE = /\.(c|m)?(j|t)sx?$|\.jsonc?$|\.ya?ml$|\.toml$|\.sh$|\.md$/;
 const IMPORT = /(?:from|import)\s*\(?\s*["']([^"']+)["']/g;
 const TYPESCRIPT_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.|workerd-db|workerd\.test/;
-const SCRIPT_FILE = /\.(c|m)?js$/;
+const SCRIPT_FILE = /\.(c|m)?js$|\.json$/;
 const EXTENSIONS = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
 
 function walk(directory) {
@@ -244,12 +244,35 @@ describe("the Workers test fixtures stay in the test configuration", () => {
     }
   );
 
+  it("has no source of the Web and Catalog Workers that imports a test runtime (every file, not only the ones the entries reach)", () => {
+    const sources = repository.filter(
+      ({ path }) =>
+        (path.startsWith("apps/web/worker/") ||
+          path.startsWith("apps/catalog/src/")) &&
+        TYPESCRIPT_FILE.test(path) &&
+        !TEST_FILE.test(path)
+    );
+    expect(sources.length).toBeGreaterThan(10);
+    for (const { path, text } of sources) {
+      for (const [, specifier] of text.matchAll(IMPORT)) {
+        for (const forbidden of FORBIDDEN_SPECIFIERS) {
+          expect(specifier, `${path} imports ${specifier}`).not.toMatch(
+            forbidden
+          );
+        }
+      }
+    }
+  });
+
   describe("the deployable artifacts and the app directories", () => {
     for (const app of ["web", "catalog"]) {
-      const dist = join(root, "apps", app, "dist");
-      const built = existsSync(dist)
-        ? walk(dist).filter((path) => SCRIPT_FILE.test(path))
-        : [];
+      // `dist-bare` is the catalog's Worker of the browser tests, built only by its e2e run
+      const built = ["dist", "dist-bare"]
+        .map((name) => join(root, "apps", app, name))
+        .filter((directory) => existsSync(directory))
+        .flatMap((directory) =>
+          walk(directory).filter((path) => SCRIPT_FILE.test(path))
+        );
       // not built yet: `bun run build` runs before the tests in CI, and the check then has a bundle to read
       it.skipIf(built.length === 0)(
         `has a ${app} build without the simulation`,

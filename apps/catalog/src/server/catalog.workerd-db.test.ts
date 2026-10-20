@@ -62,23 +62,25 @@ describe("the Hyperdrive binding of the catalog worker", () => {
       maxConnections: 1,
     });
     try {
-      const { rows } = await pool.query<{ groups: string[]; login: string }>(
-        `SELECT current_user AS login,
-                ARRAY(SELECT g FROM unnest($1::text[]) AS g WHERE pg_has_role(current_user, g, 'member') ORDER BY g) AS groups`,
-        [
-          [
-            "polaris_admin_runtime",
-            "polaris_auth_runtime",
-            "polaris_billing_runtime",
-            "polaris_catalog_runtime",
-            "polaris_outbox_runtime",
-            "polaris_pr11_runtime",
-            "polaris_privacy_runtime",
-          ],
-        ]
+      const { rows } = await pool.query<{
+        flags: boolean[];
+        groups: string[];
+        login: string;
+      }>(
+        `WITH RECURSIVE granted(role_id) AS (
+           SELECT oid FROM pg_roles WHERE rolname = current_user
+           UNION
+           SELECT member.roleid FROM pg_auth_members AS member JOIN granted ON member.member = granted.role_id
+         )
+         SELECT current_user AS login,
+                ARRAY(SELECT rolname::text FROM pg_roles JOIN granted ON granted.role_id = pg_roles.oid
+                       WHERE rolname <> current_user AND rolname NOT LIKE 'pg\\_%' ORDER BY rolname) AS groups,
+                (SELECT ARRAY[rolsuper, rolbypassrls, rolcreaterole, rolcreatedb] FROM pg_roles WHERE rolname = current_user) AS flags`
       );
       expect(rows[0]?.login).toBe(fixture.catalogLogin);
+      // every role it belongs to, however far: exactly the public catalog group
       expect(rows[0]?.groups).toEqual(["polaris_catalog_runtime"]);
+      expect(rows[0]?.flags).toEqual([false, false, false, false]);
       // it reads no table: what a visitor sees comes only through the four functions
       await expect(
         pool.query("SELECT id FROM public.products")
@@ -140,10 +142,14 @@ describe("the reads of the catalog worker", () => {
 });
 
 describe("the image route of the catalog worker", () => {
-  const put = () => env.MEDIA_BUCKET.put(shown.storageKey, MASTER);
+  // the bucket holds the image of the store that is not shown too: a 404 for it can only come from the database
+  const put = async () => {
+    await env.MEDIA_BUCKET.put(shown.storageKey, MASTER);
+    await env.MEDIA_BUCKET.put(hidden.storageKey, MASTER);
+  };
 
   afterEach(async () => {
-    await env.MEDIA_BUCKET.delete(shown.storageKey);
+    await env.MEDIA_BUCKET.delete([shown.storageKey, hidden.storageKey]);
   });
 
   it("serves the master of an image that is shown, read from the private bucket", async () => {
@@ -193,10 +199,19 @@ describe("the image route of the catalog worker", () => {
     expect((await image(shown, { size: "9999" })).status).toBe(404);
   });
 
-  it("answers 404, without reading the bucket, for an image of a store that is not shown or of another store", async () => {
+  it("answers 404 for an image of a store that is not shown, and for an image under another store's address", async () => {
     await put();
     expect((await image(hidden)).status).toBe(404);
-    // the right image under the address of another store
+    // the shown store's address with the other store's product and image
+    const foreign = await serveCatalogMedia({
+      assetId: hidden.assetId,
+      ifNoneMatch: null,
+      productId: hidden.productId,
+      size: null,
+      slug: shown.slug,
+    });
+    expect(foreign.status).toBe(404);
+    // the shown store's image under the address of the store that is not shown
     const crossed = await serveCatalogMedia({
       assetId: shown.assetId,
       ifNoneMatch: null,
@@ -205,6 +220,8 @@ describe("the image route of the catalog worker", () => {
       slug: hidden.slug,
     });
     expect(crossed.status).toBe(404);
+    // and the right image is still served: the 404s are the database's answer, not a missing object
+    expect((await image(shown)).status).toBe(200);
   });
 
   it("answers 502 when the database is down, never a missing image", async () => {

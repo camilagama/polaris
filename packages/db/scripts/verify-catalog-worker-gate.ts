@@ -12,6 +12,7 @@ import {
   setPublicCatalogPublished,
 } from "../src/public-catalog-repository";
 import { isLocalGateHost } from "./gate-hosts";
+import { assertDisposableEnvironment } from "./gate-target";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -84,6 +85,8 @@ async function run() {
   let runtime: ReturnType<typeof createDatabase> | undefined;
 
   try {
+    // a database marked as staging, production or restore drill is refused, also when the gate runs outside the runner
+    await assertDisposableEnvironment(owner.pool);
     const server = await owner.pool.query<{
       database_name: string;
       server_version: string;
@@ -197,7 +200,11 @@ async function run() {
           ? result.lines
           : result.digest;
       for (const line of lines) {
-        console.error(line.slice(0, 220));
+        console.error(
+          process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
+            ? line
+            : line.slice(0, 220)
+        );
       }
       throw new Error(
         "The Catalog Worker suite failed inside workerd (the lines above)."
@@ -233,9 +240,12 @@ async function run() {
   } finally {
     try {
       await runtime?.pool.end();
-      await logins.drop();
     } finally {
-      await owner.pool.end();
+      try {
+        await logins.drop();
+      } finally {
+        await owner.pool.end();
+      }
     }
   }
 }
