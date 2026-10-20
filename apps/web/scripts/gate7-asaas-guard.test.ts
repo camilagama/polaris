@@ -165,10 +165,21 @@ describe("the database checks before connecting", () => {
     `${remote}?hostaddr=10.0.0.1`,
     `${remote}?options=-c%20polaris.environment%3Dstaging`,
     `${remote}?service=prod`,
+    `${remote}?port=6543`,
+    `${remote}?database=other`,
+    `${remote}?sslmode=require&user=postgres`,
   ])("refuses %s, which connects elsewhere or fakes the marker", (url) => {
     expect(refusal(() => assertGate7DatabaseUrl(url)).code).toBe(
       "gate7_database_url_invalid"
     );
+  });
+
+  it("accepts the TLS parameters of a Neon URL", () => {
+    expect(() =>
+      assertGate7DatabaseUrl(
+        `${remote}?sslmode=require&channel_binding=require`
+      )
+    ).not.toThrow();
   });
 
   it("refuses a staging marker of the session alone, and a session that hides a protected one", () => {

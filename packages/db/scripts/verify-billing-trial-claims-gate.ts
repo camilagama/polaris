@@ -1303,7 +1303,7 @@ async function main() {
       await failing.close();
     }
 
-    // -------- 9. a trial no reservation paid for is settled; an idle setup ends (PR 3)
+    // -------- 11. a trial no reservation paid for is settled; an idle setup ends (PR 3)
     {
       /** A checkout paid after its person took the reservation elsewhere: an unresolved fact. */
       const unclaimed = async (label: string) => {
@@ -1315,11 +1315,7 @@ async function main() {
         const sub = `sub_${label.replaceAll(" ", "_")}_${run}`;
         await billing.attachProvider(owner.organizationId, "fake", ref);
         await abandon(owner.organizationId);
-        await billing.startTrial(
-          elsewhere.organizationId,
-          owner.userId,
-          at(0.1)
-        );
+        await billing.startTrial(moved.organizationId, owner.userId, at(0.1));
         const late = await deliver(ref, methodReady(at(0.2)), sub);
         assert.equal(late.status, "unresolved");
         assert.equal(late.outcomeCode, "trial_claim_missing");
@@ -1532,6 +1528,19 @@ async function main() {
         ),
         { provider: "fake", providerRef: `chk_first_${run}` }
       );
+      // a checkout a subscription came from was finished: it is not named as one to give up
+      await admin.pool.query(
+        "UPDATE public.organization_billing SET provider_subscription_id = $2 WHERE organization_id = $1",
+        [twice.organizationId, `sub_second_${run}`]
+      );
+      assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_third_${run}`
+        ),
+        null
+      );
       assert.equal(
         await billing.attachProvider(
           twice.organizationId,
@@ -1541,7 +1550,7 @@ async function main() {
         null
       );
       tests.push(
-        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person; and a new checkout's attachProvider names the reference it replaced (null for the first and for a repeat)"
+        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person; and a new checkout's attachProvider names the reference it replaced (null for the first, for a repeat and for a finished checkout)"
       );
     }
 

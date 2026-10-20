@@ -836,7 +836,10 @@ async function sweepOne(
 
 /**
  * How long an organization may stay setting up its trial (`trial_setup`) with
- * nothing happening before the setup counts as abandoned. The hosted checkout
+ * nothing happening before the setup counts as abandoned. "Nothing happening"
+ * is read from `updated_at`, which every write of the record moves (the opt-in,
+ * the link of a checkout, a fact that changes it): the time counts from the
+ * last of them, never less than from the opt-in. The hosted checkout
  * expires within the hour, so after this nobody can still finish it; without
  * the end, the person's reservation would stay held there and every other
  * organization of the person would get `trial_in_progress` (ADR 0101).
@@ -1195,8 +1198,11 @@ export function createBillingStore(
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [organizationId, provider, providerRef]
         );
-        // the checkout it replaces may still be open at the provider: the caller gives it up
-        return row.provider && row.provider_ref
+        // the checkout it replaces may still be open at the provider: the caller gives
+        // it up. One that a subscription already came from was finished: nothing to give up
+        return row.provider &&
+          row.provider_ref &&
+          row.provider_subscription_id === null
           ? { provider: row.provider, providerRef: row.provider_ref }
           : null;
       });
@@ -1526,6 +1532,11 @@ export function createBillingStore(
         return "not_pending";
       }
       return await inTransaction(pool, async (client) => {
+        // the provider is called with the locks held: a provider that hangs must not
+        // keep the billing connection (and this organization's webhooks) waiting
+        await client.query(
+          "SET LOCAL idle_in_transaction_session_timeout = '60s'"
+        );
         // the event first, as `processEvent` locks it: a redelivery processed meanwhile waits here
         const found = await client.query<{
           organization_id: string | null;

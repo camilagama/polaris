@@ -55,7 +55,7 @@ O corpo do webhook, o recurso relido e o link do checkout nunca vão para o log;
 
 ## Gate 7 do cartão (script, só sandbox)
 
-`apps/web/scripts/gate7-asaas.ts` roda os comandos de cobrança contra o **sandbox** do Asaas e um banco de **staging** (marcador `polaris.environment = 'staging'`) ou local sem marcador. Ele recusa chave que não comece com `$aact_hmlg_`, host que não seja `api-sandbox.asaas.com` URL de banco com `host`, `hostaddr`, `service` ou `options` (antes de conectar), `DATABASE_URL` e `BILLING_DATABASE_URL` de bancos diferentes, e banco sem o marcador `staging` gravado (`ALTER DATABASE`) fora de `localhost` sem marcador. O link do checkout vai para um arquivo novo, criado antes do checkout, com permissão `0600`, fora do repositório (também pelo caminho real); nunca para o terminal, log, PR ou relatório.
+`apps/web/scripts/gate7-asaas.ts` roda os comandos de cobrança contra o **sandbox** do Asaas e um banco de **staging** (marcador `polaris.environment = 'staging'`) ou local sem marcador. Ele recusa chave que não comece com `$aact_hmlg_`, host que não seja `api-sandbox.asaas.com` URL de banco com qualquer parâmetro além de `sslmode` e `channel_binding` (antes de conectar), `DATABASE_URL` e `BILLING_DATABASE_URL` de bancos diferentes, e banco sem o marcador `staging` gravado (`ALTER DATABASE`) fora de `localhost` sem marcador. O link do checkout vai para um arquivo novo, criado antes do checkout, com permissão `0600`, fora do repositório (também pelo caminho real); nunca para o terminal, log, PR ou relatório.
 
 ```sh
 set -a; . ~/.secrets/pagamentos-sandbox.env; set +a   # valores entre aspas simples no arquivo

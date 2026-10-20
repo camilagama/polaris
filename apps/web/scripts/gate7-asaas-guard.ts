@@ -42,20 +42,27 @@ export function assertAsaasSandbox(environment: {
   }
 }
 
-/** Query parameters that make the driver connect somewhere else, or set the marker for the session. */
-const OVERRIDING_PARAMETERS = ["host", "hostaddr", "options", "service"];
+/**
+ * The only query parameters accepted: the driver reads any other one over the
+ * URL (`host`, `hostaddr`, `port`, `database`, `options`…), so the URL would no
+ * longer say where it connects or what the session's marker is.
+ */
+const ALLOWED_PARAMETERS: readonly string[] = ["sslmode", "channel_binding"];
 
 /**
- * Checked before any connection opens: a PostgreSQL URL whose host is the one
- * it shows (no `?host=`, `?hostaddr=` or `?service=`) and that sets no session
- * option (`?options=-c polaris.environment=…` would fake the marker).
+ * Checked before any connection opens: a PostgreSQL URL whose host, port and
+ * database are the ones it shows, and that sets no session option
+ * (`?options=-c polaris.environment=…` would fake the marker): only `sslmode`
+ * and `channel_binding` may follow it.
  */
 export function assertGate7DatabaseUrl(connectionString: string): URL {
   const url = URL.parse(connectionString);
   if (
     !(url && ["postgres:", "postgresql:"].includes(url.protocol)) ||
     url.hostname === "" ||
-    OVERRIDING_PARAMETERS.some((name) => url.searchParams.has(name))
+    [...url.searchParams.keys()].some(
+      (name) => !ALLOWED_PARAMETERS.includes(name)
+    )
   ) {
     throw new Gate7RefusedError("gate7_database_url_invalid");
   }
