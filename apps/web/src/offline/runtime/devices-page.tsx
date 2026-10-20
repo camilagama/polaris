@@ -26,16 +26,17 @@ import {
 } from "./devices-model";
 import "./devices-page.css";
 import { signInPath } from "../../lib/sign-in-path";
+import { loadAuthMethods } from "../../sign-in/sign-in-model";
 import { forgetSessionCaches } from "./leave-browser";
 import { useLogout } from "./logout-control";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
-import { leaveSessionOver } from "./session-over";
 import {
   markSessionEndedHere,
   markSessionOver,
   useSessionEndedHere,
 } from "./session-ended";
+import { leaveSessionOver } from "./session-over";
 
 const DEVICES_PATH = "/devices";
 /** A live but old login: "Sair" with the reason `recente`, then back to this screen. */
@@ -43,6 +44,29 @@ const DEVICES_SIGN_IN_AGAIN = signInPath({
   reason: "recente",
   returnTo: DEVICES_PATH,
 });
+
+/** "Trocar senha" lives beside the devices, and only with the password on (ADR 0100, AC-46). */
+function ChangePasswordLink() {
+  const [passwordOn, setPasswordOn] = useState(false);
+  useEffect(() => {
+    let current = true;
+    loadAuthMethods()
+      .then((methods) => {
+        if (current) {
+          setPasswordOn(methods?.emailPassword === true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+  return passwordOn ? (
+    <p className="categories-intro-copy">
+      <a href="/conta/seguranca">Trocar senha</a>
+    </p>
+  ) : null;
+}
 
 interface SignInAgainProps {
   onDismiss: () => void;
@@ -458,6 +482,7 @@ export function DevicesPage() {
             ou computador, revogue o aparelho: o servidor deixa de aceitar o que
             ele enviar.
           </p>
+          <ChangePasswordLink />
         </div>
       </section>
       {online ? null : (

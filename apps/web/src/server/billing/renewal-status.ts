@@ -5,8 +5,8 @@ import {
   type RenewalCancellationStatus,
   renewalCancellationStatus,
 } from "@polaris/domain/billing/renewal-cancellation";
-import { describeError } from "@polaris/observability/wide-event";
 import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { WorkerBindings } from "../environment";
 
 /**

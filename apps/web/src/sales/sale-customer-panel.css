@@ -62,8 +62,8 @@
   justify-content: space-between;
   padding-bottom: 0.5rem;
   font-size: 0.86rem;
-  border-bottom: 1px solid var(--ui-line);
   overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--ui-line);
 }
 
 .sale-history small {

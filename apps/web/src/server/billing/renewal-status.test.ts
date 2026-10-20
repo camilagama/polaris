@@ -47,14 +47,14 @@ const records: Record<
     link: checkout,
     record: { cancelAtPeriodEnd: false, state: "free" },
   },
-  // Woovi has its outbound port since cobrança PR 6: Polaris cancels it too
-  woovi: {
-    link: { ...subscribed, provider: "woovi" },
-    record: { cancelAtPeriodEnd: false, state: "active" },
-  },
   // a provider Polaris does not cancel through: the person cancels there
   other: {
     link: { ...subscribed, provider: "stripe" },
+    record: { cancelAtPeriodEnd: false, state: "active" },
+  },
+  // Woovi has its outbound port since cobrança PR 6: Polaris cancels it too
+  woovi: {
+    link: { ...subscribed, provider: "woovi" },
     record: { cancelAtPeriodEnd: false, state: "active" },
   },
 };

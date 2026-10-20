@@ -7,9 +7,9 @@ import {
   MAX_SALE_COUNT_TARGET,
 } from "@polaris/domain/goals/goal";
 import {
+  type MoneyInputError,
   moneyInputText,
   monthBounds,
-  type MoneyInputError,
   parseMoneyInput,
 } from "../expenses/expense-model";
 import { calendarDayInTimezone, isCalendarDate } from "../lib/dates";

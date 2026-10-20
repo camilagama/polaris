@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
+import { describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding } from "./environment";
 import {
   MEDIA_REMOVED_RETENTION_MS,

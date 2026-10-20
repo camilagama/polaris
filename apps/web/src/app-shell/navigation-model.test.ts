@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   documentTitle,
-  isSignInPath,
+  entryPageFor,
   NAV_ITEMS,
   OFFLINE_NAV_ITEMS,
   resolveRoute,
@@ -114,11 +114,26 @@ describe("menu items of the offline runtime", () => {
 
 describe("the sign-in route", () => {
   it("is recognised with or without a trailing slash, and only exactly", () => {
-    expect(isSignInPath("/entrar")).toBe(true);
-    expect(isSignInPath("/entrar/")).toBe(true);
+    expect(entryPageFor("/entrar")).toBe("sign-in");
+    expect(entryPageFor("/entrar/")).toBe("sign-in");
     for (const path of ["/", "/entrar/x", "/entrarr", "/sales", "/ENTRAR"]) {
-      expect(isSignInPath(path)).toBe(false);
+      expect(entryPageFor(path)).toBeNull();
     }
+  });
+
+  it("has the password pages beside it, each by its exact path (ADR 0100)", () => {
+    expect(entryPageFor("/criar-conta")).toBe("sign-up");
+    expect(entryPageFor("/esqueci-a-senha")).toBe("forgot-password");
+    expect(entryPageFor("/redefinir-senha")).toBe("reset-password");
+    expect(entryPageFor("/confirmar-email")).toBe("confirm-email");
+    expect(entryPageFor("/desbloquear")).toBe("unlock");
+    for (const path of ["/redefinir-senha/abc", "/toString", "/__proto__"]) {
+      expect(entryPageFor(path)).toBeNull();
+    }
+    expect(resolveRoute("/conta/seguranca")).toMatchObject({
+      id: "account-security",
+      kind: "page",
+    });
   });
 
   it("is not a page of the shell: it has no menu and no organization", () => {

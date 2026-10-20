@@ -1,11 +1,11 @@
-import { legalAcceptancePath } from "../lib/legal-acceptance";
-import { currentReturnPath } from "../lib/sign-in-path";
-import { useHasUnsentWork } from "../lib/unsent-work";
 import {
   ACCEPTANCE_NOTICE,
   ACCEPTANCE_NOTICE_KEEPS_INPUT,
   ACCEPTANCE_NOTICE_LINK,
 } from "../legal/acceptance/acceptance-texts";
+import { legalAcceptancePath } from "../lib/legal-acceptance";
+import { currentReturnPath } from "../lib/sign-in-path";
+import { useHasUnsentWork } from "../lib/unsent-work";
 
 /**
  * The fixed notice for "the legal acceptance is missing" (ADR 0100): the server refused a call of this

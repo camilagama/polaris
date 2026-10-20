@@ -1,5 +1,5 @@
-import { withClosedExportTransaction } from "@polaris/db/closed-export-reader";
 import { createDatabase } from "@polaris/db/client";
+import { withClosedExportTransaction } from "@polaris/db/closed-export-reader";
 import type { ClaimedDataExport } from "@polaris/db/privacy-maintenance";
 import {
   type TenantRequestTransaction,

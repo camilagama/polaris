@@ -4,8 +4,8 @@ import {
 } from "../../lib/current-organization-model";
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
-import { markSigningOut } from "../../lib/sign-out";
 import type { SignInPath } from "../../lib/sign-in-path";
+import { markSigningOut } from "../../lib/sign-out";
 
 /**
  * The session is over: the next person to open this browser must not be offered

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { WorkerBindings } from "../environment";
 import { createServerApp } from "../app";
+import type { WorkerBindings } from "../environment";
 import { authMethods } from "./auth-methods";
 
 const bindings = (extra: Partial<WorkerBindings> = {}) =>

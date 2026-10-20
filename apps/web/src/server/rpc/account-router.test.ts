@@ -1,7 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
+import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
@@ -175,10 +175,10 @@ function setup(
   return {
     accepted,
     client,
-    raw,
     getSyncCursor,
     listDevices,
     listSales,
+    raw,
     readAccepted,
     recordAcceptance,
     runSyncCommand,

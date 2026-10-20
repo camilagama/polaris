@@ -103,11 +103,11 @@ describe("RPC request guards", () => {
     expect(logger).toHaveBeenCalledOnce();
     const [entry] = logger.mock.calls[0] ?? [];
     expect(entry).toMatchObject({
-      errorCode: "57014",
       errorClass: "DatabaseError",
+      errorCode: "57014",
       event: "server_error",
-      route: "/rpc/category/create",
       httpStatus: 500,
+      route: "/rpc/category/create",
     });
     const serialized = JSON.stringify(entry);
     for (const secretValue of [
@@ -193,9 +193,9 @@ describe("RPC request guards", () => {
     expect(serverError).toMatchObject({
       errorClass: "Error",
       event: "server_error",
+      httpStatus: 500,
       method: "GET",
       route: "/api/auth/*",
-      httpStatus: 500,
     });
     for (const secretValue of ["abc123", "bob@example.com", "stack"]) {
       expect(serialized).not.toContain(secretValue);
@@ -224,7 +224,7 @@ describe("rate limit wiring", () => {
         path,
         {
           body: JSON.stringify({
-            json: { organizationId: "org-1", name: "x" },
+            json: { name: "x", organizationId: "org-1" },
           }),
           headers: {
             "cf-connecting-ip": "203.0.113.9",

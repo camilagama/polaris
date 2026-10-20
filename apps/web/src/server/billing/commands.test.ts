@@ -35,9 +35,9 @@ import {
   payerLockKey,
   reconcileOrganization,
   refundCurrentPeriod,
+  type StartPixCheckoutDependencies,
   settleUnclaimedTrials,
   startCardCheckout,
-  type StartPixCheckoutDependencies,
   startPixCheckout,
 } from "./commands";
 

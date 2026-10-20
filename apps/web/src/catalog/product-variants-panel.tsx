@@ -12,9 +12,9 @@ import {
   useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./product-variants-panel.css";
 
 const optionChoices: ReadonlyArray<

@@ -1,9 +1,14 @@
-import { logger } from "@polaris/observability/logger";
-import { describeError, isSqlState } from "@polaris/observability/wide-event";
 import { authSchema } from "@polaris/db/auth-schema";
 import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
 import type { createDatabase } from "@polaris/db/client";
 import { authSecurityAuditEvents } from "@polaris/db/security-audit-schema";
+import {
+  LEGAL_DOCUMENT_IDS,
+  LEGAL_DOCUMENTS,
+  type LegalDocumentId,
+} from "@polaris/domain/legal/legal-documents";
+import { logger } from "@polaris/observability/logger";
+import { describeError, isSqlState } from "@polaris/observability/wide-event";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -13,18 +18,7 @@ import {
   isAPIError,
 } from "better-auth/api";
 import type { GoogleOptions } from "better-auth/social-providers";
-import {
-  LEGAL_DOCUMENT_IDS,
-  LEGAL_DOCUMENTS,
-  type LegalDocumentId,
-} from "@polaris/domain/legal/legal-documents";
 import { isSafeAuthCallbackPath } from "../lib/return-path";
-import {
-  createDatabaseLoginLockStore,
-  type LoginLockQueryable,
-} from "./auth/login-lock";
-import { loginLockKey } from "./auth/login-lock-key";
-import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
   type AccessLogEvent,
   type AccessLogWriter,
@@ -33,6 +27,12 @@ import {
   requestIp,
   requestIpForSessionRow,
 } from "./auth/access-log";
+import {
+  createDatabaseLoginLockStore,
+  type LoginLockQueryable,
+} from "./auth/login-lock";
+import { loginLockKey } from "./auth/login-lock-key";
+import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
   normalizePassword,
   PasswordPolicyError,
@@ -937,6 +937,14 @@ export function createBetterAuth({
     baseURL,
     database: resolvedDatabase,
     databaseHooks: {
+      account: {
+        create: {
+          before: async (data) => ({ data: { ...data, idToken: null } }),
+        },
+        update: {
+          before: async (data) => ({ data: { ...data, idToken: null } }),
+        },
+      },
       session: {
         create: {
           after: async (session, hookContext) => {
@@ -951,14 +959,6 @@ export function createBetterAuth({
           },
         },
         update: {
-          // the session is extended once a day of use (`updateAge`): that is the daily record of access, with the
-          // IP of this request. The row takes the IP only when `/get-session` has seen the record made
-          before: (data, hookContext) => {
-            if (accessLogEnabled && data.expiresAt && hookContext) {
-              refreshing.add(hookContext);
-            }
-            return Promise.resolve();
-          },
           after: async (session, hookContext) => {
             if (!(session && hookContext && refreshing.delete(hookContext))) {
               return;
@@ -980,14 +980,14 @@ export function createBetterAuth({
               recordedSessionIps.set(session.id, ip);
             }
           },
-        },
-      },
-      account: {
-        create: {
-          before: async (data) => ({ data: { ...data, idToken: null } }),
-        },
-        update: {
-          before: async (data) => ({ data: { ...data, idToken: null } }),
+          // the session is extended once a day of use (`updateAge`): that is the daily record of access, with the
+          // IP of this request. The row takes the IP only when `/get-session` has seen the record made
+          before: (data, hookContext) => {
+            if (accessLogEnabled && data.expiresAt && hookContext) {
+              refreshing.add(hookContext);
+            }
+            return Promise.resolve();
+          },
         },
       },
       user: {

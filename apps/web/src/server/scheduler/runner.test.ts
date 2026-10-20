@@ -449,8 +449,8 @@ describe("a scheduler tick", () => {
       expect(logged).not.toContain("99999");
       expect(console.error).toHaveBeenCalledWith(
         expect.objectContaining({
-          errorCode: "23505",
           errorClass: "Error",
+          errorCode: "23505",
           event: "scheduled_job_run",
           job: "outbox.dispatch",
           outcome: "failure",

@@ -153,13 +153,13 @@ export interface RuntimeSnapshot {
    */
   expiredWhileOpen: boolean;
   lastSyncAt: string | null;
+  leaseExpiresAt: string | null;
   /**
    * The server refused the last call for lack of the legal acceptance (ADR 0100). It is not a refused
    * session: the collections, the lease and the queue stay as they are, nothing is rejected, and the
    * sync tries again at its usual moments; it clears once a sync goes through.
    */
   legalAcceptanceRequired: boolean;
-  leaseExpiresAt: string | null;
   online: boolean;
   phase: RuntimePhase;
   /** Why the runtime is unavailable or the last sync failed; null when fine. */
@@ -276,8 +276,8 @@ export class OfflineRuntime {
     dataVersion: 0,
     expiredWhileOpen: false,
     lastSyncAt: null,
-    legalAcceptanceRequired: false,
     leaseExpiresAt: null,
+    legalAcceptanceRequired: false,
     online: true,
     phase: "off",
     reason: null,

@@ -3,10 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { resolveRoute } from "../../app-shell/navigation-model";
 import { signOfflineLease } from "../../lib/offline-lease-token";
+import { logoutDestination } from "../../lib/sign-in-path";
 import type { LogoutWorkspace } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
-import { logoutDestination } from "../../lib/sign-in-path";
 import { discardAndLeave, startLogout } from "./logout-flow";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import {
@@ -23,8 +23,8 @@ const snapshot = (
   dataVersion: 0,
   expiredWhileOpen: false,
   lastSyncAt: null,
-  legalAcceptanceRequired: false,
   leaseExpiresAt: null,
+  legalAcceptanceRequired: false,
   online: true,
   phase: "ready",
   reason: null,

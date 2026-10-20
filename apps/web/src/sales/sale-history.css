@@ -173,8 +173,8 @@
 
 .sale-history-time {
   font-weight: 600;
-  color: var(--ui-muted);
   font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
 }
 
 .sale-badge.is-backdated {

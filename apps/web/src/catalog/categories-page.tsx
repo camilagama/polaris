@@ -12,8 +12,8 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
 import { legalAcceptanceMessage } from "../lib/rpc-error";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import "./categories-page.css";
 
 type CategoryListStatus = "active" | "archived" | "deleted";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 // every export at once, to scan all of the lines (a namespace import would defeat tree shaking in the app)
 const texts = await import("./sign-in-texts");
 const SEVENTY_TWO = /72/;

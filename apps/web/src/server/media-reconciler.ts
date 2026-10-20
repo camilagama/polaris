@@ -1,9 +1,9 @@
-import { logger } from "@polaris/observability/logger";
-import { describeError } from "@polaris/observability/wide-event";
 import type { MediaCleanupClient } from "@polaris/db/media-cleanup";
-import type { MediaBucketBinding } from "./environment";
 import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
 import { approvedRetention } from "@polaris/domain/privacy/retention";
+import { logger } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
+import type { MediaBucketBinding } from "./environment";
 import { isMediaObjectKey } from "./media-upload-command";
 
 const MEDIA_STAGING_PREFIX = "media/staging/v1/";

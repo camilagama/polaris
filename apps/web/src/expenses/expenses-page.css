@@ -1,18 +1,18 @@
 .expenses-page .expense-panel {
-  overflow: hidden;
   margin: 0 0 1.1rem;
+  overflow: hidden;
+  background: var(--ui-surface);
   border: 1px solid var(--ui-line);
   border-radius: 0.9rem;
-  background: var(--ui-surface);
   box-shadow: var(--ui-shadow);
 }
 
 .expense-panel-heading {
   display: flex;
-  min-height: 5.1rem;
+  gap: 1rem;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  min-height: 5.1rem;
   padding: 1.05rem 1.3rem;
   border-bottom: 1px solid var(--ui-line);
 }
@@ -62,12 +62,12 @@
   width: 100%;
   min-height: 2.8rem;
   padding: 0.65rem 0.8rem;
-  border: 1px solid var(--ui-line);
-  border-radius: 0.55rem;
-  color: var(--ui-ink);
-  background: var(--ui-surface);
   font: inherit;
   font-size: 0.94rem;
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 0.55rem;
 }
 
 .expense-field input[aria-invalid="true"] {
@@ -79,12 +79,12 @@
   width: 100%;
   min-height: 2.8rem;
   padding: 0.65rem 0.8rem;
-  border: 1px solid var(--ui-line);
-  border-radius: 0.55rem;
-  color: var(--ui-ink);
-  background: var(--ui-surface);
   font: inherit;
   font-size: 0.94rem;
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 0.55rem;
 }
 
 .expense-select[aria-invalid="true"] {
@@ -106,8 +106,8 @@
 .expense-filters {
   display: grid;
   grid-template-columns: minmax(0, 18rem) minmax(0, 1fr) auto;
-  align-items: end;
   gap: 0.8rem 1.2rem;
+  align-items: end;
   margin-bottom: 1.1rem;
 }
 
@@ -128,14 +128,14 @@
 
 .expense-summary {
   display: flex;
+  gap: 1rem;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
   padding: 0.9rem 1.1rem;
   margin-bottom: 0.4rem;
+  background: var(--ui-surface-muted);
   border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
-  background: var(--ui-surface-muted);
 }
 
 .expense-summary p {
@@ -179,8 +179,8 @@
 .expense-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
   gap: 0.6rem 1.2rem;
+  align-items: center;
   padding: 1rem 0.2rem;
 }
 
@@ -190,9 +190,9 @@
 
 .expense-card-title-row {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 0.6rem;
+  align-items: center;
 }
 
 .expense-card-title-row h3 {
@@ -230,8 +230,8 @@
 
 .expense-card-actions {
   display: flex;
-  align-items: center;
   gap: 0.4rem;
+  align-items: center;
 }
 
 .expense-empty-state {
@@ -253,9 +253,9 @@
 
 .expense-categories > summary {
   display: flex;
-  min-height: 4.4rem;
   flex-direction: column;
   justify-content: center;
+  min-height: 4.4rem;
   padding: 0.9rem 1.3rem;
   cursor: pointer;
 }
@@ -280,9 +280,9 @@
 
 .expense-checkbox {
   display: inline-flex;
-  min-height: 2.75rem;
-  align-items: center;
   gap: 0.55rem;
+  align-items: center;
+  min-height: 2.75rem;
   margin-bottom: 0.6rem;
   font-size: 0.88rem;
   cursor: pointer;
@@ -290,8 +290,8 @@
 
 .expense-checkbox input {
   width: 1.1rem;
-  min-height: 0;
   height: 1.1rem;
+  min-height: 0;
   padding: 0;
   accent-color: var(--ui-accent);
 }
@@ -322,15 +322,15 @@
 .expense-category-row,
 .expense-category-rename {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem 0.7rem;
+  align-items: center;
   padding: 0.55rem 0;
 }
 
 .expense-category-name {
-  min-width: 0;
   flex: 1 1 10rem;
+  min-width: 0;
   font-size: 0.92rem;
   overflow-wrap: anywhere;
 }
@@ -348,8 +348,8 @@
 .expense-category-form {
   display: grid;
   grid-template-columns: minmax(0, 16rem) minmax(0, 1fr) auto;
-  align-items: start;
   gap: 0.8rem 1.2rem;
+  align-items: start;
   padding-top: 1.1rem;
   border-top: 1px solid var(--ui-line);
 }
@@ -369,10 +369,10 @@
 
 .expense-rules-toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.4rem 1rem;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 0.6rem;
 }
 
@@ -381,11 +381,11 @@
 }
 
 .expense-rule-form-wrap {
-  overflow: hidden;
   margin-bottom: 1.1rem;
+  overflow: hidden;
+  background: var(--ui-surface-muted);
   border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
-  background: var(--ui-surface-muted);
 }
 
 .expense-rule-form-wrap h3 {
@@ -427,8 +427,8 @@
   }
 
   .expense-category-form > .primary-button {
-    margin-top: 0;
     justify-self: start;
+    margin-top: 0;
   }
 
   .expense-filters {
@@ -440,9 +440,9 @@
   }
 
   .expense-summary {
-    align-items: flex-start;
     flex-direction: column;
     gap: 0.5rem;
+    align-items: flex-start;
   }
 
   .expense-summary-meta {
@@ -464,13 +464,13 @@
   }
 
   .expense-card-actions {
+    flex-wrap: wrap;
     grid-row: 2;
     grid-column: 1;
-    flex-wrap: wrap;
   }
 
   .expense-panel-heading {
-    align-items: flex-start;
     flex-direction: column;
+    align-items: flex-start;
   }
 }

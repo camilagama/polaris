@@ -75,8 +75,8 @@ function createRpcClient(router = createRpcRouter()) {
   const app = createServerApp({ rpcRouter: router });
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
-    method: "POST",
     headers: { origin: "https://polaris.example.invalid" },
+    method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 

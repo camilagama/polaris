@@ -32,13 +32,13 @@ import {
   toLocalCustomerRow,
 } from "./local-customers";
 import "./customers-page.css";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import {
   type CustomerDraft,
   draftOfCustomer,
   emptyCustomerDraft,
   isCustomerDraftChanged,
 } from "./customer-draft";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
 
 type CustomerListStatus = "active" | "archived";
 type CustomerAction = "anonymize" | "archive" | "restore";
@@ -414,10 +414,10 @@ function CustomerForm({
 interface CustomerCardProps {
   customer: CustomerReadModel;
   isPending: boolean;
-  /** Why editing, archiving and restoring are unavailable for this customer, or null. */
-  lockedReason: string | null;
   /** Why archiving, restoring and anonymizing (not editing) are unavailable right now, or null. */
   lifecycleReason: string | null;
+  /** Why editing, archiving and restoring are unavailable for this customer, or null. */
+  lockedReason: string | null;
   onAnonymize: (customer: CustomerReadModel) => void;
   onArchive: (customer: CustomerReadModel) => void;
   onEdit: (customer: CustomerReadModel) => void;

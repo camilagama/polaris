@@ -12,6 +12,7 @@ export type NavId =
   | "sale";
 
 export type RouteId =
+  | "account-security"
   | "attention"
   | "categories"
   | "customers"
@@ -78,6 +79,12 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
     title: "Operações que precisam de atenção",
   },
   "/categories": { id: "categories", navId: "categories", title: "Categorias" },
+  // reached from Aparelhos, only with the password on (ADR 0100)
+  "/conta/seguranca": {
+    id: "account-security",
+    navId: "devices",
+    title: "Trocar senha",
+  },
   "/customers": { id: "customers", navId: "customers", title: "Clientes" },
   "/dashboard": { id: "dashboard", navId: "dashboard", title: "Resultado" },
   "/devices": { id: "devices", navId: "devices", title: "Aparelhos" },
@@ -129,9 +136,33 @@ export function resolveRoute(pathname: string): ResolvedRoute {
     : { kind: "not-found", title: "Página não encontrada" };
 }
 
-/** `/entrar` is the sign-in screen: it lives outside the shell, so it is not one of the routes above. */
-export function isSignInPath(pathname: string): boolean {
-  return (pathname.replace(trailingSlashes, "") || "/") === "/entrar";
+/**
+ * The pages of the sign-in group (ADR 0100): outside the shell, no menu, no organization, so they are
+ * not among the routes above. All but `/desbloquear` show the challenge, under their own CSP.
+ */
+export type EntryPageId =
+  | "confirm-email"
+  | "forgot-password"
+  | "reset-password"
+  | "sign-in"
+  | "sign-up"
+  | "unlock";
+
+const ENTRY_PAGES: Readonly<Record<string, EntryPageId>> = {
+  "/confirmar-email": "confirm-email",
+  "/criar-conta": "sign-up",
+  "/desbloquear": "unlock",
+  "/entrar": "sign-in",
+  "/esqueci-a-senha": "forgot-password",
+  "/redefinir-senha": "reset-password",
+};
+
+/** The sign-in page a pathname opens, or null. Exact paths only (a trailing slash is the same page). */
+export function entryPageFor(pathname: string): EntryPageId | null {
+  const normalized = pathname.replace(trailingSlashes, "") || "/";
+  return Object.hasOwn(ENTRY_PAGES, normalized)
+    ? (ENTRY_PAGES[normalized] ?? null)
+    : null;
 }
 
 export function documentTitle(title: string): string {

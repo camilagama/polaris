@@ -6,17 +6,17 @@ import {
   useMemo,
   useState,
 } from "react";
-import { focusLater } from "../lib/focus";
-import { calendarDayInTimezone } from "../lib/dates";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { calendarDayInTimezone } from "../lib/dates";
+import { focusLater } from "../lib/focus";
 import "./inventory-page.css";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   STOCK_ACTION_LABELS,
   STOCK_ACTIONS,
   type StockAction,
 } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
-import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   STOCK_FILTERS,
   type StockFilter,
@@ -75,9 +75,9 @@ function RowActions({ disabled, onOpen, row }: RowActionsProps) {
 
 interface StockItemProps {
   children: ReactNode;
-  panelOpen: boolean;
   onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   otherPanelOpen: boolean;
+  panelOpen: boolean;
   row: StockRow;
 }
 

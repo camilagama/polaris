@@ -105,7 +105,7 @@ describe("parseAuthMethods and loadAuthMethods", () => {
     null,
     "x",
     {},
-    { google: "yes", emailPassword: false },
+    { emailPassword: false, google: "yes" },
     { google: true },
   ])("refuses %j", (body) => {
     expect(parseAuthMethods(body)).toBeNull();

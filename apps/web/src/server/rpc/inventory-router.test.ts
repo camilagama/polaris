@@ -39,8 +39,8 @@ function createInventoryClient(router = createRpcRouter()) {
   const app = createServerApp({ rpcRouter: router });
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
-    method: "POST",
     headers: { origin: "https://polaris.example.invalid" },
+    method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
 
@@ -323,11 +323,11 @@ describe("inventory RPCs", () => {
     );
     let observedCapability = "";
     const router = createRpcRouter({
-      writeOffStock,
       withTenantRequestContext: (request: TenantContextRequest) => {
         observedCapability = request.capability;
         return request.operation({}, identity);
       },
+      writeOffStock,
     } as unknown as Parameters<typeof createRpcRouter>[0]);
     const client = createInventoryClient(router);
 
