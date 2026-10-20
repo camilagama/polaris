@@ -171,7 +171,7 @@ const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   closure_notice_not_unverified:
     "Nenhuma tentativa de envio do aviso de 7 dias encontrou o e-mail do dono sem verificação: com o e-mail dos avisos ligado, espere a tentativa ou reenvie o aviso.",
   closure_notice_owner_verified:
-    "O dono já verificou o e-mail depois da última tentativa de envio do aviso de 7 dias: reenvie o aviso em vez de dispensá-lo.",
+    "O dono já verificou o e-mail depois da última tentativa de envio do aviso de 7 dias: não dispense. O repasse envia o aviso que está devido.",
   closure_notice_owner_present:
     "A organização ainda tem dono ativo: a conta do dono não foi apagada. Reenvie o aviso ou use o motivo que corresponde ao caso.",
   closure_notice_not_due:

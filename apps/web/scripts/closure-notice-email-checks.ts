@@ -383,6 +383,52 @@ async function emailScenario(
     "the address of a closure notice is read only by closure_notice_recipient, executed by the authentication runtime alone: the e-mail of the notice's user, only while the notice is owed, by its ID and organization, and only when verified; its owner reads three columns of the users (never the name), and no other runtime reads an address"
   );
 
+  // whether the owner's e-mail is verified now, for the dismissal: a boolean, of the same owner, for the act of the support only
+  const unverifiedCheck = await owner.query<{
+    config: string[] | null;
+    owner_name: string;
+    returns: string;
+    security_definer: boolean;
+  }>(
+    `SELECT pg_catalog.pg_get_userbyid(proowner) AS owner_name, prosecdef AS security_definer, proconfig AS config,
+            pg_catalog.format_type(prorettype, NULL) AS returns
+       FROM pg_catalog.pg_proc WHERE oid = 'public.closure_notice_owner_unverified(uuid, text)'::regprocedure`
+  );
+  assert.deepEqual(unverifiedCheck.rows, [
+    {
+      config: ["search_path=pg_catalog, public, pg_temp"],
+      owner_name: "polaris_notice_recipient_owner",
+      returns: "boolean",
+      security_definer: true,
+    },
+  ]);
+  const unverifiedCallers = await owner.query<{ role: string }>(
+    `SELECT role FROM pg_catalog.unnest($1::text[]) AS role
+      WHERE pg_catalog.has_function_privilege(role, 'public.closure_notice_owner_unverified(uuid, text)', 'EXECUTE')
+      ORDER BY role`,
+    [
+      [
+        "polaris_admin_owner",
+        "polaris_admin_runtime",
+        "polaris_auth_runtime",
+        "polaris_billing_runtime",
+        "polaris_catalog_runtime",
+        "polaris_outbox_runtime",
+        "polaris_pr11_runtime",
+        "polaris_privacy_owner",
+        "polaris_privacy_runtime",
+      ],
+    ]
+  );
+  assert.deepEqual(
+    unverifiedCallers.rows.map((row) => row.role),
+    ["polaris_privacy_owner"],
+    "only the owner of the act of the support asks whether the e-mail is verified now"
+  );
+  tests.push(
+    "closure_notice_owner_unverified answers only a boolean (never the address), is a definer of the owner of the address with a fixed search_path, and only the owner of the act of the support executes it"
+  );
+
   // the consumer sends it under the notice's ID, marks it sent, and nothing of the owner goes anywhere else
   const provider = fakeProvider();
   assert.equal(
@@ -683,10 +729,40 @@ async function emailScenario(
   const sendable = await closed("sendable");
   await record();
   const sendableNotice = await owedOf(owner, sendable.organizationId);
+  // the owner changed both ways: an earlier d30 still owed to the owner of now, the latest d7 to one who left
+  const mixed = await closed("former owner latest");
+  await record();
+  const mixedLatest = await owedOf(owner, mixed.organizationId);
+  const current = `gate-${randomUUID()}`;
+  await owner.query(
+    'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
+    [current, "Dona atual", `${current}@example.invalid`]
+  );
+  await owner.query(
+    "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
+    [mixed.organizationId, current]
+  );
+  const mixedEarlier = (
+    await owner.query<{ id: string }>(
+      `INSERT INTO public.closure_notices (organization_id, closure_requested_at, milestone, due_at, user_id, recorded_at)
+       SELECT organization_id, requested_at, 'd30', requested_at + interval '60 days', $2, now() - interval '2 days'
+         FROM public.organization_closures WHERE organization_id = $1
+       ON CONFLICT ON CONSTRAINT closure_notices_cycle_milestone_unique
+       DO UPDATE SET skipped = false, user_id = EXCLUDED.user_id, recorded_at = EXCLUDED.recorded_at
+       RETURNING id`,
+      [mixed.organizationId, current]
+    )
+  ).rows[0]?.id;
+  assert.ok(mixedEarlier);
+  await owner.query(
+    "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
+    [mixed.organizationId, mixed.userId]
+  );
   const turns = [
     ...stuck,
     ...formerOwners,
     { noticeId: sendableNotice.id, organizationId: sendable.organizationId },
+    { noticeId: mixedLatest.id, organizationId: mixed.organizationId },
   ];
   await owner.query(
     "UPDATE public.closure_notices SET recorded_at = now() - interval '20 minutes' WHERE id = ANY($1::uuid[])",
@@ -703,19 +779,31 @@ async function emailScenario(
     ),
     "a notice owed to a user who left is never taken"
   );
+  // a cycle with an earlier notice owed to the owner of now is taken once: that one is settled, the latest handed over
+  assert.ok(owed.some((row) => row.noticeId === mixedLatest.id));
   assert.equal(
-    owed.filter((row) => stuck.some((turn) => turn.noticeId === row.noticeId))
-      .length,
-    19,
-    "the ones found not verified fill the rest of the batch"
+    (await rowsOf(owner, mixed.organizationId)).find(
+      (row) => row.id === mixedEarlier
+    )?.skipped,
+    true,
+    "the earlier notice owed to the owner of now is settled, so the support can send the d7 again"
   );
-  // the delivery finds them not verified again: they go to the end, and the one left out comes in
+  assert.ok(
+    !(await maintenance.listOwedClosureNotices(20)).some(
+      (row) => row.organizationId === mixed.organizationId
+    ),
+    "then nothing of it is owed to an owner, and it is not taken again"
+  );
+  // the delivery finds them not verified again: they go to the end, and the ones left out come in
   const leftOut = stuck.filter(
     (turn) => !owed.some((row) => row.noticeId === turn.noticeId)
   );
-  assert.equal(leftOut.length, 2);
+  assert.ok(
+    leftOut.length >= 2,
+    "21 stuck do not fit in a batch of 20 with the others"
+  );
   for (const row of owed) {
-    if (row.noticeId !== sendableNotice.id) {
+    if (stuck.some((turn) => turn.noticeId === row.noticeId)) {
       // biome-ignore lint/performance/noAwaitInLoops: each delivery reads its own address, in turn.
       await recipients.recipient(row.noticeId, row.organizationId);
     }
@@ -733,7 +821,7 @@ async function emailScenario(
     [turns.map((turn) => turn.noticeId)]
   );
   tests.push(
-    "the handover never takes a cycle whose latest notice is owed to a user who left, and takes the cycles by when a delivery last found the address not verified (never first): 21 notices that cannot go out now never keep the one that can out of a batch of 20, and the batch takes turns"
+    "the handover never takes a cycle with nothing owed to a user who is still an owner (one with an earlier notice owed to the owner of now is taken once, so that one is settled), and takes the cycles by when a delivery last found the address not verified (never first): 21 notices that cannot go out now never keep the one that can out of a batch of 20, and the batch takes turns"
   );
 
   // the act of the support: a new d7 of the cycle sent again, under a privacy case, with the audit; never an UPDATE

@@ -16,7 +16,7 @@
 --    writes the notices and their outbox events), executed only by the Admin owner.
 -- 3. The handover of the notices left unresolved while the e-mail was off (`list_owed_closure_notices`): of the notices
 --    of the current cycle still owed, the latest is handed to the privacy job to send, and the earlier ones are settled
---    `skipped`, so the owner never gets the old ones in a row. One owed to a user who left is not taken, and the ones
+--    `skipped`, so the owner never gets the old ones in a row. A cycle owed only to users who left is not taken, and the ones
 --    found not verified go to the end of the batch, so they never keep a notice that can go out from it.
 --
 -- Expand only (ADR 0096): three new columns (`reissue` with a default, `dismissed_at` and `unverified_at`), `user_id` nullable (a dismissed notice has none), the unique key
@@ -471,8 +471,8 @@ $function$;--> statement-breakpoint
 -- cycle owed for 15 minutes or more (the consumer had its turn), the latest owed one is answered to be sent, and the
 -- earlier owed ones of the cycle are settled `skipped`, so the owner never gets the old ones in a row. A latest one
 -- recorded in the last 15 minutes is left to the consumer. One organization at a time, under the same lock as the act
--- of the support. A cycle whose latest owed notice is for a user who is no longer an owner is not taken (it never goes
--- out; the support sends it again), and the cycles go by `unverified_at` (never found not verified first, then the
+-- of the support. A cycle with no notice owed to a user who is still an owner is not taken (nothing of it goes out; the
+-- support sends it again), and the cycles go by `unverified_at` (never found not verified first, then the
 -- oldest), so the batch takes turns and the notices that cannot go out now never keep the others out of it. Only the
 -- privacy runtime executes it.
 CREATE FUNCTION public.list_owed_closure_notices(p_limit integer)
@@ -495,7 +495,7 @@ BEGIN
       JOIN public.organization_closures AS closure ON closure.organization_id = organization.id
       -- the latest owed notice of the cycle, the one that would go out
       CROSS JOIN LATERAL (
-        SELECT notice.user_id, notice.unverified_at
+        SELECT notice.unverified_at
           FROM public.closure_notices AS notice
          WHERE notice.organization_id = organization.id AND notice.closure_requested_at = closure.requested_at
            AND NOT notice.skipped AND notice.sent_at IS NULL AND notice.failed_at IS NULL
@@ -512,11 +512,16 @@ BEGIN
             AND notice.dismissed_at IS NULL AND notice.user_id IS NOT NULL
             AND notice.recorded_at <= pg_catalog.now() - interval '15 minutes'
        )
-       -- one owed to a user who is no longer an owner never goes out (the support sends it again to the owner of now):
-       -- it is not taken, so it never holds a place of the batch
+       -- a cycle with nothing owed to a user who is still an owner never sends anything (the support sends it again to
+       -- the owner of now): it is not taken, so it never holds a place of the batch. One with an earlier notice owed to
+       -- an owner is taken once, so that one is settled and the support can send the notice again.
        AND EXISTS (
-         SELECT 1 FROM public.memberships AS membership
-          WHERE membership.organization_id = organization.id AND membership.user_id = latest_owed.user_id
+         SELECT 1 FROM public.closure_notices AS notice
+           JOIN public.memberships AS membership
+             ON membership.organization_id = notice.organization_id AND membership.user_id = notice.user_id
+          WHERE notice.organization_id = organization.id AND notice.closure_requested_at = closure.requested_at
+            AND NOT notice.skipped AND notice.sent_at IS NULL AND notice.failed_at IS NULL
+            AND notice.dismissed_at IS NULL
             AND membership.role = 'owner' AND membership.status = 'active'
        )
      -- the ones never found not verified first, then the ones found so longest ago: each delivery that finds the address

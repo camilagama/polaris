@@ -24,7 +24,7 @@ Passos:
 2. O responsável põe `CLOSURE_NOTICE_EMAIL_ENABLED` = `"true"` no Worker e faz o deploy. A flag fica `"false"` em todos os ambientes do `wrangler.jsonc` até ele decidir.
 3. Na primeira hora, o repasse da varredura de privacidade envia o aviso devido mais recente de cada ciclo e grava os anteriores devidos como pulados. O dono não recebe avisos antigos em sequência.
 
-O repasse pega até 20 lojas por execução. Uma loja cujo aviso mais recente é de quem deixou de ser dono não entra (o aviso nunca sairia; o caminho é reemitir). As lojas entram pela última vez em que uma tentativa achou o e-mail sem verificação: as nunca achadas assim vêm primeiro, e cada tentativa sem verificação manda a loja para o fim da fila. Assim, avisos que não podem sair agora revezam no fim do lote e não impedem os que podem.
+O repasse pega até 20 lojas por execução. Uma loja sem aviso devido a quem ainda é dono não entra (nada dela sairia; o caminho é reemitir). As lojas entram pela última vez em que uma tentativa achou o e-mail sem verificação: as nunca achadas assim vêm primeiro, e cada tentativa sem verificação manda a loja para o fim da fila. Assim, avisos que não podem sair agora revezam no fim do lote e não impedem os que podem. Um aviso que falha por um erro passageiro do provedor não muda de lugar; com o provedor fora do ar, todos esperam juntos.
 
 Um aviso gravado nos últimos 15 minutos fica para o consumidor da fila, que tenta enviá-lo logo.
 
@@ -62,7 +62,7 @@ O ato é do Admin, com a capacidade `organization:purge`, e só sob um caso de p
 **Dispensar** serve quando o aviso não pode ser entregue, e o apagamento não pode esperar por ele. É uma decisão do responsável: exige um caso de privacidade de exclusão, pedido pelo dono da loja e aceito por inteiro (o pedido de um titular só serve com `owner_account_deleted`). Chama-se a rota de dispensa do caso (`POST /support-cases/:caseId/closure-notice/dismiss`), com a organização e o motivo. O motivo é um destes, e precisa bater com o que o banco sabe:
 
 - `owner_account_deleted`: a conta do dono foi apagada (as linhas dos avisos dele saem com ela). Só vale sem dono ativo na loja.
-- `email_not_verified`: o dono não verificou o endereço. O repasse continua tentando a cada hora, então o suporte pode esperar primeiro. Só vale quando uma tentativa de envio do `d7` achou o endereço do dono sem verificação (`unverified_at` no aviso): com o e-mail desligado não há tentativa, e a dispensa por esse motivo é recusada. E só vale se o e-mail continua sem verificação na hora da dispensa: o banco confere a conta do dono nesse momento (só se está verificada, sem ler o endereço). Se o dono verificou depois da tentativa, a dispensa é recusada e o caminho é reemitir ou esperar o repasse.
+- `email_not_verified`: o dono não verificou o endereço. O repasse continua tentando a cada hora, então o suporte pode esperar primeiro. Só vale quando uma tentativa de envio do `d7` achou o endereço do dono sem verificação (`unverified_at` no aviso): com o e-mail desligado não há tentativa, e a dispensa por esse motivo é recusada. E só vale se o e-mail continua sem verificação na hora da dispensa: o banco confere a conta do dono nesse momento (só se está verificada, sem ler o endereço). Se o dono verificou depois da tentativa, a dispensa é recusada: o aviso continua devido, e o repasse o envia.
 - `email_undeliverable`: o provedor recusou o endereço (`email_rejected`) e o dono não o corrigiu. Só vale com um `d7` do ciclo recusado para quem ainda é dono e nenhum aviso ainda devido a um dono.
 
 A dispensa grava um `d7` sem usuário, marca como pulados os avisos do ciclo que ainda estavam devidos, e não gera evento. Um aviso dispensado conta como entregue: o apagamento ainda espera 7 dias depois da dispensa.
@@ -88,7 +88,7 @@ Recusas (todas com 409 e uma mensagem):
 | `closure_notice_owner_present` (dispensa) | ainda há dono ativo, então a conta não foi apagada | reemita, ou use o motivo que corresponde |
 | `closure_notice_not_refused` (dispensa) | nenhum `d7` do ciclo foi recusado pelo provedor para o dono atual, ou ainda há um devido | reemita antes |
 | `closure_notice_not_unverified` (dispensa) | nenhuma tentativa de envio do `d7` achou o endereço sem verificação | ligue o e-mail e espere o repasse |
-| `closure_notice_owner_verified` (dispensa) | o dono verificou o e-mail depois da tentativa que o achou sem verificação | não dispense: espere o repasse ou reemita |
+| `closure_notice_owner_verified` (dispensa) | o dono verificou o e-mail depois da tentativa que o achou sem verificação | não dispense: o aviso segue devido e o repasse o envia |
 | `closure_notice_pending` (reemissão) | outro aviso do ciclo ainda está devido | deixe o repasse enviá-lo, ou resolva esse aviso antes |
 | `closure_notice_no_owner` (reemissão) | não há dono ativo | não há para quem reemitir; a decisão é do caso |
 | `closure_notice_delivered` | um `d7` ou `rescheduled` do ciclo já foi entregue ou dispensado | nada a reemitir nem dispensar |
@@ -103,5 +103,6 @@ O responsável põe `CLOSURE_NOTICE_EMAIL_ENABLED` = `"false"` e faz o deploy. O
 - Só a resposta 400 ou 422 com `validation_error` sobre o campo `to` dá o aviso por falho (`email_rejected`). Um `validation_error` sobre outro campo (o `reply_to`, por exemplo), um remetente errado (`invalid_from_address`), uma chave errada ou uma cota estourada fazem o aviso ser tentado de novo e acendem [aviso-de-encerramento-falhando](./alertas.md#aviso-de-encerramento-falhando): corrija a configuração, e o repasse envia. Antes de ligar em produção, faça um envio de teste no staging.
 - Não há webhook de bounce. Uma recusa que chega depois de o provedor aceitar o envio não aparece, e o aviso conta como enviado.
 - O link leva à raiz da aplicação, que exige login. A tela de encerramento depende do roteamento do PR G, e por isso a flag só liga com ele no ar (ver [Ligar o e-mail](#ligar-o-e-mail)).
+- O texto é fixo por aviso (a mesma chave de idempotência sempre manda a mesma mensagem), escrito pela data do marco, não pela hora do envio. Um aviso do pedido, de D − 30 ou de D − 7 enviado depois de D (o e-mail ligado tarde, ou a fila atrasada) ainda diz "peça até D" e "faltam 30 (ou 7) dias".
 - O texto do pedido de cópia segue o limite do servidor: até a meia-noite que abre D, no fuso da organização (`request_closed_export` recusa a partir desse instante). O pedido, D − 30 e o `d7` do job escrevem esse limite. D, o `d7` reemitido e o `rescheduled` não afirmam que o prazo terminou: pedem que o dono peça a cópia agora.
 - A revisão jurídica dos prazos segue a do [ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md).
