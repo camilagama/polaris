@@ -23,17 +23,23 @@ export function LegalAcceptanceNotice() {
     >
       <p>{ACCEPTANCE_NOTICE}</p>
       {unsent ? (
-        <a
-          className="primary-button"
-          href={href}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          {ACCEPTANCE_NOTICE_LINK}
-          <span className="legal-acceptance-notice-hint">
+        <>
+          <a
+            aria-describedby="legal-acceptance-notice-hint"
+            className="primary-button"
+            href={href}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            {ACCEPTANCE_NOTICE_LINK}
+          </a>
+          <p
+            className="legal-acceptance-notice-hint"
+            id="legal-acceptance-notice-hint"
+          >
             ({ACCEPTANCE_NOTICE_KEEPS_INPUT})
-          </span>
-        </a>
+          </p>
+        </>
       ) : (
         <a className="primary-button" href={href}>
           {ACCEPTANCE_NOTICE_LINK}

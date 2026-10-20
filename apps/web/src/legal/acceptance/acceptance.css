@@ -63,6 +63,9 @@
 }
 
 .acceptance-continue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   justify-self: stretch;
   min-height: 2.75rem;
   text-align: center;

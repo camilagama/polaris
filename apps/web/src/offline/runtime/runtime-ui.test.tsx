@@ -151,6 +151,36 @@ describe("the sync status in the header", () => {
   });
 });
 
+describe("the sync status while the send waits for the legal acceptance", () => {
+  const paused = (rejected: number, pending = 0) =>
+    syncStatusLabel(
+      snapshot({
+        counts: counts({ pending, rejected }),
+        legalAcceptanceRequired: true,
+      })
+    );
+
+  it("keeps the short chip and the count of what is waiting", () => {
+    expect(paused(0, 2)).toEqual({
+      attention: false,
+      short: "Envio pausado",
+      text: "Envio pausado até o aceite dos termos · 2 operações guardadas",
+      tone: "offline",
+    });
+  });
+
+  it("adds what needs attention to the sentence, not to the chip", () => {
+    expect(paused(0).text).toBe("Envio pausado até o aceite dos termos");
+    expect(paused(1).text).toBe(
+      "Envio pausado até o aceite dos termos · 1 precisa de atenção"
+    );
+    expect(paused(3, 1)).toMatchObject({
+      short: "Envio pausado",
+      text: "Envio pausado até o aceite dos termos · 1 operação guardada · 3 precisam de atenção",
+    });
+  });
+});
+
 describe("the sync status line in the open menu", () => {
   it("shows the whole sentence of the state with the colour dot, hidden from assistive technology", () => {
     const cases = [

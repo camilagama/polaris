@@ -393,15 +393,16 @@
 
 .legal-acceptance-notice a.primary-button {
   display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 0.3rem;
   align-items: center;
+  justify-content: center;
   min-height: 2.75rem;
   text-decoration: none;
 }
 
-.legal-acceptance-notice-hint {
-  font-weight: 400;
+.session-ended-notice p.legal-acceptance-notice-hint {
+  margin-top: -0.2rem;
+  font-size: 0.875rem;
+  color: var(--ui-muted);
 }
 
 .app-footer {

@@ -29,15 +29,25 @@ export function waitingOperations(snapshot: RuntimeSnapshot): number {
   return snapshot.counts.pending + snapshot.counts.sending;
 }
 
-/** The server waits for the legal acceptance: nothing was refused or lost, the send is only paused. */
-function pausedForAcceptance(waiting: number): SyncStatusLabel {
+/**
+ * The server waits for the legal acceptance: nothing was refused or lost, the send is only paused. The short
+ * chip stays "Envio pausado"; the sentence (menu line and tooltip) keeps the count of what needs attention.
+ */
+function pausedForAcceptance(
+  waiting: number,
+  rejected: number
+): SyncStatusLabel {
+  const parts = ["Envio pausado até o aceite dos termos"];
+  if (waiting > 0) {
+    parts.push(plural(waiting, "operação guardada", "operações guardadas"));
+  }
+  if (rejected > 0) {
+    parts.push(`${plural(rejected, "precisa", "precisam")} de atenção`);
+  }
   return {
     attention: false,
     short: "Envio pausado",
-    text:
-      waiting > 0
-        ? `Envio pausado até o aceite dos termos · ${plural(waiting, "operação guardada", "operações guardadas")}`
-        : "Envio pausado até o aceite dos termos",
+    text: parts.join(" · "),
     tone: "offline",
   };
 }
@@ -73,7 +83,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   const { counts } = snapshot;
   const waiting = waitingOperations(snapshot);
   if (snapshot.legalAcceptanceRequired && snapshot.online) {
-    return pausedForAcceptance(waiting);
+    return pausedForAcceptance(waiting, counts.rejected);
   }
   if (snapshot.phase !== "ready") {
     return notReadyLabel(snapshot);

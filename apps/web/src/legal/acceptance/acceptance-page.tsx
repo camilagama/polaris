@@ -306,6 +306,8 @@ function AcceptanceBody({
     <>
       <p className="sign-in-support">{acceptanceIntro(load.pending)}</p>
       <PendingList pending={load.pending} />
+      {/* the reading comes before the box and the button: "li" has to be true */}
+      <ReadLinks />
       <AcceptanceForm
         // a new read (the versions changed) starts the form again, with the box unticked
         key={round}
@@ -427,7 +429,7 @@ export function AcceptancePage() {
               versionChanged={versionChanged}
             />
           )}
-          <ReadLinks />
+          {leaving || load.status !== "pending" ? <ReadLinks /> : null}
           <IdleRuntimeProvider>
             <LogoutControl />
           </IdleRuntimeProvider>
