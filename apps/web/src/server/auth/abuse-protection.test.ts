@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import {
+  protectAuthLinkRequest,
   protectAuthRequest,
   protectSocialAuthRequest,
 } from "./abuse-protection";
@@ -9,6 +10,7 @@ import {
 const requestId = "pr16-auth-abuse-test";
 const turnstileSecret = "test-only-turnstile-secret";
 const baseURL = "https://app.example.com";
+const linkKeyPattern = /^auth-link-ip:[0-9a-f]{64}$/;
 const socialKeyPattern = /^auth-social-ip:[0-9a-f]{64}$/;
 
 function createLimiter(success = true) {
@@ -682,5 +684,131 @@ describe("Google sign-in rate limit", () => {
       );
       expect(authHandler).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("protectAuthLinkRequest (links of the e-mails)", () => {
+  const unset = (key: keyof WorkerBindings) =>
+    ({ [key]: undefined }) as Partial<WorkerBindings>;
+  const linkRequest = (ip: string | null = "203.0.113.17") =>
+    new Request(`${baseURL}/api/login-unlock`, {
+      headers: ip === null ? {} : { "cf-connecting-ip": ip },
+      method: "POST",
+    });
+
+  it("lets the request through (undefined) when the limiter allows it, with a key of its own per IP", async () => {
+    const limiter = createLimiter(true);
+
+    const response = await protectAuthLinkRequest(
+      linkRequest(),
+      createBindings({ AUTH_RATE_LIMITER: limiter }),
+      requestId
+    );
+
+    expect(response).toBeUndefined();
+    expect(limiter.limit).toHaveBeenCalledTimes(1);
+    expect(limiter.limit.mock.calls[0]?.[0].key).toMatch(linkKeyPattern);
+  });
+
+  it("uses a different key for each IP and never the IP itself", async () => {
+    const limiter = createLimiter(true);
+    const bindings = createBindings({ AUTH_RATE_LIMITER: limiter });
+
+    await protectAuthLinkRequest(linkRequest("203.0.113.1"), bindings);
+    await protectAuthLinkRequest(linkRequest("203.0.113.2"), bindings);
+    await protectAuthLinkRequest(linkRequest("203.0.113.1"), bindings);
+
+    const keys = limiter.limit.mock.calls.map(([options]) => options.key);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).toBe(keys[2]);
+    expect(keys.join()).not.toContain("203.0.113");
+  });
+
+  it("answers 429 auth_rate_limited when the limiter denies", async () => {
+    const response = await protectAuthLinkRequest(
+      linkRequest(),
+      createBindings({ AUTH_RATE_LIMITER: createLimiter(false) }),
+      requestId
+    );
+
+    expect(response?.status).toBe(429);
+    expect(await response?.json()).toMatchObject({
+      error: { code: "auth_rate_limited" },
+    });
+  });
+
+  it("fails closed with 503 auth_rate_limit_unavailable without the binding", async () => {
+    const response = await protectAuthLinkRequest(
+      linkRequest(),
+      createBindings(unset("AUTH_RATE_LIMITER")),
+      requestId
+    );
+
+    expect(response?.status).toBe(503);
+    expect(await response?.json()).toMatchObject({
+      error: { code: "auth_rate_limit_unavailable" },
+    });
+  });
+
+  it.each([
+    ["no client IP", null],
+    ["an empty client IP", "   "],
+    ["a client IP that is too long", "1".repeat(65)],
+    ["a client IP with forbidden characters", "203.0.113.1; drop"],
+  ])(
+    "fails closed with 503 with %s, without calling the limiter",
+    async (_name, ip) => {
+      const limiter = createLimiter(true);
+
+      const response = await protectAuthLinkRequest(
+        linkRequest(ip),
+        createBindings({ AUTH_RATE_LIMITER: limiter }),
+        requestId
+      );
+
+      expect(response?.status).toBe(503);
+      expect(limiter.limit).not.toHaveBeenCalled();
+    }
+  );
+
+  it("fails closed with 503 without the secret", async () => {
+    const response = await protectAuthLinkRequest(
+      linkRequest(),
+      createBindings(unset("BETTER_AUTH_SECRET")),
+      requestId
+    );
+
+    expect(response?.status).toBe(503);
+  });
+
+  it("fails closed with 503 when the limiter throws or answers no boolean", async () => {
+    const throwing = {
+      limit: vi.fn(() => Promise.reject(new Error("limiter down"))),
+    };
+    const odd = {
+      limit: vi.fn(() => Promise.resolve({ success: "yes" })),
+    };
+
+    const first = await protectAuthLinkRequest(
+      linkRequest(),
+      createBindings({
+        AUTH_RATE_LIMITER: throwing as unknown as NonNullable<
+          WorkerBindings["AUTH_RATE_LIMITER"]
+        >,
+      }),
+      requestId
+    );
+    const second = await protectAuthLinkRequest(
+      linkRequest(),
+      createBindings({
+        AUTH_RATE_LIMITER: odd as unknown as NonNullable<
+          WorkerBindings["AUTH_RATE_LIMITER"]
+        >,
+      }),
+      requestId
+    );
+
+    expect(first?.status).toBe(503);
+    expect(second?.status).toBe(503);
   });
 });

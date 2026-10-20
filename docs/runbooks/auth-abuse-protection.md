@@ -50,6 +50,15 @@ The general IP limiter runs before Siteverify to avoid spending verification cal
 - The callback is a GET that any page can trigger, so a hostile page can spend the 20 of a visitor's IP for 60 seconds; the person sees the wait text and the limit lifts by itself. This is the cost of a limit by IP that ADR 0100 accepts.
 - `POST /api/auth/link-social` is not counted: it needs a verified session and the origin check, and the ADR lists only the start and the callback.
 
+## Links dos e-mails e bloqueio da entrada (P8)
+
+- `POST /api/login-unlock {token}` (desbloqueio) e `POST /api/email-verification {token}` (confirmação de e-mail) ficam fora de `/api/auth/*`, passam pelo `originCheck` e pelo limitador `AUTH_RATE_LIMITER` com escopo próprio `auth-link-ip` (HMAC do IP com `BETTER_AUTH_SECRET`). Não têm Turnstile, porque quem chega de um e-mail não tem o desafio. Sem binding, sem `cf-connecting-ip` válido ou com erro do binding, respondem 503 `auth_rate_limit_unavailable`; excedido, 429 `auth_rate_limited`. O limite é o do próprio binding (10 por 60 segundos por IP, como acima), sem configuração nova.
+- Com `EMAIL_PASSWORD_AUTH_ENABLED` desligada, as duas rotas respondem 503 `auth_email_unavailable`, antes do limitador.
+- `GET /api/auth/verify-email` e `GET /api/auth/reset-password/<token>` respondem 404 `not_found`: o token não vai na URL de um documento.
+- Quando a entrada por senha está ligada, uma trava de e-mail responde 429 `auth_login_locked` com `retryAfterSeconds` e o cabeçalho `Retry-After`, igual exista a conta ou não. O registro de acesso guarda `login_failed` sem usuário nessa resposta. A trava não usa o limitador por IP: ela conta por e-mail digitado, no banco (`auth_login_lock`).
+- As três rotas de senha (`POST /api/auth/sign-in/email`, `/change-password` e `/set-password`) só valem pelo caminho exato. Variação de caixa, `%2F`, barra no fim, sufixo ou prefixo parecido responde 404 `not_found`, sem chegar ao Better Auth: a trava não aposta no roteador dele. Corpo acima de 8 KiB nessas três rotas responde 413 `payload_too_large`, sem ler o JSON. `POST` com `verify-password` no caminho (qualquer grafia) responde 404.
+- Eventos de auditoria novos desta etapa: `login_locked` (quando a trava começa e o e-mail de desbloqueio é enviado), `login_unlocked` (desbloqueio feito pelo link), `password_changed`, `password_set` e `password_reset_completed`. Os valores do enum vêm da migration P8a, em PR próprio.
+
 ## Verification and rollback
 
 Before enabling password auth in a shared environment, verify from the deployed hostname:

@@ -1,0 +1,906 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import {
+  createDatabaseLoginLockStore,
+  handleEmailSignInWithLock,
+  type LoginLockQueryable,
+  loginLockedResponse,
+  newUnlockToken,
+  sha256,
+  unlockTokenUserId,
+} from "./login-lock";
+import { loginLockKey } from "./login-lock-key";
+import {
+  createMemoryLoginLockStore,
+  createPasswordTestAuth,
+  createVerifiedPasswordUser,
+  jsonRequest,
+  stubPwnedPasswordRange,
+  testPassword,
+  testSecret,
+} from "./password-test-support";
+
+const MINUTE = 60 * 1000;
+const START = new Date("2026-10-20T12:00:00.000Z");
+const BASE64URL_43 = /^[A-Za-z0-9_-]{43}$/;
+const HEX_64 = /^[0-9a-f]{64}$/;
+function hex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    ""
+  );
+}
+
+const wrongPassword = "uma senha errada, bem comprida também";
+
+async function setup(emailVerified = true) {
+  stubPwnedPasswordRange();
+  const parts = createPasswordTestAuth();
+  const email = "ana.lock@example.invalid";
+  if (emailVerified) {
+    await createVerifiedPasswordUser(parts.auth, email);
+  } else {
+    await parts.auth.handler(
+      jsonRequest("/api/auth/sign-up/email", {
+        email,
+        legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+        name: "Sem verificação",
+        password: testPassword,
+      })
+    );
+  }
+  const memory = createMemoryLoginLockStore();
+  const background: Promise<unknown>[] = [];
+  const sendUnlock = vi.fn((_email: string, _key: string) => Promise.resolve());
+  const recordRefusal = vi.fn(() => Promise.resolve());
+  const runInBackground = vi.fn((task: Promise<unknown>) => {
+    background.push(task);
+  });
+  const signIn = vi.fn((request: Request) => parts.auth.handler(request));
+  const attempt = (emailTyped: string, password: string) =>
+    handleEmailSignInWithLock(
+      jsonRequest("/api/auth/sign-in/email", {
+        email: emailTyped,
+        password,
+      }),
+      {
+        recordRefusal,
+        runInBackground,
+        secret: testSecret,
+        sendUnlock,
+        signIn,
+        store: memory.store,
+      }
+    );
+  return {
+    ...memory,
+    attempt,
+    background,
+    email,
+    recordRefusal,
+    runInBackground,
+    sendUnlock,
+    signIn,
+  };
+}
+
+describe("sign-in lock by password (AC-62, AC-63, AC-65)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(START);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-62: five wrong passwords lock the e-mail, and the sixth, even with the right password, is a 429 with the seconds left", async () => {
+    const ctx = await setup();
+
+    for (let count = 1; count <= 5; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      const response = await ctx.attempt(ctx.email, wrongPassword);
+      expect(response.status).toBe(401);
+    }
+    const locked = await ctx.attempt(ctx.email, testPassword);
+
+    expect(locked.status).toBe(429);
+    expect(locked.headers.get("retry-after")).toBe("900");
+    expect(locked.headers.get("cache-control")).toBe("no-store");
+    expect(await locked.json()).toEqual({
+      error: { code: "auth_login_locked" },
+      retryAfterSeconds: 900,
+    });
+    // the sixth never reached the password check
+    expect(ctx.signIn).toHaveBeenCalledTimes(5);
+  });
+
+  it("AC-62: the 429 counts down and the e-mail works again after the 15 minutes", async () => {
+    const ctx = await setup();
+    for (let count = 1; count <= 5; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.attempt(ctx.email, wrongPassword);
+    }
+    vi.setSystemTime(new Date(START.getTime() + 5 * MINUTE));
+    const during = await ctx.attempt(ctx.email, testPassword);
+    expect(during.status).toBe(429);
+    expect(during.headers.get("retry-after")).toBe("600");
+
+    vi.setSystemTime(new Date(START.getTime() + 15 * MINUTE + 1000));
+    const after = await ctx.attempt(ctx.email, testPassword);
+    expect(after.status).toBe(200);
+  });
+
+  it("reserves the attempt before the password is checked", async () => {
+    const ctx = await setup();
+    const order: string[] = [];
+    ctx.begin.mockImplementationOnce(() => {
+      order.push("begin");
+      return Promise.resolve({
+        allowed: true,
+        newlyLocked: false,
+        retryAfterSeconds: 0,
+      });
+    });
+    ctx.signIn.mockImplementationOnce(() => {
+      order.push("signIn");
+      return Promise.resolve(new Response(null, { status: 401 }));
+    });
+
+    await ctx.attempt(ctx.email, wrongPassword);
+
+    expect(order).toEqual(["begin", "signIn"]);
+  });
+
+  it("AC-63: a success on the third attempt forgets the count", async () => {
+    const ctx = await setup();
+    const key = await loginLockKey(testSecret, ctx.email);
+
+    await ctx.attempt(ctx.email, wrongPassword);
+    await ctx.attempt(ctx.email, wrongPassword);
+    expect(ctx.rows.get(key)?.attempts).toBe(2);
+    const success = await ctx.attempt(ctx.email, testPassword);
+
+    expect(success.status).toBe(200);
+    expect(ctx.clear).toHaveBeenCalledWith(key);
+    expect(ctx.rows.has(key)).toBe(false);
+    // the count began again: four more failures do not lock
+    for (let count = 1; count <= 4; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.attempt(ctx.email, wrongPassword);
+    }
+    const next = await ctx.attempt(ctx.email, testPassword);
+    expect(next.status).toBe(200);
+  });
+
+  it("AC-65: the 429 of an e-mail with an account and of one with none are the same", async () => {
+    const ctx = await setup();
+    const stranger = "ninguem@example.invalid";
+
+    for (let count = 1; count <= 5; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.attempt(ctx.email, wrongPassword);
+      await ctx.attempt(stranger, wrongPassword);
+    }
+    const known = await ctx.attempt(ctx.email, wrongPassword);
+    const unknown = await ctx.attempt(stranger, wrongPassword);
+
+    expect(known.status).toBe(429);
+    expect(unknown.status).toBe(known.status);
+    expect(await unknown.text()).toBe(await known.text());
+    for (const name of ["retry-after", "cache-control", "content-type"]) {
+      expect(unknown.headers.get(name)).toBe(known.headers.get(name));
+    }
+    expect([...unknown.headers.keys()].sort()).toEqual(
+      [...known.headers.keys()].sort()
+    );
+  });
+
+  it("AC-65: the stranger's fifth failure locks the key too (nothing reads the user table)", async () => {
+    const ctx = await setup();
+    const stranger = "ninguem@example.invalid";
+
+    for (let count = 1; count <= 5; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      const response = await ctx.attempt(stranger, wrongPassword);
+      expect(response.status).toBe(401);
+    }
+    expect((await ctx.attempt(stranger, wrongPassword)).status).toBe(429);
+  });
+
+  it("a 403 EMAIL_NOT_VERIFIED means the password was right: it forgets the count", async () => {
+    const ctx = await setup(false);
+    const key = await loginLockKey(testSecret, ctx.email);
+
+    await ctx.attempt(ctx.email, wrongPassword);
+    await ctx.attempt(ctx.email, wrongPassword);
+    expect(ctx.rows.get(key)?.attempts).toBe(2);
+    const response = await ctx.attempt(ctx.email, testPassword);
+
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code?: string }).code).toBe(
+      "EMAIL_NOT_VERIFIED"
+    );
+    expect(ctx.clear).toHaveBeenCalledWith(key);
+    expect(ctx.rows.has(key)).toBe(false);
+  });
+
+  it("any other 403 leaves the attempt counted and does not clear", async () => {
+    const ctx = await setup();
+    ctx.signIn.mockResolvedValueOnce(
+      Response.json({ code: "OTHER" }, { status: 403 })
+    );
+
+    await ctx.attempt(ctx.email, wrongPassword);
+
+    expect(ctx.clear).not.toHaveBeenCalled();
+    expect(ctx.failed).not.toHaveBeenCalled();
+  });
+
+  it("sends the unlock e-mail once, in the background, only when the lock begins", async () => {
+    const ctx = await setup();
+    const key = await loginLockKey(testSecret, ctx.email);
+
+    for (let count = 1; count <= 4; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.attempt(ctx.email, wrongPassword);
+    }
+    expect(ctx.sendUnlock).not.toHaveBeenCalled();
+    expect(ctx.runInBackground).not.toHaveBeenCalled();
+
+    await ctx.attempt(ctx.email, wrongPassword);
+    expect(ctx.sendUnlock).toHaveBeenCalledTimes(1);
+    expect(ctx.sendUnlock).toHaveBeenCalledWith(ctx.email, key);
+    expect(ctx.runInBackground).toHaveBeenCalledTimes(1);
+    expect(ctx.runInBackground).toHaveBeenCalledWith(ctx.background[0]);
+
+    // the refusals of the lock in force do not send again
+    await ctx.attempt(ctx.email, wrongPassword);
+    await ctx.attempt(ctx.email, testPassword);
+    expect(ctx.sendUnlock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the unlock e-mail when the lock begins in `begin` (a sixth request of a burst)", async () => {
+    const ctx = await setup();
+    ctx.begin.mockResolvedValueOnce({
+      allowed: false,
+      newlyLocked: true,
+      retryAfterSeconds: 900,
+    });
+
+    const response = await ctx.attempt(ctx.email, wrongPassword);
+
+    expect(response.status).toBe(429);
+    expect(ctx.sendUnlock).toHaveBeenCalledTimes(1);
+    expect(ctx.runInBackground).toHaveBeenCalledTimes(1);
+    expect(ctx.signIn).not.toHaveBeenCalled();
+  });
+
+  it("records the refusal in the access log on a 429, and only then", async () => {
+    const ctx = await setup();
+    for (let count = 1; count <= 5; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.attempt(ctx.email, wrongPassword);
+    }
+    expect(ctx.recordRefusal).not.toHaveBeenCalled();
+
+    await ctx.attempt(ctx.email, testPassword);
+    await ctx.attempt(ctx.email, testPassword);
+
+    expect(ctx.recordRefusal).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["without an at sign", "sem-arroba"],
+    ["with a space", "ana @example.invalid"],
+    ["empty", ""],
+    ["too long", `${"a".repeat(320)}@example.invalid`],
+    ["not a string", 42],
+    ["missing", undefined],
+  ])(
+    "an e-mail %s does not touch the store and goes to Better Auth",
+    async (_name, typed) => {
+      const ctx = await setup();
+
+      const response = await handleEmailSignInWithLock(
+        jsonRequest("/api/auth/sign-in/email", {
+          email: typed,
+          password: wrongPassword,
+        }),
+        {
+          recordRefusal: ctx.recordRefusal,
+          runInBackground: ctx.runInBackground,
+          secret: testSecret,
+          sendUnlock: ctx.sendUnlock,
+          signIn: ctx.signIn,
+          store: {
+            begin: ctx.begin,
+            clear: ctx.clear,
+            failed: ctx.failed,
+            issueUnlock: ctx.issueUnlock,
+            unlock: ctx.unlock,
+          },
+        }
+      );
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).not.toBe(429);
+      expect(ctx.signIn).toHaveBeenCalledTimes(1);
+      expect(ctx.begin).not.toHaveBeenCalled();
+      expect(ctx.clear).not.toHaveBeenCalled();
+      expect(ctx.failed).not.toHaveBeenCalled();
+    }
+  );
+
+  it("a body that is not JSON does not touch the store", async () => {
+    const ctx = await setup();
+    const request = new Request("http://localhost/api/auth/sign-in/email", {
+      body: "isto não é json",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+
+    await handleEmailSignInWithLock(request, {
+      recordRefusal: ctx.recordRefusal,
+      runInBackground: ctx.runInBackground,
+      secret: testSecret,
+      sendUnlock: ctx.sendUnlock,
+      signIn: () => Promise.resolve(new Response(null, { status: 400 })),
+      store: ctx.store,
+    });
+
+    expect(ctx.begin).not.toHaveBeenCalled();
+  });
+
+  it("counts upper and lower case spellings of the e-mail on the same key", async () => {
+    const ctx = await setup();
+    const variants = [
+      ctx.email,
+      ctx.email.toUpperCase(),
+      ` ${ctx.email} `,
+      "Ana.Lock@Example.Invalid",
+      ctx.email,
+    ];
+
+    for (const typed of variants) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.attempt(typed, wrongPassword);
+    }
+
+    expect(ctx.rows.size).toBe(1);
+    const sixth = await ctx.attempt(ctx.email.toUpperCase(), testPassword);
+    expect(sixth.status).toBe(429);
+    const keys = ctx.begin.mock.calls.map(([key]) => key);
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toMatch(HEX_64);
+  });
+
+  it("never gives the e-mail or the password to the store, only the key", async () => {
+    const ctx = await setup();
+
+    await ctx.attempt(ctx.email, wrongPassword);
+
+    expect(JSON.stringify(ctx.begin.mock.calls)).not.toContain("example");
+    expect(JSON.stringify(ctx.failed.mock.calls)).not.toContain("example");
+  });
+});
+
+describe("the known ways around the lock (415, 400 or 429, never a 401 nobody counted)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(START);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const urlEncoded = (email: string) =>
+    `email=${encodeURIComponent(email)}&password=${encodeURIComponent(wrongPassword)}`;
+  const jsonBodyOf = (email: unknown) =>
+    JSON.stringify({ email, password: wrongPassword });
+  const rawJson = (text: string) => ({
+    body: text,
+    contentType: "application/json",
+  });
+
+  // `email` is the typed e-mail of the account that is locked (ana.lock@example.invalid)
+  const variants: [
+    name: string,
+    build: (email: string) => { body: string; contentType: string },
+    status: 400 | 415 | 429,
+  ][] = [
+    [
+      "form-urlencoded",
+      (email) => ({
+        body: urlEncoded(email),
+        contentType: "application/x-www-form-urlencoded",
+      }),
+      415,
+    ],
+    [
+      "multipart",
+      (email) => ({
+        body: `--x\r\nContent-Disposition: form-data; name="email"\r\n\r\n${email}\r\n--x--`,
+        contentType: "multipart/form-data; boundary=x",
+      }),
+      415,
+    ],
+    [
+      "text/plain with JSON",
+      (email) => ({ body: jsonBodyOf(email), contentType: "text/plain" }),
+      415,
+    ],
+    [
+      "the e-mail in capitals",
+      (email) => rawJson(jsonBodyOf(email.toUpperCase())),
+      429,
+    ],
+    [
+      "the e-mail with spaces around it",
+      (email) => rawJson(jsonBodyOf(`  ${email}  `)),
+      429,
+    ],
+    [
+      "the e-mail twice, the account last",
+      (email) =>
+        rawJson(
+          `{"email":"other@example.invalid","email":${JSON.stringify(email)},"password":${JSON.stringify(wrongPassword)}}`
+        ),
+      429,
+    ],
+    [
+      "a list of e-mails",
+      (email) => rawJson(jsonBodyOf([email, "other@example.invalid"])),
+      400,
+    ],
+    ["an object as the e-mail", (email) => rawJson(jsonBodyOf({ email })), 400],
+    [
+      "a list as the whole body",
+      (email) => rawJson(`[${jsonBodyOf(email)}]`),
+      400,
+    ],
+    [
+      "two addresses in one string",
+      (email) => rawJson(jsonBodyOf(`${email}, other@example.invalid`)),
+      400,
+    ],
+  ];
+
+  it.each(variants)(
+    "%s answers the expected status and never a 401 outside the count",
+    async (_name, build, status) => {
+      const ctx = await setup();
+      for (let i = 0; i < 5; i += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: the failures count one after the other
+        await ctx.attempt(ctx.email, wrongPassword);
+      }
+      const locked = ctx.begin.mock.calls.length;
+      const { body, contentType } = build(ctx.email);
+
+      const response = await handleEmailSignInWithLock(
+        new Request("http://localhost/api/auth/sign-in/email", {
+          body,
+          headers: { "content-type": contentType },
+          method: "POST",
+        }),
+        {
+          recordRefusal: ctx.recordRefusal,
+          runInBackground: ctx.runInBackground,
+          secret: testSecret,
+          sendUnlock: ctx.sendUnlock,
+          signIn: ctx.signIn,
+          store: ctx.store,
+        }
+      );
+
+      expect(response.status).toBe(status);
+      expect(response.status).not.toBe(401);
+      if (status === 429) {
+        // the same key as the typed e-mail: it was counted, and refused
+        expect(ctx.begin).toHaveBeenCalledTimes(locked + 1);
+        expect(ctx.begin.mock.calls.at(-1)?.[0]).toBe(
+          ctx.begin.mock.calls[0]?.[0]
+        );
+        expect(ctx.signIn).toHaveBeenCalledTimes(5);
+      } else {
+        expect(ctx.begin).toHaveBeenCalledTimes(locked);
+        expect(ctx.failed).toHaveBeenCalledTimes(5);
+      }
+    }
+  );
+});
+
+describe("a repeated e-mail field", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is counted on the e-mail Better Auth reads (the last), so a 401 is never outside the count", async () => {
+    const ctx = await setup();
+    const body = `{"email":${JSON.stringify(ctx.email)},"email":"other@example.invalid","password":${JSON.stringify(wrongPassword)}}`;
+
+    const response = await handleEmailSignInWithLock(
+      new Request("http://localhost/api/auth/sign-in/email", {
+        body,
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      }),
+      {
+        recordRefusal: ctx.recordRefusal,
+        runInBackground: ctx.runInBackground,
+        secret: testSecret,
+        sendUnlock: ctx.sendUnlock,
+        signIn: ctx.signIn,
+        store: ctx.store,
+      }
+    );
+
+    const otherKey = await loginLockKey(testSecret, "other@example.invalid");
+    expect(response.status).toBe(401);
+    expect(ctx.begin).toHaveBeenCalledWith(otherKey);
+    expect(ctx.failed).toHaveBeenCalledWith(otherKey);
+    expect(ctx.rows.size).toBe(1);
+  });
+});
+
+describe("the media type of the sign-in with the lock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(START);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function build(
+    contentType: string | undefined,
+    body: string,
+    overrides: Partial<Parameters<typeof handleEmailSignInWithLock>[1]> = {}
+  ) {
+    const memory = createMemoryLoginLockStore();
+    const signIn = vi.fn((_request: Request) =>
+      Promise.resolve(Response.json({ ok: true }, { status: 200 }))
+    );
+    const request = new Request("http://localhost/api/auth/sign-in/email", {
+      body,
+      headers: contentType ? { "content-type": contentType } : {},
+      method: "POST",
+    });
+    const run = () =>
+      handleEmailSignInWithLock(request, {
+        recordRefusal: () => Promise.resolve(),
+        runInBackground: () => undefined,
+        secret: testSecret,
+        sendUnlock: () => Promise.resolve(),
+        signIn,
+        store: memory.store,
+        ...overrides,
+      });
+    return { ...memory, run, signIn };
+  }
+
+  it.each([
+    [
+      "form-urlencoded",
+      "application/x-www-form-urlencoded",
+      "email=ana%40example.invalid&password=qualquer",
+    ],
+    ["multipart", "multipart/form-data; boundary=x", "--x--"],
+    [
+      "text/plain with a JSON body",
+      "text/plain",
+      '{"email":"a@b.c","password":"x"}',
+    ],
+    ["no content type", undefined, '{"email":"a@b.c","password":"x"}'],
+  ])(
+    "a %s POST answers 415 and reaches neither the signIn nor the store",
+    async (_name, contentType, body) => {
+      const ctx = build(contentType, body);
+
+      const response = await ctx.run();
+
+      expect(response.status).toBe(415);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toEqual({
+        error: { code: "unsupported_media_type" },
+      });
+      expect(ctx.signIn).not.toHaveBeenCalled();
+      expect(ctx.begin).not.toHaveBeenCalled();
+      expect(ctx.failed).not.toHaveBeenCalled();
+      expect(ctx.clear).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    "application/json",
+    "application/json; charset=utf-8",
+    "Application/JSON ; charset=UTF-8",
+  ])("accepts %s and counts the attempt", async (contentType) => {
+    const ctx = build(
+      contentType,
+      '{"email":"a@example.invalid","password":"x"}'
+    );
+
+    const response = await ctx.run();
+
+    expect(response.status).toBe(200);
+    expect(ctx.signIn).toHaveBeenCalledTimes(1);
+    expect(ctx.begin).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the Better Auth response and calls onSettleError when clear throws after a success", async () => {
+    const onSettleError = vi.fn();
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}',
+      { onSettleError }
+    );
+    const boom = new Error("clear down");
+    ctx.clear.mockRejectedValueOnce(boom);
+
+    const response = await ctx.run();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(onSettleError).toHaveBeenCalledTimes(1);
+    expect(onSettleError).toHaveBeenCalledWith(boom);
+  });
+
+  it("answers the 401 and calls onSettleError when failed throws", async () => {
+    const onSettleError = vi.fn();
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}',
+      { onSettleError }
+    );
+    ctx.signIn.mockResolvedValueOnce(
+      Response.json({ code: "INVALID_EMAIL_OR_PASSWORD" }, { status: 401 })
+    );
+    const boom = new Error("failed down");
+    ctx.failed.mockRejectedValueOnce(boom);
+
+    const response = await ctx.run();
+
+    expect(response.status).toBe(401);
+    expect(onSettleError).toHaveBeenCalledWith(boom);
+  });
+
+  it("does not need onSettleError: a failing store still returns the response", async () => {
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}'
+    );
+    ctx.clear.mockRejectedValueOnce(new Error("clear down"));
+
+    expect((await ctx.run()).status).toBe(200);
+  });
+
+  it("a failing begin is not swallowed (the sign-in fails closed)", async () => {
+    const ctx = build(
+      "application/json",
+      '{"email":"a@example.invalid","password":"x"}'
+    );
+    ctx.begin.mockRejectedValueOnce(new Error("begin down"));
+
+    await expect(ctx.run()).rejects.toThrow("begin down");
+    expect(ctx.signIn).not.toHaveBeenCalled();
+  });
+});
+
+describe("loginLockedResponse", () => {
+  it.each([
+    [900, 900],
+    [0, 1],
+    [-5, 1],
+    [59.2, 60],
+  ])("answers %s seconds as Retry-After %s", async (given, expected) => {
+    const response = loginLockedResponse(given);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe(String(expected));
+    expect(await response.json()).toEqual({
+      error: { code: "auth_login_locked" },
+      retryAfterSeconds: expected,
+    });
+  });
+});
+
+describe("unlock token", () => {
+  it("is the user's ID, a dot and 32 random bytes in 43 characters of base64url", () => {
+    const token = newUnlockToken("user_123-abc");
+    const [userId, secret, ...rest] = token.split(".");
+
+    expect(rest).toEqual([]);
+    expect(userId).toBe("user_123-abc");
+    expect(secret).toMatch(BASE64URL_43);
+    const bytes = Uint8Array.from(
+      atob((secret as string).replaceAll("-", "+").replaceAll("_", "/")),
+      (char) => char.charCodeAt(0)
+    );
+    expect(bytes).toHaveLength(32);
+  });
+
+  it("is different each time", () => {
+    const tokens = new Set(
+      Array.from({ length: 20 }, () => newUnlockToken("u1"))
+    );
+
+    expect(tokens.size).toBe(20);
+  });
+
+  it("is read back by unlockTokenUserId", () => {
+    expect(unlockTokenUserId(newUnlockToken("user-9"))).toBe("user-9");
+  });
+
+  const secret43 = "A".repeat(43);
+  it.each([
+    ["empty", ""],
+    ["no dot", `user${secret43}`],
+    ["no user", `.${secret43}`],
+    ["short secret", `user.${"A".repeat(42)}`],
+    ["long secret", `user.${"A".repeat(44)}`],
+    ["padding", `user.${"A".repeat(42)}=`],
+    ["standard base64 characters", `user.${"A".repeat(41)}+/`],
+    ["user with a dot", `us.er.${secret43}`],
+    ["user with a space", `us er.${secret43}`],
+    ["user too long", `${"u".repeat(65)}.${secret43}`],
+    ["trailing newline", `user.${secret43}\n`],
+  ])(
+    "unlockTokenUserId refuses a token of the wrong shape: %s",
+    (_name, token) => {
+      expect(unlockTokenUserId(token)).toBeUndefined();
+    }
+  );
+
+  it("unlockTokenUserId accepts a user of 64 characters", () => {
+    expect(unlockTokenUserId(`${"u".repeat(64)}.${secret43}`)).toBe(
+      "u".repeat(64)
+    );
+  });
+
+  it("sha256 gives the 32 bytes of the standard digest", async () => {
+    const digest = await sha256("abc");
+
+    expect(hex(digest)).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+  });
+});
+
+describe("createDatabaseLoginLockStore", () => {
+  function fakePool(rows: Record<string, unknown>[] = []) {
+    const query = vi.fn(
+      (_config: { query_timeout: number; text: string; values: unknown[] }) =>
+        Promise.resolve({ rows })
+    );
+    const pool: LoginLockQueryable = { query };
+    return {
+      pool,
+      query,
+      setRows: (next: Record<string, unknown>[]) =>
+        rows.splice(0, rows.length, ...next),
+    };
+  }
+  const key = "a".repeat(64);
+
+  it("begin calls auth_login_lock_begin with the key and reads the three columns", async () => {
+    const { pool, query } = fakePool([
+      { allowed: true, newly_locked: false, retry_after_seconds: 0 },
+    ]);
+
+    const attempt = await createDatabaseLoginLockStore(pool).begin(key);
+
+    expect(attempt).toEqual({
+      allowed: true,
+      newlyLocked: false,
+      retryAfterSeconds: 0,
+    });
+    expect(query).toHaveBeenCalledWith({
+      query_timeout: 5000,
+      text: "SELECT allowed, retry_after_seconds, newly_locked FROM public.auth_login_lock_begin($1::text)",
+      values: [key],
+    });
+  });
+
+  it("begin reads a lock (integer as a string, as a driver may give it)", async () => {
+    const { pool } = fakePool([
+      { allowed: false, newly_locked: true, retry_after_seconds: "900" },
+    ]);
+
+    expect(await createDatabaseLoginLockStore(pool).begin(key)).toEqual({
+      allowed: false,
+      newlyLocked: true,
+      retryAfterSeconds: 900,
+    });
+  });
+
+  it("begin fails closed when the function answers no row", async () => {
+    const { pool } = fakePool([]);
+
+    expect(await createDatabaseLoginLockStore(pool).begin(key)).toEqual({
+      allowed: false,
+      newlyLocked: false,
+      retryAfterSeconds: 0,
+    });
+  });
+
+  it("begin does not catch a database error: the sign-in fails closed", async () => {
+    const pool: LoginLockQueryable = {
+      query: () => Promise.reject(new Error("db down")),
+    };
+
+    await expect(createDatabaseLoginLockStore(pool).begin(key)).rejects.toThrow(
+      "db down"
+    );
+  });
+
+  it("clear calls auth_login_lock_clear", async () => {
+    const { pool, query } = fakePool();
+
+    await createDatabaseLoginLockStore(pool).clear(key);
+
+    expect(query).toHaveBeenCalledWith({
+      query_timeout: 5000,
+      text: "SELECT public.auth_login_lock_clear($1::text)",
+      values: [key],
+    });
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+    [null, false],
+  ])("failed answers %s as %s", async (locked, expected) => {
+    const { pool, query } = fakePool([{ locked }]);
+
+    expect(await createDatabaseLoginLockStore(pool).failed(key)).toBe(expected);
+    expect(query.mock.calls[0]?.[0]).toMatchObject({
+      text: "SELECT public.auth_login_lock_failed($1::text) AS locked",
+      values: [key],
+    });
+  });
+
+  it("issueUnlock gives the key and the digest, and answers whether it was stored", async () => {
+    const digest = new Uint8Array(32).fill(7);
+    const { pool, query } = fakePool([{ issued: true }]);
+    const store = createDatabaseLoginLockStore(pool);
+
+    expect(await store.issueUnlock(key, digest)).toBe(true);
+    expect(query.mock.calls[0]?.[0]).toMatchObject({
+      text: "SELECT public.auth_login_lock_issue_unlock($1::text, $2::bytea) AS issued",
+      values: [key, digest],
+    });
+
+    const none = fakePool([{ issued: false }]);
+    expect(
+      await createDatabaseLoginLockStore(none.pool).issueUnlock(key, digest)
+    ).toBe(false);
+  });
+
+  it.each([
+    ["unlocked", "unlocked"],
+    ["invalid", "invalid"],
+    ["anything else", "invalid"],
+    [undefined, "invalid"],
+  ])("unlock reads %s as %s", async (result, expected) => {
+    const digest = new Uint8Array(32).fill(1);
+    const { pool, query } = fakePool([{ result }]);
+
+    expect(await createDatabaseLoginLockStore(pool).unlock(digest)).toBe(
+      expected
+    );
+    expect(query.mock.calls[0]?.[0]).toMatchObject({
+      text: "SELECT public.auth_login_unlock($1::bytea) AS result",
+      values: [digest],
+    });
+  });
+
+  it("unlock treats an empty answer as invalid", async () => {
+    const { pool } = fakePool([]);
+
+    expect(
+      await createDatabaseLoginLockStore(pool).unlock(new Uint8Array(32))
+    ).toBe("invalid");
+  });
+});

@@ -890,6 +890,7 @@ describe("Email/password authentication", () => {
       .mockImplementation(() => undefined);
     const emailDelivery = createResendAuthEmailDelivery({
       apiKey: "re_test_only",
+      appBaseURL: "http://localhost",
       from: "Polaris <auth@example.invalid>",
     });
     const { app: testApp } = createEmailPasswordTestApp(emailDelivery);
