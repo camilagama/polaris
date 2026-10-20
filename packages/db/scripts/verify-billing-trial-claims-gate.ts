@@ -3,7 +3,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import type { BillingFact } from "@polaris/domain/billing/facts";
 import { Client } from "pg";
-import { createBillingStore } from "../src/billing-store";
+import {
+  type AbandonedTrialCheckout,
+  createBillingStore,
+} from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import {
   createTenantFixture,
@@ -28,7 +31,9 @@ import {
  * backfill of the trials already used (with its edges), the cascade with the
  * account, the privileges of the billing and tenant roles, the provider's
  * subscription ID stored from the first matched fact, the amount of the money
- * facts and the semiannual price turned off.
+ * facts, the semiannual price turned off, and a checkout paid after its
+ * person took the reservation elsewhere (given up at the provider, and kept as
+ * `unresolved` instead of starting a second trial).
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -938,6 +943,364 @@ async function main() {
     tests.push(
       "the semiannual Pro price is kept but no longer active (Q12): only the monthly and annual cycles are offered"
     );
+
+    // ------------------- 10. a checkout paid after the reservation moved elsewhere
+    const discarded: AbandonedTrialCheckout[] = [];
+    const discarding = createBillingStore(billingUrl, {
+      discardCheckout: (checkout) => {
+        discarded.push(checkout);
+        return Promise.resolve();
+      },
+    });
+    const failing = createBillingStore(billingUrl, {
+      discardCheckout: () => Promise.reject(new Error("provider_unavailable")),
+    });
+    try {
+      const eventOf = async (eventId: string) =>
+        (
+          await admin.pool.query<{
+            attempts: number;
+            outcome_code: string | null;
+            state_after: string | null;
+            state_before: string | null;
+            status: string;
+          }>(
+            "SELECT status, outcome_code, attempts, state_before, state_after FROM public.billing_events WHERE id = $1",
+            [eventId]
+          )
+        ).rows[0];
+      const deliverStored = async (
+        providerRef: string,
+        fact: BillingFact,
+        providerSubscriptionId: string | null = null
+      ) => {
+        const stored = await billing.recordEvent({
+          fact,
+          provider: "fake",
+          providerEventId: `trial-gate-${randomUUID()}`,
+          providerRef,
+          providerSubscriptionId,
+        });
+        return {
+          id: stored.id,
+          result: await billing.processEvent(stored.id, fact.occurredAt),
+        };
+      };
+      const trialsOf = async (organizationIds: string[]) =>
+        Number(
+          (
+            await admin.pool.query<{ count: string }>(
+              "SELECT count(*)::text AS count FROM public.organization_billing WHERE organization_id = ANY($1::text[]) AND trial_started_at IS NOT NULL",
+              [organizationIds]
+            )
+          ).rows[0]?.count
+        );
+
+      // 1. U opts into the trial on A (reservation in A, checkout linked)
+      const shopA = await newTenant("paid late A");
+      const shopB = await newTenant("paid late B");
+      const owner = shopA.userId;
+      await addOwner(shopB.organizationId, owner, at(0));
+      await discarding.startTrial(shopA.organizationId, owner, at(0));
+      await discarding.attachProvider(
+        shopA.organizationId,
+        "fake",
+        `chk_late_A_${run}`
+      );
+      assert.deepEqual(discarded, [], "a first reservation gives nothing up");
+      // 2. the checkout of A is abandoned: A is Free again
+      await abandon(shopA.organizationId);
+      // 3. U opts in on B: the reservation moves, and A's checkout is given up once the move is committed
+      await discarding.startTrial(shopB.organizationId, owner, at(0.2));
+      assert.equal(
+        (await claimOf(owner))?.organization_id,
+        shopB.organizationId
+      );
+      assert.deepEqual(discarded, [
+        {
+          organizationId: shopA.organizationId,
+          provider: "fake",
+          providerRef: `chk_late_A_${run}`,
+        },
+      ]);
+      // 4. U pays A's old checkout anyway (the provider did not cancel it in time)
+      const lateA = await deliverStored(
+        `chk_late_A_${run}`,
+        methodReady(at(0.3)),
+        `sub_late_A_${run}`
+      );
+      assert.deepEqual(lateA.result, {
+        eventId: lateA.id,
+        organizationId: shopA.organizationId,
+        outcomeCode: "trial_claim_missing",
+        status: "unresolved",
+      });
+      assert.deepEqual(await eventOf(lateA.id), {
+        attempts: 1,
+        outcome_code: "trial_claim_missing",
+        state_after: "free",
+        state_before: "free",
+        status: "unresolved",
+      });
+      const recordA = await billingRow(shopA.organizationId);
+      assert.equal(recordA?.state, "free");
+      assert.equal(recordA?.trial_started_at, null);
+      // the subscription is still found by its ID, for the reconciliation to cancel or charge it
+      assert.equal(recordA?.provider_subscription_id, `sub_late_A_${run}`);
+      assert.deepEqual(await claimOf(owner), {
+        consumed_at: null,
+        organization_id: shopB.organizationId,
+        reserved_at: at(0.2),
+      });
+      // 5. U pays B's checkout: B's trial starts, and it is the only one
+      await discarding.attachProvider(
+        shopB.organizationId,
+        "fake",
+        `chk_late_B_${run}`
+      );
+      const readyB = await deliver(`chk_late_B_${run}`, methodReady(at(0.4)));
+      assert.equal(readyB.status, "applied");
+      assert.equal((await billingRow(shopB.organizationId))?.state, "trialing");
+      assert.equal(
+        (await claimOf(owner))?.organization_id,
+        shopB.organizationId
+      );
+      assert.ok((await claimOf(owner))?.consumed_at);
+      assert.equal(
+        await trialsOf([shopA.organizationId, shopB.organizationId]),
+        1,
+        "one person, one trial"
+      );
+      // the retry pass reads the unresolved fact again: still nothing to pay for it
+      const retried = await billing.retryPending(at(5), 1000);
+      assert.ok(retried.unresolved >= 1);
+      assert.equal((await eventOf(lateA.id))?.status, "unresolved");
+      assert.equal((await eventOf(lateA.id))?.attempts, 2);
+      assert.equal((await billingRow(shopA.organizationId))?.state, "free");
+      assert.equal(
+        await trialsOf([shopA.organizationId, shopB.organizationId]),
+        1
+      );
+      // an unresolved event whose reading throws is a failure that counts an attempt (never retried forever)
+      await admin.pool.query(
+        `CREATE FUNCTION public.trial_gate_refuse_unresolved() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'trial gate refuses the reading' USING ERRCODE = '23514'; END $$`
+      );
+      await admin.pool.query(
+        `CREATE TRIGGER trial_gate_refuse_unresolved BEFORE UPDATE ON public.billing_events
+           FOR EACH ROW WHEN (OLD.status = 'unresolved' AND NEW.status = 'unresolved' AND NEW.id = '${lateA.id}')
+           EXECUTE FUNCTION public.trial_gate_refuse_unresolved()`
+      );
+      try {
+        await assert.rejects(() => billing.processEvent(lateA.id, at(6)));
+      } finally {
+        await admin.pool.query(
+          "DROP TRIGGER trial_gate_refuse_unresolved ON public.billing_events"
+        );
+        await admin.pool.query(
+          "DROP FUNCTION public.trial_gate_refuse_unresolved()"
+        );
+      }
+      assert.deepEqual(await eventOf(lateA.id), {
+        attempts: 3,
+        outcome_code: "error",
+        state_after: "free",
+        state_before: "free",
+        status: "failed",
+      });
+      tests.push(
+        "a checkout paid after its person took the trial reservation to another organization starts no trial: A's checkout is given up when the reservation moves, the late trial_method_ready of A is kept as unresolved (trial_claim_missing, only IDs, A stays Free), B's own checkout starts the one trial, the retry pass reads the unresolved fact again without starting a second, and a reading that throws counts an attempt like any failure"
+      );
+
+      // a fact that was unresolved applies once its organization holds the reservation again, and only once
+      const shopC = await newTenant("paid late C");
+      const shopD = await newTenant("paid late D");
+      const back = shopC.userId;
+      await addOwner(shopD.organizationId, back, at(0));
+      await discarding.startTrial(shopC.organizationId, back, at(0));
+      await discarding.attachProvider(
+        shopC.organizationId,
+        "fake",
+        `chk_late_C_${run}`
+      );
+      await abandon(shopC.organizationId);
+      await discarding.startTrial(shopD.organizationId, back, at(0.1));
+      const lateC = await deliverStored(
+        `chk_late_C_${run}`,
+        methodReady(at(0.2))
+      );
+      assert.equal(lateC.result.status, "unresolved");
+      // D is abandoned too (it never linked a checkout: nothing to give up) and the person returns to C
+      await abandon(shopD.organizationId);
+      const before = discarded.length;
+      await discarding.startTrial(shopC.organizationId, back, at(0.3));
+      assert.equal(discarded.length, before, "D had no checkout to give up");
+      assert.equal(
+        (await claimOf(back))?.organization_id,
+        shopC.organizationId
+      );
+      await billing.retryPending(at(5), 1000);
+      assert.equal((await eventOf(lateC.id))?.status, "applied");
+      assert.equal((await billingRow(shopC.organizationId))?.state, "trialing");
+      assert.ok((await claimOf(back))?.consumed_at);
+      const again = await billing.processEvent(lateC.id, at(6));
+      assert.equal(again.status, "applied");
+      await billing.retryPending(at(10), 1000);
+      const ledgerC = await admin.pool.query<{ status: string }>(
+        "SELECT status FROM public.billing_events WHERE organization_id = $1 AND fact_type = 'trial_method_ready'",
+        [shopC.organizationId]
+      );
+      assert.deepEqual(
+        ledgerC.rows.map((row) => row.status),
+        ["applied"]
+      );
+      assert.equal(
+        await trialsOf([shopC.organizationId, shopD.organizationId]),
+        1
+      );
+      tests.push(
+        "an unresolved fact is reprocessable: once its organization holds the person's reservation again, the retry pass applies it once (one ledger row, one consumed reservation, one trial), and processing it again changes nothing"
+      );
+
+      // the race: the fact waits on the reservation's row while the person moves it; it then finds none
+      const racedP = await newTenant("raced P");
+      const racedQ = await newTenant("raced Q");
+      const mover = racedP.userId;
+      await addOwner(racedQ.organizationId, mover, at(0));
+      await billing.startTrial(racedP.organizationId, mover, at(0));
+      await billing.attachProvider(
+        racedP.organizationId,
+        "fake",
+        `chk_raced_P_${run}`
+      );
+      const claimHolder = new Client({ connectionString: adminUrl });
+      await claimHolder.connect();
+      let racedOutcome: Awaited<ReturnType<typeof deliverStored>> | undefined;
+      try {
+        const holderPid = (
+          await claimHolder.query<{ pid: number }>(
+            "SELECT pg_backend_pid() AS pid"
+          )
+        ).rows[0]?.pid;
+        assert.ok(holderPid);
+        await claimHolder.query("BEGIN");
+        await claimHolder.query(
+          "SELECT 1 FROM public.billing_trial_claims WHERE user_id = $1 FOR UPDATE",
+          [mover]
+        );
+        const waiting = deliverStored(
+          `chk_raced_P_${run}`,
+          methodReady(at(0.2))
+        );
+        for (let tries = 0; ; tries += 1) {
+          // biome-ignore lint/performance/noAwaitInLoops: Polls until the fact waits on the row.
+          const blocked = await admin.pool.query<{ count: string }>(
+            `SELECT count(DISTINCT waiting.pid)::text AS count FROM pg_catalog.pg_locks AS waiting
+              WHERE NOT waiting.granted AND $1 = ANY (pg_catalog.pg_blocking_pids(waiting.pid))`,
+            [holderPid]
+          );
+          if (Number(blocked.rows[0]?.count) === 1) {
+            break;
+          }
+          assert.ok(tries < 200, "the fact waits on the reservation's row");
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        // meanwhile the reservation moved to Q (as reserveTrial moves it)
+        await claimHolder.query(
+          "UPDATE public.billing_trial_claims SET organization_id = $2, reserved_at = $3 WHERE user_id = $1",
+          [mover, racedQ.organizationId, at(0.1)]
+        );
+        await claimHolder.query("COMMIT");
+        racedOutcome = await waiting;
+      } finally {
+        await claimHolder.end();
+      }
+      assert.equal(racedOutcome?.result.status, "unresolved");
+      assert.equal(racedOutcome?.result.outcomeCode, "trial_claim_missing");
+      const racedRecord = await billingRow(racedP.organizationId);
+      assert.equal(racedRecord?.state, "trial_setup");
+      assert.equal(racedRecord?.trial_started_at, null);
+      assert.deepEqual(await claimOf(mover), {
+        consumed_at: null,
+        organization_id: racedQ.organizationId,
+        reserved_at: at(0.1),
+      });
+      tests.push(
+        "the fact that would start the trial locks the organization's reservation before it writes: one waiting while the reservation moves away finds none after the wait, stays unresolved and consumes nothing"
+      );
+
+      // the provider fails to give the checkout up: the move stands, and a late payment still starts nothing
+      const shopE = await newTenant("discard fails E");
+      const shopF = await newTenant("discard fails F");
+      const unlucky = shopE.userId;
+      await addOwner(shopF.organizationId, unlucky, at(0));
+      await failing.startTrial(shopE.organizationId, unlucky, at(0));
+      await failing.attachProvider(
+        shopE.organizationId,
+        "fake",
+        `chk_fail_E_${run}`
+      );
+      await abandon(shopE.organizationId);
+      const moved = await failing.startTrial(
+        shopF.organizationId,
+        unlucky,
+        at(0.1)
+      );
+      assert.equal(moved.state, "trial_setup");
+      assert.equal(
+        (await claimOf(unlucky))?.organization_id,
+        shopF.organizationId
+      );
+      const lateE = await deliverStored(
+        `chk_fail_E_${run}`,
+        methodReady(at(0.2))
+      );
+      assert.equal(lateE.result.status, "unresolved");
+      assert.equal((await billingRow(shopE.organizationId))?.state, "free");
+      tests.push(
+        "a provider that fails to give the abandoned checkout up does not undo the move (startTrial succeeds, the failure is only logged), and the late payment of that checkout is still unresolved"
+      );
+
+      // a refused move gives nothing up, and a live subscription is not a pending checkout
+      const live = await newTenant("live G");
+      const other = await newTenant("live H");
+      await addOwner(other.organizationId, live.userId, at(0));
+      await discarding.startTrial(live.organizationId, live.userId, at(0));
+      await discarding.attachProvider(
+        live.organizationId,
+        "fake",
+        `chk_live_G_${run}`
+      );
+      const countBefore = discarded.length;
+      await assert.rejects(
+        () => discarding.startTrial(other.organizationId, live.userId, at(0.1)),
+        TRIAL_IN_PROGRESS
+      );
+      await deliver(`chk_live_G_${run}`, {
+        amount: { currency: "BRL", value: "24.90" },
+        cycleMonths: 1,
+        occurredAt: at(0.2),
+        periodEndsAt: at(30.2),
+        type: "charge_succeeded",
+      });
+      assert.equal((await billingRow(live.organizationId))?.state, "active");
+      await discarding.startTrial(other.organizationId, live.userId, at(0.3));
+      assert.equal(
+        (await claimOf(live.userId))?.organization_id,
+        other.organizationId
+      );
+      assert.equal(
+        discarded.length,
+        countBefore,
+        "neither a refused move nor a subscription that is live gives a checkout up"
+      );
+      tests.push(
+        "a move refused with trial_in_progress gives nothing up, and a reservation that leaves an organization with a live subscription (subscribed without a trial) leaves its checkout alone"
+      );
+    } finally {
+      await discarding.close();
+      await failing.close();
+    }
 
     console.log(
       JSON.stringify(

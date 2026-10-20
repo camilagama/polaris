@@ -97,8 +97,15 @@ export interface BillingProviderPort {
     providerRef: string,
     providerSubscriptionId?: string | null
   ) => Promise<"already_cancelled" | "cancelled" | "nothing_to_cancel">;
-  /** Gives up a prepared checkout that could not be linked (best effort). */
-  discardCheckout: (checkoutId: string) => Promise<void>;
+  /**
+   * Gives up a checkout so it can no longer be paid: one prepared that could not
+   * be linked, or the one of an organization whose trial reservation moved to
+   * another (best effort). Safe to repeat: a checkout already cancelled, or
+   * one the provider does not know, is `already_closed`.
+   */
+  discardCheckout: (
+    checkoutId: string
+  ) => Promise<"already_closed" | "discarded">;
   /** Creates the subscription (or the checkout that creates it) at the provider. */
   prepareSubscription: (
     input: PrepareSubscriptionInput

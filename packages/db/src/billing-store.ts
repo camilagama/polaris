@@ -66,7 +66,12 @@ export interface BillingProviderLink {
   providerSubscriptionId: string | null;
 }
 
-type BillingEventStatus = "applied" | "failed" | "ignored" | "received";
+type BillingEventStatus =
+  | "applied"
+  | "failed"
+  | "ignored"
+  | "received"
+  | "unresolved";
 
 interface ProcessedBillingEvent {
   eventId: string;
@@ -85,6 +90,31 @@ export interface BillingRetryReport {
   failed: number;
   processed: number;
   scanned: number;
+  /** Events read again that still cannot apply (`trial_claim_missing`): kept for the next pass and the reconciliation. */
+  unresolved: number;
+}
+
+/**
+ * The provider checkout an organization was setting up its trial with, when the
+ * person's trial reservation leaves it for another organization (ADR 0101).
+ */
+export interface AbandonedTrialCheckout {
+  /** The organization the reservation left. */
+  organizationId: string;
+  provider: string;
+  /** The reference `attachProvider` stored (for Asaas, the checkout's ID). */
+  providerRef: string;
+}
+
+export interface BillingStoreOptions {
+  /**
+   * Gives up, at the provider, the checkout of the organization a trial
+   * reservation was moved away from, so that it can no longer be paid (the
+   * port's `discardCheckout`). Called after the move is committed, best effort:
+   * a failure is logged and never undoes the move. Without it nothing is called;
+   * a checkout paid anyway does not start a trial (`trial_claim_missing`).
+   */
+  discardCheckout?: (checkout: AbandonedTrialCheckout) => Promise<unknown>;
 }
 
 export interface GrantEntitlementInput extends GrantRequest {
@@ -137,7 +167,7 @@ export interface BillingStore {
   recordEvent: (
     input: RecordBillingEventInput
   ) => Promise<{ duplicate: boolean; id: string }>;
-  /** Processes events that were received but not applied, and retries failed ones. */
+  /** Processes events that were received but not applied, and retries failed and unresolved ones. */
   retryPending: (now?: Date, limit?: number) => Promise<BillingRetryReport>;
   /** Ends a grant now (or, if it has not started, as soon as it could); ending one twice is one ending. */
   revokeEntitlementGrant: (
@@ -151,7 +181,9 @@ export interface BillingStore {
    * the session, set by the server, never taken from the client. It reserves
    * that person's trial for the organization; a trial already used is
    * `trial_already_used`, and one reserved for another organization still
-   * setting up its trial is `trial_in_progress`.
+   * setting up its trial is `trial_in_progress`. A reservation that moves here
+   * from an organization with a checkout still linked has that checkout given
+   * up at the provider afterwards (`discardCheckout` of the options), best effort.
    */
   startTrial: (
     organizationId: string,
@@ -262,12 +294,33 @@ async function exceedsFreeLimits(
 }
 
 /**
- * Writes the record. `consumesTrial` is set when the fact that starts the trial
- * (`trial_method_ready`) applied: the trial of the person who reserved it for
- * this organization last (the one whose opt-in put it in `trial_setup`) is
- * consumed in the same statement that records `trial_started_at` (ADR 0101), so
- * one never exists without the other. Abandoning the checkout consumes nothing.
- * Answers how many reservations were consumed (0 or 1).
+ * The trial reservation the fact that starts this organization's trial consumes:
+ * the one reserved for it last (the person whose opt-in put it in
+ * `trial_setup`), locked for the rest of the transaction so it cannot move
+ * before it is consumed. The record is locked first, as in `startTrial`. Null
+ * when the organization holds none.
+ */
+async function lockTrialClaim(
+  client: PoolClient,
+  organizationId: string
+): Promise<string | null> {
+  const result = await client.query<{ user_id: string }>(
+    `SELECT user_id FROM public.billing_trial_claims
+      WHERE organization_id = $1 AND consumed_at IS NULL
+      ORDER BY reserved_at DESC, user_id
+      LIMIT 1
+      FOR UPDATE`,
+    [organizationId]
+  );
+  return result.rows[0]?.user_id ?? null;
+}
+
+/**
+ * Writes the record. `trialClaimUserId` is given when the fact that starts the
+ * trial (`trial_method_ready`) applied: that person's reservation (locked by
+ * `lockTrialClaim`) is consumed in the same statement that records
+ * `trial_started_at` (ADR 0101), so one never exists without the other.
+ * Abandoning the checkout consumes nothing.
  */
 async function saveRecord(
   client: PoolClient,
@@ -275,26 +328,18 @@ async function saveRecord(
   before: BillingRecord,
   next: BillingRecord,
   now: Date,
-  consumesTrial = false
-): Promise<number> {
+  trialClaimUserId: string | null = null
+): Promise<void> {
   // when the organization left Pro (the start of the Free Over Limit adaptation window, ADR 0064)
   const episode = episodeStartAfter({
     before,
     nextState: next.state,
     now,
   });
-  // the outer conditions are checked again on the locked row: a reservation
-  // moved to another organization meanwhile is not consumed here
   const saved = await client.query<{ consumed_claims: number }>(
     `WITH trial_claim AS (
        UPDATE public.billing_trial_claims SET consumed_at = $9::timestamptz
-        WHERE $16::boolean AND organization_id = $1 AND consumed_at IS NULL
-          AND user_id = (
-            SELECT claim.user_id FROM public.billing_trial_claims AS claim
-             WHERE claim.organization_id = $1 AND claim.consumed_at IS NULL
-             ORDER BY claim.reserved_at DESC, claim.user_id
-             LIMIT 1
-          )
+        WHERE user_id = $16 AND organization_id = $1 AND consumed_at IS NULL
         RETURNING user_id
      )
      UPDATE public.organization_billing SET
@@ -331,10 +376,16 @@ async function saveRecord(
       next.revoked?.reason ?? null,
       next.revoked?.cycleMonths ?? null,
       next.revoked?.cancelAtPeriodEnd ?? false,
-      consumesTrial && !before.trialConsumed && next.trialConsumed,
+      trialClaimUserId,
     ]
   );
-  return saved.rows[0]?.consumed_claims ?? 0;
+  if (
+    trialClaimUserId !== null &&
+    (saved.rows[0]?.consumed_claims ?? 0) !== 1
+  ) {
+    // the reservation was locked a moment ago: never a trial without its consumption
+    throw new Error("billing_trial_claim_not_consumed");
+  }
 }
 
 interface EventRow {
@@ -356,7 +407,7 @@ async function finishEvent(
     outcomeCode: string | null;
     stateAfter: string | null;
     stateBefore: string | null;
-    status: "applied" | "failed" | "ignored";
+    status: "applied" | "failed" | "ignored" | "unresolved";
   },
   now: Date,
   attempts: number
@@ -591,27 +642,59 @@ async function processInTransaction(
       status: "ignored",
     };
   }
+  // the one place that decides whether this fact starts the trial (and so spends a reservation)
   const startsTrial =
     fact.type === "trial_method_ready" &&
     !before.trialConsumed &&
     result.record.trialConsumed;
-  const consumedClaims = await saveRecord(
+  const trialClaimUserId = startsTrial
+    ? await lockTrialClaim(client, organizationId)
+    : null;
+  if (startsTrial && trialClaimUserId === null) {
+    // a trial nobody's reservation pays for (a checkout paid after the person took
+    // the reservation to another organization, or an opt-in from before the trial
+    // was per person): it does not start, which the trial per person exists to
+    // prevent. The organization stays as it is and nothing is charged here; the
+    // event waits, read again by the retry pass, and the reconciliation decides
+    // (cancel the subscription, or charge it without a trial)
+    // the last attempt is an error: from then on only the reconciliation reads it
+    const unclaimed = {
+      eventId,
+      organizationId: opaqueId(organizationId),
+    };
+    if (attempts >= MAX_BILLING_EVENT_ATTEMPTS) {
+      logger.error("billing_trial_fact_without_claim", unclaimed);
+    } else {
+      logger.warn("billing_trial_fact_without_claim", unclaimed);
+    }
+    await finishEvent(
+      client,
+      eventId,
+      {
+        organizationId,
+        outcomeCode: "trial_claim_missing",
+        stateAfter: before.state,
+        stateBefore: before.state,
+        status: "unresolved",
+      },
+      now,
+      attempts
+    );
+    return {
+      eventId,
+      organizationId,
+      outcomeCode: "trial_claim_missing",
+      status: "unresolved",
+    };
+  }
+  await saveRecord(
     client,
     organizationId,
     before,
     result.record,
     now,
-    startsTrial
+    trialClaimUserId
   );
-  if (startsTrial && consumedClaims === 0) {
-    // a trial that started with no reservation (opted in before the trial was per
-    // person, or a checkout paid after the person took the reservation elsewhere):
-    // nobody's trial was spent, which the trial per person exists to prevent
-    logger.warn("billing_trial_started_without_claim", {
-      eventId,
-      organizationId: opaqueId(organizationId),
-    });
-  }
   await finishEvent(
     client,
     eventId,
@@ -840,7 +923,10 @@ async function sweepExpiredGrants(
  * one reserved for another organization moves only if that organization is no
  * longer setting up its trial (its checkout was abandoned or it subscribed
  * without one). An organization already setting up the trial of another person
- * (a co-owner) refuses a second one: its trial is that person's.
+ * (a co-owner) refuses a second one: its trial is that person's. Answers the
+ * checkout the reservation left behind, when it moved from an organization
+ * that still has one linked and is not on Pro: the caller gives it up at the
+ * provider once the move is committed.
  */
 async function reserveTrial(
   client: PoolClient,
@@ -851,7 +937,7 @@ async function reserveTrial(
     settingUp: boolean;
     userId: string;
   }
-): Promise<void> {
+): Promise<AbandonedTrialCheckout | null> {
   const { now, organizationId, userId } = input;
   if (input.settingUp) {
     const current = await client.query<{ user_id: string }>(
@@ -871,7 +957,7 @@ async function reserveTrial(
     [userId, organizationId, now]
   );
   if (inserted.rowCount === 1) {
-    return;
+    return null;
   }
   const found = await client.query<{
     consumed_at: Date | null;
@@ -888,22 +974,42 @@ async function reserveTrial(
     throw new Error("trial_already_used");
   }
   if (claim.organization_id === organizationId) {
-    return;
+    return null;
   }
-  const other = await client.query<{ state: string }>(
-    "SELECT state FROM public.organization_billing WHERE organization_id = $1",
+  // read in one statement, not locked: locking the other record here, after the
+  // claim, could deadlock with a `startTrial` of that organization
+  const other = await client.query<{
+    provider: string | null;
+    provider_ref: string | null;
+    state: string;
+  }>(
+    "SELECT state, provider, provider_ref FROM public.organization_billing WHERE organization_id = $1",
     [claim.organization_id]
   );
-  if (other.rows[0]?.state === "trial_setup") {
+  const [left] = other.rows;
+  if (left?.state === "trial_setup") {
     throw new Error("trial_in_progress");
   }
   await client.query(
     "UPDATE public.billing_trial_claims SET organization_id = $2, reserved_at = $3 WHERE user_id = $1",
     [userId, organizationId, now]
   );
+  // a subscription that is live there is not a pending checkout: it is left alone
+  return left?.provider &&
+    left.provider_ref &&
+    !grantsPro(left.state as BillingState)
+    ? {
+        organizationId: claim.organization_id,
+        provider: left.provider,
+        providerRef: left.provider_ref,
+      }
+    : null;
 }
 
-export function createBillingStore(connectionString: string): BillingStore {
+export function createBillingStore(
+  connectionString: string,
+  options: BillingStoreOptions = {}
+): BillingStore {
   const pool = new Pool({
     connectionString,
     connectionTimeoutMillis: 5000,
@@ -1119,7 +1225,7 @@ export function createBillingStore(connectionString: string): BillingStore {
         // the work was rolled back: record the failure on its own so a retry sees it
         await inTransaction(pool, async (client) => {
           await client.query(
-            "UPDATE public.billing_events SET status = 'failed', outcome_code = 'error', attempts = attempts + 1, processed_at = $2 WHERE id = $1 AND status IN ('received', 'failed')",
+            "UPDATE public.billing_events SET status = 'failed', outcome_code = 'error', attempts = attempts + 1, processed_at = $2 WHERE id = $1 AND status IN ('received', 'failed', 'unresolved')",
             [eventId, now]
           );
         }).catch(() => undefined);
@@ -1190,7 +1296,7 @@ export function createBillingStore(connectionString: string): BillingStore {
         `SELECT id FROM public.billing_events
           WHERE (status = 'received' AND received_at < $1)
              OR (
-               status = 'failed'
+               status IN ('failed', 'unresolved')
                AND attempts < $2
                AND processed_at < $4::timestamptz - (attempts * interval '15 minutes')
              )
@@ -1207,6 +1313,7 @@ export function createBillingStore(connectionString: string): BillingStore {
         failed: 0,
         processed: 0,
         scanned: pending.rows.length,
+        unresolved: 0,
       };
       for (const { id } of pending.rows) {
         try {
@@ -1214,6 +1321,8 @@ export function createBillingStore(connectionString: string): BillingStore {
           const result = await store.processEvent(id, now);
           if (result.status === "failed") {
             report.failed += 1;
+          } else if (result.status === "unresolved") {
+            report.unresolved += 1;
           } else {
             report.processed += 1;
           }
@@ -1228,41 +1337,57 @@ export function createBillingStore(connectionString: string): BillingStore {
       return report;
     },
     async startTrial(organizationId, userId, now = new Date()) {
-      return await inTransaction(pool, async (client) => {
-        const row = await lockRecord(client, organizationId);
-        const before = toRecord(row);
-        // the state machine refuses a trial that is running, a subscriber and a second trial
-        const next = applyBillingEvent(
-          before,
-          { type: "start_trial" },
-          {
+      const { abandoned, record: started } = await inTransaction(
+        pool,
+        async (client) => {
+          const row = await lockRecord(client, organizationId);
+          const before = toRecord(row);
+          // the state machine refuses a trial that is running, a subscriber and a second trial
+          const next = applyBillingEvent(
+            before,
+            { type: "start_trial" },
+            {
+              now,
+              overFreeLimits: false,
+              trialConsumed: before.trialConsumed,
+            }
+          );
+          const left = await reserveTrial(client, {
             now,
-            overFreeLimits: false,
-            trialConsumed: before.trialConsumed,
-          }
-        );
-        await reserveTrial(client, {
-          now,
-          organizationId,
-          settingUp: before.state === "trial_setup",
-          userId,
-        });
-        const record: BillingRecord = { ...before, ...next };
-        await saveRecord(client, organizationId, before, record, now);
-        await writeLedger(
-          client,
-          {
-            fact: { type: "start_trial" },
-            factType: "command",
             organizationId,
-            providerEventId: `command:start_trial:${randomUUID()}`,
-            stateAfter: record.state,
-            stateBefore: before.state,
-          },
-          now
-        );
-        return record;
-      });
+            settingUp: before.state === "trial_setup",
+            userId,
+          });
+          const record: BillingRecord = { ...before, ...next };
+          await saveRecord(client, organizationId, before, record, now);
+          await writeLedger(
+            client,
+            {
+              fact: { type: "start_trial" },
+              factType: "command",
+              organizationId,
+              providerEventId: `command:start_trial:${randomUUID()}`,
+              stateAfter: record.state,
+              stateBefore: before.state,
+            },
+            now
+          );
+          return { abandoned: left, record };
+        }
+      );
+      if (abandoned && options.discardCheckout) {
+        try {
+          await options.discardCheckout(abandoned);
+        } catch (error: unknown) {
+          // the move stands: a checkout paid anyway does not start a trial (`trial_claim_missing`)
+          logger.warn("billing_trial_checkout_discard_failed", {
+            ...describeError(error),
+            organizationId: opaqueId(abandoned.organizationId),
+            provider: abandoned.provider,
+          });
+        }
+      }
+      return started;
     },
     async sweepDue(now = new Date(), limit = 50) {
       const due = await pool.query<{ organization_id: string }>(

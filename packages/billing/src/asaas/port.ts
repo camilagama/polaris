@@ -7,6 +7,7 @@ import {
   type PrepareSubscriptionInput,
   type ProviderBillingEvent,
   ProviderNotFoundError,
+  ProviderRejectedError,
 } from "../provider-port";
 import { createAsaasClient } from "./client";
 import { newPolarisReference } from "./ids";
@@ -173,7 +174,24 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       return "cancelled";
     },
     async discardCheckout(checkoutId) {
-      await client.cancelCheckout(checkoutId);
+      try {
+        await client.cancelCheckout(checkoutId);
+        return "discarded";
+      } catch (error: unknown) {
+        // a checkout cancelled before answers 400 to a second cancel, and one Asaas
+        // does not know answers 404 (sandbox, 19/10/2026): nothing is left to give up.
+        // The ID is checked before the call, so a 400 is not a malformed one; an
+        // expired or paid checkout was not measured and is read the same way (the
+        // fact paid without a reservation still starts no trial). A refused key
+        // (401, 403) or an outage still throws
+        if (
+          error instanceof ProviderRejectedError &&
+          (error.status === 400 || error.status === 404)
+        ) {
+          return "already_closed";
+        }
+        throw error;
+      }
     },
     async prepareSubscription(input) {
       const reference = newPolarisReference(config.randomUuid());

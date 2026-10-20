@@ -5,7 +5,7 @@ import { runBillingMaintenance } from "./maintenance";
 const now = new Date("2026-10-14T12:00:00.000Z");
 
 function store(
-  retry = { failed: 0, processed: 1, scanned: 1 },
+  retry = { failed: 0, processed: 1, scanned: 1, unresolved: 0 },
   sweep = { failed: 0, scanned: 2, transitioned: 2 }
 ) {
   const calls: string[] = [];
@@ -33,7 +33,7 @@ describe("the hourly billing maintenance", () => {
     expect(fixture.store.retryPending).toHaveBeenCalledWith(now);
     expect(fixture.store.sweepDue).toHaveBeenCalledWith(now);
     expect(report).toEqual({
-      retry: { failed: 0, processed: 1, scanned: 1 },
+      retry: { failed: 0, processed: 1, scanned: 1, unresolved: 0 },
       sweep: { failed: 0, scanned: 2, transitioned: 2 },
     });
   });
@@ -43,7 +43,7 @@ describe("the hourly billing maintenance", () => {
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
     const retryFailed = store(
-      { failed: 1, processed: 0, scanned: 1 },
+      { failed: 1, processed: 0, scanned: 1, unresolved: 0 },
       { failed: 0, scanned: 0, transitioned: 0 }
     );
     await expect(runBillingMaintenance(retryFailed.store, now)).rejects.toThrow(
@@ -53,7 +53,7 @@ describe("the hourly billing maintenance", () => {
     expect(retryFailed.calls).toEqual(["retry", "sweep"]);
 
     const sweepFailed = store(
-      { failed: 0, processed: 0, scanned: 0 },
+      { failed: 0, processed: 0, scanned: 0, unresolved: 0 },
       { failed: 2, scanned: 2, transitioned: 0 }
     );
     await expect(runBillingMaintenance(sweepFailed.store, now)).rejects.toThrow(

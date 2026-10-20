@@ -10,6 +10,9 @@
 -- * `provider_subscription_id` (Asaas `sub_`) on the inbox and on the record: stored from the first fact that matched
 --   `provider_ref`, unique per provider on the record (one subscription, one organization). The tenant keeps reading the ledger's old columns only (column grant) and never the new one.
 -- * The semiannual Pro price stops being sold (Q12); it comes back by migration.
+-- * `billing_events` gains the status `unresolved` (outcome `trial_claim_missing`): a fact that would start a trial no
+--   reservation of this organization pays for is kept, changes nothing and is read again by the retry pass. Both
+--   checks only widen and the retry index takes the new status: the previous Worker never writes it.
 -- * `purge_organization_data` keeps `amount` and `currency` in a pseudonymized fact (Filipe V2): the money facts now
 --   carry the amount, which the fiscal record needs. The rest of the function is the one of migration 0080, unchanged.
 CREATE TABLE "billing_trial_claims" (
@@ -28,6 +31,12 @@ CREATE INDEX "billing_trial_claims_organization_idx" ON "billing_trial_claims" U
 CREATE UNIQUE INDEX "organization_billing_provider_subscription_unique" ON "organization_billing" USING btree ("provider","provider_subscription_id") WHERE "organization_billing"."provider_subscription_id" IS NOT NULL;--> statement-breakpoint
 ALTER TABLE "billing_events" ADD CONSTRAINT "billing_events_provider_subscription_length" CHECK ("billing_events"."provider_subscription_id" IS NULL OR char_length("billing_events"."provider_subscription_id") BETWEEN 1 AND 128);--> statement-breakpoint
 ALTER TABLE "organization_billing" ADD CONSTRAINT "organization_billing_provider_subscription_coherent" CHECK ("organization_billing"."provider_subscription_id" IS NULL OR ("organization_billing"."provider_ref" IS NOT NULL AND char_length("organization_billing"."provider_subscription_id") BETWEEN 1 AND 128));--> statement-breakpoint
+ALTER TABLE "billing_events" DROP CONSTRAINT "billing_events_status_allowed";--> statement-breakpoint
+ALTER TABLE "billing_events" DROP CONSTRAINT "billing_events_outcome_allowed";--> statement-breakpoint
+DROP INDEX "billing_events_pending_idx";--> statement-breakpoint
+CREATE INDEX "billing_events_pending_idx" ON "billing_events" USING btree ("received_at") WHERE "billing_events"."status" IN ('received', 'failed', 'unresolved');--> statement-breakpoint
+ALTER TABLE "billing_events" ADD CONSTRAINT "billing_events_status_allowed" CHECK ("billing_events"."status" IN ('received', 'applied', 'ignored', 'failed', 'unresolved'));--> statement-breakpoint
+ALTER TABLE "billing_events" ADD CONSTRAINT "billing_events_outcome_allowed" CHECK ("billing_events"."outcome_code" IS NULL OR "billing_events"."outcome_code" IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error', 'trial_claim_missing'));--> statement-breakpoint
 CREATE POLICY "billing_trial_claims_billing_runtime_select" ON "billing_trial_claims" AS PERMISSIVE FOR SELECT TO "polaris_billing_runtime" USING (true);--> statement-breakpoint
 CREATE POLICY "billing_trial_claims_billing_runtime_insert" ON "billing_trial_claims" AS PERMISSIVE FOR INSERT TO "polaris_billing_runtime" WITH CHECK (true);--> statement-breakpoint
 CREATE POLICY "billing_trial_claims_billing_runtime_update" ON "billing_trial_claims" AS PERMISSIVE FOR UPDATE TO "polaris_billing_runtime" USING (true) WITH CHECK (true);--> statement-breakpoint

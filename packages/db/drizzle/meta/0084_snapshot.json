@@ -765,7 +765,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"billing_events\".\"status\" IN ('received', 'failed')",
+          "where": "\"billing_events\".\"status\" IN ('received', 'failed', 'unresolved')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -812,11 +812,11 @@
         },
         "billing_events_status_allowed": {
           "name": "billing_events_status_allowed",
-          "value": "\"billing_events\".\"status\" IN ('received', 'applied', 'ignored', 'failed')"
+          "value": "\"billing_events\".\"status\" IN ('received', 'applied', 'ignored', 'failed', 'unresolved')"
         },
         "billing_events_outcome_allowed": {
           "name": "billing_events_outcome_allowed",
-          "value": "\"billing_events\".\"outcome_code\" IS NULL OR \"billing_events\".\"outcome_code\" IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error')"
+          "value": "\"billing_events\".\"outcome_code\" IS NULL OR \"billing_events\".\"outcome_code\" IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error', 'trial_claim_missing')"
         },
         "billing_events_fact_is_small_object": {
           "name": "billing_events_fact_is_small_object",

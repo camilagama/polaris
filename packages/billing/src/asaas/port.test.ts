@@ -464,12 +464,61 @@ describe("refundCurrentPeriod", () => {
 });
 
 describe("discardCheckout", () => {
+  // the shape of the sandbox answers (19/10/2026): 200 with CANCELED, then a 400 for the same checkout
+  const cancelled = `{"id":"${CHECKOUT_ID}","status":"CANCELED"}`;
+  const alreadyCancelled =
+    '{"errors":[{"code":"invalid_action","description":"Checkout já cancelado."}]}';
+
   it("posts to /checkouts/<uuid>/cancel", async () => {
-    const { calls, fetch } = fakeAsaas(() => ({ text: "{}" }));
-    await portWith(fetch).discardCheckout(CHECKOUT_ID);
+    const { calls, fetch } = fakeAsaas(() => ({ text: cancelled }));
+    await expect(portWith(fetch).discardCheckout(CHECKOUT_ID)).resolves.toBe(
+      "discarded"
+    );
     expect(calls).toHaveLength(1);
     expect(calls[0]?.method).toBe("POST");
     expect(calls[0]?.url).toBe(`/checkouts/${CHECKOUT_ID}/cancel`);
+  });
+
+  it("is safe to repeat: a checkout cancelled before is already_closed", async () => {
+    let answered = 0;
+    const { calls, fetch } = fakeAsaas(() => {
+      answered += 1;
+      return answered === 1
+        ? { text: cancelled }
+        : { status: 400, text: alreadyCancelled };
+    });
+    const port = portWith(fetch);
+    await expect(port.discardCheckout(CHECKOUT_ID)).resolves.toBe("discarded");
+    await expect(port.discardCheckout(CHECKOUT_ID)).resolves.toBe(
+      "already_closed"
+    );
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a checkout the provider does not know is already_closed", async () => {
+    const { fetch } = fakeAsaas(() => ({ status: 404, text: "{}" }));
+    await expect(portWith(fetch).discardCheckout(CHECKOUT_ID)).resolves.toBe(
+      "already_closed"
+    );
+  });
+
+  it("a refused key or an outage still throws, for the caller to log", async () => {
+    const refused = fakeAsaas(() => ({ status: 401, text: "{}" }));
+    await expect(
+      portWith(refused.fetch).discardCheckout(CHECKOUT_ID)
+    ).rejects.toMatchObject({ code: "provider_rejected", status: 401 });
+    const down = fakeAsaas(() => ({ status: 503, text: "{}" }));
+    await expect(
+      portWith(down.fetch).discardCheckout(CHECKOUT_ID)
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+
+  it("never sends an ID that is not a checkout's", async () => {
+    const { calls, fetch } = fakeAsaas(() => ({ text: cancelled }));
+    await expect(
+      portWith(fetch).discardCheckout("../payments/pay_1")
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(0);
   });
 });
 

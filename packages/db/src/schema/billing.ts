@@ -365,7 +365,7 @@ export const billingEvents = pgTable(
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "restrict",
     }),
-    /** `not_applicable`, `stale` and `reference_mismatch` for ignored facts, `unknown_organization` and `error` for failed ones. */
+    /** `not_applicable`, `stale` and `reference_mismatch` for ignored facts, `unknown_organization` and `error` for failed ones, `trial_claim_missing` for an unresolved one. */
     outcomeCode: text("outcome_code"),
     processedAt: timestamp("processed_at", { withTimezone: true }),
     provider: text("provider").notNull(),
@@ -400,11 +400,11 @@ export const billingEvents = pgTable(
     ),
     check(
       "billing_events_status_allowed",
-      sql`${table.status} IN ('received', 'applied', 'ignored', 'failed')`
+      sql`${table.status} IN ('received', 'applied', 'ignored', 'failed', 'unresolved')`
     ),
     check(
       "billing_events_outcome_allowed",
-      sql`${table.outcomeCode} IS NULL OR ${table.outcomeCode} IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error')`
+      sql`${table.outcomeCode} IS NULL OR ${table.outcomeCode} IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error', 'trial_claim_missing')`
     ),
     check(
       "billing_events_fact_is_small_object",
@@ -422,7 +422,7 @@ export const billingEvents = pgTable(
     // what the retry pass reads
     index("billing_events_pending_idx")
       .on(table.receivedAt)
-      .where(sql`${table.status} IN ('received', 'failed')`),
+      .where(sql`${table.status} IN ('received', 'failed', 'unresolved')`),
     // a person sees the billing history of their own organization, never writes it
     pgPolicy("billing_events_current_tenant_select", {
       for: "select",

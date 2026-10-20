@@ -1181,7 +1181,14 @@ async function run() {
     );
 
     // the same on a trial: the trial runs, and the first charge cannot convert it
-    const trialRefund = await attachedFree("lifecycle trial refund", "sub_E2");
+    // (the person opts in first: a trial without a reservation does not start)
+    const trialRefund = await newTenant("lifecycle trial refund");
+    await billing.startTrial(
+      trialRefund.organizationId,
+      trialRefund.userId,
+      at(0)
+    );
+    await billing.attachProvider(trialRefund.organizationId, "fake", "sub_E2");
     await apply(
       "fake",
       "evt-E2-ready",
