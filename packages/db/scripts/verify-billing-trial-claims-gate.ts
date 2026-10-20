@@ -8,6 +8,7 @@ import {
   createBillingStore,
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
+import { eachRound, lockRow, raceBehindLock } from "./concurrency-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -423,84 +424,88 @@ async function main() {
     );
 
     // ------------------------------------------- 3. the race, behind a barrier
-    const racer = await newTenant("race A");
-    const raceOther = await newTenant("race B");
-    await addOwner(raceOther.organizationId, racer.userId, at(0));
-    await admin.pool.query(
-      `CREATE FUNCTION public.trial_gate_barrier() RETURNS trigger LANGUAGE plpgsql AS $$
-       BEGIN
-         IF NEW.user_id = '${racer.userId}' THEN
-           PERFORM pg_catalog.pg_advisory_lock_shared(${BARRIER_KEY});
-           PERFORM pg_catalog.pg_advisory_unlock_shared(${BARRIER_KEY});
-         END IF;
-         RETURN NEW;
-       END $$`
-    );
-    await admin.pool.query(
-      "CREATE TRIGGER trial_gate_barrier BEFORE INSERT ON public.billing_trial_claims FOR EACH ROW EXECUTE FUNCTION public.trial_gate_barrier()"
-    );
-    barrierInstalled = true;
-    const gate = new Client({ connectionString: adminUrl });
-    await gate.connect();
-    let outcomes: PromiseSettledResult<unknown>[];
-    try {
-      await gate.query("SELECT pg_advisory_lock($1)", [BARRIER_KEY]);
-      const both = Promise.allSettled([
-        billing.startTrial(racer.organizationId, racer.userId, at(0)),
-        billing.startTrial(raceOther.organizationId, racer.userId, at(0)),
-      ]);
-      // both transactions reached the claim (each holding its own organization's row) and wait at the barrier
-      for (let tries = 0; ; tries += 1) {
-        // biome-ignore lint/performance/noAwaitInLoops: Polls until both racers wait.
-        const waiting = await admin.pool.query<{ count: string }>(
-          "SELECT count(*)::text AS count FROM pg_catalog.pg_locks WHERE locktype = 'advisory' AND objid = $1 AND NOT granted",
-          [BARRIER_KEY]
-        );
-        if (Number(waiting.rows[0]?.count) === 2) {
-          break;
-        }
-        assert.ok(tries < 200, "both racers reach the barrier");
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      await gate.query("SELECT pg_advisory_unlock($1)", [BARRIER_KEY]);
-      outcomes = await both;
-    } finally {
-      await gate.end();
+    // Each round repeats the race with fresh organizations; the barrier below holds both
+    // commands inside their transaction and the gate proves both are waiting at it.
+    const startRounds = await eachRound(async (round) => {
+      const racer = await newTenant(`race A ${round}`);
+      const raceOther = await newTenant(`race B ${round}`);
+      await addOwner(raceOther.organizationId, racer.userId, at(0));
       await admin.pool.query(
-        "DROP TRIGGER trial_gate_barrier ON public.billing_trial_claims"
+        `CREATE FUNCTION public.trial_gate_barrier() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN
+           IF NEW.user_id = '${racer.userId}' THEN
+             PERFORM pg_catalog.pg_advisory_lock_shared(${BARRIER_KEY});
+             PERFORM pg_catalog.pg_advisory_unlock_shared(${BARRIER_KEY});
+           END IF;
+           RETURN NEW;
+         END $$`
       );
-      await admin.pool.query("DROP FUNCTION public.trial_gate_barrier()");
-      barrierInstalled = false;
-    }
-    const fulfilled = outcomes.filter(
-      (outcome) => outcome.status === "fulfilled"
-    );
-    const rejected = outcomes.filter(
-      (outcome): outcome is PromiseRejectedResult =>
-        outcome.status === "rejected"
-    );
-    assert.equal(
-      fulfilled.length,
-      1,
-      "exactly one organization gets the trial"
-    );
-    assert.equal(rejected.length, 1);
-    assert.match(String(rejected[0]?.reason), TRIAL_IN_PROGRESS);
-    const raced = await claimOf(racer.userId);
-    assert.ok(raced);
-    const winner =
-      outcomes[0]?.status === "fulfilled"
-        ? racer.organizationId
-        : raceOther.organizationId;
-    const loser =
-      winner === racer.organizationId
-        ? raceOther.organizationId
-        : racer.organizationId;
-    assert.equal(raced.organization_id, winner);
-    assert.equal((await billingRow(winner))?.state, "trial_setup");
-    assert.equal((await billingRow(loser))?.state ?? "free", "free");
+      await admin.pool.query(
+        "CREATE TRIGGER trial_gate_barrier BEFORE INSERT ON public.billing_trial_claims FOR EACH ROW EXECUTE FUNCTION public.trial_gate_barrier()"
+      );
+      barrierInstalled = true;
+      const gate = new Client({ connectionString: adminUrl });
+      await gate.connect();
+      let outcomes: PromiseSettledResult<unknown>[];
+      try {
+        await gate.query("SELECT pg_advisory_lock($1)", [BARRIER_KEY]);
+        const both = Promise.allSettled([
+          billing.startTrial(racer.organizationId, racer.userId, at(0)),
+          billing.startTrial(raceOther.organizationId, racer.userId, at(0)),
+        ]);
+        // both transactions reached the claim (each holding its own organization's row) and wait at the barrier
+        for (let tries = 0; ; tries += 1) {
+          // biome-ignore lint/performance/noAwaitInLoops: Polls until both racers wait.
+          const waiting = await admin.pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM pg_catalog.pg_locks WHERE locktype = 'advisory' AND objid = $1 AND NOT granted",
+            [BARRIER_KEY]
+          );
+          if (Number(waiting.rows[0]?.count) === 2) {
+            break;
+          }
+          assert.ok(tries < 200, "both racers reach the barrier");
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        await gate.query("SELECT pg_advisory_unlock($1)", [BARRIER_KEY]);
+        outcomes = await both;
+      } finally {
+        await gate.end();
+        await admin.pool.query(
+          "DROP TRIGGER trial_gate_barrier ON public.billing_trial_claims"
+        );
+        await admin.pool.query("DROP FUNCTION public.trial_gate_barrier()");
+        barrierInstalled = false;
+      }
+      const fulfilled = outcomes.filter(
+        (outcome) => outcome.status === "fulfilled"
+      );
+      const rejected = outcomes.filter(
+        (outcome): outcome is PromiseRejectedResult =>
+          outcome.status === "rejected"
+      );
+      assert.equal(
+        fulfilled.length,
+        1,
+        "exactly one organization gets the trial"
+      );
+      assert.equal(rejected.length, 1);
+      assert.match(String(rejected[0]?.reason), TRIAL_IN_PROGRESS);
+      const raced = await claimOf(racer.userId);
+      assert.ok(raced);
+      const winner =
+        outcomes[0]?.status === "fulfilled"
+          ? racer.organizationId
+          : raceOther.organizationId;
+      const loser =
+        winner === racer.organizationId
+          ? raceOther.organizationId
+          : racer.organizationId;
+      assert.equal(raced.organization_id, winner);
+      assert.equal((await billingRow(winner))?.state, "trial_setup");
+      assert.equal((await billingRow(loser))?.state ?? "free", "free");
+    });
     tests.push(
-      "two organizations of one person starting a trial at the same instant (released together from a barrier) end with one reservation: one trial_setup, the other refused with trial_in_progress and left Free"
+      `two organizations of one person starting a trial at the same instant (released together from a barrier, both seen waiting at it) end with one reservation: one trial_setup, the other refused with trial_in_progress and left Free (${startRounds} round(s))`
     );
 
     // ------------------- 4. the claim row is the lock: a decision waits for a consumption
@@ -1111,6 +1116,86 @@ async function main() {
       });
       tests.push(
         "a checkout paid after its person took the trial reservation to another organization starts no trial: A's checkout is given up when the reservation moves, the late trial_method_ready of A is kept as unresolved (trial_claim_missing, only IDs, A stays Free), B's own checkout starts the one trial, the retry pass reads the unresolved fact again without starting a second, and a reading that throws counts an attempt like any failure"
+      );
+
+      // the move of the reservation racing the payment of the checkout it gives up:
+      // exactly one of them wins, never both (concurrency-support.ts holds the claim's row first)
+      const discardRounds = await eachRound(async (round) => {
+        const discardA = await newTenant(`discard race A ${round}`);
+        const discardB = await newTenant(`discard race B ${round}`);
+        const traveler = discardA.userId;
+        const checkoutA = `chk_discard_A_${run}_${round}`;
+        await addOwner(discardB.organizationId, traveler, at(0));
+        await discarding.startTrial(discardA.organizationId, traveler, at(0));
+        await discarding.attachProvider(
+          discardA.organizationId,
+          "fake",
+          checkoutA
+        );
+        await abandon(discardA.organizationId);
+        let paidEventId = "";
+        const { results } = await raceBehindLock<unknown>({
+          adminUrl,
+          hold: [lockRow("billing_trial_claims", "user_id", traveler)],
+          label:
+            "the move of the trial reservation racing the payment of the discarded checkout",
+          racers: [
+            () =>
+              discarding.startTrial(discardB.organizationId, traveler, at(0.2)),
+            async () => {
+              const delivered = await deliverStored(
+                checkoutA,
+                methodReady(at(0.3)),
+                `sub_discard_A_${run}_${round}`
+              );
+              paidEventId = delivered.id;
+              return delivered;
+            },
+          ],
+        });
+        const [moved, paid] = results;
+        assert.ok(moved && paid);
+        assert.equal(paid.status, "fulfilled", "the payment is always stored");
+        const reservation = await claimOf(traveler);
+        assert.ok(reservation);
+        if (moved.status === "fulfilled") {
+          // the reservation moved first: A's late payment starts no trial
+          assert.equal(reservation.organization_id, discardB.organizationId);
+          assert.equal(reservation.consumed_at, null);
+          assert.equal(
+            (await billingRow(discardB.organizationId))?.state,
+            "trial_setup"
+          );
+          assert.equal(
+            (await billingRow(discardA.organizationId))?.state,
+            "free"
+          );
+          assert.equal(
+            (await eventOf(paidEventId))?.outcome_code,
+            "trial_claim_missing"
+          );
+        } else {
+          // the payment came first: A holds the one trial and the move is refused
+          assert.match(String(moved.reason), TRIAL_ALREADY_USED);
+          assert.equal(reservation.organization_id, discardA.organizationId);
+          assert.ok(reservation.consumed_at);
+          assert.equal(
+            (await billingRow(discardA.organizationId))?.state,
+            "trialing"
+          );
+          assert.equal(
+            (await billingRow(discardB.organizationId))?.state ?? "free",
+            "free"
+          );
+        }
+        assert.equal(
+          await trialsOf([discardA.organizationId, discardB.organizationId]),
+          moved.status === "fulfilled" ? 0 : 1,
+          "one traveler, one trial, whoever wins the race"
+        );
+      });
+      tests.push(
+        `the move of a trial reservation racing the payment of the checkout it gives up ends in exactly one of two states, never both: the reservation moved and the late payment is trial_claim_missing, or the payment consumed it and the move is trial_already_used (${discardRounds} round(s), released from a barrier with the racers seen blocked on the claim's row)`
       );
 
       // a fact that was unresolved applies once its organization holds the reservation again, and only once

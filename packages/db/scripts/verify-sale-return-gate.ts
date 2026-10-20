@@ -20,6 +20,14 @@ import {
 } from "../src/sale-return-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
+  advisoryLock,
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   confirmPlainSale,
   createSellableProduct,
   createTenantFixture,
@@ -747,138 +755,192 @@ async function run() {
     );
 
     // ----------------------------------------------------- 9. concurrency
+    // Each race holds the lock the racers queue on (the compensation lock of the
+    // sale, or the product lock), releases its racers from one start barrier and
+    // fails if the database never saw them blocked (concurrency-support.ts); each
+    // round repeats it with fresh data.
     const raceProduct = await createSellableProduct(rt, tenantA, "corrida", {
       cost: "5.00",
       quantity: 40,
     });
-    const raceSale = await confirmPlainSale(rt, tenantA, [
-      { quantity: 10, variantId: raceProduct.variantId },
-    ]);
-    const stockBeforeRace = (await balance(tenantA, raceProduct.variantId))
-      .quantity;
-    const race = await Promise.allSettled(
-      Array.from({ length: 8 }, () =>
-        giveBack(
-          tenantA,
-          {
-            items: [{ position: 0, restockedQuantity: 3, returnedQuantity: 3 }],
-            saleId: raceSale.sale.id,
-          },
-          concurrentDatabase
-        )
-      )
-    );
-    assert.equal(race.filter((r) => r.status === "fulfilled").length, 3);
-    assert.ok(
-      race
-        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-        .every((r) => r.reason instanceof SaleReturnExceedsAvailableError),
-      "every losing return fails on availability, not with a database error"
-    );
-    assert.deepEqual(await returnedSum(tenantA, raceSale.sale.id), [
-      { position: 0, restocked: 9, returned: 9 },
-    ]);
-    assert.equal(
-      (await balance(tenantA, raceProduct.variantId)).quantity,
-      stockBeforeRace + 9
-    );
-
-    const sameCommandSale = await confirmPlainSale(rt, tenantA, [
-      { quantity: 4, variantId: raceProduct.variantId },
-    ]);
-    const sharedCommand = randomUUID();
-    const sameCommand = await Promise.all(
-      Array.from({ length: 5 }, () =>
-        giveBack(
-          tenantA,
-          {
-            commandId: sharedCommand,
-            items: [{ position: 0, restockedQuantity: 2, returnedQuantity: 2 }],
-            saleId: sameCommandSale.sale.id,
-          },
-          concurrentDatabase
-        )
-      )
-    );
-    assert.equal(sameCommand.filter((r) => !r.replayed).length, 1);
-    assert.equal(new Set(sameCommand.map((r) => r.saleReturn.id)).size, 1);
-    assert.equal((await movementsOf(tenantA, sharedCommand)).length, 1);
-
-    // return racing cancellation: exactly one of them wins, never both
-    const duels: {
-      cancelled: number;
-      outcome: PromiseSettledResult<unknown>[];
-      returns: number;
-    }[] = [];
-    for (let round = 0; round < 5; round += 1) {
-      // biome-ignore lint/performance/noAwaitInLoops: each duel needs its own sale and a quiet pool
-      const duelSale = await confirmPlainSale(rt, tenantA, [
-        { quantity: 2, variantId: raceProduct.variantId },
+    const lockCompensation = (saleId: string) => [
+      advisoryLock(`polaris.sale.compensation:${saleId}`),
+    ];
+    // the races run in an organization of their own, so the sales they leave behind
+    // never push the sales of the other sections out of a paged listing
+    const raceTenant = await createTenantFixture(admin.pool, "race");
+    const rounds = await eachRound(async (round) => {
+      const roundProduct = await createSellableProduct(
+        rt,
+        raceTenant,
+        `corrida ${round}`,
+        { cost: "5.00", quantity: 60 }
+      );
+      const raceSale = await confirmPlainSale(rt, raceTenant, [
+        { quantity: 10, variantId: roundProduct.variantId },
       ]);
-      const outcome = await Promise.allSettled([
-        giveBack(
-          tenantA,
-          {
-            items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
-            saleId: duelSale.sale.id,
-          },
-          concurrentDatabase
+      const stockBeforeRace = (
+        await balance(raceTenant, roundProduct.variantId)
+      ).quantity;
+      const { results: race } = await raceBehindLock({
+        adminUrl,
+        hold: lockCompensation(raceSale.sale.id),
+        label: "eight returns of 3 units over 10 sold",
+        racers: Array.from(
+          { length: 8 },
+          () => () =>
+            giveBack(
+              raceTenant,
+              {
+                items: [
+                  { position: 0, restockedQuantity: 3, returnedQuantity: 3 },
+                ],
+                saleId: raceSale.sale.id,
+              },
+              concurrentDatabase
+            )
         ),
-        cancel(tenantA, duelSale.sale.id, concurrentDatabase),
-      ]);
-      const cancelled = await admin.pool.query<{ count: string }>(
-        "SELECT count(*)::text AS count FROM public.sale_cancellations WHERE sale_id = $1",
-        [duelSale.sale.id]
-      );
-      duels.push({
-        cancelled: Number(cancelled.rows[0]?.count),
-        outcome,
-        returns: await returnCount(tenantA, duelSale.sale.id),
       });
-    }
-    for (const duel of duels) {
-      assert.equal(
-        duel.cancelled + duel.returns,
-        1,
-        "a return and a cancellation of one sale never both commit"
-      );
-      assert.equal(
-        duel.outcome.filter((r) => r.status === "fulfilled").length,
-        1
-      );
-      const loser = duel.outcome.find(
-        (r): r is PromiseRejectedResult => r.status === "rejected"
-      );
+      assert.equal(fulfilled(race).length, 3);
       assert.ok(
-        loser?.reason instanceof SaleHasReturnsError ||
-          loser?.reason instanceof SaleNotReturnableError,
-        "the loser fails with a domain conflict"
+        rejections(race).every(
+          (reason) => reason instanceof SaleReturnExceedsAvailableError
+        ),
+        "every losing return fails on availability, not with a database error"
       );
-    }
+      assert.deepEqual(await returnedSum(raceTenant, raceSale.sale.id), [
+        { position: 0, restocked: 9, returned: 9 },
+      ]);
+      assert.equal(
+        (await balance(raceTenant, roundProduct.variantId)).quantity,
+        stockBeforeRace + 9
+      );
 
-    const mixed = await Promise.allSettled([
-      giveBack(
-        tenantA,
-        {
-          items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
-          saleId: sameCommandSale.sale.id,
-        },
-        concurrentDatabase
-      ),
-      ...Array.from({ length: 5 }, () =>
-        confirmPlainSale(
-          { adminPool: admin.pool, db: concurrentDatabase.db },
-          tenantA,
-          [{ quantity: 1, variantId: raceProduct.variantId }]
-        )
-      ),
-    ]);
-    assert.ok(
-      mixed.every((result) => result.status === "fulfilled"),
-      "a return and new sales over the same product never deadlock"
-    );
+      const sameCommandSale = await confirmPlainSale(rt, raceTenant, [
+        { quantity: 4, variantId: roundProduct.variantId },
+      ]);
+      const sharedCommand = randomUUID();
+      const { results: sameCommandResults } = await raceBehindLock({
+        adminUrl,
+        hold: lockCompensation(sameCommandSale.sale.id),
+        label: "five deliveries of one return command",
+        racers: Array.from(
+          { length: 5 },
+          () => () =>
+            giveBack(
+              raceTenant,
+              {
+                commandId: sharedCommand,
+                items: [
+                  { position: 0, restockedQuantity: 2, returnedQuantity: 2 },
+                ],
+                saleId: sameCommandSale.sale.id,
+              },
+              concurrentDatabase
+            )
+        ),
+      });
+      assert.deepEqual(rejections(sameCommandResults), []);
+      const sameCommand = fulfilled(sameCommandResults);
+      assert.equal(sameCommand.filter((r) => !r.replayed).length, 1);
+      assert.equal(new Set(sameCommand.map((r) => r.saleReturn.id)).size, 1);
+      assert.equal((await movementsOf(raceTenant, sharedCommand)).length, 1);
+
+      // return racing cancellation: exactly one of them wins, never both
+      const duels: {
+        cancelled: number;
+        outcome: PromiseSettledResult<unknown>[];
+        returns: number;
+      }[] = [];
+      for (let duelRound = 0; duelRound < 5; duelRound += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: each duel needs its own sale and a quiet pool
+        const duelSale = await confirmPlainSale(rt, raceTenant, [
+          { quantity: 2, variantId: roundProduct.variantId },
+        ]);
+        const { results: outcome } = await raceBehindLock<unknown>({
+          adminUrl,
+          hold: lockCompensation(duelSale.sale.id),
+          label: "a return racing a cancellation of one sale",
+          racers: [
+            () =>
+              giveBack(
+                raceTenant,
+                {
+                  items: [
+                    { position: 0, restockedQuantity: 1, returnedQuantity: 1 },
+                  ],
+                  saleId: duelSale.sale.id,
+                },
+                concurrentDatabase
+              ),
+            () => cancel(raceTenant, duelSale.sale.id, concurrentDatabase),
+          ],
+        });
+        const cancelled = await admin.pool.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM public.sale_cancellations WHERE sale_id = $1",
+          [duelSale.sale.id]
+        );
+        duels.push({
+          cancelled: Number(cancelled.rows[0]?.count),
+          outcome,
+          returns: await returnCount(raceTenant, duelSale.sale.id),
+        });
+      }
+      for (const duel of duels) {
+        assert.equal(
+          duel.cancelled + duel.returns,
+          1,
+          "a return and a cancellation of one sale never both commit"
+        );
+        assert.equal(
+          duel.outcome.filter((r) => r.status === "fulfilled").length,
+          1
+        );
+        const loser = duel.outcome.find(
+          (r): r is PromiseRejectedResult => r.status === "rejected"
+        );
+        assert.ok(
+          loser?.reason instanceof SaleHasReturnsError ||
+            loser?.reason instanceof SaleNotReturnableError,
+          "the loser fails with a domain conflict"
+        );
+      }
+
+      const { results: mixed } = await raceBehindLock<unknown>({
+        adminUrl,
+        hold: [lockRow("products", "id", roundProduct.productId)],
+        label: "a return racing five new sales of the same product",
+        racers: [
+          () =>
+            giveBack(
+              raceTenant,
+              {
+                items: [
+                  { position: 0, restockedQuantity: 1, returnedQuantity: 1 },
+                ],
+                saleId: sameCommandSale.sale.id,
+              },
+              concurrentDatabase
+            ),
+          ...Array.from(
+            { length: 5 },
+            () => () =>
+              confirmPlainSale(
+                { adminPool: admin.pool, db: concurrentDatabase.db },
+                raceTenant,
+                [{ quantity: 1, variantId: roundProduct.variantId }]
+              )
+          ),
+        ],
+      });
+      assert.deepEqual(
+        rejections(mixed),
+        [],
+        "a return and new sales over the same product never deadlock"
+      );
+    });
     tests.push(
-      "eight racing returns of 3 units over 10 sold produce exactly three successes (9 units) and restore stock once; five deliveries of one command produce one return; a return racing a cancellation of the same sale never both commit; returns racing new sales never deadlock"
+      `eight racing returns of 3 units over 10 sold produce exactly three successes (9 units) and restore stock once; five deliveries of one command produce one return; a return racing a cancellation of the same sale never both commit; returns racing new sales never deadlock (${rounds} round(s), released from a barrier with the racers seen blocked on a lock)`
     );
 
     // ---------------------- 10. randomized sequence against an in-memory model
@@ -1212,21 +1274,26 @@ async function run() {
     const duelSale = await confirmPlainSale(rt, tenantA, [
       { quantity: 3, variantId: a1.variantId },
     ]);
-    const duel = await Promise.allSettled([
-      insertReturn(tenantA, {
-        items: [{ position: 0, restocked: 0, returned: 2 }],
-        saleId: duelSale.sale.id,
-      }),
-      insertReturn(tenantA, {
-        items: [{ position: 0, restocked: 0, returned: 2 }],
-        saleId: duelSale.sale.id,
-      }),
-    ]);
+    // the holder takes the compensation lock the commit-time trigger takes, so both
+    // raw writers insert, then queue on it at commit: the race is measured, not assumed
+    const { results: duel } = await raceBehindLock({
+      adminUrl,
+      hold: lockCompensation(duelSale.sale.id),
+      label: "two raw returns of 2 over 3 sold",
+      racers: [0, 1].map(
+        () => () =>
+          insertReturn(tenantA, {
+            items: [{ position: 0, restocked: 0, returned: 2 }],
+            saleId: duelSale.sale.id,
+          })
+      ),
+    });
     assert.equal(
-      duel.filter((result) => result.status === "fulfilled").length,
+      fulfilled(duel).length,
       1,
       "exactly one of two raw returns of 2 over 3 sold commits"
     );
+    assert.equal(rejections(duel).length, 1);
     assert.equal(
       (await returnedSum(tenantA, duelSale.sale.id))[0]?.returned,
       2

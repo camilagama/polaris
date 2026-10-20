@@ -20,6 +20,12 @@ import {
 import { createPrivacyMaintenanceClient } from "../src/privacy-maintenance";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
+  eachRound,
+  fulfilled,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createTenantFixture,
   disposableHostPattern,
   expectSqlState,
@@ -29,8 +35,8 @@ import {
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
-  temporaryRuntimeUrl,
   type TenantFixture,
+  temporaryRuntimeUrl,
   withRuntimeSqlContext,
   withTenantAs,
 } from "./sales-gate-support";
@@ -809,42 +815,42 @@ async function run() {
       `undoing a closure is refused with another_organization_active (and changes nothing, audit included) while an owner has another open organization, active or suspended, or while another owner of the same organization has one; organizations in closure next to it do not stop it (${recoveryMatrix.length} states and the co-owner case)`
     );
 
-    // the race: opening another organization and undoing a closure at the same time, released together
-    for (let round = 0; round < 3; round += 1) {
-      const racer = await newOwner();
-      const closing = await ownedBy("closing", racer);
-      const barrier = await owner.pool.connect();
-      let results: string[] = [];
-      try {
-        await barrier.query("BEGIN");
-        await barrier.query(
-          "SELECT pg_advisory_xact_lock(1347374145, hashtext($1))",
-          [racer]
+    // the race: opening another organization and undoing a closure at the same time.
+    // The holder keeps the per-user key (concurrency-support.ts), both commands queue on it, are released
+    // together and the gate fails if the database never saw them blocked; each round makes three attempts.
+    const attempts = 3;
+    const closureRounds = await eachRound(async (round) => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const racer = await newOwner();
+        const closing = await ownedBy("closing", racer);
+        const { results: settled } = await raceBehindLock({
+          adminUrl,
+          hold: [
+            {
+              params: [racer],
+              sql: "SELECT pg_advisory_xact_lock(1347374145, hashtext($1))",
+            },
+          ],
+          label: "opening an organization racing the undoing of a closure",
+          racers: [() => openFor(racer), () => recoverAs(racer, closing)],
+        });
+        assert.deepEqual(rejections(settled), []);
+        const results = fulfilled(settled);
+        assert.ok(
+          (results[0] === "created" &&
+            results[1] === "another_organization_active") ||
+            (results[0] === "existing" && results[1] === "recovered"),
+          `one of the two wins, never both (round ${round}, attempt ${attempt}: ${results.join(", ")})`
         );
-        const racing = Promise.all([openFor(racer), recoverAs(racer, closing)]);
-        const early = await Promise.race([
-          racing.then(() => "finished"),
-          new Promise((resolve) => setTimeout(() => resolve("waiting"), 1500)),
-        ]);
-        assert.equal(early, "waiting", "both wait for the per-user key");
-        await barrier.query("COMMIT");
-        results = await racing;
-      } catch (error) {
-        await barrier.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
-        barrier.release();
+        assert.equal(
+          await openCount(racer),
+          1,
+          "exactly one open organization"
+        );
       }
-      assert.ok(
-        (results[0] === "created" &&
-          results[1] === "another_organization_active") ||
-          (results[0] === "existing" && results[1] === "recovered"),
-        `one of the two wins, never both (round ${round}: ${results.join(", ")})`
-      );
-      assert.equal(await openCount(racer), 1, "exactly one open organization");
-    }
+    });
     tests.push(
-      "opening an organization and undoing a closure of the same person, held behind the per-user key and released together, never both win: either the new one is opened and the recovery is refused (another_organization_active), or the closure is undone and the opening gives the recovered organization back; exactly one open organization at the end (three rounds)"
+      `opening an organization and undoing a closure of the same person, held behind the per-user key and released together, never both win: either the new one is opened and the recovery is refused (another_organization_active), or the closure is undone and the opening gives the recovered organization back; exactly one open organization at the end (${closureRounds * attempts} attempts, both seen blocked on the key before the release)`
     );
 
     // ------------------------------------------------- 7. who may do what

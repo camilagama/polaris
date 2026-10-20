@@ -18,7 +18,6 @@ import {
   listPausedGoalIds,
   updateGoal,
 } from "../src/goal-repository";
-import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import {
   type CreateProductMediaAssetInput,
   createProductMediaAsset,
@@ -31,6 +30,14 @@ import {
   deleteProduct,
 } from "../src/product-repository";
 import { runSyncCommand } from "../src/sync-command-repository";
+import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
+import {
+  advisoryLock,
+  eachRound,
+  fulfilled,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -395,33 +402,43 @@ async function run() {
       "variants.active.max",
       "archiving a product does not free its place"
     );
-    const racing = await createTenantFixture(
-      admin.pool,
-      "entitlements race",
-      "America/Sao_Paulo",
-      "free"
-    );
-    await as(racing, "product:create", (tx, identity) =>
-      inSequence(46, () =>
-        createProduct(tx, identity, { name: `R ${randomUUID()}` })
-      )
-    );
-    const outcomes = await Promise.allSettled(
-      Array.from({ length: 8 }, () => newProduct(racing))
-    );
-    assert.equal(
-      outcomes.filter((outcome) => outcome.status === "fulfilled").length,
-      4,
-      "exactly the room that was left"
-    );
-    for (const outcome of outcomes) {
-      if (outcome.status === "rejected") {
-        assert.ok(outcome.reason instanceof EntitlementLimitReachedError);
+    // The race holds the advisory lock of the limit first, releases its racers
+    // from one start barrier and fails if the database never saw them blocked on
+    // it (concurrency-support.ts); each round repeats it on a fresh organization.
+    const raceRounds = await eachRound(async (round) => {
+      const racing = await createTenantFixture(
+        admin.pool,
+        `entitlements race ${round}`,
+        "America/Sao_Paulo",
+        "free"
+      );
+      await as(racing, "product:create", (tx, identity) =>
+        inSequence(46, () =>
+          createProduct(tx, identity, { name: `R ${randomUUID()}` })
+        )
+      );
+      const { results: outcomes } = await raceBehindLock({
+        adminUrl,
+        hold: [
+          advisoryLock(
+            `polaris.entitlement:variants.active.max:${racing.organizationId}`
+          ),
+        ],
+        label: "eight additions into the last four places of a limit",
+        racers: Array.from({ length: 8 }, () => () => newProduct(racing)),
+      });
+      assert.equal(
+        fulfilled(outcomes).length,
+        4,
+        "exactly the room that was left"
+      );
+      for (const reason of rejections(outcomes)) {
+        assert.ok(reason instanceof EntitlementLimitReachedError);
       }
-    }
-    assert.equal(await variantCount(racing), 50, "never past the limit");
+      assert.equal(await variantCount(racing), 50, "never past the limit");
+    });
     tests.push(
-      "Pro holds more variants than Free, a downgrade keeps all of them and refuses only the next one (archiving frees nothing), and eight concurrent additions into the last four places of a Free organization commit exactly four"
+      `Pro holds more variants than Free, a downgrade keeps all of them and refuses only the next one (archiving frees nothing), and eight concurrent additions into the last four places of a Free organization commit exactly four (${raceRounds} round(s), released from a barrier with the racers seen blocked on the limit's lock)`
     );
 
     // ------------------------------------------------------------- 6. goals

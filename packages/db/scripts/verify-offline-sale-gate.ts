@@ -34,6 +34,13 @@ import type {
   TenantRequestTransaction,
 } from "../src/tenant-transaction";
 import {
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createSellableProduct,
   createTenantFixture,
   disposableHostPattern,
@@ -617,24 +624,40 @@ async function run() {
     );
 
     // --------------- 6. two devices race for the last units
-    const scarce = await createSellableProduct(gateRuntime, tenantA, "rara", {
-      cost: "5.00",
-      quantity: 3,
+    // The race holds the product lock first, releases both sales from one start
+    // barrier and fails if the database never saw them blocked on a lock
+    // (concurrency-support.ts); each round repeats it with a fresh product.
+    const rounds = await eachRound(async (round) => {
+      const scarce = await createSellableProduct(
+        gateRuntime,
+        tenantA,
+        `rara ${round}`,
+        { cost: "5.00", quantity: 3 }
+      );
+      const { results: raceResults } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", scarce.productId)],
+        label: "two offline sales of 2 units over 3 units",
+        racers: [0, 1].map(
+          () => () =>
+            pushSale(randomUUID(), [
+              { quantity: 2, variantId: scarce.variantId },
+            ])
+        ),
+      });
+      assert.deepEqual(rejections(raceResults), []);
+      const race = fulfilled(raceResults);
+      assert.deepEqual(race.map((outcome) => outcome.status).sort(), [
+        "accepted",
+        "rejected",
+      ]);
+      assert.ok(race.some((outcome) => outcome.code === "insufficient_stock"));
+      const left = await balance(scarce.variantId);
+      assert.equal(left?.quantity, 1);
+      assert.equal(await saleMovements(scarce.variantId), 1);
     });
-    const race = await Promise.all([
-      pushSale(randomUUID(), [{ quantity: 2, variantId: scarce.variantId }]),
-      pushSale(randomUUID(), [{ quantity: 2, variantId: scarce.variantId }]),
-    ]);
-    assert.deepEqual(race.map((outcome) => outcome.status).sort(), [
-      "accepted",
-      "rejected",
-    ]);
-    assert.ok(race.some((outcome) => outcome.code === "insufficient_stock"));
-    const left = await balance(scarce.variantId);
-    assert.equal(left?.quantity, 1);
-    assert.equal(await saleMovements(scarce.variantId), 1);
     tests.push(
-      "two sales racing for the same last units: one is confirmed, the other is insufficient_stock, and stock never goes negative"
+      `two sales racing for the same last units: one is confirmed, the other is insufficient_stock, and stock never goes negative (${rounds} round(s), released from a barrier with the racers seen blocked on the lock)`
     );
 
     // ----------------------- 7. another organization cannot sell this variant

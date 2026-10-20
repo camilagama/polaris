@@ -22,6 +22,7 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { lockRow, raceBehindLock, raceRounds } from "./concurrency-support";
 import {
   createTenantFixture,
   type Database,
@@ -729,12 +730,21 @@ async function run() {
       await createSession(tenantA.userId),
       await createSession(tenantA.userId),
     ];
-    for (let round = 0; round < 10; round += 1) {
-      const checks = await Promise.allSettled(
-        tabSessions.map((sessionId) =>
-          touchDevice(db, tenantA.userId, tabs.id, { sessionId })
-        )
-      );
+    // Every race of this section holds the device row first, releases its racers
+    // from one start barrier and fails if the database never saw them blocked on a
+    // lock (concurrency-support.ts); POLARIS_CONCURRENCY_REPEAT multiplies the
+    // rounds below.
+    const raceFactor = raceRounds();
+    for (let round = 0; round < 10 * raceFactor; round += 1) {
+      const { results: checks } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("devices", "id", tabs.id)],
+        label: "two tabs checking one device",
+        racers: tabSessions.map(
+          (sessionId) => () =>
+            touchDevice(db, tenantA.userId, tabs.id, { sessionId })
+        ),
+      });
       assert.deepEqual(
         checks.map((check) => check.status),
         ["fulfilled", "fulfilled"],
@@ -864,22 +874,36 @@ async function run() {
     );
 
     // (c) many racing pairs: no session is ever left linked to a revoked device
-    for (let round = 0; round < 12; round += 1) {
+    for (let round = 0; round < 12 * raceFactor; round += 1) {
       const { device: racer, lease: racerLease } = await setUpDevice();
       const racerSession = await createSession(tenantA.userId);
-      const [pushed, revokedRacer] = await Promise.allSettled([
-        withSession(
-          db,
-          tenantA,
-          racerSession,
-          "sync:push",
-          (transaction, identity) =>
-            validateOfflineLeaseClaims(transaction, identity, racerLease.claims)
-        ),
-        revokeDevice(db, tenantA.userId, racer.id, {
-          actingSession: fresh(actor),
-        }),
-      ]);
+      const {
+        results: [pushed, revokedRacer],
+      } = await raceBehindLock<unknown>({
+        adminUrl,
+        hold: [lockRow("devices", "id", racer.id)],
+        label: "a sync racing the revocation of its device",
+        racers: [
+          () =>
+            withSession(
+              db,
+              tenantA,
+              racerSession,
+              "sync:push",
+              (transaction, identity) =>
+                validateOfflineLeaseClaims(
+                  transaction,
+                  identity,
+                  racerLease.claims
+                )
+            ),
+          () =>
+            revokeDevice(db, tenantA.userId, racer.id, {
+              actingSession: fresh(actor),
+            }),
+        ],
+      });
+      assert.ok(pushed && revokedRacer);
       // the revocation always succeeds; the sync either went first or is refused as revoked, linking nothing (never a
       // deadlock, a lock timeout or any other error)
       assert.equal(revokedRacer.status, "fulfilled", "the revocation succeeds");

@@ -20,6 +20,13 @@ import { confirmSale } from "../src/sale-repository";
 import { TenantAuditEventError } from "../src/tenant-audit";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
+  eachRound,
+  fulfilled,
+  lockRow,
+  raceBehindLock,
+  rejections,
+} from "./concurrency-support";
+import {
   createTenantFixture,
   disposableHostPattern,
   expectSqlState,
@@ -587,36 +594,55 @@ async function run() {
 
     // ------------------------------------------------------- 5. concurrency
     const contenders = [customerOne, customerTwo, customerThree];
-    const race = await Promise.allSettled(
-      Array.from({ length: 6 }, (_, index) =>
-        change(
-          tenantA,
-          {
-            action: "assign",
-            customerId: (contenders[index % contenders.length] ?? customerOne)
-              .id,
-            expectedVersion: 0,
-            saleId: saleThree,
-          },
-          concurrentDatabase
-        )
-      )
-    );
-    const winners = race.filter((result) => result.status === "fulfilled");
-    const losers = race.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected"
-    );
-    assert.equal(winners.length, 1, "exactly one concurrent change wins");
-    assert.ok(
-      losers.every(
-        (result) =>
-          result.reason instanceof SaleCustomerLinkVersionConflictError
-      ),
-      "the others see a stale version, not a database error"
-    );
-    assert.equal(await rowCount(saleThree), 1);
+    // The racers share-lock the customer they link: the holder keeps all three
+    // locked, so the six changes are released together and meet at the unique
+    // version index (concurrency-support.ts).
+    const rounds = await eachRound(async (round) => {
+      const raceSale =
+        round === 0 ? saleThree : await newSale(tenantA, `race ${round}`);
+      const { results: race } = await raceBehindLock({
+        adminUrl,
+        hold: [
+          lockRow(
+            "customers",
+            "id",
+            contenders.map((customer) => customer.id)
+          ),
+        ],
+        label: "six assignments of one sale over the same version",
+        racers: Array.from(
+          { length: 6 },
+          (_, index) => () =>
+            change(
+              tenantA,
+              {
+                action: "assign",
+                customerId: (
+                  contenders[index % contenders.length] ?? customerOne
+                ).id,
+                expectedVersion: 0,
+                saleId: raceSale,
+              },
+              concurrentDatabase
+            )
+        ),
+      });
+      assert.equal(
+        fulfilled(race).length,
+        1,
+        "exactly one concurrent change wins"
+      );
+      assert.equal(rejections(race).length, 5, "the five others lose");
+      assert.ok(
+        rejections(race).every(
+          (reason) => reason instanceof SaleCustomerLinkVersionConflictError
+        ),
+        "the others see a stale version, not a database error"
+      );
+      assert.equal(await rowCount(raceSale), 1);
+    });
     tests.push(
-      "six concurrent assignments against the same version produce exactly one new version; the rest conflict cleanly"
+      `six concurrent assignments against the same version produce exactly one new version; the rest conflict cleanly (${rounds} round(s), released from a barrier with the racers seen blocked on a lock)`
     );
 
     // ------------------- 5b. deterministic interleavings and rollbacks

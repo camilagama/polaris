@@ -19,6 +19,7 @@ import {
 } from "../src/admin-support-repository";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
+import { advisoryLock, eachRound, raceBehindLock } from "./concurrency-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -28,8 +29,8 @@ import {
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
-  temporaryRuntimeUrl,
   type TenantFixture,
+  temporaryRuntimeUrl,
   withRuntimeSqlContext,
   withTenantAs,
 } from "./sales-gate-support";
@@ -278,22 +279,10 @@ async function run() {
     );
 
     // ------------------------------------------------- 2b. a user in two organizations, and the race with a lease being issued
-    const orgD = await createTenantFixture(
-      owner.pool,
-      `susp D ${suffix}`,
-      "America/Sao_Paulo",
-      "pro"
-    );
-    const orgE = await createTenantFixture(
-      owner.pool,
-      `susp E ${suffix}`,
-      "America/Sao_Paulo",
-      "pro"
-    );
-    await owner.pool.query(
-      "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
-      [orgE.organizationId, orgD.userId]
-    );
+    // The issuance holds the user's key (and keeps the lease it wrote) while the
+    // suspension asks for it; the gate waits until the database reports the
+    // suspension blocked on that key instead of guessing with a timer
+    // (concurrency-support.ts); each round repeats it on fresh organizations.
     const deviceOf = async (userId: string) =>
       (
         await owner.pool.query<{ id: string }>(
@@ -304,18 +293,12 @@ async function run() {
     const leaseFor = (
       deviceId: string,
       organizationId: string,
-      userId: string,
-      runner: {
-        query: (text: string, values: unknown[]) => Promise<unknown>;
-      } = owner.pool
+      userId: string
     ) =>
-      runner.query(
+      owner.pool.query(
         "INSERT INTO public.offline_grants (device_id, organization_id, user_id, authorization_epoch, expires_at) VALUES ($1, $2, $3, 0, now() + interval '12 hours')",
         [deviceId, organizationId, userId]
       );
-    const sharedDevice = await deviceOf(orgD.userId);
-    await leaseFor(sharedDevice, orgD.organizationId, orgD.userId);
-    await leaseFor(sharedDevice, orgE.organizationId, orgD.userId);
     const epochOf = async (organizationId: string, userId: string) =>
       (
         await owner.pool.query<{ epoch: number }>(
@@ -323,64 +306,77 @@ async function run() {
           [organizationId, userId]
         )
       ).rows[0]?.epoch as number;
-    const epochE = await epochOf(orgE.organizationId, orgD.userId);
-    const caseD = await openCase(orgD.organizationId);
-    assert.ok(caseD);
-    // a lease being issued holds the user's key while the suspension asks for it
-    const issuing = await owner.pool.connect();
-    let suspendedD: Awaited<ReturnType<typeof suspendOrganization>> | undefined;
-    try {
-      await issuing.query("BEGIN");
-      await issuing.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended('authorization-epoch:' || $1::text, 0))",
-        [orgD.userId]
+    let orgD: TenantFixture | undefined;
+    const issuanceRounds = await eachRound(async (round) => {
+      orgD = await createTenantFixture(
+        owner.pool,
+        `susp D ${suffix} ${round}`,
+        "America/Sao_Paulo",
+        "pro"
       );
-      await leaseFor(sharedDevice, orgD.organizationId, orgD.userId, issuing);
-      const waiting = asAdmin((client) =>
-        suspendOrganization(client, p1, caseD.id)
+      const orgE = await createTenantFixture(
+        owner.pool,
+        `susp E ${suffix} ${round}`,
+        "America/Sao_Paulo",
+        "pro"
       );
-      const outcome = await Promise.race([
-        waiting.then(() => "finished"),
-        new Promise((resolve) => setTimeout(() => resolve("waiting"), 1500)),
-      ]);
+      await owner.pool.query(
+        "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
+        [orgE.organizationId, orgD.userId]
+      );
+      const sharedDevice = await deviceOf(orgD.userId);
+      await leaseFor(sharedDevice, orgD.organizationId, orgD.userId);
+      await leaseFor(sharedDevice, orgE.organizationId, orgD.userId);
+      const epochE = await epochOf(orgE.organizationId, orgD.userId);
+      const caseD = await openCase(orgD.organizationId);
+      assert.ok(caseD);
+      const { results } = await raceBehindLock({
+        adminUrl,
+        hold: [
+          advisoryLock(`authorization-epoch:${orgD.userId}`),
+          {
+            params: [sharedDevice, orgD.organizationId, orgD.userId],
+            sql: "INSERT INTO public.offline_grants (device_id, organization_id, user_id, authorization_epoch, expires_at) VALUES ($1, $2, $3, 0, now() + interval '12 hours')",
+          },
+        ],
+        label: "a suspension waiting for a lease being issued",
+        racers: [
+          () => asAdmin((client) => suspendOrganization(client, p1, caseD.id)),
+        ],
+        release: "commit",
+      });
+      assert.deepEqual(
+        results.map((result) =>
+          result.status === "fulfilled" ? result.value : String(result.reason)
+        ),
+        [{ changed: true, revokedLeases: 2, status: "suspended" }],
+        "the lease issued just before is revoked by the suspension (it is not left alive)"
+      );
+      assert.equal((await state(orgD.organizationId)).live_leases, 0);
       assert.equal(
-        outcome,
-        "waiting",
-        "the suspension waits for the lease being issued"
+        (await state(orgE.organizationId)).live_leases,
+        1,
+        "the same user's lease in another organization is untouched"
       );
-      await issuing.query("COMMIT");
-      suspendedD = await waiting;
-    } catch (error) {
-      await issuing.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      issuing.release();
-    }
-    assert.deepEqual(
-      suspendedD,
-      { changed: true, revokedLeases: 2, status: "suspended" },
-      "the lease issued just before is revoked by the suspension (it is not left alive)"
-    );
-    assert.equal((await state(orgD.organizationId)).live_leases, 0);
-    assert.equal(
-      (await state(orgE.organizationId)).live_leases,
-      1,
-      "the same user's lease in another organization is untouched"
-    );
-    assert.equal(
-      await epochOf(orgE.organizationId, orgD.userId),
-      epochE,
-      "and so is that membership's epoch"
-    );
-    assert.equal((await state(orgE.organizationId)).status, "active");
+      assert.equal(
+        await epochOf(orgE.organizationId, orgD.userId),
+        epochE,
+        "and so is that membership's epoch"
+      );
+      assert.equal((await state(orgE.organizationId)).status, "active");
+    });
+    assert.ok(orgD);
+    const suspendedD = orgD;
     // after the suspension nothing new is issued or done in that organization
     await assert.rejects(
       () =>
-        withTenantAs(runtimeDb, orgD, "catalog:read", () => Promise.resolve(1)),
+        withTenantAs(runtimeDb, suspendedD, "catalog:read", () =>
+          Promise.resolve(1)
+        ),
       (error: unknown) => error instanceof Error
     );
     tests.push(
-      "a suspension waits for a lease that is being issued and then revokes it (the same per-user key the issuance takes), leaves the same user's lease and epoch in another organization alone, and afterwards the organization's own user cannot start a tenant operation"
+      `a suspension waits for a lease that is being issued and then revokes it (the same per-user key the issuance takes), leaves the same user's lease and epoch in another organization alone, and afterwards the organization's own user cannot start a tenant operation (${issuanceRounds} round(s), the suspension seen blocked on the key before the release)`
     );
 
     // ------------------------------------------------- 3. undoing it

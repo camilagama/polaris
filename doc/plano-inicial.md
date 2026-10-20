@@ -4941,6 +4941,8 @@ Cobrir:
 
 - billing transition race.
 
+A matriz que liga cada corrida à proteção e ao gate está em [docs/architecture/concurrency-matrix.md](../docs/architecture/concurrency-matrix.md); a suíte nomeada é `gates:concurrency`.
+
 
 
 ---
