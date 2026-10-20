@@ -119,6 +119,16 @@ export interface WorkerBindings {
   TURNSTILE_SECRET_KEY?: string;
   /** The public key of the Turnstile widget of this environment (not a secret). */
   TURNSTILE_SITE_KEY?: string;
+  /** Woovi AppID (secret): the sandbox one in staging, the production one only in production (ADR 0101). */
+  WOOVI_APP_ID?: string;
+  /** `https://api.woovi-sandbox.com` in staging, `https://api.woovi.com` in production. */
+  WOOVI_BASE_URL?: string;
+  /**
+   * Woovi's public keys that sign webhooks (`x-webhook-signature`), pinned: one
+   * SPKI key as base64 of its DER, or two separated by a comma during a
+   * rotation (public, not a secret).
+   */
+  WOOVI_WEBHOOK_PUBLIC_KEYS?: string;
 }
 
 export interface ServerEnv {

@@ -226,10 +226,32 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("the Asaas adapter is registered", () => {
-  it("answers at /webhooks/billing/asaas; Woovi is still a 404 until its adapter (AC-11)", () => {
+describe("the provider adapters are registered (AC-11)", () => {
+  it("asaas and woovi answer at /webhooks/billing/:provider", () => {
     expect(Object.hasOwn(billingProviderAdapters, "asaas")).toBe(true);
-    expect(Object.hasOwn(billingProviderAdapters, "woovi")).toBe(false);
+    expect(Object.hasOwn(billingProviderAdapters, "woovi")).toBe(true);
+    expect(billingProviderAdapters.asaas?.provider).toBe("asaas");
+    expect(billingProviderAdapters.woovi?.provider).toBe("woovi");
+  });
+
+  it("any other name is a 404, before the body is read", async () => {
+    const app = new Hono<ServerEnv>();
+    app.use("*", requestIdMiddleware);
+    app.route("/", createBillingWebhookRoutes());
+    for (const name of ["stripe", "constructor", "Asaas", "asaas2"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: One request per name.
+      const response = await app.fetch(
+        new Request(
+          `https://polaris.example.invalid/webhooks/billing/${name}`,
+          {
+            body: "{}",
+            method: "POST",
+          }
+        ),
+        configured as unknown as WorkerBindings
+      );
+      expect(response.status).toBe(404);
+    }
   });
 });
 

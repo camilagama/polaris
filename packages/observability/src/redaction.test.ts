@@ -471,12 +471,103 @@ describe("redaction of what the audit tried", () => {
     expect(masked).toEqual({
       creditCardHolderInfo: "[REDACTED:card]",
       creditCardToken: "[REDACTED:secret]",
-      customer: { taxID: "[REDACTED:cpf]" },
+      customer: "[REDACTED:person]",
       emv: "[REDACTED:secret]",
       pixKey: "[REDACTED:secret]",
       tax_id: "[REDACTED:cpf]",
       taxID: "[REDACTED:cpf]",
       taxId: "[REDACTED:cpf]",
+    });
+  });
+
+  it("masks the person and the Pix data of a Woovi payload (ADR 0101, emenda Woovi)", () => {
+    // the shape of Woovi's subscription, installment and refund payloads, with made-up values
+    const holder = {
+      name: "Pagadora de Teste",
+      taxID: { taxID: "52998224725", type: "BR:CPF" },
+    };
+    const masked = redact({
+      creditParty: { account: { account: "73519", branch: "001" }, holder },
+      customer: {
+        address: { street: "Rua de Teste", zipcode: "01310100" },
+        correlationID: "6f4131ea-b816-4b08-8ba6-11cf6b622a6e",
+        email: "pagadora.teste@example.com",
+        name: "Pagadora de Teste",
+        phone: "+5511999999999",
+        taxID: { taxID: "52998224725", type: "BR:CPF" },
+      },
+      debitParty: { pixKey: { pixKey: "pagadora.teste@example.com" } },
+      event: "PIX_AUTOMATIC_APPROVED",
+      globalID: "UGF5bWVudFN1YnNjcmlwdGlvbjo2OGE4ODMyMWQ2NWNiMmQ1MDdhMmVlMjk=",
+      originalTransaction: { endToEndId: "E0000", payer: holder },
+      paymentLink: "https://woovi-sandbox.com/pay/fake",
+      paymentLinkID: "fake-link",
+      pixRecurring: {
+        emv: "00020101021226870014br.gov.bcb.pix",
+        journey: "ONLY_RECURRENCY",
+        recurrencyId: "RN0000",
+        status: "APPROVED",
+      },
+      refundTransaction: { holder, value: 2490 },
+    });
+    expect(masked).toEqual({
+      creditParty: "[REDACTED:person]",
+      customer: "[REDACTED:person]",
+      debitParty: "[REDACTED:person]",
+      event: "PIX_AUTOMATIC_APPROVED",
+      // base64 shaped like a token: the adapter logs the decoded form instead
+      globalID: "[REDACTED:secret]",
+      originalTransaction: { endToEndId: "E0000", payer: "[REDACTED:person]" },
+      paymentLink: "[REDACTED:secret]",
+      paymentLinkID: "[REDACTED:secret]",
+      pixRecurring: {
+        emv: "[REDACTED:secret]",
+        journey: "ONLY_RECURRENCY",
+        recurrencyId: "RN0000",
+        status: "APPROVED",
+      },
+      refundTransaction: { holder: "[REDACTED:person]", value: 2490 },
+    });
+    const text = JSON.stringify(masked);
+    for (const leak of [
+      "Pagadora",
+      "52998224725",
+      "example.com",
+      "Rua de Teste",
+      "73519",
+      "br.gov.bcb.pix",
+    ]) {
+      expect(text).not.toContain(leak);
+    }
+  });
+
+  it("masks the plural and flat spellings of a payer and the other Pix payloads", () => {
+    const masked = redact({
+      addresses: [{ street: "Rua de Teste" }],
+      brCode: "00020101021226870014br.gov.bcb.pix",
+      customerName: "Pagadora de Teste",
+      customers: [{ name: "Pagadora de Teste" }],
+      holderName: "Pagadora de Teste",
+      payerName: "Pagadora de Teste",
+      qrCodeImage: "https://woovi-sandbox.com/qr/fake.png",
+    });
+    expect(masked).toEqual({
+      addresses: "[REDACTED:person]",
+      brCode: "[REDACTED:secret]",
+      customerName: "[REDACTED:person]",
+      customers: "[REDACTED:person]",
+      holderName: "[REDACTED:person]",
+      payerName: "[REDACTED:person]",
+      qrCodeImage: "[REDACTED:secret]",
+    });
+  });
+
+  it("keeps the IDs that only look like a person's key", () => {
+    const fields = { customerId: "c1", ipAddress: "x", remoteAddress: "y" };
+    expect(redact(fields)).toEqual({
+      customerId: "c1",
+      ipAddress: "[REDACTED:ip]",
+      remoteAddress: "[REDACTED:ip]",
     });
   });
 
@@ -489,10 +580,7 @@ describe("redaction of what the audit tried", () => {
 describe("redaction at depth", () => {
   it("reaches arrays of objects, Maps and Sets", () => {
     const out = redact({
-      customers: [
-        { contact: { email: "a@b.co" } },
-        { note: "cpf 123.456.789-09" },
-      ],
+      rows: [{ contact: { email: "a@b.co" } }, { note: "cpf 123.456.789-09" }],
       map: new Map([
         ["password", "p"],
         ["free", "maria@example.com"],
