@@ -249,14 +249,16 @@ export interface ClosureNoticeEmailConfig {
 }
 
 /**
- * What the provider did with one message: `sent` (taken, or already taken under the same key), `rejected` (it will not
- * take this message: an address or a message it refuses, for good) or `retry` (the provider or the network failed, or
- * the key is in use by a request still running). `status` is the HTTP status, when there was one.
+ * What the provider did with one message: `sent` (taken, or already taken under the same key), `rejected` (it refuses
+ * this message for good: a field of the request it does not accept, in practice the address) or `retry` (anything else:
+ * the provider or the network failed, our key or sender is wrong, a quota, or the key is in use by a request still
+ * running). `status` is the HTTP status, when there was one; `code` is the provider's error name (`validation_error`,
+ * `invalid_from_address`...), a short code checked before it is kept, never its message.
  */
 export type ClosureNoticeSendResult =
   | { outcome: "sent" }
-  | { outcome: "rejected"; status: number }
-  | { outcome: "retry"; status: number | null };
+  | { code: string | null; outcome: "rejected"; status: number }
+  | { code: string | null; outcome: "retry"; status: number | null };
 
 export type ClosureNoticeSender = (message: {
   html: string;
@@ -282,16 +284,31 @@ export async function renderClosureNoticeEmail(
   return { html, subject: content.subject, text };
 }
 
-// a 409 at Resend is the same key still in flight; 401 and 403 are a key of ours that is wrong (configuration,
-// not the address); 429 and 5xx are the provider. All of them are tried again later.
-function retriable(status: number): boolean {
-  return (
-    status === 401 ||
-    status === 403 ||
-    status === 409 ||
-    status === 429 ||
-    status >= 500
-  );
+const PROVIDER_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** The provider's error name, and nothing else of its answer (its message may echo the address). */
+async function providerCode(response: Response): Promise<string | null> {
+  try {
+    const body: unknown = await response.json();
+    const name =
+      typeof body === "object" && body !== null && "name" in body
+        ? body.name
+        : null;
+    return typeof name === "string" && PROVIDER_CODE.test(name) ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Only a field of the request the provider does not accept is the message's fault (400 or 422 with
+ * `validation_error`, which is how an address it refuses is answered): the notice then fails for good. Everything else
+ * is tried again, so a mistake of ours (a wrong sender, a key, a quota) never fails a notice that a fix would send:
+ * 401 and 403 (the key, or the sender's domain), 409 (the same key in flight, or another message under it: Resend keeps
+ * a key 24 hours), 422 with another name (`invalid_from_address`), 429 and 5xx.
+ */
+function refusedForGood(status: number, code: string | null): boolean {
+  return (status === 400 || status === 422) && code === "validation_error";
 }
 
 export function createResendClosureNoticeSender(
@@ -320,16 +337,17 @@ export function createResendClosureNoticeSender(
       });
     } catch {
       // the network or the timeout: nothing of the request (the address is in it) goes on
-      return { outcome: "retry", status: null };
+      return { code: null, outcome: "retry", status: null };
     }
-    // the body may echo the address: it is never read
-    await response.body?.cancel();
     if (response.ok) {
+      // the answer of a message taken is never read
+      await response.body?.cancel();
       return { outcome: "sent" };
     }
-    if (retriable(response.status)) {
-      return { outcome: "retry", status: response.status };
+    const code = await providerCode(response);
+    if (refusedForGood(response.status, code)) {
+      return { code, outcome: "rejected", status: response.status };
     }
-    return { outcome: "rejected", status: response.status };
+    return { code, outcome: "retry", status: response.status };
   };
 }

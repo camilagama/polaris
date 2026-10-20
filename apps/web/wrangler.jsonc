@@ -39,7 +39,8 @@
   // The ids below only serve local development. Deployed Workers need real
   // Hyperdrive configurations with query caching disabled:
   // - HYPERDRIVE: tenant role (RLS, no access to the auth tables)
-  // - AUTH_HYPERDRIVE: Better Auth role (DML only on user/account/session/verification, plus the functions of the sign-in lock)
+  // - AUTH_HYPERDRIVE: Better Auth role (DML only on user/account/session/verification, plus the functions of the sign-in lock
+  //   and the one that reads the address of a closure notice, closure_notice_recipient)
   // - OUTBOX_HYPERDRIVE: outbox role (dispatcher and queue processing record, functions only; ADR 0084)
   "hyperdrive": [
     {

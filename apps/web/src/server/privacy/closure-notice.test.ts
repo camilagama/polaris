@@ -233,7 +233,7 @@ describe("the consumer of a closure notice", () => {
   it("marks the notice failed, with no retry, when the provider refuses the message for good", async () => {
     const spies = spyLogger();
     const { dependencies, notices } = setup({
-      result: { outcome: "rejected", status: 422 },
+      result: { code: null, outcome: "rejected", status: 422 },
     });
 
     await handleClosureNotice(dependencies, envelope());
@@ -254,7 +254,7 @@ describe("the consumer of a closure notice", () => {
   it("throws a retry error, marking nothing, when the provider or the network fails", async () => {
     const spies = spyLogger();
     const { dependencies, notices } = setup({
-      result: { outcome: "retry", status: 503 },
+      result: { code: null, outcome: "retry", status: 503 },
     });
 
     const failure = await handleClosureNotice(dependencies, envelope()).then(
@@ -322,8 +322,8 @@ describe("the handover of the owed closure notices", () => {
     notices.listOwedClosureNotices.mockResolvedValueOnce(owed);
     send
       .mockResolvedValueOnce({ outcome: "sent" })
-      .mockResolvedValueOnce({ outcome: "retry", status: 500 })
-      .mockResolvedValueOnce({ outcome: "rejected", status: 400 });
+      .mockResolvedValueOnce({ code: null, outcome: "retry", status: 500 })
+      .mockResolvedValueOnce({ code: null, outcome: "rejected", status: 400 });
     recipients.recipient
       .mockResolvedValueOnce({ email: ADDRESS, verified: true })
       .mockResolvedValueOnce({ email: ADDRESS, verified: true })

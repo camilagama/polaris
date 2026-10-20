@@ -85,12 +85,6 @@ export function isClosureNoticeDismissalReason(
 }
 
 /**
- * A notice still owed this many minutes after it was written is handed over by the privacy job (with the e-mail on)
- * instead of waiting for its consumer: the database writes it as `interval '15 minutes'`.
- */
-export const CLOSURE_NOTICE_HANDOVER_MIN_AGE_MINUTES = 15;
-
-/**
  * A notice still owed (neither sent, failed nor skipped) this many days after its date enters the alert of a store
  * left behind (`closure_purge_overdue`), for the support to see the owner was not told, for example while no e-mail
  * is configured. The database writes it in hours (`interval '72 hours'`).
@@ -108,10 +102,10 @@ export const CLOSURE_PHASES = Object.freeze([
 export type ClosurePhase = (typeof CLOSURE_PHASES)[number];
 
 export interface ClosureDeadlines {
-  /** The schedule of the purge and its notice, 7 local days before D. */
-  d7At: Date;
   /** The first notice, 30 local days before D. */
   d30At: Date;
+  /** The schedule of the purge and its notice, 7 local days before D. */
+  d7At: Date;
   /** The first instant of D in the organization's time zone. */
   deletableFrom: Date;
   /** D, as the organization's calendar shows it (YYYY-MM-DD). */
@@ -203,12 +197,12 @@ export function closureDeadlines(
   );
   const deletableFrom = localDayStart(deletionDate, timeZone);
   return {
-    d7At: localDayStart(
-      addDays(deletionDate, -CLOSURE_PURGE_SCHEDULE_LEAD_DAYS),
-      timeZone
-    ),
     d30At: localDayStart(
       addDays(deletionDate, -CLOSURE_FIRST_NOTICE_LEAD_DAYS),
+      timeZone
+    ),
+    d7At: localDayStart(
+      addDays(deletionDate, -CLOSURE_PURGE_SCHEDULE_LEAD_DAYS),
       timeZone
     ),
     deletableFrom,

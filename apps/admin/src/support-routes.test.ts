@@ -795,8 +795,12 @@ describe("suspension and billing commands", () => {
       "closure_notice_pending",
       "closure_notice_delivered",
       "closure_notice_no_owner",
+      "closure_notice_owner_present",
+      "closure_notice_not_refused",
+      "closure_notice_not_overdue",
       "privacy_case_required",
-      "privacy_case_not_decided",
+      "privacy_case_not_deletion",
+      "privacy_case_not_accepted",
     ] as const) {
       const { dependencies, send } = setup({
         closureNotice: vi.fn(() =>

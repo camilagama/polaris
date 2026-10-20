@@ -149,7 +149,9 @@ export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "closure_notice_pending",
   "closure_notice_delivered",
   "closure_notice_no_owner",
-  "privacy_case_not_decided",
+  "closure_notice_owner_present",
+  "closure_notice_not_refused",
+  "closure_notice_not_overdue",
 ] as const);
 
 export type OrganizationPurgeRefusalCode =
@@ -160,9 +162,15 @@ const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   Record<OrganizationPurgeRefusalCode, string>
 > = Object.freeze({
   closure_notice_delivered:
-    "O aviso de 7 dias deste encerramento já foi entregue (ou dispensado): não há o que dispensar.",
+    "O aviso de 7 dias deste encerramento já foi entregue (ou dispensado): não há o que reenviar nem dispensar.",
   closure_notice_no_owner:
     "A organização não tem dono ativo para receber o aviso. Se ninguém pode ser avisado, dispense o aviso com a decisão do caso.",
+  closure_notice_not_overdue:
+    "Não há aviso deste encerramento esperando envio há mais de 3 dias depois da data: o e-mail não verificado só é dispensado depois disso.",
+  closure_notice_not_refused:
+    "Nenhum aviso deste encerramento foi recusado pelo provedor de e-mail (ou ainda há um aviso esperando envio): reenvie o aviso antes de dispensá-lo.",
+  closure_notice_owner_present:
+    "A organização ainda tem dono ativo: a conta do dono não foi apagada. Reenvie o aviso ou use o motivo que corresponde ao caso.",
   closure_notice_not_due:
     "O aviso de 7 dias deste encerramento ainda não venceu: não há o que reenviar nem dispensar.",
   closure_notice_pending:
@@ -179,8 +187,6 @@ const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
     "A organização ainda tem período de teste ou acesso pago em andamento.",
   privacy_case_not_accepted:
     "O pedido de exclusão ainda não foi decidido ou não foi aceito por inteiro.",
-  privacy_case_not_decided:
-    "O caso de privacidade ainda não tem decisão registrada de aceitar o pedido: a dispensa do aviso é uma decisão do responsável.",
   privacy_case_not_deletion:
     "O caso de privacidade não é um pedido de exclusão.",
   privacy_case_required:

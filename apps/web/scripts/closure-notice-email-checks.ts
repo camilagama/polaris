@@ -320,11 +320,15 @@ async function emailScenario(
       "closure_notices.sent_at",
       "closure_notices.skipped",
       "closure_notices.user_id",
+      "memberships.organization_id",
+      "memberships.role",
+      "memberships.status",
+      "memberships.user_id",
       "user.email",
       "user.email_verified",
       "user.id",
     ],
-    "the owner of the function reads three columns of the users (never the name) and the notices"
+    "the owner of the function reads three columns of the users (never the name), the notices and who is an owner"
   );
   const ownerAttributes = await owner.query<{
     rolbypassrls: boolean;
@@ -417,7 +421,8 @@ async function emailScenario(
     await deliverClosureNotice(
       {
         email: email(
-          fakeProvider(() => ({ outcome: "rejected", status: 422 })).send
+          fakeProvider(() => ({ code: null, outcome: "rejected", status: 422 }))
+            .send
         ),
         notices: maintenance,
       },
@@ -438,7 +443,8 @@ async function emailScenario(
     deliverClosureNotice(
       {
         email: email(
-          fakeProvider(() => ({ outcome: "retry", status: 503 })).send
+          fakeProvider(() => ({ code: null, outcome: "retry", status: 503 }))
+            .send
         ),
         notices: maintenance,
       },
@@ -457,9 +463,24 @@ async function emailScenario(
   const left = await closed("left");
   await record();
   const leftNotice = await owedOf(owner, left.organizationId);
+  // a second owner stays: the support sends the notice again to the owner of now
+  const second = `gate-${randomUUID()}`;
+  await owner.query(
+    'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
+    [second, "Segunda dona", `${second}@example.invalid`]
+  );
+  await owner.query(
+    "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
+    [left.organizationId, second]
+  );
   await owner.query(
     "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
     [left.organizationId, left.userId]
+  );
+  assert.equal(
+    await recipients.recipient(leftNotice.id, left.organizationId),
+    null,
+    "no address of a user who is no longer an owner"
   );
   assert.equal(
     await deliverClosureNotice(
@@ -470,8 +491,26 @@ async function emailScenario(
     "not_due"
   );
   assert.equal(provider.sent.length, 1);
+  const leftCase = await openedPrivacyCase(context, left.organizationId);
+  const toSecond = await reissueClosureNotice(
+    admin,
+    principal,
+    leftCase,
+    left.organizationId
+  );
+  assert.ok(toSecond);
+  const leftRows = await rowsOf(owner, left.organizationId);
+  assert.equal(
+    leftRows.find((row) => row.id === leftNotice.id)?.skipped,
+    true,
+    "the notice owed to the one who left is settled skipped, never sent"
+  );
+  assert.equal(
+    leftRows.find((row) => row.id === toSecond.noticeId)?.user_id,
+    second
+  );
   tests.push(
-    "the consumer sends a notice under its own ID as the provider's key, marks it sent once (a duplicate sends nothing), leaves it owed when the e-mail is not verified or the provider fails, marks it failed when the provider refuses it, and never sends to a user who is no longer a member; the event carries only the notice's ID and the text no address"
+    "the consumer sends a notice under its own ID as the provider's key, marks it sent once (a duplicate sends nothing), leaves it owed when the e-mail is not verified or the provider fails, marks it failed when the provider refuses it, and never sends to (nor reads the address of) a user who is no longer an owner, whose owed notice the support replaces with one for the owner of now; the event carries only the notice's ID and the text no address"
   );
 
   // the handover: the latest notice owed of the cycle goes out, the earlier owed ones are settled skipped
@@ -721,10 +760,47 @@ async function emailScenario(
         gone.organizationId,
         "owner_account_deleted"
       ),
-    "privacy_case_not_decided",
-    "a dismissal needs the recorded decision of the case"
+    "privacy_case_not_deletion",
+    "a dismissal needs a case of deletion, not any privacy case"
+  );
+  const undecided = (
+    await openPrivacyCase(admin, principal, {
+      channel: "email",
+      dueDays: 15,
+      note: null,
+      organizationId: gone.organizationId,
+      reason: "Pedido de exclusão da conta",
+      receivedAt: null,
+      requesterKind: "organization_owner",
+      requestType: "deletion",
+    })
+  )?.id;
+  assert.ok(undecided);
+  await refusedWith(
+    () =>
+      dismissClosureNotice(
+        admin,
+        principal,
+        undecided,
+        gone.organizationId,
+        "owner_account_deleted"
+      ),
+    "privacy_case_not_accepted",
+    "a dismissal needs the decision of the case, accepted"
   );
   const decided = await acceptedDeletionCase(context, gone.organizationId);
+  await refusedWith(
+    () =>
+      dismissClosureNotice(
+        admin,
+        principal,
+        decided,
+        gone.organizationId,
+        "owner_account_deleted"
+      ),
+    "closure_notice_owner_present",
+    "the reason must fit the facts: the owner is still there"
+  );
   await assert.rejects(
     dismissClosureNotice(
       admin,
@@ -814,21 +890,73 @@ async function emailScenario(
     "closure_notice_delivered",
     "a notice already dismissed is not dismissed again"
   );
+  await refusedWith(
+    () => reissueClosureNotice(admin, principal, decided, gone.organizationId),
+    "closure_notice_delivered",
+    "nor sent again after the dismissal"
+  );
+  const deliveredCase = await openedPrivacyCase(context, store.organizationId);
+  await refusedWith(
+    () =>
+      reissueClosureNotice(
+        admin,
+        principal,
+        deliveredCase,
+        store.organizationId
+      ),
+    "closure_notice_delivered",
+    "a d7 delivered is not sent again (it would only push the deletion)"
+  );
+  // a refused address: the person responsible dismisses it with the reason that fits
+  const refusedCase = await acceptedDeletionCase(
+    context,
+    refused.organizationId
+  );
+  const undeliverable = await dismissClosureNotice(
+    admin,
+    principal,
+    refusedCase,
+    refused.organizationId,
+    "email_undeliverable"
+  );
+  assert.equal(undeliverable?.dismissed, true);
   // a dismissal settles the notices still owed of the cycle (an e-mail never verified), and they leave the alert
   const neverVerified = await closed("never verified");
   await record();
   const neverVerifiedNotice = await owedOf(owner, neverVerified.organizationId);
-  await owner
-    .query(
-      "UPDATE public.closure_notices SET due_at = due_at - interval '4 days' WHERE id = $1",
-      [neverVerifiedNotice.id]
-    )
-    .catch(() => undefined);
-  const overdueBefore = (await record()).overdue;
   const neverVerifiedCase = await acceptedDeletionCase(
     context,
     neverVerified.organizationId
   );
+  await refusedWith(
+    () =>
+      dismissClosureNotice(
+        admin,
+        principal,
+        neverVerifiedCase,
+        neverVerified.organizationId,
+        "email_not_verified"
+      ),
+    "closure_notice_not_overdue",
+    "an e-mail not verified is dismissed only once its notice is past the alert"
+  );
+  await refusedWith(
+    () =>
+      dismissClosureNotice(
+        admin,
+        principal,
+        neverVerifiedCase,
+        neverVerified.organizationId,
+        "email_undeliverable"
+      ),
+    "closure_notice_not_refused",
+    "no address was refused here"
+  );
+  await owner.query(
+    "UPDATE public.closure_notices SET due_at = due_at - interval '4 days' WHERE id = $1",
+    [neverVerifiedNotice.id]
+  );
+  const overdueBefore = (await record()).overdue;
   await dismissClosureNotice(
     admin,
     principal,
@@ -854,7 +982,7 @@ async function emailScenario(
         asRole(
           owner,
           role,
-          "SELECT public.closure_notice_support_reissue($1, true)",
+          "SELECT public.closure_notice_support_reissue($1, NULL)",
           [gone.organizationId]
         ),
       "42501",
@@ -875,7 +1003,7 @@ async function emailScenario(
     );
   }
   tests.push(
-    "the person responsible dismisses the d7 (an account gone with its notices, an e-mail never verified) only under a privacy case with its decision recorded and a reason of the list: a new d7 with no user and no event, audited as closure_notice.dismissed with the reason, that settles the notices still owed, leaves the alert, and lets the store be deleted only 7 days later; a second dismissal is refused, and only the Admin's functions write it"
+    "the person responsible dismisses the d7 (an account gone with its notices, an address refused, an e-mail never verified past the alert) only under a privacy case of deletion asked by the owner and accepted, with a reason of the list that fits the facts (no owner left; a refused address; an owed notice past the alert): a new d7 with no user and no event, audited as closure_notice.dismissed with the reason, that settles the notices still owed, leaves the alert, and lets the store be deleted only 7 days later; a second dismissal, or a reissue after a delivery or a dismissal, is refused, and only the Admin's functions write it"
   );
   return tests;
 }

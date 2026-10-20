@@ -174,6 +174,7 @@ async function deliverClosureNotice(
   if (result.outcome === "retry") {
     logger.error("closure_notice_email_failed", {
       ...fields,
+      errorCode: result.code ?? undefined,
       httpStatus: result.status ?? undefined,
       milestone: delivery.milestone,
       outcome: "failure",
@@ -189,6 +190,7 @@ async function deliverClosureNotice(
     );
     logger.error("closure_notice_email_failed", {
       ...fields,
+      errorCode: result.code ?? undefined,
       httpStatus: result.status,
       marked,
       milestone: delivery.milestone,

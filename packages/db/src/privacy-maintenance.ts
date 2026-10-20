@@ -60,12 +60,12 @@ export interface ClaimedOrganizationPurge {
 
 /** What one call of the automatic schedule did (ADR 0102). */
 export interface ScheduledClosurePurges {
-  /** Closed organizations still waiting 30 days after D with no legal hold (left behind). */
-  overdue: number;
   /** Organizations this call put into the purge. */
   scheduled: number;
   /** Organizations the closure period put into the purge in the last 24 hours, this call included. */
   scheduledLastDay: number;
+  /** Closed organizations still waiting 30 days after D with no legal hold (left behind). */
+  overdue: number;
 }
 
 /** What one call of the notices did (ADR 0102, amended). */
@@ -82,10 +82,10 @@ export interface RecordedClosureNotices {
 
 /** What the consumer of `organization.closure_notice` reads to write the e-mail: IDs and dates, never the address. */
 export interface ClosureNoticeDelivery {
-  /** The first instant of D in the organization's time zone. */
-  deletableFrom: Date;
   /** D, as the organization's calendar shows it (YYYY-MM-DD). */
   deletionDate: string;
+  /** The first instant of D in the organization's time zone. */
+  deletableFrom: Date;
   /** When the milestone was due (for a notice the support sent again, when it was sent again). */
   dueAt: Date;
   milestone: ClosureNoticeMilestone;
@@ -137,6 +137,11 @@ export interface PrivacyMaintenanceClient {
   ) => Promise<ClosureNoticeDelivery | null>;
   /** Takes the oldest export that is waiting (or whose run stopped); null when there is none. */
   claimDataExport: (leaseSeconds: number) => Promise<ClaimedDataExport | null>;
+  /** Takes the oldest due purge (or one whose second sweep did not finish); null when there is none. */
+  claimOrganizationPurge: (
+    leaseSeconds: number
+  ) => Promise<ClaimedOrganizationPurge | null>;
+  close: () => Promise<void>;
   /**
    * Takes the one export a queue event names, by ID and organization, under the same rules (not before
    * the delay of a failed run, not past its attempts); null when it is not there to take.
@@ -146,22 +151,12 @@ export interface PrivacyMaintenanceClient {
     organizationId: string,
     leaseSeconds: number
   ) => Promise<ClaimedDataExport | null>;
-  /** Takes the oldest due purge (or one whose second sweep did not finish); null when there is none. */
-  claimOrganizationPurge: (
-    leaseSeconds: number
-  ) => Promise<ClaimedOrganizationPurge | null>;
-  close: () => Promise<void>;
   completeDataExport: (
     exportId: string,
     validityHours: number
   ) => Promise<{ expiresAt: Date; totalBytes: number }>;
   /** The second sweep found nothing left: the purge is over. */
   completeOrganizationPurgeSweep: (organizationId: string) => Promise<boolean>;
-  /**
-   * How many scheduled purges are held back past their time by a live temporary access of the Admin, a renewal still
-   * alive or a notice not delivered (the legal hold is not counted), whatever the switch of the automatic purge.
-   */
-  countPurgesHeldBack: () => Promise<number>;
   /** Makes finished and failed exports unavailable when their time is up; returns how many. */
   expireDataExports: (
     failedKeepHours: number,
@@ -175,6 +170,19 @@ export interface PrivacyMaintenanceClient {
   ) => Promise<boolean>;
   /** Marks the recovery windows that ended as closed, at most `limit` organizations; returns how many. */
   finalizeExpiredClosures: (limit: number) => Promise<number>;
+  /**
+   * How many scheduled purges are held back past their time by a live temporary access of the Admin, a renewal still
+   * alive or a notice not delivered (the legal hold is not counted), whatever the switch of the automatic purge.
+   */
+  countPurgesHeldBack: () => Promise<number>;
+  /**
+   * Schedules the purge of at most `limit` closed organizations whose D minus 7 local days arrived (ADR 0102),
+   * skipping one under a legal hold, a live temporary access of the Admin, a cancellation of the Admin in this
+   * closure or a renewal still alive.
+   */
+  scheduleClosedOrganizationPurges: (
+    limit: number
+  ) => Promise<ScheduledClosurePurges>;
   /**
    * The images of a closed organization's export, for the run that holds it (its export and lease token), after the
    * given asset ID: the reader does not read the storage keys.
@@ -198,6 +206,7 @@ export interface PrivacyMaintenanceClient {
    * owed ones settled `skipped`.
    */
   listOwedClosureNotices: (limit: number) => Promise<OwedClosureNotice[]>;
+  markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
   /** The notice will not go out, with a short code, once; whether this call changed it. */
   markClosureNoticeFailed: (
     noticeId: string,
@@ -209,7 +218,6 @@ export interface PrivacyMaintenanceClient {
     noticeId: string,
     organizationId: string
   ) => Promise<boolean>;
-  markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
   /**
    * The purge is about to remove its first object from the storage; from now on it cannot be cancelled.
    * Refused (`purge_not_claimed`) when this run no longer holds the purge.
@@ -253,14 +261,6 @@ export interface PrivacyMaintenanceClient {
     organizationId: string,
     code: string
   ) => Promise<void>;
-  /**
-   * Schedules the purge of at most `limit` closed organizations whose D minus 7 local days arrived (ADR 0102),
-   * skipping one under a legal hold, a live temporary access of the Admin, a cancellation of the Admin in this
-   * closure or a renewal still alive.
-   */
-  scheduleClosedOrganizationPurges: (
-    limit: number
-  ) => Promise<ScheduledClosurePurges>;
 }
 
 export function createPrivacyMaintenanceClient(
@@ -310,6 +310,14 @@ export function createPrivacyMaintenanceClient(
       ]);
       return claimedExport(result.rows[0]?.claimed);
     },
+    async claimOrganizationPurge(leaseSeconds) {
+      const result = await pool.query<{
+        claimed: ClaimedOrganizationPurge | null;
+      }>("SELECT public.claim_organization_purge($1::integer) AS claimed", [
+        leaseSeconds,
+      ]);
+      return result.rows[0]?.claimed ?? null;
+    },
     async claimDataExportById(exportId, organizationId, leaseSeconds) {
       const result = await pool.query<{
         claimed: ClaimedDataExportRow | null;
@@ -318,14 +326,6 @@ export function createPrivacyMaintenanceClient(
         [exportId, organizationId, leaseSeconds]
       );
       return claimedExport(result.rows[0]?.claimed);
-    },
-    async claimOrganizationPurge(leaseSeconds) {
-      const result = await pool.query<{
-        claimed: ClaimedOrganizationPurge | null;
-      }>("SELECT public.claim_organization_purge($1::integer) AS claimed", [
-        leaseSeconds,
-      ]);
-      return result.rows[0]?.claimed ?? null;
     },
     async close() {
       await pool.end();
@@ -353,12 +353,6 @@ export function createPrivacyMaintenanceClient(
       );
       return result.rows[0]?.completed === true;
     },
-    async countPurgesHeldBack() {
-      const result = await pool.query<{ held_back: number }>(
-        "SELECT public.count_purges_held_back() AS held_back"
-      );
-      return Number(result.rows[0]?.held_back ?? 0);
-    },
     async expireDataExports(failedKeepHours, limit) {
       const result = await pool.query<{ expired: number }>(
         "SELECT public.expire_data_exports($1::integer, $2::integer) AS expired",
@@ -379,6 +373,30 @@ export function createPrivacyMaintenanceClient(
         [limit]
       );
       return Number(result.rows[0]?.finalized ?? 0);
+    },
+    async countPurgesHeldBack() {
+      const result = await pool.query<{ held_back: number }>(
+        "SELECT public.count_purges_held_back() AS held_back"
+      );
+      return Number(result.rows[0]?.held_back ?? 0);
+    },
+    async scheduleClosedOrganizationPurges(limit) {
+      const result = await pool.query<{
+        scheduled: {
+          overdue: number;
+          scheduled: number;
+          scheduledLastDay: number;
+        };
+      }>(
+        "SELECT public.schedule_closed_organization_purges($1::integer) AS scheduled",
+        [limit]
+      );
+      const scheduled = result.rows[0]?.scheduled;
+      return {
+        scheduled: Number(scheduled?.scheduled ?? 0),
+        scheduledLastDay: Number(scheduled?.scheduledLastDay ?? 0),
+        overdue: Number(scheduled?.overdue ?? 0),
+      };
     },
     async listClosedExportMedia(exportId, leaseToken, afterAssetId, limit) {
       const result = await pool.query<{
@@ -415,6 +433,13 @@ export function createPrivacyMaintenanceClient(
         storageKey: row.storage_key,
       }));
     },
+    async markDataExportFilesDeleted(exportId) {
+      const result = await pool.query<{ marked: boolean }>(
+        "SELECT public.mark_data_export_files_deleted($1::uuid) AS marked",
+        [exportId]
+      );
+      return result.rows[0]?.marked === true;
+    },
     async listOwedClosureNotices(limit) {
       const result = await pool.query<{
         owed_notice: string;
@@ -442,13 +467,6 @@ export function createPrivacyMaintenanceClient(
       );
       return result.rows[0]?.marked === true;
     },
-    async markDataExportFilesDeleted(exportId) {
-      const result = await pool.query<{ marked: boolean }>(
-        "SELECT public.mark_data_export_files_deleted($1::uuid) AS marked",
-        [exportId]
-      );
-      return result.rows[0]?.marked === true;
-    },
     async markOrganizationPurgeStorageTouched(organizationId) {
       await pool.query(
         "SELECT public.mark_organization_purge_storage_touched($1::text)",
@@ -472,8 +490,8 @@ export function createPrivacyMaintenanceClient(
       }
       return {
         alreadyPurged: purged.alreadyPurged === true,
-        deletedRows: Number(purged.deletedRows),
         pseudonymizedBillingEvents: Number(purged.pseudonymizedBillingEvents),
+        deletedRows: Number(purged.deletedRows),
         scrubbedTexts: Number(purged.scrubbedTexts),
       };
     },
@@ -514,24 +532,6 @@ export function createPrivacyMaintenanceClient(
         "SELECT public.record_organization_purge_failure($1::text, $2::text)",
         [organizationId, code]
       );
-    },
-    async scheduleClosedOrganizationPurges(limit) {
-      const result = await pool.query<{
-        scheduled: {
-          overdue: number;
-          scheduled: number;
-          scheduledLastDay: number;
-        };
-      }>(
-        "SELECT public.schedule_closed_organization_purges($1::integer) AS scheduled",
-        [limit]
-      );
-      const scheduled = result.rows[0]?.scheduled;
-      return {
-        overdue: Number(scheduled?.overdue ?? 0),
-        scheduled: Number(scheduled?.scheduled ?? 0),
-        scheduledLastDay: Number(scheduled?.scheduledLastDay ?? 0),
-      };
     },
   };
 }

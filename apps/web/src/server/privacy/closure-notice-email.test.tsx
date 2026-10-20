@@ -233,15 +233,22 @@ describe("the sender of the provider", () => {
     from: "Polaris <avisos@example.invalid>",
   });
 
-  function stubFetch(status: number) {
-    const body = new Response("echo dono@example.invalid", { status });
-    const cancel = vi.spyOn(body.body as ReadableStream, "cancel");
-    const text = vi.spyOn(body, "text");
-    const json = vi.spyOn(body, "json");
-    const fetchMock = vi.fn(() => Promise.resolve(body));
+  function stubFetch(status: number, body = "echo dono@example.invalid") {
+    const response = new Response(body, { status });
+    const cancel = vi.spyOn(response.body as ReadableStream, "cancel");
+    const text = vi.spyOn(response, "text");
+    const json = vi.spyOn(response, "json");
+    const fetchMock = vi.fn(() => Promise.resolve(response));
     vi.stubGlobal("fetch", fetchMock);
     return { cancel, fetchMock, json, text };
   }
+
+  const providerError = (name: string) =>
+    JSON.stringify({
+      message: "Invalid `to` field: dono@example.invalid",
+      name,
+      statusCode: 422,
+    });
 
   it("posts to the provider with the idempotency key and the bearer key, and never reads the body", async () => {
     const { cancel, fetchMock, json, text } = stubFetch(200);
@@ -266,16 +273,45 @@ describe("the sender of the provider", () => {
   });
 
   for (const status of [400, 422]) {
-    it(`rejects for good on ${status}`, async () => {
-      stubFetch(status);
-      expect(await sender(message)).toEqual({ outcome: "rejected", status });
+    it(`fails for good on ${status} with validation_error, keeping only the error's name`, async () => {
+      stubFetch(status, providerError("validation_error"));
+      const result = await sender(message);
+      expect(result).toEqual({
+        code: "validation_error",
+        outcome: "rejected",
+        status,
+      });
+      // nothing of the provider's message (which echoes the address) is kept
+      expect(JSON.stringify(result)).not.toContain("dono@example.invalid");
     });
   }
 
-  for (const status of [401, 403, 409, 429, 500, 503]) {
-    it(`asks for a retry on ${status}`, async () => {
+  it("asks for a retry on a 422 that is a mistake of ours (the sender), not the message's", async () => {
+    stubFetch(422, providerError("invalid_from_address"));
+    expect(await sender(message)).toEqual({
+      code: "invalid_from_address",
+      outcome: "retry",
+      status: 422,
+    });
+  });
+
+  it("keeps no error name that is not a short code", async () => {
+    stubFetch(422, providerError("Invalid to: dono@example.invalid"));
+    expect(await sender(message)).toEqual({
+      code: null,
+      outcome: "retry",
+      status: 422,
+    });
+  });
+
+  for (const status of [400, 401, 403, 409, 429, 500, 503]) {
+    it(`asks for a retry on ${status} with a body that is not the provider's error`, async () => {
       stubFetch(status);
-      expect(await sender(message)).toEqual({ outcome: "retry", status });
+      expect(await sender(message)).toEqual({
+        code: null,
+        outcome: "retry",
+        status,
+      });
     });
   }
 
@@ -284,6 +320,10 @@ describe("the sender of the provider", () => {
       "fetch",
       vi.fn(() => Promise.reject(new Error("boom dono@example.invalid")))
     );
-    expect(await sender(message)).toEqual({ outcome: "retry", status: null });
+    expect(await sender(message)).toEqual({
+      code: null,
+      outcome: "retry",
+      status: null,
+    });
   });
 });

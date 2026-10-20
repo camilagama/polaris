@@ -559,10 +559,6 @@ export function purgeFunctionDifferences(
     admin_schedule_organization_purge: withoutComments(
       definitions.admin_schedule_organization_purge
     ),
-    closed_organization_purge_wait: withoutComments(
-      definitions.closed_organization_purge_wait
-    ),
-    count_purges_held_back: withoutComments(definitions.count_purges_held_back),
     organization_purge_blocker: withoutComments(
       definitions.organization_purge_blocker
     ),
@@ -572,6 +568,10 @@ export function purgeFunctionDifferences(
     schedule_closed_organization_purges: withoutComments(
       definitions.schedule_closed_organization_purges
     ),
+    closed_organization_purge_wait: withoutComments(
+      definitions.closed_organization_purge_wait
+    ),
+    count_purges_held_back: withoutComments(definitions.count_purges_held_back),
   };
   return [
     ...scopeDifferences(sql.admin_schedule_organization_purge),

@@ -1,19 +1,18 @@
-import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
+import { configureLogging, logger } from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
-import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
+import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
 import {
   createOutboxClient,
   type OutboxClient,
 } from "@polaris/db/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
-import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
-import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
-import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
-import { approvedRetention } from "@polaris/domain/privacy/retention";
-import { laneOfCron } from "@polaris/domain/scheduling/scheduled-jobs";
-import { configureLogging, logger } from "@polaris/observability/logger";
+import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { app } from "../src/server/app";
+import {
+  reconcileRemovedMedia,
+  reconcileStagedMedia,
+} from "../src/server/media-reconciler";
 import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
@@ -24,11 +23,6 @@ import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
 } from "../src/server/billing/renewal-cancellation";
-import type { WorkerBindings } from "../src/server/environment";
-import {
-  reconcileRemovedMedia,
-  reconcileStagedMedia,
-} from "../src/server/media-reconciler";
 import {
   type ClosureNoticeEmail,
   closureNoticeEmailConfig,
@@ -46,15 +40,21 @@ import {
   runPrivacyMaintenance,
 } from "../src/server/privacy/maintenance";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
+import type { WorkerBindings } from "../src/server/environment";
+import {
+  handleDeadLetterBatch,
+  isDeadLetterQueue,
+} from "../src/server/queue/dead-letter";
 import {
   handleQueueBatch,
   PermanentHandlerError,
   type QueueBatch,
 } from "../src/server/queue/consumer";
-import {
-  handleDeadLetterBatch,
-  isDeadLetterQueue,
-} from "../src/server/queue/dead-letter";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
+import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
+import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
+import { approvedRetention } from "@polaris/domain/privacy/retention";
+import { laneOfCron } from "@polaris/domain/scheduling/scheduled-jobs";
 import { dispatchOutbox } from "../src/server/queue/dispatcher";
 import {
   createDurableProcessingLedger,

@@ -41,39 +41,6 @@ BEGIN
   END IF;
   due := GREATEST(window_end, closure_requested + interval '${days}') + p_delay_seconds * interval '1 second';
 END;`,
-    closed_organization_purge_wait: `CREATE OR REPLACE FUNCTION public.closed_organization_purge_wait(p_organization text, p_requested_at timestamptz)
-BEGIN
-  IF EXISTS (SELECT 1 FROM public.organization_legal_holds AS hold WHERE hold.organization_id = p_organization AND hold.released_at IS NULL) THEN
-    RETURN 'legal_hold_active';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.tenant_access_grants AS access_grant
-              WHERE access_grant.revoked_at IS NULL AND access_grant.expires_at > pg_catalog.now()) THEN
-    RETURN 'tenant_access_active';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.organization_purge_cancellations AS cancellation
-              WHERE cancellation.cancelled_at >= p_requested_at) THEN
-    RETURN 'purge_cancelled';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.organization_billing AS billing
-              WHERE billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
-                AND billing.state IN ('trialing', 'active', 'grace') AND NOT billing.cancel_at_period_end) THEN
-    RETURN 'renewal_alive';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.closure_notices AS notice
-                  WHERE notice.organization_id = p_organization AND notice.closure_requested_at = p_requested_at
-                    AND notice.milestone IN ('d7', 'rescheduled') AND COALESCE(notice.sent_at, notice.dismissed_at) IS NOT NULL
-                 HAVING pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <= pg_catalog.now() - interval '168 hours') THEN
-    RETURN 'closure_notice_not_delivered';
-  END IF;
-END;`,
-    count_purges_held_back: `CREATE OR REPLACE FUNCTION public.count_purges_held_back()
- AS $function$
-  SELECT pg_catalog.count(*)::integer FROM public.organization_purges AS purge
-    JOIN public.organizations AS organization ON organization.id = purge.organization_id
-   WHERE organization.status = 'purge_pending' AND purge.purged_at IS NULL AND purge.not_before <= pg_catalog.now()
-     AND public.organization_purge_blocker(organization.id)
-         IN ('tenant_access_active', 'renewal_alive', 'closure_notice_not_delivered')
-$function$`,
     organization_purge_blocker: `CREATE OR REPLACE FUNCTION public.organization_purge_blocker(p_organization text)
  AS $function$
 BEGIN
@@ -136,6 +103,39 @@ BEGIN
   END LOOP;
   SELECT 1 WHERE purge.scheduled_at > pg_catalog.now() - interval '24 hours';
   SELECT 1 WHERE deadline.deletable_from + interval '720 hours' <= pg_catalog.now();
+END;`,
+    count_purges_held_back: `CREATE OR REPLACE FUNCTION public.count_purges_held_back()
+ AS $function$
+  SELECT pg_catalog.count(*)::integer FROM public.organization_purges AS purge
+    JOIN public.organizations AS organization ON organization.id = purge.organization_id
+   WHERE organization.status = 'purge_pending' AND purge.purged_at IS NULL AND purge.not_before <= pg_catalog.now()
+     AND public.organization_purge_blocker(organization.id)
+         IN ('tenant_access_active', 'renewal_alive', 'closure_notice_not_delivered')
+$function$`,
+    closed_organization_purge_wait: `CREATE OR REPLACE FUNCTION public.closed_organization_purge_wait(p_organization text, p_requested_at timestamptz)
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.organization_legal_holds AS hold WHERE hold.organization_id = p_organization AND hold.released_at IS NULL) THEN
+    RETURN 'legal_hold_active';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tenant_access_grants AS access_grant
+              WHERE access_grant.revoked_at IS NULL AND access_grant.expires_at > pg_catalog.now()) THEN
+    RETURN 'tenant_access_active';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.organization_purge_cancellations AS cancellation
+              WHERE cancellation.cancelled_at >= p_requested_at) THEN
+    RETURN 'purge_cancelled';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.organization_billing AS billing
+              WHERE billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
+                AND billing.state IN ('trialing', 'active', 'grace') AND NOT billing.cancel_at_period_end) THEN
+    RETURN 'renewal_alive';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.closure_notices AS notice
+                  WHERE notice.organization_id = p_organization AND notice.closure_requested_at = p_requested_at
+                    AND notice.milestone IN ('d7', 'rescheduled') AND COALESCE(notice.sent_at, notice.dismissed_at) IS NOT NULL
+                 HAVING pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <= pg_catalog.now() - interval '168 hours') THEN
+    RETURN 'closure_notice_not_delivered';
+  END IF;
 END;`,
   };
 }

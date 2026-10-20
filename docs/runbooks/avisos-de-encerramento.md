@@ -54,13 +54,13 @@ Um `devidos` que não cai ao longo das horas, com o `closure_notice_handover_com
 
 O ato é do Admin, com a capacidade `organization:purge`, e só sob um caso de privacidade aberto da organização. Não há como editar um aviso: o ato grava uma linha nova (reemissão) ou marca a dispensa numa linha nova, e a auditoria registra cada um (`closure_notice.reissued` e `closure_notice.dismissed`).
 
-**Reemitir** serve quando o aviso devido ou falho precisa sair de novo, depois que a causa foi corrigida. Chama-se a rota de reemissão do caso, com o identificador da organização no corpo. Cria um aviso `d7` novo do mesmo ciclo, para o dono atual, com `reissue` 1, 2 e assim por diante.
+**Reemitir** serve quando o `d7` foi pulado ou falhou, ou foi gravado para quem deixou de ser dono, e precisa sair de novo, depois que a causa foi corrigida. Chama-se a rota de reemissão do caso (`POST /support-cases/:caseId/closure-notice/reissue`), com o identificador da organização no corpo. Basta um caso de privacidade aberto da organização, em qualquer etapa. Cria um aviso `d7` novo do mesmo ciclo, para o dono atual, com `reissue` 1, 2 e assim por diante; um aviso ainda devido a quem deixou de ser dono fica pulado. Não reemite depois de um `d7` ou `rescheduled` já entregue ou dispensado: isso só adiaria o apagamento.
 
-**Dispensar** serve quando o aviso não pode ser entregue, e o apagamento não pode esperar por ele. Chama-se a rota de dispensa do caso, com a organização e o motivo. O motivo é um destes:
+**Dispensar** serve quando o aviso não pode ser entregue, e o apagamento não pode esperar por ele. É uma decisão do responsável: exige um caso de privacidade de exclusão, pedido pelo dono (como dono da loja ou como titular) e aceito por inteiro. Chama-se a rota de dispensa do caso (`POST /support-cases/:caseId/closure-notice/dismiss`), com a organização e o motivo. O motivo é um destes, e precisa bater com o que o banco sabe:
 
-- `owner_account_deleted`: o dono apagou a conta depois do aviso entregue. A linha do aviso sai com a conta.
-- `email_not_verified`: o dono não verificou o endereço. O repasse continua tentando a cada hora, então o suporte pode esperar primeiro.
-- `email_undeliverable`: o provedor recusou o endereço e o dono não o corrigiu.
+- `owner_account_deleted`: a conta do dono foi apagada (as linhas dos avisos dele saem com ela). Só vale sem dono ativo na loja.
+- `email_not_verified`: o dono não verificou o endereço. O repasse continua tentando a cada hora, então o suporte pode esperar primeiro. Só vale quando um aviso devido ao dono passou 3 dias da data (o que já aparece no alerta de [loja-encerrada-parada](./alertas.md#loja-encerrada-parada)).
+- `email_undeliverable`: o provedor recusou o endereço (`email_rejected`) e o dono não o corrigiu. Só vale com um aviso recusado no ciclo e nenhum ainda devido a um dono.
 
 A dispensa grava um `d7` sem usuário, marca como pulados os avisos do ciclo que ainda estavam devidos, e não gera evento. Um aviso dispensado conta como entregue: o apagamento ainda espera 7 dias depois da dispensa.
 
@@ -79,10 +79,15 @@ Recusas (todas com 409 e uma mensagem):
 | `organization_not_in_closure` | a loja não está em encerramento | não há aviso a tratar |
 | `closure_notice_not_due` | o marco do ciclo ainda não chegou | espere a data |
 | `privacy_case_required` | não há caso de privacidade aberto da organização | abra o caso de privacidade primeiro |
-| `privacy_case_not_decided` (dispensa) | o caso não tem decisão registrada | registre a decisão no caso, depois dispense |
+| `privacy_case_not_deletion` (dispensa) | o caso não é um pedido de exclusão | use o caso de exclusão do dono |
+| `privacy_requester_not_owner` (dispensa) | o pedido não foi feito pelo dono | use o caso de exclusão do dono |
+| `privacy_case_not_accepted` (dispensa) | o pedido ainda não foi decidido ou não foi aceito por inteiro | registre a decisão no caso, depois dispense |
+| `closure_notice_owner_present` (dispensa) | ainda há dono ativo, então a conta não foi apagada | reemita, ou use o motivo que corresponde |
+| `closure_notice_not_refused` (dispensa) | nenhum aviso do ciclo foi recusado pelo provedor, ou ainda há um devido | reemita antes |
+| `closure_notice_not_overdue` (dispensa) | não há aviso devido há mais de 3 dias | espere o repasse |
 | `closure_notice_pending` (reemissão) | outro aviso do ciclo ainda está devido | deixe o repasse enviá-lo, ou resolva esse aviso antes |
 | `closure_notice_no_owner` (reemissão) | não há dono ativo | não há para quem reemitir; a decisão é do caso |
-| `closure_notice_delivered` (dispensa) | um `d7` ou `rescheduled` do ciclo já foi entregue ou dispensado | nada a dispensar |
+| `closure_notice_delivered` | um `d7` ou `rescheduled` do ciclo já foi entregue ou dispensado | nada a reemitir nem dispensar |
 
 ## Desligar
 
@@ -90,7 +95,8 @@ O responsável põe `CLOSURE_NOTICE_EMAIL_ENABLED` = `"false"` e faz o deploy. O
 
 ## Limites
 
-- A chave de idempotência do Resend é guardada por 24 horas. Um reenvio depois desse prazo é outro envio.
+- A chave de idempotência do Resend é guardada por 24 horas. Um reenvio depois desse prazo é outro envio: se o provedor aceitou e a marca de enviado falhou, o repasse do dia seguinte pode mandar o mesmo aviso de novo. Dentro das 24 horas, a mesma chave com outro conteúdo (por exemplo, depois de um deploy que mudou o texto) responde 409 e é tentada de novo até a chave vencer.
+- Só a resposta 400 ou 422 com `validation_error` dá o aviso por falho (`email_rejected`). Um remetente errado (`invalid_from_address`), uma chave errada ou uma cota estourada fazem o aviso ser tentado de novo e acendem [aviso-de-encerramento-falhando](./alertas.md#aviso-de-encerramento-falhando): corrija a configuração, e o repasse envia. Antes de ligar em produção, faça um envio de teste no staging.
 - Não há webhook de bounce. Uma recusa que chega depois de o provedor aceitar o envio não aparece, e o aviso conta como enviado.
 - O link leva à raiz da aplicação, que exige login. A tela de encerramento depende do roteamento do PR G.
 - A revisão do texto do e-mail está pendente (Petković).
