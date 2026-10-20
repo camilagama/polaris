@@ -186,6 +186,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   3. o lojista avisado antes de os dados saírem: os avisos por marco (D − 30, D − 7, D e o reagendamento depois de uma trava) e o e-mail ligados em produção, com o domínio definitivo (AC-30, AC-50 e AC-51), e o painel da loja encerrada com o pedido de cópia no ar; ou uma exceção registrada pelo responsável;
   4. a revisão de advogado dos termos;
   5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
+- `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. Antes dele, o e-mail manda o dono pedir a cópia ou desfazer o encerramento num painel que não existe. Com o PR G, o link e o botão do e-mail apontam para essa tela. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
