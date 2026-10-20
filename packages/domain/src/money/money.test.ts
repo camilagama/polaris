@@ -1,10 +1,5 @@
-import {
-  bigInt,
-  assert as fcAssert,
-  integer,
-  property,
-  tuple,
-} from "fast-check";
+import { bigInt, integer, property, tuple } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   DecimalAmount,
@@ -72,14 +67,13 @@ describe("Percentage.fromRate", () => {
   });
 
   it("agrees with Percentage.from for every rate up to 100 (property)", () => {
-    fcAssert(
+    assertProperty(
       property(integer({ max: 100_000_000, min: 0 }), (units) => {
         const text = decimalFromUnits(BigInt(units), 6);
         expect(Percentage.fromRate(text).toString()).toBe(
           Percentage.from(text).toString()
         );
-      }),
-      { numRuns: 300 }
+      })
     );
   });
 });
@@ -97,8 +91,8 @@ describe("Money", () => {
     ).toThrow(MoneyLimitError);
   });
 
-  it("adds exact cents for all generated signed values", async () => {
-    await fcAssert(
+  it("adds exact cents for all generated signed values", () => {
+    assertProperty(
       property(
         bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
         bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
@@ -108,13 +102,12 @@ describe("Money", () => {
           );
           expect(result.minorUnits).toBe(leftCents + rightCents);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
-  it("subtracts a discount without floating-point conversion", async () => {
-    await fcAssert(
+  it("subtracts a discount without floating-point conversion", () => {
+    assertProperty(
       property(
         tuple(
           bigInt({ max: PROPERTY_MAX_CENTS, min: 0n }),
@@ -130,13 +123,12 @@ describe("Money", () => {
             grossCents - discountCents
           );
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
-  it("multiplies exact cents by an integer quantity", async () => {
-    await fcAssert(
+  it("multiplies exact cents by an integer quantity", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000_000_000_000n, min: -1_000_000_000_000_000n }),
         integer({ max: 1000, min: 1 }),
@@ -146,8 +138,7 @@ describe("Money", () => {
               .minorUnits
           ).toBe(minorUnits * BigInt(quantity));
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
@@ -166,8 +157,8 @@ describe("Money", () => {
 });
 
 describe("DecimalAmount", () => {
-  it("adds mixed-scale intermediate decimals exactly", async () => {
-    await fcAssert(
+  it("adds mixed-scale intermediate decimals exactly", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000n, min: -1_000_000n }),
         bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
@@ -179,13 +170,12 @@ describe("DecimalAmount", () => {
           );
           expect(left.add(right).toString()).toBe(expected.toString());
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
-  it("subtracts mixed-scale intermediate decimals exactly", async () => {
-    await fcAssert(
+  it("subtracts mixed-scale intermediate decimals exactly", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000n, min: -1_000_000n }),
         bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
@@ -197,13 +187,12 @@ describe("DecimalAmount", () => {
           );
           expect(left.subtract(right).toString()).toBe(expected.toString());
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
-  it("multiplies exact intermediate values by a positive quantity", async () => {
-    await fcAssert(
+  it("multiplies exact intermediate values by a positive quantity", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000_000n, min: -1_000_000_000n }),
         integer({ max: 1000, min: 1 }),
@@ -216,8 +205,7 @@ describe("DecimalAmount", () => {
             expected.toString()
           );
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
@@ -235,8 +223,8 @@ describe("DecimalAmount", () => {
     );
   });
 
-  it("rounds generated three-place values half-up to cents", async () => {
-    await fcAssert(
+  it("rounds generated three-place values half-up to cents", () => {
+    assertProperty(
       property(
         bigInt({ max: PROPERTY_MAX_CENTS, min: -PROPERTY_MAX_CENTS }),
         (milliUnits) => {
@@ -247,8 +235,7 @@ describe("DecimalAmount", () => {
           );
           expect(exact.roundToScale(2).toString()).toBe(expected.toString());
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
@@ -267,8 +254,8 @@ describe("Percentage", () => {
     expect(() => Percentage.from("-1")).toThrow(InvalidPercentageError);
   });
 
-  it("applies percentage points exactly before rounding", async () => {
-    await fcAssert(
+  it("applies percentage points exactly before rounding", () => {
+    assertProperty(
       property(
         bigInt({ max: 1_000_000_000_000n, min: -1_000_000_000_000n }),
         bigInt({ max: 1_000_000_000n, min: 0n }),
@@ -284,8 +271,7 @@ describe("Percentage", () => {
             expected.toString()
           );
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 });

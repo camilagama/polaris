@@ -1,4 +1,5 @@
-import { assert as fcAssert, integer, property } from "fast-check";
+import { integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   assertSaleOccurredWithinWindow,
@@ -94,7 +95,7 @@ describe("assertSaleOccurredWithinWindow", () => {
   });
 
   it("is monotonic: the older the sale, the less likely it is accepted (property)", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 120, min: 0 }),
         integer({ max: 120, min: 0 }),
@@ -121,8 +122,7 @@ describe("assertSaleOccurredWithinWindow", () => {
           expect(accepts(30)).toBe(true);
           expect(accepts(31)).toBe(false);
         }
-      ),
-      { numRuns: 200 }
+      )
     );
   });
 });

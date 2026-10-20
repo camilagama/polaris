@@ -1,4 +1,5 @@
 import fc from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   dueOccurrences,
@@ -59,7 +60,7 @@ describe("occurrenceDate", () => {
         noInvalidDate: true,
       })
       .map((date) => date.toISOString().slice(0, 10));
-    fc.assert(
+    assertProperty(
       fc.property(
         start,
         frequency,
@@ -153,7 +154,7 @@ describe("dueOccurrences", () => {
   });
 
   it("continuing from any split gives the same dates as one pass (property)", () => {
-    fc.assert(
+    assertProperty(
       fc.property(
         fc.constantFrom<RecurrenceFrequency>("weekly", "monthly", "yearly"),
         fc.integer({ max: 30, min: 0 }),
@@ -228,7 +229,7 @@ describe("occurrencesThrough", () => {
   });
 
   it("agrees with generating the due occurrences one by one (property)", () => {
-    fc.assert(
+    assertProperty(
       fc.property(
         fc.constantFrom<RecurrenceFrequency>("weekly", "monthly", "yearly"),
         fc

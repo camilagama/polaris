@@ -43,6 +43,11 @@ const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /** Lowercase, as `uuid::text` writes it: an uppercase ID would never match the record it names. */
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+/** A field that is not text is refused as it is: no `String()` turns a number into an ID that passes the pattern. */
+function matches(pattern: RegExp, value: unknown): boolean {
+  return typeof value === "string" && pattern.test(value);
+}
+
 const ENTRY_FIELDS = new Set([
   "entityId",
   "entityType",
@@ -70,12 +75,12 @@ export function deletionLedgerEntry(
   if (
     !(
       knownKind &&
-      OPAQUE_ID.test(String(entityId)) &&
-      OPAQUE_ID.test(String(organizationId))
+      matches(OPAQUE_ID, entityId) &&
+      matches(OPAQUE_ID, organizationId)
     ) ||
-    (entityType === "customer" && !UUID.test(entityId)) ||
+    (entityType === "customer" && !matches(UUID, entityId)) ||
     (entityType === "organization" && entityId !== organizationId) ||
-    (privacyCaseId !== null && !UUID.test(privacyCaseId))
+    (privacyCaseId !== null && !matches(UUID, privacyCaseId))
   ) {
     throw new InvalidDeletionLedgerEntryError();
   }

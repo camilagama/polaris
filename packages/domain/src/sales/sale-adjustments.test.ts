@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  array,
-  assert as fcAssert,
-  bigInt,
-  integer,
-  property,
-  tuple,
-} from "fast-check";
+import { array, bigInt, integer, property, tuple } from "fast-check";
+import { assertProperty } from "../testing/property";
 import {
   InvalidSaleAdjustmentError,
   SaleDiscountExceedsSubtotalError,
@@ -181,8 +175,8 @@ describe("calculateSaleAdjustments", () => {
     }
   });
 
-  it("sums negotiated item prices and quantities exactly", async () => {
-    await fcAssert(
+  it("sums negotiated item prices and quantities exactly", () => {
+    assertProperty(
       property(
         array(
           tuple(
@@ -207,13 +201,12 @@ describe("calculateSaleAdjustments", () => {
           expect(result.subtotal).toBe(moneyFromMinorUnits(expectedSubtotal));
           expect(result.totalDue).toBe(moneyFromMinorUnits(expectedSubtotal));
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 
-  it("applies matching percent adjustments to the same subtotal", async () => {
-    await fcAssert(
+  it("applies matching percent adjustments to the same subtotal", () => {
+    assertProperty(
       property(
         bigInt({ min: 0n, max: 1_000_000_000_000n }),
         bigInt({ min: 0n, max: 100_000_000n }),
@@ -234,8 +227,7 @@ describe("calculateSaleAdjustments", () => {
 
           expect(result.totalDue).toBe(moneyFromMinorUnits(subtotalCents));
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 });

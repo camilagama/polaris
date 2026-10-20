@@ -127,6 +127,19 @@ describe("outboxEvent", () => {
     expect(() => outboxEvent(bad as never)).toThrow(InvalidOutboxEventError);
   });
 
+  it("refuses a field that is not text instead of turning it into text", () => {
+    for (const field of ["organizationId", "idempotencyKey", "correlationId"]) {
+      for (const value of [123, 12_345, true, {}, ["abc"], 10n]) {
+        expect(() =>
+          outboxEvent({ ...valid, [field]: value } as never)
+        ).toThrow(InvalidOutboxEventError);
+      }
+    }
+    expect(() => outboxEvent({ ...valid, type: 123 } as never)).toThrow(
+      InvalidOutboxEventError
+    );
+  });
+
   it("refuses a body with too many keys", () => {
     const event = Object.fromEntries(
       Array.from({ length: OUTBOX_EVENT_MAX_KEYS + 1 }, (_, index) => [

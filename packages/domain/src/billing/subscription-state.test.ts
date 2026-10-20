@@ -1,4 +1,5 @@
 import fc from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   type BillingFacts,
@@ -429,7 +430,7 @@ describe("properties of any sequence of events", () => {
   };
 
   it("the record stays coherent, in the future when it grants Pro, and Pro starts only through a renewal method or a payment", () => {
-    fc.assert(
+    assertProperty(
       fc.property(fc.array(step, { maxLength: 40 }), (steps) => {
         run(steps, (before, after, event, context) => {
           expect(isCoherentBillingFacts(after)).toBe(true);
@@ -447,7 +448,7 @@ describe("properties of any sequence of events", () => {
   });
 
   it("access never ends early and a payment never shortens it", () => {
-    fc.assert(
+    assertProperty(
       fc.property(fc.array(step, { maxLength: 40 }), (steps) => {
         run(steps, (before, after, _event, context) => {
           const left = grantsPro(before.state) && !grantsPro(after.state);
@@ -473,7 +474,7 @@ describe("properties of any sequence of events", () => {
   });
 
   it("free_over_limit is entered, and left for free, only when the usage says so", () => {
-    fc.assert(
+    assertProperty(
       fc.property(fc.array(step, { maxLength: 40 }), (steps) => {
         run(steps, (before, after, _event, context) => {
           if (
@@ -515,7 +516,7 @@ describe("properties of any sequence of events", () => {
         )
       ).toThrow(InvalidBillingTransitionError);
     }
-    fc.assert(
+    assertProperty(
       fc.property(fc.array(step, { maxLength: 40 }), (steps) => {
         run(steps, (before, after, event, context) => {
           if (event.type === "start_trial" && after.state === "trial_setup") {
