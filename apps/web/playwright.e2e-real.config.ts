@@ -14,7 +14,10 @@ import {
  */
 const inCI = Boolean(process.env.CI);
 const run = ensureRunEnvironment();
-const owner = ownerDatabaseUrl();
+// Without the database URL the config still loads (knip reads it); the global setup then stops the run and says why.
+const owner = process.env.POLARIS_E2E_DATABASE_URL
+  ? ownerDatabaseUrl()
+  : undefined;
 const PORTS = { online: 4321, "runtime-ligado": 4322 } as const;
 const origin = (project: keyof typeof PORTS) =>
   `http://127.0.0.1:${PORTS[project]}`;
@@ -82,19 +85,21 @@ export default defineConfig({
   timeout: 60_000,
   use: { trace: "retain-on-failure" },
   // one after another: each preview reads its own build before the next build rewrites the deploy pointer (serve.ts)
-  webServer: (Object.keys(PORTS) as (keyof typeof PORTS)[]).map((project) => ({
-    command: `node e2e-real/serve.ts ${project} ${PORTS[project]}`,
-    env: previewEnvironment(
-      owner,
-      run,
-      origin(project),
-      project === "runtime-ligado"
-    ),
-    gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5000 },
-    reuseExistingServer: false,
-    stdout: "ignore" as const,
-    timeout: 180_000,
-    url: `${origin(project)}/health`,
-  })),
+  webServer: (owner ? (Object.keys(PORTS) as (keyof typeof PORTS)[]) : []).map(
+    (project) => ({
+      command: `node e2e-real/serve.ts ${project} ${PORTS[project]}`,
+      env: previewEnvironment(
+        owner as URL,
+        run,
+        origin(project),
+        project === "runtime-ligado"
+      ),
+      gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5000 },
+      reuseExistingServer: false,
+      stdout: "ignore" as const,
+      timeout: 180_000,
+      url: `${origin(project)}/health`,
+    })
+  ),
   workers: 1, // SQLite WASM is memory-intensive and there is one Worker and one PostgreSQL: serial.
 });
