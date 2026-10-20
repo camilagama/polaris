@@ -688,42 +688,40 @@ async function emailScenario(
   // to a user who left never keep a notice that can go out out of a batch of 20
   const stuck: { noticeId: string; organizationId: string }[] = [];
   for (let index = 0; index < 21; index += 1) {
-    // biome-ignore lint/performance/noAwaitInLoops: each store is written in turn, as the scenario needs.
-    const store = await closed(
+    const held = await closed(
       `stuck ${index}`,
       await localDayStart(owner, ZONE, -85)
     );
     await record();
-    const stuckNotice = await owedOf(owner, store.organizationId);
+    const stuckNotice = await owedOf(owner, held.organizationId);
     await owner.query(
       'UPDATE public."user" SET email_verified = false WHERE id = $1',
-      [store.userId]
+      [held.userId]
     );
     assert.deepEqual(
-      await recipients.recipient(stuckNotice.id, store.organizationId),
+      await recipients.recipient(stuckNotice.id, held.organizationId),
       { verified: false }
     );
     stuck.push({
       noticeId: stuckNotice.id,
-      organizationId: store.organizationId,
+      organizationId: held.organizationId,
     });
   }
   const formerOwners: { noticeId: string; organizationId: string }[] = [];
   for (let index = 0; index < 3; index += 1) {
-    // biome-ignore lint/performance/noAwaitInLoops: each store is written in turn, as the scenario needs.
-    const store = await closed(
+    const held = await closed(
       `former owner ${index}`,
       await localDayStart(owner, ZONE, -86)
     );
     await record();
-    const goneNotice = await owedOf(owner, store.organizationId);
+    const goneNotice = await owedOf(owner, held.organizationId);
     await owner.query(
       "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
-      [store.organizationId, store.userId]
+      [held.organizationId, held.userId]
     );
     formerOwners.push({
       noticeId: goneNotice.id,
-      organizationId: store.organizationId,
+      organizationId: held.organizationId,
     });
   }
   const sendable = await closed("sendable");
@@ -804,7 +802,6 @@ async function emailScenario(
   );
   for (const row of owed) {
     if (stuck.some((turn) => turn.noticeId === row.noticeId)) {
-      // biome-ignore lint/performance/noAwaitInLoops: each delivery reads its own address, in turn.
       await recipients.recipient(row.noticeId, row.organizationId);
     }
   }
