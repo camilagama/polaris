@@ -53,8 +53,11 @@ describe("publicCatalogErrorMessage", () => {
     expect(publicCatalogErrorMessage(rpcError("FORBIDDEN"), "load")).toContain(
       "não pode gerir"
     );
-    expect(
-      publicCatalogErrorMessage(rpcError("UNAUTHORIZED"), "load")
-    ).toContain("sessão");
+    expect(publicCatalogErrorMessage(rpcError("UNAUTHORIZED"), "load")).toBe(
+      "Não foi possível carregar o catálogo público."
+    );
+    expect(publicCatalogErrorMessage(rpcError("UNAUTHORIZED"), "profile")).toBe(
+      "A alteração do catálogo público não foi salva."
+    );
   });
 });

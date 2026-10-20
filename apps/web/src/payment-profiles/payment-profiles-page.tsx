@@ -12,8 +12,8 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import "./payment-profiles-page.css";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 const methods = [
   ["pix", "Pix"],
@@ -105,6 +105,13 @@ function profileDraft(profile: PaymentProfileReadModel): ProfileDraft {
     })),
   };
 }
+/** The draft without the ids the form makes up for its rows, to tell whether it was changed. */
+function profileDraftKey(draft: ProfileDraft): string {
+  return JSON.stringify({
+    name: draft.name,
+    rules: draft.rules.map(({ draftId: _draftId, ...rule }) => rule),
+  });
+}
 function feeInput(fee: FeeDraft): PaymentFeeConfigurationReadModel {
   const fixed = fee.mode === "fixed" || fee.mode === "fixed_and_percentage";
   const percentage =
@@ -143,7 +150,7 @@ function errorText(error: unknown): string {
       ? String((error as { code?: unknown }).code)
       : "";
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return "Não foi possível concluir a operação com o perfil de pagamento.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -532,6 +539,11 @@ export function PaymentProfilesPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  useReportUnsentWork(
+    !pending &&
+      profileDraftKey(draft) !==
+        profileDraftKey(editing ? profileDraft(editing) : blankDraft())
+  );
   const loadProfiles = useCallback(async () => {
     setLoading(true);
     setError(null);

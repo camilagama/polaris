@@ -6,7 +6,6 @@ import {
   isAuthAbuseProtectionApplicable,
   isSocialAuthRateLimitApplicable,
   protectAuthRequest,
-  SOCIAL_UNAVAILABLE_LOCATION,
   protectSocialAuthRequest,
 } from "./auth/abuse-protection";
 import {
@@ -127,16 +126,11 @@ export function createServerApp({
       const socialResponse = await protectSocialAuthRequest(
         context.req.raw,
         context.env,
-        context.get("requestId")
+        context.get("requestId"),
+        // The callback turns a failing limiter into a redirect, which a 5xx alert no longer sees: say it here.
+        () => logServerEvent("auth_social_rate_limit_unavailable", context)
       );
       if (socialResponse !== undefined) {
-        // The callback turns a failing limiter into a redirect, which a 5xx alert no longer sees: say it here.
-        if (
-          socialResponse.status === 503 ||
-          socialResponse.headers.get("location") === SOCIAL_UNAVAILABLE_LOCATION
-        ) {
-          logServerEvent("auth_social_rate_limit_unavailable", context);
-        }
         return context.newResponse(socialResponse.body, socialResponse);
       }
     }

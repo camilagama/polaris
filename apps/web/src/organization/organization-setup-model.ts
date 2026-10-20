@@ -1,5 +1,4 @@
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 export const MAX_ORGANIZATION_NAME_LENGTH = 128;
 export const MAX_TIMEZONE_LENGTH = 64;
@@ -75,7 +74,7 @@ export function setupErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return "A organização não foi aberta.";
   }
   if (code === "FORBIDDEN") {
     return "Verifique seu email antes de criar ou abrir uma organização.";

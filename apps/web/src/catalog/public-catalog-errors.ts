@@ -1,5 +1,4 @@
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 export type PublicCatalogAction = "load" | "products" | "profile" | "switch";
 
@@ -32,7 +31,9 @@ export function publicCatalogErrorMessage(
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return action === "load"
+      ? "Não foi possível carregar o catálogo público."
+      : "A alteração do catálogo público não foi salva.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não pode gerir o catálogo público desta organização.";

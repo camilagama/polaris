@@ -18,6 +18,7 @@ import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
 import { formatBrlAmount } from "../lib/format";
 import { useNow } from "../lib/use-now";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   filterLocalStockEntries,
   localStockEntries,
@@ -78,6 +79,7 @@ import {
   type ItemDraft,
   idleSubmission,
   isFormLocked,
+  isSaleFormDirty,
   isSubmitting,
   itemFieldKey,
   MAX_SALE_ADJUSTMENTS,
@@ -1081,6 +1083,12 @@ export function SalePage() {
   submissionRef.current = submission;
   const formRef = useRef(form);
   formRef.current = form;
+  // the cart is work the session notice warns about, until the sale is confirmed or queued
+  useReportUnsentWork(
+    isSaleFormDirty(form) &&
+      submission.phase !== "confirmed" &&
+      submission.phase !== "queued"
+  );
   // Money and stock go to the server whenever it is reachable; only without a
   // connection is the sale kept on this device. The mode is FROZEN while a sale
   // is in flight or locked (outcome unknown): the connection dropping during the

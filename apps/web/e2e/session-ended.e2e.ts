@@ -85,8 +85,14 @@ test("401 numa ação da tela não navega sozinho: avisa, mantém o digitado e o
   await expect(
     notice.getByRole("button", { name: "Entrar de novo" })
   ).toBeVisible();
-  // the error is also said where it happened, once as an alert
-  await expect(page.getByRole("alert")).toContainText(SENTENCE);
+  // the red box says only what did not happen; the sentence about the session is the notice's alone
+  await expect(page.getByRole("alert")).toContainText(
+    "A categoria não foi alterada."
+  );
+  await expect(page.getByRole("alert")).not.toContainText(SENTENCE);
+  await expect(page.getByText(SENTENCE)).toHaveCount(1);
+  // the notice is brought to the person: it has the focus
+  await expect(notice).toBeFocused();
   expect(new URL(page.url()).pathname).toBe("/categories");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
   await expect(page.locator("body")).not.toContainText("sessão não está ativa");

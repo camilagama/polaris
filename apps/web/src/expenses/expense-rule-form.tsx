@@ -17,6 +17,7 @@ import {
 } from "react";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
+import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { ExpenseCategorySelect } from "./expense-category-select";
 import { moneyInputText } from "./expense-model";
 import {
@@ -173,6 +174,9 @@ export function ExpenseRuleForm({
     draftFrom(editing, today)
   );
   const [errors, setErrors] = useState<RuleDraftErrors>({});
+  // the form starts over under a new key, so what it started with is fixed for its life
+  const [initialDraft] = useState<RuleDraft>(() => draftFrom(editing, today));
+  useReportUnsentWork(isDraftChanged(draft, initialDraft));
 
   // Active categories only; the one the edited rule already has stays
   // selectable even when it was archived since.

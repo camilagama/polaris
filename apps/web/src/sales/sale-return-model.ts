@@ -364,6 +364,17 @@ export function openReturn(
   };
 }
 
+/** Whether a quantity, a reason or a note was put in the open panel and not sent. */
+export function isReturnDraftChanged(state: ReturnState): boolean {
+  const { lines, reasonCode, reasonNote } = state.draft;
+  return (
+    state.step !== "closed" &&
+    (reasonCode !== "" ||
+      reasonNote.trim() !== "" ||
+      lines.some((line) => line.returned !== "" || line.restockedTouched))
+  );
+}
+
 export function closeReturn(state: ReturnState): ReturnState {
   return isReturnLocked(state) ? state : initialReturnState();
 }

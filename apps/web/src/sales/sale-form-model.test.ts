@@ -29,6 +29,7 @@ import {
   formFieldKeys,
   idleSubmission,
   isFormLocked,
+  isSaleFormDirty,
   isSubmitting,
   itemFieldKey,
   type Loadable,
@@ -955,6 +956,10 @@ describe("server errors", () => {
     expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).kind).toBe(
       "unauthorized"
     );
+    // the sentence about the session is the notice's, not the red box's
+    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).message).toBe(
+      "A venda não foi confirmada."
+    );
     expect(mapSaleSubmitError({ code: "FORBIDDEN" }).message).toContain(
       "permissão"
     );
@@ -1620,5 +1625,45 @@ describe("sale date and time", () => {
     expect(saleDateDetails(dates).map((row) => row.label)).not.toContain(
       "Venda retroativa"
     );
+  });
+});
+
+describe("isSaleFormDirty (the sign that the session notice warns about)", () => {
+  it("does not count a blank form, whose quantity already says 1", () => {
+    expect(isSaleFormDirty(createBlankSaleForm(sequentialIds()))).toBe(false);
+  });
+
+  it("counts a cart built only by taps and selections, with no field typed", () => {
+    const blank = createBlankSaleForm(sequentialIds());
+    const { draftId } = lineOf(blank);
+    const picked = selectItemVariant(
+      selectItemProduct(blank, draftId, productId),
+      draftId,
+      variantId,
+      "Camiseta — Azul / M"
+    );
+
+    expect(isSaleFormDirty(picked)).toBe(true);
+    expect(isSaleFormDirty(addAdjustment(blank, "adjustment-1"))).toBe(true);
+    expect(isSaleFormDirty(selectPaymentMethod(blank, "pix"))).toBe(true);
+  });
+
+  it("counts a typed quantity or price, and not a field put back to its start", () => {
+    const blank = createBlankSaleForm(sequentialIds());
+    const { draftId } = lineOf(blank);
+
+    expect(isSaleFormDirty(updateItem(blank, draftId, { quantity: "3" }))).toBe(
+      true
+    );
+    expect(
+      isSaleFormDirty(updateItem(blank, draftId, { chargedUnitPrice: "9,90" }))
+    ).toBe(true);
+    expect(isSaleFormDirty(updateItem(blank, draftId, { quantity: "1" }))).toBe(
+      false
+    );
+  });
+
+  it("counts a complete sale", () => {
+    expect(isSaleFormDirty(validForm())).toBe(true);
   });
 });

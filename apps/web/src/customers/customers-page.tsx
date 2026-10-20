@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   createOfflineCustomer,
   type PendingCustomer,
@@ -31,16 +32,15 @@ import {
   toLocalCustomerRow,
 } from "./local-customers";
 import "./customers-page.css";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
+import {
+  type CustomerDraft,
+  draftOfCustomer,
+  emptyCustomerDraft,
+  isCustomerDraftChanged,
+} from "./customer-draft";
 
 type CustomerListStatus = "active" | "archived";
 type CustomerAction = "anonymize" | "archive" | "restore";
-interface CustomerDraft {
-  email: string;
-  name: string;
-  notes: string;
-  phone: string;
-}
 
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
 const customerStatuses: ReadonlyArray<readonly [CustomerListStatus, string]> = [
@@ -48,19 +48,32 @@ const customerStatuses: ReadonlyArray<readonly [CustomerListStatus, string]> = [
   ["archived", "Arquivados"],
 ];
 
-const emptyDraft: CustomerDraft = {
-  email: "",
-  name: "",
-  notes: "",
-  phone: "",
-};
-
 function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return undefined;
   }
   const { code } = error as { code?: unknown };
   return typeof code === "string" ? code : undefined;
+}
+
+/** What did not happen, without the sentence about the session: the notice of the shell carries that one. */
+function unauthorizedText(
+  action?: CustomerAction | "duplicate-check" | "load" | "save"
+): string {
+  switch (action) {
+    case "anonymize":
+      return "O cliente não foi anonimizado.";
+    case "archive":
+      return "O cliente não foi arquivado.";
+    case "restore":
+      return "O cliente não foi restaurado.";
+    case "load":
+      return "Não foi possível carregar os clientes.";
+    case "duplicate-check":
+      return "Não foi possível conferir se o cliente já existe.";
+    default:
+      return "O cliente não foi salvo.";
+  }
 }
 
 function errorMessage(
@@ -75,7 +88,7 @@ function errorMessage(
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return unauthorizedText(action);
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -844,7 +857,7 @@ export function CustomersPage() {
   >(new Map());
   const [status, setStatus] = useState<CustomerListStatus>("active");
   const [customers, setCustomers] = useState<CustomerReadModel[]>([]);
-  const [draft, setDraft] = useState<CustomerDraft>(emptyDraft);
+  const [draft, setDraft] = useState<CustomerDraft>(emptyCustomerDraft);
   const [editingCustomer, setEditingCustomer] =
     useState<CustomerReadModel | null>(null);
   const [duplicateMatches, setDuplicateMatches] = useState<
@@ -855,6 +868,7 @@ export function CustomersPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const customerLoadSequence = useRef(0);
+  useReportUnsentWork(isCustomerDraftChanged(draft, editingCustomer));
 
   const loadCustomers = useCallback(
     async (targetOrganizationId: string, targetStatus: CustomerListStatus) => {
@@ -972,7 +986,7 @@ export function CustomersPage() {
       setError(null);
       setStatus(nextStatus);
       setEditingCustomer(null);
-      setDraft(emptyDraft);
+      setDraft(emptyCustomerDraft);
       setDuplicateMatches([]);
       setNotice(null);
     },
@@ -981,12 +995,7 @@ export function CustomersPage() {
 
   const handleEdit = useCallback((customer: CustomerReadModel) => {
     setEditingCustomer(customer);
-    setDraft({
-      email: customer.email ?? "",
-      name: customer.name,
-      notes: customer.notes ?? "",
-      phone: customer.phone ?? "",
-    });
+    setDraft(draftOfCustomer(customer));
     setDuplicateMatches([]);
     setError(null);
     setNotice(null);
@@ -1007,12 +1016,7 @@ export function CustomersPage() {
       }
       setStatus(customer.status);
       setEditingCustomer(customer);
-      setDraft({
-        email: customer.email ?? "",
-        name: customer.name,
-        notes: customer.notes ?? "",
-        phone: customer.phone ?? "",
-      });
+      setDraft(draftOfCustomer(customer));
       setDuplicateMatches([]);
       setError(null);
       setNotice(
@@ -1026,7 +1030,7 @@ export function CustomersPage() {
 
   const handleCancelEdit = useCallback(() => {
     setEditingCustomer(null);
-    setDraft(emptyDraft);
+    setDraft(emptyCustomerDraft);
     setDuplicateMatches([]);
     setError(null);
     setNotice(null);
@@ -1145,7 +1149,7 @@ export function CustomersPage() {
         }
         setNotice(await persistCustomer());
         setEditingCustomer(null);
-        setDraft(emptyDraft);
+        setDraft(emptyCustomerDraft);
         await refreshList();
       } catch (caughtError) {
         setError(errorMessage(caughtError, failureAction));
@@ -1198,7 +1202,7 @@ export function CustomersPage() {
         }
         if (editingCustomer?.id === customer.id) {
           setEditingCustomer(null);
-          setDraft(emptyDraft);
+          setDraft(emptyCustomerDraft);
         }
         await refreshList();
       } catch (caughtError) {

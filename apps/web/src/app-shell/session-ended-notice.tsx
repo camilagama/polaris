@@ -1,26 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { currentReturnPath } from "../lib/sign-in-path";
 import {
   SESSION_ENDED_MESSAGE,
   SIGN_IN_AGAIN_BUTTON,
+  SIGN_IN_AGAIN_OPENING,
   UNSENT_INPUT_WARNING,
 } from "../lib/session-ended-text";
+import { useHasUnsentWork } from "../lib/unsent-work";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { leaveSessionOver } from "../offline/runtime/session-over";
-
-/** Whether something typed in this page is still unsent: any filled text field of the main area. */
-function hasUnsentInput(root: ParentNode): boolean {
-  const fields = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-    "main textarea, main input"
-  );
-  return [...fields].some((field) => {
-    if (field instanceof HTMLInputElement) {
-      const filled = ["email", "number", "tel", "text", "url"];
-      return filled.includes(field.type) && field.value.trim().length > 0;
-    }
-    return field.value.trim().length > 0;
-  });
-}
 
 interface SessionEndedNoticeProps {
   /**
@@ -34,9 +22,9 @@ interface SessionEndedNoticeProps {
 
 /**
  * The one component for "the session is over" (AC-17, AC-18): the sentence, the button "Entrar de
- * novo", and, when there is something typed, the warning that it can be lost. The session is dead,
- * so the button does not go through "Sair": it drops the local copy and goes to `/entrar?motivo=sessao`,
- * and the queue stays where it is.
+ * novo", and, when a screen holds something typed or picked, the warning that it can be lost. The
+ * session is dead, so the button does not go through "Sair": it drops the local copy and goes to
+ * `/entrar?motivo=sessao`, and the queue stays where it is.
  */
 export function SessionEndedNotice({
   alone = false,
@@ -44,13 +32,20 @@ export function SessionEndedNotice({
 }: SessionEndedNoticeProps) {
   const runtime = useOfflineRuntime();
   const [leaving, setLeaving] = useState(false);
-  const [unsent, setUnsent] = useState(false);
-  // looked at again whenever the person types, so a notice that appeared while they were away still tells the truth
+  // each screen says by itself that it holds something typed or picked and not sent
+  const unsent = useHasUnsentWork();
+  const noticeRef = useRef<HTMLElement>(null);
+  // the notice can appear far from where the person is (a long sale): bring it into view and put the focus on it
   useEffect(() => {
-    const look = () => setUnsent(hasUnsentInput(document));
-    look();
-    document.addEventListener("input", look);
-    return () => document.removeEventListener("input", look);
+    const notice = noticeRef.current;
+    notice?.scrollIntoView?.({ block: "center" });
+    // never take the focus from a field the person is typing in: the keys would be lost without a word
+    const typing = document.activeElement?.closest(
+      "input, textarea, select, [contenteditable='true']"
+    );
+    if (!typing) {
+      notice?.focus({ preventScroll: true });
+    }
   }, []);
   const handleClick = useCallback(() => {
     setLeaving(true);
@@ -61,7 +56,9 @@ export function SessionEndedNotice({
     <section
       aria-label="Sessão"
       className="session-ended-notice"
+      ref={noticeRef}
       role={alone ? "alert" : "status"}
+      tabIndex={-1}
     >
       <p>{SESSION_ENDED_MESSAGE}</p>
       {unsent ? <p>{UNSENT_INPUT_WARNING}</p> : null}
@@ -72,7 +69,7 @@ export function SessionEndedNotice({
         onClick={handleClick}
         type="button"
       >
-        {SIGN_IN_AGAIN_BUTTON}
+        {leaving ? SIGN_IN_AGAIN_OPENING : SIGN_IN_AGAIN_BUTTON}
       </button>
     </section>
   );

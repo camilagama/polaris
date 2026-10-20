@@ -524,18 +524,34 @@ describe("Google sign-in rate limit", () => {
   ])(
     "redirects the callback to the sign-in page when the request %s",
     async (_name, build, limiter) => {
+      const onUnavailable = vi.fn();
       const response = await protectSocialAuthRequest(
         build(),
         socialBindings({ AUTH_SOCIAL_RATE_LIMITER: limiter }),
-        requestId
+        requestId,
+        onUnavailable
       );
 
       expect(response?.status).toBe(302);
       expect(response?.headers.get("location")).toBe(
         "/entrar?erro=indisponivel"
       );
+      expect(onUnavailable).toHaveBeenCalledTimes(1);
     }
   );
+
+  it("does not report an unavailable limiter when someone is only over the limit", async () => {
+    const onUnavailable = vi.fn();
+    const refused = await protectSocialAuthRequest(
+      callbackRequest(),
+      socialBindings({ AUTH_SOCIAL_RATE_LIMITER: createLimiter(false) }),
+      requestId,
+      onUnavailable
+    );
+
+    expect(refused?.headers.get("location")).toBe("/entrar?erro=limite");
+    expect(onUnavailable).not.toHaveBeenCalled();
+  });
 
   it("ignores every other auth route", async () => {
     const limiter = createLimiter(false);
