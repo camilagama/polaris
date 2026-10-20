@@ -145,6 +145,9 @@ function missingOrExtra(
   return `extra ${show(extra)}, missing ${show(missing)}`;
 }
 
+/** How long ago the latest notice must have been delivered: the minimum notice of the schedule, in hours. */
+const DELIVERY_MIN_AGE_HOURS = CLOSURE_PURGE_MIN_NOTICE_DAYS * 24;
+
 /** The periods written as `interval '...'`, leaving out `p_delay_seconds * interval '1 second'`, which is a delay. */
 function periodIntervals(sql: string): string[] {
   return [...sql.replace(DELAY_INTERVAL, "").matchAll(INTERVAL_LITERAL)].map(
@@ -178,7 +181,12 @@ function periodDifferences(
   sql: string
 ): string[] {
   const period = `${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} days`;
-  const intervals = periodIntervals(sql);
+  // the blocker also asks the latest notice to be old enough, an interval of its own that the domain names
+  const intervals = periodIntervals(sql).filter(
+    (interval) =>
+      name !== "organization_purge_blocker" ||
+      interval !== `${DELIVERY_MIN_AGE_HOURS} hours`
+  );
   const problems = intervals
     .filter((interval) => interval !== period)
     .map(
@@ -393,6 +401,25 @@ function scheduleClosedDifferences(sql: string): string[] {
 /** The states a renewal is alive in are the ones that give Pro (`renewalAlive` of the domain). */
 const RENEWAL_ALIVE_STATES = BILLING_STATES.filter(grantsPro);
 
+/**
+ * The notice delivered in the current cycle, and delivered long enough ago (ADR 0102, amended): the cycle `cycle`
+ * names, a `sent_at` filled, and the latest of them at least `CLOSURE_PURGE_MIN_NOTICE_DAYS` old (in hours, so the
+ * session's time zone never changes it), or the function answers `closure_notice_not_delivered`.
+ */
+function noticeDelivered(cycle: RegExp): RegExp {
+  return new RegExp(
+    String.raw`IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+public\.closure_notices\s+AS\s+notice` +
+      String.raw`(?=[\s\S]*notice\.organization_id\s*=\s*p_organization)` +
+      String.raw`(?=[\s\S]*` +
+      cycle.source +
+      ")" +
+      String.raw`[\s\S]*notice\.sent_at\s+IS\s+NOT\s+NULL` +
+      String.raw`\s*HAVING\s+pg_catalog\.max\s*\(\s*notice\.sent_at\s*\)\s*<=\s*pg_catalog\.now\(\)\s*-\s*interval\s+'${DELIVERY_MIN_AGE_HOURS} hours'` +
+      String.raw`\s*\)\s*THEN\s+RETURN\s+'closure_notice_not_delivered'`,
+    "i"
+  );
+}
+
 const PURGE_WAIT_USAGE = [
   [
     "the legal hold in force",
@@ -409,7 +436,7 @@ const PURGE_WAIT_USAGE = [
   ],
   [
     "the notice delivered in the current cycle",
-    /IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+public\.closure_notices\s+AS\s+notice(?=[\s\S]*notice\.organization_id\s*=\s*p_organization)(?=[\s\S]*notice\.closure_requested_at\s*=\s*p_requested_at)[\s\S]*notice\.sent_at\s+IS\s+NOT\s+NULL[\s\S]*RETURN\s+'closure_notice_not_delivered'/i,
+    noticeDelivered(/notice\.closure_requested_at\s*=\s*p_requested_at/),
   ],
 ] as const;
 
@@ -473,7 +500,9 @@ const BLOCKER_USAGE = [
   ],
   [
     "the notice delivered in the current cycle",
-    /IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+public\.closure_notices\s+AS\s+notice(?=[\s\S]*notice\.organization_id\s*=\s*p_organization)(?=[\s\S]*(?:notice\.closure_requested_at\s*=\s*closure\.requested_at|closure\.requested_at\s*=\s*notice\.closure_requested_at))[\s\S]*notice\.sent_at\s+IS\s+NOT\s+NULL[\s\S]*RETURN\s+'closure_notice_not_delivered'/i,
+    noticeDelivered(
+      /(?:notice\.closure_requested_at\s*=\s*closure\.requested_at|closure\.requested_at\s*=\s*notice\.closure_requested_at)/
+    ),
   ],
 ] as const;
 

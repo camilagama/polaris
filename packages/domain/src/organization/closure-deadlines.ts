@@ -53,7 +53,7 @@ export type ClosureNoticeMilestone = (typeof CLOSURE_NOTICE_MILESTONES)[number];
 /**
  * The notices that tell the owner the data will be deleted: the one of D minus 7 days, and the new one of 7 days after
  * a legal hold released. No store is deleted before one of them was delivered (`sent_at` filled) in the current cycle
- * (ADR 0102, amended): the schedule waits and the run refuses with `closure_notice_not_delivered`. The database
+ * and the latest of them at least `CLOSURE_PURGE_MIN_NOTICE_DAYS` ago (ADR 0102, amended): the schedule waits and the run refuses with `closure_notice_not_delivered`. The database
  * writes the same list in `closed_organization_purge_wait` and `organization_purge_blocker`, and the purge gate
  * compares them.
  */

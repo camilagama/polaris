@@ -16,7 +16,9 @@
 --
 -- A notice delivered is a condition of the deletion (decision of 20/10/2026): the schedule (`closed_organization_purge_wait`)
 -- and the run (`organization_purge_blocker`) wait with `closure_notice_not_delivered` while the current cycle has no
--- `d7` or `rescheduled` notice with `sent_at` filled. A purge held for it, or for the other two reasons, past its time
+-- `d7` or `rescheduled` notice with `sent_at` filled, and while the latest of them (`max(sent_at)`) was delivered less than
+-- 7 days ago (168 hours, `CLOSURE_PURGE_MIN_NOTICE_DAYS`): a late notice, or a purge the Admin schedules, never deletes the
+-- store hours after the owner was told. A purge held for it, or for the other two reasons, past its time
 -- is counted by `count_purges_held_back` for the alert of a store left behind, and so is a notice still owed 3 days
 -- after its date (`record_closure_notices`); a closed store held for it falls in the count that already existed. `closure_notices` is under FORCE ROW LEVEL SECURITY.
 --
@@ -158,6 +160,7 @@ BEGIN
         ON closure.organization_id = notice.organization_id AND closure.requested_at = notice.closure_requested_at
      WHERE notice.organization_id = p_organization
        AND notice.milestone IN ('d7', 'rescheduled') AND notice.sent_at IS NOT NULL
+    HAVING pg_catalog.max(notice.sent_at) <= pg_catalog.now() - interval '168 hours'
   ) THEN
     RETURN 'closure_notice_not_delivered';
   END IF;
@@ -166,7 +169,7 @@ END;
 $function$;--> statement-breakpoint
 -- The schedule waits for one reason more (the decision of 20/10/2026): the notice of D minus 7 days of this closure
 -- cycle was not delivered (`closure_notice_not_delivered`). No store is deleted without the owner having been told, so
--- the schedule and the purge wait for a `d7` or `rescheduled` notice with `sent_at` filled; a store held for it past 30
+-- the schedule and the purge wait for a `d7` or `rescheduled` notice with `sent_at` filled at least 7 days ago; a store held for it past 30
 -- days after D falls in the alert of a store left behind, and the support settles it. The recheck in the
 -- blocker above asks the same, for the purge of the closure period and for the Admin's alike.
 CREATE OR REPLACE FUNCTION public.closed_organization_purge_wait(p_organization text, p_requested_at timestamptz)
@@ -208,6 +211,7 @@ BEGIN
     SELECT 1 FROM public.closure_notices AS notice
      WHERE notice.organization_id = p_organization AND notice.closure_requested_at = p_requested_at
        AND notice.milestone IN ('d7', 'rescheduled') AND notice.sent_at IS NOT NULL
+    HAVING pg_catalog.max(notice.sent_at) <= pg_catalog.now() - interval '168 hours'
   ) THEN
     RETURN 'closure_notice_not_delivered';
   END IF;

@@ -127,15 +127,24 @@ export async function closedOrganization(
 }
 
 /**
- * The notice of D minus 7 days of the organization's current closure cycle, delivered (`sent_at` filled): what the
- * schedule and the run wait for before a store is deleted (ADR 0102, amended). It names the cycle by the instant of
- * the request, so a check that moves the request writes it again afterwards. The e-mail that would deliver it is the
- * next change, so the check writes the row as the e-mail would leave it.
+ * How long ago a notice counts as delivered when a check does not say otherwise: older than the 7 days the purge waits
+ * after the latest delivery (`CLOSURE_PURGE_MIN_NOTICE_DAYS`, ADR 0102 amended), so the checks about something else
+ * are not held by it.
+ */
+const DELIVERED_AGO_HOURS = (CLOSURE_PURGE_MIN_NOTICE_DAYS + 1) * 24;
+
+/**
+ * The notice of D minus 7 days of the organization's current closure cycle, delivered (`sent_at` filled, 8 days ago
+ * unless `sentAgoHours` says otherwise): what the schedule and the run wait for before a store is deleted (ADR 0102,
+ * amended). It names the cycle by the instant of the request, so a check that moves the request writes it again
+ * afterwards. The e-mail that would deliver it is the next change, so the check writes the row as the e-mail would
+ * leave it.
  */
 export async function deliverClosureNotice(
   owner: Pool,
   organizationId: string,
-  milestone: "d7" | "rescheduled" = "d7"
+  milestone: "d7" | "rescheduled" = "d7",
+  sentAgoHours = DELIVERED_AGO_HOURS
 ) {
   await owner.query(
     `INSERT INTO public.closure_notices
@@ -144,13 +153,14 @@ export async function deliverClosureNotice(
             CASE WHEN $2::text = 'rescheduled' THEN closure.requested_at + interval '100 days' END,
             CASE WHEN $2::text = 'rescheduled' THEN closure.requested_at + interval '93 days'
                  ELSE deadline.d7_at END,
-            closure.requested_by_user_id, now()
+            closure.requested_by_user_id, now() - make_interval(hours => $3)
        FROM public.organization_closures AS closure
        JOIN public.organizations AS organization ON organization.id = closure.organization_id
        CROSS JOIN LATERAL public.closure_deadlines(closure.requested_at, organization.timezone) AS deadline
       WHERE closure.organization_id = $1
-     ON CONFLICT ON CONSTRAINT closure_notices_cycle_milestone_unique DO UPDATE SET sent_at = now()`,
-    [organizationId, milestone]
+     ON CONFLICT ON CONSTRAINT closure_notices_cycle_milestone_unique
+       DO UPDATE SET sent_at = now() - make_interval(hours => $3)`,
+    [organizationId, milestone, sentAgoHours]
   );
 }
 
@@ -1284,7 +1294,11 @@ async function writeNotice(
   organizationId: string,
   milestone: string,
   state: NoticeState,
-  options: { cycleShiftDays?: number; dueAgoHours?: number } = {}
+  options: {
+    cycleShiftDays?: number;
+    dueAgoHours?: number;
+    sentAgoHours?: number;
+  } = {}
 ) {
   await owner.query(
     `INSERT INTO public.closure_notices
@@ -1293,7 +1307,7 @@ async function writeNotice(
             CASE WHEN $2::text = 'rescheduled' THEN now() + interval '1 day' END,
             GREATEST(closure.requested_at - make_interval(days => $4), now() - make_interval(hours => $5)),
             closure.requested_by_user_id, $3::text = 'skipped',
-            CASE WHEN $3::text = 'sent' THEN now() END,
+            CASE WHEN $3::text = 'sent' THEN now() - make_interval(hours => $6) END,
             CASE WHEN $3::text = 'failed' THEN now() END,
             CASE WHEN $3::text = 'failed' THEN 'address_refused' END
        FROM public.organization_closures AS closure
@@ -1307,6 +1321,7 @@ async function writeNotice(
       state,
       options.cycleShiftDays ?? 0,
       options.dueAgoHours ?? 0,
+      options.sentAgoHours ?? DELIVERED_AGO_HOURS,
     ]
   );
 }
@@ -1610,6 +1625,146 @@ async function deliveredNoticeScenario(
   assert.equal(await statusOf(owner, byAdmin.organizationId), "purged");
   tests.push(
     "the notice delivered is a condition of the Admin's purge too: scheduled by the case it is not taken, and with it gone while the run holds it the mark and the purge refuse; it runs when the notice is delivered"
+  );
+
+  // the notice must have been delivered at least 7 days ago (decision of 20/10/2026): a late notice, or a purge the Admin
+  // schedules, never deletes the store hours after the owner was told. The latest of the d7 and rescheduled notices counts.
+  const settle = CLOSURE_PURGE_MIN_NOTICE_DAYS * 24;
+  const aged = (id: string, hoursAgo: number) =>
+    owner.query(
+      "UPDATE public.closure_notices SET sent_at = now() - make_interval(hours => $2) WHERE organization_id = $1 AND sent_at IS NOT NULL",
+      [id, hoursAgo]
+    );
+  const settling = await closedOrganization(owner, "notice settle", requested, {
+    notice: false,
+  });
+  const settlingId = settling.organizationId;
+  await writeNotice(owner, settlingId, "d7", "sent", {
+    sentAgoHours: settle - 1,
+  });
+  assert.equal(
+    await waitOf(owner, settlingId),
+    "closure_notice_not_delivered",
+    "a notice delivered less than 7 days ago keeps the schedule waiting"
+  );
+  await schedule();
+  assert.equal(await statusOf(owner, settlingId), "closed");
+  await writeNotice(owner, settlingId, "d7", "sent", {
+    sentAgoHours: settle + 1,
+  });
+  await writeNotice(owner, settlingId, "rescheduled", "sent", {
+    sentAgoHours: 1,
+  });
+  assert.equal(
+    await waitOf(owner, settlingId),
+    "closure_notice_not_delivered",
+    "the latest of the notices counts: an old d7 does not make up for a rescheduled one sent an hour ago"
+  );
+  await schedule();
+  assert.equal(await statusOf(owner, settlingId), "closed");
+  await aged(settlingId, settle + 1);
+  assert.equal(await waitOf(owner, settlingId), null);
+  await schedule();
+  assert.equal(
+    await statusOf(owner, settlingId),
+    "purge_pending",
+    "delivered more than 7 days ago, the schedule goes on"
+  );
+  tests.push(
+    "the schedule waits (closure_notice_not_delivered) while the latest d7 or rescheduled notice of the cycle was delivered less than 7 days ago, even with an older one delivered before it; delivered more than 7 days ago, it goes on"
+  );
+
+  // the run checks the age again: held back by a fresh notice (and counted by the alert), then taken once it is 7 days old
+  await pastTime(settlingId);
+  await keepOthersAway(settlingId);
+  const withAged = await maintenance.countPurgesHeldBack();
+  await aged(settlingId, settle - 1);
+  assert.equal(
+    await maintenance.countPurgesHeldBack(),
+    withAged + 1,
+    "a purge held back by a notice delivered less than 7 days ago is counted"
+  );
+  assert.equal(
+    await maintenance.claimOrganizationPurge(900),
+    null,
+    "the claim does not take a purge whose notice was delivered less than 7 days ago"
+  );
+  await aged(settlingId, settle + 1);
+  const settledClaim = await maintenance.claimOrganizationPurge(900);
+  assert.equal(settledClaim?.organizationId, settlingId);
+  await aged(settlingId, settle - 1);
+  await expectPurgeRefusal(
+    () => maintenance.markOrganizationPurgeStorageTouched(settlingId),
+    "closure_notice_not_delivered",
+    "the storage is not touched when the notice was delivered less than 7 days ago"
+  );
+  await expectPurgeRefusal(
+    () => maintenance.purgeOrganizationData(settlingId),
+    "closure_notice_not_delivered",
+    "the purge refuses when the notice was delivered less than 7 days ago"
+  );
+  assert.equal(await statusOf(owner, settlingId), "purge_pending");
+  await aged(settlingId, settle + 1);
+  await owner.query(
+    "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+    [settlingId]
+  );
+  assert.deepEqual(
+    await runOrganizationPurges({
+      bucket: context.bucket,
+      client: maintenance,
+      now: () => new Date(),
+    }),
+    { failed: 0, purged: 1, swept: 1 }
+  );
+  assert.equal(await statusOf(owner, settlingId), "purged");
+  tests.push(
+    "the run checks the age of the notice again: delivered less than 7 days ago, the claim does not take the purge, the alert counts it, and the mark before the storage and purge_organization_data refuse with closure_notice_not_delivered; delivered more than 7 days ago, the purge runs"
+  );
+
+  // the Admin's purge waits the same 7 days: the case may schedule it at once, the run does not
+  const settlingAdmin = await closedOrganization(
+    owner,
+    "notice settle admin",
+    requested,
+    { notice: false }
+  );
+  await writeNotice(owner, settlingAdmin.organizationId, "d7", "sent", {
+    sentAgoHours: 1,
+  });
+  await owner.query(
+    `UPDATE public.organization_billing
+        SET state = 'active', access_ends_at = now() - interval '1 day', provider = 'asaas', provider_ref = $2,
+            cancel_at_period_end = true
+      WHERE organization_id = $1`,
+    [settlingAdmin.organizationId, `sub_gate_${randomUUID().slice(0, 8)}`]
+  );
+  const adminScheduled = await scheduleOrganizationPurge(
+    admin,
+    principal,
+    await acceptedDeletionCase(context, settlingAdmin.organizationId),
+    settlingAdmin.organizationId
+  );
+  assert.equal(adminScheduled?.status, "purge_pending");
+  await pastTime(settlingAdmin.organizationId);
+  await keepOthersAway(settlingAdmin.organizationId);
+  assert.equal(
+    await maintenance.claimOrganizationPurge(900),
+    null,
+    "an Admin purge is not taken while the notice was delivered an hour ago"
+  );
+  await aged(settlingAdmin.organizationId, settle + 1);
+  assert.deepEqual(
+    await runOrganizationPurges({
+      bucket: context.bucket,
+      client: maintenance,
+      now: () => new Date(),
+    }),
+    { failed: 0, purged: 1, swept: 1 }
+  );
+  assert.equal(await statusOf(owner, settlingAdmin.organizationId), "purged");
+  tests.push(
+    "the Admin's purge scheduled by the case waits for the notice to be 7 days old as well: not taken with the notice delivered an hour ago, and it runs once the notice is older than 7 days"
   );
 
   // a notice still owed days after its date enters the alert, whatever the switch; one settled or skipped does not
