@@ -284,6 +284,18 @@ export const alertSignals = [
       "Loja encerrada parada: sem apagamento 30 dias depois de D, purge preso ou aviso sem entregar",
     windowMinutes: 1440,
   },
+  {
+    id: "aviso-de-encerramento-falhando",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["closure_notice_email_failed"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Falha no envio do e-mail de aviso do encerramento (provedor fora ou endereço recusado)",
+    windowMinutes: 1440,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];

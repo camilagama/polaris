@@ -431,13 +431,13 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     basis: "decisao",
     class: "closure_notice",
     data: [
-      "closure_notices (os avisos do encerramento: organização, ciclo, marco, datas, o usuário a quem o aviso se destina e se foi enviado, pulado ou falhou; sem e-mail nem texto)",
+      "closure_notices (os avisos do encerramento: organização, ciclo, marco, datas, o usuário a quem o aviso se destina, se foi enviado, pulado, falhou ou foi dispensado pelo responsável, e o número da reemissão do suporte; sem e-mail nem texto)",
     ],
     period: { kind: "undecided" },
     proposed:
       "Sobrevive ao purge da organização, para o dono ainda ler quando os dados foram apagados, e sai 6 meses depois do purge (ou do desfazer do encerramento, para os avisos daquele ciclo); sai antes com a conta do usuário, pela chave estrangeira em cascata (pergunta R2 do desenho t107, aceita na consolidação de 19/10/2026, ADR 0102 emendado). O prazo de 6 meses espera a decisão do responsável; nenhum job a apaga ainda.",
     review: { state: "pendente_juridica" },
-    rule: "Cada marco do encerramento (o pedido, D menos 30 e menos 7 dias locais, D e o reagendamento depois de uma trava legal solta) vira uma linha quando a data chega, com ou sem e-mail. A linha guarda só IDs e datas: o endereço é lido da conta na hora do envio e nunca fica no aviso, no evento nem no log. Nenhum papel de runtime a lê ou escreve diretamente; o purge não a apaga.",
+    rule: "Cada marco do encerramento (o pedido, D menos 30 e menos 7 dias locais, D e o reagendamento depois de uma trava legal solta) vira uma linha quando a data chega, com ou sem e-mail. A linha guarda só IDs e datas: o endereço é lido da conta na hora do envio, por uma função do papel de autenticação, e nunca fica no aviso, no evento nem no log. O suporte reenvia ou dispensa um aviso gravando uma linha nova, nunca alterando a antiga; a dispensada não tem usuário. Nenhum papel de runtime a lê ou escreve diretamente; o purge não a apaga.",
     sources: ["ADR 0079", "ADR 0102", "docs/business-rules/privacy.md"],
     status: "proposta",
   },

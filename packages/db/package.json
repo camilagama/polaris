@@ -62,6 +62,7 @@
     "./export-reader": "./src/export-reader.ts",
     "./outbox-dispatch": "./src/outbox-dispatch.ts",
     "./privacy-maintenance": "./src/privacy-maintenance.ts",
+    "./closure-notice-recipient": "./src/closure-notice-recipient.ts",
     "./auth-login-lock-maintenance": "./src/auth-login-lock-maintenance.ts",
     "./inventory-repository": "./src/inventory-repository.ts",
     "./device-schema": "./src/schema/device.ts",

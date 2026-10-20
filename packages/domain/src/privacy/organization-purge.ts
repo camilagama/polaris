@@ -143,6 +143,16 @@ export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "purge_in_progress",
   "purge_storage_touched",
   "purge_already_done",
+  // the act of the support on the closure notices (ADR 0102, amended)
+  "organization_not_in_closure",
+  "closure_notice_not_due",
+  "closure_notice_pending",
+  "closure_notice_delivered",
+  "closure_notice_no_owner",
+  "closure_notice_owner_present",
+  "closure_notice_not_refused",
+  "closure_notice_not_unverified",
+  "closure_notice_owner_verified",
 ] as const);
 
 export type OrganizationPurgeRefusalCode =
@@ -152,12 +162,30 @@ export type OrganizationPurgeRefusalCode =
 const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   Record<OrganizationPurgeRefusalCode, string>
 > = Object.freeze({
+  closure_notice_delivered:
+    "O aviso de 7 dias deste encerramento já foi entregue (ou dispensado): não há o que reenviar nem dispensar.",
+  closure_notice_no_owner:
+    "A organização não tem dono ativo para receber o aviso. Se ninguém pode ser avisado, dispense o aviso com a decisão do caso.",
+  closure_notice_not_refused:
+    "O provedor de e-mail não recusou o aviso de 7 dias deste encerramento para o dono atual (ou ainda há um aviso esperando envio): reenvie o aviso antes de dispensá-lo.",
+  closure_notice_not_unverified:
+    "Nenhuma tentativa de envio do aviso de 7 dias encontrou o e-mail do dono sem verificação: com o e-mail dos avisos ligado, espere a tentativa ou reenvie o aviso.",
+  closure_notice_owner_verified:
+    "O dono já verificou o e-mail depois da última tentativa de envio do aviso de 7 dias: não dispense. O repasse envia o aviso que está devido.",
+  closure_notice_owner_present:
+    "A organização ainda tem dono ativo: a conta do dono não foi apagada. Reenvie o aviso ou use o motivo que corresponde ao caso.",
+  closure_notice_not_due:
+    "O aviso de 7 dias deste encerramento ainda não venceu: não há o que reenviar nem dispensar.",
+  closure_notice_pending:
+    "Há um aviso deste encerramento esperando envio. Espere o envio ou, se ninguém pode ser avisado, dispense o aviso.",
   closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, para o dono poder ler e exportar os dados.`,
   legal_hold_active:
     "Há uma trava legal vigente na organização: o purge não é agendado nem executado enquanto ela não for liberada.",
   organization_mismatch: "A organização informada não é a do caso.",
   organization_not_closed:
     "A organização não está encerrada (ativa, suspensa ou ainda em encerramento).",
+  organization_not_in_closure:
+    "A organização não está em encerramento (ativa, suspensa, com o encerramento desfeito ou já apagada).",
   paid_access_running:
     "A organização ainda tem período de teste ou acesso pago em andamento.",
   privacy_case_not_accepted:

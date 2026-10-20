@@ -52,7 +52,8 @@ export type ClosureNoticeMilestone = (typeof CLOSURE_NOTICE_MILESTONES)[number];
 
 /**
  * The notices that tell the owner the data will be deleted: the one of D minus 7 days, and the new one of 7 days after
- * a legal hold released. No store is deleted before one of them was delivered (`sent_at` filled) in the current cycle
+ * a legal hold released. No store is deleted before one of them was delivered (`sent_at` filled), or dismissed by the
+ * person responsible under a privacy case (`dismissed_at`, a new `d7` with no user), in the current cycle
  * and the latest of them at least `CLOSURE_PURGE_MIN_NOTICE_DAYS` ago (ADR 0102, amended): the schedule waits and the run refuses with `closure_notice_not_delivered`. The database
  * writes the same list in `closed_organization_purge_wait` and `organization_purge_blocker`, and the purge gate
  * compares them.
@@ -61,6 +62,27 @@ export const CLOSURE_DELIVERY_MILESTONES = Object.freeze([
   "d7",
   "rescheduled",
 ] as const satisfies readonly ClosureNoticeMilestone[]);
+
+/**
+ * Why the person responsible dismissed the notice of D minus 7 days (ADR 0102, amended): nobody can be told, because
+ * the owner's account is gone, the e-mail is not verified, or the address refuses the e-mail. The dismissal is a new
+ * `d7` with no user, under a privacy case whose decision is recorded, and counts as delivered for the purge. The
+ * database holds the same list (`admin_dismiss_closure_notice`).
+ */
+export const CLOSURE_NOTICE_DISMISSAL_REASONS = Object.freeze([
+  "owner_account_deleted",
+  "email_not_verified",
+  "email_undeliverable",
+] as const);
+
+export type ClosureNoticeDismissalReason =
+  (typeof CLOSURE_NOTICE_DISMISSAL_REASONS)[number];
+
+export function isClosureNoticeDismissalReason(
+  value: unknown
+): value is ClosureNoticeDismissalReason {
+  return CLOSURE_NOTICE_DISMISSAL_REASONS.some((reason) => reason === value);
+}
 
 /**
  * A notice still owed (neither sent, failed nor skipped) this many days after its date enters the alert of a store

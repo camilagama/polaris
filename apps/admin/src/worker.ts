@@ -9,6 +9,7 @@ import {
   auditBillingCommand,
   cancelOrganizationPurge,
   closeSupportCase,
+  dismissClosureNotice,
   grantTenantAccess,
   listOrganizationLegalHolds,
   listPrivacyCases,
@@ -25,6 +26,7 @@ import {
   recordPrivacyIdentity,
   recordPrivacyRole,
   recordPrivacyScope,
+  reissueClosureNotice,
   releaseOrganizationLegalHold,
   resolvePrivacyCase,
   revealCustomerField,
@@ -215,6 +217,18 @@ const dependencies: AdminDependencies = {
   },
   report: (event, fields) => logger.warn(`admin.${event}`, fields),
   support: {
+    closureNotice: (principalId, caseId, organizationId, action, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        action.kind === "dismiss"
+          ? dismissClosureNotice(
+              client,
+              principalId,
+              caseId,
+              organizationId,
+              action.reason
+            )
+          : reissueClosureNotice(client, principalId, caseId, organizationId)
+      ),
     cancelPurge: (principalId, caseId, organizationId, reason, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         cancelOrganizationPurge(

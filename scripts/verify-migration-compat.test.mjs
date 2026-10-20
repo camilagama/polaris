@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   checkDirectory,
+  checkJournal,
   checkMigration,
+  FUTURE_TOLERANCE_MS,
   findMarker,
   LAST_GRANDFATHERED,
   migrationsDirectory,
@@ -115,5 +117,54 @@ describe("expand/contract guard", () => {
 
   it("passes on the migrations of the repository", () => {
     expect(checkDirectory(migrationsDirectory)).toEqual([]);
+  });
+});
+
+describe("migration journal", () => {
+  const now = 1_792_530_000_000;
+  const journal = (...whens) => ({
+    entries: whens.map((when, idx) => ({
+      idx,
+      version: "7",
+      when,
+      tag: `${String(idx).padStart(4, "0")}_x`,
+    })),
+  });
+
+  it("accepts a strictly increasing journal that is not in the future", () => {
+    expect(checkJournal(journal(1, 2, now), now)).toEqual([]);
+    expect(checkJournal(journal(), now)).toEqual([]);
+  });
+
+  it("accepts a `when` within the clock skew tolerance", () => {
+    expect(checkJournal(journal(1, now + FUTURE_TOLERANCE_MS), now)).toEqual(
+      []
+    );
+  });
+
+  it("rejects a `when` equal to the previous one", () => {
+    const problems = checkJournal(journal(1, 2, 2), now);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("0002_x");
+    expect(problems[0]).toContain("greater");
+  });
+
+  it("rejects a `when` smaller than the previous one", () => {
+    const problems = checkJournal(journal(5, 3, 6), now);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("0001_x");
+  });
+
+  it("rejects a `when` in the future", () => {
+    const problems = checkJournal(
+      journal(1, now + FUTURE_TOLERANCE_MS + 1),
+      now
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("future");
+  });
+
+  it("rejects a `when` that is not a number", () => {
+    expect(checkJournal(journal(1, Number.NaN), now)).toHaveLength(1);
   });
 });

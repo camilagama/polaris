@@ -86,6 +86,8 @@ export interface ClosureNoticeDelivery {
   deletionDate: string;
   /** The first instant of D in the organization's time zone. */
   deletableFrom: Date;
+  /** When the milestone was due (for a notice the support sent again, when it was sent again). */
+  dueAt: Date;
   milestone: ClosureNoticeMilestone;
   noticeId: string;
   organizationId: string;
@@ -93,6 +95,8 @@ export interface ClosureNoticeDelivery {
   /** Only for `rescheduled`: the first instant the purge may run after the release of a legal hold. */
   purgeFrom: Date | null;
   recoverUntil: Date;
+  /** 0 for the notice of the privacy job; 1, 2... for a `d7` the support sent again. */
+  reissue: number;
   requestedAt: Date;
   timeZone: string;
   /** The owner it is for: the address is read from the account when it is sent. */
@@ -102,15 +106,24 @@ export interface ClosureNoticeDelivery {
 interface ClosureNoticeDeliveryRow {
   deletableFrom: string;
   deletionDate: string;
+  /** Absent from a database before 0091. */
+  dueAt?: string;
   milestone: ClosureNoticeMilestone;
   noticeId: string;
   organizationId: string;
   organizationName: string;
   purgeFrom: string | null;
   recoverUntil: string;
+  reissue?: number;
   requestedAt: string;
   timezone: string;
   userId: string;
+}
+
+/** A notice still owed that the handover sends (ADR 0102, amended): the latest of its cycle. */
+export interface OwedClosureNotice {
+  noticeId: string;
+  organizationId: string;
 }
 
 export interface PrivacyMaintenanceClient {
@@ -187,6 +200,12 @@ export interface PrivacyMaintenanceClient {
   listOrganizationPurgeMedia: (
     organizationId: string
   ) => Promise<{ id: string; storageKey: string }[]>;
+  /**
+   * The handover of the notices left unresolved (ADR 0102, amended), only with the e-mail on: for at most `limit`
+   * organizations, the latest notice still owed of the current cycle (owed for 15 minutes or more), with the earlier
+   * owed ones settled `skipped`.
+   */
+  listOwedClosureNotices: (limit: number) => Promise<OwedClosureNotice[]>;
   markDataExportFilesDeleted: (exportId: string) => Promise<boolean>;
   /** The notice will not go out, with a short code, once; whether this call changed it. */
   markClosureNoticeFailed: (
@@ -270,12 +289,14 @@ export function createPrivacyMaintenanceClient(
       return {
         deletableFrom: new Date(row.deletableFrom),
         deletionDate: row.deletionDate,
+        dueAt: new Date(row.dueAt ?? row.requestedAt),
         milestone: row.milestone,
         noticeId: row.noticeId,
         organizationId: row.organizationId,
         organizationName: row.organizationName,
         purgeFrom: row.purgeFrom ? new Date(row.purgeFrom) : null,
         recoverUntil: new Date(row.recoverUntil),
+        reissue: Number(row.reissue ?? 0),
         requestedAt: new Date(row.requestedAt),
         timeZone: row.timezone,
         userId: row.userId,
@@ -418,6 +439,19 @@ export function createPrivacyMaintenanceClient(
         [exportId]
       );
       return result.rows[0]?.marked === true;
+    },
+    async listOwedClosureNotices(limit) {
+      const result = await pool.query<{
+        owed_notice: string;
+        owed_organization: string;
+      }>(
+        "SELECT owed_notice, owed_organization FROM public.list_owed_closure_notices($1::integer)",
+        [limit]
+      );
+      return result.rows.map((row) => ({
+        noticeId: row.owed_notice,
+        organizationId: row.owed_organization,
+      }));
     },
     async markClosureNoticeFailed(noticeId, organizationId, code) {
       const result = await pool.query<{ marked: boolean }>(

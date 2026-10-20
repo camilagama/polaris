@@ -403,8 +403,9 @@ const RENEWAL_ALIVE_STATES = BILLING_STATES.filter(grantsPro);
 
 /**
  * The notice delivered in the current cycle, and delivered long enough ago (ADR 0102, amended): the cycle `cycle`
- * names, a `sent_at` filled, and the latest of them at least `CLOSURE_PURGE_MIN_NOTICE_DAYS` old (in hours, so the
- * session's time zone never changes it), or the function answers `closure_notice_not_delivered`.
+ * names, a `sent_at` filled or a dismissal of the support (`dismissed_at`), and the latest of them at least
+ * `CLOSURE_PURGE_MIN_NOTICE_DAYS` old (in hours, so the session's time zone never changes it), or the function answers
+ * `closure_notice_not_delivered`.
  */
 function noticeDelivered(cycle: RegExp): RegExp {
   return new RegExp(
@@ -413,8 +414,8 @@ function noticeDelivered(cycle: RegExp): RegExp {
       String.raw`(?=[\s\S]*` +
       cycle.source +
       ")" +
-      String.raw`[\s\S]*notice\.sent_at\s+IS\s+NOT\s+NULL` +
-      String.raw`\s*HAVING\s+pg_catalog\.max\s*\(\s*notice\.sent_at\s*\)\s*<=\s*pg_catalog\.now\(\)\s*-\s*interval\s+'${DELIVERY_MIN_AGE_HOURS} hours'` +
+      String.raw`[\s\S]*COALESCE\s*\(\s*notice\.sent_at\s*,\s*notice\.dismissed_at\s*\)\s+IS\s+NOT\s+NULL` +
+      String.raw`\s*HAVING\s+pg_catalog\.max\s*\(\s*COALESCE\s*\(\s*notice\.sent_at\s*,\s*notice\.dismissed_at\s*\)\s*\)\s*<=\s*pg_catalog\.now\(\)\s*-\s*interval\s+'${DELIVERY_MIN_AGE_HOURS} hours'` +
       String.raw`\s*\)\s*THEN\s+RETURN\s+'closure_notice_not_delivered'`,
     "i"
   );

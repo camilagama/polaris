@@ -801,6 +801,98 @@ async function run() {
       "the owner of a closed organization asks for a copy outside the tenant: the request (mode closed, the formats in canonical order), its audit (only IDs and the request ID) and its outbox event (keyed by the export) are written together; someone else and an organization that does not exist get the same refusal, an active organization asks through the tenant; one at a time (an export asked for before the closure counts), three a day, until D, and not while a run holds the purge (it can again while the purge is only scheduled, before D)"
     );
 
+    // the limit to the second: D is a local midnight, so the real clock never lands one second from it. The function is
+    // the live definition (read from the catalog, nothing retyped) with its clock fixed at the instant under test, in a
+    // transaction that is rolled back: nothing it writes stays. The gate's owner connection is a superuser, so the
+    // replacement keeps the function's owner (the privacy owner) and the call runs as it does in production.
+    const requestFunctionName = "public.request_closed_data_export";
+    const requestFunction = `${requestFunctionName}(text,text[],uuid)`;
+    const askWithClockAt = async (tenant: TenantFixture, clock: Date) => {
+      const client = await owner.pool.connect();
+      try {
+        await client.query("BEGIN");
+        const [live] = (
+          await client.query<{ definition: string }>(
+            "SELECT pg_get_functiondef($1::regprocedure) AS definition",
+            [requestFunction]
+          )
+        ).rows;
+        assert.ok(live);
+        const fixed = live.definition.replaceAll(
+          "pg_catalog.now()",
+          `'${clock.toISOString()}'::timestamptz`
+        );
+        assert.notEqual(fixed, live.definition, "the clock of the function");
+        assert.ok(!fixed.includes("pg_catalog.now()"));
+        await client.query(fixed);
+        await client.query("SELECT set_config('app.user_id', $1, true)", [
+          tenant.userId,
+        ]);
+        await client.query(
+          `SELECT ${requestFunctionName}($1, ARRAY['json']::text[], NULL)`,
+          [tenant.organizationId]
+        );
+        return "accepted";
+      } catch (error: unknown) {
+        return error instanceof Error ? error.message : String(error);
+      } finally {
+        try {
+          await client.query("ROLLBACK");
+        } finally {
+          client.release();
+        }
+      }
+    };
+    for (const [label, timezone, purgeAfterD] of [
+      ["no purge", "America/Sao_Paulo", null],
+      ["a purge rescheduled after D", "America/Manaus", 5],
+    ] as const) {
+      const orgLimit = await fixture(`limit ${label}`, "active", timezone);
+      await close(orgLimit);
+      const requestedAt = new Date(Date.now() - 80 * 86_400_000);
+      await age(orgLimit, requestedAt);
+      const { deletableFrom } = closureDeadlines(requestedAt, timezone);
+      assert.ok(deletableFrom.getTime() > Date.now());
+      const [sqlDeadline] = await ownerQuery<{ deletable_from: Date }>(
+        "SELECT deletable_from FROM public.closure_deadlines($1::timestamptz, $2)",
+        [requestedAt, timezone]
+      );
+      assert.equal(
+        sqlDeadline?.deletable_from.toISOString(),
+        deletableFrom.toISOString()
+      );
+      if (purgeAfterD !== null) {
+        // scheduled at D, then held and put back to a later day: the purge only waits, nothing was claimed
+        await owner.pool.query(
+          "INSERT INTO public.organization_purges (organization_id, not_before, trigger) VALUES ($1, $2, 'closure_period')",
+          [
+            orgLimit.organizationId,
+            new Date(deletableFrom.getTime() + purgeAfterD * 86_400_000),
+          ]
+        );
+        await owner.pool.query(
+          "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1",
+          [orgLimit.organizationId]
+        );
+      }
+      const at = (offsetMs: number) =>
+        askWithClockAt(orgLimit, new Date(deletableFrom.getTime() + offsetMs));
+      assert.equal(await at(-1000), "accepted", `${label}: a second before D`);
+      assert.equal(
+        await at(1000),
+        "closed_export_unavailable",
+        `${label}: a second after D`
+      );
+      assert.equal(
+        await at(0),
+        "closed_export_unavailable",
+        `${label}: at D itself`
+      );
+    }
+    tests.push(
+      "the copy is asked for until the first instant of D, to the second (the live function with its clock fixed): accepted one second before D, refused at D and one second after, with or without a purge rescheduled to a later day"
+    );
+
     // ------------------------------------------------- 5. the claim and the reader
     const claimedE = await privacyClient.claimDataExportById(
       askedE.id,

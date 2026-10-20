@@ -5,6 +5,7 @@ import {
   index,
   pgPolicy,
   pgTable,
+  smallint,
   text,
   timestamp,
   unique,
@@ -28,8 +29,13 @@ const ownerRole = "polaris_privacy_owner";
  * purge of the organization (class `closure_notice`), so the owner can still read when the data was deleted, and
  * leaves with the account of its user (foreign key in cascade). No runtime role reads or writes it directly, and the
  * table is under FORCE ROW LEVEL SECURITY (the migration says so: the schema builder has no form for it). The purge
- * owner reads four columns of the delivered `d7` and `rescheduled` notices, by a policy the migration writes: no store
- * is deleted before the owner was told (ADR 0102, amended).
+ * owner reads five columns of the delivered (or dismissed) `d7` and `rescheduled` notices, by a policy the migration
+ * writes: no store is deleted before the owner was told, or before the person responsible decided, under a privacy
+ * case, that the notice is dismissed (ADR 0102, amended).
+ *
+ * The support resends or dismisses a notice by a new `d7` row of the same cycle (`reissue` 1, 2...), never by an
+ * UPDATE (`admin_reissue_closure_notice` and `admin_dismiss_closure_notice`). A dismissed row has no user (nobody was
+ * told; the account may be gone) and `dismissed_at` filled.
  */
 export const closureNotices = pgTable(
   "closure_notices",
@@ -39,6 +45,11 @@ export const closureNotices = pgTable(
       withTimezone: true,
     }).notNull(),
     /** When the milestone was due (the first instant of its local day, or the request, or the release of a hold). */
+    /**
+     * When the person responsible dismissed the notice under a privacy case (a new `d7` row, never sent): it counts
+     * as delivered for the purge, and the decision is in the platform audit (`closure_notice.dismissed`).
+     */
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
     failedAt: timestamp("failed_at", { withTimezone: true }),
     /** A short code of why the notice was not sent; never a message or an address. */
@@ -54,13 +65,21 @@ export const closureNotices = pgTable(
     recordedAt: timestamp("recorded_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    /** 0 for the notice the privacy job writes; 1, 2... for each new `d7` the support writes in the same cycle. */
+    reissue: smallint("reissue").default(0).notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     /** An earlier milestone found together with a later one: written, never sent. */
     skipped: boolean("skipped").default(false).notNull(),
-    /** The owner the notice is for, when it was written (an internal ID, never a name or an e-mail). */
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    /**
+     * When `closure_notice_recipient` last found the address of the notice's user not verified (the notice stays owed;
+     * cleared once it is found verified): the fact the dismissal `email_not_verified` needs, never the address.
+     */
+    unverifiedAt: timestamp("unverified_at", { withTimezone: true }),
+    /**
+     * The owner the notice is for, when it was written (an internal ID, never a name or an e-mail). Null only for a
+     * dismissed notice: nobody is told.
+     */
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
   },
   (table) => [
     unique("closure_notices_cycle_milestone_unique")
@@ -68,7 +87,8 @@ export const closureNotices = pgTable(
         table.organizationId,
         table.closureRequestedAt,
         table.milestone,
-        table.purgeFrom
+        table.purgeFrom,
+        table.reissue
       )
       .nullsNotDistinct(),
     index("closure_notices_user_idx").on(table.userId),
@@ -85,6 +105,14 @@ export const closureNotices = pgTable(
       sql`(${table.sentAt} IS NULL OR ${table.failedAt} IS NULL)
         AND (NOT ${table.skipped} OR (${table.sentAt} IS NULL AND ${table.failedAt} IS NULL))
         AND ((${table.failedAt} IS NULL) = (${table.failureCode} IS NULL))`
+    ),
+    check(
+      "closure_notices_dismissal_coherent",
+      sql`(${table.dismissedAt} IS NULL OR (${table.sentAt} IS NULL AND ${table.failedAt} IS NULL AND NOT ${table.skipped}))
+        AND ((${table.userId} IS NULL) = (${table.dismissedAt} IS NOT NULL))
+        AND (${table.reissue} = 0 OR ${table.milestone} = 'd7')
+        AND (${table.dismissedAt} IS NULL OR ${table.reissue} > 0)
+        AND ${table.reissue} >= 0`
     ),
     check(
       "closure_notices_failure_code_format",

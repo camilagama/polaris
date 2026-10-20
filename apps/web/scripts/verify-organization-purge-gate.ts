@@ -24,6 +24,10 @@ import { requestDataExport } from "@polaris/db/data-export-repository";
 import { requestOrganizationClosure } from "@polaris/db/organization-closure-repository";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import {
+  type ClosureNoticeRecipientClient,
+  createClosureNoticeRecipientClient,
+} from "@polaris/db/closure-notice-recipient";
+import {
   PURGE_BILLING_FACT_KEYS,
   PURGE_CASCADED_TABLES,
   PURGE_DELETE_ORDER,
@@ -57,6 +61,7 @@ import {
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
 import type { MediaBucketBinding } from "../src/server/environment";
+import { verifyClosureNoticeEmail } from "./closure-notice-email-checks";
 import { verifyClosureNotices } from "./closure-notice-checks";
 import {
   deliverClosureNotice,
@@ -508,6 +513,7 @@ async function run() {
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let privacy: ReturnType<typeof createPrivacyMaintenanceClient> | undefined;
+  let recipients: ClosureNoticeRecipientClient | undefined;
   let concurrentPrivacy:
     | ReturnType<typeof createPrivacyMaintenanceClient>
     | undefined;
@@ -557,6 +563,8 @@ async function run() {
       "polaris_admin_runtime",
       "polaris_purge_admin"
     );
+    const authUrl = await login("polaris_auth_runtime", "polaris_purge_auth");
+    recipients = createClosureNoticeRecipientClient(authUrl);
     runtime = createDatabase(tenantUrl, { maxConnections: 2 });
     const { db } = runtime;
     privacy = createPrivacyMaintenanceClient(privacyUrl);
@@ -2787,9 +2795,24 @@ async function run() {
       }))
     );
 
+    // the e-mail of the notices and the act of the support (ADR 0102, amended)
+    tests.push(
+      ...(await verifyClosureNoticeEmail({
+        admin,
+        bucket,
+        concurrent: concurrentPrivacy,
+        maintenance,
+        owner: owner.pool,
+        principal,
+        recipients,
+        runtimes: { admin, tenant: runtime.pool },
+      }))
+    );
+
     console.log(JSON.stringify({ gate: "organization-purge", tests }, null, 2));
   } finally {
     await privacy?.close().catch(() => undefined);
+    await recipients?.close().catch(() => undefined);
     await concurrentPrivacy?.close().catch(() => undefined);
     await adminDatabase?.pool.end().catch(() => undefined);
     await runtime?.pool.end().catch(() => undefined);

@@ -4,6 +4,7 @@ import {
   supportRefusalFromMessage,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
+import type { ClosureNoticeDismissalReason } from "@polaris/domain/organization/closure-deadlines";
 import {
   OrganizationPurgeRefusedError,
   organizationPurgeRefusalFromMessage,
@@ -316,6 +317,43 @@ export function cancelOrganizationPurge(
   return call<{ changed: boolean; status: string }>(
     client,
     "public.admin_cancel_organization_purge($1, $2, $3, $4)",
+    [principalId, caseId, organizationId, reason]
+  );
+}
+
+/**
+ * Sends the notice of D minus 7 days of the case's organization again (ADR 0102, amended): a new `d7` of the current
+ * cycle for the owner of now, with its outbox event, under an open privacy case and naming the same organization. The
+ * purge then waits 7 days from its delivery. Refused while another notice of the cycle is still owed.
+ */
+export function reissueClosureNotice(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string
+) {
+  return call<{ dismissed: boolean; noticeId: string; reissue: number }>(
+    client,
+    "public.admin_reissue_closure_notice($1, $2, $3)",
+    [principalId, caseId, organizationId]
+  );
+}
+
+/**
+ * Dismisses the notice of D minus 7 days of the case's organization by the decision of the person responsible (ADR
+ * 0102, amended): nobody can be told. A new `d7` with no user, which counts as delivered for the purge (7 days later),
+ * under a privacy case whose decision is recorded, with one reason of the closed list.
+ */
+export function dismissClosureNotice(
+  client: AdminQueryable,
+  principalId: string,
+  caseId: string,
+  organizationId: string,
+  reason: ClosureNoticeDismissalReason
+) {
+  return call<{ dismissed: boolean; noticeId: string; reissue: number }>(
+    client,
+    "public.admin_dismiss_closure_notice($1, $2, $3, $4)",
     [principalId, caseId, organizationId, reason]
   );
 }

@@ -7,6 +7,7 @@ import {
   type OutboxClient,
 } from "@polaris/db/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
+import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { app } from "../src/server/app";
 import {
   reconcileRemovedMedia,
@@ -22,7 +23,12 @@ import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
 } from "../src/server/billing/renewal-cancellation";
-import { handleClosureNotice } from "../src/server/privacy/closure-notice";
+import {
+  type ClosureNoticeEmail,
+  closureNoticeEmailConfig,
+  handleClosureNotice,
+  handOverOwedClosureNotices,
+} from "../src/server/privacy/closure-notice";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
@@ -274,6 +280,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
     } catch (error: unknown) {
       failures.push(error);
     }
+    await runClosureNoticeHandover(env, client, failures);
     const live = queuePathLive(env);
     if (live) {
       // the safety net of the queue path: an export still owed gets its event sent again
@@ -519,11 +526,60 @@ async function handleClosureNoticeEvent(
     throw new PermanentHandlerError("closure_notice_not_configured");
   }
   const client = createPrivacyMaintenanceClient(connectionString);
+  const email = closureNoticeEmailOf(env);
   try {
-    await handleClosureNotice(client, envelope);
+    await handleClosureNotice(
+      { email: email?.email ?? null, notices: client },
+      envelope
+    );
   } finally {
     await quietly(() => client.close());
+    if (email) {
+      await quietly(email.close);
+    }
   }
+}
+
+/**
+ * The notices left owed (the e-mail was off, or a delivery did not settle), only with the e-mail on: the latest of
+ * each cycle goes out (ADR 0102, amended).
+ */
+async function runClosureNoticeHandover(
+  env: WorkerBindings,
+  client: ReturnType<typeof createPrivacyMaintenanceClient>,
+  failures: unknown[]
+): Promise<void> {
+  const email = closureNoticeEmailOf(env);
+  if (!email) {
+    return;
+  }
+  try {
+    const handover = await handOverOwedClosureNotices({
+      email: email.email,
+      notices: client,
+    });
+    logger.info("closure_notice_handover_complete", { ...handover });
+  } catch (error: unknown) {
+    failures.push(error);
+  } finally {
+    await quietly(email.close);
+  }
+}
+
+/**
+ * The e-mail of the closure notices, or null while it is off (ADR 0102, amended): the switch, the provider's secrets
+ * and the authentication role, the only one that reads the address (`closure_notice_recipient`).
+ */
+function closureNoticeEmailOf(
+  env: WorkerBindings
+): { close: () => Promise<void>; email: ClosureNoticeEmail } | null {
+  const config = closureNoticeEmailConfig(env);
+  const authConnection = env.AUTH_HYPERDRIVE?.connectionString;
+  if (!(config && authConnection)) {
+    return null;
+  }
+  const recipients = createClosureNoticeRecipientClient(authConnection);
+  return { close: () => recipients.close(), email: { config, recipients } };
 }
 
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */

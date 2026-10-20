@@ -61,8 +61,8 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.closure_notices AS notice
                    JOIN public.organization_closures AS closure ON closure.requested_at = notice.closure_requested_at
-                  WHERE notice.organization_id = p_organization AND notice.milestone IN ('d7', 'rescheduled') AND notice.sent_at IS NOT NULL
-                 HAVING pg_catalog.max(notice.sent_at) <= pg_catalog.now() - interval '168 hours') THEN
+                  WHERE notice.organization_id = p_organization AND notice.milestone IN ('d7', 'rescheduled') AND COALESCE(notice.sent_at, notice.dismissed_at) IS NOT NULL
+                 HAVING pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <= pg_catalog.now() - interval '168 hours') THEN
     RETURN 'closure_notice_not_delivered';
   END IF;
 END;
@@ -132,8 +132,8 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.closure_notices AS notice
                   WHERE notice.organization_id = p_organization AND notice.closure_requested_at = p_requested_at
-                    AND notice.milestone IN ('d7', 'rescheduled') AND notice.sent_at IS NOT NULL
-                 HAVING pg_catalog.max(notice.sent_at) <= pg_catalog.now() - interval '168 hours') THEN
+                    AND notice.milestone IN ('d7', 'rescheduled') AND COALESCE(notice.sent_at, notice.dismissed_at) IS NOT NULL
+                 HAVING pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <= pg_catalog.now() - interval '168 hours') THEN
     RETURN 'closure_notice_not_delivered';
   END IF;
 END;`,
@@ -197,13 +197,16 @@ describe("purgeFunctionDifferences", () => {
       ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
       expect(
         mutated(name, (sql) =>
-          sql.replace("AND notice.sent_at IS NOT NULL", "")
+          sql.replace(
+            "AND COALESCE(notice.sent_at, notice.dismissed_at) IS NOT NULL",
+            ""
+          )
         )
       ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
       expect(
         mutated(name, (sql) =>
           sql.replace(
-            "pg_catalog.max(notice.sent_at) <= pg_catalog.now() - interval '168 hours'",
+            "pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <= pg_catalog.now() - interval '168 hours'",
             "true"
           )
         )
@@ -211,17 +214,14 @@ describe("purgeFunctionDifferences", () => {
       expect(
         mutated(name, (sql) =>
           sql.replace(
-            "pg_catalog.max(notice.sent_at) <=",
-            "pg_catalog.max(notice.sent_at) <"
+            "pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <=",
+            "pg_catalog.max(COALESCE(notice.sent_at, notice.dismissed_at)) <"
           )
         )
       ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
       expect(
         mutated(name, (sql) =>
-          sql.replace(
-            "pg_catalog.max(notice.sent_at)",
-            "pg_catalog.min(notice.sent_at)"
-          )
+          sql.replace("pg_catalog.max(COALESCE", "pg_catalog.min(COALESCE")
         )
       ).toEqual([`${name}: the notice delivered in the current cycle is gone`]);
       expect(
