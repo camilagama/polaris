@@ -51,7 +51,9 @@
       "ignoreDependencies": ["cloudflare"]
     },
     "apps/admin": {
-      "project": ["src/**/*.ts"]
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["cloudflare"]
     }
   }
 }
