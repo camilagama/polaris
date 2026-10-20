@@ -22,7 +22,8 @@ import { assertAllowedGateUrl } from "./gate-hosts";
  * The observer reads `pg_stat_activity` and `pg_blocking_pids` for backends of
  * other roles, so it needs the owner of the disposable database (a superuser
  * or a member of `pg_read_all_stats`, as the gate owner is). Without it the
- * gate fails loudly (no racer is ever seen blocked); it never passes by it.
+ * gate fails early with a message that says so, before any racer starts; it
+ * never passes by it.
  *
  * Rounds: `POLARIS_CONCURRENCY_REPEAT` (default 1, `gates:concurrency` sets 3,
  * at most 10) says how many times a gate repeats each race with fresh data.
@@ -155,6 +156,16 @@ export async function raceBehindLock<T>(
     ).rows[0]?.pid;
     if (pid === undefined) {
       throw new Error(`${label}: the holder has no backend pid.`);
+    }
+    const access = await observer.query<{ allowed: boolean }>(
+      `SELECT (role.rolsuper OR pg_catalog.pg_has_role(role.oid, 'pg_read_all_stats', 'USAGE')) AS allowed
+         FROM pg_catalog.pg_roles AS role
+        WHERE role.rolname = current_user`
+    );
+    if (access.rows[0]?.allowed !== true) {
+      throw new Error(
+        `${label}: the owner role cannot observe other roles' backends (it needs superuser or pg_read_all_stats), so no race can be shown to compete.`
+      );
     }
     await holder.query("BEGIN");
     open = true;

@@ -54,9 +54,18 @@ Dois itens, cada um por um motivo que o PostgreSQL local não resolve:
 
 O `rls` só roda contra o PostgreSQL local (`localOnly` no executor): `gates:all` num Neon o deixa de fora, e pedi-lo pelo nome num Neon é erro.
 
+## Corridas: quando o `gates:concurrency` é obrigatório
+
+O job `PostgreSQL 18 gates` do CI roda `gates:ci` com **1 rodada** de cada corrida; corrida intermitente é justamente o que 1 rodada não pega. Por isso a suíte `gates:concurrency` (as corridas da [matriz de concorrência](../architecture/concurrency-matrix.md), **N = 3 rodadas**, o padrão da suíte) é obrigatória em dois momentos, sem job novo no CI:
+
+- **Em todo PR que mexa numa proteção listada na matriz** (um lock, um índice único, a ordem de lock, um gatilho ou uma função que uma corrida da matriz prova): o autor roda `CI=true bun run --filter @polaris/db gates:concurrency` num banco novo e registra o resultado na seção "Verificação" do PR. Mudou a corrida ou criou uma proteção nova: a linha da matriz muda no mesmo PR.
+- **Antes de cada prova de release** (item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block)): `gates:concurrency` com 3 rodadas, num PostgreSQL 18 descartável e novo, a partir do SHA candidato, além da suíte `all` em Neon.
+
+Mais rodadas (`POLARIS_CONCURRENCY_REPEAT=10`, o máximo) servem para investigar uma corrida que falhou de vez em quando; não são exigência.
+
 ## Prova antes de liberação em Neon
 
-O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon). Ela roda **antes de uma liberação** e, como o ADR 0025 já pedia, no fim de cada fase e quando mudam o executor (`run-gates.ts`), o suporte comum dos gates (`sales-gate-support.ts`) ou os privilégios de forma ampla ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emendas da issue #115). Por pull request **não** se roda nada em Neon: o job do CI roda a suíte `ci`; o `gate2-runtime` e a prova de Hyperdrive ficam para esta prova. Um PR que mude o executor, o suporte comum ou privilégios de forma ampla roda esta prova **antes do merge**; o fim de fase e a liberação rodam depois do merge, antes de fechar a fase ou de promover. Nas fases já fechadas (3 e 4), um PR que quebre o `gate2-runtime` ou o caminho Hyperdrive é pego na prova de liberação (item 4 do checklist, BLOCK): não escapa, só chega mais tarde.
+O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedor real (papéis, hostnames e o caminho Worker, Hyperdrive e Neon). Ela roda **antes de uma liberação** e, como o ADR 0025 já pedia, no fim de cada fase e quando mudam o executor (`run-gates.ts`), o suporte comum dos gates (`sales-gate-support.ts`) ou os privilégios de forma ampla ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emendas da issue #115). Por pull request **não** se roda nada em Neon: o job do CI roda a suíte `ci`; o `gate2-runtime` e a prova de Hyperdrive ficam para esta prova. Um PR que mude o executor (`run-gates.ts`), o suporte comum (`sales-gate-support.ts`, `concurrency-support.ts`) ou privilégios de forma ampla **não** roda esta prova antes do merge (o dev não tem credencial Neon de teste e não se cria branch-raiz): a mudança vira **pendência da próxima prova de release em Neon**, registrada no item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block), e essa prova a confere antes de promover. O fim de fase e a liberação rodam depois do merge, antes de fechar a fase ou de promover. Nas fases já fechadas (3 e 4), um PR que quebre o `gate2-runtime` ou o caminho Hyperdrive é pego na prova de liberação (item 4 do checklist, BLOCK): não escapa, só chega mais tarde.
 
 ### Regras da branch
 

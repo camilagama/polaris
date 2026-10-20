@@ -1274,21 +1274,26 @@ async function run() {
     const duelSale = await confirmPlainSale(rt, tenantA, [
       { quantity: 3, variantId: a1.variantId },
     ]);
-    const duel = await Promise.allSettled([
-      insertReturn(tenantA, {
-        items: [{ position: 0, restocked: 0, returned: 2 }],
-        saleId: duelSale.sale.id,
-      }),
-      insertReturn(tenantA, {
-        items: [{ position: 0, restocked: 0, returned: 2 }],
-        saleId: duelSale.sale.id,
-      }),
-    ]);
+    // the holder takes the compensation lock the commit-time trigger takes, so both
+    // raw writers insert, then queue on it at commit: the race is measured, not assumed
+    const { results: duel } = await raceBehindLock({
+      adminUrl,
+      hold: lockCompensation(duelSale.sale.id),
+      label: "two raw returns of 2 over 3 sold",
+      racers: [0, 1].map(
+        () => () =>
+          insertReturn(tenantA, {
+            items: [{ position: 0, restocked: 0, returned: 2 }],
+            saleId: duelSale.sale.id,
+          })
+      ),
+    });
     assert.equal(
-      duel.filter((result) => result.status === "fulfilled").length,
+      fulfilled(duel).length,
       1,
       "exactly one of two raw returns of 2 over 3 sold commits"
     );
+    assert.equal(rejections(duel).length, 1);
     assert.equal(
       (await returnedSum(tenantA, duelSale.sale.id))[0]?.returned,
       2
