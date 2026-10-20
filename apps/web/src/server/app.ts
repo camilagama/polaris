@@ -28,6 +28,7 @@ import {
 } from "./observability/server-log";
 import { authMethodsRoutes } from "./routes/auth-methods";
 import { createBillingWebhookRoutes } from "./routes/billing-webhooks";
+import { createClosedExportRoutes } from "./routes/closed-exports";
 import { createDataExportRoutes } from "./routes/data-exports";
 import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
@@ -163,6 +164,7 @@ export function createServerApp({
   app.route("/", systemRoutes);
   app.route("/", createMediaRoutes());
   app.route("/", createDataExportRoutes());
+  app.route("/", createClosedExportRoutes());
   // Provider webhooks sit outside /api and /rpc (browser origin checks): they
   // prove themselves by the provider signature their adapter verifies.
   app.route("/", createBillingWebhookRoutes());

@@ -14,7 +14,10 @@ import {
 } from "../src/server/media-reconciler";
 import { runBillingMaintenance } from "../src/server/billing/maintenance";
 import { runDataExports } from "../src/server/privacy/data-export-job";
-import { createRequesterReader } from "../src/server/privacy/data-export-reader";
+import {
+  createClosedExportReader,
+  createRequesterReader,
+} from "../src/server/privacy/data-export-reader";
 import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 import type { WorkerBindings } from "../src/server/environment";
@@ -163,6 +166,14 @@ function runDataExportsWith(
         claimed,
         operation
       ),
+    // a closed organization's export is read through the privacy role, the only one that may become its reader
+    ...(env.PRIVACY_HYPERDRIVE?.connectionString
+      ? {
+          readClosedExport: createClosedExportReader(
+            env.PRIVACY_HYPERDRIVE.connectionString
+          ),
+        }
+      : {}),
   });
 }
 

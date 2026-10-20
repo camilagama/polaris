@@ -35,6 +35,8 @@ function createClient(overrides: Record<string, unknown>) {
   return createORPCClient(link) as unknown as {
     dataExport: {
       list: (input: unknown) => Promise<{ exports: unknown[] }>;
+      listClosed: (input: unknown) => Promise<{ exports: unknown[] }>;
+      requestClosed: (input: unknown) => Promise<{ id: string }>;
       request: (input: unknown) => Promise<{ id: string }>;
     };
   };
@@ -159,6 +161,154 @@ describe("dataExport.list", () => {
         requestedAt: requestedAt.toISOString(),
         status: "ready",
         totalBytes: 10,
+      },
+    ]);
+  });
+});
+
+function authenticated(createdAt: Date) {
+  // async like the real context: an operation that throws becomes a rejection
+  return async (input: {
+    operation: (
+      database: unknown,
+      current: { session: { createdAt: Date }; user: { id: string } }
+    ) => Promise<unknown>;
+  }) => input.operation({}, { session: { createdAt }, user: session.user });
+}
+
+const closedExportId = "0199c2d0-0000-7000-8000-0000000000bb";
+
+describe("dataExport.requestClosed", () => {
+  it("asks for the session user with a fresh sign-in, handing over formats and organization", async () => {
+    const requestClosedDataExport = vi.fn(
+      async (
+        _database: unknown,
+        _userId: string,
+        _input: { formats: string[]; organizationId: string }
+      ) => ({ id: closedExportId })
+    );
+    const client = createClient({
+      dataExportRepository: { requestClosedDataExport },
+      withAuthenticatedRequestContext: authenticated(new Date()),
+    });
+    await expect(
+      client.dataExport.requestClosed({
+        formats: ["json", "csv"],
+        organizationId,
+      })
+    ).resolves.toEqual({ id: closedExportId });
+    expect(requestClosedDataExport).toHaveBeenCalledWith(
+      expect.anything(),
+      session.user.id,
+      expect.objectContaining({ formats: ["json", "csv"], organizationId })
+    );
+  });
+
+  it("refuses a session signed in more than 15 minutes ago and does nothing", async () => {
+    const requestClosedDataExport = vi.fn();
+    const client = createClient({
+      dataExportRepository: { requestClosedDataExport },
+      withAuthenticatedRequestContext: authenticated(
+        new Date(Date.now() - 16 * 60 * 1000)
+      ),
+    });
+    await expect(
+      client.dataExport.requestClosed({ formats: ["json"], organizationId })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "fresh_session_required" },
+    });
+    expect(requestClosedDataExport).not.toHaveBeenCalled();
+  });
+
+  it("answers a conflict with the reason when the closed copy is unavailable", async () => {
+    const client = createClient({
+      dataExportRepository: {
+        requestClosedDataExport: () =>
+          Promise.reject(
+            new InvalidExportRequestError("closed_export_unavailable")
+          ),
+      },
+      withAuthenticatedRequestContext: authenticated(new Date()),
+    });
+    await expect(
+      client.dataExport.requestClosed({ formats: ["json"], organizationId })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "closed_export_unavailable" },
+    });
+  });
+});
+
+describe("dataExport.listClosed", () => {
+  it("shows the copies with their mode, dates as text and the files", async () => {
+    const requestedAt = new Date("2026-10-17T12:00:00.000Z");
+    const listClosedDataExports = vi.fn(
+      async (_database: unknown, _userId: string, _organizationId: string) => [
+        {
+          errorCode: null,
+          expiresAt: new Date("2026-10-18T12:05:00.000Z"),
+          files: [
+            { name: "polaris-dados-2026-10-17.zip", ordinal: 1, sizeBytes: 10 },
+          ],
+          formats: ["json"],
+          id: closedExportId,
+          mode: "closed",
+          readyAt: new Date("2026-10-17T12:05:00.000Z"),
+          requestedAt,
+          status: "ready",
+          totalBytes: 10,
+        },
+        {
+          errorCode: null,
+          expiresAt: null,
+          files: [],
+          formats: ["csv"],
+          id: "0199c2d0-0000-7000-8000-0000000000cc",
+          mode: "active",
+          readyAt: null,
+          requestedAt,
+          status: "requested",
+          totalBytes: null,
+        },
+      ]
+    );
+    const client = createClient({
+      dataExportRepository: { listClosedDataExports },
+      withAuthenticatedRequestContext: authenticated(new Date()),
+    });
+    const result = await client.dataExport.listClosed({ organizationId });
+    expect(listClosedDataExports).toHaveBeenCalledWith(
+      expect.anything(),
+      session.user.id,
+      organizationId
+    );
+    expect(result.exports).toEqual([
+      {
+        errorCode: null,
+        expiresAt: "2026-10-18T12:05:00.000Z",
+        files: [
+          { name: "polaris-dados-2026-10-17.zip", ordinal: 1, sizeBytes: 10 },
+        ],
+        formats: ["json"],
+        id: closedExportId,
+        mode: "closed",
+        readyAt: "2026-10-17T12:05:00.000Z",
+        requestedAt: "2026-10-17T12:00:00.000Z",
+        status: "ready",
+        totalBytes: 10,
+      },
+      {
+        errorCode: null,
+        expiresAt: null,
+        files: [],
+        formats: ["csv"],
+        id: "0199c2d0-0000-7000-8000-0000000000cc",
+        mode: "active",
+        readyAt: null,
+        requestedAt: "2026-10-17T12:00:00.000Z",
+        status: "requested",
+        totalBytes: null,
       },
     ]);
   });

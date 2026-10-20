@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: Probes, in order.
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
@@ -57,6 +58,7 @@ const SERVICE_ROLES = [
   "polaris_privacy_runtime",
 ];
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear gate, section by section
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -621,7 +623,231 @@ async function run() {
       "when the window ends the owner can no longer undo the closure and it is no longer offered; the sweep marks exactly the expired ones as closed (a window still open and every other status are left alone), is bounded (a limit outside 1 to 1000 is refused) and is idempotent; the platform's reactivate and suspend leave a closed organization as it is"
     );
 
-    // ------------------------------------------------- 6. who may do what
+    // ------------------------------------------------- 6. the ceiling: one open organization and two in closure per person (L6)
+    const onboardingUrl = await login(
+      "polaris_onboarding_runtime",
+      "polaris_clos_onb"
+    );
+    const runOn = async <T>(
+      url: string,
+      operation: (client: Client) => Promise<T>
+    ) => {
+      const client = new Client({
+        connectionString: url,
+        connectionTimeoutMillis: 5000,
+      });
+      await client.connect();
+      try {
+        return await operation(client);
+      } finally {
+        await client.end();
+      }
+    };
+    const resultOf = async (operation: () => Promise<string>) => {
+      try {
+        return await operation();
+      } catch (error: unknown) {
+        const failure = error as { detail?: string; message?: string };
+        return failure.detail ?? failure.message ?? "error";
+      }
+    };
+    const openFor = (userId: string) =>
+      resultOf(async () => {
+        const result = await runOn(onboardingUrl, (client) =>
+          client.query<{ created: boolean }>(
+            "SELECT created FROM public.create_initial_organization($1, $2, $3, 'America/Sao_Paulo', $4)",
+            [userId, randomUUID(), `teto ${suffix}`, randomUUID()]
+          )
+        );
+        return result.rows[0]?.created ? "created" : "existing";
+      });
+    const recoverAs = (userId: string, organizationId: string) =>
+      resultOf(async () => {
+        await withRuntimeSqlContext(
+          tenantUrl,
+          { organizationId: "", userId },
+          (client) =>
+            client.query("SELECT public.recover_organization_closure($1)", [
+              organizationId,
+            ])
+        );
+        return "recovered";
+      });
+    const newOwner = async () => {
+      const userId = randomUUID();
+      await owner.pool.query(
+        'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
+        [userId, `teto ${suffix}`, `teto-${userId}@example.invalid`]
+      );
+      return userId;
+    };
+    type OwnedStatus =
+      | "active"
+      | "suspended"
+      | "closing"
+      | "closed"
+      | "purge_pending";
+    /** An organization the users own, in a status; one in closure has its record (a window still open when closing). */
+    const ownedBy = async (wanted: OwnedStatus, ...userIds: string[]) => {
+      const organizationId = randomUUID();
+      await owner.pool.query(
+        "INSERT INTO public.organizations (id, name, timezone, status) VALUES ($1, $2, 'America/Sao_Paulo', $3)",
+        [organizationId, `teto ${wanted} ${suffix}`, wanted]
+      );
+      for (const userId of userIds) {
+        await owner.pool.query(
+          "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
+          [organizationId, userId]
+        );
+      }
+      if (wanted !== "active" && wanted !== "suspended") {
+        const daysAgo = wanted === "closing" ? 1 : 40;
+        await owner.pool.query(
+          "INSERT INTO public.organization_closures (organization_id, requested_by_user_id, requested_at, recover_until) VALUES ($1, $2, now() - $3 * interval '1 day', now() - $3 * interval '1 day' + interval '30 days')",
+          [organizationId, userIds[0], daysAgo]
+        );
+      }
+      return organizationId;
+    };
+    const openCount = async (userId: string) =>
+      Number(
+        (
+          await owner.pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.memberships m JOIN public.organizations o ON o.id = m.organization_id WHERE m.user_id = $1 AND o.status IN ('active', 'suspended')",
+            [userId]
+          )
+        ).rows[0]?.count
+      );
+    const creationMatrix: [OwnedStatus[], string][] = [
+      [[], "created"],
+      [["active"], "existing"],
+      [["suspended"], "organization_not_available"],
+      [["closing"], "created"],
+      [["closed"], "created"],
+      [["purge_pending"], "created"],
+      [["closing", "closed"], "organization_limit_reached"],
+      [["closed", "purge_pending"], "organization_limit_reached"],
+      [["active", "closed"], "existing"],
+      [["suspended", "closing"], "organization_not_available"],
+      [["active", "closing", "closed"], "existing"],
+    ];
+    for (const [statuses, expected] of creationMatrix) {
+      const userId = await newOwner();
+      for (const status of statuses) {
+        await ownedBy(status, userId);
+      }
+      assert.equal(
+        await openFor(userId),
+        expected,
+        `opening an organization with [${statuses.join(", ")}]`
+      );
+      assert.ok((await openCount(userId)) <= 1, "never two open organizations");
+    }
+    // co-owners: a sharedClosing organization in closure counts for both of its owners
+    const ownerOne = await newOwner();
+    const ownerTwo = await newOwner();
+    await ownedBy("closed", ownerOne, ownerTwo);
+    await ownedBy("closing", ownerOne);
+    await ownedBy("closed", ownerTwo);
+    assert.equal(await openFor(ownerOne), "organization_limit_reached");
+    assert.equal(await openFor(ownerTwo), "organization_limit_reached");
+    tests.push(
+      `opening an organization follows the ceiling in ${creationMatrix.length} states (none, active, suspended, closing, closed, purge_pending and their mixes): an open one comes back (or organization_not_available while suspended), one or no organization in closure lets another be opened, two refuse it with organization_limit_reached, and no state ends with two open; an organization with two owners counts for both`
+    );
+
+    const recoveryMatrix: [OwnedStatus[], string][] = [
+      [[], "recovered"],
+      [["active"], "another_organization_active"],
+      [["suspended"], "another_organization_active"],
+      [["closed"], "recovered"],
+      [["purge_pending"], "recovered"],
+    ];
+    for (const [statuses, expected] of recoveryMatrix) {
+      const userId = await newOwner();
+      const closing = await ownedBy("closing", userId);
+      for (const status of statuses) {
+        await ownedBy(status, userId);
+      }
+      const recoveredBefore = await auditCount(
+        closing,
+        "organization.closure_recovered"
+      );
+      assert.equal(
+        await recoverAs(userId, closing),
+        expected,
+        `undoing a closure next to [${statuses.join(", ")}]`
+      );
+      const statusAfter = (
+        await owner.pool.query<{ status: string }>(
+          "SELECT status FROM public.organizations WHERE id = $1",
+          [closing]
+        )
+      ).rows[0]?.status;
+      assert.equal(
+        statusAfter,
+        expected === "recovered" ? "active" : "closing",
+        "a refused recovery changes nothing"
+      );
+      assert.equal(
+        await auditCount(closing, "organization.closure_recovered"),
+        recoveredBefore + (expected === "recovered" ? 1 : 0)
+      );
+      assert.ok((await openCount(userId)) <= 1);
+    }
+    // the other owner of the organization being recovered has an open organization of their own
+    const sharer = await newOwner();
+    const coOwner = await newOwner();
+    const sharedClosing = await ownedBy("closing", sharer, coOwner);
+    await ownedBy("active", coOwner);
+    assert.equal(
+      await recoverAs(sharer, sharedClosing),
+      "another_organization_active",
+      "refused while any owner of it has another open organization"
+    );
+    assert.ok((await openCount(coOwner)) <= 1);
+    tests.push(
+      `undoing a closure is refused with another_organization_active (and changes nothing, audit included) while an owner has another open organization, active or suspended, or while another owner of the same organization has one; organizations in closure next to it do not stop it (${recoveryMatrix.length} states and the co-owner case)`
+    );
+
+    // the race: opening another organization and undoing a closure at the same time, released together
+    for (let round = 0; round < 3; round += 1) {
+      const racer = await newOwner();
+      const closing = await ownedBy("closing", racer);
+      const barrier = await owner.pool.connect();
+      let results: string[] = [];
+      try {
+        await barrier.query("BEGIN");
+        await barrier.query(
+          "SELECT pg_advisory_xact_lock(1347374145, hashtext($1))",
+          [racer]
+        );
+        const racing = Promise.all([openFor(racer), recoverAs(racer, closing)]);
+        const early = await Promise.race([
+          racing.then(() => "finished"),
+          new Promise((resolve) => setTimeout(() => resolve("waiting"), 1500)),
+        ]);
+        assert.equal(early, "waiting", "both wait for the per-user key");
+        await barrier.query("COMMIT");
+        results = await racing;
+      } catch (error) {
+        await barrier.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        barrier.release();
+      }
+      assert.ok(
+        (results[0] === "created" &&
+          results[1] === "another_organization_active") ||
+          (results[0] === "existing" && results[1] === "recovered"),
+        `one of the two wins, never both (round ${round}: ${results.join(", ")})`
+      );
+      assert.equal(await openCount(racer), 1, "exactly one open organization");
+    }
+    tests.push(
+      "opening an organization and undoing a closure of the same person, held behind the per-user key and released together, never both win: either the new one is opened and the recovery is refused (another_organization_active), or the closure is undone and the opening gives the recovered organization back; exactly one open organization at the end (three rounds)"
+    );
+
+    // ------------------------------------------------- 7. who may do what
     const permission = async (sql: string, values: unknown[]) =>
       (await owner.pool.query<{ allowed: boolean }>(sql, values)).rows[0]
         ?.allowed;
@@ -708,7 +934,6 @@ async function run() {
     ]);
     assert.deepEqual(await privileges("tenant_audit_event"), ["INSERT"]);
     for (const table of ["organizations", "memberships", "offline_grants"]) {
-      // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
       const held = await privileges(table);
       assert.equal(
         held.includes("DELETE") ||
@@ -743,6 +968,8 @@ async function run() {
       "id",
       "name",
       "status",
+      // the dates of a closed organization are in its time zone (ADR 0081)
+      "timezone",
     ]);
     assert.deepEqual(await columns("memberships", "SELECT"), [
       "authorization_epoch",
@@ -773,12 +1000,17 @@ async function run() {
         "data_export_files_privacy_owner_delete",
         "data_export_files_privacy_owner_insert",
         "data_export_files_privacy_owner_select",
+        // a closed organization's copy (ADR 0081): the request, its outbox event, whether a purge was claimed and
+        // the images of a closed export
+        "data_exports_privacy_owner_insert_closed",
         "data_exports_privacy_owner_select",
         "data_exports_privacy_owner_update",
         "deletion_ledger_privacy_owner_select",
         // the re-arm of an export event still owed (ADR 0084)
+        "event_outbox_privacy_owner_insert_closed",
         "event_outbox_privacy_owner_rearm",
         "event_outbox_privacy_owner_select",
+        "media_assets_privacy_owner_select_closed",
         "memberships_privacy_owner_select",
         "memberships_privacy_owner_update",
         "offline_grants_privacy_owner_select",
@@ -786,6 +1018,7 @@ async function run() {
         "organization_closures_privacy_owner_insert",
         "organization_closures_privacy_owner_select",
         "organization_closures_privacy_owner_update",
+        "organization_purges_privacy_owner_select",
         "organizations_privacy_owner_select",
         "organizations_privacy_owner_update",
         "tenant_audit_event_privacy_owner_insert",
@@ -828,7 +1061,6 @@ async function run() {
   } finally {
     await runtime?.pool.end().catch(() => undefined);
     for (const [role, group] of logins) {
-      // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
       await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }

@@ -10,8 +10,15 @@ const claimed: ClaimedDataExport = {
   attempt: 1,
   formats: ["json", "images"],
   id: exportId,
+  leaseToken: null,
+  mode: "active",
   organizationId,
   requestedBy: "user_1",
+};
+const closedClaim: ClaimedDataExport = {
+  ...claimed,
+  leaseToken: "0199c2d0-0000-7000-8000-0000000000bb",
+  mode: "closed",
 };
 const prefix = `exports/v1/${organizationId}/${exportId}/`;
 const now = new Date("2026-10-17T12:00:00.000Z");
@@ -32,8 +39,10 @@ function fixture(input: {
   claims?: (ClaimedDataExport | null)[];
   collect?: ReturnType<typeof vi.fn>;
   deletable?: { id: string; organizationId: string }[];
+  closedImages?: { assetId: string; byteSize: number; storageKey: string }[];
   images?: { assetId: string; byteSize: number; storageKey: string }[];
   objects?: Map<string, Uint8Array>;
+  withClosedReader?: boolean;
 }) {
   const objects = input.objects ?? new Map<string, Uint8Array>();
   const claims = [...(input.claims ?? [claimed, null])];
@@ -49,6 +58,14 @@ function fixture(input: {
     expireDataExports: vi.fn(() => Promise.resolve(2)),
     failDataExport: vi.fn((_id: string, _code: string, final: boolean) =>
       Promise.resolve(final)
+    ),
+    listClosedExportMedia: vi.fn(
+      (
+        _exportId: string,
+        _lease: string,
+        _after: string | null,
+        _limit: number
+      ) => Promise.resolve(input.closedImages ?? [])
     ),
     listDataExportsToDelete: vi.fn(() =>
       Promise.resolve(input.deletable ?? [])
@@ -97,6 +114,12 @@ function fixture(input: {
       operation: (transaction: never) => Promise<unknown>
     ) => operation({} as never)
   );
+  const readClosedExport = vi.fn(
+    (
+      _claimed: ClaimedDataExport,
+      operation: (transaction: never) => Promise<unknown>
+    ) => operation({} as never)
+  );
   return {
     bucket,
     client,
@@ -107,11 +130,106 @@ function fixture(input: {
       collect,
       now: () => now,
       readAsRequester,
+      ...(input.withClosedReader === false ? {} : { readClosedExport }),
     } as never,
     objects,
     readAsRequester,
+    readClosedExport,
   };
 }
+
+describe("the export of a closed organization", () => {
+  it("reads as the closed organization's reader, never as the requester, and lists the images through the run's lease", async () => {
+    const collect = vi.fn(
+      async (
+        _transaction: unknown,
+        _organizationId: string,
+        _formats: string[],
+        options?: {
+          readImagePage?: (
+            after: string | null,
+            rows: number
+          ) => Promise<unknown[]>;
+          rewriteOrganization?: (row: object) => object;
+        }
+      ) => ({
+        entries: [{ bytes: new Uint8Array([1]), name: "data/a.json" }],
+        images: options?.readImagePage
+          ? await options.readImagePage(null, 500)
+          : [],
+        rewritten: [
+          options?.rewriteOrganization?.({ id: "o", status: "purge_pending" }),
+          options?.rewriteOrganization?.({ id: "o", status: "closing" }),
+        ],
+        summaries: [{ columns: ["id"], name: "organizacao", rows: 1 }],
+      })
+    );
+    const f = fixture({
+      claims: [closedClaim, null],
+      closedImages: [],
+      collect,
+    });
+    const report = await runDataExports(f.deps);
+    expect(report.ready).toBe(1);
+    expect(f.readClosedExport).toHaveBeenCalledWith(
+      closedClaim,
+      expect.any(Function)
+    );
+    expect(f.readAsRequester).not.toHaveBeenCalled();
+    expect(f.client.listClosedExportMedia).toHaveBeenCalledWith(
+      exportId,
+      closedClaim.leaseToken,
+      null,
+      500
+    );
+    // a scheduled purge does not show in the copy
+    expect((await collect.mock.results[0]?.value)?.rewritten).toEqual([
+      { id: "o", status: "closed" },
+      { id: "o", status: "closing" },
+    ]);
+  });
+
+  it("never stores a copy without the organization's own row (the reader's scope no longer held), and tries again", async () => {
+    const collect = vi.fn(() =>
+      Promise.resolve({
+        entries: [{ bytes: new Uint8Array([1]), name: "data/a.json" }],
+        images: [],
+        summaries: [{ columns: ["id"], name: "organizacao", rows: 0 }],
+      })
+    );
+    const f = fixture({ claims: [closedClaim, null], collect });
+    const report = await runDataExports(f.deps);
+    expect(report.ready).toBe(0);
+    expect(f.client.failDataExport).toHaveBeenCalledWith(
+      exportId,
+      "export_failed",
+      false
+    );
+    expect(f.client.recordDataExportFile).not.toHaveBeenCalled();
+    expect([...f.objects.keys()]).toEqual([]);
+  });
+
+  it("fails for good, keeping nothing, when the job has no reader for it", async () => {
+    const f = fixture({ claims: [closedClaim, null], withClosedReader: false });
+    const report = await runDataExports(f.deps);
+    expect(report.failed).toBe(1);
+    expect(f.client.failDataExport).toHaveBeenCalledWith(
+      exportId,
+      "export_not_authorized",
+      true
+    );
+    expect(f.readAsRequester).not.toHaveBeenCalled();
+    expect(f.collect).not.toHaveBeenCalled();
+    expect([...f.objects.keys()]).toEqual([]);
+  });
+
+  it("reads an active export as the requester, with the images of its own transaction", async () => {
+    const f = fixture({});
+    await runDataExports(f.deps);
+    expect(f.readClosedExport).not.toHaveBeenCalled();
+    expect(f.collect.mock.calls[0]?.[3]).toBeUndefined();
+  });
+});
 
 describe("the data export job", () => {
   it("builds the archive as the requester, stores it, records it and finishes", async () => {

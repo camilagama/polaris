@@ -14,6 +14,7 @@ import {
   exportFileName,
   FAILED_EXPORT_KEEP_HOURS,
 } from "@polaris/domain/privacy/data-export";
+import type { ExportRow } from "@polaris/db/export-reader";
 import type { MediaBucketBinding } from "../environment";
 import {
   buildDataArchive,
@@ -21,6 +22,7 @@ import {
   type CollectedExport,
   collectExport,
   ExportTooLargeError,
+  type ImagePageReader,
 } from "./data-export-build";
 import { deleteObjectsUnderPrefix } from "./storage-prefix";
 
@@ -45,6 +47,7 @@ type ExportClient = Pick<
   | "completeDataExport"
   | "expireDataExports"
   | "failDataExport"
+  | "listClosedExportMedia"
   | "listDataExportsToDelete"
   | "markDataExportFilesDeleted"
   | "recordDataExportFile"
@@ -71,6 +74,15 @@ export interface DataExportJobDependencies {
     operation: (transaction: TenantRequestTransaction) => Promise<T>
   ) => Promise<T>;
   /**
+   * Runs `operation` for a closed organization's export (ADR 0081): a read-only snapshot as the closed
+   * organization's reader, scoped to the export and the lease this run holds. Without it a closed export
+   * fails for good, as one the job cannot read.
+   */
+  readClosedExport?: <T>(
+    claimed: ClaimedDataExport,
+    operation: (transaction: TenantRequestTransaction) => Promise<T>
+  ) => Promise<T>;
+  /**
    * Whether the run also expires the exports whose time is up and removes their files (default
    * true: the hourly run). The queue consumer leaves it to the hourly run, so a message does not
    * repeat the sweep.
@@ -88,15 +100,75 @@ function exportObjectPrefix(organizationId: string, exportId: string) {
   return `exports/v1/${organizationId}/${exportId}/`;
 }
 
+/** The export is a closed organization's, and the job has no reader for it: nothing can be read. */
+class ClosedExportUnreadableError extends Error {
+  constructor() {
+    super("closed_export_unreadable");
+    this.name = "ClosedExportUnreadableError";
+  }
+}
+
 /** A refusal of authorization means the person can no longer read the data: that is final, not retried. */
 function failureOf(error: unknown): { code: string; final: boolean } {
   if (error instanceof ExportTooLargeError) {
     return { code: error.code, final: true };
   }
-  if (error instanceof TenantAuthorizationError) {
+  if (
+    error instanceof TenantAuthorizationError ||
+    error instanceof ClosedExportUnreadableError
+  ) {
     return { code: "export_not_authorized", final: true };
   }
   return { code: "export_failed", final: false };
+}
+
+/** How the claimed export is read: as the person who asked, or as the closed organization's reader. */
+function readFor(
+  claimed: ClaimedDataExport,
+  dependencies: DataExportJobDependencies
+): <T>(
+  operation: (transaction: TenantRequestTransaction) => Promise<T>
+) => Promise<T> {
+  if (claimed.mode !== "closed") {
+    return (operation) => dependencies.readAsRequester(claimed, operation);
+  }
+  const { readClosedExport } = dependencies;
+  if (!readClosedExport) {
+    return () => Promise.reject(new ClosedExportUnreadableError());
+  }
+  return (operation) => readClosedExport(claimed, operation);
+}
+
+/**
+ * A closed organization's copy shows it as closed even once its purge is scheduled: the owner never learns of a
+ * schedule (nor of a legal hold) from the copy, as from the panel (ADR 0081).
+ */
+function closedOrganizationRow(row: ExportRow): ExportRow {
+  return row.status === "purge_pending" ? { ...row, status: "closed" } : row;
+}
+
+/**
+ * The images of a closed export, through the lease of the run that holds it. They are listed on the privacy
+ * connection, not in the reader's snapshot: the organization is closed, so nothing of the tenant writes in between.
+ */
+function closedImagePages(
+  client: ExportClient,
+  exportId: string,
+  leaseToken: string
+): ImagePageReader {
+  return async (afterAssetId, pageRows) =>
+    (
+      await client.listClosedExportMedia(
+        exportId,
+        leaseToken,
+        afterAssetId,
+        pageRows
+      )
+    ).map((image) => ({
+      assetId: image.assetId,
+      byteSize: image.byteSize,
+      storageKey: image.storageKey,
+    }));
 }
 
 async function buildAndStore(
@@ -111,10 +183,36 @@ async function buildAndStore(
   await deleteObjectsUnderPrefix(bucket, prefix);
 
   const collect = dependencies.collect ?? collectExport;
-  const collected: CollectedExport = await dependencies.readAsRequester(
+  const collected: CollectedExport = await readFor(
     claimed,
-    (transaction) => collect(transaction, claimed.organizationId, formats)
+    dependencies
+  )((transaction) =>
+    collect(
+      transaction,
+      claimed.organizationId,
+      formats,
+      claimed.mode === "closed" && claimed.leaseToken
+        ? {
+            readImagePage: closedImagePages(
+              client,
+              claimed.id,
+              claimed.leaseToken
+            ),
+            rewriteOrganization: closedOrganizationRow,
+          }
+        : undefined
+    )
   );
+  // the reader of a closed organization reads nothing (and raises nothing) once its scope no longer holds: a copy
+  // without the organization's own row is never stored, it is tried again
+  if (
+    claimed.mode === "closed" &&
+    collected.summaries.length > 0 &&
+    collected.summaries.find((summary) => summary.name === "organizacao")
+      ?.rows !== 1
+  ) {
+    throw new Error("closed_export_scope_lost");
+  }
 
   const store = async (file: {
     bytes: Uint8Array;
@@ -245,12 +343,13 @@ export async function runDataExports(
         });
       if (isFinal) {
         report.failed += 1;
-        // nothing of a failed export is kept
-        await deleteObjectsUnderPrefix(
-          bucket,
-          exportObjectPrefix(claimed.organizationId, claimed.id)
-        ).catch(() => undefined);
       }
+      // nothing of a failed run is kept, final or not: a run tried again starts from nothing anyway, and an export
+      // whose record is gone (its organization purged in the middle) would never be swept otherwise
+      await deleteObjectsUnderPrefix(
+        bucket,
+        exportObjectPrefix(claimed.organizationId, claimed.id)
+      ).catch(() => undefined);
     }
   }
   return report;
