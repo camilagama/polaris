@@ -12,6 +12,35 @@
  *   (the same rule as the gates, `packages/db/scripts/gate-hosts.ts`).
  */
 
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+// `pg` is a dependency of @polaris/db, and `pg-protocol` and `pg-cloudflare` are dependencies of `pg`: walk the same path the Worker does.
+const fromDb = createRequire(
+  new URL("../packages/db/package.json", import.meta.url)
+);
+const fromPg = createRequire(fromDb.resolve("pg"));
+
+/**
+ * The `resolve.alias` every root Vitest config of a Worker that uses `pg` needs: inside workerd,
+ * `pg-protocol` resolves to an ESM file in a CommonJS package, and the harness does not apply the
+ * `workerd` export condition, so `pg-cloudflare` would resolve to its empty Node stub. The alias has
+ * to live in the root config: inside a project it is not applied when the run starts from the repository root.
+ */
+export const pgWorkerdAliases = [
+  {
+    find: /^pg-protocol$/,
+    replacement: fromPg.resolve("pg-protocol/dist/index.js"),
+  },
+  {
+    find: /^pg-cloudflare$/,
+    replacement: join(
+      dirname(fromPg.resolve("pg-cloudflare/package.json")),
+      "dist/index.js"
+    ),
+  },
+];
+
 /** Loopback port nobody listens on: a connection is refused at once. */
 export const CLOSED_PORT = 1;
 

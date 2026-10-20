@@ -26,7 +26,7 @@ Gates e provas por fase:
 - Observabilidade (Fase 12, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)): [Alertas operacionais](./alertas.md), com o significado de cada sinal, como confirmar nos Workers Logs ou no banco e o que fazer.
 - Ambientes (Fase 14, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): [Staging fixo](./staging.md), com os recursos e segredos que o responsável cria, o cliente OAuth do Google em modo Testing, a verificação de isolamento e os itens do release-checklist provados no staging.
 
-Testes (Fase 13): [Harness de teste dos Workers](./workers-test-harness.md), com o projeto `admin-workerd`, os alias do `pg`, o Hyperdrive em porta fechada, o guarda de host e o que o harness não prova.
+Testes (Fase 13): [Harness de teste dos Workers](./workers-test-harness.md), com o projeto `admin-workerd`, os alias do `pg`, o Hyperdrive em porta fechada, o guarda de host, a suíte do Admin completo contra PostgreSQL (gate `admin-worker`, Access simulado, production guard) e o que o harness não prova.
 
 Testes (Fase 13): a [matriz de concorrência](../architecture/concurrency-matrix.md) lista cada corrida do sistema, a proteção, o gate que a prova e o que falta; a suíte `gates:concurrency` roda só essas corridas, repetidas (`POLARIS_CONCURRENCY_REPEAT`), num PostgreSQL 18 descartável.
 

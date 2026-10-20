@@ -1,6 +1,6 @@
 # Harness de teste dos Workers (workerd)
 
-Plano: PR 121 (T-121a). Os testes `*.workerd.test.ts` rodam o Worker de verdade dentro do `workerd`, pelo `@cloudflare/vitest-plugin` (Vitest 5), e chamam `exports.default.fetch(...)` de `cloudflare:workers`.
+Plano: PR 121 (T-121a) e PR 127 (T-127a). Os testes `*.workerd.test.ts` rodam o Worker de verdade dentro do `workerd`, pelo `@cloudflare/vitest-plugin` (Vitest 5), e chamam `exports.default.fetch(...)` de `cloudflare:workers`.
 
 ## Como roda
 
@@ -10,7 +10,7 @@ Plano: PR 121 (T-121a). Os testes `*.workerd.test.ts` rodam o Worker de verdade 
 
 ## O que o harness faz por conta própria
 
-- **`resolve.alias` do `pg` na config raiz.** Dentro do `workerd`, `pg-protocol` resolve para um arquivo ESM de um pacote CommonJS e `pg-cloudflare` para um stub vazio (a condição `workerd` não é aplicada). Os dois alias só funcionam na config raiz, não dentro de um projeto. Todo Worker novo que use `pg` herda isso.
+- **`resolve.alias` do `pg` na config raiz.** Dentro do `workerd`, `pg-protocol` resolve para um arquivo ESM de um pacote CommonJS e `pg-cloudflare` para um stub vazio (a condição `workerd` não é aplicada). Os dois alias (`pgWorkerdAliases`, em `scripts/workerd-harness.mjs`) só funcionam numa config raiz (`vitest.config.ts` ou `vitest.admin-worker.config.ts`), não dentro de um projeto. Todo Worker novo que use `pg` herda isso.
 - **Hyperdrive em porta fechada.** O Admin aponta `ADMIN_HYPERDRIVE` para `127.0.0.1:1` (`miniflare.hyperdrives`), no lugar da `localConnectionString` do app, porque um PostgreSQL local na porta padrão poderia responder. Uma consulta falha fechada e o teste observa essa falha.
 - **Guarda de host** (`scripts/workerd-harness.mjs`): `assertAllowedHyperdriveHost` segue a regra dos gates (`packages/db/scripts/gate-hosts.ts`). Fora do CI só passa a porta fechada do loopback; com `CI=true` também passa o loopback em qualquer porta e o serviço do job `database`. Recusa qualquer outro host, o protocolo que não é PostgreSQL e `host`, `hostaddr` ou `service` na query. Todo projeto monta o seu `miniflare.hyperdrives` por `harnessHyperdrives(...)`; os que precisam de PostgreSQL (T-121b, T-127a) devem fazer o mesmo.
 - **Sem `.dev.vars` e sem `.env`.** Um teste do Admin falha se o `env` do Worker ganhar qualquer binding fora da lista, e outro falha se o Hyperdrive deixar de ser o de porta fechada.
@@ -19,7 +19,23 @@ Plano: PR 121 (T-121a). Os testes `*.workerd.test.ts` rodam o Worker de verdade 
 
 ## Projetos com PostgreSQL
 
-Projetos que precisam de banco (Web e Catalog na T-121b, o Admin completo na T-127a) terão a sua própria config, fora do `bun run test`, e rodam no job `database` com `--project`.
+Projetos que precisam de banco (Web e Catalog na T-121b, o Admin completo na T-127a) têm a sua própria config na raiz, fora do `bun run test`, e rodam no job `database` por um gate. O `*.workerd-db.test.ts` não entra no projeto `node` nem no `admin-workerd`, e `scripts/workerd-harness.test.mjs` falha se um deles não tiver a config e o gate.
+
+### Admin completo contra PostgreSQL (T-127a, gate `admin-worker`)
+
+- **O que roda.** `apps/admin/src/worker.workerd-db.test.ts` chama o `fetch` real do Worker no `workerd`, com o Access simulado, e o Hyperdrive do Admin e do billing apontando para o PostgreSQL do job. A cadeia inteira corre junta: token, principal no banco, capacidade, rota, função do banco e auditoria.
+- **Como roda.** `bun run --filter @polaris/db gates:ci admin-worker` (ou a suíte `ci`/`gate9`), com `CI=true` e o PostgreSQL 18 local migrado do zero. O gate `packages/db/scripts/verify-admin-worker-gate.ts` cria os logins temporários (Admin, billing e tenant), dois principais (dono e desativado), quatro organizações e dois clientes, entrega isso à config `vitest.admin-worker.config.ts` por variáveis de ambiente (`POLARIS_ADMIN_WORKER_*`, que o gate lê e nunca imprime), roda o Vitest e depois lê o banco como dono. Sem essas variáveis o projeto para; ele nunca adivinha um banco. Local só passa com `CI=true`: o guarda de host do harness recusa o resto.
+- **O que prova.**
+  - *Sem Access:* sem token, token que não é JWT, expirado, assinado por chave que o time não publicou, de outra audiência, de outro time, login de quem não é operador e de operador desativado: 401 ou 403, na leitura e na escrita, e o banco não ganha linha (organização B sem caso e sem auditoria; só o dono aparece na auditoria). Um cabeçalho que só afirma a identidade não vale.
+  - *Dono:* `whoami`, busca e diagnóstico de organização.
+  - *Acesso JIT:* abrir caso, 403 antes da concessão, concessão de 15 min, lista mascarada, revelação de um campo, cliente de outra organização que não aparece nem se revela, revogação e 403 de novo; a auditoria tem os cinco eventos e nenhuma concessão fica aberta.
+  - *Cobrança e reembolso:* o Admin **não tem comando de reembolso** (ADR 0073: nenhum comando que dependa de provedor existe antes do adaptador). O fluxo de cobrança é a concessão de entitlement, gravada antes e depois, uma por `commandId` (a repetição é a mesma) e atribuída ao operador; o teste prova que reembolso não tem rota (404) e que nenhum evento de reembolso é gravado. Quando o comando de reembolso existir, ele entra aqui.
+  - *Suspensão:* suspender uma vez, o diagnóstico mostra, a organização deixa de abrir para os seus usuários (lido pelo papel de tenant), a época avança uma vez, reativar não a devolve, as outras organizações ficam como estavam e um operador desativado não consegue.
+- **Mock do Access confinado.** `apps/admin/src/access-mock-confinement.test.ts` (projeto `node`, roda em todo `bun run test`) falha se qualquer arquivo fora das configs de teste, dos testes e do gate nomear a chave de teste, o time de teste, o assinador ou o `outboundService`; confere por nome os três `wrangler.jsonc` e os workflows; e percorre os imports de `worker.ts` para provar que o Worker implantado não alcança teste, `vitest` nem `cloudflare:workers`. Há caso de controle: o teste prova que pegaria um marcador num `wrangler.jsonc`, num workflow ou no Worker.
+- **Production guard.** `scripts/admin-production-guard.test.mjs` lê o `wrangler.jsonc` do Admin e falha se o topo, `env.staging` ou `env.production` não tiverem `workers_dev` e `preview_urls` em `false`, ou se algum tiver rota, domínio personalizado ou zona; confere o nome e as variáveis do Access na produção e que o topo e o staging não as definem (um Worker sem elas responde 503, nunca sem verificação). A metade do Worker (recusa sem JWT válido) é a do teste de cadeia.
+- **O que não prova.** O Access real na frente do hostname real, e a recusa de `workers.dev` pela Cloudflare: isso é o item de go-live do Admin ([README, checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon)), a prova no ambiente de produção. Também não prova Hyperdrive real nem o pooler (o binding local é uma conexão direta).
+- **Custo.** Estimado em cerca de +1 min no job `database` (partida do `workerd`, 21 testes e o banco do gate); o valor medido do primeiro CI fica no PR. Não há job novo nem mudança de workflow: o gate entra na suíte `ci`.
+- **Se falhar.** O gate imprime só as linhas que dizem o que falhou (a execução completa do Vitest não cabe nas últimas linhas que o executor mostra). Para reproduzir no seu PostgreSQL local de gates: `CI=true`, as variáveis `POLARIS_GATE_*` e `bun run --filter @polaris/db gates:ci admin-worker`.
 
 ## O que o harness não prova
 

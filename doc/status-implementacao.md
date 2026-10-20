@@ -1907,6 +1907,16 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Semente | Concluído | Semente nova a cada execução, impressa no início e repetida no JSON final do executor, também quando o gate passa; na falha, a sequência mínima em comandos concretos, o motivo e o comando de reprodução (`POLARIS_PROPERTY_SEED` e `POLARIS_PROPERTY_PATH`) ficam nas últimas linhas. |
 | Prova por quebra | Concluída (20/10/2026) | Três quebras locais e descartadas, todas pegas: devolução acima do disponível, média antiga na reposição de custo desconhecido em saldo zero (pega só pelo exemplo fixo) e média truncada. Na revisão do QA, três quebras que o sorteio deixava passar (contagem que aceita versão velha, teto de quantidade `>=`, limite de custo deslocado) passaram a ser pegas, com a versão velha na contagem e os exemplos fixos de borda. Nenhum defeito do sistema foi achado; a revisão achou um do modelo (ordem das linhas da devolução), corrigido e fixado como exemplo. |
 
+### Fase 13 — Worker do Admin completo contra PostgreSQL, com Access simulado (T-127a, POL-62; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Suíte | Escrita; o gate depende do CI | `apps/admin/src/worker.workerd-db.test.ts`, pelo `fetch` real do Worker no `workerd` (harness da T-121a) com o PostgreSQL do job: sem Access (sem token, malformado, expirado, chave estranha, audiência, time, desconhecido, desativado), dono, acesso JIT, cobrança e suspensão. O gate `admin-worker` (suítes `ci` e `gate9`, só PostgreSQL local) cria os logins e as fixtures, roda a suíte e confere o banco como dono. A primeira execução com banco é a do CI; a máquina da tarefa (área app) não sobe PostgreSQL. |
+| Reembolso | Não existe no Admin | O ADR 0073 deixa o reembolso para depois do adaptador do provedor; a suíte prova que não há rota nem evento de reembolso e cobre o comando de cobrança que existe (conceder e encerrar entitlement, gravado antes e depois). |
+| Access simulado só no teste | Concluído | `access-mock-confinement.test.ts` (roda em `bun run test`): nenhum arquivo fora das configs de teste, dos testes e do gate nomeia a chave, o time de teste ou o assinador; os `wrangler.jsonc` e os workflows são conferidos por nome; o grafo de imports de `worker.ts` não alcança teste. Com caso de controle. |
+| Production guard | Concluído (parte estática) | `scripts/admin-production-guard.test.mjs`: `workers_dev` e `preview_urls` desligados no topo, no staging e na produção do Admin, nenhuma rota nem domínio, variáveis do Access na produção. A prova com o Access real é o item de go-live do Admin. |
+| Custo | A medir no CI | Estimado em +1 min no job `database`; sem job novo nem mudança de workflow. |
+
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
 Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md); o número pode mudar). O procedimento está no [runbook do staging](../docs/runbooks/staging.md).

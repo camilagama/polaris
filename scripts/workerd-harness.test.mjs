@@ -12,6 +12,7 @@ import {
 const REFUSED = /Workers harness/;
 const ci = { CI: "true" };
 const notCi = {};
+const DATABASE_GATE_IN_CI = /ci: \[[^\]]*"admin-worker"/;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("workerd harness host guard", () => {
@@ -106,7 +107,7 @@ describe("workerd harness host guard", () => {
   });
 });
 
-/** Every `*.workerd.test.ts` under apps/<app>/src. */
+/** Every `*.workerd.test.ts` and `*.workerd-db.test.ts` under apps/<app>/src. */
 function workerdTests() {
   const found = [];
   for (const app of readdirSync(join(root, "apps"), { withFileTypes: true })) {
@@ -121,31 +122,63 @@ function workerdTests() {
       // an app without src
     }
     for (const entry of entries) {
-      if (String(entry).endsWith(".workerd.test.ts")) {
-        found.push({ app: app.name, file: String(entry) });
+      const file = String(entry);
+      if (file.endsWith(".workerd.test.ts")) {
+        found.push({ app: app.name, database: false, file });
+      } else if (file.endsWith(".workerd-db.test.ts")) {
+        found.push({ app: app.name, database: true, file });
       }
     }
   }
   return found;
 }
 
-// The Node project excludes `*.workerd.test.ts` and a project that matches no
+// The Node project excludes the Workers tests and a project that matches no
 // file passes silently, so a mistyped include would leave the test running nowhere.
+// The ones without a database run in the root config (`bun run test`); the ones with a
+// database run through their gate, from their own root config (the `database` job).
 describe("workerd harness discovery", () => {
   const tests = workerdTests();
   const rootConfig = readFileSync(join(root, "vitest.config.ts"), "utf8");
+  const databaseConfig = readFileSync(
+    join(root, "vitest.admin-worker.config.ts"),
+    "utf8"
+  );
+  const gates = readFileSync(
+    join(root, "packages/db/scripts/run-gates.ts"),
+    "utf8"
+  );
 
-  it("finds the Admin test", () => {
+  it("finds the Admin tests", () => {
     expect(tests.map(({ app }) => app)).toContain("admin");
+    expect(tests.some(({ database }) => database)).toBe(true);
   });
 
   it.each(tests)(
-    "runs $app/src/$file in a workers project of the root config",
-    ({ app }) => {
+    "runs $app/src/$file in a workers project",
+    ({ app, database }) => {
+      if (database) {
+        const configPath = `apps/${app}/vitest.workers-db.config.ts`;
+        expect(databaseConfig).toContain(`"${configPath}"`);
+        expect(rootConfig).not.toContain(configPath);
+        expect(readFileSync(join(root, configPath), "utf8")).toContain(
+          '"src/**/*.workerd-db.test.ts"'
+        );
+        // and a gate runs that config, in the suite of the `database` job
+        expect(gates).toContain("verify-admin-worker-gate.ts");
+        expect(gates).toMatch(DATABASE_GATE_IN_CI);
+        return;
+      }
       const configPath = `apps/${app}/vitest.workers.config.ts`;
       expect(rootConfig).toContain(`"${configPath}"`);
       const projectConfig = readFileSync(join(root, configPath), "utf8");
       expect(projectConfig).toContain('"src/**/*.workerd.test.ts"');
     }
   );
+
+  it("keeps the database project out of `bun run test` and the node project away from both", () => {
+    expect(rootConfig).not.toContain("workers-db");
+    expect(rootConfig).toContain('"**/*.workerd.test.ts"');
+    expect(rootConfig).toContain('"**/*.workerd-db.test.ts"');
+  });
 });
