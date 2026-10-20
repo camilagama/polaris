@@ -9,7 +9,7 @@
   "overrides": [
     {
       "includes": ["packages/domain/**"],
-      "plugins": ["./scripts/biome-plugins/no-fast-check-default-assert.grit"],
+      "plugins": ["./scripts/biome-plugins/no-fast-check-direct-run.grit"],
       "linter": {
         "rules": {
           "style": {

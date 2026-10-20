@@ -1,4 +1,4 @@
-import { constantFrom, integer, property } from "fast-check";
+import { integer, property } from "fast-check";
 import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
@@ -243,13 +243,13 @@ describe("restockMovingAverageCost", () => {
     ).toBeNull();
   });
 
-  it("accepts quantities from 0 and 1 up to 2147483647 and refuses past it, at every edge (property)", () => {
-    // literals, not MAX_INVENTORY_QUANTITY: moving the limit in the code must turn this red
+  it("accepts quantities from 0 and 1 up to 2147483647 and refuses past it, at every edge", () => {
+    // every pair of edges, not a draw: moving the limit in the code must turn this red on every run
+    // (literals, not MAX_INVENTORY_QUANTITY)
     const max = 2_147_483_647;
-    const current = constantFrom(-1, 0, 1, 2, max - 1, max, max + 1);
-    const received = constantFrom(-1, 0, 1, 2, max - 1, max, max + 1);
-    assertProperty(
-      property(current, received, (currentQuantity, receivedQuantity) => {
+    const edges = [-1, 0, 1, 2, max - 1, max, max + 1];
+    for (const currentQuantity of edges) {
+      for (const receivedQuantity of edges) {
         const run = () =>
           calculateMovingAverageCost({
             currentAverageCost: currentQuantity === 0 ? null : "5.000000",
@@ -257,19 +257,20 @@ describe("restockMovingAverageCost", () => {
             receivedQuantity,
             unitCost: "5.000000",
           });
+        const label = `current ${currentQuantity}, received ${receivedQuantity}`;
         if (
           currentQuantity < 0 ||
           currentQuantity > max ||
           receivedQuantity < 1 ||
           receivedQuantity > max
         ) {
-          expect(run).toThrow(InvalidStockMovementError);
+          expect(run, label).toThrow(InvalidStockMovementError);
         } else if (currentQuantity + receivedQuantity > max) {
-          expect(run).toThrow(InventoryQuantityLimitError);
+          expect(run, label).toThrow(InventoryQuantityLimitError);
         } else {
-          expect(run()).toBe("5.000000");
+          expect(run(), label).toBe("5.000000");
         }
-      })
-    );
+      }
+    }
   });
 });

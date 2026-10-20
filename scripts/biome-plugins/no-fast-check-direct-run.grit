@@ -1,0 +1,11 @@
+`$object.$method($args)` where {
+  $object <: or {
+    `fc`,
+    `fastCheck`
+  },
+  $method <: or {
+    `assert`,
+    `check`
+  },
+  register_diagnostic(span=$object, message="Run a property with assertProperty from testing/property.ts, not fast-check's assert or check: runs, seed and the replay line are decided there.", severity="error")
+}

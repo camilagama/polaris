@@ -391,37 +391,37 @@ describe("outbox event (EVT-2 to EVT-3)", () => {
   });
 
   it("EVT-2: the organization is 1 to 64 characters and the key and the correlation 1 to 128, at every edge", () => {
-    // literals, so moving a limit in the code turns this red
+    // every type, field and edge length, not a draw; literals, so moving a limit in the code turns this red on every run
     const limits = {
       correlationId: 128,
       idempotencyKey: 128,
       organizationId: 64,
-    };
-    const fields = constantFrom(
-      "correlationId",
-      "idempotencyKey",
-      "organizationId"
-    );
-    const lengths = constantFrom(0, 1, 2, 63, 64, 65, 127, 128, 129, 130);
-    assertProperty(
-      property(modelType, fields, lengths, (type, field, length) => {
-        const input = {
-          correlationId: "trace-1",
-          event: Object.fromEntries(
-            Object.keys(modelOf(type).keys).map((key) => [key, "a"])
-          ),
-          idempotencyKey: `${type}:a`,
-          organizationId: "org1",
-          type,
-          [field]: "a".repeat(length),
-        };
-        if (length >= 1 && length <= limits[field]) {
-          expect(outboxEvent(input).type).toBe(type);
-        } else {
-          expect(() => outboxEvent(input)).toThrow(InvalidOutboxEventError);
+    } as const;
+    const lengths = [0, 1, 2, 63, 64, 65, 127, 128, 129, 130];
+    for (const type of MODEL_TYPES) {
+      for (const field of Object.keys(limits) as (keyof typeof limits)[]) {
+        for (const length of lengths) {
+          const input = {
+            correlationId: "trace-1",
+            event: Object.fromEntries(
+              Object.keys(modelOf(type).keys).map((key) => [key, "a"])
+            ),
+            idempotencyKey: `${type}:a`,
+            organizationId: "org1",
+            type,
+            [field]: "a".repeat(length),
+          };
+          const label = `${type}, ${field}, length ${length}`;
+          if (length >= 1 && length <= limits[field]) {
+            expect(outboxEvent(input).type, label).toBe(type);
+          } else {
+            expect(() => outboxEvent(input), label).toThrow(
+              InvalidOutboxEventError
+            );
+          }
         }
-      })
-    );
+      }
+    }
   });
 
   it("EVT-3: the idempotency key of a declared type and an opaque ID is itself a valid key, the same for the same thing and different for another", () => {

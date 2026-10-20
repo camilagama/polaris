@@ -15,7 +15,8 @@ import { expect } from "vitest";
  *   other cases and a rerun of the same commit repeats them) or, outside CI, is a fixed one.
  *
  * The seed is printed on every run (once per test file), not only on a failure, so a case that fails
- * in CI can be replayed.
+ * in CI can be replayed. In a pull request `GITHUB_SHA` is the SHA of the merge commit GitHub builds
+ * from the head and the base, so the seed also changes when the base moves; a rerun of the same run repeats it.
  */
 export const DEFAULT_PROPERTY_RUNS = 300;
 export const DEFAULT_PROPERTY_SEED = 20_261_020;
@@ -28,7 +29,7 @@ const COMMIT_SHA = /^[0-9a-f]{7,64}$/i;
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
-type SeedSource = "environment" | "commit" | "fixed";
+type SeedSource = "environment" | "commit" | "fixed" | "random";
 
 export interface PropertySettings {
   numRuns: number;
@@ -73,7 +74,7 @@ function seedFrom(environment: Environment): {
     if (text === "random") {
       return {
         seed: Math.floor(Math.random() * SEED_LIMIT),
-        source: "environment",
+        source: "random",
       };
     }
     const value = Number(text);
@@ -131,10 +132,13 @@ function announce(settings: PropertySettings, testPath: string): void {
     return;
   }
   announced.add(testPath);
+  // with `random` each property draws its own seed (a failure prints the one it used); a property with a floor runs more than `numRuns`
+  const line =
+    settings.source === "random"
+      ? `Property tests: random seeds, ${settings.numRuns} runs per property (a failure prints its own Replay line).`
+      : `Property tests: seed ${settings.seed} (${settings.source}), ${settings.numRuns} runs per property (more where a property sets a floor). ${propertyReplayHint(settings, testPath)}`;
   // biome-ignore lint/suspicious/noConsole: The seed has to reach the CI log of a run that passes.
-  console.info(
-    `Property tests: seed ${settings.seed} (${settings.source}), at least ${settings.numRuns} runs. ${propertyReplayHint(settings, testPath)}`
-  );
+  console.info(line);
 }
 
 /**
@@ -145,13 +149,11 @@ export function assertProperty<Ts>(
   property: IProperty<Ts>,
   options: AssertPropertyOptions = {}
 ): void {
-  const settings = propertySettings(
-    options.environment ?? process.env,
-    options.minRuns
-  );
+  const environment = options.environment ?? process.env;
+  const settings = propertySettings(environment, options.minRuns);
   const testPath = currentTestPath();
   if (options.environment === undefined) {
-    announce(settings, testPath);
+    announce(propertySettings(environment), testPath);
   }
   try {
     assert(property, { numRuns: settings.numRuns, seed: settings.seed });

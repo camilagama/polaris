@@ -1,4 +1,0 @@
-`$object.assert($args)` where {
-  $object <: `fc`,
-  register_diagnostic(span=$object, message="Run a property with assertProperty from testing/property.ts, not fc.assert: runs, seed and the replay line are decided there.", severity="error")
-}
