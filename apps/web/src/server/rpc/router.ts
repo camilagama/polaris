@@ -302,6 +302,10 @@ import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
 import {
+  createRenewalStatusReader,
+  type RenewalStatusReader,
+} from "../billing/renewal-status";
+import {
   type ClosureRepository,
   createOrganizationRpcHandlers,
 } from "./organization-handlers";
@@ -339,6 +343,8 @@ interface RpcRouterDependencies {
   archiveProduct: typeof archiveProduct;
   billing: BillingRpcOverrides;
   closureRepository: Partial<ClosureRepository>;
+  /** The renewal of closed organizations (ADR 0074, L4); tests give a fake one. */
+  readRenewalStatuses: RenewalStatusReader;
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
   configureProductVariants: typeof configureProductVariants;
@@ -1365,6 +1371,8 @@ export function createRpcRouter(
     },
     defaultListUserOrganizations: listUserOrganizations,
     listUserOrganizations: overrides.listUserOrganizations,
+    readRenewalStatuses:
+      overrides.readRenewalStatuses ?? createRenewalStatusReader(),
     toRpcError,
     withAuthenticatedRequestContext: authenticatedRequest,
     withTenantRequestContext: tenantRequest,

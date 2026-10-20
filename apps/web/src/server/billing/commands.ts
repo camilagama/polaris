@@ -14,6 +14,7 @@ import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
+import { sha256Hex } from "../../lib/canonical-json";
 
 /**
  * The billing commands (ADR 0101): start the checkout, and the operator's
@@ -31,17 +32,27 @@ export type BillingCommandErrorCode =
   | "already_subscribed"
   | "checkout_pending_confirmation"
   | "cycle_not_offered"
+  | "renewal_cancelled_until"
   | "trial_already_used"
   | "trial_in_progress";
 
-/** A refusal the person can act on; the code goes to the client as the reason. */
+/**
+ * A refusal the person can act on; the code goes to the client as the reason.
+ * `until` is the end of the paid access, for `renewal_cancelled_until`: a new
+ * subscription starts only after it (the client shows the date).
+ */
 export class BillingCommandError extends Error {
   readonly code: BillingCommandErrorCode;
+  readonly until: Date | null;
 
-  constructor(code: BillingCommandErrorCode, options?: ErrorOptions) {
+  constructor(
+    code: BillingCommandErrorCode,
+    options?: ErrorOptions & { until?: Date }
+  ) {
     super(code, options);
     this.name = "BillingCommandError";
     this.code = code;
+    this.until = options?.until ?? null;
   }
 }
 
@@ -205,6 +216,13 @@ export async function startCardCheckout(
   };
   const record = await store.readRecord(input.organizationId);
   if (record && grantsPro(record.state)) {
+    if (record.cancelAtPeriodEnd && record.accessEndsAt) {
+      // the renewal was cancelled (a closure, even one undone, or the operator): the subscription is not
+      // created again (B8), and a new one waits for the end of the access already paid for (ADR 0074)
+      throw new BillingCommandError("renewal_cancelled_until", {
+        until: record.accessEndsAt,
+      });
+    }
     // a trial running, a paid period or grace: nothing to start
     throw new BillingCommandError("already_subscribed");
   }
@@ -382,10 +400,26 @@ export async function refundCurrentPeriod(
 }
 
 /**
+ * The ID of the cancellation fact: one per request and per subscription. The
+ * same request repeated for the same subscription is a duplicate; repeated
+ * after the organization subscribed again (a new reference), it is a fact of
+ * its own and applies, so the record says what the provider did. The reference
+ * goes in as a digest: the ID has a bounded length, and the reference is kept in
+ * its own column.
+ */
+export async function cancelRenewalEventId(
+  requestId: string,
+  providerRef: string
+): Promise<string> {
+  const digest = await sha256Hex(providerRef);
+  return `command:cancel_renewal:${requestId}:${digest.slice(0, 32)}`;
+}
+
+/**
  * Cancels the renewal at the provider; access already paid for runs to its end.
  * The cancellation is written through the inbox at once
- * (`command:cancel_renewal:<requestId>`), so the record does not wait for the
- * provider's webhook; the webhook that follows is a duplicate by value.
+ * (`cancelRenewalEventId`), so the record does not wait for the provider's
+ * webhook; the webhook that follows is a duplicate by value.
  */
 export async function cancelRenewal(
   dependencies: OperatorCommandDependencies,
@@ -409,7 +443,10 @@ export async function cancelRenewal(
       fact: { occurredAt: now, type: "subscription_cancelled" },
       organizationId: input.organizationId,
       provider: port.provider,
-      providerEventId: `command:cancel_renewal:${input.requestId}`,
+      providerEventId: await cancelRenewalEventId(
+        input.requestId,
+        link.providerRef
+      ),
       providerRef: link.providerRef,
     });
     await store.processEvent(stored.id, now);

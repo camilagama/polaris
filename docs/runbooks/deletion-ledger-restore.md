@@ -105,6 +105,8 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
 **Antes, as travas legais.** As travas legais (`organization_legal_holds`) também não voltam com o backup: uma trava posta depois do instante do backup some no ambiente restaurado, e o purge reaplicado rodaria sob ela. Junto da leitura do passo 1, leia no ambiente **que será substituído** as travas vigentes (`SELECT organization_id, support_case_id, placed_by, placed_at, review_at FROM public.organization_legal_holds WHERE released_at IS NULL`; a mesma lista sai de `GET /legal-holds` no Admin, com as vencidas marcadas como pendentes de revisão) e, no restaurado, antes de reaplicar qualquer purge, recoloque cada trava que não estiver lá. Pôr a trava exige um **caso de suporte aberto** da organização, e o caso original (o `support_case_id` lido acima) pode não existir no banco restaurado: se ele não estiver lá, ou estiver fechado, **abra um caso novo** pelo Admin (`POST /support-cases`, tipo `support`, motivo "restauração", a organização da trava) e **vincule a trava a ele**: `POST /support-cases/{caso novo}/legal-hold` com `{ organizationId, reviewAt }`. A data de revisão é obrigatória, no futuro e a no máximo 366 dias: use a lida acima se ainda valer e, se já tiver passado (a trava estava pendente de revisão), uma data nova, decidida pelo responsável. Na conferência, nenhuma organização com trava vigente na origem pode estar em `purge_pending` sem trava no restaurado. Registre o resultado sem IDs.
 
+**Antes, a renovação.** O SQL abaixo agenda o purge sem passar pela rota do Admin, que recusa (`renewal_alive`) enquanto a renovação da assinatura estiver viva num provedor tratado ([ADR 0074](../adr/0074-encerramento-de-organizacao.md)). Confira à mão, no restaurado, cada organização a reaplicar: `SELECT state, cancel_at_period_end, provider FROM public.organization_billing WHERE organization_id = '<ID da organização>'`. Com `provider = 'asaas'`, `state` em `trialing`, `active` ou `grace` e `cancel_at_period_end` falso, não reaplique: o purge original só rodou depois do cancelamento, então o fato voltou atrás com o backup; reconcilie a organização (`reconcileOrganization`, [billing-providers](billing-providers.md)) até o registro dizer cancelada e só então siga.
+
 Para cada tombstone `organization` / `purge` cuja organização reapareceu no ambiente restaurado (com qualquer status diferente de `purged`), o dono do banco, à mão e antes de reabrir o ambiente, faz as duas instruções numa única transação, trocando os `<…>` pelos valores do tombstone:
 
 ```sql
@@ -123,9 +125,20 @@ ON CONFLICT (organization_id) DO UPDATE
 COMMIT;
 ```
 
-- `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger` (todo purge nasce de um caso de privacidade de exclusão, ADR 0081).
+- `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou, o caso e o `trigger`; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger`.
+- **Purge automático** ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md)): o tombstone vem com `privacy_case_id` nulo, porque ninguém agendou. Se a linha não estava no backup, crie-a como o período a criou, sem operador nem caso (a tabela recusa uma linha do período com qualquer um dos três preenchido), no lugar do `INSERT` acima:
+
+  ```sql
+  INSERT INTO public.organization_purges (organization_id, trigger, not_before, storage_touched_at)
+  VALUES ('<ID da organização>', 'closure_period', now(), now())
+  ON CONFLICT (organization_id) DO UPDATE
+     SET not_before = now(), attempts = 0, locked_until = NULL,
+         last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = now();
+  ```
+
+  A conclusão reaplicada é auditada de novo como do sistema. O freio `CLOSURE_AUTO_PURGE_ENABLED` não interfere: ele só liga o agendamento, não a execução de um purge já agendado.
 - `storage_touched_at` vai preenchido de propósito: o tombstone só existe porque o purge original já apagou o R2, então o purge reaplicado não pode ser cancelado (a função de cancelamento recusa com `purge_storage_touched`) e deixar a organização `closed` com mídia e exportações que apontam para objetos que não existem mais.
-- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois. Se o caso de privacidade foi aberto depois do instante do backup, ele não existe no ambiente restaurado e o `INSERT` falha pela chave estrangeira: pare, não reabra o ambiente e acione o responsável (recriar o caso é decisão dele, com o registro do atendimento original).
+- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e num purge do Admin (`trigger = 'admin'`, o padrão) os dois e `scheduled_by` não podem ser nulos: use o ID do caso de privacidade nos dois. Se o caso de privacidade foi aberto depois do instante do backup, ele não existe no ambiente restaurado e o `INSERT` falha pela chave estrangeira: pare, não reabra o ambiente e acione o responsável (recriar o caso é decisão dele, com o registro do atendimento original).
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
 - O purge reaplicado também refaz a pseudonimização da cobrança (o `fact` de `billing_events`, só com as chaves de `PURGE_BILLING_FACT_KEYS`; as referências do provedor continuam) e a troca do texto livre dos casos de suporte e de privacidade, dos cancelamentos e dos motivos das concessões. Isso acontece no job de privacidade, na mesma transação das linhas; não há passo SQL à parte para isso.
 - A trava dos 90 dias não impede a reaplicação. O tombstone `organization`/`purge` já está no ledger (o passo 3 o recoloca), e o purge confere o prazo por ele, não pela data de encerramento do backup, que pode não ter voltado.

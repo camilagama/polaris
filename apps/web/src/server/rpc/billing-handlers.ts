@@ -59,7 +59,10 @@ function billingRpcError(
       error.code === "cycle_not_offered" ? "BAD_REQUEST" : "CONFLICT",
       {
         cause: error,
-        data: { reason: error.code },
+        data: {
+          reason: error.code,
+          ...(error.until ? { until: error.until.toISOString() } : {}),
+        },
         ...(Object.hasOwn(refusalMessages, error.code)
           ? { message: refusalMessages[error.code] }
           : {}),

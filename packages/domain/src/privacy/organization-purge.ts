@@ -1,9 +1,10 @@
 /**
- * The full purge of a closed organization (plan PR107, ADR 0081). The purge is started only by an
- * explicit administrative command on a `closed` organization; nothing schedules it on its own while
- * the retention of a closed organization is only proposed (ADR 0079). The executor then removes the
- * storage first (exports and image masters and derivatives), the rows second, in one transaction that
- * writes the deletion ledger tombstone before deleting, and sweeps the storage prefixes once more.
+ * The full purge of a closed organization (plan PR107, ADR 0081 and 0102). The privacy job schedules it on
+ * its own seven local days before D (the closure period of the approved class `closed_organization`), behind
+ * the switch `CLOSURE_AUTO_PURGE_ENABLED`; an explicit administrative command under a privacy case still
+ * schedules it for the exceptions. The executor then removes the storage first (exports and image masters
+ * and derivatives), the rows second, in one transaction that writes the deletion ledger tombstone before
+ * deleting, and sweeps the storage prefixes once more.
  */
 import type { PrivacyDataCategory } from "../admin/privacy-case";
 import {
@@ -62,17 +63,18 @@ export function organizationMediaPrefix(organizationId: string): string {
  * The closure period (decision of 18/10/2026, changed from 30 to 90 days on 19/10/2026, ADR 0081): the purge
  * removes the tenant's operational data only once the organization has been closed for this long, and refuses
  * before it (`closure_period_not_elapsed`), whatever recovery window the closure had. Polaris is the processor
- * of that data and the fiscal duty to keep it is the customer's, who has the export. The intent is that the
- * owner only reads and exports during the period; the read-only mode after the recovery window is a requirement
- * of ADR 0081, not built yet. The migration holds the same period (`interval '90 days'` in
- * `admin_schedule_organization_purge` and `organization_purge_blocker`).
+ * of that data and the fiscal duty to keep it is the customer's, who has the export. The owner only reads and
+ * exports during the period (the read-only mode of ADR 0081). The migration holds the same period (`interval '90
+ * days'` in `admin_schedule_organization_purge` and `organization_purge_blocker`; the calendar days of D in
+ * `closure_deadlines`, which `schedule_closed_organization_purges` reads).
  */
 export const ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS = 90;
 
 /**
- * The time between the end of the recovery window and the earliest purge, from the retention
- * registry. While `closed_organization` is only proposed it adds nothing: the window (approved, ADR
- * 0074) is the only wait, and the purge needs the explicit command. No period is invented here.
+ * The time the Admin's schedule adds after the end of the closure period, from the retention registry:
+ * only a class approved with a plain duration would add one. `closed_organization` is approved in calendar
+ * days of the closure (ADR 0102), which is the period itself, not a delay after it, so it adds nothing. No
+ * period is invented here.
  */
 export function purgeDelayAfterWindowMs(
   policies: readonly RetentionPolicy[] = RETENTION_POLICIES
@@ -84,15 +86,21 @@ export function purgeDelayAfterWindowMs(
 }
 
 /**
- * Whether a job may put a closed organization into the purge on its own. Only an approved class with
- * a period allows it; until then (today) the purge starts only by the administrative command, and no
- * job does it.
+ * Whether a job may put a closed organization into the purge on its own (ADR 0102): only while the class
+ * is approved with the closure period in calendar days, the very period the database counts, and with the
+ * job declared. A class put back to proposed, or a period that differs from the database, turns it off.
  */
 export function automaticPurgeSchedulingAllowed(
   policies: readonly RetentionPolicy[] = RETENTION_POLICIES
 ): boolean {
   const policy = retentionPolicyIn(policies, "closed_organization");
-  return policy.status === "aprovada" && policy.period.kind === "duration";
+  return (
+    policy.status === "aprovada" &&
+    policy.period.kind === "closure_calendar_days" &&
+    policy.period.days === ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS &&
+    "job" in policy &&
+    policy.job === "privacy.closure_purge_schedule"
+  );
 }
 
 /**

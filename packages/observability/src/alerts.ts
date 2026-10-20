@@ -238,6 +238,29 @@ export const alertSignals = [
     title: "Falha ao gravar o registro de acesso",
     windowMinutes: 15,
   },
+  {
+    id: "apagamento-automatico",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["closure_auto_purge_volume_high"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Mais de 5 lojas encerradas entraram no apagamento automático em um dia",
+    windowMinutes: 1440,
+  },
+  {
+    id: "loja-encerrada-parada",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["closure_purge_overdue"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Loja encerrada sem apagamento 30 dias depois de D, sem trava legal",
+    windowMinutes: 1440,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];

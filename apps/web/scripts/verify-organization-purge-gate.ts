@@ -57,14 +57,15 @@ import {
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
 import type { MediaBucketBinding } from "../src/server/environment";
+import { verifyAutomaticPurge } from "./organization-purge-automatic-checks";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import { createRequesterReader } from "../src/server/privacy/data-export-reader";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 
 /**
- * The full purge of a closed organization on a real PostgreSQL 18 (plan PR107, ADR 0081), with the
- * real job and an in-memory bucket: only an operator schedules it, only for a closed organization whose
- * recovery window is over; the storage goes before the rows and nothing is left under the
+ * The full purge of a closed organization on a real PostgreSQL 18 (plan PR107, ADR 0081 and 0102), with the
+ * real job and an in-memory bucket: an operator schedules it, only for a closed organization whose
+ * recovery window is over, or the privacy job does from D minus 7 local days (the scenario at the end); the storage goes before the rows and nothing is left under the
  * organization's prefixes; every row of the tenant goes in one transaction that writes the deletion
  * ledger tombstone first; the cases, the audit, the billing and the ledger survive; running it again
  * changes nothing; and an export cannot leave a copy of an organization that is no longer active. The
@@ -503,6 +504,9 @@ async function run() {
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let privacy: ReturnType<typeof createPrivacyMaintenanceClient> | undefined;
+  let concurrentPrivacy:
+    | ReturnType<typeof createPrivacyMaintenanceClient>
+    | undefined;
   let adminDatabase: ReturnType<typeof createDatabase> | undefined;
 
   try {
@@ -553,6 +557,7 @@ async function run() {
     const { db } = runtime;
     privacy = createPrivacyMaintenanceClient(privacyUrl);
     const maintenance = privacy;
+    concurrentPrivacy = createPrivacyMaintenanceClient(privacyUrl);
     adminDatabase = createDatabase(adminRuntimeUrl, { maxConnections: 1 });
     const admin = adminDatabase.pool;
     const gateRuntime = { adminPool: owner.pool, db };
@@ -653,10 +658,12 @@ async function run() {
           "billing_events",
           "deletion_ledger",
           "entitlement_grants",
+          "organization_billing",
           "organization_legal_holds",
           "organization_purge_cancellations",
           "privacy_cases",
           "support_cases",
+          "tenant_access_grants",
         ],
       ]
     );
@@ -680,8 +687,16 @@ async function run() {
         "entitlement_grants.organization_id:SELECT",
         "entitlement_grants.reason:SELECT",
         "entitlement_grants.reason:UPDATE",
+        // the automatic schedule (ADR 0102): whether the renewal of a closed organization is alive
+        "organization_billing.cancel_at_period_end:SELECT",
+        "organization_billing.organization_id:SELECT",
+        "organization_billing.provider:SELECT",
+        "organization_billing.provider_ref:SELECT",
+        "organization_billing.state:SELECT",
         "organization_legal_holds.organization_id:SELECT",
         "organization_legal_holds.released_at:SELECT",
+        // the automatic schedule: whether the Admin cancelled a purge of this closure
+        "organization_purge_cancellations.cancelled_at:SELECT",
         "organization_purge_cancellations.organization_id:SELECT",
         "organization_purge_cancellations.reason:SELECT",
         "organization_purge_cancellations.reason:UPDATE",
@@ -698,6 +713,10 @@ async function run() {
         "support_cases.reason:UPDATE",
         "support_cases.resolution:SELECT",
         "support_cases.resolution:UPDATE",
+        // the automatic schedule: whether a temporary access of the Admin is live
+        "tenant_access_grants.expires_at:SELECT",
+        "tenant_access_grants.organization_id:SELECT",
+        "tenant_access_grants.revoked_at:SELECT",
       ],
       "the purge owner reaches only these columns of what survives"
     );
@@ -741,15 +760,18 @@ async function run() {
                             'admin_cancel_organization_purge', 'mark_organization_purge_storage_touched',
                             'admin_place_organization_legal_hold', 'admin_release_organization_legal_hold',
                             'admin_list_organization_legal_holds',
-                            'organization_purge_blocker')
+                            'organization_purge_blocker', 'schedule_closed_organization_purges',
+                            'closed_organization_purge_wait')
           AND acl.privilege_type = 'EXECUTE' AND r.rolname NOT IN ('polaris_purge_owner', 'polaris_admin_owner')
         ORDER BY 1, 2`
     );
     for (const row of executors.rows) {
-      assert.notEqual(
-        row.fn,
-        "organization_purge_blocker",
-        "the blocker is internal to the purge functions"
+      assert.ok(
+        ![
+          "organization_purge_blocker",
+          "closed_organization_purge_wait",
+        ].includes(row.fn),
+        `${row.fn} is internal to the purge functions`
       );
       assert.equal(
         row.grantee,
@@ -2723,9 +2745,23 @@ async function run() {
       "outside the purge, stock movements stay append-only, the links of a removed product stay frozen and a closed case stays final"
     );
 
+    // the purge of the closure period, scheduled on its own (ADR 0102)
+    tests.push(
+      ...(await verifyAutomaticPurge({
+        admin,
+        bucket,
+        concurrent: concurrentPrivacy,
+        maintenance,
+        owner: owner.pool,
+        principal,
+        runtimes: { admin, tenant: runtime.pool },
+      }))
+    );
+
     console.log(JSON.stringify({ gate: "organization-purge", tests }, null, 2));
   } finally {
     await privacy?.close().catch(() => undefined);
+    await concurrentPrivacy?.close().catch(() => undefined);
     await adminDatabase?.pool.end().catch(() => undefined);
     await runtime?.pool.end().catch(() => undefined);
     for (const [role, group] of logins) {

@@ -146,7 +146,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 18. Gate das funções do purge verde (BLOCK)
 
-- Critério: o gate `purge-functions` (suítes `ci` e `gate10`, `packages/db/scripts/verify-purge-functions-gate.ts`) passa no SHA candidato, com as migrations replayadas do zero. Ele lê `pg_get_functiondef` de `admin_schedule_organization_purge`, `organization_purge_blocker` e `purge_organization_data` e confere: o escopo `whole_organization` contra `ORGANIZATION_PURGE_REQUIRED_SCOPE`, o prazo contra `ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS`, as tabelas apagadas (nomes e ordem) contra `PURGE_DELETE_ORDER` e as chaves do fato de cobrança contra `PURGE_BILLING_FACT_KEYS`. Ele confere também que cada lista é lida (o laço sobre `deleted_tables`, a chamada de `organization_purge_blocker`, as duas conferências do escopo) e que nenhum outro `DELETE` existe. Motivo: duas migrations que recriam a mesma função não dão conflito no git, e a última sobrescreve a anterior sem aviso (a 0079 e a 0080 recriaram `admin_schedule_organization_purge` com corpos diferentes, e o prazo de 90 dias e o escopo sem a auditoria só foram preservados por conferência manual do diff). O gate também é obrigatório em todo PR que recrie uma das três funções.
+- Critério: o gate `purge-functions` (suítes `ci` e `gate10`, `packages/db/scripts/verify-purge-functions-gate.ts`) passa no SHA candidato, com as migrations replayadas do zero. Ele lê `pg_get_functiondef` de `admin_schedule_organization_purge`, `organization_purge_blocker` e `purge_organization_data` (e, desde o [ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md), de `schedule_closed_organization_purges` e `closed_organization_purge_wait`: D lido de `closure_deadlines`, as 48 horas depois de D, os 7 dias de aviso e os estados de uma renovação viva) e confere: o escopo `whole_organization` contra `ORGANIZATION_PURGE_REQUIRED_SCOPE`, o prazo contra `ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS`, as tabelas apagadas (nomes e ordem) contra `PURGE_DELETE_ORDER` e as chaves do fato de cobrança contra `PURGE_BILLING_FACT_KEYS`. Ele confere também que cada lista é lida (o laço sobre `deleted_tables`, a chamada de `organization_purge_blocker`, as duas conferências do escopo) e que nenhum outro `DELETE` existe. Motivo: duas migrations que recriam a mesma função não dão conflito no git, e a última sobrescreve a anterior sem aviso (a 0079 e a 0080 recriaram `admin_schedule_organization_purge` com corpos diferentes, e o prazo de 90 dias e o escopo sem a auditoria só foram preservados por conferência manual do diff). O gate também é obrigatório em todo PR que recrie uma dessas funções.
 - Evidência: `"status": "passed"` do gate `purge-functions` no SHA candidato (no CI, ou na execução do item 4). Não vale rodar o gate num banco que não seja o das migrations do SHA.
 - Severidade BLOCK: **decidida** (os revisores pediram o gate como obrigatório antes de qualquer PR que recrie uma das três funções, e o Arrascaeta decidiu BLOCK em 19/10/2026).
 
@@ -176,6 +176,17 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   7. No staging (ou depois do go-live, com um erro de teste provocado por quem tem a conta), conferir no projeto `polaris` um evento com `environment` e `release` certos, a pilha com os nomes do código-fonte e **nenhum** dado pessoal (e-mail, CPF, telefone, cookie, token, valor de query). Qualquer vazamento impede ligar o DSN em produção até a correção.
 - Severidade WARN: **proposta, pendente de decisão**. O app funciona sem o Sentry, mas um go-live sem ele deixa o navegador sem registro de erro; o registro cita o item e o responsável.
 - Evidência: o ambiente, o SHA, a saída do upload (sem o token), o resultado do passo 5 e o evento de teste (sem dado pessoal).
+
+### 22. Freio do apagamento automático (BLOCK)
+
+- Critério: `CLOSURE_AUTO_PURGE_ENABLED` está `"false"` no ambiente promovido, a menos que a promoção seja o go-live que o liga ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md), decisão N1 do corte da loja encerrada). Ligar em produção exige, antes:
+  1. a prova de fiação em staging com datas retroagidas registrada (agendamento em D menos 7 e execução a partir de D mais 48 horas numa loja sintética);
+  2. os critérios AC-47, AC-49 e AC-61 verdes;
+  3. o lojista avisado antes de os dados saírem: os avisos por marco (D − 30, D − 7, D e o reagendamento depois de uma trava) e o e-mail ligados em produção, com o domínio definitivo (AC-30, AC-50 e AC-51), e o painel da loja encerrada com o pedido de cópia no ar; ou uma exceção registrada pelo responsável;
+  4. a revisão de advogado dos termos;
+  5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
+- Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
+- Severidade BLOCK: proposta, pendente de decisão do responsável.
 
 ## Veredito
 

@@ -1546,7 +1546,10 @@ async function run() {
         "closed_export_organization():polaris_closed_export_reader",
         "closed_organization_status(text):polaris_pr11_runtime",
         "closure_deadlines(timestamp with time zone,text):polaris_privacy_owner",
+        // the automatic schedule of the purge reads D the same way (ADR 0102)
+        "closure_deadlines(timestamp with time zone,text):polaris_purge_owner",
         "closure_local_day_start(date,text):polaris_privacy_owner",
+        "closure_local_day_start(date,text):polaris_purge_owner",
         "closure_phase_at(timestamp with time zone,timestamp with time zone,text,timestamp with time zone):polaris_privacy_owner",
         "list_closed_data_exports(text):polaris_pr11_runtime",
         "list_closed_export_media(uuid,uuid,uuid,integer):polaris_privacy_runtime",

@@ -10,9 +10,16 @@
  * name, an e-mail or a note would be, cannot be written.
  */
 
-/** The events the tenant runtime may write. A new one is a reviewed migration (the policy lists them). */
+/**
+ * The events the database lets a command write (the tenant runtime, or the closure function of the privacy
+ * owner). A new one is a reviewed migration (a policy lists each).
+ * - `data_export.requested`: an export was asked for (ADR 0078).
+ * - `billing.renewal_cancel_requested`: the organization was closed and the renewal of its subscription is to
+ *   be cancelled at the provider (ADR 0074, L4); the body names the closure cycle by the instant of its request.
+ */
 export const OUTBOX_EVENT_TYPES = Object.freeze([
   "data_export.requested",
+  "billing.renewal_cancel_requested",
 ] as const);
 
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
@@ -24,6 +31,8 @@ export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 const OUTBOX_EVENT_KEYS: Readonly<Record<OutboxEventType, readonly string[]>> =
   Object.freeze({
     "data_export.requested": Object.freeze(["exportId"]),
+    // milliseconds since the epoch of the closure request: the cycle, never the subscription or the provider
+    "billing.renewal_cancel_requested": Object.freeze(["requestedAt"]),
   });
 export type OutboxEventValue = string | number | boolean;
 export type OutboxEventBody = Readonly<Record<string, OutboxEventValue>>;

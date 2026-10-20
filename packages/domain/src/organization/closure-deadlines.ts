@@ -18,6 +18,18 @@ export const CLOSURE_DELETABLE_AFTER_DAYS =
 export const CLOSURE_PURGE_SCHEDULE_LEAD_DAYS = 7;
 /** The first purge run is never sooner than this after D. */
 export const CLOSURE_PURGE_GRACE_HOURS = 48;
+/**
+ * A purge of the closure period never runs sooner than this after it was scheduled, nor after a legal hold
+ * that held it was released (ADR 0102): the owner always has this notice. The database writes it in hours
+ * (`interval '168 hours'`), so the session's time zone never changes it.
+ */
+export const CLOSURE_PURGE_MIN_NOTICE_DAYS = 7;
+/**
+ * A closed organization still not purged this many days after D, with no legal hold, was left behind (a cancellation
+ * of the Admin, a renewal still alive, a temporary access of the Admin): the privacy job raises an alert (ADR 0102).
+ * The database writes it in hours (`interval '720 hours'`).
+ */
+export const CLOSURE_PURGE_OVERDUE_DAYS = 30;
 /** The first notice before D goes out this many days before it. */
 export const CLOSURE_FIRST_NOTICE_LEAD_DAYS = 30;
 
@@ -139,6 +151,39 @@ export function closureDeadlines(
     deletionDate,
     exportOpenUntil: deletableFrom,
   };
+}
+
+const HOUR_MS = 3_600_000;
+
+/**
+ * The first instant the purge of the closure period may run, when the privacy job schedules it at
+ * `scheduledAt` (ADR 0102): the later of D plus 48 hours and the schedule plus 7 days. On time (7 local days
+ * before D) it is D plus 48 hours; a late sweep pushes it to the schedule plus 7 days. The database writes the
+ * same `not_before` (`schedule_closed_organization_purges`), and a gate compares them.
+ */
+export function closurePurgeNotBefore(
+  requestedAt: Date,
+  timeZone: string,
+  scheduledAt: Date
+): Date {
+  const { deletableFrom } = closureDeadlines(requestedAt, timeZone);
+  return new Date(
+    Math.max(
+      deletableFrom.getTime() + CLOSURE_PURGE_GRACE_HOURS * HOUR_MS,
+      scheduledAt.getTime() + CLOSURE_PURGE_MIN_NOTICE_DAYS * DAY_MS
+    )
+  );
+}
+
+/** Whether the privacy job may schedule the purge of this closure at `now`: from 7 local days before D on. */
+export function closurePurgeSchedulable(
+  requestedAt: Date,
+  timeZone: string,
+  now: Date
+): boolean {
+  return (
+    now.getTime() >= closureDeadlines(requestedAt, timeZone).d7At.getTime()
+  );
 }
 
 export interface ClosureDates {

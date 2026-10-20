@@ -16,12 +16,21 @@ import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
 } from "../src/server/billing/maintenance";
+import { billingProviderPortOf } from "../src/server/billing/provider-ports";
+import {
+  handleRenewalCancelRequested,
+  rearmRenewalCancellations,
+} from "../src/server/billing/renewal-cancellation";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
   createRequesterReader,
 } from "../src/server/privacy/data-export-reader";
-import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
+import {
+  closureAutoPurgeEnabled,
+  closureAutoPurgeVolumeHigh,
+  runPrivacyMaintenance,
+} from "../src/server/privacy/maintenance";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 import type { WorkerBindings } from "../src/server/environment";
 import {
@@ -33,6 +42,7 @@ import {
   PermanentHandlerError,
   type QueueBatch,
 } from "../src/server/queue/consumer";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { approvedRetention } from "@polaris/domain/privacy/retention";
@@ -147,6 +157,13 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     failures.push(error);
   }
   try {
+    // after the sweep, which ends what time ended: a closed organization whose renewal is still alive asks again
+    const rearmed = await rearmRenewalCancellations(store);
+    logger.info("billing_renewal_cancel_rearm_complete", { ...rearmed });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
     // after the retry pass, which is what leaves an unclaimed trial past its retries
     const settled = await runUnclaimedTrialSettlement(env, store);
     if (settled) {
@@ -195,9 +212,10 @@ function runDataExportsWith(
 
 /**
  * What the privacy role does in the background: marks the closures whose recovery window ended as
- * closed (ADR 0074), builds the data exports that were asked for and removes the ones whose time is up
- * (ADR 0078), and runs the purges an operator scheduled (ADR 0081; nothing schedules one on its own).
- * One connection serves all three, and one failing never hides the others.
+ * closed (ADR 0074) and, with `CLOSURE_AUTO_PURGE_ENABLED` on, schedules the purge of the closures that
+ * reached D minus 7 days (ADR 0102), builds the data exports that were asked for and removes the ones whose
+ * time is up (ADR 0078), and runs the purges that are due, scheduled by the closure period or by an operator
+ * (ADR 0081). One connection serves them all, and one failing never hides the others.
  */
 async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
@@ -215,8 +233,24 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   const failures: unknown[] = [];
   try {
     try {
-      const report = await runPrivacyMaintenance(client);
+      const report = await runPrivacyMaintenance(client, {
+        autoPurgeEnabled: closureAutoPurgeEnabled(
+          env.CLOSURE_AUTO_PURGE_ENABLED
+        ),
+      });
       logger.info("privacy_maintenance_complete", { ...report });
+      if (closureAutoPurgeVolumeHigh(report)) {
+        // more stores than expected entered the purge on their own in a day: the brake is a person's (ADR 0102)
+        logger.warn("closure_auto_purge_volume_high", {
+          scheduledPurgesLastDay: report.scheduledPurgesLastDay,
+        });
+      }
+      if (report.overduePurges > 0) {
+        // closed stores still waiting a month after D with no legal hold: a person decides each one (ADR 0102)
+        logger.warn("closure_purge_overdue", {
+          overduePurges: report.overduePurges,
+        });
+      }
     } catch (error: unknown) {
       failures.push(error);
     }
@@ -424,6 +458,34 @@ async function handleDataExportRequested(
   }
 }
 
+/**
+ * The handler of `billing.renewal_cancel_requested` (ADR 0074, L4): the closure asked to cancel the renewal.
+ * Without the billing role there is no subscription to cancel here, and a retry would not change it. A
+ * provider without its settings, or one that fails, throws: the queue retries, then the dead-letter queue.
+ */
+async function handleRenewalCancelEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("billing_not_configured");
+  }
+  const store = createBillingStore(connectionString);
+  try {
+    await handleRenewalCancelRequested(
+      {
+        handles: billingProviderHandled,
+        portFor: (provider) => billingProviderPortOf(env, provider),
+        store,
+      },
+      envelope
+    );
+  } finally {
+    await quietly(() => store.close());
+  }
+}
+
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */
 const inMemoryLedger = createInMemoryProcessingLedger();
 
@@ -454,6 +516,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     return;
   }
   const handlers = {
+    "billing.renewal_cancel_requested": (envelope: QueueEnvelope) =>
+      handleRenewalCancelEvent(env, envelope),
     "data_export.requested": (envelope: QueueEnvelope) =>
       handleDataExportRequested(env, envelope),
   };

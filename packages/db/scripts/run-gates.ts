@@ -82,6 +82,8 @@ const gates: Gate[] = [
   ["privacy-cases", "verify-privacy-cases-gate.ts"],
   ["data-export", "verify-data-export-gate.ts"],
   ["organization-closure", "verify-organization-closure-gate.ts"],
+  // closing the organization cancels the renewal (ADR 0074, L4): the request in the closure, the retry by state
+  ["renewal-cancellation", "verify-renewal-cancellation-gate.ts"],
   // the closed organization, read-only until the purge (ADR 0081): its state, its copy, the reader and the two barriers
   [
     "closed-organization-readonly",
@@ -237,6 +239,7 @@ const suites: Record<string, string[]> = {
     "privacy-cases",
     "data-export",
     "organization-closure",
+    "renewal-cancellation",
     "closed-organization-readonly",
     "customer-anonymization",
     "deletion-ledger",
@@ -344,6 +347,7 @@ const suites: Record<string, string[]> = {
   // Phase 10 (privacy): grows with every gate of the phase.
   gate10: [
     "organization-closure",
+    "renewal-cancellation",
     "closed-organization-readonly",
     "customer-anonymization",
     "deletion-ledger",
