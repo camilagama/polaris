@@ -116,6 +116,7 @@ body:has(.ui-root) {
 
 .primary-button,
 .quiet-button,
+.secondary-button,
 .danger-button,
 .danger-text-button {
   min-height: 2.75rem;
@@ -141,18 +142,21 @@ body:has(.ui-root) {
 
 .ui-root .primary-button:disabled,
 .ui-root .danger-button:disabled,
+.ui-root .secondary-button:disabled,
 .ui-root .quiet-button:disabled {
   cursor: wait;
   opacity: 0.65;
 }
 
-.quiet-button {
+.quiet-button,
+.secondary-button {
   color: var(--ui-ink);
   background: var(--ui-surface);
   border-color: var(--ui-line);
 }
 
-.quiet-button:hover:not(:disabled) {
+.quiet-button:hover:not(:disabled),
+.secondary-button:hover:not(:disabled) {
   background: var(--ui-surface-muted);
 }
 
