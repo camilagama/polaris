@@ -245,8 +245,8 @@ describe("the sender of the provider", () => {
 
   const providerError = (
     name: string,
-    message = "Invalid `to` field: dono@example.invalid"
-  ) => JSON.stringify({ message, name, statusCode: 422 });
+    detail = "Invalid `to` field: dono@example.invalid"
+  ) => JSON.stringify({ message: detail, name, statusCode: 422 });
 
   it("posts to the provider with the idempotency key and the bearer key, and never reads the body", async () => {
     const { cancel, fetchMock, json, text } = stubFetch(200);
