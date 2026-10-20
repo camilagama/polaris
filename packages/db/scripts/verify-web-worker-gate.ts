@@ -14,7 +14,11 @@ import {
   runtimeRole,
   type TenantFixture,
 } from "./sales-gate-support";
-import { runWorkerdVitest, temporaryLogins } from "./workerd-gate-support";
+import {
+  runWorkerdVitest,
+  temporaryLogins,
+  workerdSuiteFailure,
+} from "./workerd-gate-support";
 
 /**
  * The Web Worker through its own `fetch`, `scheduled` and `queue` handlers, inside workerd, against the PostgreSQL of
@@ -48,6 +52,8 @@ const BINDINGS = [
     ["polaris_closed_export_reader"],
   ],
 ] as const;
+/** The tests of apps/web/worker/index.workerd-db.test.ts: one added or removed is changed here too, or the gate fails (an `it.each` counts one test per case). */
+const WEB_WORKER_TESTS = 25;
 const MAINTENANCE_JOBS = [
   "auth.login_lock_expiry",
   "billing.maintenance",
@@ -255,31 +261,21 @@ async function run() {
     assert.ok(startedAt);
 
     // ------------------------------------------------- the Worker, through its own handlers
-    const result = await runWorkerdVitest("vitest.web-worker.config.ts", {
-      ...urls,
-      POLARIS_WEB_WORKER_FIXTURE: JSON.stringify({
-        events,
-        forged,
-        logins: loginsByBinding,
-        organizations: { a: orgA, b: orgB },
-      }),
-    });
+    const result = await runWorkerdVitest(
+      "vitest.web-worker.config.ts",
+      {
+        ...urls,
+        POLARIS_WEB_WORKER_FIXTURE: JSON.stringify({
+          events,
+          forged,
+          logins: loginsByBinding,
+          organizations: { a: orgA, b: orgB },
+        }),
+      },
+      { tests: WEB_WORKER_TESTS }
+    );
     if (result.code !== 0) {
-      // the runner of the gates shows only the last lines: the digest is what failed, the whole output only on request
-      const shown =
-        process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
-          ? result.lines
-          : result.digest;
-      for (const line of shown) {
-        console.error(
-          process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
-            ? line
-            : line.slice(0, 220)
-        );
-      }
-      throw new Error(
-        "The Web Worker suite failed inside workerd (the lines above)."
-      );
+      throw workerdSuiteFailure("Web Worker", result);
     }
     tests.push(
       "the Worker's own fetch, scheduled and queue handlers run in workerd with the seven Hyperdrive bindings of its wrangler file, each reaching PostgreSQL as its own login"
@@ -371,6 +367,7 @@ async function run() {
       "the consumer's record has the processed event and the one that finished after a retry, and none for a forged event, a failure for good or a message refused before the claim"
     );
 
+    // `before + 1` because only one test of the suite delivers to the dead-letter queue with the database up
     assert.equal(
       await incidentCount("invalid_envelope", "unknown"),
       invalidBefore + 1,

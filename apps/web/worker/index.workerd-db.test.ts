@@ -496,6 +496,10 @@ describe("the queue handler of the web worker", () => {
     });
   });
 
+  // The gate counts the incidents of `invalid_envelope` and `wrong_queue` as `before + 1`. That holds because this is the only test
+  // that delivers to the dead-letter queue with a database that is up (`refusals()` only records the notices in the other
+  // tests, and the one below delivers them with the database down, where nothing is written). A second test that
+  // delivers them to a live `polaris-dlq-local` adds an incident and the gate fails: change the gate's counts with it.
   it("turns each notice of the dead-letter queue into an incident, and acknowledges it only after", async () => {
     const { deadLetters } = await refusals();
     const result = await deliver(

@@ -25,7 +25,11 @@ import {
   type TenantFixture,
   withTenantAs,
 } from "./sales-gate-support";
-import { runWorkerdVitest, temporaryLogins } from "./workerd-gate-support";
+import {
+  runWorkerdVitest,
+  temporaryLogins,
+  workerdSuiteFailure,
+} from "./workerd-gate-support";
 
 /**
  * The server side of the Catalog Worker inside workerd, against the PostgreSQL of the job (T-121b): the Hyperdrive
@@ -41,6 +45,8 @@ const expectedDatabase =
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
 
+/** The tests of the `*.workerd-db.test.ts` files of apps/catalog/src: one added or removed is changed here too, or the gate fails (an `it.each` counts one test per case). */
+const CATALOG_WORKER_TESTS = 11;
 const MASTER_BYTES = [82, 73, 70, 70, 1, 2, 3, 4];
 
 function mediaInput(
@@ -184,31 +190,21 @@ async function run() {
     const before = await counts();
 
     // ------------------------------------------------- the Worker's server side, in workerd
-    const result = await runWorkerdVitest("vitest.catalog-worker.config.ts", {
-      POLARIS_CATALOG_WORKER_CATALOG_HYPERDRIVE_URL: catalogUrl,
-      POLARIS_CATALOG_WORKER_FIXTURE: JSON.stringify({
-        masterBytes: MASTER_BYTES,
-        catalogLogin: decodeURIComponent(new URL(catalogUrl).username),
-        hidden,
-        shown,
-      }),
-    });
+    const result = await runWorkerdVitest(
+      "vitest.catalog-worker.config.ts",
+      {
+        POLARIS_CATALOG_WORKER_CATALOG_HYPERDRIVE_URL: catalogUrl,
+        POLARIS_CATALOG_WORKER_FIXTURE: JSON.stringify({
+          masterBytes: MASTER_BYTES,
+          catalogLogin: decodeURIComponent(new URL(catalogUrl).username),
+          hidden,
+          shown,
+        }),
+      },
+      { tests: CATALOG_WORKER_TESTS }
+    );
     if (result.code !== 0) {
-      // the runner of the gates shows only the last lines: the digest is what failed, the whole output only on request
-      const lines =
-        process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
-          ? result.lines
-          : result.digest;
-      for (const line of lines) {
-        console.error(
-          process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
-            ? line
-            : line.slice(0, 220)
-        );
-      }
-      throw new Error(
-        "The Catalog Worker suite failed inside workerd (the lines above)."
-      );
+      throw workerdSuiteFailure("Catalog Worker", result);
     }
     tests.push(
       "the Hyperdrive binding of the public catalog role and the bucket work inside workerd: the reads, the image route, and what a store that is not shown, an unknown address and a database that is down answer"

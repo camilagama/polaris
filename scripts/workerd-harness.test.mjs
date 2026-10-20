@@ -9,6 +9,8 @@ import {
   harnessHyperdrives,
 } from "./workerd-harness.mjs";
 
+const CI_SUITE = /\n {2}ci: \[([^\]]*)\]/;
+const QUOTED_NAME = /"([\w-]+)"/g;
 const REFUSED = /Workers harness/;
 const ci = { CI: "true" };
 const notCi = {};
@@ -248,6 +250,15 @@ describe("workerd harness discovery", () => {
       expect(declared.size).toBeGreaterThan(0);
       expect(listed, app).toEqual(declared);
     }
+  });
+
+  // `web-worker` runs the scheduled jobs of the Web Worker for real, and they clear state the gates before it left (and
+  // would clear what a later gate set up): it and `catalog-worker` (which does not touch it) end the list of `ci`.
+  it("ends the `ci` suite with web-worker and catalog-worker, in that order", () => {
+    const list = gates.match(CI_SUITE)?.[1] ?? "";
+    const names = [...list.matchAll(QUOTED_NAME)].map(([, name]) => name);
+    expect(names.slice(-2)).toEqual(["web-worker", "catalog-worker"]);
+    expect(names.filter((name) => name === "web-worker")).toHaveLength(1);
   });
 
   it("keeps the database projects out of `bun run test` and the node project away from both", () => {
