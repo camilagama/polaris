@@ -48,6 +48,7 @@ const E2E_RELEVANT = [
 const DEPENDENCY_FILES = [
   /(^|\/)package\.json$/,
   /^bun\.lock$/,
+  /^bunfig\.toml$/,
   /^\.bun-version$/,
   /^\.node-version$/,
 ];

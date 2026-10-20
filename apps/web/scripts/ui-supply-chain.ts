@@ -1,3 +1,5 @@
+import { dirname, resolve, sep } from "node:path";
+
 /**
  * The supply-chain floor of the interface packages (ADR 0103, security conditions 1, 3, 4 and 6).
  * Pure functions: ui-supply-chain.test.ts feeds them the real files and also synthetic ones, so a rule
@@ -105,6 +107,16 @@ export function inexactInterfaceVersions(manifest: PackageManifest) {
     .map(({ name, range }) => `${name}@${range}`);
 }
 
+const NON_REGISTRY_RANGE =
+  /^(?:npm:|git|https?:|file:|link:|github:|[\w.-]+\/[\w.-]+$)/;
+
+/** Dependencies pointing at something other than the registry (alias, URL, git, path): a name on the list would hide them. */
+export function nonRegistryDependencies(manifest: PackageManifest) {
+  return declaredDependencies(manifest)
+    .filter(({ range }) => NON_REGISTRY_RANGE.test(range))
+    .map(({ name, range }) => `${name}@${range}`);
+}
+
 /** `trustedDependencies` entries of a manifest: any one lets that package run install scripts. */
 export function trustedDependencyEntries(manifest: PackageManifest) {
   return manifest.trustedDependencies ?? [];
@@ -121,17 +133,21 @@ export function parseBunLock(text: string) {
   const lock = JSON.parse(json) as {
     packages: Record<
       string,
-      [string, string, Partial<Record<string, Record<string, string>>>?]
+      [string, string, Record<string, Record<string, string> | string[]>?]
     >;
   };
   const packages = new Map<string, LockPackage>();
   for (const [key, entry] of Object.entries(lock.packages)) {
     const meta = entry[2] ?? {};
+    const optionalPeers = new Set((meta.optionalPeers ?? []) as string[]);
     packages.set(key, {
-      // Peer dependencies are the app's own direct ones (react...) and are covered by the baseline list.
+      // Bun installs required peers too; an optional peer that nobody else brings is not installed.
       dependencies: [
         ...Object.keys(meta.dependencies ?? {}),
         ...Object.keys(meta.optionalDependencies ?? {}),
+        ...Object.keys(meta.peerDependencies ?? {}).filter(
+          (name) => !optionalPeers.has(name)
+        ),
       ],
       id: entry[0],
     });
@@ -141,10 +157,17 @@ export function parseBunLock(text: string) {
 
 const LAST_PACKAGE_IN_KEY = /^(.*)\/(@[^/]+\/[^/]+|[^/@][^/]*)$/;
 
+const PLAIN_PACKAGE_NAME = /^(?:@[^/]+\/)?[^/]+$/;
+
 function parentKey(key: string) {
+  if (PLAIN_PACKAGE_NAME.test(key)) {
+    return null;
+  }
   const match = LAST_PACKAGE_IN_KEY.exec(key);
   return match?.[1] ?? null;
 }
+
+const WORKSPACE_KEY = "@polaris/web";
 
 function resolveInLock(
   packages: Map<string, LockPackage>,
@@ -163,8 +186,8 @@ function resolveInLock(
 }
 
 /**
- * `name@version` of the given packages and of everything they pull in (dependencies and optional
- * dependencies, the native binaries of the build tools included), read from bun.lock, sorted.
+ * `name@version` of the given packages and of everything they pull in (dependencies, optional
+ * dependencies and required peers, the native binaries of the build tools included), read from bun.lock, sorted.
  */
 export function interfaceClosure(
   packages: Map<string, LockPackage>,
@@ -173,7 +196,8 @@ export function interfaceClosure(
   const seen = new Set<string>();
   const queue: string[] = [];
   for (const root of roots) {
-    const key = resolveInLock(packages, null, root);
+    // A workspace that needs another version than the hoisted one gets its own key, prefixed by its name.
+    const key = resolveInLock(packages, WORKSPACE_KEY, root);
     if (key === null) {
       throw new Error(`${root} is in package.json but not in bun.lock`);
     }
@@ -222,6 +246,14 @@ const SOURCE_RULES: { rule: string; pattern: RegExp }[] = [
   },
   { pattern: /insertAdjacentHTML/, rule: "insertAdjacentHTML" },
   { pattern: /\.innerHTML/, rule: ".innerHTML" },
+  // Beyond the ADR's list: the same holes by another door.
+  { pattern: /\bouterHTML\b/, rule: "outerHTML" },
+  { pattern: /document\.write/, rule: "document.write" },
+  {
+    pattern: /createElementNS\([^)]*["'`]style["'`]/,
+    rule: 'createElementNS(..., "style")',
+  },
+  { pattern: /adoptedStyleSheets/, rule: "adoptedStyleSheets" },
   { pattern: /next-themes/, rule: "next-themes" },
   { pattern: /\bsonner\b/, rule: "sonner" },
   { pattern: /\bvaul\b/, rule: "vaul" },
@@ -237,11 +269,27 @@ function packageName(specifier: string) {
     : (parts[0] ?? specifier);
 }
 
+/** A relative import that reaches node_modules or leaves apps/web/src (`srcRoot`, when given). */
+function escapesSource(file: string, specifier: string, srcRoot?: string) {
+  if (specifier.split("/").includes("node_modules")) {
+    return true;
+  }
+  if (srcRoot === undefined) {
+    return false;
+  }
+  const target = resolve(dirname(file), specifier);
+  return target !== srcRoot && !target.startsWith(`${srcRoot}${sep}`);
+}
+
 /**
  * Condition 3: what code under apps/web/src/ui/ may not contain, and the packages it may import.
  * A relative import stays inside the project; anything else must be on the interface list.
  */
-export function scanUiSource(file: string, source: string): SourceFinding[] {
+export function scanUiSource(
+  file: string,
+  source: string,
+  srcRoot?: string
+): SourceFinding[] {
   const findings: SourceFinding[] = SOURCE_RULES.filter(({ pattern }) =>
     pattern.test(source)
   ).map(({ rule }) => ({ file, rule }));
@@ -251,7 +299,13 @@ export function scanUiSource(file: string, source: string): SourceFinding[] {
   ]);
   for (const match of source.matchAll(IMPORT_SPECIFIER)) {
     const specifier = match[1] as string;
-    if (specifier.startsWith(".") || specifier.startsWith("@/")) {
+    if (specifier.startsWith(".")) {
+      if (escapesSource(file, specifier, srcRoot)) {
+        findings.push({ file, rule: `import of ${specifier}` });
+      }
+      continue;
+    }
+    if (specifier.startsWith("@/")) {
       continue;
     }
     if (!allowed.has(packageName(specifier))) {
@@ -261,16 +315,17 @@ export function scanUiSource(file: string, source: string): SourceFinding[] {
   return findings;
 }
 
+// What installs dependencies or runs repository code (a build, a test run that builds inside): none of it may hold a secret.
 const INSTALL_OR_BUILD =
-  /\bbunx?\s+(?:install|i|add|ci)\b|\bnpm\s+(?:ci|install|i)\b|\bbun\s+run\s+(?:--filter\s+\S+\s+)?build|\bturbo\s+run\s+build|\bvite\s+build/;
+  /\b(?:bunx?|npm|yarn|pnpm)\s+(?:install|i|add|ci|update|up)\b|\b(?:bun|npm|yarn|pnpm)\s+run\s+[^\n]*\b(?:build|test)\b|\b(?:turbo|npm|yarn|pnpm)\s+(?:run\s+)?build\b|\bvite\s+build|\bplaywright\s+test|\bvitest\b/;
 
 // A secret or the job token read through an expression (a comment that only says "secrets." does not count).
 const SECRET_REFERENCE = /\$\{\{[^}]*\b(?:secrets|github\.token)\b[^}]*\}\}/;
 
-const JOBS_KEY = /^jobs:\s*$/;
-const JOB_KEY = /^ {2}([\w-]+):\s*$/;
-const STEPS_KEY = /^ {4}steps:\s*$/;
-const STEP_START = /^ {6}- /;
+const JOBS_KEY = /^jobs:\s*(?:#.*)?$/;
+const JOB_KEY = /^ {2}([\w-]+):\s*(?:#.*)?$/;
+const STEPS_KEY = /^(\s+)steps:\s*(?:#.*)?$/;
+const LIST_ITEM = /^(\s*)- /;
 
 function splitJobs(lines: string[], jobsAt: number) {
   const starts = lines
@@ -283,8 +338,13 @@ function splitJobs(lines: string[], jobsAt: number) {
     );
     const stepsAt = body.findIndex((line) => STEPS_KEY.test(line));
     const steps: string[][] = [];
-    for (const line of stepsAt === -1 ? [] : body.slice(stepsAt + 1)) {
-      if (STEP_START.test(line)) {
+    const afterSteps = stepsAt === -1 ? [] : body.slice(stepsAt + 1);
+    // The steps are the list items at the indent of the first one, whatever that indent is.
+    const itemIndent = afterSteps
+      .map((line) => LIST_ITEM.exec(line))
+      .find((item) => item !== null)?.[1];
+    for (const line of afterSteps) {
+      if (LIST_ITEM.exec(line)?.[1] === itemIndent) {
         steps.push([line]);
       } else {
         steps.at(-1)?.push(line);
@@ -304,19 +364,29 @@ function splitJobs(lines: string[], jobsAt: number) {
  * flow-style maps), so a line-based reading is enough; a file without a top-level `jobs:` fails loudly.
  */
 export function secretsInInstallOrBuild(workflow: string, file: string) {
+  return readWorkflow(workflow, file).problems;
+}
+
+/**
+ * Same check, plus how many install or build steps it recognized: a workflow where that count is zero
+ * is a workflow this reader may not understand, and the test refuses to call it clean.
+ */
+export function readWorkflow(workflow: string, file: string) {
   const lines = workflow
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("#"));
   const jobsAt = lines.findIndex((line) => JOBS_KEY.test(line));
   if (jobsAt === -1) {
-    return [`${file}: no top-level jobs: key`];
+    return { problems: [`${file}: no top-level jobs: key`], recognized: 0 };
   }
   const workflowHasSecret = SECRET_REFERENCE.test(
     lines.slice(0, jobsAt).join("\n")
   );
   const problems: string[] = [];
+  let recognized = 0;
   for (const job of splitJobs(lines, jobsAt)) {
     const risky = job.steps.filter((step) => INSTALL_OR_BUILD.test(step));
+    recognized += risky.length;
     if (risky.length === 0) {
       continue;
     }
@@ -336,5 +406,5 @@ export function secretsInInstallOrBuild(workflow: string, file: string) {
       );
     }
   }
-  return problems;
+  return { problems, recognized };
 }

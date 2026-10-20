@@ -7,8 +7,10 @@ import {
   declaredInterfacePackages,
   inexactInterfaceVersions,
   interfaceClosure,
+  nonRegistryDependencies,
   type PackageManifest,
   parseBunLock,
+  readWorkflow,
   scanUiSource,
   secretsInInstallOrBuild,
   trustedDependencyEntries,
@@ -56,6 +58,29 @@ describe("allowlist of interface packages (condition 1)", () => {
     ).toEqual([]);
   });
 
+  it("has no dependency that bypasses the registry", () => {
+    expect(nonRegistryDependencies(webManifest)).toEqual([]);
+    expect(
+      nonRegistryDependencies({
+        dependencies: {
+          a: "npm:evil@1.0.0",
+          b: "git+https://example.com/b.git",
+          c: "https://example.com/c.tgz",
+          d: "file:../d",
+          e: "owner/repo",
+          f: "^1.0.0",
+          g: "workspace:*",
+        },
+      })
+    ).toEqual([
+      "a@npm:evil@1.0.0",
+      "b@git+https://example.com/b.git",
+      "c@https://example.com/c.tgz",
+      "d@file:../d",
+      "e@owner/repo",
+    ]);
+  });
+
   it("holds interface packages to an exact version", () => {
     expect(inexactInterfaceVersions(webManifest)).toEqual([]);
     expect(
@@ -81,7 +106,7 @@ describe("closure of the interface packages (condition 1)", () => {
       declaredInterfacePackages(webManifest)
     );
     const expected = `${closure.join("\n")}${closure.length > 0 ? "\n" : ""}`;
-    if (process.env.UI_CLOSURE_UPDATE === "1") {
+    if (process.env.UI_CLOSURE_UPDATE === "1" && !process.env.CI) {
       writeFileSync(join(root, CLOSURE_FILE), expected);
     }
     const recorded = readRoot(CLOSURE_FILE)
@@ -94,7 +119,7 @@ describe("closure of the interface packages (condition 1)", () => {
     ).toBe(expected);
   });
 
-  it("follows dependencies, optional dependencies and nested versions in the lock", () => {
+  it("follows dependencies, optional dependencies, peers and nested versions in the lock", () => {
     const lock = parseBunLock(`{
       "lockfileVersion": 2,
       "packages": {
@@ -112,7 +137,45 @@ describe("closure of the interface packages (condition 1)", () => {
       "leaf@2.5.0",
       "native-x@1.0.0",
       "other@1.0.0",
+      "react@19.0.0",
       "ui@1.0.0",
+    ]);
+  });
+
+  it("brings in required peers and leaves optional ones out", () => {
+    const lock = parseBunLock(`{
+      "packages": {
+        "ui": ["ui@1.0.0", "", { "peerDependencies": { "react": ">=18", "native": "*" }, "optionalPeers": ["native"] }, "x"],
+        "react": ["react@19.0.0", "", {}, "x"],
+        "native": ["native@1.0.0", "", {}, "x"]
+      }
+    }`);
+    expect(interfaceClosure(lock, ["ui"])).toEqual([
+      "react@19.0.0",
+      "ui@1.0.0",
+    ]);
+  });
+
+  it("prefers the copy the workspace owns over the hoisted one", () => {
+    const lock = parseBunLock(`{
+      "packages": {
+        "ui": ["ui@2.0.0", "", {}, "x"],
+        "@polaris/web/ui": ["ui@1.0.0", "", {}, "x"]
+      }
+    }`);
+    expect(interfaceClosure(lock, ["ui"])).toEqual(["ui@1.0.0"]);
+  });
+
+  it("does not look up a scoped package as a nested one of its own scope", () => {
+    const lock = parseBunLock(`{
+      "packages": {
+        "@s/ui": ["@s/ui@1.0.0", "", { "dependencies": { "ui": "*" } }, "x"],
+        "ui": ["ui@9.0.0", "", {}, "x"]
+      }
+    }`);
+    expect(interfaceClosure(lock, ["@s/ui"])).toEqual([
+      "@s/ui@1.0.0",
+      "ui@9.0.0",
     ]);
   });
 
@@ -182,7 +245,7 @@ describe("source of apps/web/src/ui/ (condition 3)", () => {
     () => {
       const findings = present
         ? sourceFiles(uiDir).flatMap((file) =>
-            scanUiSource(file, readFileSync(file, "utf8"))
+            scanUiSource(file, readFileSync(file, "utf8"), uiDir)
           )
         : [];
       expect(findings).toEqual([]);
@@ -229,6 +292,29 @@ export const Box = () => <Dialog.Root />;`;
     expect(rules.some((rule) => rule.startsWith("import of "))).toBe(true);
   });
 
+  it("rejects a relative import that reaches node_modules or leaves src", () => {
+    const srcRoot = "/repo/apps/web/src";
+    const file = "/repo/apps/web/src/ui/button.tsx";
+    const rules = (specifier: string) =>
+      scanUiSource(file, `import x from "${specifier}";`, srcRoot);
+    expect(rules("../lib/cn")).toEqual([]);
+    expect(rules("./button-group")).toEqual([]);
+    expect(rules("../../../../node_modules/x/index.js")).toHaveLength(1);
+    expect(rules("../../../../packages/db/src/index")).toHaveLength(1);
+    expect(rules("../../../other/file")).toHaveLength(1);
+  });
+
+  it.each([
+    ["outerHTML", "el.outerHTML = x"],
+    ["document.write", 'document.write("<p>")'],
+    ['createElementNS(..., "style")', 'document.createElementNS(ns, "style")'],
+    ["adoptedStyleSheets", "document.adoptedStyleSheets = [sheet]"],
+  ])("rejects %s too", (rule, source) => {
+    expect(
+      scanUiSource("x.tsx", source).map((finding) => finding.rule)
+    ).toContain(rule);
+  });
+
   it("takes a scoped package by its first two segments", () => {
     expect(
       scanUiSource("x.tsx", 'import { a } from "@base-ui/react/popover";')
@@ -244,10 +330,15 @@ describe("minimumReleaseAge (condition 4)", () => {
     const renovate = JSON.parse(readRoot("renovate.json")) as {
       internalChecksFilter?: string;
       minimumReleaseAge?: string;
+      packageRules?: Record<string, unknown>[];
     };
     expect(renovate.minimumReleaseAge).toBe("7 days");
     // "strict" keeps the branch from being created before the age is reached.
     expect(renovate.internalChecksFilter).toBe("strict");
+    // No rule may shorten or drop the age for its packages.
+    expect(
+      renovate.packageRules?.filter((rule) => "minimumReleaseAge" in rule)
+    ).toEqual([]);
   });
 
   it("is 7 days (604800 seconds) for Bun", () => {
@@ -270,9 +361,56 @@ describe("secrets stay out of install and build steps (condition 6)", () => {
     "%s: no secret in a step that installs or builds",
     (name) => {
       const text = readFileSync(join(workflowDir, name), "utf8");
-      expect(secretsInInstallOrBuild(text, name)).toEqual([]);
+      const { problems, recognized } = readWorkflow(text, name);
+      expect(problems).toEqual([]);
+      // A reader that recognizes nothing would pass any file: it must see the install it knows is there.
+      expect(
+        recognized,
+        `${name}: no install or build step recognized`
+      ).toBeGreaterThan(0);
     }
   );
+
+  it.each([
+    "bun run --filter=@polaris/web build",
+    "bun run --cwd apps/web build",
+    "bun run --bun build",
+    "bun update",
+    "turbo build",
+    "npm run build",
+    "yarn install",
+    "pnpm install",
+    "npx playwright test --config x.ts",
+    "bun run test:offline-poc",
+    "bunx vitest run",
+  ])("recognizes `%s` as an install or build step", (command) => {
+    const workflow = `name: X
+jobs:
+  j:
+    steps:
+      - env:
+          T: \${{ secrets.T }}
+        run: ${command}
+`;
+    expect(secretsInInstallOrBuild(workflow, "w.yml")).toHaveLength(1);
+  });
+
+  it("reads steps at another indent and a job key with a comment", () => {
+    const workflow = `name: X
+jobs:
+  a: # first
+    steps:
+    - run: echo hi
+  b: # second
+    steps:
+    - env:
+        T: \${{ secrets.T }}
+      run: bun install
+`;
+    const { problems, recognized } = readWorkflow(workflow, "w.yml");
+    expect(recognized).toBe(1);
+    expect(problems).toHaveLength(1);
+  });
 
   const header = `name: X
 on: push

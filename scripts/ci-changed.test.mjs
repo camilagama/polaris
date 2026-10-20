@@ -119,6 +119,10 @@ function adminDependents() {
 }
 
 describe("which CI jobs a change affects", () => {
+  it("treats bunfig.toml as a dependency change (the install policy lives there)", () => {
+    expect(classifyChanges(["bunfig.toml"]).dependencies).toBe(true);
+  });
+
   it("runs everything when the changed files are unknown", () => {
     expect(classifyChanges(null)).toEqual({
       browser: true,
