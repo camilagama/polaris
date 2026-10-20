@@ -2,6 +2,7 @@ import type { DeviceReadModel } from "@polaris/contracts";
 import { formatInstant } from "../../lib/format";
 import {
   isDefiniteRpcRejection,
+  legalAcceptanceMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../../lib/rpc-error";
@@ -208,6 +209,11 @@ export function revokeFailure(error: unknown): RevokeFailure {
   }
   if (!isDefiniteRpcRejection(error)) {
     return { kind: "message", text: UNCERTAIN_TEXT, uncertain: true };
+  }
+  // a write like any other: with the acceptance pending the server refuses it, and the screen says why
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return { kind: "message", text: unaccepted, uncertain: false };
   }
   return {
     kind: "message",

@@ -1830,7 +1830,7 @@ Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Registro de sinais | Concluído | `packages/observability/src/alerts.ts` (`alertSignals`, `criticalRoutes`): 12 sinais com evento de origem, janela, limiar, severidade, acorda ou só relatório e a seção do runbook. Cobre 5xx, latência p95, DLQ, outbox parado e falhando, reconcile da cobrança, erros de banco, jobs agendados, R2/mídia, cota 9422 do Images, rejeição do sync e `auth_access_log_write_failed`. |
+| Registro de sinais | Concluído | `packages/observability/src/alerts.ts` (`alertSignals`, `criticalRoutes`): 16 sinais com evento de origem, janela, limiar, severidade, acorda ou só relatório e a seção do runbook. Cobre 5xx, latência p95, DLQ, outbox parado e falhando, reconcile da cobrança, erros de banco, jobs agendados, R2/mídia, cota 9422 do Images, rejeição do sync, `auth_access_log_write_failed` e `legal_acceptance_signup_record_failed` (aceite não gravado no cadastro). |
 | Eventos novos | Concluído | `http_request_timed` (evento largo só nas rotas críticas, para a latência), `sync_push_command_rejected` (um por comando rejeitado, com o código em `reason`) e `sqlState` no `server_error`. Sem dado pessoal. |
 | Teste | Concluído | `packages/observability/src/alerts.test.ts` lê as fontes (AST) e exige que todo evento do registro seja emitido, que cada sinal tenha seção no runbook citando seus eventos e que só `critical` acorde alguém; testes do middleware, do `sqlState` e da rejeição do sync ao lado do código. |
 | Runbook | Concluído | [docs/runbooks/alertas.md](../docs/runbooks/alertas.md): significado, consulta nos Workers Logs ou no banco e ação de cada sinal. |

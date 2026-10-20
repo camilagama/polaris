@@ -6,6 +6,7 @@ import { periodSummaryErrorMessage } from "../dashboard/dashboard-errors";
 import { goalErrorMessage } from "../dashboard/goal-errors";
 import { expenseErrorMessage } from "../expenses/expense-errors";
 import { mapStockError } from "../inventory/stock-command-model";
+import { revokeFailure } from "../offline/runtime/devices-model";
 import { setupErrorMessage } from "../organization/organization-setup-model";
 import { publicCatalogErrorMessage } from "../catalog/public-catalog-errors";
 import { mapCancelError } from "../sales/sale-cancellation-model";
@@ -59,6 +60,13 @@ describe("every screen error mapper treats the refusal for the missing acceptanc
     ["mapLinkError", (error) => mapLinkError(error).message],
     ["mapStockError", (error) => mapStockError("receive", error).message],
     ["setupErrorMessage", setupErrorMessage],
+    [
+      "revokeFailure",
+      (error) => {
+        const failure = revokeFailure(error);
+        return failure.kind === "message" ? failure.text : "";
+      },
+    ],
     [
       "expenseErrorMessage(save)",
       (error) => expenseErrorMessage(error, "save"),
@@ -134,7 +142,6 @@ const TEST_FILE = /\.test\.(ts|tsx)$/;
 /** Files that name FORBIDDEN without mapping it to a text of a screen, and why. */
 const NOT_SCREEN_MAPPERS = new Map([
   ["lib/rpc-error.ts", "defines the helper"],
-  ["offline/runtime/devices-model.ts", "reads the fresh-session reason only"],
   [
     "offline/runtime/offline-runtime.ts",
     "pauses the sync before the session refusal",

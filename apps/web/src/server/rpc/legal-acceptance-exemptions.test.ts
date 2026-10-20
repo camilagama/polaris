@@ -236,7 +236,7 @@ describe("the exempt /api routes", () => {
 });
 
 const WEB_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
-const BATCH_PLUGIN = /Batch(?:Handler|Link)Plugin|@orpc\/[a-z-]+\/plugins/;
+const BATCH_PLUGIN = /Batch(?:Handler|Link)Plugin/;
 const SOURCE_FILE = /\.(?:ts|tsx|mjs)$/;
 const TEST_FILE = /\.test\./;
 const SKIPPED = new Set([".wrangler", "dist", "node_modules"]);

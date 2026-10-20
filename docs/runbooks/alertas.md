@@ -171,7 +171,7 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 
 **O que significa.** A conta foi criada pelo cadastro com e-mail, mas a gravação do aceite dos Termos de Uso e da Política de Privacidade falhou ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). O evento é `legal_acceptance_signup_record_failed` (nível `error`), com `errorClass`, `sqlState` (quando é do banco) e `requestId`; nunca o usuário nem o e-mail. O cadastro não falha: a pessoa entra normalmente.
 
-**Como confirmar.** Workers Logs: o evento, por `sqlState` e `errorClass`. `42501` é privilégio revogado nas funções de aceite (trate como incidente de banco); `57014` ou timeout é banco lento.
+**Como confirmar.** Workers Logs: o evento, por `sqlState` e `errorClass`. `42501` é privilégio revogado nas funções de aceite (trate como incidente de banco); `57014` ou timeout é banco lento; sem `sqlState`, com `LegalAcceptanceRecordError`, a função recusou a linha (defeito de código).
 
 **O que fazer.** Com a flag `LEGAL_ACCEPTANCE_ENFORCED` ligada, nada se perde: o controle pede o aceite no primeiro acesso autenticado da pessoa. Com a flag desligada, a pessoa fica sem prova de aceite até a flag ligar, então corrija a causa (siga [erros-de-banco](#erros-de-banco) se for do banco) antes de ligar a flag. Não grave o aceite à mão: a pessoa o dá na tela `/aceite`.
 

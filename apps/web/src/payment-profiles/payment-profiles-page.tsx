@@ -139,14 +139,14 @@ function ruleInput(rule: RuleDraft): PaymentProfileRuleInput {
     processingFee: feeInput(rule.processingFee),
   };
 }
-function errorText(error: unknown): string {
+function errorText(error: unknown, subject?: string): string {
   if (
     error instanceof Error &&
     error.message === "duplicate_payment_profile_rule"
   ) {
     return "Remova regras repetidas para o mesmo método e combinação de parcelas.";
   }
-  const unaccepted = legalAcceptanceMessage(error);
+  const unaccepted = legalAcceptanceMessage(error, subject);
   if (unaccepted !== undefined) {
     return unaccepted;
   }
@@ -559,7 +559,7 @@ export function PaymentProfilesPage() {
       });
       setProfiles(result.profiles);
     } catch (loadError) {
-      setError(errorText(loadError));
+      setError(errorText(loadError, "os perfis de pagamento"));
     } finally {
       setLoading(false);
     }

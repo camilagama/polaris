@@ -106,8 +106,8 @@ function rpcErrorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-function variantErrorMessage(error: unknown): string {
-  const unaccepted = legalAcceptanceMessage(error);
+function variantErrorMessage(error: unknown, subject?: string): string {
+  const unaccepted = legalAcceptanceMessage(error, subject);
   if (unaccepted !== undefined) {
     return unaccepted;
   }
@@ -852,7 +852,7 @@ export function ProductVariantsPanel({
       })
       .catch((error: unknown) => {
         if (current) {
-          setLoadError(variantErrorMessage(error));
+          setLoadError(variantErrorMessage(error, "as variantes"));
         }
       })
       .finally(() => {
