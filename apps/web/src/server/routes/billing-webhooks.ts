@@ -210,6 +210,8 @@ async function storeEvents(
           provider: adapter.provider,
           providerEventId: event.providerEventId,
           providerRef: event.providerRef,
+          // stored on the first matched fact: the commands find the subscription by it (ADR 0101)
+          providerSubscriptionId: event.providerSubscriptionId ?? null,
         })
       );
       return stored;
