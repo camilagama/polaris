@@ -1,4 +1,8 @@
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 
 export const MAX_ORGANIZATION_NAME_LENGTH = 128;
 export const MAX_TIMEZONE_LENGTH = 64;
@@ -71,6 +75,10 @@ export function firstInvalidField(
 
 /** Opening an organization is idempotent, so any failure can be retried. */
 export function setupErrorMessage(error: unknown): string {
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error);
   if (code === "UNAUTHORIZED") {

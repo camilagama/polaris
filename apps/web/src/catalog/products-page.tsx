@@ -23,6 +23,7 @@ import {
 } from "./local-products";
 import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./products-page.css";
 
 type ProductListStatus = "active" | "archived";
@@ -58,6 +59,13 @@ function errorMessage(
   error: unknown,
   action?: ProductAction | "create" | "update"
 ): string {
+  const unaccepted = legalAcceptanceMessage(
+    error,
+    action === undefined ? "os produtos" : undefined
+  );
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     return action === undefined

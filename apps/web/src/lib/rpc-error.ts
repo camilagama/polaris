@@ -32,6 +32,30 @@ export function isLegalAcceptanceRefusal(error: unknown): boolean {
   );
 }
 
+const LEGAL_ACCEPTANCE_MISSING =
+  "falta aceitar os Termos de Uso e a Política de Privacidade.";
+
+/** Text of a write refused for the missing legal acceptance. */
+export const legalAcceptanceWriteMessage = `Não foi feito: ${LEGAL_ACCEPTANCE_MISSING}`;
+
+/**
+ * Shared by every screen error mapper, called before the generic FORBIDDEN one: the refusal for the missing
+ * legal acceptance is not a lack of permission, so it must not read as "sua conta não tem acesso". With a
+ * `subject` it is a failed read ("Não foi possível carregar {subject}: ..."); without, a failed write.
+ * Undefined when the error is not that refusal.
+ */
+export function legalAcceptanceMessage(
+  error: unknown,
+  subject?: string
+): string | undefined {
+  if (!isLegalAcceptanceRefusal(error)) {
+    return undefined;
+  }
+  return subject === undefined
+    ? legalAcceptanceWriteMessage
+    : `Não foi possível carregar ${subject}: ${LEGAL_ACCEPTANCE_MISSING}`;
+}
+
 const definiteCodes = new Set([
   "BAD_REQUEST",
   "CONFLICT",
@@ -57,8 +81,9 @@ export function readErrorMessage(error: unknown, subject: string): string {
   if (code === "UNAUTHORIZED") {
     return `Não foi possível carregar ${subject}.`;
   }
-  if (isLegalAcceptanceRefusal(error)) {
-    return `Não foi possível carregar ${subject}: falta aceitar os Termos de Uso e a Política de Privacidade.`;
+  const unaccepted = legalAcceptanceMessage(error, subject);
+  if (unaccepted !== undefined) {
+    return unaccepted;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

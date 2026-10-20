@@ -32,6 +32,7 @@ import {
 } from "../lib/format";
 import {
   isLegalAcceptanceRefusal,
+  legalAcceptanceMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -513,6 +514,10 @@ export type CatalogView =
 
 /** Message for a failed read of products, profiles, variants or stock. */
 export function loadErrorMessage(error: unknown, subject: string): string {
+  const unaccepted = legalAcceptanceMessage(error, subject);
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   // the session notice says the rest; here only what did not happen
   if (code === "UNAUTHORIZED") {

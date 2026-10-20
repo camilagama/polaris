@@ -20,6 +20,7 @@ import {
 } from "../lib/format";
 import {
   isDefiniteRpcRejection,
+  legalAcceptanceMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -827,6 +828,10 @@ export function mapStockError(
       `Não foi possível confirmar se ${STOCK_ACTION_LABELS[action].noun} foi registrad${action === "count" ? "a" : "o"}. A tentativa ficou bloqueada para edição. Use “Tentar novamente (seguro)”: o mesmo pedido é reenviado e o servidor não duplica o movimento.`,
       { unknownOutcome: true }
     );
+  }
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return stockFailure(unaccepted);
   }
   const code = rpcErrorCode(error);
   const refinable =

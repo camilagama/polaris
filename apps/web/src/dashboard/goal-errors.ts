@@ -1,4 +1,8 @@
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 
 export type GoalAction = "cancel" | "create" | "history" | "load" | "update";
 
@@ -26,8 +30,18 @@ function fallbackMessage(action: GoalAction): string {
   return "Não foi possível concluir a operação. Tente novamente.";
 }
 
+/** What each read action loads, for the text of the missing legal acceptance (the other actions are writes). */
+const READ_SUBJECTS: Partial<Record<GoalAction, string>> = {
+  history: "o histórico do alvo",
+  load: "as metas",
+};
+
 /** Portuguese text for a failed goal request. */
 export function goalErrorMessage(error: unknown, action: GoalAction): string {
+  const unaccepted = legalAcceptanceMessage(error, READ_SUBJECTS[action]);
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     if (action === "load") {

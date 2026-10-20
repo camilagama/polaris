@@ -13,6 +13,7 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./payment-profiles-page.css";
 
 const methods = [
@@ -144,6 +145,10 @@ function errorText(error: unknown): string {
     error.message === "duplicate_payment_profile_rule"
   ) {
     return "Remova regras repetidas para o mesmo método e combinação de parcelas.";
+  }
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return unaccepted;
   }
   const code =
     typeof error === "object" && error !== null && "code" in error

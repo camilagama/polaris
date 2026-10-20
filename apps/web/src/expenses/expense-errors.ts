@@ -1,4 +1,4 @@
-import { rpcErrorCode } from "../lib/rpc-error";
+import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
 
 export type ExpenseAction =
   | "category-archive"
@@ -99,11 +99,21 @@ function unauthorizedText(action: ExpenseAction): string {
   return UNAUTHORIZED_TEXTS[action];
 }
 
+/** What each read action loads, for the text of the missing legal acceptance (the other actions are writes). */
+const READ_SUBJECTS: Partial<Record<ExpenseAction, string>> = {
+  load: "as despesas",
+  "rule-load": "as regras",
+};
+
 /** Portuguese text for a failed expense, expense rule or expense category request. */
 export function expenseErrorMessage(
   error: unknown,
   action: ExpenseAction
 ): string {
+  const unaccepted = legalAcceptanceMessage(error, READ_SUBJECTS[action]);
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     return unauthorizedText(action);

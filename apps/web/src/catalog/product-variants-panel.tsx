@@ -14,6 +14,7 @@ import {
 import { orpcClient } from "../lib/orpc";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 import "./product-variants-panel.css";
 
 const optionChoices: ReadonlyArray<
@@ -106,6 +107,10 @@ function rpcErrorCode(error: unknown): string | undefined {
 }
 
 function variantErrorMessage(error: unknown): string {
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
     return "Não foi possível carregar ou salvar as variantes.";
