@@ -7,6 +7,8 @@ export const SESSION_ENDED_MESSAGE =
   "Sua sessão acabou. Entre de novo para continuar.";
 
 export const SIGN_IN_AGAIN_BUTTON = "Entrar de novo";
+/** The button after the tap: the page is about to leave (it waits for the local copy to be dropped). */
+export const SIGN_IN_AGAIN_OPENING = "Abrindo a tela de entrada…";
 
 /**
  * Going to the sign-in screen leaves the page, so what was typed and not sent can be lost (AC-22).

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import { publicCatalogErrorMessage } from "./public-catalog-errors";
 import {
   draftFromProfile,
@@ -41,6 +42,9 @@ export function PublicCatalogPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  useReportUnsentWork(
+    loaded !== null && hasProfileChanges(draft, loaded.setup.profile)
+  );
 
   const load = useCallback(
     async (keepDraft: boolean) => {

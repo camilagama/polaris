@@ -7,9 +7,12 @@ import type { SignInError, SignInReason } from "../lib/sign-in-path";
 export const SIGN_IN_TITLE = "Entrar no Polaris";
 export const SIGN_IN_PAGE_TITLE = "Entrar";
 export const SIGN_IN_SUPPORT = "Use sua conta do Google para entrar.";
+export const SIGN_IN_FIRST_TIME =
+  "Primeira vez? É o mesmo botão: sua conta é criada ao continuar.";
 
 export const GOOGLE_BUTTON = "Continuar com o Google";
 export const GOOGLE_BUTTON_PENDING = "Abrindo o Google…";
+export const GOOGLE_RETRY = "Tentar de novo";
 export const SIGN_IN_ENTERING = "Entrando…";
 export const SIGN_IN_CHECKING = "Verificando se você já entrou…";
 
@@ -36,7 +39,7 @@ export const RECENT_LOGIN_REASON =
 export const PRIVACY_LINK = "Política de Privacidade";
 export const TERMS_LINK = "Termos de Uso";
 // Only a pointer to the texts: the acceptance itself is recorded by its own screen (P7), not implied here.
-export const LEGAL_LINKS_INTRO = "Leia os";
+export const LEGAL_LINKS_TITLE = "Leia antes de entrar";
 export const NEW_TAB_HINT = "abre em outra aba";
 
 /** The line above the button for the reason the person was sent here, if any. */

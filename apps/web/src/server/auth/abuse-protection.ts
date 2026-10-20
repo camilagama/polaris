@@ -169,7 +169,7 @@ async function checkEmailSendRateLimit(
 const socialStartSuffix = "/sign-in/social";
 const socialCallbackSuffix = "/callback/google";
 const socialRateLimitedLocation = "/entrar?erro=limite";
-export const SOCIAL_UNAVAILABLE_LOCATION = "/entrar?erro=indisponivel";
+const SOCIAL_UNAVAILABLE_LOCATION = "/entrar?erro=indisponivel";
 
 type SocialAuthStep = "callback" | "start";
 
@@ -211,11 +211,14 @@ export function isSocialAuthRateLimitApplicable(request: Request): boolean {
  * is on while the password is off. It fails closed: no binding, no client IP or a failing binding is a 503
  * on the start. Over the limit, the start answers 429 JSON; the callback, which the browser navigates to,
  * redirects to the sign-in page instead of showing JSON, in both cases (`erro=limite`, `erro=indisponivel`).
+ * `onUnavailable` is called when the limiter itself is the failure (not when someone is over the limit),
+ * because the callback's redirect hides it from a 5xx alert.
  */
 export async function protectSocialAuthRequest(
   request: Request,
   bindings: WorkerBindings,
-  requestId?: string
+  requestId?: string,
+  onUnavailable?: () => void
 ): Promise<Response | undefined> {
   const step = socialAuthStep(request);
   if (!step) {
@@ -223,10 +226,12 @@ export async function protectSocialAuthRequest(
   }
 
   // The callback is a navigation of the browser: a 503 there would show JSON, so it goes back to the sign-in page.
-  const unavailable = () =>
-    step === "callback"
+  const unavailable = () => {
+    onUnavailable?.();
+    return step === "callback"
       ? redirectToSignIn(SOCIAL_UNAVAILABLE_LOCATION)
       : jsonError(503, "auth_rate_limit_unavailable", requestId);
+  };
 
   const secret = bindings.BETTER_AUTH_SECRET;
   const clientIp = request.headers.get("cf-connecting-ip")?.trim();

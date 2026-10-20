@@ -264,6 +264,31 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
   };
 }
 
+/**
+ * Whether the person put anything on the sale: a chosen variant, a changed quantity or price, an
+ * adjustment, a payment or profile choice, or a date. A blank form, and the offline mode's own
+ * "dated now", are not work. The cart counts even when it was built only by taps and selections.
+ */
+export function isSaleFormDirty(form: SaleFormState): boolean {
+  const blank = createItemDraft("");
+  const itemChanged = (item: ItemDraft) =>
+    item.variantId !== "" ||
+    item.productId !== "" ||
+    item.quantity !== blank.quantity ||
+    item.chargedUnitPrice !== blank.chargedUnitPrice ||
+    item.listedUnitPrice !== blank.listedUnitPrice;
+  return (
+    form.items.some(itemChanged) ||
+    form.adjustments.length > 0 ||
+    form.occurredAtLocal !== "" ||
+    form.payment.method !== "" ||
+    form.payment.installmentPlan !== "" ||
+    form.payment.installments !== "" ||
+    form.payment.anticipationRequested ||
+    form.profile.choice !== ""
+  );
+}
+
 export function editSaleDate(
   form: SaleFormState,
   occurredAtLocal: string
@@ -1824,7 +1849,7 @@ function failure(
 function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
   switch (code) {
     case "UNAUTHORIZED":
-      return failure("unauthorized", SESSION_ENDED_MESSAGE);
+      return failure("unauthorized", "A venda não foi confirmada.");
     case "FORBIDDEN":
       return failure(
         "forbidden",

@@ -11,7 +11,6 @@ import {
   listPriceFromField,
 } from "./product-variant-price-model";
 import "./product-variants-panel.css";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 const optionLabels: Record<ProductVariantOptionName, string> = {
   color: "Cor",
@@ -48,7 +47,7 @@ function priceErrorMessage(error: unknown): string {
     return "Sua conta não tem acesso a esta ação.";
   }
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return "O preço não foi salvo.";
   }
   return "Não foi possível salvar o preço. Tente novamente.";
 }

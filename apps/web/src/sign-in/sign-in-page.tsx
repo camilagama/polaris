@@ -1,9 +1,16 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import { parseSignInSearch } from "../lib/sign-in-path";
 import { GoogleLogo } from "./google-logo";
 import {
+  googleStartOutcome,
   hasSession,
   loadAuthMethods,
   type SignInFailure,
@@ -15,13 +22,15 @@ import {
   GOOGLE_BUTTON_PENDING,
   GOOGLE_ERROR_HELP,
   GOOGLE_NOT_OFFERED,
-  LEGAL_LINKS_INTRO,
+  GOOGLE_RETRY,
+  LEGAL_LINKS_TITLE,
   NEW_TAB_HINT,
   PRIVACY_LINK,
   reasonText,
   SIGN_IN_BACK_ONLINE,
   SIGN_IN_CHECKING,
   SIGN_IN_ENTERING,
+  SIGN_IN_FIRST_TIME,
   SIGN_IN_LIMIT,
   SIGN_IN_OFFLINE,
   SIGN_IN_PAGE_TITLE,
@@ -49,18 +58,77 @@ const failureText: Readonly<Record<SignInFailure, string>> = {
 /** The two legal pages open in another tab, so a half-done sign-in is not lost (L1 of the legal pages). */
 function LegalLinks() {
   return (
-    <p className="sign-in-legal">
-      <span>{LEGAL_LINKS_INTRO}</span>
-      <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
-        {TERMS_LINK}
-        <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-      </a>
-      <span>e a</span>
-      <a href={LEGAL_PATHS.privacy} rel="noopener noreferrer" target="_blank">
-        {PRIVACY_LINK}
-        <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-      </a>
+    <fieldset className="sign-in-legal">
+      <legend className="sign-in-legal-title">{LEGAL_LINKS_TITLE}</legend>
+      <ul>
+        <li>
+          <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
+            {TERMS_LINK}
+            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
+          </a>
+        </li>
+        <li>
+          <a
+            href={LEGAL_PATHS.privacy}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            {PRIVACY_LINK}
+            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
+          </a>
+        </li>
+      </ul>
+    </fieldset>
+  );
+}
+
+interface SignInAlertProps {
+  alertRef: RefObject<HTMLParagraphElement | null>;
+  help: string | null;
+  text: string;
+}
+
+function SignInAlert({ alertRef, help, text }: SignInAlertProps) {
+  return (
+    <p className="sign-in-alert" ref={alertRef} role="alert" tabIndex={-1}>
+      <span aria-hidden="true" className="sign-in-alert-icon">
+        !
+      </span>
+      <span>
+        {text}
+        {help ? (
+          <>
+            <br />
+            {help}
+          </>
+        ) : null}
+      </span>
     </p>
+  );
+}
+
+/** Always mounted, so a screen reader announces the change when the connection goes or returns. */
+function ConnectionNotice({
+  online,
+  reconnected,
+}: {
+  online: boolean;
+  reconnected: boolean;
+}) {
+  return (
+    <div className="sign-in-live" role="status">
+      {online ? null : (
+        <p className="sign-in-offline">
+          <span aria-hidden="true" className="sign-in-alert-icon">
+            ×
+          </span>
+          <span>{SIGN_IN_OFFLINE}</span>
+        </p>
+      )}
+      {online && reconnected ? (
+        <p className="sign-in-status">{SIGN_IN_BACK_ONLINE}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -82,6 +150,8 @@ export function SignInPage() {
   const [starting, setStarting] = useState(false);
   const [failure, setFailure] = useState<SignInFailure | null>(null);
   const [reconnected, setReconnected] = useState(false);
+  // bumped by "Tentar de novo" (Google off): the lookups run again
+  const [lookupRound, setLookupRound] = useState(0);
   const startedRef = useRef<boolean>(false);
   const alertRef = useRef<HTMLParagraphElement>(null);
 
@@ -136,6 +206,10 @@ export function SignInPage() {
         // `motivo=sessao` says the app was just refused with this very session: going back to `voltar` would
         // be refused again and bring the person here again, so the screen stays and offers the button
         if (inside && search.reason !== "sessao") {
+          // the person already tapped the button while this was running: the Google start is under way, leave it be
+          if (startedRef.current) {
+            return;
+          }
           setPhase("entering");
           window.location.replace(search.returnTo ?? "/");
           return;
@@ -153,7 +227,7 @@ export function SignInPage() {
       current = false;
       clearTimeout(slowTimer);
     };
-  }, [online, search.reason, search.returnTo]);
+  }, [online, search.reason, search.returnTo, lookupRound]);
 
   const handleGoogle = useCallback(() => {
     if (startedRef.current) {
@@ -163,6 +237,7 @@ export function SignInPage() {
     setStarting(true);
     setFailure(null);
     startGoogleSignIn(search.returnTo)
+      .then(googleStartOutcome)
       .then((result) => {
         if (result.status === "redirect") {
           // the page leaves: the button stays pending until it does
@@ -180,6 +255,12 @@ export function SignInPage() {
       });
   }, [search.returnTo]);
 
+  const handleRetry = useCallback(() => {
+    setSlowCheck(false);
+    setPhase("checking");
+    setLookupRound((round) => round + 1);
+  }, []);
+
   const alertText = failure
     ? failureText[failure]
     : (errorText(search.error) ?? (googleOff ? GOOGLE_NOT_OFFERED : null));
@@ -191,7 +272,11 @@ export function SignInPage() {
   }, [alertText]);
 
   const reason = reasonText(search.reason);
-  const showButton = phase === "ready";
+  // The button does not wait for the lookups, which only send away someone who is already in or turn it off: once
+  // the check is slow it is there, active, beside "Verificando…". A quick check (the return from Google) never
+  // shows it, so it does not flash before "Entrando…".
+  const showButton =
+    phase !== "entering" && (phase === "ready" || slowCheck || googleOff);
   const buttonDisabled = starting || !online || googleOff;
 
   return (
@@ -206,29 +291,18 @@ export function SignInPage() {
           </p>
           <h1 id="sign-in-title">{SIGN_IN_TITLE}</h1>
           <p className="sign-in-support">{SIGN_IN_SUPPORT}</p>
+          <p className="sign-in-support">{SIGN_IN_FIRST_TIME}</p>
           {reason ? <p className="sign-in-reason">{reason}</p> : null}
 
           {alertText ? (
-            <p
-              className="sign-in-alert"
-              ref={alertRef}
-              role="alert"
-              tabIndex={-1}
-            >
-              <span aria-hidden="true" className="sign-in-alert-icon">
-                !
-              </span>
-              <span>
-                {alertText}
-                {showGoogleHelp ? (
-                  <>
-                    <br />
-                    {GOOGLE_ERROR_HELP}
-                  </>
-                ) : null}
-              </span>
-            </p>
+            <SignInAlert
+              alertRef={alertRef}
+              help={showGoogleHelp ? GOOGLE_ERROR_HELP : null}
+              text={alertText}
+            />
           ) : null}
+
+          <ConnectionNotice online={online} reconnected={reconnected} />
 
           {phase === "entering" ? (
             <p className="sign-in-status" role="status">
@@ -254,20 +328,16 @@ export function SignInPage() {
             </button>
           ) : null}
 
-          {/* always mounted, so a screen reader announces the change when the connection goes or returns */}
-          <div className="sign-in-live" role="status">
-            {online ? null : (
-              <p className="sign-in-offline">
-                <span aria-hidden="true" className="sign-in-alert-icon">
-                  ×
-                </span>
-                <span>{SIGN_IN_OFFLINE}</span>
-              </p>
-            )}
-            {online && reconnected ? (
-              <p className="sign-in-status">{SIGN_IN_BACK_ONLINE}</p>
-            ) : null}
-          </div>
+          {googleOff && online ? (
+            <button
+              className="sign-in-retry"
+              disabled={phase === "checking"}
+              onClick={handleRetry}
+              type="button"
+            >
+              {GOOGLE_RETRY}
+            </button>
+          ) : null}
 
           <LegalLinks />
         </section>

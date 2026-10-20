@@ -65,7 +65,9 @@ describe("time zones", () => {
 
 describe("setupErrorMessage", () => {
   it("maps the server's answers to actionable messages", () => {
-    expect(setupErrorMessage({ code: "UNAUTHORIZED" })).toContain("sessão");
+    expect(setupErrorMessage({ code: "UNAUTHORIZED" })).toBe(
+      "A organização não foi aberta."
+    );
     expect(setupErrorMessage({ code: "FORBIDDEN" })).toContain("email");
     expect(setupErrorMessage({ code: "BAD_REQUEST" })).toContain("Revise");
     expect(setupErrorMessage({ code: "CONFLICT" })).toContain("suporte");

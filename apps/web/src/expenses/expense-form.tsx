@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { focusLater } from "../lib/focus";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import { ExpenseCategorySelect } from "./expense-category-select";
 import {
   EXPENSE_DRAFT_FIELDS,
@@ -22,6 +23,7 @@ import {
   type ExpenseDraftErrors,
   type ExpenseDraftField,
   type ExpenseInput,
+  isExpenseDraftChanged,
   moneyInputText,
   validateExpenseDraft,
 } from "./expense-model";
@@ -120,6 +122,11 @@ export function ExpenseForm({
     draftFrom(editing, today)
   );
   const [errors, setErrors] = useState<ExpenseDraftErrors>({});
+  // the form starts over under a new key, so what it started with is fixed for its life
+  const [initialDraft] = useState<ExpenseDraft>(() =>
+    draftFrom(editing, today)
+  );
+  useReportUnsentWork(isExpenseDraftChanged(draft, initialDraft));
 
   // Active categories only; the one the edited expense already has stays
   // selectable even when it was archived since.

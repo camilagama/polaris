@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   googleAuthorizationUrl,
+  googleStartOutcome,
   hasSession,
   loadAuthMethods,
   parseAuthMethods,
@@ -129,6 +130,37 @@ describe("hasSession", () => {
     expect(await hasSession(async () => json({}, 500))).toBe(false);
     expect(await hasSession(async () => Promise.reject(new Error("x")))).toBe(
       false
+    );
+  });
+});
+
+describe("googleStartOutcome", () => {
+  it("lets the page leave for Google's address", () => {
+    expect(googleStartOutcome({ status: "redirect", url: GOOGLE_URL })).toEqual(
+      {
+        status: "redirect",
+        url: GOOGLE_URL,
+      }
+    );
+  });
+
+  it.each([
+    "https://evil.example/x",
+    "https://accounts.google.com.evil.example/",
+    "http://accounts.google.com/x",
+    "javascript:alert(1)",
+    "/entrar",
+    "",
+  ])("shows the error state instead of leaving for %j", (url) => {
+    expect(googleStartOutcome({ status: "redirect", url })).toEqual({
+      failure: "indisponivel",
+      status: "failed",
+    });
+  });
+
+  it("passes a failure along as it is", () => {
+    expect(googleStartOutcome({ failure: "limite", status: "failed" })).toEqual(
+      { failure: "limite", status: "failed" }
     );
   });
 });

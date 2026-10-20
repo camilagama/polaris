@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import {
   createOfflineProduct,
   type PendingProduct,
@@ -23,7 +24,6 @@ import {
 import { ProductMediaPanel } from "./product-media-panel";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import "./products-page.css";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type ProductListStatus = "active" | "archived";
 type ProductAction = "archive" | "restore";
@@ -60,7 +60,9 @@ function errorMessage(
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return action === undefined
+      ? "Não foi possível carregar os produtos."
+      : "O produto não foi alterado.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -835,6 +837,19 @@ export function ProductsPage() {
 
   const editingProduct =
     products.find((product) => product.id === editingProductId) ?? null;
+  // typed and not sent: the form against an empty one, or against the product being edited
+  useReportUnsentWork(
+    isDraftChanged(
+      draft,
+      editingProduct
+        ? {
+            categoryId: editingProduct.categoryId ?? "",
+            description: editingProduct.description ?? "",
+            name: editingProduct.name,
+          }
+        : emptyDraft
+    )
+  );
   const variantsProduct =
     products.find((product) => product.id === variantsProductId) ?? null;
   const mediaProduct =

@@ -12,6 +12,7 @@ import {
   type WriteOffReasonCode,
 } from "@polaris/domain/inventory/write-off-stock";
 import { isCalendarDate } from "../lib/dates";
+import { isDraftChanged } from "../lib/unsent-work";
 import {
   formatBrlAmount,
   formatCalendarDate,
@@ -28,7 +29,6 @@ import {
   type StockTarget,
   unitsText,
 } from "./stock-target";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type ReceiveInput = Parameters<
   PolarisRpcClient["inventory"]["receiveStock"]
@@ -796,7 +796,7 @@ function stockFailure(
 function genericFailure(code: string | undefined): StockFailure {
   switch (code) {
     case "UNAUTHORIZED":
-      return stockFailure(SESSION_ENDED_MESSAGE);
+      return stockFailure("O movimento de estoque não foi registrado.");
     case "FORBIDDEN":
       return stockFailure(
         "Sua conta não tem permissão para alterar o estoque nesta organização."
@@ -908,6 +908,18 @@ export function isStockLocked(state: StockCommandState): boolean {
     state.submission.phase === "locked" ||
     state.submission.phase === "success"
   );
+}
+
+/**
+ * Whether something was typed in the panel and not sent: a field no longer at its starting value, and the
+ * command not yet done. Opening the panel with today's date alone is not work.
+ */
+export function isStockDraftChanged(state: StockCommandState): boolean {
+  if (state.submission.phase === "success") {
+    return false;
+  }
+  const initial = initialStockDraft(state.action, state.today);
+  return isDraftChanged(state.draft, initial);
 }
 
 /** The panel can be closed unless a request is in flight or its outcome unknown. */

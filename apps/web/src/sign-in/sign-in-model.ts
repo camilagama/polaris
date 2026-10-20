@@ -106,6 +106,20 @@ export type GoogleStart =
   | { status: "redirect"; url: string };
 
 /**
+ * What the page does with the answer of the start, checked once more right before it leaves: the
+ * address must be `https://accounts.google.com/...`, or the screen shows the error state instead.
+ */
+export function googleStartOutcome(result: GoogleStart): GoogleStart {
+  if (result.status !== "redirect") {
+    return result;
+  }
+  const url = googleAuthorizationUrl({ url: result.url });
+  return url
+    ? { status: "redirect", url }
+    : { failure: "indisponivel", status: "failed" };
+}
+
+/**
  * `POST /api/auth/sign-in/social` (AC-2). 429 is "too many tries"; every other refusal, a network
  * failure and a useless answer are "unavailable". Nothing is retried and nothing is stored.
  */

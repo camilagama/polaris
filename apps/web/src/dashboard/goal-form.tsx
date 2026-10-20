@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { focusLater } from "../lib/focus";
+import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import {
   GOAL_DRAFT_FIELDS,
   GOAL_KIND_OPTIONS,
@@ -212,6 +213,9 @@ export function GoalCreateForm({
 }: GoalCreateFormProps) {
   const [draft, setDraft] = useState<GoalDraft>(() => newGoalDraft(month));
   const [errors, setErrors] = useState<GoalDraftErrors>({});
+  // the form starts over under a new key, so what it started with is fixed for its life
+  const [initialDraft] = useState<GoalDraft>(() => newGoalDraft(month));
+  useReportUnsentWork(isDraftChanged(draft, initialDraft));
 
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -373,6 +377,9 @@ export function GoalEditForm({
   const [name, setName] = useState(goal.name ?? "");
   const [target, setTarget] = useState(goalTargetInputText(goal));
   const [errors, setErrors] = useState<GoalEditErrors>({});
+  useReportUnsentWork(
+    name !== (goal.name ?? "") || target !== goalTargetInputText(goal)
+  );
 
   const handleName = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setName(event.currentTarget.value);

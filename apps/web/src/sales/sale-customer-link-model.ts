@@ -8,7 +8,6 @@ import {
   type Loadable,
   loadErrorMessage,
 } from "./sale-form-model";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 export type LinkAction = SaleCustomerLinkReadModel["history"][number]["action"];
 
@@ -488,7 +487,7 @@ function codeFailure(code: string | undefined): Omit<LinkFailure, "reason"> {
     case "UNAUTHORIZED":
       return {
         ...plain,
-        message: SESSION_ENDED_MESSAGE,
+        message: "O vínculo do cliente com a venda não foi alterado.",
       };
     case "FORBIDDEN":
       return {

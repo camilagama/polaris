@@ -43,4 +43,10 @@ describe("the sign-in texts", () => {
     expect(texts.reasonText("recente")).toBe(texts.RECENT_LOGIN_REASON);
     expect(texts.reasonText(undefined)).toBeNull();
   });
+
+  it("tell a first-time visitor that the same button creates the account", () => {
+    expect(texts.SIGN_IN_FIRST_TIME).toBe(
+      "Primeira vez? É o mesmo botão: sua conta é criada ao continuar."
+    );
+  });
 });

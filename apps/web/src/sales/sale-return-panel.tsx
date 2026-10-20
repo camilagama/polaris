@@ -1,5 +1,6 @@
 import { type ChangeEvent, useCallback, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import "../catalog/categories-page.css";
 import "./sale-page.css";
 import "./sale-return-panel.css";
@@ -15,6 +16,7 @@ import {
   editReturnNote,
   editReturnReason,
   initialReturnState,
+  isReturnDraftChanged,
   isReturnLocked,
   mapReturnError,
   openReturn,
@@ -286,6 +288,7 @@ export function SaleReturnPanel({
   saleId,
 }: ReturnPanelProps) {
   const [state, setState] = useState(initialReturnState);
+  useReportUnsentWork(isReturnDraftChanged(state));
   const inFlight = useRef<boolean>(false);
 
   const handleOpen = useCallback(

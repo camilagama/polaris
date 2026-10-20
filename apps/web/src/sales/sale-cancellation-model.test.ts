@@ -15,6 +15,7 @@ import {
   editCancelNote,
   editCancelReason,
   initialCancelState,
+  isCancelDraftChanged,
   isCancelLocked,
   mapCancelError,
   noteCounterText,
@@ -350,8 +351,8 @@ describe("error mapping", () => {
   });
 
   it("uses the existing generic messages for authorization errors", () => {
-    expect(mapCancelError({ code: "UNAUTHORIZED" }).message).toContain(
-      "sessão"
+    expect(mapCancelError({ code: "UNAUTHORIZED" }).message).toBe(
+      "A alteração da venda não foi feita."
     );
     const forbidden = mapCancelError({
       code: "FORBIDDEN",
@@ -438,5 +439,27 @@ describe("unknown-outcome lock", () => {
 
   it("unlocks after a locked retry succeeds", () => {
     expect(isCancelLocked(cancelSucceeded(result(true)))).toBe(false);
+  });
+});
+
+describe("isCancelDraftChanged (the sign that the session notice warns about)", () => {
+  it("does not count a closed panel, or one opened and left empty", () => {
+    expect(isCancelDraftChanged(initialCancelState())).toBe(false);
+    expect(isCancelDraftChanged(openCancel(initialCancelState()))).toBe(false);
+  });
+
+  it("counts a chosen reason or a typed note", () => {
+    const opened = openCancel(initialCancelState());
+    expect(isCancelDraftChanged(editCancelReason(opened, "other"))).toBe(true);
+    expect(
+      isCancelDraftChanged(
+        editCancelNote(editCancelReason(opened, "other"), "cliente desistiu")
+      )
+    ).toBe(true);
+  });
+
+  it("does not count what closing threw away", () => {
+    const opened = editCancelReason(openCancel(initialCancelState()), "other");
+    expect(isCancelDraftChanged(closeCancel(opened))).toBe(false);
   });
 });

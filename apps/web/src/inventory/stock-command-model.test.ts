@@ -5,6 +5,7 @@ import {
   cancelDiscardStock,
   discardLockedStock,
   editStockField,
+  isStockDraftChanged,
   firstInvalidStockField,
   isStockLocked,
   mapStockError,
@@ -761,8 +762,8 @@ describe("mapStockError", () => {
   );
 
   it("falls back to the oRPC code when there is no known reason", () => {
-    expect(mapStockError("count", { code: "UNAUTHORIZED" }).message).toContain(
-      "sessão"
+    expect(mapStockError("count", { code: "UNAUTHORIZED" }).message).toBe(
+      "O movimento de estoque não foi registrado."
     );
     expect(mapStockError("count", { code: "FORBIDDEN" }).message).toContain(
       "permissão"
@@ -861,5 +862,40 @@ describe("summaries", () => {
     expect(stockConsequence("receive")).toContain("custo médio");
     expect(stockConsequence("count")).toContain("histórico");
     expect(stockConsequence("write_off")).toContain("nem cria despesa");
+  });
+});
+
+describe("isStockDraftChanged (the sign that the session notice warns about)", () => {
+  it("does not count a panel that was only opened (the date already says today)", () => {
+    for (const action of ["receive", "count", "write_off"] as const) {
+      expect(
+        isStockDraftChanged(startStockCommand(action, target, today))
+      ).toBe(false);
+    }
+  });
+
+  it("counts a typed field, and not one put back to its start", () => {
+    expect(isStockDraftChanged(filled("receive", { quantity: "10" }))).toBe(
+      true
+    );
+    expect(
+      isStockDraftChanged(filled("count", { physicalQuantity: "7" }))
+    ).toBe(true);
+    expect(isStockDraftChanged(filled("receive", { quantity: "" }))).toBe(
+      false
+    );
+  });
+
+  it("does not count a command that is already done", () => {
+    const done = stockSucceeded(filled("receive", receiveFields), {
+      balance: {
+        movingAverageCost: "11.000000",
+        quantity: 15,
+        variantId: target.variantId,
+        version: 4,
+      },
+      replayed: false,
+    });
+    expect(isStockDraftChanged(done)).toBe(false);
   });
 });

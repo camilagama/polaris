@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   defaultTimezone,
   firstInvalidField,
@@ -31,6 +32,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
   const [errors, setErrors] = useState<SetupErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  useReportUnsentWork(name.trim() !== "");
   const nameRef = useRef<HTMLInputElement>(null);
   const timezoneRef = useRef<HTMLInputElement>(null);
 

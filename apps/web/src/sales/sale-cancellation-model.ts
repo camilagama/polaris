@@ -7,7 +7,6 @@ import {
 } from "@polaris/domain/sales/sale-cancellation";
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
 import { isDefiniteRejection } from "./sale-form-model";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type CancelSaleRequest = Parameters<PolarisRpcClient["sale"]["cancel"]>[0];
 export type CancelSaleResult = Awaited<
@@ -187,7 +186,7 @@ export function operationFailure(
 function genericOperationFailure(code: string | undefined): OperationFailure {
   switch (code) {
     case "UNAUTHORIZED":
-      return operationFailure(SESSION_ENDED_MESSAGE);
+      return operationFailure("A alteração da venda não foi feita.");
     case "FORBIDDEN":
       return operationFailure(
         "Sua conta não tem acesso a esta organização ou ação."
@@ -299,6 +298,14 @@ export function openCancel(state: CancelState): CancelState {
   return isCancelLocked(state) || state.step !== "closed"
     ? state
     : { ...state, showErrors: false, step: "editing" };
+}
+
+/** Whether a reason or a note was put in the open panel and not sent. */
+export function isCancelDraftChanged(state: CancelState): boolean {
+  return (
+    state.step !== "closed" &&
+    (state.draft.reasonCode !== "" || state.draft.reasonNote.trim() !== "")
+  );
 }
 
 /** Closing abandons the draft; it is not possible while locked. */

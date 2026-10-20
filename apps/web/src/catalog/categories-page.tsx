@@ -12,8 +12,8 @@ import {
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import "./categories-page.css";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 type CategoryListStatus = "active" | "archived" | "deleted";
 type CategoryAction = "archive" | "restore" | "delete";
@@ -50,7 +50,9 @@ function errorMessage(
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return action === undefined
+      ? "Não foi possível carregar as categorias."
+      : "A categoria não foi alterada.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
@@ -494,6 +496,14 @@ export function CategoriesPage() {
     null
   );
   const [renameValue, setRenameValue] = useState("");
+  // typed and not sent: a new name, or a rename that differs from the current name
+  const renamedCategory = categories.find(
+    (item) => item.id === renamingCategoryId
+  );
+  useReportUnsentWork(
+    categoryName.trim() !== "" ||
+      (renamedCategory !== undefined && renameValue !== renamedCategory.name)
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
