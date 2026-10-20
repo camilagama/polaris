@@ -33,6 +33,42 @@ export const CLOSURE_PURGE_OVERDUE_DAYS = 30;
 /** The first notice before D goes out this many days before it. */
 export const CLOSURE_FIRST_NOTICE_LEAD_DAYS = 30;
 
+/**
+ * The notices of a closure (ADR 0102, amended), in the order of their dates: the request, D minus 30 and minus 7
+ * local days, D, and `rescheduled`, the new notice of 7 days when a legal hold released after the schedule pushed
+ * the purge. The privacy job writes one per closure cycle once its date arrives; of several due together only the
+ * latest goes out, the others are `skipped`. The database holds the same list (`closure_notices_milestone_allowed`),
+ * and the purge gate compares them.
+ */
+export const CLOSURE_NOTICE_MILESTONES = Object.freeze([
+  "closure",
+  "d30",
+  "d7",
+  "deletion_day",
+  "rescheduled",
+] as const);
+
+export type ClosureNoticeMilestone = (typeof CLOSURE_NOTICE_MILESTONES)[number];
+
+/**
+ * The notices that tell the owner the data will be deleted: the one of D minus 7 days, and the new one of 7 days after
+ * a legal hold released. No store is deleted before one of them was delivered (`sent_at` filled) in the current cycle
+ * and the latest of them at least `CLOSURE_PURGE_MIN_NOTICE_DAYS` ago (ADR 0102, amended): the schedule waits and the run refuses with `closure_notice_not_delivered`. The database
+ * writes the same list in `closed_organization_purge_wait` and `organization_purge_blocker`, and the purge gate
+ * compares them.
+ */
+export const CLOSURE_DELIVERY_MILESTONES = Object.freeze([
+  "d7",
+  "rescheduled",
+] as const satisfies readonly ClosureNoticeMilestone[]);
+
+/**
+ * A notice still owed (neither sent, failed nor skipped) this many days after its date enters the alert of a store
+ * left behind (`closure_purge_overdue`), for the support to see the owner was not told, for example while no e-mail
+ * is configured. The database writes it in hours (`interval '72 hours'`).
+ */
+export const CLOSURE_NOTICE_OVERDUE_DAYS = 3;
+
 export const CLOSURE_PHASES = Object.freeze([
   "closing",
   "closed",

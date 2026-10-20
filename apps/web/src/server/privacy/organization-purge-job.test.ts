@@ -430,6 +430,37 @@ describe("runOrganizationPurges", () => {
     expect(error).not.toHaveBeenCalled();
   });
 
+  it("logs a purge held when it runs by a temporary access, a live renewal or a notice not delivered as a refusal, with its code", async () => {
+    for (const code of [
+      "tenant_access_active",
+      "renewal_alive",
+      "closure_notice_not_delivered",
+    ]) {
+      const { error, warn } = quiet();
+      const ctx = fixture({
+        onPurge: () => Promise.reject(new Error(code)),
+      });
+
+      // biome-ignore lint/performance/noAwaitInLoops: one code at a time, each with its own fixture
+      await ctx.run();
+
+      expect(warn).toHaveBeenCalledWith("organization_purge_step_failed", {
+        attempt: 1,
+        job: "organization_purge",
+        organizationId: orgA,
+        outcome: "rejected",
+        reason: code,
+        step: "database",
+      });
+      expect(ctx.client.recordOrganizationPurgeFailure).toHaveBeenCalledWith(
+        orgA,
+        code
+      );
+      expect(error).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("stops before the database when a listed master is outside the organization's prefix", async () => {
     const ctx = fixture({
       media: {

@@ -57,7 +57,11 @@ import {
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
 import type { MediaBucketBinding } from "../src/server/environment";
-import { verifyAutomaticPurge } from "./organization-purge-automatic-checks";
+import { verifyClosureNotices } from "./closure-notice-checks";
+import {
+  deliverClosureNotice,
+  verifyAutomaticPurge,
+} from "./organization-purge-automatic-checks";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import { createRequesterReader } from "../src/server/privacy/data-export-reader";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
@@ -1087,6 +1091,9 @@ async function run() {
       "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
+    // the notice of D minus 7 days of this cycle was delivered (the cycle is the instant of the request, so it is
+    // written again after each move of the request): a purge waits for it (ADR 0102, amended)
+    await deliverClosureNotice(owner.pool, target.organizationId);
     // other gates may leave closures due: only this organization must end up closed
     await maintenance.finalizeExpiredClosures(1000);
     const closed = await owner.pool.query<{ status: string }>(
@@ -1169,6 +1176,9 @@ async function run() {
       "UPDATE public.organization_closures SET requested_at = now() - interval '91 days', recover_until = now() - interval '1 day' WHERE organization_id = $1",
       [target.organizationId]
     );
+    // the notice of D minus 7 days of this cycle was delivered (the cycle is the instant of the request, so it is
+    // written again after each move of the request): a purge waits for it (ADR 0102, amended)
+    await deliverClosureNotice(owner.pool, target.organizationId);
     await expectRefusal(
       privacyCase.id,
       "paid_access_running",
@@ -1224,6 +1234,9 @@ async function run() {
       "UPDATE public.organization_closures SET requested_at = now() - interval '91 days' WHERE organization_id = $1",
       [target.organizationId]
     );
+    // the notice of D minus 7 days of this cycle was delivered (the cycle is the instant of the request, so it is
+    // written again after each move of the request): a purge waits for it (ADR 0102, amended)
+    await deliverClosureNotice(owner.pool, target.organizationId);
     // a legal hold: placed under a case of the organization named, audited, and while in force no schedule
     const reviewIn = (days: number) =>
       new Date(Date.now() + days * 86_400_000).toISOString();
@@ -1679,6 +1692,9 @@ async function run() {
       "UPDATE public.organization_closures SET requested_at = now() - interval '91 days' WHERE organization_id = $1",
       [target.organizationId]
     );
+    // the notice of D minus 7 days of this cycle was delivered (the cycle is the instant of the request, so it is
+    // written again after each move of the request): a purge waits for it (ADR 0102, amended)
+    await deliverClosureNotice(owner.pool, target.organizationId);
     assert.equal(await salesLeft(), salesBeforeRefusals, "nothing was removed");
     const untouched = await owner.pool.query<{
       attempts: number;
@@ -2748,6 +2764,19 @@ async function run() {
     // the purge of the closure period, scheduled on its own (ADR 0102)
     tests.push(
       ...(await verifyAutomaticPurge({
+        admin,
+        bucket,
+        concurrent: concurrentPrivacy,
+        maintenance,
+        owner: owner.pool,
+        principal,
+        runtimes: { admin, tenant: runtime.pool },
+      }))
+    );
+
+    // the notices of the closure milestones, written by the same job (ADR 0102, amended)
+    tests.push(
+      ...(await verifyClosureNotices({
         admin,
         bucket,
         concurrent: concurrentPrivacy,

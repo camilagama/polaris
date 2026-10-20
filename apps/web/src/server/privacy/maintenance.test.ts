@@ -17,21 +17,34 @@ const nothingToSchedule = () =>
     Promise.resolve({ overdue: 0, scheduled: 0, scheduledLastDay: 0 })
   );
 
+const noneHeldBack = () => vi.fn(() => Promise.resolve(0));
+
+const nothingToRecord = () =>
+  vi.fn((_limit: number) =>
+    Promise.resolve({ organizations: 0, overdue: 0, recorded: 0, skipped: 0 })
+  );
+
 describe("the closure sweep", () => {
   it("asks once and stops when nothing was due", async () => {
     const finalizeExpiredClosures = vi.fn(() => Promise.resolve(0));
     await expect(
       runPrivacyMaintenance(
         {
+          countPurgesHeldBack: noneHeldBack(),
           finalizeExpiredClosures,
+          recordClosureNotices: nothingToRecord(),
           scheduleClosedOrganizationPurges: nothingToSchedule(),
         },
         off
       )
     ).resolves.toEqual({
       closedOrganizations: 0,
+      closureNoticesOverdue: 0,
+      closureNoticesRecorded: 0,
+      closureNoticesSkipped: 0,
       overduePurges: 0,
       purgeSchedulingEnabled: false,
+      purgesHeldBack: 0,
       scheduledPurges: 0,
       scheduledPurgesLastDay: 0,
     });
@@ -46,7 +59,9 @@ describe("the closure sweep", () => {
       .mockResolvedValueOnce(7);
     const report = await runPrivacyMaintenance(
       {
+        countPurgesHeldBack: noneHeldBack(),
         finalizeExpiredClosures,
+        recordClosureNotices: nothingToRecord(),
         scheduleClosedOrganizationPurges: nothingToSchedule(),
       },
       off
@@ -61,7 +76,9 @@ describe("the closure sweep", () => {
     );
     await runPrivacyMaintenance(
       {
+        countPurgesHeldBack: noneHeldBack(),
         finalizeExpiredClosures,
+        recordClosureNotices: nothingToRecord(),
         scheduleClosedOrganizationPurges: nothingToSchedule(),
       },
       off
@@ -75,7 +92,9 @@ describe("the closure sweep", () => {
     await expect(
       runPrivacyMaintenance(
         {
+          countPurgesHeldBack: noneHeldBack(),
           finalizeExpiredClosures: () => Promise.reject(new Error("db_down")),
+          recordClosureNotices: nothingToRecord(),
           scheduleClosedOrganizationPurges: nothingToSchedule(),
         },
         on
@@ -89,7 +108,9 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     const scheduleClosedOrganizationPurges = nothingToSchedule();
     const report = await runPrivacyMaintenance(
       {
+        countPurgesHeldBack: noneHeldBack(),
         finalizeExpiredClosures: () => Promise.resolve(0),
+        recordClosureNotices: nothingToRecord(),
         scheduleClosedOrganizationPurges,
       },
       off
@@ -130,7 +151,12 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
         });
       });
     const report = await runPrivacyMaintenance(
-      { finalizeExpiredClosures, scheduleClosedOrganizationPurges },
+      {
+        countPurgesHeldBack: noneHeldBack(),
+        finalizeExpiredClosures,
+        recordClosureNotices: nothingToRecord(),
+        scheduleClosedOrganizationPurges,
+      },
       on
     );
     expect(calls).toEqual(["close", "schedule", "schedule"]);
@@ -139,8 +165,12 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     );
     expect(report).toEqual({
       closedOrganizations: 3,
+      closureNoticesOverdue: 0,
+      closureNoticesRecorded: 0,
+      closureNoticesSkipped: 0,
       overduePurges: 1,
       purgeSchedulingEnabled: true,
+      purgesHeldBack: 0,
       scheduledPurges: CLOSURE_SWEEP_BATCH + 2,
       scheduledPurgesLastDay: CLOSURE_SWEEP_BATCH + 2,
     });
@@ -156,7 +186,9 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     );
     await runPrivacyMaintenance(
       {
+        countPurgesHeldBack: noneHeldBack(),
         finalizeExpiredClosures: () => Promise.resolve(0),
+        recordClosureNotices: nothingToRecord(),
         scheduleClosedOrganizationPurges,
       },
       on
@@ -164,6 +196,36 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     expect(scheduleClosedOrganizationPurges).toHaveBeenCalledTimes(
       CLOSURE_SWEEP_MAX_BATCHES
     );
+  });
+
+  it("counts the purges held back past their time with the switch on or off, after the notices", async () => {
+    for (const options of [off, on]) {
+      const calls: string[] = [];
+      const countPurgesHeldBack = vi.fn(() => {
+        calls.push("held back");
+        return Promise.resolve(3);
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: the switch off, then on, one after the other
+      const report = await runPrivacyMaintenance(
+        {
+          countPurgesHeldBack,
+          finalizeExpiredClosures: () => Promise.resolve(0),
+          recordClosureNotices: vi.fn((_limit: number) => {
+            calls.push("notices");
+            return Promise.resolve({
+              organizations: 0,
+              overdue: 0,
+              recorded: 0,
+              skipped: 0,
+            });
+          }),
+          scheduleClosedOrganizationPurges: nothingToSchedule(),
+        },
+        options
+      );
+      expect(report.purgesHeldBack).toBe(3);
+      expect(calls).toEqual(["notices", "held back"]);
+    }
   });
 
   it("is turned on only by the exact text true", () => {
@@ -177,8 +239,12 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     expect(CLOSURE_AUTO_PURGE_ALERT_PER_DAY).toBe(5);
     const report = (scheduledPurgesLastDay: number) => ({
       closedOrganizations: 0,
+      closureNoticesOverdue: 0,
+      closureNoticesRecorded: 0,
+      closureNoticesSkipped: 0,
       overduePurges: 0,
       purgeSchedulingEnabled: true,
+      purgesHeldBack: 0,
       scheduledPurges: 0,
       scheduledPurgesLastDay,
     });
@@ -196,5 +262,107 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     ].map((match) => match[1]);
     // the local top level, staging and production each declare it, and each one off
     expect(values).toEqual(["false", "false", "false"]);
+  });
+});
+
+describe("the notices of the closure milestones (ADR 0102, amended)", () => {
+  it("are written after the schedule, whatever the switch", async () => {
+    for (const options of [off, on]) {
+      const calls: string[] = [];
+      const recordClosureNotices = vi.fn((_limit: number) => {
+        calls.push("notices");
+        return Promise.resolve({
+          organizations: 2,
+          overdue: 4,
+          recorded: 2,
+          skipped: 1,
+        });
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: the switch off, then on, one after the other
+      const report = await runPrivacyMaintenance(
+        {
+          countPurgesHeldBack: noneHeldBack(),
+          finalizeExpiredClosures: () => {
+            calls.push("close");
+            return Promise.resolve(0);
+          },
+          recordClosureNotices,
+          scheduleClosedOrganizationPurges: vi.fn(() => {
+            calls.push("schedule");
+            return Promise.resolve({
+              overdue: 0,
+              scheduled: 0,
+              scheduledLastDay: 0,
+            });
+          }),
+        },
+        options
+      );
+      expect(calls).toEqual(
+        options.autoPurgeEnabled
+          ? ["close", "schedule", "notices"]
+          : ["close", "notices"]
+      );
+      expect(recordClosureNotices).toHaveBeenCalledWith(CLOSURE_SWEEP_BATCH);
+      expect(report.closureNoticesRecorded).toBe(2);
+      expect(report.closureNoticesSkipped).toBe(1);
+      expect(report.closureNoticesOverdue).toBe(4);
+    }
+  });
+
+  it("keep going while a whole batch of organizations was looked at, and are bounded", async () => {
+    const recordClosureNotices = vi
+      .fn<
+        (limit: number) => Promise<{
+          organizations: number;
+          overdue: number;
+          recorded: number;
+          skipped: number;
+        }>
+      >()
+      .mockResolvedValueOnce({
+        organizations: CLOSURE_SWEEP_BATCH,
+        overdue: 5,
+        recorded: CLOSURE_SWEEP_BATCH,
+        skipped: 3,
+      })
+      .mockResolvedValueOnce({
+        organizations: 4,
+        overdue: 2,
+        recorded: 4,
+        skipped: 0,
+      });
+    const report = await runPrivacyMaintenance(
+      {
+        countPurgesHeldBack: noneHeldBack(),
+        finalizeExpiredClosures: () => Promise.resolve(0),
+        recordClosureNotices,
+        scheduleClosedOrganizationPurges: nothingToSchedule(),
+      },
+      off
+    );
+    expect(recordClosureNotices).toHaveBeenCalledTimes(2);
+    expect(report.closureNoticesRecorded).toBe(CLOSURE_SWEEP_BATCH + 4);
+    expect(report.closureNoticesSkipped).toBe(3);
+    // the count is the database's, at the end of the last batch: it is not added up
+    expect(report.closureNoticesOverdue).toBe(2);
+    const endless = vi.fn(() =>
+      Promise.resolve({
+        organizations: CLOSURE_SWEEP_BATCH,
+        overdue: 0,
+        recorded: 1,
+        skipped: 0,
+      })
+    );
+    await runPrivacyMaintenance(
+      {
+        countPurgesHeldBack: noneHeldBack(),
+        finalizeExpiredClosures: () => Promise.resolve(0),
+        recordClosureNotices: endless,
+        scheduleClosedOrganizationPurges: nothingToSchedule(),
+      },
+      off
+    );
+    expect(endless).toHaveBeenCalledTimes(CLOSURE_SWEEP_MAX_BATCHES);
   });
 });

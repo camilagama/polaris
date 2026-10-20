@@ -22,6 +22,7 @@ import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
 } from "../src/server/billing/renewal-cancellation";
+import { handleClosureNotice } from "../src/server/privacy/closure-notice";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
@@ -257,10 +258,17 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           scheduledPurgesLastDay: report.scheduledPurgesLastDay,
         });
       }
-      if (report.overduePurges > 0) {
-        // closed stores still waiting a month after D with no legal hold: a person decides each one (ADR 0102)
+      if (
+        report.overduePurges > 0 ||
+        report.purgesHeldBack > 0 ||
+        report.closureNoticesOverdue > 0
+      ) {
+        // stores left behind (a month after D with no legal hold, or a purge held back past its time) and notices
+        // still owed days after their date: a person decides each one (ADR 0102)
         logger.warn("closure_purge_overdue", {
+          closureNoticesOverdue: report.closureNoticesOverdue,
           overduePurges: report.overduePurges,
+          purgesHeldBack: report.purgesHeldBack,
         });
       }
     } catch (error: unknown) {
@@ -498,6 +506,26 @@ async function handleRenewalCancelEvent(
   }
 }
 
+/**
+ * The handler of `organization.closure_notice` (ADR 0102, amended): a milestone of a closure arrived. Without the
+ * privacy role there is nothing to read, and a retry would not change it.
+ */
+async function handleClosureNoticeEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.PRIVACY_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("closure_notice_not_configured");
+  }
+  const client = createPrivacyMaintenanceClient(connectionString);
+  try {
+    await handleClosureNotice(client, envelope);
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */
 const inMemoryLedger = createInMemoryProcessingLedger();
 
@@ -532,6 +560,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
       handleRenewalCancelEvent(env, envelope),
     "data_export.requested": (envelope: QueueEnvelope) =>
       handleDataExportRequested(env, envelope),
+    "organization.closure_notice": (envelope: QueueEnvelope) =>
+      handleClosureNoticeEvent(env, envelope),
   };
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {

@@ -61,6 +61,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
       "cobrança: lida só pelo papel de billing, fora do escopo do export do tenant",
     billing_trial_claims:
       "cobrança: o teste grátis da pessoa, lido só pelo papel de billing (antiabuso)",
+    closure_notices:
+      "avisos do encerramento, só IDs e datas: lidos só pelas funções do papel de privacidade, nunca pelo tenant",
     data_export_files: "o próprio export",
     deletion_ledger:
       "tombstones de exclusão, só IDs opacos: o papel do tenant só grava, não lê",

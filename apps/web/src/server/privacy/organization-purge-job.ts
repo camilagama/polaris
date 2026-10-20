@@ -110,10 +110,16 @@ async function sweep(
   }
 }
 
-/** The refusals the database names, written as they are: the operator reads why the purge waits. */
+/**
+ * The refusals the database names, written as they are: the operator reads why the purge waits. Besides the hold and
+ * the period, a temporary access of the Admin or a renewal alive that began after the schedule (ADR 0102, amended).
+ */
 const NAMED_REFUSALS = new Set([
+  "closure_notice_not_delivered",
   "closure_period_not_elapsed",
   "legal_hold_active",
+  "renewal_alive",
+  "tenant_access_active",
 ]);
 
 /** The code written for a failed step: a named refusal, or the step (never the error's message). */
@@ -202,8 +208,8 @@ async function purgeOne(
 }
 
 /**
- * The purges an operator scheduled (no job schedules one, ADR 0079 and 0081). A purge that fails
- * never stops the others.
+ * The purges that are due, scheduled by an operator or by the closure period (ADR 0081 and 0102). A purge that
+ * fails never stops the others.
  */
 export async function runOrganizationPurges(
   dependencies: OrganizationPurgeJobDependencies

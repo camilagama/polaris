@@ -60,7 +60,33 @@ describe("outboxEvent", () => {
     expect(OUTBOX_EVENT_TYPES).toEqual([
       "data_export.requested",
       "billing.renewal_cancel_requested",
+      "organization.closure_notice",
     ]);
+  });
+
+  it("takes the notice of a closure milestone by its ID, and nothing beside it", () => {
+    const notice = {
+      event: { noticeId: "0199f0aa-2b3c-7d4e-8f90-123456789abc" },
+      idempotencyKey: outboxIdempotencyKey(
+        "organization.closure_notice",
+        "0199f0aa-2b3c-7d4e-8f90-123456789abc"
+      ),
+      organizationId: "org_1",
+      type: "organization.closure_notice",
+    };
+    expect(outboxEvent(notice).event).toEqual({
+      noticeId: "0199f0aa-2b3c-7d4e-8f90-123456789abc",
+    });
+    for (const event of [
+      { noticeId: "0199f0aa-2b3c-7d4e-8f90-123456789abc", userId: "user_1" },
+      { noticeId: "owner@example.com" },
+      { milestone: "d7" },
+      {},
+    ]) {
+      expect(() => outboxEvent({ ...notice, event })).toThrow(
+        InvalidOutboxEventError
+      );
+    }
   });
 
   it("takes the closure cycle of a renewal cancellation as an integer, and nothing beside it", () => {

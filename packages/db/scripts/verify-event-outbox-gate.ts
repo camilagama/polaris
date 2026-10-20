@@ -550,8 +550,9 @@ async function run() {
       [
         ["DELETE", ["polaris_purge_owner"]],
         ["INSERT", [runtimeRole]],
-        // the request of a closed organization's copy (ADR 0081) and the cancellation of the renewal at the
-        // closure (ADR 0074), through the privacy owner's functions
+        // the request of a closed organization's copy (ADR 0081), the cancellation of the renewal at the
+        // closure (ADR 0074) and the notice of a closure milestone (ADR 0102), through the privacy owner's functions
+        ["INSERT", ["polaris_privacy_owner"]],
         ["INSERT", ["polaris_privacy_owner"]],
         ["INSERT", ["polaris_privacy_owner"]],
         ["SELECT", ["polaris_outbox_owner"]],

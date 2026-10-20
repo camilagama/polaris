@@ -108,10 +108,10 @@ export const SCHEDULED_JOBS: readonly ScheduledJob[] = Object.freeze([
   {
     cadenceSeconds: HOUR_SECONDS,
     description:
-      "Privacy: closes the organizations whose recovery window ended, schedules the purge of the closures 7 local days before D behind CLOSURE_AUTO_PURGE_ENABLED (ADR 0102), sends back the data export events still owed, builds (without the queue path) or expires the data exports, and carries out the purges scheduled by the closure period or by an operator.",
+      "Privacy: closes the organizations whose recovery window ended, schedules the purge of the closures 7 local days before D behind CLOSURE_AUTO_PURGE_ENABLED (ADR 0102), writes the notices of the closure milestones whose date arrived, sends back the data export events still owed, builds (without the queue path) or expires the data exports, and carries out the purges scheduled by the closure period or by an operator.",
     id: "privacy.maintenance",
     idempotentBy:
-      "closing, scheduling and expiring act on what time already made due (an organization already scheduled is no longer closed, so it is not scheduled twice); the re-arm, the export claim and the purge claim are fenced by the database, and every purge step can run again without effect",
+      "closing, scheduling and expiring act on what time already made due (an organization already scheduled is no longer closed, so it is not scheduled twice); a notice is unique by milestone and closure cycle, so it is written once; the re-arm, the export claim and the purge claim are fenced by the database, and every purge step can run again without effect",
     lane: "maintenance",
     leaseSeconds: LEASE_SECONDS,
     purges: ["privacy.closure_purge_schedule", "privacy.data_export_expiry"],

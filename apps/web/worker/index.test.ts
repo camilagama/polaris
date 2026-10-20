@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
   dispatchOutbox: vi.fn(),
+  handleClosureNotice: vi.fn(),
   handleRenewalCancelRequested: vi.fn(),
   loginLockClose: vi.fn(),
   loginLockExpire: vi.fn(),
@@ -51,6 +52,9 @@ vi.mock("../src/server/privacy/data-export-job", () => ({
 }));
 vi.mock("../src/server/privacy/organization-purge-job", () => ({
   runOrganizationPurges: mocks.runOrganizationPurges,
+}));
+vi.mock("../src/server/privacy/closure-notice", () => ({
+  handleClosureNotice: mocks.handleClosureNotice,
 }));
 vi.mock("../src/server/privacy/data-export-reader", () => ({
   createClosedExportReader: vi.fn(() => vi.fn()),
@@ -375,8 +379,10 @@ describe("the scheduled maintenance", () => {
     it("warns when more than 5 stores entered the purge on their own in a day", async () => {
       const report = (scheduledPurgesLastDay: number) => ({
         closedOrganizations: 0,
+        closureNoticesOverdue: 0,
         overduePurges: 0,
         purgeSchedulingEnabled: true,
+        purgesHeldBack: 0,
         scheduledPurges: 1,
         scheduledPurgesLastDay,
       });
@@ -396,10 +402,12 @@ describe("the scheduled maintenance", () => {
     });
 
     it("warns when a closed store is still waiting 30 days after D with no legal hold", async () => {
-      const report = (overduePurges: number) => ({
+      const report = (overduePurges: number, closureNoticesOverdue = 0) => ({
         closedOrganizations: 0,
+        closureNoticesOverdue,
         overduePurges,
         purgeSchedulingEnabled: true,
+        purgesHeldBack: 0,
         scheduledPurges: 0,
         scheduledPurgesLastDay: 0,
       });
@@ -414,6 +422,45 @@ describe("the scheduled maintenance", () => {
         expect.objectContaining({
           event: "closure_purge_overdue",
           overduePurges: 2,
+        })
+      );
+    });
+
+    it("warns when a notice of the closure is still owed days after its date, with no store left behind", async () => {
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce({
+        closedOrganizations: 0,
+        closureNoticesOverdue: 3,
+        overduePurges: 0,
+        purgeSchedulingEnabled: false,
+        purgesHeldBack: 0,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+      });
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          closureNoticesOverdue: 3,
+          event: "closure_purge_overdue",
+          overduePurges: 0,
+        })
+      );
+    });
+
+    it("warns when a scheduled purge is held back past its time, with the automatic switch off", async () => {
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce({
+        closedOrganizations: 0,
+        closureNoticesOverdue: 0,
+        overduePurges: 0,
+        purgeSchedulingEnabled: false,
+        purgesHeldBack: 2,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+      });
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "closure_purge_overdue",
+          purgesHeldBack: 2,
         })
       );
     });
@@ -932,6 +979,52 @@ describe("the queue consumer", () => {
 
     expect(mocks.runDataExports).not.toHaveBeenCalled();
     expect(sent.ack).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the notice of a closure milestone", () => {
+    const noticeEvent = {
+      attempt: 1,
+      correlationId: "req-3",
+      event: { noticeId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a30" },
+      eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a31",
+      idempotencyKey:
+        "organization.closure_notice:0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a30",
+      organizationId: "org_1",
+      type: "organization.closure_notice",
+      version: 1,
+    };
+
+    it("runs on the default queue with the privacy role, acks and closes the connection", async () => {
+      mocks.handleClosureNotice.mockResolvedValue(undefined);
+      const sent = message(noticeEvent);
+      await runQueue({ ...configured, ...privacy }, sent);
+
+      expect(mocks.createPrivacyMaintenanceClient).toHaveBeenCalledWith(
+        privacy.PRIVACY_HYPERDRIVE.connectionString
+      );
+      expect(mocks.handleClosureNotice).toHaveBeenCalledTimes(1);
+      const [, envelope] = mocks.handleClosureNotice.mock.calls[0] ?? [];
+      expect(envelope).toMatchObject({
+        eventId: noticeEvent.eventId,
+        organizationId: "org_1",
+      });
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("acks without running where the privacy role is not provisioned", async () => {
+      const sent = message({
+        ...noticeEvent,
+        event: { noticeId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a32" },
+        eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a33",
+        idempotencyKey:
+          "organization.closure_notice:0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a32",
+      });
+      await runQueue(configured, sent);
+
+      expect(mocks.handleClosureNotice).not.toHaveBeenCalled();
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("the renewal cancellation of a closure", () => {

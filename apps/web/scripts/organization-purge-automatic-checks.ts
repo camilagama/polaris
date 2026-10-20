@@ -13,11 +13,13 @@ import {
   recordPrivacyScope,
   readSupportCase,
   releaseOrganizationLegalHold,
+  revokeTenantAccess,
   scheduleOrganizationPurge,
 } from "@polaris/db/admin-support-repository";
 import type { createDatabase } from "@polaris/db/client";
 import type { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import {
+  CLOSURE_NOTICE_OVERDUE_DAYS,
   CLOSURE_PURGE_GRACE_HOURS,
   CLOSURE_PURGE_MIN_NOTICE_DAYS,
   closureDeadlines,
@@ -39,7 +41,7 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * runs before the later of D plus 48 hours and the schedule plus 7 days.
  */
 
-type Pool = ReturnType<typeof createDatabase>["pool"];
+export type Pool = ReturnType<typeof createDatabase>["pool"];
 
 export interface AutomaticPurgeContext {
   admin: Pool;
@@ -53,14 +55,14 @@ export interface AutomaticPurgeContext {
   runtimes: { admin: Pool; tenant: Pool };
 }
 
-const ZONE = "America/Sao_Paulo";
+export const ZONE = "America/Sao_Paulo";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 /** Every organization this scenario writes, so the checks read only their own. */
 const created: string[] = [];
 
-async function dbNow(owner: Pool): Promise<Date> {
+export async function dbNow(owner: Pool): Promise<Date> {
   const result = await owner.query<{ now: Date }>("SELECT now() AS now");
   const now = result.rows[0]?.now;
   assert.ok(now);
@@ -68,7 +70,7 @@ async function dbNow(owner: Pool): Promise<Date> {
 }
 
 /** The first instant of the local day `offset` days from today's local date in the zone, as the database counts it. */
-async function localDayStart(
+export async function localDayStart(
   owner: Pool,
   zone: string,
   offset: number
@@ -82,12 +84,15 @@ async function localDayStart(
   return new Date(start);
 }
 
-/** A closed organization whose closure was requested at `requestedAt`, its recovery window over unless `recoverUntil` says otherwise. */
-async function closedOrganization(
+/**
+ * A closed organization whose closure was requested at `requestedAt`, its recovery window over unless `recoverUntil`
+ * says otherwise, with the notice of D minus 7 days delivered unless `notice` is false.
+ */
+export async function closedOrganization(
   owner: Pool,
   label: string,
   requestedAt: Date,
-  options: { recoverUntil?: Date; zone?: string } = {}
+  options: { notice?: boolean; recoverUntil?: Date; zone?: string } = {}
 ): Promise<{ organizationId: string; userId: string }> {
   const zone = options.zone ?? ZONE;
   const tenant = await createTenantFixture(
@@ -114,10 +119,77 @@ async function closedOrganization(
     [tenant.organizationId]
   );
   created.push(tenant.organizationId);
+  // the notice of D minus 7 days is delivered unless the check is about it (ADR 0102, amended)
+  if (options.notice !== false) {
+    await deliverClosureNotice(owner, tenant.organizationId);
+  }
   return tenant;
 }
 
-async function statusOf(owner: Pool, organizationId: string): Promise<string> {
+/**
+ * How long ago a notice counts as delivered when a check does not say otherwise: older than the 7 days the purge waits
+ * after the latest delivery (`CLOSURE_PURGE_MIN_NOTICE_DAYS`, ADR 0102 amended), so the checks about something else
+ * are not held by it.
+ */
+const DELIVERED_AGO_HOURS = (CLOSURE_PURGE_MIN_NOTICE_DAYS + 1) * 24;
+
+/**
+ * The notice of D minus 7 days of the organization's current closure cycle, delivered (`sent_at` filled, 8 days ago
+ * unless `sentAgoHours` says otherwise): what the schedule and the run wait for before a store is deleted (ADR 0102,
+ * amended). It names the cycle by the instant of the request, so a check that moves the request writes it again
+ * afterwards. The e-mail that would deliver it is the next change, so the check writes the row as the e-mail would
+ * leave it.
+ */
+export async function deliverClosureNotice(
+  owner: Pool,
+  organizationId: string,
+  milestone: "d7" | "rescheduled" = "d7",
+  sentAgoHours = DELIVERED_AGO_HOURS
+) {
+  await owner.query(
+    `INSERT INTO public.closure_notices
+       (organization_id, closure_requested_at, milestone, purge_from, due_at, user_id, sent_at)
+     SELECT closure.organization_id, closure.requested_at, $2::text,
+            CASE WHEN $2::text = 'rescheduled' THEN closure.requested_at + interval '100 days' END,
+            CASE WHEN $2::text = 'rescheduled' THEN closure.requested_at + interval '93 days'
+                 ELSE deadline.d7_at END,
+            closure.requested_by_user_id, now() - make_interval(hours => $3)
+       FROM public.organization_closures AS closure
+       JOIN public.organizations AS organization ON organization.id = closure.organization_id
+       CROSS JOIN LATERAL public.closure_deadlines(closure.requested_at, organization.timezone) AS deadline
+      WHERE closure.organization_id = $1
+     ON CONFLICT ON CONSTRAINT closure_notices_cycle_milestone_unique
+       DO UPDATE SET sent_at = now() - make_interval(hours => $3)`,
+    [organizationId, milestone, sentAgoHours]
+  );
+}
+
+/** `days` pass for a closed organization: its closure and its notices move that far back, the same cycle. */
+export async function timePasses(
+  owner: Pool,
+  organizationId: string,
+  days: number
+) {
+  await owner.query(
+    `UPDATE public.organization_closures
+        SET requested_at = requested_at - make_interval(days => $2), recover_until = recover_until - make_interval(days => $2),
+            closed_at = closed_at - make_interval(days => $2)
+      WHERE organization_id = $1`,
+    [organizationId, days]
+  );
+  await owner.query(
+    `UPDATE public.closure_notices
+        SET closure_requested_at = closure_requested_at - make_interval(days => $2), due_at = due_at - make_interval(days => $2),
+            purge_from = purge_from - make_interval(days => $2)
+      WHERE organization_id = $1`,
+    [organizationId, days]
+  );
+}
+
+export async function statusOf(
+  owner: Pool,
+  organizationId: string
+): Promise<string> {
   const result = await owner.query<{ status: string }>(
     "SELECT status FROM public.organizations WHERE id = $1",
     [organizationId]
@@ -134,7 +206,7 @@ interface PurgeRow {
   trigger: string;
 }
 
-async function purgeRow(
+export async function purgeRow(
   owner: Pool,
   organizationId: string
 ): Promise<PurgeRow | undefined> {
@@ -160,7 +232,7 @@ async function scheduledAudit(owner: Pool, organizationId: string) {
   ).rows;
 }
 
-async function asRole(
+export async function asRole(
   owner: Pool,
   role: string,
   statement: string,
@@ -183,7 +255,7 @@ const ZONES = [ZONE, "America/Manaus", "America/New_York"];
  * Waits past local midnight when the run is about to cross it in any zone of the scenario: "today" must be the same
  * day for the whole scenario, which takes well under the 5 minutes of margin.
  */
-async function awayFromMidnight(owner: Pool) {
+export async function awayFromMidnight(owner: Pool) {
   const result = await owner.query<{ seconds: number }>(
     `SELECT min(EXTRACT(epoch FROM public.closure_local_day_start((now() AT TIME ZONE zone)::date + 1, zone) - now()))::float8 AS seconds
        FROM unnest($1::text[]) AS zone`,
@@ -200,7 +272,7 @@ async function awayFromMidnight(owner: Pool) {
  * closed organizations (moved so the schedule, which takes the whole database, does not reach them) and the lease of
  * the other purges (held so the claim, which takes the oldest due one, reaches the scenario's).
  */
-async function setAsideOthers(owner: Pool) {
+export async function setAsideOthers(owner: Pool) {
   const closures = (
     await owner.query<{
       organization_id: string;
@@ -249,7 +321,7 @@ async function setAsideOthers(owner: Pool) {
   };
 }
 
-async function acceptedDeletionCase(
+export async function acceptedDeletionCase(
   context: AutomaticPurgeContext,
   organizationId: string
 ): Promise<string> {
@@ -282,7 +354,7 @@ async function acceptedDeletionCase(
   return opened.id;
 }
 
-async function supportCaseOf(
+export async function supportCaseOf(
   context: AutomaticPurgeContext,
   organizationId: string
 ): Promise<string> {
@@ -304,7 +376,10 @@ export async function verifyAutomaticPurge(
   // closure is moved to a month ago (still closed, window over, D far ahead), and everything is put back at the end
   const restoreOthers = await setAsideOthers(context.owner);
   try {
-    return await scenario(context);
+    const tests = await scenario(context);
+    tests.push(...(await recheckScenario(context)));
+    tests.push(...(await deliveredNoticeScenario(context)));
+    return tests;
   } finally {
     await restoreOthers();
   }
@@ -640,6 +715,11 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
       "42501",
       `the ${label} runtime cannot schedule`
     );
+    await expectSqlState(
+      () => pool.query("SELECT public.count_purges_held_back()"),
+      "42501",
+      `the ${label} runtime cannot count the purges held back`
+    );
   }
   await expectSqlState(
     () => maintenance.scheduleClosedOrganizationPurges(0),
@@ -802,13 +882,7 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
 
   // the clock reaches not_before (10 days pass: the closure is 93 days old): an hour before it, the run waits; at it, the
   // purge runs with no operator
-  await owner.query(
-    `UPDATE public.organization_closures
-        SET requested_at = requested_at - interval '10 days', recover_until = recover_until - interval '10 days',
-            closed_at = closed_at - interval '10 days'
-      WHERE organization_id = $1`,
-    [onTime.organizationId]
-  );
+  await timePasses(owner, onTime.organizationId, 10);
   await owner.query(
     "UPDATE public.organization_purges SET not_before = now() + interval '1 hour' WHERE organization_id = $1",
     [onTime.organizationId]
@@ -940,13 +1014,7 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
     "a cancellation in this closure pauses the automatic schedule"
   );
   // the Admin's path keeps the period of 90 days from the request: 5 days pass
-  await owner.query(
-    `UPDATE public.organization_closures
-        SET requested_at = requested_at - interval '5 days', recover_until = recover_until - interval '5 days',
-            closed_at = closed_at - interval '5 days'
-      WHERE organization_id = $1`,
-    [late.organizationId]
-  );
+  await timePasses(owner, late.organizationId, 5);
   const deletionCase = await acceptedDeletionCase(context, late.organizationId);
   const rescheduled = await scheduleOrganizationPurge(
     context.admin,
@@ -1025,5 +1093,734 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
     "every audit event of the system has no principal and no case, so the case views of the Admin list only events with a principal; an event of the system with a case, an operator's without a principal, any other type as the system's and a purge of the closure period with an operator are refused"
   );
 
+  return tests;
+}
+
+/** A refusal of the purge by name: SQLSTATE 55000 and the code as the message, as the job writes it down. */
+async function expectPurgeRefusal(
+  operation: () => Promise<unknown>,
+  code: string,
+  label: string
+) {
+  await assert.rejects(
+    operation,
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "55000", label);
+      assert.equal((error as Error).message, code, label);
+      return true;
+    },
+    label
+  );
+}
+
+async function membershipCount(owner: Pool, organizationId: string) {
+  const result = await owner.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM public.memberships WHERE organization_id = $1",
+    [organizationId]
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+/**
+ * The purge checks again, when it runs, what the schedule waited for (ADR 0102 amended, suggestion 1 of the security
+ * review): a temporary access of the Admin opened after the schedule, or a renewal alive again after it, keeps the
+ * claim away and makes the mark before the storage and `purge_organization_data` refuse, by the codes of the schedule,
+ * with nothing removed; for a purge of the closure period and for one of the Admin alike. Once both are gone the
+ * purge runs.
+ */
+async function recheckScenario(
+  context: AutomaticPurgeContext
+): Promise<string[]> {
+  const { admin, maintenance, owner, principal } = context;
+  const tests: string[] = [];
+  const keepOthersAway = (except: string) =>
+    owner.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '1 day' WHERE organization_id <> $1 AND swept_at IS NULL",
+      [except]
+    );
+  const releaseLease = (organizationId: string) =>
+    owner.query(
+      "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+      [organizationId]
+    );
+  const renewal = (organizationId: string, alive: boolean) =>
+    owner.query(
+      `UPDATE public.organization_billing
+          SET state = 'active', access_ends_at = now() - interval '1 day', provider = 'asaas',
+              provider_ref = $2, cancel_at_period_end = $3
+        WHERE organization_id = $1`,
+      [organizationId, `sub_gate_${randomUUID().slice(0, 8)}`, !alive]
+    );
+
+  // the two paths: a purge the closure period scheduled (a late sweep, so not_before is the schedule plus 7 days), and
+  // one the Admin scheduled under an accepted deletion case (its paid access over, no renewal to cancel)
+  const requested = await localDayStart(owner, ZONE, -95);
+  const automatic = await closedOrganization(
+    owner,
+    "recheck automatic",
+    requested
+  );
+  await maintenance.scheduleClosedOrganizationPurges(1000);
+  assert.equal(
+    await statusOf(owner, automatic.organizationId),
+    "purge_pending"
+  );
+  assert.equal(
+    (await purgeRow(owner, automatic.organizationId))?.trigger,
+    "closure_period"
+  );
+  const byAdmin = await closedOrganization(owner, "recheck admin", requested);
+  await renewal(byAdmin.organizationId, false);
+  await owner.query(
+    "INSERT INTO public.organization_purge_cancellations (organization_id, support_case_id, cancelled_by, reason, scheduled_at, cancelled_at) VALUES ($1, $2, $3, 'Pausa do automático', now(), now())",
+    [
+      byAdmin.organizationId,
+      await supportCaseOf(context, byAdmin.organizationId),
+      principal,
+    ]
+  );
+  const scheduled = await scheduleOrganizationPurge(
+    admin,
+    principal,
+    await acceptedDeletionCase(context, byAdmin.organizationId),
+    byAdmin.organizationId
+  );
+  assert.equal(scheduled?.status, "purge_pending");
+  assert.equal(
+    (await purgeRow(owner, byAdmin.organizationId))?.trigger,
+    "admin"
+  );
+
+  for (const [label, tenant] of [
+    ["closure period", automatic],
+    ["Admin", byAdmin],
+  ] as const) {
+    const { organizationId } = tenant;
+    await owner.query(
+      "UPDATE public.organization_purges SET not_before = now() - interval '1 second', locked_until = NULL WHERE organization_id = $1",
+      [organizationId]
+    );
+    await keepOthersAway(organizationId);
+    const members = await membershipCount(owner, organizationId);
+    assert.ok(members > 0);
+
+    // a temporary access of the Admin opened after the schedule: the run does not take the purge
+    const caseId = await supportCaseOf(context, organizationId);
+    const access = await grantTenantAccess(admin, principal, caseId, 30);
+    assert.ok(access);
+    assert.equal(
+      await maintenance.claimOrganizationPurge(900),
+      null,
+      `${label}: the access keeps the run away`
+    );
+    // opened while a run holds the purge: the mark before the storage and the purge itself refuse, by name
+    assert.ok(await revokeTenantAccess(admin, principal, access.id));
+    const claimed = await maintenance.claimOrganizationPurge(900);
+    assert.equal(claimed?.organizationId, organizationId);
+    const reopened = await grantTenantAccess(admin, principal, caseId, 30);
+    assert.ok(reopened);
+    await expectPurgeRefusal(
+      () => maintenance.markOrganizationPurgeStorageTouched(organizationId),
+      "tenant_access_active",
+      `${label}: the storage is not touched while an access is live`
+    );
+    await expectPurgeRefusal(
+      () => maintenance.purgeOrganizationData(organizationId),
+      "tenant_access_active",
+      `${label}: the purge refuses while an access is live`
+    );
+    assert.ok(await revokeTenantAccess(admin, principal, reopened.id));
+
+    // a renewal alive again after the schedule (a provider brought it back): the same, by its code
+    await renewal(organizationId, true);
+    await expectPurgeRefusal(
+      () => maintenance.markOrganizationPurgeStorageTouched(organizationId),
+      "renewal_alive",
+      `${label}: the storage is not touched while the renewal is alive`
+    );
+    await expectPurgeRefusal(
+      () => maintenance.purgeOrganizationData(organizationId),
+      "renewal_alive",
+      `${label}: the purge refuses while the renewal is alive`
+    );
+    await releaseLease(organizationId);
+    assert.equal(
+      await maintenance.claimOrganizationPurge(900),
+      null,
+      `${label}: the live renewal keeps the run away`
+    );
+    assert.equal(await statusOf(owner, organizationId), "purge_pending");
+    assert.equal(
+      await membershipCount(owner, organizationId),
+      members,
+      `${label}: nothing was removed`
+    );
+    const touched = await owner.query<{ storage_touched_at: Date | null }>(
+      "SELECT storage_touched_at FROM public.organization_purges WHERE organization_id = $1",
+      [organizationId]
+    );
+    assert.equal(
+      touched.rows[0]?.storage_touched_at,
+      null,
+      `${label}: the storage was never marked touched`
+    );
+
+    // both gone (the renewal cancelled at the end of the period, the access revoked): the purge runs
+    await renewal(organizationId, false);
+    await releaseLease(organizationId);
+    await keepOthersAway(organizationId);
+    assert.deepEqual(
+      await runOrganizationPurges({
+        bucket: context.bucket,
+        client: maintenance,
+        now: () => new Date(),
+      }),
+      { failed: 0, purged: 1, swept: 1 },
+      `${label}: purged once nothing holds it`
+    );
+    assert.equal(await statusOf(owner, organizationId), "purged");
+  }
+  tests.push(
+    "when the purge runs it checks again what the schedule waited for: a temporary access of the Admin opened after the schedule, or a renewal alive again, keeps the run from taking it, and while a run holds it the mark before the storage and purge_organization_data refuse with tenant_access_active or renewal_alive, nothing removed and the storage untouched; for a purge of the closure period and one of the Admin alike, and it runs once both are gone"
+  );
+  return tests;
+}
+
+type NoticeState = "failed" | "sent" | "skipped" | "unresolved";
+
+/** One notice of the organization's current cycle in the state asked, as the privacy job and the e-mail would leave it. */
+async function writeNotice(
+  owner: Pool,
+  organizationId: string,
+  milestone: string,
+  state: NoticeState,
+  options: {
+    cycleShiftDays?: number;
+    dueAgoHours?: number;
+    sentAgoHours?: number;
+  } = {}
+) {
+  await owner.query(
+    `INSERT INTO public.closure_notices
+       (organization_id, closure_requested_at, milestone, purge_from, due_at, user_id, skipped, sent_at, failed_at, failure_code)
+     SELECT closure.organization_id, closure.requested_at - make_interval(days => $4), $2::text,
+            CASE WHEN $2::text = 'rescheduled' THEN now() + interval '1 day' END,
+            GREATEST(closure.requested_at - make_interval(days => $4), now() - make_interval(hours => $5)),
+            closure.requested_by_user_id, $3::text = 'skipped',
+            CASE WHEN $3::text = 'sent' THEN now() - make_interval(hours => $6) END,
+            CASE WHEN $3::text = 'failed' THEN now() END,
+            CASE WHEN $3::text = 'failed' THEN 'address_refused' END
+       FROM public.organization_closures AS closure
+      WHERE closure.organization_id = $1
+     ON CONFLICT ON CONSTRAINT closure_notices_cycle_milestone_unique DO UPDATE
+       SET skipped = EXCLUDED.skipped, sent_at = EXCLUDED.sent_at, failed_at = EXCLUDED.failed_at,
+           failure_code = EXCLUDED.failure_code, due_at = EXCLUDED.due_at`,
+    [
+      organizationId,
+      milestone,
+      state,
+      options.cycleShiftDays ?? 0,
+      options.dueAgoHours ?? 0,
+      options.sentAgoHours ?? DELIVERED_AGO_HOURS,
+    ]
+  );
+}
+
+async function dropNotices(owner: Pool, organizationId: string) {
+  await owner.query(
+    "DELETE FROM public.closure_notices WHERE organization_id = $1",
+    [organizationId]
+  );
+}
+
+async function waitOf(owner: Pool, organizationId: string) {
+  const result = await owner.query<{ wait: string | null }>(
+    `SELECT public.closed_organization_purge_wait(closure.organization_id, closure.requested_at) AS wait
+       FROM public.organization_closures AS closure WHERE closure.organization_id = $1`,
+    [organizationId]
+  );
+  return result.rows[0]?.wait ?? null;
+}
+
+/**
+ * No store is deleted before the owner was told (ADR 0102, amended, decision of 20/10/2026): the schedule and the run
+ * wait while the current closure cycle has no `d7` or `rescheduled` notice with `sent_at` filled, for the closure period
+ * and for the Admin's path alike, and a store held back lands in the alert of a store left behind. Each check removes
+ * the notice to prove the refusal and puts it back to prove the purge goes on.
+ */
+async function deliveredNoticeScenario(
+  context: AutomaticPurgeContext
+): Promise<string[]> {
+  const { admin, maintenance, owner, principal } = context;
+  const tests: string[] = [];
+  const schedule = () => maintenance.scheduleClosedOrganizationPurges(1000);
+  const keepOthersAway = (except: string) =>
+    owner.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '1 day' WHERE organization_id <> $1 AND swept_at IS NULL",
+      [except]
+    );
+  const pastTime = (id: string) =>
+    owner.query(
+      "UPDATE public.organization_purges SET not_before = now() - interval '1 second', locked_until = NULL WHERE organization_id = $1",
+      [id]
+    );
+  const requested = await localDayStart(owner, ZONE, -95);
+
+  // the schedule waits for the delivered notice of D minus 7 days of this cycle, and for nothing else it can mistake for it
+  const automatic = await closedOrganization(
+    owner,
+    "notice wait automatic",
+    requested,
+    { notice: false }
+  );
+  const { organizationId } = automatic;
+  assert.equal(
+    await waitOf(owner, organizationId),
+    "closure_notice_not_delivered"
+  );
+  await schedule();
+  assert.equal(
+    await statusOf(owner, organizationId),
+    "closed",
+    "no notice at all"
+  );
+  for (const milestone of ["closure", "d30", "deletion_day"]) {
+    await writeNotice(owner, organizationId, milestone, "sent");
+  }
+  await schedule();
+  assert.equal(
+    await statusOf(owner, organizationId),
+    "closed",
+    "the other milestones, delivered, are not the notice of D minus 7 days"
+  );
+  for (const state of ["unresolved", "failed", "skipped"] as const) {
+    await writeNotice(owner, organizationId, "d7", state);
+    await schedule();
+    assert.equal(
+      await statusOf(owner, organizationId),
+      "closed",
+      `a d7 notice that is ${state} is not a delivered one`
+    );
+    assert.equal(
+      await waitOf(owner, organizationId),
+      "closure_notice_not_delivered"
+    );
+  }
+  await dropNotices(owner, organizationId);
+  await writeNotice(owner, organizationId, "d7", "sent", {
+    cycleShiftDays: 200,
+  });
+  await schedule();
+  assert.equal(
+    await statusOf(owner, organizationId),
+    "closed",
+    "a notice delivered in an earlier closure cycle does not count for this one"
+  );
+  await dropNotices(owner, organizationId);
+  await writeNotice(owner, organizationId, "d7", "sent");
+  assert.equal(await waitOf(owner, organizationId), null);
+  await schedule();
+  assert.equal(await statusOf(owner, organizationId), "purge_pending");
+  tests.push(
+    "the schedule waits (closure_notice_not_delivered) while the current closure cycle has no d7 or rescheduled notice with sent_at filled: no notice, the other milestones delivered, a d7 notice unresolved, failed or skipped, and one delivered in an earlier cycle all keep the store closed; the delivered notice lets it go"
+  );
+
+  // the run checks it again: a notice that disappears (a restore from an older copy) keeps the run away and makes the
+  // mark before the storage and the purge refuse, by name; the rescheduled notice is the other that satisfies it
+  await pastTime(organizationId);
+  await keepOthersAway(organizationId);
+  const claimed = await maintenance.claimOrganizationPurge(900);
+  assert.equal(claimed?.organizationId, organizationId);
+  const members = await membershipCount(owner, organizationId);
+  assert.ok(members > 0);
+  await dropNotices(owner, organizationId);
+  await expectPurgeRefusal(
+    () => maintenance.markOrganizationPurgeStorageTouched(organizationId),
+    "closure_notice_not_delivered",
+    "the storage is not touched without a delivered notice"
+  );
+  await expectPurgeRefusal(
+    () => maintenance.purgeOrganizationData(organizationId),
+    "closure_notice_not_delivered",
+    "the purge refuses without a delivered notice"
+  );
+  await owner.query(
+    "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+    [organizationId]
+  );
+  assert.equal(
+    await maintenance.claimOrganizationPurge(900),
+    null,
+    "without a delivered notice the claim does not take it"
+  );
+  assert.equal(await statusOf(owner, organizationId), "purge_pending");
+  assert.equal(
+    await membershipCount(owner, organizationId),
+    members,
+    "nothing was removed"
+  );
+  const touched = await owner.query<{ storage_touched_at: Date | null }>(
+    "SELECT storage_touched_at FROM public.organization_purges WHERE organization_id = $1",
+    [organizationId]
+  );
+  assert.equal(touched.rows[0]?.storage_touched_at, null);
+
+  // the alert counts it (`count_purges_held_back`: past not_before, held back by the notice), and not one under a legal hold
+  const baseline = () => maintenance.countPurgesHeldBack();
+  const withNotice = await (async () => {
+    await writeNotice(owner, organizationId, "d7", "sent");
+    const count = await baseline();
+    await dropNotices(owner, organizationId);
+    return count;
+  })();
+  const stuck = await baseline();
+  assert.equal(
+    stuck,
+    withNotice + 1,
+    "a purge past its time held back by the notice is counted"
+  );
+  // the count does not depend on the switch of the automatic purge: the Admin's purges wait the same way
+  const switchedOff = await runPrivacyMaintenance(maintenance, {
+    autoPurgeEnabled: false,
+  });
+  assert.equal(switchedOff.purgesHeldBack, stuck);
+  assert.equal(switchedOff.purgeSchedulingEnabled, false);
+  const holdCase = await supportCaseOf(context, organizationId);
+  await placeOrganizationLegalHold(
+    admin,
+    principal,
+    holdCase,
+    organizationId,
+    new Date(Date.now() + 30 * DAY_MS).toISOString()
+  );
+  await pastTime(organizationId);
+  assert.equal(
+    await baseline(),
+    withNotice,
+    "under a legal hold it is not counted"
+  );
+  await releaseOrganizationLegalHold(
+    admin,
+    principal,
+    holdCase,
+    organizationId
+  );
+  await pastTime(organizationId);
+  assert.equal(await baseline(), withNotice + 1);
+  // the other two reasons count the same once the notice is there: a live temporary access and a renewal alive
+  await writeNotice(owner, organizationId, "rescheduled", "sent");
+  assert.equal(
+    await baseline(),
+    withNotice,
+    "a delivered rescheduled notice satisfies it as well"
+  );
+  const access = await grantTenantAccess(admin, principal, holdCase, 30);
+  assert.ok(access);
+  assert.equal(
+    await baseline(),
+    withNotice + 1,
+    "a live temporary access past the time is counted"
+  );
+  assert.ok(await revokeTenantAccess(admin, principal, access.id));
+  assert.equal(await baseline(), withNotice);
+  await owner.query(
+    `UPDATE public.organization_billing
+        SET state = 'active', access_ends_at = now() - interval '1 day', provider = 'asaas', provider_ref = $2,
+            cancel_at_period_end = false
+      WHERE organization_id = $1`,
+    [organizationId, `sub_gate_${randomUUID().slice(0, 8)}`]
+  );
+  assert.equal(
+    await baseline(),
+    withNotice + 1,
+    "a renewal alive past the time is counted"
+  );
+  await owner.query(
+    "UPDATE public.organization_billing SET cancel_at_period_end = true WHERE organization_id = $1",
+    [organizationId]
+  );
+  assert.equal(await baseline(), withNotice);
+  // with the notice delivered and nothing else in the way the purge runs (here by the rescheduled notice alone)
+  await owner.query(
+    "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+    [organizationId]
+  );
+  await keepOthersAway(organizationId);
+  assert.deepEqual(
+    await runOrganizationPurges({
+      bucket: context.bucket,
+      client: maintenance,
+      now: () => new Date(),
+    }),
+    { failed: 0, purged: 1, swept: 1 }
+  );
+  assert.equal(await statusOf(owner, organizationId), "purged");
+  tests.push(
+    "the run checks the notice again: without a delivered one the claim does not take the purge and the mark before the storage and purge_organization_data refuse with closure_notice_not_delivered, nothing removed; the alert counts, with the automatic switch on or off, the purge held back past its time by the notice, a live access or a live renewal (not one under a legal hold), and the purge runs once a d7 or rescheduled notice is delivered"
+  );
+
+  // the Admin's path: the Admin may schedule it (the case decides), and the run waits for the notice all the same
+  const byAdmin = await closedOrganization(
+    owner,
+    "notice wait admin",
+    requested,
+    {
+      notice: false,
+    }
+  );
+  await owner.query(
+    `UPDATE public.organization_billing
+        SET state = 'active', access_ends_at = now() - interval '1 day', provider = 'asaas', provider_ref = $2,
+            cancel_at_period_end = true
+      WHERE organization_id = $1`,
+    [byAdmin.organizationId, `sub_gate_${randomUUID().slice(0, 8)}`]
+  );
+  const scheduled = await scheduleOrganizationPurge(
+    admin,
+    principal,
+    await acceptedDeletionCase(context, byAdmin.organizationId),
+    byAdmin.organizationId
+  );
+  assert.equal(scheduled?.status, "purge_pending");
+  assert.equal(
+    (await purgeRow(owner, byAdmin.organizationId))?.trigger,
+    "admin"
+  );
+  await pastTime(byAdmin.organizationId);
+  await keepOthersAway(byAdmin.organizationId);
+  assert.equal(
+    await maintenance.claimOrganizationPurge(900),
+    null,
+    "an Admin purge without a delivered notice is not taken"
+  );
+  await writeNotice(owner, byAdmin.organizationId, "d7", "sent");
+  const adminClaim = await maintenance.claimOrganizationPurge(900);
+  assert.equal(adminClaim?.organizationId, byAdmin.organizationId);
+  await dropNotices(owner, byAdmin.organizationId);
+  await expectPurgeRefusal(
+    () =>
+      maintenance.markOrganizationPurgeStorageTouched(byAdmin.organizationId),
+    "closure_notice_not_delivered",
+    "Admin: the storage is not touched without a delivered notice"
+  );
+  await expectPurgeRefusal(
+    () => maintenance.purgeOrganizationData(byAdmin.organizationId),
+    "closure_notice_not_delivered",
+    "Admin: the purge refuses without a delivered notice"
+  );
+  await writeNotice(owner, byAdmin.organizationId, "d7", "sent");
+  await owner.query(
+    "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+    [byAdmin.organizationId]
+  );
+  await keepOthersAway(byAdmin.organizationId);
+  assert.deepEqual(
+    await runOrganizationPurges({
+      bucket: context.bucket,
+      client: maintenance,
+      now: () => new Date(),
+    }),
+    { failed: 0, purged: 1, swept: 1 }
+  );
+  assert.equal(await statusOf(owner, byAdmin.organizationId), "purged");
+  tests.push(
+    "the notice delivered is a condition of the Admin's purge too: scheduled by the case it is not taken, and with it gone while the run holds it the mark and the purge refuse; it runs when the notice is delivered"
+  );
+
+  // the notice must have been delivered at least 7 days ago (decision of 20/10/2026): a late notice, or a purge the Admin
+  // schedules, never deletes the store hours after the owner was told. The latest of the d7 and rescheduled notices counts.
+  const settle = CLOSURE_PURGE_MIN_NOTICE_DAYS * 24;
+  const aged = (id: string, hoursAgo: number) =>
+    owner.query(
+      "UPDATE public.closure_notices SET sent_at = now() - make_interval(hours => $2) WHERE organization_id = $1 AND sent_at IS NOT NULL",
+      [id, hoursAgo]
+    );
+  const settling = await closedOrganization(owner, "notice settle", requested, {
+    notice: false,
+  });
+  const settlingId = settling.organizationId;
+  await writeNotice(owner, settlingId, "d7", "sent", {
+    sentAgoHours: settle - 1,
+  });
+  assert.equal(
+    await waitOf(owner, settlingId),
+    "closure_notice_not_delivered",
+    "a notice delivered less than 7 days ago keeps the schedule waiting"
+  );
+  await schedule();
+  assert.equal(await statusOf(owner, settlingId), "closed");
+  await writeNotice(owner, settlingId, "d7", "sent", {
+    sentAgoHours: settle + 1,
+  });
+  await writeNotice(owner, settlingId, "rescheduled", "sent", {
+    sentAgoHours: 1,
+  });
+  assert.equal(
+    await waitOf(owner, settlingId),
+    "closure_notice_not_delivered",
+    "the latest of the notices counts: an old d7 does not make up for a rescheduled one sent an hour ago"
+  );
+  await schedule();
+  assert.equal(await statusOf(owner, settlingId), "closed");
+  await aged(settlingId, settle + 1);
+  assert.equal(await waitOf(owner, settlingId), null);
+  await schedule();
+  assert.equal(
+    await statusOf(owner, settlingId),
+    "purge_pending",
+    "delivered more than 7 days ago, the schedule goes on"
+  );
+  tests.push(
+    "the schedule waits (closure_notice_not_delivered) while the latest d7 or rescheduled notice of the cycle was delivered less than 7 days ago, even with an older one delivered before it; delivered more than 7 days ago, it goes on"
+  );
+
+  // the run checks the age again: held back by a fresh notice (and counted by the alert), then taken once it is 7 days old
+  await pastTime(settlingId);
+  await keepOthersAway(settlingId);
+  const withAged = await maintenance.countPurgesHeldBack();
+  await aged(settlingId, settle - 1);
+  assert.equal(
+    await maintenance.countPurgesHeldBack(),
+    withAged + 1,
+    "a purge held back by a notice delivered less than 7 days ago is counted"
+  );
+  assert.equal(
+    await maintenance.claimOrganizationPurge(900),
+    null,
+    "the claim does not take a purge whose notice was delivered less than 7 days ago"
+  );
+  await aged(settlingId, settle + 1);
+  const settledClaim = await maintenance.claimOrganizationPurge(900);
+  assert.equal(settledClaim?.organizationId, settlingId);
+  await aged(settlingId, settle - 1);
+  await expectPurgeRefusal(
+    () => maintenance.markOrganizationPurgeStorageTouched(settlingId),
+    "closure_notice_not_delivered",
+    "the storage is not touched when the notice was delivered less than 7 days ago"
+  );
+  await expectPurgeRefusal(
+    () => maintenance.purgeOrganizationData(settlingId),
+    "closure_notice_not_delivered",
+    "the purge refuses when the notice was delivered less than 7 days ago"
+  );
+  assert.equal(await statusOf(owner, settlingId), "purge_pending");
+  await aged(settlingId, settle + 1);
+  await owner.query(
+    "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+    [settlingId]
+  );
+  assert.deepEqual(
+    await runOrganizationPurges({
+      bucket: context.bucket,
+      client: maintenance,
+      now: () => new Date(),
+    }),
+    { failed: 0, purged: 1, swept: 1 }
+  );
+  assert.equal(await statusOf(owner, settlingId), "purged");
+  tests.push(
+    "the run checks the age of the notice again: delivered less than 7 days ago, the claim does not take the purge, the alert counts it, and the mark before the storage and purge_organization_data refuse with closure_notice_not_delivered; delivered more than 7 days ago, the purge runs"
+  );
+
+  // the Admin's purge waits the same 7 days: the case may schedule it at once, the run does not
+  const settlingAdmin = await closedOrganization(
+    owner,
+    "notice settle admin",
+    requested,
+    { notice: false }
+  );
+  await writeNotice(owner, settlingAdmin.organizationId, "d7", "sent", {
+    sentAgoHours: 1,
+  });
+  await owner.query(
+    `UPDATE public.organization_billing
+        SET state = 'active', access_ends_at = now() - interval '1 day', provider = 'asaas', provider_ref = $2,
+            cancel_at_period_end = true
+      WHERE organization_id = $1`,
+    [settlingAdmin.organizationId, `sub_gate_${randomUUID().slice(0, 8)}`]
+  );
+  const adminScheduled = await scheduleOrganizationPurge(
+    admin,
+    principal,
+    await acceptedDeletionCase(context, settlingAdmin.organizationId),
+    settlingAdmin.organizationId
+  );
+  assert.equal(adminScheduled?.status, "purge_pending");
+  await pastTime(settlingAdmin.organizationId);
+  await keepOthersAway(settlingAdmin.organizationId);
+  assert.equal(
+    await maintenance.claimOrganizationPurge(900),
+    null,
+    "an Admin purge is not taken while the notice was delivered an hour ago"
+  );
+  await aged(settlingAdmin.organizationId, settle + 1);
+  assert.deepEqual(
+    await runOrganizationPurges({
+      bucket: context.bucket,
+      client: maintenance,
+      now: () => new Date(),
+    }),
+    { failed: 0, purged: 1, swept: 1 }
+  );
+  assert.equal(await statusOf(owner, settlingAdmin.organizationId), "purged");
+  tests.push(
+    "the Admin's purge scheduled by the case waits for the notice to be 7 days old as well: not taken with the notice delivered an hour ago, and it runs once the notice is older than 7 days"
+  );
+
+  // a notice still owed days after its date enters the alert, whatever the switch; one settled or skipped does not
+  const owed = await closedOrganization(owner, "notice owed", requested, {
+    notice: false,
+  });
+  const overdue = async () =>
+    (await maintenance.recordClosureNotices(1000)).overdue;
+  // the job writes this store's own notices on the first call: they are settled, so the count is taken without them
+  await overdue();
+  await owner.query(
+    "UPDATE public.closure_notices SET sent_at = now() WHERE organization_id = $1 AND NOT skipped",
+    [owed.organizationId]
+  );
+  const before = await overdue();
+  const limitHours = CLOSURE_NOTICE_OVERDUE_DAYS * 24;
+  await writeNotice(owner, owed.organizationId, "d30", "unresolved", {
+    dueAgoHours: limitHours - 1,
+  });
+  assert.equal(
+    await overdue(),
+    before,
+    "an unresolved notice younger than the limit is not counted"
+  );
+  await writeNotice(owner, owed.organizationId, "d30", "unresolved", {
+    dueAgoHours: limitHours + 1,
+  });
+  assert.equal(
+    await overdue(),
+    before + 1,
+    `an unresolved notice older than ${CLOSURE_NOTICE_OVERDUE_DAYS} days is counted`
+  );
+  for (const state of ["sent", "failed", "skipped"] as const) {
+    await writeNotice(owner, owed.organizationId, "d30", state, {
+      dueAgoHours: limitHours + 1,
+    });
+    assert.equal(
+      await overdue(),
+      before,
+      `a notice ${state} is settled: not counted`
+    );
+  }
+  await writeNotice(owner, owed.organizationId, "d30", "unresolved", {
+    dueAgoHours: limitHours + 1,
+  });
+  await owner.query(
+    "UPDATE public.organization_closures SET recovered_at = now(), closed_at = NULL WHERE organization_id = $1",
+    [owed.organizationId]
+  );
+  assert.equal(
+    await overdue(),
+    before,
+    "a notice of a closure the owner undid is not counted"
+  );
+  tests.push(
+    `a notice still owed for more than ${CLOSURE_NOTICE_OVERDUE_DAYS} days (neither sent, failed nor skipped, in a closure still on) enters the alert, with the switch of the automatic purge on or off; a younger one, a settled one and one of a recovered closure do not`
+  );
   return tests;
 }

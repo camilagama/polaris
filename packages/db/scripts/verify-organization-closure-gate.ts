@@ -979,6 +979,8 @@ async function run() {
     ]);
     assert.deepEqual(await columns("memberships", "SELECT"), [
       "authorization_epoch",
+      // the owner a notice of the closure is for, when the one who asked is no longer a member (ADR 0102, amended)
+      "created_at",
       "organization_id",
       "role",
       "status",
@@ -987,6 +989,17 @@ async function run() {
     assert.deepEqual(await columns("offline_grants", "SELECT"), [
       "organization_id",
       "revoked_at",
+    ]);
+    // whether a purge was claimed (ADR 0081), and when a purge of the closure period was scheduled and may run (the
+    // notice of a rescheduled purge, ADR 0102 amended)
+    assert.deepEqual(await columns("organization_purges", "SELECT"), [
+      "locked_until",
+      "not_before",
+      "organization_id",
+      "purged_at",
+      "scheduled_at",
+      "storage_touched_at",
+      "trigger",
     ]);
     await Promise.all(
       ["organizations", "memberships", "offline_grants"].map(async (table) =>
@@ -1003,6 +1016,10 @@ async function run() {
     assert.deepEqual(
       policies.rows.map((row) => row.policyname),
       [
+        // the notices of the closure milestones (ADR 0102, amended): written, read and settled by its functions
+        "closure_notices_privacy_owner_insert",
+        "closure_notices_privacy_owner_select",
+        "closure_notices_privacy_owner_update",
         "data_export_files_privacy_owner_delete",
         "data_export_files_privacy_owner_insert",
         "data_export_files_privacy_owner_select",
@@ -1014,6 +1031,8 @@ async function run() {
         "deletion_ledger_privacy_owner_select",
         // the re-arm of an export event still owed (ADR 0084)
         "event_outbox_privacy_owner_insert_closed",
+        // the event of a closure notice that goes out (ADR 0102, amended)
+        "event_outbox_privacy_owner_insert_closure_notice",
         // the cancellation of the renewal at the closure and its retry by state (ADR 0074, L4)
         "event_outbox_privacy_owner_insert_renewal_cancel",
         "event_outbox_privacy_owner_rearm",
@@ -1039,6 +1058,55 @@ async function run() {
       "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.organization_closures'::regclass"
     );
     assert.equal(forced.rows[0]?.relforcerowsecurity, true);
+    // the notices of the closure are forced too (ADR 0102, amended): the policies bind the owner of the table, and the
+    // purge owner reads only the delivered notices that let a purge run, in four columns
+    const noticesForced = await owner.pool.query<{
+      relforcerowsecurity: boolean;
+      relrowsecurity: boolean;
+    }>(
+      "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'public.closure_notices'::regclass"
+    );
+    assert.deepEqual(noticesForced.rows[0], {
+      relforcerowsecurity: true,
+      relrowsecurity: true,
+    });
+    const noticePolicies = await owner.pool.query<{
+      policyname: string;
+      qual: string | null;
+      roles: string[];
+    }>(
+      "SELECT policyname, roles::text[] AS roles, qual FROM pg_policies WHERE schemaname = 'public' AND tablename = 'closure_notices' AND 'polaris_purge_owner' = ANY (roles::text[])"
+    );
+    assert.equal(noticePolicies.rows.length, 1);
+    assert.equal(
+      noticePolicies.rows[0]?.policyname,
+      "closure_notices_purge_owner_select_delivered"
+    );
+    const noticeQual = noticePolicies.rows[0]?.qual ?? "";
+    assert.ok(noticeQual.includes("sent_at IS NOT NULL"));
+    assert.ok(
+      noticeQual.includes("'d7'") && noticeQual.includes("'rescheduled'")
+    );
+    assert.ok(
+      !(noticeQual.includes("'closure'") || noticeQual.includes("'d30'"))
+    );
+    const purgeOwnerNoticeColumns = await owner.pool.query<{
+      column_name: string;
+      privilege_type: string;
+    }>(
+      "SELECT column_name, privilege_type FROM information_schema.column_privileges WHERE table_schema = 'public' AND table_name = 'closure_notices' AND grantee = 'polaris_purge_owner' ORDER BY column_name, privilege_type"
+    );
+    assert.deepEqual(
+      purgeOwnerNoticeColumns.rows.map(
+        (row) => `${row.column_name}:${row.privilege_type}`
+      ),
+      [
+        "closure_requested_at:SELECT",
+        "milestone:SELECT",
+        "organization_id:SELECT",
+        "sent_at:SELECT",
+      ]
+    );
     const status = await owner.pool.query<{ definition: string }>(
       "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'organizations_status_check'"
     );
