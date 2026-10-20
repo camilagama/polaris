@@ -1,4 +1,5 @@
 import fc from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import { type BillingState, grantsPro } from "./entitlements";
 import {
@@ -403,7 +404,7 @@ describe("properties of any sequence of facts", () => {
     });
 
   it("the record always stays coherent, and the clock of facts never goes back", () => {
-    fc.assert(
+    assertProperty(
       fc.property(start, sequence, (initial, steps) => {
         let record = initial;
         let clock = base;
@@ -430,7 +431,7 @@ describe("properties of any sequence of facts", () => {
   });
 
   it("applying the same fact twice never applies it twice", () => {
-    fc.assert(
+    assertProperty(
       fc.property(start, factArb(base), fc.boolean(), (initial, fact, over) => {
         const first = reconcileFact(initial, fact, ctx(base, over));
         if (first.outcome === "ignored") {
@@ -447,7 +448,7 @@ describe("properties of any sequence of facts", () => {
   });
 
   it("a payment fact never ends access earlier than it was before", () => {
-    fc.assert(
+    assertProperty(
       fc.property(start, factArb(base), (initial, fact) => {
         if (fact.type !== "charge_succeeded") {
           return;

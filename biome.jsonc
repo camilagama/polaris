@@ -9,12 +9,21 @@
   "overrides": [
     {
       "includes": ["packages/domain/**"],
+      "plugins": ["./scripts/biome-plugins/no-fast-check-direct-run.grit"],
       "linter": {
         "rules": {
           "style": {
             "noRestrictedImports": {
               "level": "error",
               "options": {
+                // Property tests run through `assertProperty` (testing/property.ts), the one place that decides
+                // the runs and the seed and prints the replay line (T-124a).
+                "paths": {
+                  "fast-check": {
+                    "importNames": ["assert"],
+                    "message": "Run a property with assertProperty from testing/property.ts, not fast-check's assert: runs, seed and the replay line are decided there."
+                  }
+                },
                 "patterns": [
                   {
                     "group": [

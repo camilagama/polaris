@@ -248,8 +248,26 @@ describe("purge jobs", () => {
     for (const job of RETENTION_PURGE_JOBS) {
       const policy = retentionPolicy(job.class);
       expect(policy.status).toBe("aprovada");
-      expect(policy.period.kind).toBe("duration");
+      expect(["duration", "closure_calendar_days"]).toContain(
+        policy.period.kind
+      );
     }
+  });
+
+  it("schedule the purge of a closed organization 90 calendar days after the closure (ADR 0102)", () => {
+    const policy = retentionPolicy("closed_organization");
+    expect(policy.status).toBe("aprovada");
+    expect(policy.period).toEqual({ days: 90, kind: "closure_calendar_days" });
+    expect(policy.approvedOn).toBe("2026-10-19");
+    expect(policy.sources).toContain("ADR 0102");
+    expect(RETENTION_PURGE_JOBS).toContainEqual({
+      class: "closed_organization",
+      id: "privacy.closure_purge_schedule",
+    });
+    // a calendar period is not a duration: nothing reads it as milliseconds
+    expect(() => approvedRetention("closed_organization")).toThrow(
+      RetentionNotApprovedError
+    );
   });
 
   it("are the jobs the approved policies point to, and only those", () => {
@@ -271,7 +289,7 @@ describe("proposed classes", () => {
     }
   });
 
-  it("are removed only after an explicit administrative command, never by a job", () => {
+  it("keep the administrative purge apart from the jobs, for the exceptions", () => {
     const scheduledIds = new Set<string>(
       RETENTION_PURGE_JOBS.map((job) => job.id)
     );

@@ -112,6 +112,7 @@ export const RESOLVED_RETENTION_BLOCKERS: readonly RetentionBlocker[] =
 /** The purge jobs that already exist; each one serves exactly one approved class. */
 export type RetentionPurgeJobId =
   | "auth.login_lock_expiry"
+  | "privacy.closure_purge_schedule"
   | "media.removed_cleanup"
   | "media.staging_reconcile"
   | "outbox.processing_expiry"
@@ -169,6 +170,16 @@ interface ApprovedUntilPurge extends RetentionPolicyBase {
   status: "aprovada";
 }
 
+/**
+ * Kept until D, the local date of the owner's closure request plus this many calendar days in the
+ * organization's time zone (`closureDeadlines`), and then removed by the purge its job schedules (ADR 0102).
+ */
+interface ApprovedClosureCalendarDays extends RetentionPolicyBase {
+  job: RetentionPurgeJobId;
+  period: { days: number; kind: "closure_calendar_days" };
+  status: "aprovada";
+}
+
 /** Not decided: no period is enforced and no job may exist. */
 interface ProposedPolicy extends RetentionPolicyBase {
   period: { kind: "undecided" };
@@ -179,6 +190,7 @@ interface ProposedPolicy extends RetentionPolicyBase {
 
 export type RetentionPolicy =
   | ApprovedCalendarMonths
+  | ApprovedClosureCalendarDays
   | ApprovedDuration
   | ApprovedProviderRotation
   | ApprovedUntilPurge
@@ -398,15 +410,21 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "aprovada",
   },
   {
+    approvedOn: "2026-10-19",
     basis: "decisao",
     class: "closed_organization",
     data: ["todos os dados de uma organização closed"],
-    period: { kind: "undecided" },
-    proposed: `Agendar o purge sozinho depois do fim do prazo de encerramento de 90 dias (${TO_CONFIRM}: hoje nenhum job o agenda).`,
+    job: "privacy.closure_purge_schedule",
+    period: { days: 90, kind: "closure_calendar_days" },
     review: USER_APPROVED_REVIEW,
-    rule: "Nada é apagado na janela de recuperação. O purge só começa por comando administrativo explícito sobre uma organização closed, e recusa rodar antes de 90 dias do encerramento ou com legal hold vigente (decisão do responsável de 18/10/2026, prazo de 90 dias decidido em 19/10/2026, ADR 0081); nos 90 dias o lojista só lê e exporta; respeita o deletion ledger. Nenhum job o agenda.",
-    sources: ["ADR 0074", "ADR 0081", "docs/business-rules/privacy.md"],
-    status: "proposta",
+    rule: "Nada é apagado na janela de recuperação. D é a data local do pedido de encerramento mais 90 dias de calendário, no fuso da organização. Em D menos 7 dias a varredura de privacidade agenda o purge sozinha (ADR 0102), sem caso de privacidade, e ele nunca roda antes do maior entre D mais 48 horas e o agendamento mais 7 dias; não agenda com legal hold vigente, acesso temporário do Admin vigente, cancelamento de purge pelo Admin depois deste encerramento ou renovação ainda viva no provedor, e uma trava solta depois do agendamento adia o purge para a soltura mais 7 dias. O agendamento automático fica atrás de CLOSURE_AUTO_PURGE_ENABLED, desligado até o go-live; o comando administrativo com caso de privacidade continua para exceções. Nos 90 dias o lojista só lê e exporta; o purge respeita o deletion ledger (decisão do responsável de 18/10/2026, prazo de 90 dias decidido e aprovado em 19/10/2026, ADR 0081).",
+    sources: [
+      "ADR 0074",
+      "ADR 0081",
+      "ADR 0102",
+      "docs/business-rules/privacy.md",
+    ],
+    status: "aprovada",
   },
   {
     approvedOn: "2026-10-18",
@@ -630,12 +648,15 @@ export const RETENTION_PURGE_JOBS: readonly {
   { class: "media_removed_image", id: "media.removed_cleanup" },
   { class: "data_exports", id: "privacy.data_export_expiry" },
   { class: "queue_processing", id: "outbox.processing_expiry" },
+  { class: "closed_organization", id: "privacy.closure_purge_schedule" },
 ]);
 
 /**
- * Removals that are not jobs: nothing schedules them. Each one runs only after an explicit
- * administrative command names what to remove (the purge of a closed organization, ADR 0081), so it
- * can exist for a class that is only proposed. A job of `RETENTION_PURGE_JOBS` never can.
+ * Removals an explicit administrative command starts, naming what to remove: the purge of a closed
+ * organization under an accepted privacy case (ADR 0081), which stays for the exceptions (a purge
+ * rescheduled after a legal hold, or cancelled and decided again) next to the job of the closure period
+ * (ADR 0102). A removal of this list may exist for a class that is only proposed; a job of
+ * `RETENTION_PURGE_JOBS` never can.
  */
 export const ADMIN_TRIGGERED_REMOVALS: readonly {
   class: RetentionClass;

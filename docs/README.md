@@ -9,7 +9,8 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 - estrutura do sistema, modelo de dados e fluxos: [architecture/](architecture/);
 - decisões técnicas difíceis de reverter e seus motivos: [adr/](adr/);
 - invariantes de domínio: [business-rules/](business-rules/);
-- procedimentos operacionais repetíveis e checklist de go-live: [runbooks/](runbooks/).
+- procedimentos operacionais repetíveis e checklist de go-live: [runbooks/](runbooks/);
+- invariantes do domínio ligadas aos testes que as provam, e o padrão dos testes de propriedade: [testing/property-invariants.md](testing/property-invariants.md).
 
 [doc/doc-inicial.md](../doc/doc-inicial.md) é o material original de produto e arquitetura. [doc/plano-inicial.md](../doc/plano-inicial.md) é a autoridade para a sequência de implementação e os critérios dos gates ([ADR 0016](adr/0016-ordem-das-fases-gate-auth-e-gate-2.md)). [doc/status-implementacao.md](../doc/status-implementacao.md) registra o estado de entrega, sem criar regras. [doc/checkpoint-gate4.md](../doc/checkpoint-gate4.md) e [doc/revisao-checkpoint-gate4.md](../doc/revisao-checkpoint-gate4.md) são o dossiê e a revisão do fim da Fase 4. Para conteúdo de produto, termos, design, arquitetura e invariantes, use os arquivos canônicos acima. Quando essas fontes exigirem uma mudança, atualize o plano no mesmo pull request.
 

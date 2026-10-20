@@ -1,4 +1,5 @@
 import fc from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import { Money } from "../money/money";
 import {
@@ -491,7 +492,7 @@ const minor = (value: string) => Money.from(value).minorUnits;
 
 describe("economics properties", () => {
   it("the chain holds for any valid sale: net = gross - discounts - returns, and the margin follows", () => {
-    fc.assert(
+    assertProperty(
       fc.property(saleArbitrary, (fact) => {
         const result = saleEconomics(fact);
         expect(minor(result.netSales)).toBe(
@@ -514,7 +515,7 @@ describe("economics properties", () => {
   });
 
   it("returns never exceed what was sold net of discounts, and a full return gives back exactly that", () => {
-    fc.assert(
+    assertProperty(
       fc.property(saleArbitrary, (fact) => {
         const live = { ...fact, cancelled: false };
         const result = saleEconomics(live);
@@ -538,7 +539,7 @@ describe("economics properties", () => {
   });
 
   it("splitting the sales of a period in two adds up to the whole period, in any order", () => {
-    fc.assert(
+    assertProperty(
       fc.property(
         fc.array(saleArbitrary, { maxLength: 6 }),
         fc.array(price, { maxLength: 4 }),
@@ -573,7 +574,7 @@ describe("economics properties", () => {
   });
 
   it("cancelled sales change nothing in a period", () => {
-    fc.assert(
+    assertProperty(
       fc.property(
         fc.array(saleArbitrary, { maxLength: 5 }),
         saleArbitrary,
@@ -591,7 +592,7 @@ describe("economics properties", () => {
   });
 
   it("an unknown cost lowers the COGS only by leaving it out, never by pricing it at zero", () => {
-    fc.assert(
+    assertProperty(
       fc.property(saleArbitrary, (fact) => {
         const live = { ...fact, cancelled: false };
         const unknownAll = saleEconomics({

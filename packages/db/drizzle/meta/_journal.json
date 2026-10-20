@@ -610,6 +610,13 @@
       "when": 1792473540567,
       "tag": "0086_encerrar_cancela_renovacao",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1792484307184,
+      "tag": "0087_apagamento_automatico",
+      "breakpoints": true
     }
   ]
 }

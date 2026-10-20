@@ -1,4 +1,5 @@
-import { assert as fcAssert, integer, property } from "fast-check";
+import { integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {
   assertOfflineGrantRevokeReason,
@@ -68,7 +69,7 @@ describe("offline grant window", () => {
   });
 
   it("accepts a window iff 0 < lifetime <= 72h (property)", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: OFFLINE_GRANT_MAX_LIFETIME_MS * 2, min: -1000 }),
         (delta) => {
@@ -83,8 +84,7 @@ describe("offline grant window", () => {
             expect(run).toThrow(InvalidOfflineGrantWindowError);
           }
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 });

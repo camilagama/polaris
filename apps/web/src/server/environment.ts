@@ -85,6 +85,11 @@ export interface WorkerBindings {
   BILLING_HYPERDRIVE?: HyperdriveBinding;
   /** The origin the public catalog is served from (used only to show the organization its link). */
   CATALOG_ORIGIN?: string;
+  /**
+   * `true` turns on the automatic schedule of the purge of a closed organization (ADR 0102); anything else
+   * leaves it off. Off in every environment until the go-live.
+   */
+  CLOSURE_AUTO_PURGE_ENABLED?: string;
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;

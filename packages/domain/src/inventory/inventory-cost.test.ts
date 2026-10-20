@@ -1,5 +1,10 @@
-import { assert as fcAssert, integer, property } from "fast-check";
+import { integer, property } from "fast-check";
+import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
+import {
+  InvalidStockMovementError,
+  InventoryQuantityLimitError,
+} from "./inventory";
 import {
   calculateMovingAverageCost,
   InvalidUnitCostError,
@@ -88,7 +93,7 @@ describe("inventory cost rules", () => {
   });
 
   it("preserves the weighted-average property over generated exact-decimal cases", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 5000, min: 0 }),
         integer({ max: 5000, min: 1 }),
@@ -132,12 +137,12 @@ describe("inventory cost rules", () => {
           expect(resultingCost <= upperBound).toBe(true);
         }
       ),
-      { numRuns: 500 }
+      { minRuns: 500 }
     );
   });
 
   it("is a no-op for the cost when the received cost equals the current average (property)", () => {
-    fcAssert(
+    assertProperty(
       property(
         integer({ max: 5000, min: 1 }),
         integer({ max: 5000, min: 1 }),
@@ -153,8 +158,7 @@ describe("inventory cost rules", () => {
             })
           ).toBe(cost);
         }
-      ),
-      { numRuns: 300 }
+      )
     );
   });
 });
@@ -237,5 +241,36 @@ describe("restockMovingAverageCost", () => {
         restockedUnitCost: "10.000000",
       })
     ).toBeNull();
+  });
+
+  it("accepts quantities from 0 and 1 up to 2147483647 and refuses past it, at every edge", () => {
+    // every pair of edges, not a draw: moving the limit in the code must turn this red on every run
+    // (literals, not MAX_INVENTORY_QUANTITY)
+    const max = 2_147_483_647;
+    const edges = [-1, 0, 1, 2, max - 1, max, max + 1];
+    for (const currentQuantity of edges) {
+      for (const receivedQuantity of edges) {
+        const run = () =>
+          calculateMovingAverageCost({
+            currentAverageCost: currentQuantity === 0 ? null : "5.000000",
+            currentQuantity,
+            receivedQuantity,
+            unitCost: "5.000000",
+          });
+        const label = `current ${currentQuantity}, received ${receivedQuantity}`;
+        if (
+          currentQuantity < 0 ||
+          currentQuantity > max ||
+          receivedQuantity < 1 ||
+          receivedQuantity > max
+        ) {
+          expect(run, label).toThrow(InvalidStockMovementError);
+        } else if (currentQuantity + receivedQuantity > max) {
+          expect(run, label).toThrow(InventoryQuantityLimitError);
+        } else {
+          expect(run(), label).toBe("5.000000");
+        }
+      }
+    }
   });
 });
