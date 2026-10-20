@@ -8,11 +8,12 @@ import { loginLockKey } from "./login-lock-key";
  * failure or forget the e-mail.
  */
 
+/** How long a lock lasts, in minutes (the 15 of `auth_login_lock_begin`, migration 0082); the unlock e-mail says it. */
+export const LOGIN_LOCK_MINUTES = 15;
 /** The time a call to the lock waits for the database, at most. */
 const LOGIN_LOCK_QUERY_TIMEOUT_MS = 5000;
 /** The unlock token: the user's ID, a dot and 32 bytes of CSPRNG in base64url (43 characters). */
 const unlockTokenPattern = /^([A-Za-z0-9_-]{1,64})\.[A-Za-z0-9_-]{43}$/;
-const trailingSlashPattern = /\/+$/;
 const base64PaddingPattern = /[=]+$/;
 
 /** The part of a `pg` pool (or client) this module uses. */
@@ -118,12 +119,13 @@ export function unlockTokenUserId(token: string): string | undefined {
   return unlockTokenPattern.exec(token)?.[1];
 }
 
+/** The one path of the sign-in by e-mail; the lock decides by it, never by a suffix (see `isPasswordRouteLookalike` in the handler). */
+export const EMAIL_SIGN_IN_PATH = "/api/auth/sign-in/email";
+
 export function isEmailSignInRequest(request: Request): boolean {
   return (
-    request.method.toUpperCase() === "POST" &&
-    new URL(request.url).pathname
-      .replace(trailingSlashPattern, "")
-      .endsWith("/sign-in/email")
+    request.method === "POST" &&
+    new URL(request.url).pathname === EMAIL_SIGN_IN_PATH
   );
 }
 

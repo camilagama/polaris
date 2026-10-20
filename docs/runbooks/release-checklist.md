@@ -189,6 +189,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
+### 23. Entrada por senha ligada só com as páginas do P9 no ar (BLOCK)
+
+- Critério: vale quando a promoção liga `EMAIL_PASSWORD_AUTH_ENABLED=true` no Worker `polaris-web` ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Os botões dos e-mails levam a páginas do app: `/desbloquear`, `/redefinir-senha`, `/confirmar-email` e `/esqueci-a-senha` (as telas do P9). Com a flag ligada e uma delas fora do ar, o botão do e-mail cai numa rota que não existe. A flag só liga com as quatro páginas publicadas no SHA candidato (ou em um anterior já em produção). Antes de ligar, também: as variações de caminho de `sign-in/email`, `change-password` e `set-password` (maiúsculas, `%2F`, barra no fim, sufixo parecido) respondem 404 sem chegar ao Better Auth (testes de `handler.test.ts` verdes no SHA candidato). Um teste de rota real na pilha local (T-125a), que mande essas variações com senha errada seis vezes, ainda não existe: é recomendado antes de ligar e fica registrado como pendência.
+- Evidência: o SHA em que as quatro páginas existem e a data da publicação; a leitura de cada rota pelo host de produção (a página abre, sem token); o resultado de `handler.test.ts` no SHA candidato e, se já existir, o do teste de rota real das variações de caminho.
+- Severidade BLOCK: proposta, pendente de decisão do responsável.
+
 ## Veredito
 
 Ordem de decisão:

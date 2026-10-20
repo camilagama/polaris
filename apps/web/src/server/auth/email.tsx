@@ -209,7 +209,7 @@ export function createResendAuthEmailDelivery({
             url={appTokenURL(appBaseURL, "/confirmar-email", token)}
           />
         ),
-        subject: "Confirme seu email do Polaris",
+        subject: "Confirme seu e-mail do Polaris",
         to: user.email,
       });
     },

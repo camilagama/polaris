@@ -384,6 +384,165 @@ describe("sign-in lock by password (AC-62, AC-63, AC-65)", () => {
   });
 });
 
+describe("the known ways around the lock (415, 400 or 429, never a 401 nobody counted)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(START);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const urlEncoded = (email: string) =>
+    `email=${encodeURIComponent(email)}&password=${encodeURIComponent(wrongPassword)}`;
+  const jsonBodyOf = (email: unknown) =>
+    JSON.stringify({ email, password: wrongPassword });
+  const rawJson = (text: string) => ({
+    body: text,
+    contentType: "application/json",
+  });
+
+  // `email` is the typed e-mail of the account that is locked (ana.lock@example.invalid)
+  const variants: [
+    name: string,
+    build: (email: string) => { body: string; contentType: string },
+    status: 400 | 415 | 429,
+  ][] = [
+    [
+      "form-urlencoded",
+      (email) => ({
+        body: urlEncoded(email),
+        contentType: "application/x-www-form-urlencoded",
+      }),
+      415,
+    ],
+    [
+      "multipart",
+      (email) => ({
+        body: `--x\r\nContent-Disposition: form-data; name="email"\r\n\r\n${email}\r\n--x--`,
+        contentType: "multipart/form-data; boundary=x",
+      }),
+      415,
+    ],
+    [
+      "text/plain with JSON",
+      (email) => ({ body: jsonBodyOf(email), contentType: "text/plain" }),
+      415,
+    ],
+    [
+      "the e-mail in capitals",
+      (email) => rawJson(jsonBodyOf(email.toUpperCase())),
+      429,
+    ],
+    [
+      "the e-mail with spaces around it",
+      (email) => rawJson(jsonBodyOf(`  ${email}  `)),
+      429,
+    ],
+    [
+      "the e-mail twice, the account last",
+      (email) =>
+        rawJson(
+          `{"email":"other@example.invalid","email":${JSON.stringify(email)},"password":${JSON.stringify(wrongPassword)}}`
+        ),
+      429,
+    ],
+    [
+      "a list of e-mails",
+      (email) => rawJson(jsonBodyOf([email, "other@example.invalid"])),
+      400,
+    ],
+    ["an object as the e-mail", (email) => rawJson(jsonBodyOf({ email })), 400],
+    [
+      "a list as the whole body",
+      (email) => rawJson(`[${jsonBodyOf(email)}]`),
+      400,
+    ],
+    [
+      "two addresses in one string",
+      (email) => rawJson(jsonBodyOf(`${email}, other@example.invalid`)),
+      400,
+    ],
+  ];
+
+  it.each(variants)(
+    "%s answers the expected status and never a 401 outside the count",
+    async (_name, build, status) => {
+      const ctx = await setup();
+      for (let i = 0; i < 5; i += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: the failures count one after the other
+        await ctx.attempt(ctx.email, wrongPassword);
+      }
+      const locked = ctx.begin.mock.calls.length;
+      const { body, contentType } = build(ctx.email);
+
+      const response = await handleEmailSignInWithLock(
+        new Request("http://localhost/api/auth/sign-in/email", {
+          body,
+          headers: { "content-type": contentType },
+          method: "POST",
+        }),
+        {
+          recordRefusal: ctx.recordRefusal,
+          runInBackground: ctx.runInBackground,
+          secret: testSecret,
+          sendUnlock: ctx.sendUnlock,
+          signIn: ctx.signIn,
+          store: ctx.store,
+        }
+      );
+
+      expect(response.status).toBe(status);
+      expect(response.status).not.toBe(401);
+      if (status === 429) {
+        // the same key as the typed e-mail: it was counted, and refused
+        expect(ctx.begin).toHaveBeenCalledTimes(locked + 1);
+        expect(ctx.begin.mock.calls.at(-1)?.[0]).toBe(
+          ctx.begin.mock.calls[0]?.[0]
+        );
+        expect(ctx.signIn).toHaveBeenCalledTimes(5);
+      } else {
+        expect(ctx.begin).toHaveBeenCalledTimes(locked);
+        expect(ctx.failed).toHaveBeenCalledTimes(5);
+      }
+    }
+  );
+});
+
+describe("a repeated e-mail field", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is counted on the e-mail Better Auth reads (the last), so a 401 is never outside the count", async () => {
+    const ctx = await setup();
+    const body = `{"email":${JSON.stringify(ctx.email)},"email":"other@example.invalid","password":${JSON.stringify(wrongPassword)}}`;
+
+    const response = await handleEmailSignInWithLock(
+      new Request("http://localhost/api/auth/sign-in/email", {
+        body,
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      }),
+      {
+        recordRefusal: ctx.recordRefusal,
+        runInBackground: ctx.runInBackground,
+        secret: testSecret,
+        sendUnlock: ctx.sendUnlock,
+        signIn: ctx.signIn,
+        store: ctx.store,
+      }
+    );
+
+    const otherKey = await loginLockKey(testSecret, "other@example.invalid");
+    expect(response.status).toBe(401);
+    expect(ctx.begin).toHaveBeenCalledWith(otherKey);
+    expect(ctx.failed).toHaveBeenCalledWith(otherKey);
+    expect(ctx.rows.size).toBe(1);
+  });
+});
+
 describe("the media type of the sign-in with the lock", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });

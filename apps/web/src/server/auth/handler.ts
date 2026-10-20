@@ -30,6 +30,7 @@ import {
 } from "./email";
 import {
   createDatabaseLoginLockStore,
+  EMAIL_SIGN_IN_PATH,
   handleEmailSignInWithLock,
   isEmailSignInRequest,
   type LoginLockQueryable,
@@ -116,13 +117,101 @@ async function isGoogleOAuthRequest(request: Request): Promise<boolean> {
   );
 }
 
-function isPostTo(request: Request, suffix: string): boolean {
-  return (
-    request.method.toUpperCase() === "POST" &&
-    new URL(request.url).pathname
-      .replace(trailingSlashPattern, "")
-      .endsWith(suffix)
+const CHANGE_PASSWORD_PATH = "/api/auth/change-password";
+const SET_PASSWORD_PATH = "/api/auth/set-password";
+/** The password routes: the lock and the notices live in the handler, so only the exact path may reach it. */
+const passwordRoutePaths = [
+  EMAIL_SIGN_IN_PATH,
+  CHANGE_PASSWORD_PATH,
+  SET_PASSWORD_PATH,
+] as const;
+
+/** The most a password route reads from the body (JSON of an e-mail and one or two passwords). */
+const PASSWORD_BODY_MAX_BYTES = 8 * 1024;
+
+function lowercaseDecoded(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname).toLowerCase();
+  } catch {
+    return pathname.toLowerCase();
+  }
+}
+
+/**
+ * A POST that looks like a password route (any case, `%2F`, a trailing slash, a suffix, a prefix) without
+ * being exactly its path. It never reaches Better Auth: whether its router would take that spelling is
+ * not something the lock can bet on, so the answer is 404 (a segment boundary is required, so
+ * `/reset-password` is not `/set-password`). A Better Auth plugin with a route that holds one of these
+ * segments (`/sign-in/email-otp`) would be closed here too: add it to the list of exceptions then.
+ */
+function isPasswordRouteLookalike(request: Request): boolean {
+  if (request.method !== "POST") {
+    return false;
+  }
+  const { pathname } = new URL(request.url);
+  if ((passwordRoutePaths as readonly string[]).includes(pathname)) {
+    return false;
+  }
+  const decoded = lowercaseDecoded(pathname);
+  return passwordRoutePaths.some((path) =>
+    decoded.includes(path.slice("/api/auth".length))
   );
+}
+
+function isExactPost(request: Request, path: string): boolean {
+  return request.method === "POST" && new URL(request.url).pathname === path;
+}
+
+function isPasswordRoute(request: Request): boolean {
+  return passwordRoutePaths.some((path) => isExactPost(request, path));
+}
+
+/**
+ * Reads the body of a password route up to the limit: above it, 413 without parsing. The bytes are read
+ * once and the request is rebuilt on them, so every later `clone().json()` reads the same bounded body.
+ */
+export async function withBoundedBody(
+  request: Request
+): Promise<Request | Response> {
+  const declared = Number(request.headers.get("content-length"));
+  if (declared > PASSWORD_BODY_MAX_BYTES) {
+    await request.body?.cancel();
+    return jsonError(413, "payload_too_large");
+  }
+  if (!request.body) {
+    return request;
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = request.body.getReader();
+  try {
+    for (;;) {
+      // biome-ignore lint/performance/noAwaitInLoops: the chunks come in order, and the read stops at the limit.
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      size += value.byteLength;
+      if (size > PASSWORD_BODY_MAX_BYTES) {
+        await reader.cancel();
+        return jsonError(413, "payload_too_large");
+      }
+      chunks.push(value);
+    }
+  } catch {
+    // The client dropped the connection while sending: nothing to answer to, and not a 5xx for the alerts.
+    return jsonError(400, "invalid_request_body");
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const headers = new Headers(request.headers);
+  headers.delete("content-length");
+  // Rebuilt on purpose: the abort `signal` and `request.cf` are not carried, and nothing downstream reads them.
+  return new Request(request.url, { body: bytes, headers, method: "POST" });
 }
 
 /**
@@ -148,7 +237,10 @@ function isTokenInUrlRoute(request: Request): boolean {
  * app uses it, so it stays closed.
  */
 function isClosedPasswordRoute(request: Request): boolean {
-  return isPostTo(request, "/verify-password");
+  return (
+    request.method === "POST" &&
+    lowercaseDecoded(new URL(request.url).pathname).includes("/verify-password")
+  );
 }
 
 function safeRequestIdOf(requestId: string | undefined): string {
@@ -720,7 +812,7 @@ export async function sendLoginUnlock(
 }
 
 export async function handleBetterAuthRequest(
-  request: Request,
+  received: Request,
   bindings: WorkerBindings,
   requestId?: string,
   runInBackground?: BackgroundTaskHandler
@@ -734,20 +826,30 @@ export async function handleBetterAuthRequest(
   }
 
   if (
-    (await isGoogleOAuthRequest(request)) &&
+    (await isGoogleOAuthRequest(received)) &&
     !(googleClientId && googleClientSecret)
   ) {
     return jsonError(503, "auth_provider_unavailable");
   }
 
   if (
-    isEmailPasswordAuthRoute(request) &&
+    isEmailPasswordAuthRoute(received) &&
     !isEmailPasswordAuthEnabled(bindings)
   ) {
     return jsonError(503, "auth_email_unavailable");
   }
-  if (isTokenInUrlRoute(request) || isClosedPasswordRoute(request)) {
+  if (
+    isTokenInUrlRoute(received) ||
+    isClosedPasswordRoute(received) ||
+    isPasswordRouteLookalike(received)
+  ) {
     return jsonError(404, "not_found");
+  }
+  const request = isPasswordRoute(received)
+    ? await withBoundedBody(received)
+    : received;
+  if (request instanceof Response) {
+    return request;
   }
 
   const opened = openAuthRuntime(bindings, requestId, runInBackground);
@@ -759,10 +861,10 @@ export async function handleBetterAuthRequest(
 
   try {
     await enforceAbsoluteSessionLifetime(auth, request);
-    if (isPostTo(request, "/set-password")) {
+    if (isExactPost(request, SET_PASSWORD_PATH)) {
       return await handleSetPasswordRequest(auth, request, runtime.effects);
     }
-    if (isPostTo(request, "/change-password")) {
+    if (isExactPost(request, CHANGE_PASSWORD_PATH)) {
       return await handleChangePasswordRequest(auth, request, runtime.effects);
     }
     if (isEmailSignInRequest(request)) {

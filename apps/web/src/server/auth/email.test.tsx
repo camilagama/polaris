@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEmailDelivery } from "../auth";
 import { createResendAuthEmailDelivery } from "./email";
+import { LOGIN_LOCK_MINUTES } from "./login-lock";
 
 const apiKey = "re_test_api_key";
 const from = "Polaris <auth@example.invalid>";
@@ -16,6 +17,14 @@ async function sha256Hex(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
+}
+
+const urlPattern = /https?:\/\/\S+/g;
+// "email" as a word of the text; "e-mail" and the paths of the links ("confirmar-email") do not count.
+const emailWithoutHyphen = /(?<![-\w])email(?![-\w])/i;
+
+function wordsWithoutLinks(text: string): string {
+  return text.replace(urlPattern, "");
 }
 
 function testUser(): Parameters<
@@ -73,13 +82,17 @@ describe("Resend authentication email delivery", () => {
     expect(headers.get("idempotency-key")).not.toContain(token);
     expect(body.from).toBe(from);
     expect(body.to).toEqual([recipient]);
-    expect(body.subject).toBe("Confirme seu email do Polaris");
+    expect(body.subject).toBe("Confirme seu e-mail do Polaris");
     // the link is a page of the app with the token in the fragment, never the Worker route Better Auth built
     const appLink = `${appBaseURL}/confirmar-email#token=${token}`;
     expect(body.html).toContain(appLink);
     expect(body.text).toContain(appLink);
     expect(body.html).not.toContain(url);
     expect(body.text).not.toContain("verify-email");
+    expect(body.html).toContain("Confirme seu e-mail");
+    expect(body.text).toContain("Confirmar e-mail");
+    expect(body.text).not.toContain("Verificar");
+    expect(wordsWithoutLinks(body.text)).not.toMatch(emailWithoutHyphen);
   });
 
   it("sends password reset with a separate idempotency namespace", async () => {
@@ -119,6 +132,7 @@ describe("Resend authentication email delivery", () => {
     expect(body.html).toContain("expira em 1 hora");
     expect(body.text).toContain(appLink);
     expect(body.text).not.toContain(url);
+    expect(wordsWithoutLinks(body.text)).not.toMatch(emailWithoutHyphen);
   });
 
   it("keeps a generic response and log when the provider rejects a send", async () => {
@@ -194,7 +208,10 @@ describe("Resend authentication email delivery", () => {
     expect(body.subject).toBe("Pausamos a entrada na sua conta do Polaris");
     expect(body.text).toContain(`${appBaseURL}/desbloquear#token=${token}`);
     expect(body.text).toContain("1 hora");
-    expect(body.text).toContain("Esqueci a senha");
+    expect(body.text).toContain("“Esqueci a senha”");
+    // the length of the pause is the constant of the lock, not a number written in the e-mail
+    expect(body.text).toContain(`pausada por ${LOGIN_LOCK_MINUTES} minutos`);
+    expect(body.text).toContain(`espere ${LOGIN_LOCK_MINUTES} minutos`);
     expect(body.html).not.toContain("<img");
   });
 
@@ -233,6 +250,14 @@ describe("Resend authentication email delivery", () => {
     expect(sent[1]?.body.subject).toBe("Sua conta do Polaris agora tem senha");
     for (const { body } of sent) {
       expect(body.text).toContain(`${appBaseURL}/esqueci-a-senha`);
+      expect(body.text).toContain("Pedir um link para redefinir a senha");
+      expect(body.text).toContain(
+        "Se não foi você, peça agora um link para redefinir a senha. Enviaremos o link para este e-mail."
+      );
+      expect(body.text).toContain(
+        "Por segurança, os outros aparelhos saíram da sua conta e vão pedir a senha de novo."
+      );
+      expect(body.text).not.toContain("Redefinir a senha");
     }
   });
 
@@ -262,5 +287,7 @@ describe("Resend authentication email delivery", () => {
     };
     expect(body.subject).toBe("Você já tem conta no Polaris");
     expect(body.text).toContain(`${appBaseURL}/entrar`);
+    expect(body.text).toContain("“Continuar com o Google”");
+    expect(body.text).toContain("“Esqueci a senha”");
   });
 });
