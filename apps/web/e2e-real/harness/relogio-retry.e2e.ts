@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, runT0, test } from "../fixtures";
 import { ensureRunEnvironment } from "../run-environment";
 
@@ -13,7 +14,11 @@ test("T0 é o mesmo no retry", async ({}, testInfo) => {
     description: "o retry é o objeto do teste",
     type: "retry-proposital",
   });
-  const file = `test-results/e2e-real/t0-${ensureRunEnvironment().runId}.txt`;
+  const file = join(
+    testInfo.project.outputDir,
+    `t0-${ensureRunEnvironment().runId}.txt`
+  );
+  mkdirSync(testInfo.project.outputDir, { recursive: true });
   if (testInfo.retry === 0) {
     writeFileSync(file, `${process.pid} ${runT0()}`);
     throw new Error(

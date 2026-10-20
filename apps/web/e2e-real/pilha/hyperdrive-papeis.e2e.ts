@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import config from "../../playwright.e2e-real.config";
+import { closedEnvironment } from "../closed-environment";
 import { createJourneyUser, expect, test } from "../fixtures";
 import { journeyName } from "../journey-names";
 import {
@@ -8,8 +10,6 @@ import {
   HYPERDRIVE_ROLES,
   type HyperdriveBinding,
   hyperdriveVariable,
-  ownerDatabaseUrl,
-  previewEnvironment,
   runLoginName,
 } from "../run-environment";
 
@@ -20,34 +20,40 @@ import {
  * run from cron and queue, which the preview never schedules: their connection string is checked instead.
  */
 const run = ensureRunEnvironment();
-const owner = ownerDatabaseUrl();
+const BINDING = /"binding":\s*"(\w+)"/g;
 const HTTP_PATH: HyperdriveBinding[] = [
   "HYPERDRIVE",
   "AUTH_HYPERDRIVE",
   "ONBOARDING_HYPERDRIVE",
 ];
 
-test("o wrangler.jsonc do topo cai em postgres:postgres, então o run substitui os 7", () => {
-  const config = readFileSync(
+test("os 7 bindings do wrangler.jsonc chegam a cada preview como os logins do run, nunca o fallback postgres:postgres", () => {
+  // the top level of wrangler.jsonc has exactly these seven, each with the postgres:postgres fallback the run replaces
+  const wrangler = readFileSync(
     new URL("../../wrangler.jsonc", import.meta.url),
     "utf8"
   );
-  for (const binding of HYPERDRIVE_BINDINGS) {
-    expect(config).toContain(`"binding": "${binding}"`);
-  }
-  for (const project of ["online", "runtime-ligado"] as const) {
-    const environment = previewEnvironment(
-      owner,
-      run,
-      "http://127.0.0.1:4321",
-      project === "runtime-ligado"
+  const topLevel = wrangler.slice(0, wrangler.indexOf('"env"'));
+  expect(
+    [...topLevel.matchAll(BINDING)].map((match) => match[1]).sort()
+  ).toEqual([...HYPERDRIVE_BINDINGS].sort());
+  // what each web server of the config really gets: Playwright's merge of the process environment and the
+  // config's `env`, closed by serve.ts (closed-environment.ts)
+  const servers = config.webServer as { env: Record<string, string> }[];
+  expect(servers).toHaveLength(2);
+  for (const server of servers) {
+    const effective = closedEnvironment(
+      { ...process.env, ...server.env },
+      "preview"
     );
-    expect(() => assertRunHyperdrives(environment, run.runId)).not.toThrow();
+    expect(() => assertRunHyperdrives(effective, run.runId)).not.toThrow();
     for (const binding of HYPERDRIVE_BINDINGS) {
-      const url = new URL(environment[hyperdriveVariable(binding)] as string);
-      expect(url.username).toBe(runLoginName(run.runId, binding));
-      expect(url.username).not.toBe("postgres");
+      const url = new URL(effective[hyperdriveVariable(binding)] as string);
+      expect(url.username, binding).toBe(runLoginName(run.runId, binding));
+      expect(url.username, binding).not.toBe("postgres");
+      expect(url.pathname, binding).toBe(`/e2e_${run.runId}`);
     }
+    expect(effective.POLARIS_E2E_DATABASE_URL).toBeUndefined();
   }
 });
 

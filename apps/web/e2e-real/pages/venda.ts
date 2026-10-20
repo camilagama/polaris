@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
 const CONFIRMED_HEADLINE = /Venda confirmada|já estava confirmada/;
 
 /** The sale screen (/sales), by role and label only. */
@@ -15,7 +16,10 @@ export interface SaleLineInput {
 
 /** The value (`<dd>`) of a row (`<dt>`) of a definition list inside `scope`. */
 export function termValue(scope: Locator, label: string | RegExp): Locator {
-  const exact = typeof label === "string" ? new RegExp(`^${label}$`) : label;
+  const exact =
+    typeof label === "string"
+      ? new RegExp(`^${label.replace(REGEX_SPECIAL, "\\$&")}$`)
+      : label;
   return scope
     .locator("div")
     .filter({ has: scope.page().getByRole("term").filter({ hasText: exact }) })

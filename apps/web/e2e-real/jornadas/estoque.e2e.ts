@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { localDate } from "../calendar";
-import { expect, openJourney, runT0, test } from "../fixtures";
+import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { seedProduct } from "../seed";
 
+// a refusal of the rule, not a lost session, a network error or a crash of the server
+const BUSINESS_REFUSAL =
+  /^(BAD_REQUEST|CONFLICT|UNPROCESSABLE_CONTENT|PRECONDITION_FAILED)$/;
 const WRITE_OFF_ABOVE_BALANCE =
   /A baixa não pode ser maior que o saldo exibido \(10\)/;
 const CLOSE_BUTTON = /^Fechar$/;
@@ -61,10 +64,10 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
   expect(receipt?.occurred_on).toBe(localDate(runT0(), ZONE));
 
   // on screen: a write-off above the balance is refused before it leaves
-  await page
-    .getByRole("button", { name: CLOSE_BUTTON })
-    .click()
-    .catch(() => undefined);
+  await expect(
+    page.getByText("Saldo: 10 unidades", { exact: false })
+  ).toBeVisible();
+  await page.getByRole("button", { name: CLOSE_BUTTON }).click();
   await page
     .getByRole("button", {
       name: `Baixar estoque de ${product.productName}, Variante padrão`,
@@ -76,16 +79,18 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
   await expect(page.getByText(WRITE_OFF_ABOVE_BALANCE)).toBeVisible();
 
   // and by the server, if a client sends it anyway
-  await expect(
-    journey.user.rpc.inventory.writeOffStock({
-      commandId: randomUUID(),
-      commandVersion: 1,
-      occurredOn: localDate(runT0(), ZONE),
-      organizationId,
-      quantity: 11,
-      reasonCode: "damaged",
-      variantId: product.variantId,
-    })
-  ).rejects.toThrow();
+  expect(
+    await refusedWith(
+      journey.user.rpc.inventory.writeOffStock({
+        commandId: randomUUID(),
+        commandVersion: 1,
+        occurredOn: localDate(runT0(), ZONE),
+        organizationId,
+        quantity: 11,
+        reasonCode: "damaged",
+        variantId: product.variantId,
+      })
+    )
+  ).toMatch(BUSINESS_REFUSAL);
   expect(await balance()).toEqual({ balance: 10, count: 1, movements: 10 });
 });

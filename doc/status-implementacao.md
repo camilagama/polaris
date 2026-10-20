@@ -1923,7 +1923,7 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Pilha | Concluída (local) | `apps/web/playwright.e2e-real.config.ts` e `apps/web/e2e-real/`: dois builds de produção servidos por `vite preview` (chave do runtime offline desligada e ligada), banco `e2e_<run>` migrado do zero, um login por Hyperdrive (os 7) e sessão de teste pelo `testUtils` só no Node. Runbook: [e2e-real](../docs/runbooks/e2e-real.md). |
-| Jornadas | Concluídas (local) | Onboarding, produto, estoque, cliente, venda (oráculo em centavos, casos a–e de arredondamento, duplo toque), devolução e cancelamento, despesa; isolamento pela `/rpc` com controle; cliente e venda também com a chave ligada. |
+| Jornadas | Concluídas (local) | Onboarding, produto, estoque, cliente, venda (oráculo em centavos, casos a–e de arredondamento, duplo toque), devolução e cancelamento, despesa; isolamento pela `/rpc` e pela RLS com controle; cliente e venda também com a chave ligada. As provas por remoção e as 10 execuções sem retry estão registradas no PR e em `apps/web/e2e-real/medicoes/`. |
 | Job de CI | Pendente | O trecho do job `e2e-real` vai no PR para o responsável aplicar no `ci.yml`; a saída `e2e` do `scripts/ci-changed.mjs` já existe. Obrigatório só depois das 10 execuções sem retry. |
 | Propostas futuras | Registradas | Venda offline na pilha real, AC-10 (sessão expirada com operações na fila) e troca de usuário no mesmo navegador, no projeto `runtime-ligado`; AC-10 primeiro. |
 

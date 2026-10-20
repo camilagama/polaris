@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { localDate } from "../calendar";
-import { expect, openJourney, runT0, test } from "../fixtures";
+import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { cents } from "../oracle";
 import { chainValue } from "../pages/resultado";
 import { seedCashSale, seedProduct, seedStock } from "../seed";
 
+// a refusal of the rule, not a lost session, a network error or a crash of the server
+const BUSINESS_REFUSAL =
+  /^(BAD_REQUEST|CONFLICT|UNPROCESSABLE_CONTENT|PRECONDITION_FAILED)$/;
 const BRL_VALUE = /R\$/;
 const RETURN_REGISTERED =
   /^Devolução registrada: 1 unidade no total; 1 voltaram ao estoque/;
@@ -56,7 +59,7 @@ async function seeded(journey: Awaited<ReturnType<typeof openJourney>>) {
     journey.user.rpc,
     organizationId,
     [{ price: "45.90", quantity: 3, variantId: product.variantId }],
-    new Date().toISOString()
+    new Date(runT0()).toISOString()
   );
   return { organizationId, product, saleId };
 }
@@ -82,17 +85,21 @@ test("devolução parcial pelo detalhe: estoque volta, venda original inalterada
   // more than was sold: refused on screen
   await panel.getByLabel(RETURNED_INPUT).fill("4");
   await panel.getByRole("button", { name: "Revisar devolução" }).click();
-  await expect(panel.getByRole("alert").first()).toBeVisible();
+  await expect(panel.getByRole("alert").first()).toHaveText(
+    "Use um número inteiro de 1 a 3."
+  );
   // and by the server
-  await expect(
-    journey.user.rpc.sale.return({
-      commandId: randomUUID(),
-      commandVersion: 1,
-      items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 4 }],
-      organizationId,
-      saleId,
-    })
-  ).rejects.toThrow();
+  expect(
+    await refusedWith(
+      journey.user.rpc.sale.return({
+        commandId: randomUUID(),
+        commandVersion: 1,
+        items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 4 }],
+        organizationId,
+        saleId,
+      })
+    )
+  ).toMatch(BUSINESS_REFUSAL);
 
   await panel.getByLabel(RETURNED_INPUT).fill("1");
   await panel.getByLabel(RESTOCKED_INPUT).fill("1");

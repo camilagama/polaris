@@ -115,13 +115,13 @@ test("venda: itens, desconto percentual e dinheiro; tela e banco iguais ao orác
   // the calendar date of the sale is the organization's, computed here from the instant the server recorded
   const [{ occurred_at: occurredAt } = { occurred_at: "" }] = (
     await sql.query<{ occurred_at: string }>(
-      "SELECT occurred_at::text FROM sales WHERE id = $1",
+      "SELECT (extract(epoch FROM occurred_at) * 1000)::bigint::text AS occurred_at FROM sales WHERE id = $1",
       [sale?.id]
     )
   ).rows;
-  expect(sale?.occurred_on).toBe(localDate(Date.parse(occurredAt), zone));
+  expect(sale?.occurred_on).toBe(localDate(Number(occurredAt), zone));
   console.log(
-    `venda em ${zone}: data local ${sale?.occurred_on}, data UTC ${localDate(Date.parse(occurredAt), "UTC")}`
+    `venda em ${zone}: data local ${sale?.occurred_on}, data UTC ${localDate(Number(occurredAt), "UTC")}`
   );
 
   // stock went down, one movement per item, and the cost snapshot is the moving average of the receipts
@@ -268,4 +268,6 @@ test("venda: arredondamento meia-alta uma vez por ajuste (casos a–e do orácul
       subtotal: expected.subtotal,
     });
   }
+  // after the last sale settled: still one sale per case (a double tap would have left one more)
+  expect(await saleRows(sql, organizationId)).toHaveLength(cases.length);
 });

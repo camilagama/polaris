@@ -22,5 +22,6 @@ export default async function globalSetup(): Promise<void> {
     recursive: true,
   });
   await createRunDatabase(owner, run);
-  process.env.E2E_T0 ??= String(Date.now());
+  // always the instant of this run, never one left in the shell by an earlier run
+  process.env.E2E_T0 = String(Date.now());
 }

@@ -23,10 +23,19 @@ const origin = (project: keyof typeof PORTS) =>
   `http://127.0.0.1:${PORTS[project]}`;
 // `E2E_RETRIES=0` for the 10 runs without retry that come before the job is required.
 const defaultRetries = inCI ? 1 : 0;
+function retriesFrom(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(
+      "E2E_RETRIES must be a whole number (0 for the runs without retry)."
+    );
+  }
+  return parsed;
+}
 const retries =
   process.env.E2E_RETRIES === undefined
     ? defaultRetries
-    : Number(process.env.E2E_RETRIES);
+    : retriesFrom(process.env.E2E_RETRIES);
 
 const desktop = {
   ...devices["Desktop Chrome"],
