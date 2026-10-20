@@ -81,6 +81,8 @@ function fakeApi(
       )
     ),
     listSubscriptionInstallments: vi.fn(),
+    listSubscriptions: vi.fn(),
+    refundPix: vi.fn(),
     updateCustomer: vi.fn(),
   };
   return { calls, client };
@@ -149,6 +151,7 @@ describe("PIX_AUTOMATIC_APPROVED", () => {
         fact: { cycleMonths: 1, occurredAt: clock, type: "trial_method_ready" },
         providerEventId: `PIX_AUTOMATIC_APPROVED:${SUBSCRIPTION_ID}`,
         providerRef: SUBSCRIPTION_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -219,6 +222,7 @@ describe("PIX_AUTOMATIC_REJECTED", () => {
           fact: { occurredAt: clock, type: "subscription_cancelled" },
           providerEventId: `PIX_AUTOMATIC_REJECTED:${SUBSCRIPTION_ID}`,
           providerRef: SUBSCRIPTION_ID,
+          providerSubscriptionId: SUBSCRIPTION_ID,
         },
       ]);
     }
@@ -247,6 +251,7 @@ describe("PIX_AUTOMATIC_COBR_COMPLETED", () => {
         },
         providerEventId: `PIX_AUTOMATIC_COBR_COMPLETED:${INSTALLMENT_ID}`,
         providerRef: SUBSCRIPTION_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -352,6 +357,7 @@ describe("PIX_AUTOMATIC_COBR_REJECTED", () => {
         fact: { occurredAt: clock, type: "charge_failed" },
         providerEventId: `PIX_AUTOMATIC_COBR_REJECTED:${INSTALLMENT_ID}`,
         providerRef: SUBSCRIPTION_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });
@@ -769,6 +775,8 @@ describe("AC-3: nothing personal leaves the mapper", () => {
           "fact",
           "providerEventId",
           "providerRef",
+          // the subscription's own `globalID`, an ID of the provider, never a person's data
+          "providerSubscriptionId",
         ]);
         expect(
           Object.keys(serializeBillingFact(event.fact as BillingFact)).sort()
@@ -951,6 +959,7 @@ describe("reconcileWooviSubscription", () => {
         fact: { occurredAt: clock, type: "subscription_cancelled" },
         providerEventId: `PIX_AUTOMATIC_REJECTED:${SUBSCRIPTION_ID}`,
         providerRef: SUBSCRIPTION_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
       },
     ]);
   });

@@ -45,16 +45,29 @@ export interface WooviClient {
   createSubscription: (body: string) => Promise<unknown>;
   /**
    * The customer with this CPF or CNPJ, or null when Woovi has none. Read from
-   * the list filtered by tax ID (`GET /api/v1/customer?taxID=`), not from
-   * `GET /api/v1/customer/{taxID}`: that one answers an unknown customer with a
-   * 400 (sandbox, 20/10/2026), which says nothing a refusal of another cause
-   * would not. The list is checked again here: only an entry with this exact
-   * tax ID counts, and more than one is not an answer to trust.
+   * the whole list of customers (`GET /api/v1/customer`, at most 1000), never
+   * from a URL that carries the document: `?taxID=` and `/customer/{taxID}`
+   * would put the CPF in the request's URL, which the platform's traces of
+   * outbound requests may keep (ADR 0101, emenda do PR 6). Only an entry with
+   * this exact tax ID counts, and more than one is not an answer to trust.
    */
   findCustomerByTaxId: (taxId: string) => Promise<unknown>;
   getInstallment: (installmentId: string) => Promise<unknown>;
   getSubscription: (subscriptionId: string) => Promise<unknown>;
   listSubscriptionInstallments: (subscriptionId: string) => Promise<unknown[]>;
+  /**
+   * Every subscription of the account, newest first, at most 1000 (ten pages):
+   * Woovi's list takes no filter by customer (sandbox, 20/10/2026: `customer`,
+   * `taxID` and `status` are ignored), so whoever needs one customer's filters
+   * here. More than that is not an answer to trust, and throws.
+   */
+  listSubscriptions: () => Promise<unknown[]>;
+  /**
+   * `POST /api/v1/refund`: gives back a Pix received, named by its
+   * `endToEndId`, in full. The `correlationID` is Polaris's and makes a repeat
+   * the same refund at Woovi.
+   */
+  refundPix: (body: string) => Promise<unknown>;
   /** `PATCH /api/v1/customer/{correlationID}` with the name and the e-mail; the tax ID never changes. */
   updateCustomer: (
     correlationId: string,
@@ -166,6 +179,32 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
     }
   }
 
+  /** Reads a list page by page; a short page is the last one, whatever `pageInfo` says. */
+  async function listAll(path: string, key: string): Promise<unknown[]> {
+    const items: unknown[] = [];
+    const separator = path.includes("?") ? "&" : "?";
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const answer = record(
+        // biome-ignore lint/performance/noAwaitInLoops: Pages are read one after the other.
+        await call(
+          "GET",
+          `${path}${separator}skip=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`
+        )
+      );
+      const list = answer[key];
+      if (!Array.isArray(list)) {
+        throw new ProviderResponseMalformedError();
+      }
+      items.push(...list);
+      // (the documented example of an empty list says `hasNextPage: true`)
+      if (list.length < PAGE_SIZE) {
+        return items;
+      }
+    }
+    // more than a list Polaris reads can have: not an answer to trust
+    throw new ProviderResponseMalformedError();
+  }
+
   return {
     cancelSubscription: async (subscriptionId) =>
       call(
@@ -182,20 +221,16 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
       if (!isTaxIdDigits(taxId)) {
         throw new TypeError("invalid_tax_id");
       }
-      const { customers } = record(
-        await call("GET", `/api/v1/customer?taxID=${taxId}`)
+      const same = (await listAll("/api/v1/customer", "customers")).filter(
+        (entry) => {
+          const { taxID } = record(entry);
+          return (
+            typeof taxID === "object" &&
+            taxID !== null &&
+            (taxID as Record<string, unknown>).taxID === taxId
+          );
+        }
       );
-      if (!Array.isArray(customers)) {
-        throw new ProviderResponseMalformedError();
-      }
-      const same = customers.filter((entry) => {
-        const { taxID } = record(entry);
-        return (
-          typeof taxID === "object" &&
-          taxID !== null &&
-          (taxID as Record<string, unknown>).taxID === taxId
-        );
-      });
       if (same.length > 1) {
         throw new ProviderResponseMalformedError();
       }
@@ -219,31 +254,15 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
         "subscription",
         true
       ),
-    async listSubscriptionInstallments(subscriptionId) {
-      const path = `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/installments`;
-      const items: unknown[] = [];
-      for (let page = 0; page < MAX_PAGES; page += 1) {
-        const answer = record(
-          // biome-ignore lint/performance/noAwaitInLoops: Pages are read one after the other.
-          await call(
-            "GET",
-            `${path}?skip=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`
-          )
-        );
-        const { installments } = answer;
-        if (!Array.isArray(installments)) {
-          throw new ProviderResponseMalformedError();
-        }
-        items.push(...installments);
-        // a short page is the last one, whatever `pageInfo` says (the documented
-        // example of an empty list says `hasNextPage: true`)
-        if (installments.length < PAGE_SIZE) {
-          return items;
-        }
-      }
-      // more installments than a subscription of Polaris can have: not an answer to trust
-      throw new ProviderResponseMalformedError();
-    },
+    listSubscriptionInstallments: async (subscriptionId) =>
+      listAll(
+        `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/installments`,
+        "installments"
+      ),
+    listSubscriptions: async () =>
+      listAll("/api/v1/subscriptions", "subscriptions"),
+    refundPix: async (body) =>
+      unwrap(await call("POST", "/api/v1/refund", body), "refund", false),
     async updateCustomer(correlationId, fields) {
       if (!isWooviCustomerCorrelationId(correlationId)) {
         throw new ProviderResponseMalformedError();

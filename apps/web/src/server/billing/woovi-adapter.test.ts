@@ -308,7 +308,8 @@ describe("the signature (AC-1b), checked over the raw bytes", () => {
       provider: "woovi",
       providerEventId: `PIX_AUTOMATIC_APPROVED:${SUBSCRIPTION_ID}`,
       providerRef: SUBSCRIPTION_ID,
-      providerSubscriptionId: null,
+      // the subscription's own globalID: stored on the record by the first matched fact
+      providerSubscriptionId: SUBSCRIPTION_ID,
     });
     expect(t.api.urls).toEqual([
       `https://api.woovi-sandbox.com${SUBSCRIPTION_PATH}`,
@@ -330,7 +331,8 @@ describe("the signature (AC-1b), checked over the raw bytes", () => {
       provider: "woovi",
       providerEventId: `PIX_AUTOMATIC_COBR_COMPLETED:${INSTALLMENT_ID}`,
       providerRef: SUBSCRIPTION_ID,
-      providerSubscriptionId: null,
+      // the subscription's own globalID: stored on the record by the first matched fact
+      providerSubscriptionId: SUBSCRIPTION_ID,
     });
     expect(t.api.urls).toHaveLength(2);
   });

@@ -47,8 +47,14 @@ const records: Record<
     link: checkout,
     record: { cancelAtPeriodEnd: false, state: "free" },
   },
+  // Woovi has its outbound port since cobrança PR 6: Polaris cancels it too
   woovi: {
     link: { ...subscribed, provider: "woovi" },
+    record: { cancelAtPeriodEnd: false, state: "active" },
+  },
+  // a provider Polaris does not cancel through: the person cancels there
+  other: {
+    link: { ...subscribed, provider: "stripe" },
     record: { cancelAtPeriodEnd: false, state: "active" },
   },
 };
@@ -81,6 +87,7 @@ describe("the renewal status of closed organizations", () => {
       "free",
       "openCheckout",
       "woovi",
+      "other",
       "missing",
     ]);
 
@@ -92,7 +99,8 @@ describe("the renewal status of closed organizations", () => {
       free: "not_handled",
       missing: "not_handled",
       openCheckout: "pending",
-      woovi: "not_handled",
+      other: "not_handled",
+      woovi: "pending",
     });
     // the ledger is read only for a checkout that could still be open
     expect(store.checkoutDiscarded).toHaveBeenCalledTimes(2);

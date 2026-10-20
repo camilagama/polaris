@@ -148,4 +148,25 @@ describe("stringifyWithAmount", () => {
       )
     ).toThrow("amount_placeholder_misplaced");
   });
+
+  describe("in cents (Woovi)", () => {
+    it.each([
+      ["24.90", "2490"],
+      ["0.10", "10"],
+      ["249.00", "24900"],
+      ["0.01", "1"],
+    ])("writes %s as the integer number %s", (amount, cents) => {
+      const text = stringifyWithAmount(body(), amount, "cents");
+      expect(text).toContain(`"value":${cents}}`);
+      expect(text).not.toContain('"value":"');
+      expect(text).not.toContain("polaris-amount");
+      expect(text).not.toContain(".");
+    });
+
+    it.each(["0", "0.00", "-1.00"])("refuses the amount %s", (amount) => {
+      expect(() => stringifyWithAmount(body(), amount, "cents")).toThrow(
+        RangeError
+      );
+    });
+  });
 });

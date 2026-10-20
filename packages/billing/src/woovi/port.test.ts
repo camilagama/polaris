@@ -1,0 +1,950 @@
+import { describe, expect, it, vi } from "vitest";
+import type { FetchInit, FetchLike } from "../http";
+import { parseProviderJson } from "../json";
+import {
+  type PrepareSubscriptionInput,
+  ProviderNotFoundError,
+  ProviderResponseMalformedError,
+  ProviderUnavailableError,
+} from "../provider-port";
+import { WooviCustomerHeldError } from "./customer";
+import {
+  pickWooviInstallment,
+  pickWooviSubscription,
+  reconcileWooviSubscription,
+} from "./mapper";
+import { createWooviPort, type WooviPortConfig } from "./port";
+import {
+  globalId,
+  INSTALLMENT_ID,
+  installmentJson,
+  OTHER_INSTALLMENT_ID,
+  OTHER_SUBSCRIPTION_ID,
+  PERSONAL_VALUES,
+  SUBSCRIPTION_ID,
+  subscriptionBeforeApprovalJson,
+  subscriptionJson,
+} from "./test-fixtures";
+
+const BASE_URL = "https://api.woovi-sandbox.com";
+const UUID = "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
+const CPF = "52998224725";
+const OTHER_CPF = "11144477735";
+const PAYER_NAME = "Pagadora de Teste";
+const PAYER_EMAIL = "pagador.teste@example.com";
+const ORGANIZATION_ID = "org-0001";
+const CUSTOMER_KEY = "cust-fake-0001";
+const END_TO_END_ID = "E00000000202610271200FAKE0000001";
+const FAKE_EMV =
+  "00020126FAKE0000PIXAUTOMATICO5204000053039865802BR5909POLARISFK6009SAO PAULO62070503***6304ABCD";
+/** Inside the period of the installment charged on 2026-10-27. */
+const NOW = new Date("2026-10-28T15:00:00.000Z");
+const encoded = (id: string) => encodeURIComponent(id);
+const SUBSCRIPTION_PATH = `/api/v1/subscriptions/${encoded(SUBSCRIPTION_ID)}`;
+const INSTALLMENTS_PATH = `${SUBSCRIPTION_PATH}/installments?skip=0&limit=100`;
+
+interface Call {
+  body?: string;
+  method: string;
+  /** Path and query, without the host. */
+  url: string;
+}
+
+type Answer = { status?: number; text: string } | undefined;
+type Route = (call: Call) => Answer;
+
+/** A fake fetch that records every call and answers by the first route that matches. */
+function fakeWoovi(...routes: Route[]) {
+  const calls: Call[] = [];
+  const fetch: FetchLike = (url, init: FetchInit) => {
+    const call: Call = {
+      method: init.method,
+      url: url.replace(BASE_URL, ""),
+      ...(init.body === undefined ? {} : { body: init.body }),
+    };
+    calls.push(call);
+    for (const route of routes) {
+      const answer = route(call);
+      if (answer) {
+        return Promise.resolve({
+          status: answer.status ?? 200,
+          text: () => Promise.resolve(answer.text),
+        });
+      }
+    }
+    return Promise.resolve({ status: 404, text: () => Promise.resolve("{}") });
+  };
+  return { calls, fetch };
+}
+
+const json = (value: unknown): Answer => ({ text: JSON.stringify(value) });
+
+function on(
+  method: string,
+  url: string,
+  answer: Answer | (() => Answer)
+): Route {
+  return (call) => {
+    if (call.method !== method || call.url !== url) {
+      return;
+    }
+    return typeof answer === "function" ? answer() : answer;
+  };
+}
+
+const getSubscription = (overrides: Record<string, unknown> = {}) =>
+  on(
+    "GET",
+    SUBSCRIPTION_PATH,
+    json({ subscription: subscriptionJson(overrides) })
+  );
+const getInstallments = (...installments: Record<string, unknown>[]) =>
+  on("GET", INSTALLMENTS_PATH, json({ installments }));
+const cancelRoute = () =>
+  on("PUT", `${SUBSCRIPTION_PATH}/cancel`, json({ subscription: {} }));
+const refundRoute = () => on("POST", "/api/v1/refund", json({ refund: {} }));
+
+function portWith(fetch: FetchLike, overrides: Partial<WooviPortConfig> = {}) {
+  return createWooviPort({
+    appId: "fake-app-id-0123",
+    baseUrl: BASE_URL,
+    fetch,
+    randomUuid: () => UUID,
+    timeoutMs: 5000,
+    ...overrides,
+  });
+}
+
+async function failureOf(run: () => Promise<unknown>): Promise<Error> {
+  try {
+    await run();
+  } catch (error) {
+    return error as Error;
+  }
+  throw new Error("expected_failure");
+}
+
+/** What an error or a result shows when logged or serialized. */
+function shown(value: unknown): string {
+  const error = value instanceof Error ? value : undefined;
+  return `${error?.message ?? ""} ${error?.stack ?? ""} ${JSON.stringify(value)}`;
+}
+
+describe("prepareSubscription", () => {
+  const input = (
+    overrides: Partial<PrepareSubscriptionInput> = {}
+  ): PrepareSubscriptionInput => ({
+    amount: "24.90",
+    cycleMonths: 1,
+    firstChargeOn: "2026-11-03",
+    organizationId: ORGANIZATION_ID,
+    payer: {
+      email: `  ${PAYER_EMAIL} `,
+      name: `  ${PAYER_NAME}  `,
+      taxId: CPF,
+    },
+    trial: true,
+    ...overrides,
+  });
+
+  const customersAnswer = (...customers: Record<string, unknown>[]) =>
+    json({ customers });
+  const storedCustomer = (overrides: Record<string, unknown> = {}) => ({
+    correlationID: CUSTOMER_KEY,
+    email: PAYER_EMAIL,
+    name: PAYER_NAME,
+    taxID: { taxID: CPF, type: "BR:CPF" },
+    ...overrides,
+  });
+  const findCustomer = (...customers: Record<string, unknown>[]) =>
+    on(
+      "GET",
+      "/api/v1/customer?skip=0&limit=100",
+      customersAnswer(...customers)
+    );
+  const createRoute = (answer?: Answer) =>
+    on(
+      "POST",
+      "/api/v1/subscriptions",
+      answer ?? json({ subscription: subscriptionBeforeApprovalJson() })
+    );
+  const patchRoute = (overrides: Record<string, unknown> = {}) =>
+    on(
+      "PATCH",
+      `/api/v1/customer/${CUSTOMER_KEY}`,
+      json({ customer: storedCustomer(overrides) })
+    );
+  const listEntry = (
+    globalID: string,
+    taxID: string,
+    status: string,
+    approval = "APPROVED"
+  ): Record<string, unknown> => ({
+    customer: { taxID: { taxID, type: "BR:CPF" } },
+    globalID,
+    pixRecurring: { status: approval },
+    status,
+  });
+  const listSubscriptions = (...entries: Record<string, unknown>[]) =>
+    on(
+      "GET",
+      "/api/v1/subscriptions?skip=0&limit=100",
+      json({ subscriptions: entries })
+    );
+  /** An empty list of subscriptions is the default; a route given first wins. */
+  const woovi = (...routes: Route[]) =>
+    fakeWoovi(...routes, listSubscriptions());
+  const postOf = (calls: Call[]) =>
+    calls.find((call) => call.method === "POST") as Call;
+
+  it("with the trial, creates a journey 2 subscription with the exact body", async () => {
+    const { calls, fetch } = woovi(findCustomer(), createRoute());
+
+    await portWith(fetch).prepareSubscription(input());
+
+    const body = postOf(calls).body ?? "";
+    expect(postOf(calls).url).toBe("/api/v1/subscriptions");
+    // the amount is an integer JSON number of cents, in the raw text
+    expect(body).toContain('"value":2490');
+    expect(body).not.toContain("2490.");
+    expect(body).not.toContain('"value":"');
+    expect(JSON.parse(body)).toEqual({
+      comment: "Polaris Pro mensal",
+      correlationID: `pol_${UUID}`,
+      customer: { email: PAYER_EMAIL, name: PAYER_NAME, taxID: CPF },
+      dayGenerateCharge: "2026-11-03T12:00:00.000Z",
+      frequency: "MONTHLY",
+      name: "Polaris Pro mensal",
+      pixRecurringOptions: {
+        journey: "ONLY_RECURRENCY",
+        retryPolicy: "THREE_RETRIES_7_DAYS",
+      },
+      type: "PIX_RECURRING",
+      value: 2490,
+    });
+  });
+
+  it("without the trial, the journey is PAYMENT_ON_APPROVAL", async () => {
+    const { calls, fetch } = woovi(findCustomer(), createRoute());
+
+    await portWith(fetch).prepareSubscription(
+      input({ firstChargeOn: "2026-10-20", trial: false })
+    );
+
+    const body = JSON.parse(postOf(calls).body ?? "") as {
+      dayGenerateCharge: string;
+      pixRecurringOptions: { journey: string };
+    };
+    expect(body.pixRecurringOptions.journey).toBe("PAYMENT_ON_APPROVAL");
+    expect(body.dayGenerateCharge).toBe("2026-10-20T12:00:00.000Z");
+  });
+
+  it.each([
+    [1, "MONTHLY", "Polaris Pro mensal"],
+    [12, "ANNUALLY", "Polaris Pro anual"],
+  ] as const)(
+    "a %i-month cycle is %s",
+    async (cycleMonths, frequency, name) => {
+      const { calls, fetch } = woovi(findCustomer(), createRoute());
+
+      await portWith(fetch).prepareSubscription(
+        input({ amount: "249.00", cycleMonths })
+      );
+
+      const body = postOf(calls).body ?? "";
+      expect(body).toContain('"value":24900');
+      expect(JSON.parse(body)).toMatchObject({ frequency, name });
+    }
+  );
+
+  it("looks the customer up, then updates it, and only then creates", async () => {
+    const { calls, fetch } = woovi(
+      findCustomer(storedCustomer({ name: "Nome Antigo" })),
+      listSubscriptions(listEntry(OTHER_SUBSCRIPTION_ID, CPF, "ACTIVE")),
+      patchRoute(),
+      createRoute()
+    );
+
+    await portWith(fetch, {
+      heldByAnotherOrganization: () => Promise.resolve(false),
+    }).prepareSubscription(input());
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "GET /api/v1/subscriptions?skip=0&limit=100",
+      "GET /api/v1/customer?skip=0&limit=100",
+      `PATCH /api/v1/customer/${CUSTOMER_KEY}`,
+      "POST /api/v1/subscriptions",
+    ]);
+  });
+
+  it("gives the globalID as providerRef and checkoutId, and the handoff", async () => {
+    const { fetch } = woovi(
+      findCustomer(),
+      createRoute(
+        json({
+          subscription: subscriptionBeforeApprovalJson({
+            paymentLink: "https://woovi-sandbox.com/pay/fake-link-0001",
+          }),
+        })
+      )
+    );
+
+    const prepared = await portWith(fetch).prepareSubscription(input());
+
+    expect(prepared.providerRef).toBe(SUBSCRIPTION_ID);
+    expect(prepared.checkoutId).toBe(SUBSCRIPTION_ID);
+    expect(prepared.handoff).toEqual({
+      emv: FAKE_EMV,
+      kind: "pix_authorization",
+      url: "https://woovi-sandbox.com/pay/fake-link-0001",
+    });
+  });
+
+  it.each([
+    ["https://woovi.com/pay/x", "https://woovi.com/pay/x"],
+    ["https://app.woovi.com/pay/x", "https://app.woovi.com/pay/x"],
+    ["https://woovi-sandbox.com/pay/x", "https://woovi-sandbox.com/pay/x"],
+    ["https://openpix.com.br/pay/x", "https://openpix.com.br/pay/x"],
+    ["https://pay.openpix.com.br/x", "https://pay.openpix.com.br/x"],
+    ["sandbox-pix-abc123/def456", null],
+    ["http://woovi.com/pay/x", null],
+    ["https://woovi.com.evil.example/pay/x", null],
+    ["https://evilwoovi.com/pay/x", null],
+    ["https://user:pass@woovi.com/pay/x", null],
+    ["https://woovi.com:8443/pay/x", null],
+    ["javascript:alert(1)", null],
+    ["", null],
+  ])("the paymentLink %j becomes the url %j", async (paymentLink, url) => {
+    const { fetch } = woovi(
+      findCustomer(),
+      createRoute(
+        json({ subscription: subscriptionBeforeApprovalJson({ paymentLink }) })
+      )
+    );
+
+    const prepared = await portWith(fetch).prepareSubscription(input());
+
+    expect(prepared.handoff).toMatchObject({ url });
+  });
+
+  it("a response without paymentLink has no url", async () => {
+    const { paymentLink: _link, ...bare } = subscriptionBeforeApprovalJson();
+    const { fetch } = woovi(
+      findCustomer(),
+      createRoute(json({ subscription: bare }))
+    );
+
+    expect(
+      (await portWith(fetch).prepareSubscription(input())).handoff
+    ).toMatchObject({ url: null });
+  });
+
+  it("is `absent` when Woovi has no customer of that CPF", async () => {
+    const { fetch } = woovi(findCustomer(), createRoute());
+    expect(
+      (await portWith(fetch).prepareSubscription(input())).customerAlignment
+    ).toBe("absent");
+  });
+
+  it("is `matches` when Woovi holds the same name and e-mail, with no PATCH", async () => {
+    const { calls, fetch } = woovi(
+      findCustomer(storedCustomer()),
+      createRoute()
+    );
+
+    expect(
+      (await portWith(fetch).prepareSubscription(input())).customerAlignment
+    ).toBe("matches");
+    expect(calls.some((call) => call.method === "PATCH")).toBe(false);
+  });
+
+  it("is `updated` when the name differs and no live subscription is held elsewhere", async () => {
+    const held = vi.fn(() => Promise.resolve(false));
+    const { calls, fetch } = woovi(
+      findCustomer(storedCustomer({ name: "Nome Antigo" })),
+      listSubscriptions(
+        listEntry(OTHER_SUBSCRIPTION_ID, CPF, "ACTIVE"),
+        listEntry(SUBSCRIPTION_ID, CPF, "INACTIVE")
+      ),
+      patchRoute(),
+      createRoute()
+    );
+
+    const prepared = await portWith(fetch, {
+      heldByAnotherOrganization: held,
+    }).prepareSubscription(input());
+
+    expect(prepared.customerAlignment).toBe("updated");
+    expect(held).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(calls.find((c) => c.method === "PATCH")?.body ?? "")
+    ).toEqual({ email: PAYER_EMAIL, name: PAYER_NAME });
+  });
+
+  it("asks with the organization of the input and the live globalIDs of that CPF", async () => {
+    const held = vi.fn(() => Promise.resolve(false));
+    const { fetch } = woovi(
+      findCustomer(storedCustomer({ name: "Nome Antigo" })),
+      listSubscriptions(
+        listEntry(OTHER_SUBSCRIPTION_ID, CPF, "ACTIVE"),
+        listEntry(
+          globalId("PaymentSubscription", "aaaaaaaaaaaaaaaaaaaaaaaa"),
+          OTHER_CPF,
+          "ACTIVE"
+        ),
+        listEntry(
+          globalId("PaymentSubscription", "bbbbbbbbbbbbbbbbbbbbbbbb"),
+          CPF,
+          "INACTIVE"
+        )
+      ),
+      patchRoute(),
+      createRoute()
+    );
+
+    await portWith(fetch, {
+      heldByAnotherOrganization: held,
+    }).prepareSubscription(input());
+
+    expect(held).toHaveBeenCalledWith(ORGANIZATION_ID, [OTHER_SUBSCRIPTION_ID]);
+  });
+
+  it("refuses with WooviCustomerHeldError when another organization holds a live subscription, with no PATCH and no POST", async () => {
+    const held = vi.fn(() => Promise.resolve(true));
+    const { calls, fetch } = woovi(
+      findCustomer(storedCustomer({ name: "Nome Antigo" })),
+      listSubscriptions(listEntry(OTHER_SUBSCRIPTION_ID, CPF, "ACTIVE")),
+      patchRoute(),
+      createRoute()
+    );
+
+    const error = await failureOf(() =>
+      portWith(fetch, {
+        heldByAnotherOrganization: held,
+      }).prepareSubscription(input())
+    );
+
+    expect(error).toBeInstanceOf(WooviCustomerHeldError);
+    expect((error as WooviCustomerHeldError).code).toBe("payer_data_mismatch");
+    expect(held).toHaveBeenCalledWith(ORGANIZATION_ID, [OTHER_SUBSCRIPTION_ID]);
+    expect(calls.map((call) => call.method)).toEqual(["GET", "GET"]);
+  });
+
+  it("without heldByAnotherOrganization a divergent customer is refused, with no PATCH", async () => {
+    const { calls, fetch } = woovi(
+      findCustomer(storedCustomer({ email: "outro@example.com" })),
+      patchRoute(),
+      createRoute()
+    );
+
+    const error = await failureOf(() =>
+      portWith(fetch).prepareSubscription(input())
+    );
+
+    expect(error).toBeInstanceOf(WooviCustomerHeldError);
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "GET /api/v1/subscriptions?skip=0&limit=100",
+      "GET /api/v1/customer?skip=0&limit=100",
+    ]);
+  });
+
+  it("with no live subscription of that CPF the question is still asked, with an empty list", async () => {
+    const held = vi.fn(() => Promise.resolve(false));
+    const { calls, fetch } = woovi(
+      findCustomer(storedCustomer({ name: "Nome Antigo" })),
+      listSubscriptions(
+        listEntry(OTHER_SUBSCRIPTION_ID, OTHER_CPF, "ACTIVE"),
+        listEntry(SUBSCRIPTION_ID, CPF, "INACTIVE")
+      ),
+      patchRoute(),
+      createRoute()
+    );
+
+    const prepared = await portWith(fetch, {
+      heldByAnotherOrganization: held,
+    }).prepareSubscription(input());
+
+    expect(prepared.customerAlignment).toBe("updated");
+    expect(held).toHaveBeenCalledWith(ORGANIZATION_ID, []);
+    expect(calls.some((call) => call.method === "PATCH")).toBe(true);
+  });
+
+  it("an ACTIVE subscription not approved by the payer does not hold the customer", async () => {
+    const held = vi.fn(() => Promise.resolve(false));
+    const { fetch } = woovi(
+      findCustomer(),
+      listSubscriptions(
+        listEntry(OTHER_SUBSCRIPTION_ID, CPF, "ACTIVE", "CREATED")
+      ),
+      createRoute()
+    );
+
+    await portWith(fetch, {
+      heldByAnotherOrganization: held,
+    }).prepareSubscription(input());
+
+    expect(held).toHaveBeenCalledWith(ORGANIZATION_ID, []);
+  });
+
+  it("absent, matches and updated read the same lists and ask the same question; only updated patches", async () => {
+    const runs = [
+      ["absent", findCustomer(), false],
+      ["matches", findCustomer(storedCustomer()), false],
+      ["updated", findCustomer(storedCustomer({ name: "Nome Antigo" })), true],
+    ] as const;
+    const seen: Record<string, string[]> = {};
+    for (const [alignment, customerRoute, patches] of runs) {
+      const held = vi.fn(() => Promise.resolve(false));
+      const { calls, fetch } = woovi(
+        customerRoute,
+        patchRoute(),
+        createRoute()
+      );
+
+      // biome-ignore lint/performance/noAwaitInLoops: One run per alignment.
+      const prepared = await portWith(fetch, {
+        heldByAnotherOrganization: held,
+      }).prepareSubscription(input());
+
+      expect(prepared.customerAlignment).toBe(alignment);
+      expect(held).toHaveBeenCalledTimes(1);
+      expect(held).toHaveBeenCalledWith(ORGANIZATION_ID, []);
+      expect(calls.some((call) => call.method === "PATCH")).toBe(patches);
+      seen[alignment] = calls
+        .filter((call) => call.method === "GET")
+        .map((call) => call.url);
+      // the tax ID is in no URL
+      for (const call of calls) {
+        expect(call.url).not.toContain(CPF);
+      }
+    }
+    expect(seen.absent).toEqual([
+      "/api/v1/subscriptions?skip=0&limit=100",
+      "/api/v1/customer?skip=0&limit=100",
+    ]);
+    expect(seen.matches).toEqual(seen.absent);
+    expect(seen.updated).toEqual(seen.absent);
+  });
+
+  it("the refusal carries no personal data", async () => {
+    const { fetch } = woovi(
+      findCustomer(storedCustomer({ name: "Nome Antigo" })),
+      createRoute()
+    );
+
+    const error = await failureOf(() =>
+      portWith(fetch).prepareSubscription(input())
+    );
+
+    const text = shown(error);
+    for (const value of [CPF, PAYER_EMAIL, PAYER_NAME, FAKE_EMV]) {
+      expect(text).not.toContain(value);
+    }
+  });
+
+  it.each([
+    ["no payer", { payer: undefined }],
+    [
+      "a payer with no tax ID",
+      { payer: { email: PAYER_EMAIL, name: PAYER_NAME } },
+    ],
+    ["no organization", { organizationId: undefined }],
+    ["an empty organization", { organizationId: "" }],
+  ])("%s is a TypeError before any fetch", async (_name, overrides) => {
+    const { calls, fetch } = woovi(findCustomer(), createRoute());
+
+    const error = await failureOf(() =>
+      portWith(fetch).prepareSubscription(
+        input(overrides as Partial<PrepareSubscriptionInput>)
+      )
+    );
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    ["no globalID", { globalID: undefined }],
+    ["a globalID of another type", { globalID: INSTALLMENT_ID }],
+    ["a globalID that is a path", { globalID: "../x" }],
+    ["no pixRecurring", { pixRecurring: undefined }],
+    ["no emv", { pixRecurring: { journey: "ONLY_RECURRENCY" } }],
+    ["an emv that is not text", { pixRecurring: { emv: 1 } }],
+    ["an empty emv", { pixRecurring: { emv: "" } }],
+  ])("a creation answer with %s is malformed", async (_name, overrides) => {
+    const { fetch } = woovi(
+      findCustomer(),
+      createRoute(
+        json({ subscription: subscriptionBeforeApprovalJson(overrides) })
+      )
+    );
+
+    const error = await failureOf(() =>
+      portWith(fetch).prepareSubscription(input())
+    );
+
+    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+    expect(shown(error)).not.toContain(FAKE_EMV);
+  });
+});
+
+describe("cancelRenewal", () => {
+  it("cancels an ACTIVE subscription, reading it first with the encoded globalID", async () => {
+    const { calls, fetch } = fakeWoovi(getSubscription(), cancelRoute());
+
+    const outcome = await portWith(fetch).cancelRenewal(SUBSCRIPTION_ID);
+
+    expect(outcome).toBe("cancelled");
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      `GET ${SUBSCRIPTION_PATH}`,
+      `PUT ${SUBSCRIPTION_PATH}/cancel`,
+    ]);
+    expect(SUBSCRIPTION_PATH).not.toContain("=");
+  });
+
+  it("reads the stored providerSubscriptionId when there is one", async () => {
+    const { calls, fetch } = fakeWoovi(getSubscription(), cancelRoute());
+
+    await portWith(fetch).cancelRenewal("not-a-global-id", SUBSCRIPTION_ID);
+
+    expect(calls[0]?.url).toBe(SUBSCRIPTION_PATH);
+  });
+
+  it("an INACTIVE subscription is already cancelled, with no PUT", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription({ status: "INACTIVE" }),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).cancelRenewal(SUBSCRIPTION_ID)).toBe(
+      "already_cancelled"
+    );
+    expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
+  it("a 404 is nothing to cancel", async () => {
+    const { calls, fetch } = fakeWoovi();
+
+    expect(await portWith(fetch).cancelRenewal(SUBSCRIPTION_ID)).toBe(
+      "nothing_to_cancel"
+    );
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe("discardCheckout", () => {
+  it("a subscription the payer has not approved is cancelled and discarded", async () => {
+    const { calls, fetch } = fakeWoovi(
+      on(
+        "GET",
+        SUBSCRIPTION_PATH,
+        json({ subscription: subscriptionBeforeApprovalJson() })
+      ),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "discarded"
+    );
+    expect(calls.at(-1)?.method).toBe("PUT");
+    expect(calls.at(-1)?.url).toBe(`${SUBSCRIPTION_PATH}/cancel`);
+  });
+
+  it("an approved subscription is no longer a checkout: already closed, with no PUT", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription({
+        pixRecurring: { emv: FAKE_EMV, status: "APPROVED" },
+      }),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "already_closed"
+    );
+    expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
+  it("an INACTIVE subscription is already closed, with no PUT", async () => {
+    const { calls, fetch } = fakeWoovi(
+      on(
+        "GET",
+        SUBSCRIPTION_PATH,
+        json({
+          subscription: subscriptionBeforeApprovalJson({ status: "INACTIVE" }),
+        })
+      ),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "already_closed"
+    );
+    expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
+  it("a 404 is already closed", async () => {
+    const { fetch } = fakeWoovi();
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "already_closed"
+    );
+  });
+
+  it("a 503 is ProviderUnavailableError", async () => {
+    const { fetch } = fakeWoovi(() => ({ status: 503, text: "" }));
+    await expect(
+      portWith(fetch).discardCheckout(SUBSCRIPTION_ID)
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+});
+
+describe("hasSubscription", () => {
+  const notApproved = () =>
+    on(
+      "GET",
+      SUBSCRIPTION_PATH,
+      json({ subscription: subscriptionBeforeApprovalJson() })
+    );
+
+  it("an approved authorization is a subscription, without reading installments", async () => {
+    const { calls, fetch } = fakeWoovi(getSubscription());
+
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("a subscription not approved and with no installments is not one", async () => {
+    const { fetch } = fakeWoovi(notApproved(), getInstallments());
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(false);
+  });
+
+  it("a subscription not approved but with an installment was one (approved, then revoked)", async () => {
+    const { fetch } = fakeWoovi(
+      notApproved(),
+      getInstallments(installmentJson())
+    );
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
+  });
+
+  it("a 404 throws ProviderNotFoundError", async () => {
+    const { fetch } = fakeWoovi();
+    await expect(
+      portWith(fetch).hasSubscription(SUBSCRIPTION_ID)
+    ).rejects.toBeInstanceOf(ProviderNotFoundError);
+  });
+});
+
+/** A resource as the client hands it over: numbers kept as text. */
+const parsed = (value: unknown) => parseProviderJson(JSON.stringify(value));
+
+describe("readState", () => {
+  it("gives the same facts as the reconciliation, tied to the globalID", async () => {
+    const { fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        installmentJson(),
+        installmentJson({
+          dateGenerateCharge: "2026-11-27T12:00:00.000Z",
+          globalID: OTHER_INSTALLMENT_ID,
+          status: "SCHEDULED",
+        })
+      )
+    );
+
+    const events = await portWith(fetch).readState(SUBSCRIPTION_ID, NOW);
+
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.fact.type)).toEqual([
+      "trial_method_ready",
+      "charge_succeeded",
+    ]);
+    for (const event of events) {
+      expect(event.providerRef).toBe(SUBSCRIPTION_ID);
+      expect(event.providerSubscriptionId).toBe(SUBSCRIPTION_ID);
+    }
+    // the reconciliation's own reading of the same resources
+    expect(events).toEqual(
+      reconcileWooviSubscription({
+        installments: [
+          pickWooviInstallment(parsed(installmentJson())),
+          pickWooviInstallment(
+            parsed(
+              installmentJson({
+                dateGenerateCharge: "2026-11-27T12:00:00.000Z",
+                globalID: OTHER_INSTALLMENT_ID,
+                status: "SCHEDULED",
+              })
+            )
+          ),
+        ],
+        now: NOW,
+        subscription: pickWooviSubscription(parsed(subscriptionJson())),
+      })
+    );
+  });
+
+  it("carries nothing personal", async () => {
+    const { fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(installmentJson())
+    );
+    const events = await portWith(fetch).readState(SUBSCRIPTION_ID, NOW);
+    const text = JSON.stringify(events);
+    for (const value of PERSONAL_VALUES) {
+      expect(text).not.toContain(value);
+    }
+  });
+});
+
+describe("refundCurrentPeriod", () => {
+  const CORRELATION_ID = `refund:${SUBSCRIPTION_ID}:${INSTALLMENT_ID}`;
+
+  it("refunds the paid installment of the period in force and answers the fact", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(installmentJson()),
+      refundRoute()
+    );
+
+    const outcome = await portWith(fetch).refundCurrentPeriod(
+      SUBSCRIPTION_ID,
+      NOW
+    );
+
+    const post = calls.find((call) => call.method === "POST");
+    expect(post?.url).toBe("/api/v1/refund");
+    expect(post?.body).toContain('"value":2490');
+    expect(post?.body).not.toContain('"value":"');
+    expect(JSON.parse(post?.body ?? "")).toEqual({
+      comment: "Reembolso Polaris Pro",
+      correlationID: CORRELATION_ID,
+      transactionEndToEndId: END_TO_END_ID,
+      value: 2490,
+    });
+    expect(outcome).toEqual({
+      event: {
+        fact: {
+          amount: { currency: "BRL", value: "24.90" },
+          occurredAt: NOW,
+          // 2026-10-27 plus one month, through the whole day in São Paulo
+          periodEndsAt: new Date("2026-11-28T03:00:00.000Z"),
+          type: "charge_refunded",
+        },
+        providerEventId: CORRELATION_ID,
+        providerRef: SUBSCRIPTION_ID,
+        providerSubscriptionId: SUBSCRIPTION_ID,
+      },
+      kind: "refund_requested",
+    });
+  });
+
+  it("uses the latest paid installment, not an earlier one", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        installmentJson({
+          dateGenerateCharge: "2026-09-27T12:00:00.000Z",
+          globalID: OTHER_INSTALLMENT_ID,
+        }),
+        installmentJson()
+      ),
+      refundRoute()
+    );
+
+    await portWith(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW);
+
+    expect(
+      JSON.parse(calls.find((call) => call.method === "POST")?.body ?? "")
+    ).toMatchObject({ correlationID: CORRELATION_ID });
+  });
+
+  it.each([
+    [
+      "only a future installment",
+      installmentJson({
+        dateGenerateCharge: "2026-11-27T12:00:00.000Z",
+        status: "SCHEDULED",
+      }),
+    ],
+    [
+      "a paid installment charged tomorrow in São Paulo",
+      installmentJson({ dateGenerateCharge: "2026-10-29T12:00:00.000Z" }),
+    ],
+    [
+      "an installment whose period has ended",
+      installmentJson({ dateGenerateCharge: "2026-09-20T12:00:00.000Z" }),
+    ],
+    ["an installment not paid", installmentJson({ status: "ACTIVE" })],
+  ])("%s is nothing to refund, with no POST", async (_name, installment) => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(installment),
+      refundRoute()
+    );
+
+    expect(
+      await portWith(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+    ).toBe("nothing_to_refund");
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("no installments at all is nothing to refund", async () => {
+    const { fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(),
+      refundRoute()
+    );
+    expect(
+      await portWith(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+    ).toBe("nothing_to_refund");
+  });
+
+  it("a paid installment without an endToEndId is malformed, with no POST", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        installmentJson({
+          cobr: { status: "CONCLUDED" },
+        })
+      ),
+      refundRoute()
+    );
+
+    await expect(
+      portWith(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("an endToEndId of another shape is malformed, with no POST", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        installmentJson({ cobr: { endToEndId: "../x", status: "CONCLUDED" } })
+      ),
+      refundRoute()
+    );
+
+    await expect(
+      portWith(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("the result carries no personal data nor the Pix payload", async () => {
+    const { fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(installmentJson()),
+      refundRoute()
+    );
+
+    const outcome = await portWith(fetch).refundCurrentPeriod(
+      SUBSCRIPTION_ID,
+      NOW
+    );
+
+    const text = JSON.stringify(outcome);
+    for (const value of PERSONAL_VALUES) {
+      expect(text).not.toContain(value);
+    }
+  });
+});

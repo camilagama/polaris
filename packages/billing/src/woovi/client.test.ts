@@ -21,6 +21,7 @@ const PRODUCTION_URL = "https://api.woovi.com";
 const PERSONAL_BODY =
   '{"error":"Cliente maria@example.com CPF 52998224725 recusado"}';
 const CPF = "52998224725";
+const OTHER_CPF = "11144477735";
 const UNENCODED = /[=+/]/;
 
 interface Call {
@@ -368,8 +369,65 @@ describe("findCustomerByTaxId", () => {
       name: "N",
       taxID: { taxID: CPF, type: "BR:CPF" },
     });
-    expect(calls[0]?.url).toBe(`${SANDBOX_URL}/api/v1/customer?taxID=${CPF}`);
+    expect(calls[0]?.url).toBe(
+      `${SANDBOX_URL}/api/v1/customer?skip=0&limit=100`
+    );
     expect(calls[0]?.init.method).toBe("GET");
+    // the tax ID is never in a URL (traces may keep it)
+    for (const call of calls) {
+      expect(call.url).not.toContain(CPF);
+    }
+  });
+
+  it("reads the whole list page by page and finds the customer on a later one", async () => {
+    const customer = (taxID: string) => ({
+      correlationID: "c-late",
+      name: "N",
+      taxID: { taxID, type: "BR:CPF" },
+    });
+    const { calls, fetch } = recorder((_call, index) =>
+      ok(
+        JSON.stringify({
+          customers:
+            index === 0
+              ? Array.from({ length: 100 }, () => customer(OTHER_CPF))
+              : [customer(CPF)],
+        })
+      )
+    );
+
+    expect(await clientWith(fetch).findCustomerByTaxId(CPF)).toMatchObject({
+      correlationID: "c-late",
+    });
+    expect(calls.map((call) => call.url.slice(SANDBOX_URL.length))).toEqual([
+      "/api/v1/customer?skip=0&limit=100",
+      "/api/v1/customer?skip=100&limit=100",
+    ]);
+    for (const call of calls) {
+      expect(call.url).not.toContain(CPF);
+    }
+  });
+
+  it("more than ten full pages are not an answer to trust", async () => {
+    const { calls, fetch } = recorder(() =>
+      ok(
+        JSON.stringify({
+          customers: Array.from({ length: 100 }, () => ({
+            correlationID: "c-x",
+            name: "N",
+            taxID: { taxID: OTHER_CPF, type: "BR:CPF" },
+          })),
+        })
+      )
+    );
+    const error = await failureOf(() =>
+      clientWith(fetch).findCustomerByTaxId(CPF)
+    );
+    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls).toHaveLength(10);
+    for (const call of calls) {
+      expect(call.url).not.toContain(CPF);
+    }
   });
 
   it("an empty list, or one without this tax ID, means there is no such customer", async () => {
@@ -506,5 +564,77 @@ describe("listSubscriptionInstallments", () => {
       clientWith(fetch).listSubscriptionInstallments(SUBSCRIPTION_ID)
     );
     expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+  });
+});
+
+describe("listSubscriptions", () => {
+  const page = (count: number) =>
+    JSON.stringify({
+      pageInfo: { hasNextPage: true, skip: 0 },
+      subscriptions: Array.from({ length: count }, (_, index) => ({
+        n: index,
+      })),
+    });
+
+  it("a short page is the last one", async () => {
+    const { calls, fetch } = recorder(() => ok(page(3)));
+    expect(await clientWith(fetch).listSubscriptions()).toHaveLength(3);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.url).toBe(
+      `${SANDBOX_URL}/api/v1/subscriptions?skip=0&limit=100`
+    );
+  });
+
+  it("reads 100 by 100 until a short page", async () => {
+    const { calls, fetch } = recorder((_call, index) =>
+      ok(page(index < 2 ? 100 : 5))
+    );
+    expect(await clientWith(fetch).listSubscriptions()).toHaveLength(205);
+    expect(calls.map((call) => call.url.slice(SANDBOX_URL.length))).toEqual([
+      "/api/v1/subscriptions?skip=0&limit=100",
+      "/api/v1/subscriptions?skip=100&limit=100",
+      "/api/v1/subscriptions?skip=200&limit=100",
+    ]);
+  });
+
+  it("more than ten full pages are not an answer to trust", async () => {
+    const { calls, fetch } = recorder(() => ok(page(100)));
+    const error = await failureOf(() => clientWith(fetch).listSubscriptions());
+    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls).toHaveLength(10);
+  });
+
+  it("refuses a page without the list", async () => {
+    const { fetch } = recorder(() => ok('{"pageInfo":{}}'));
+    const error = await failureOf(() => clientWith(fetch).listSubscriptions());
+    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+  });
+});
+
+describe("refundPix", () => {
+  it("posts the given body to /api/v1/refund, as JSON", async () => {
+    const body = '{"correlationID":"refund:a:b","value":2490}';
+    const { calls, fetch } = recorder(() =>
+      ok(JSON.stringify({ refund: { status: "IN_PROCESSING" } }))
+    );
+
+    const answer = await clientWith(fetch).refundPix(body);
+
+    expect(answer).toEqual({ status: "IN_PROCESSING" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(`${SANDBOX_URL}/api/v1/refund`);
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe(body);
+    expect(calls[0]?.init.headers["content-type"]).toBe("application/json");
+    expect(calls[0]?.init.headers.authorization).toBe(APP_ID);
+  });
+
+  it("a refusal carries nothing of the answer", async () => {
+    const { fetch } = recorder(() => ({ status: 422, text: PERSONAL_BODY }));
+    const error = await failureOf(() => clientWith(fetch).refundPix("{}"));
+    expect(error).toBeInstanceOf(ProviderRejectedError);
+    expect(JSON.stringify(error)).not.toContain(CPF);
+    expect(error.message).not.toContain(CPF);
   });
 });

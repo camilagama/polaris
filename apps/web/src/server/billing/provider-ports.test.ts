@@ -9,7 +9,7 @@ const valid = {
 };
 
 describe("billingProviderPortOf", () => {
-  it.each(["woovi", "unknown", ""])(
+  it.each(["unknown", "Woovi", ""])(
     "refuses the provider %j, which has no port here",
     (provider) => {
       expect(() => billingProviderPortOf(valid, provider)).toThrow(
@@ -90,5 +90,36 @@ describe("billingProviderPortOf", () => {
     expect(new URL(body.callback.successUrl).origin).toBe(
       "https://app.example.test"
     );
+  });
+
+  describe("Woovi (Pix Automático, cobrança PR 6)", () => {
+    const woovi = {
+      ...valid,
+      WOOVI_APP_ID: "fake-app-id",
+      WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+    };
+
+    it("builds the Woovi port from its settings", () => {
+      expect(billingProviderPortOf(woovi, "woovi").provider).toBe("woovi");
+    });
+
+    it.each(["WOOVI_APP_ID", "WOOVI_BASE_URL"] as const)(
+      "refuses to build it without %s",
+      (missing) => {
+        expect(() =>
+          billingProviderPortOf({ ...woovi, [missing]: undefined }, "woovi")
+        ).toThrow(ProviderNotConfiguredError);
+      }
+    );
+
+    it.each([
+      "https://api.woovi.com.evil.example",
+      "http://api.woovi-sandbox.com",
+      "https://api.woovi-sandbox.com/api/v1",
+    ])("refuses the host %s", (baseUrl) => {
+      expect(() =>
+        billingProviderPortOf({ ...woovi, WOOVI_BASE_URL: baseUrl }, "woovi")
+      ).toThrow(ProviderNotConfiguredError);
+    });
   });
 });

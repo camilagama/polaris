@@ -3,14 +3,17 @@ import { ProviderNotFoundError } from "../provider-port";
 import { createWooviClient } from "./client";
 import { alignWooviCustomer } from "./customer";
 import { pickWooviSubscription } from "./mapper";
+import { createWooviPort } from "./port";
 
 /**
  * Against the real Woovi SANDBOX, only when asked for
  * (`WOOVI_SANDBOX_INTEGRATION=1` with `WOOVI_APP_ID` and
  * `WOOVI_BASE_URL=https://api.woovi-sandbox.com` in the environment). It aligns
  * the test customer (CPF de teste), creates one Pix Automático subscription
- * that starts in 7 days and cancels it, and reads resources that do not exist.
- * Nothing is printed: no AppID, no `emv`, no tax ID, no resource.
+ * that starts in 7 days and cancels it, reads resources that do not exist, and
+ * runs the port of the checkout (PR 6): journey 2 and journey 3, each given up
+ * (`discardCheckout`) or cancelled (`cancelRenewal`) at once. Nothing is
+ * printed: no AppID, no `emv`, no tax ID, no resource.
  */
 const enabled =
   process.env.WOOVI_SANDBOX_INTEGRATION === "1" &&
@@ -32,6 +35,11 @@ const client = () =>
     fetch: (url: string, init: RequestInit) => fetch(url, init),
     timeoutMs: 8000,
   });
+
+const todayInSaoPaulo = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+    new Date()
+  );
 
 const sevenDaysLater = () => {
   const today = new Intl.DateTimeFormat("en-CA", {
@@ -101,4 +109,65 @@ describe.skipIf(!enabled)("Woovi sandbox", () => {
       woovi.getInstallment(btoa(`PaymentSubscriptionInstallment:${zeros}`))
     ).rejects.toBeInstanceOf(ProviderNotFoundError);
   }, 30_000);
+
+  it("the port prepares journey 2 (trial) and journey 3 (no trial), and gives each up", async () => {
+    const port = createWooviPort({
+      appId: process.env.WOOVI_APP_ID ?? "",
+      baseUrl: process.env.WOOVI_BASE_URL ?? "",
+      fetch: (url: string, init: RequestInit) => fetch(url, init),
+      // the test customer is shared by every run: it is never another organization's
+      heldByAnotherOrganization: () => Promise.resolve(false),
+      randomUuid: () => crypto.randomUUID(),
+      timeoutMs: 8000,
+    });
+    const organizationId = `sandbox-${crypto.randomUUID()}`;
+
+    const trial = await port.prepareSubscription({
+      amount: "24.90",
+      cycleMonths: 1,
+      firstChargeOn: sevenDaysLater(),
+      organizationId,
+      payer: PAYER,
+      trial: true,
+    });
+    try {
+      expect(trial.providerRef).toBe(trial.checkoutId);
+      expect(trial.handoff.kind).toBe("pix_authorization");
+      expect(["absent", "matches", "updated"]).toContain(
+        trial.customerAlignment
+      );
+      // not approved: nothing was subscribed yet
+      expect(await port.hasSubscription(trial.providerRef)).toBe(false);
+    } finally {
+      expect(await port.discardCheckout(trial.checkoutId)).toBe("discarded");
+    }
+    expect(await port.discardCheckout(trial.checkoutId)).toBe("already_closed");
+
+    const paidOnApproval = await port.prepareSubscription({
+      amount: "249.00",
+      cycleMonths: 12,
+      firstChargeOn: todayInSaoPaulo(),
+      organizationId,
+      payer: PAYER,
+      trial: false,
+    });
+    try {
+      expect(paidOnApproval.customerAlignment).toBe("matches");
+      expect(
+        pickWooviSubscription(
+          await client().getSubscription(paidOnApproval.providerRef)
+        ).journey
+      ).toBe("PAYMENT_ON_APPROVAL");
+      expect(
+        await port.readState(paidOnApproval.providerRef, new Date())
+      ).toEqual([]);
+    } finally {
+      expect(await port.cancelRenewal(paidOnApproval.providerRef)).toBe(
+        "cancelled"
+      );
+    }
+    expect(await port.cancelRenewal(paidOnApproval.providerRef)).toBe(
+      "already_cancelled"
+    );
+  }, 90_000);
 });

@@ -15,6 +15,7 @@ import {
 import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
+  runWooviReconciliation,
 } from "../src/server/billing/maintenance";
 import { billingProviderPortOf } from "../src/server/billing/provider-ports";
 import {
@@ -127,7 +128,9 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
 
 /**
  * Applies the events that were received but not processed, then what time itself
- * causes, then settles the trials no reservation paid for (ADR 0101).
+ * causes, asks again for the renewal cancellations still owed, reads Woovi's
+ * subscriptions again (the reconciliation), then settles the trials no
+ * reservation paid for (ADR 0101).
  */
 async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
@@ -156,6 +159,15 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     // after the sweep, which ends what time ended: a closed organization whose renewal is still alive asks again
     const rearmed = await rearmRenewalCancellations(store);
     logger.info("billing_renewal_cancel_rearm_complete", { ...rearmed });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
+    // the reconciliation with Woovi (ADR 0101, PR 6): what a webhook answered without a fact is read here
+    const reconciled = await runWooviReconciliation(env, store);
+    if (reconciled) {
+      logger.info("billing_woovi_reconcile_complete", { ...reconciled });
+    }
   } catch (error: unknown) {
     failures.push(error);
   }

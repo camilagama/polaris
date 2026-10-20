@@ -155,10 +155,11 @@ describe("checkoutOpen", () => {
 });
 
 describe("the providers Polaris acts through", () => {
-  it("are Asaas only until Woovi has its port", () => {
-    expect(HANDLED_BILLING_PROVIDERS).toEqual(["asaas"]);
+  it("are Asaas and Woovi, each with its outbound port (cobrança PR 6)", () => {
+    expect(HANDLED_BILLING_PROVIDERS).toEqual(["asaas", "woovi"]);
     expect(billingProviderHandled("asaas")).toBe(true);
-    expect(billingProviderHandled("woovi")).toBe(false);
+    expect(billingProviderHandled("woovi")).toBe(true);
+    expect(billingProviderHandled("stripe")).toBe(false);
   });
 });
 
@@ -183,7 +184,16 @@ describe("renewalBlocksPurge", () => {
       renewalBlocksPurge({ cancelAtPeriodEnd: false, state: "active" }, null)
     ).toBe(false);
     expect(
-      renewalBlocksPurge({ cancelAtPeriodEnd: false, state: "active" }, woovi)
+      renewalBlocksPurge(
+        { cancelAtPeriodEnd: false, state: "active" },
+        { provider: "stripe", providerSubscriptionId: "sub_3" }
+      )
     ).toBe(false);
+  });
+
+  it("blocks a live Woovi renewal too, now that Polaris cancels through it", () => {
+    expect(
+      renewalBlocksPurge({ cancelAtPeriodEnd: false, state: "active" }, woovi)
+    ).toBe(true);
   });
 });

@@ -7,8 +7,12 @@ import {
   BillingCommandError,
   checkoutPriceOf,
   startCardCheckout,
+  startPixCheckout,
 } from "../billing/commands";
-import { billingProviderPortOf } from "../billing/provider-ports";
+import {
+  type BillingPortOptions,
+  billingProviderPortOf,
+} from "../billing/provider-ports";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
@@ -21,10 +25,16 @@ interface BillingRpcContext {
 export interface BillingRpcOverrides {
   createBillingStore?: typeof createBillingStore;
   listBillingPrices?: typeof listBillingPrices;
+  /** The Pix checkout's waits (its minimum answer time); tests give their own. */
+  pixTiming?: {
+    elapsedMs: () => number;
+    sleep: (ms: number) => Promise<void>;
+  };
   /** The provider's port; tests give a fake one. */
   providerPortOf?: (
     bindings: WorkerBindings,
-    provider: string
+    provider: string,
+    options?: BillingPortOptions
   ) => BillingProviderPort;
 }
 
@@ -46,8 +56,13 @@ const unavailableCodes: ReadonlySet<string> = new Set([
 
 /** What the person reads when a refusal needs more than its code (the client may show it as it is). */
 const refusalMessages: Readonly<Record<string, string>> = {
+  checkout_in_progress:
+    "Outro checkout com esse documento está em andamento. Aguarde um instante e tente de novo.",
   checkout_pending_confirmation:
     "Seu pagamento anterior ainda está sendo confirmado. Aguarde alguns minutos e atualize a página antes de abrir um novo checkout.",
+  // the same text whatever the reason: it never tells whether the CPF or CNPJ is known
+  payer_not_accepted:
+    "Não foi possível iniciar o Pix Automático com esses dados. Confira o nome, o CPF ou CNPJ e o e-mail, ou escolha o cartão.",
 };
 
 function billingRpcError(
@@ -87,7 +102,9 @@ function billingRpcError(
 }
 
 /**
- * The owner starts the Pro subscription (ADR 0101). Authorization, the
+ * The owner starts the Pro subscription (ADR 0101): the card at Asaas, or Pix
+ * Automático at Woovi (the payer's name, document and e-mail go to Woovi and
+ * nowhere else). Authorization, the
  * organization and the price come from the tenant transaction (the
  * organization is the server's, the price is `billing_prices`'); the trial,
  * the checkout and the link run on the billing role afterwards, outside it, so
@@ -124,7 +141,14 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
             data: { reason: "billing_not_configured" },
           });
         }
-        const port = portOf(context.bindings, "asaas");
+        const payerLockSecret = context.bindings.BETTER_AUTH_SECRET ?? "";
+        if (input.method === "pix_automatic" && payerLockSecret.length < 32) {
+          // the payer's lock is keyed by the server's secret
+          throw new ORPCError("SERVICE_UNAVAILABLE", {
+            data: { reason: "billing_not_configured" },
+          });
+        }
+        const provider = input.method === "pix_automatic" ? "woovi" : "asaas";
         const store = createStore(connectionString, {
           // the checkout of an organization the person's trial reservation left
           discardCheckout: (abandoned) =>
@@ -133,14 +157,31 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
             ),
         });
         try {
-          return await startCardCheckout(
-            { port, store },
-            {
-              ...authorized,
-              cycleMonths: input.cycleMonths,
-              trial: input.trial,
-            }
-          );
+          const port = portOf(context.bindings, provider, {
+            heldByAnotherOrganization: (organizationId, subscriptionIds) =>
+              store.providerSubscriptionHeldElsewhere(
+                organizationId,
+                provider,
+                subscriptionIds
+              ),
+          });
+          const checkout = {
+            ...authorized,
+            cycleMonths: input.cycleMonths,
+            trial: input.trial,
+          };
+          if (input.method === "pix_automatic") {
+            return await startPixCheckout(
+              {
+                ...dependencies.pixTiming,
+                payerLockSecret,
+                port,
+                store,
+              },
+              { ...checkout, payer: input.payer }
+            );
+          }
+          return await startCardCheckout({ port, store }, checkout);
         } finally {
           await store.close().catch(() => undefined);
         }

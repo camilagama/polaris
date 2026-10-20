@@ -61,20 +61,44 @@ export interface PrepareSubscriptionInput {
   /** The day of the first charge, `AAAA-MM-DD` in America/Sao_Paulo (the end of the trial, or today). */
   firstChargeOn: string;
   /**
+   * The organization the subscription is for, from the server's context. Pix
+   * Automático needs it to tell the payer's other organizations from this one
+   * (`alignWooviCustomer`); the card checkout does not read it.
+   */
+  organizationId?: string;
+  /**
    * The payer, never stored by Polaris. The card checkout takes none of it (the
    * payer types it on the provider's page) and refuses a tax ID; Pix
    * Automático needs the name, the CPF or CNPJ and the e-mail.
    */
   payer?: { email: string; name: string; taxId?: string };
+  /**
+   * Whether the first charge comes after a trial. Pix Automático picks its
+   * journey by it (2, `ONLY_RECURRENCY`, with; 3, `PAYMENT_ON_APPROVAL`,
+   * paid on approval, without); the card checkout reads only the date.
+   */
+  trial?: boolean;
 }
 
 export type CheckoutHandoff =
   | { kind: "redirect"; url: string }
-  | { emv: string; kind: "pix_authorization"; url: string };
+  | {
+      /** The Pix "copia e cola" of the authorization; no QR is drawn by Polaris. */
+      emv: string;
+      kind: "pix_authorization";
+      /** Woovi's page of the authorization, when it gave one over https (the sandbox gives none). */
+      url: string | null;
+    };
 
 export interface PreparedSubscription {
   /** The provider's ID of what was created (the hosted checkout), kept to cancel it if the link fails. */
   checkoutId: string;
+  /**
+   * Pix Automático: what Woovi held for the payer's document before
+   * (`alignWooviCustomer`). For the operator's audit log only, with no
+   * personal data; never returned to the tenant, in any form.
+   */
+  customerAlignment?: "absent" | "matches" | "updated";
   /** What the client needs to finish at the provider. Never logged. */
   handoff: CheckoutHandoff;
   /**
@@ -126,13 +150,23 @@ export interface BillingProviderPort {
     now: Date,
     providerSubscriptionId?: string | null
   ) => Promise<ProviderBillingEvent[]>;
-  /** Refunds in full the charge of the period in force at `now`; never part of it, never an earlier one. */
+  /**
+   * Refunds in full the charge of the period in force at `now`; never part of
+   * it, never an earlier one. A provider whose refund sends no webhook tied to
+   * the subscription (Woovi) answers the fact too, and the command writes it
+   * through the inbox.
+   */
   refundCurrentPeriod: (
     providerRef: string,
     now: Date,
     providerSubscriptionId?: string | null
-  ) => Promise<"nothing_to_refund" | "refund_requested">;
+  ) => Promise<RefundOutcome>;
 }
+
+export type RefundOutcome =
+  | "nothing_to_refund"
+  | "refund_requested"
+  | { event: ProviderBillingEvent; kind: "refund_requested" };
 
 /** The provider did not answer in time, could not be reached, or failed (5xx, 429). A retry may work. */
 export class ProviderUnavailableError extends Error {
