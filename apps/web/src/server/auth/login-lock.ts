@@ -175,7 +175,7 @@ export interface EmailSignInLockOptions {
   store: LoginLockStore;
 }
 
-export function isJsonRequest(request: Request): boolean {
+function isJsonRequest(request: Request): boolean {
   return (
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ===
     "application/json"
