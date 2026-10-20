@@ -1,14 +1,18 @@
 // biome-ignore-all lint/suspicious/noBitwiseOperators: the ZIP oracle reads and checks bit-level fields (CRC-32, little-endian headers).
 import {
   array,
+  bigInt,
+  boolean,
   constantFrom,
   constant,
+  double,
   integer,
   oneof,
   property,
   record,
   string,
   stringMatching,
+  tuple,
   uint8Array,
   uniqueArray,
   uuid,
@@ -34,7 +38,7 @@ import {
   retentionExpiry,
   retentionPolicy,
 } from "./retention";
-import { ZipBuilder } from "./zip";
+import { ZipBuilder, ZipLimitError } from "./zip";
 
 /*
  * Invariants of the privacy area (docs/testing/property-invariants.md, PRV-1 to PRV-14). Each oracle
@@ -146,7 +150,40 @@ const awkwardChar = constantFrom(
 const awkwardText = array(awkwardChar, { maxLength: 12 }).map((chars) =>
   chars.join("")
 );
-const textCell = oneof(awkwardText, string({ maxLength: 20 }));
+// Cells at the edge of "a plain number" (the one case a formula starter is not guarded) and of the starters.
+const edgeCell = constantFrom(
+  "-",
+  "+",
+  "-1",
+  "+1",
+  "-0",
+  "1.",
+  ".5",
+  "-.5",
+  "+1.5",
+  "-1.",
+  "1.5.2",
+  "--1",
+  "+-1",
+  "-1e5",
+  "-1 ",
+  " -1",
+  "-1\n",
+  "=1+1",
+  "@SUM(A1)",
+  "\t1",
+  "\r1",
+  "'=1",
+  " =1",
+  "0",
+  "٣"
+);
+const textCell = oneof(
+  awkwardText,
+  string({ maxLength: 20 }),
+  edgeCell,
+  edgeCell
+);
 
 describe("CSV export (PRV-1 to PRV-3)", () => {
   it("PRV-1: reading the file back gives every cell as written, one record per row, after the BOM", () => {
@@ -259,10 +296,29 @@ function readZip(bytes: Uint8Array): ReadEntry[] {
 const NAME_INVALID = /^zip_entry_name_invalid$/;
 const NAME_REPEATED = /^zip_entry_name_repeated$/;
 const SEGMENT = stringMatching(/^[a-z0-9_-]{1,8}$/);
-const entryName = array(oneof(SEGMENT, constant("é-ção"), constant("日本")), {
-  maxLength: 3,
-  minLength: 1,
-}).map((parts) => parts.join("/"));
+// Characters on both sides of each UTF-8 width change (1 to 2 bytes at U+0080, 2 to 3 at U+0800, 3 to 4 at U+10000).
+const WIDTH_EDGES = [
+  "\u007f",
+  "\u0080",
+  "\u07ff",
+  "\u0800",
+  "\uffff",
+  "\u{10000}",
+  "\u{10ffff}",
+  "😀",
+].map((char) => `n${char}`);
+const entryName = array(
+  oneof(
+    SEGMENT,
+    constant("é-ção"),
+    constant("日本"),
+    constantFrom(...WIDTH_EDGES)
+  ),
+  {
+    maxLength: 3,
+    minLength: 1,
+  }
+).map((parts) => parts.join("/"));
 const archiveEntries = uniqueArray(
   record({ data: uint8Array({ maxLength: 64 }), name: entryName }),
   { maxLength: 8, selector: (entry) => entry.name }
@@ -338,6 +394,24 @@ describe("ZIP writer (PRV-4 to PRV-6)", () => {
       })
     );
   });
+
+  // The count limit is the one an archive can reach in a test (the 4 GiB one cannot, it would need that much
+  // memory). The rule is "an export part has far fewer than 65,535 entries" (the 16-bit field of the
+  // directory); 65,000 is the figure the writer keeps, so the 65,000th entry goes in and the next is refused.
+  it("PRV-6: the 65,000th entry is accepted, the 65,001st is refused with the limit error and changes nothing, and the archive still reads back", () => {
+    const builder = new ZipBuilder();
+    const data = new Uint8Array(0);
+    for (let index = 0; index < 65_000; index += 1) {
+      builder.add(`e${index}`, data);
+    }
+    expect(builder.count).toBe(65_000);
+    const before = { count: builder.count, size: builder.size };
+    expect(() => builder.add("one-too-many", data)).toThrow(ZipLimitError);
+    expect({ count: builder.count, size: builder.size }).toEqual(before);
+    const read = readZip(builder.finish());
+    expect(read).toHaveLength(65_000);
+    expect(read.at(-1)?.name).toBe("e64999");
+  });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -380,8 +454,55 @@ function addCalendarMonths(
   return day * DAY_MS + timeOfDay;
 }
 
-const instant = integer({ max: 4_102_444_800_000, min: 0 }).map(
-  (ms) => new Date(ms)
+// Instants at the edges of the calendar: the first and the last day of a month, 29 to 31 (a month that does
+// not have them rolls over), a leap day, the start of the clock and its last millisecond, and the ends of
+// the range the other instants are drawn from.
+// The last days of every kind of month, in leap and common years (31 August + 6 months, 29 February + 12).
+const monthEndInstant = tuple(
+  constantFrom(2000, 2023, 2024, 2027, 2028, 2096),
+  constantFrom(
+    [1, 31],
+    [2, 28],
+    [2, 29],
+    [3, 31],
+    [4, 30],
+    [5, 31],
+    [6, 30],
+    [8, 31],
+    [9, 30],
+    [10, 31],
+    [11, 30],
+    [12, 31]
+  ),
+  constantFrom(0, 86_399_999)
+).map(
+  ([year, [month, day], time]) =>
+    new Date(Date.UTC(year, month - 1, day) + time)
+);
+const edgeInstant = oneof(
+  tuple(
+    constantFrom(1970, 1999, 2000, 2023, 2024, 2027, 2028, 2099),
+    integer({ max: 12, min: 1 }),
+    constantFrom(1, 28, 29, 30, 31),
+    constantFrom(0, 1, 86_399_999)
+  ).map(
+    ([year, month, day, time]) =>
+      new Date(Date.UTC(year, month - 1, day) + time)
+  ),
+  monthEndInstant,
+  constantFrom(0, 1, 4_102_444_799_999, 4_102_444_800_000).map(
+    (ms) => new Date(ms)
+  )
+);
+const instant = oneof(
+  integer({ max: 4_102_444_800_000, min: 0 }).map((ms) => new Date(ms)),
+  edgeInstant
+);
+
+const calendarMonthPeriods = RETENTION_POLICIES.flatMap((policy) =>
+  policy.status === "aprovada" && policy.period.kind === "calendar_months"
+    ? [{ class: policy.class, ...policy.period }]
+    : []
 );
 
 describe("retention periods (PRV-7 to PRV-10)", () => {
@@ -423,12 +544,23 @@ describe("retention periods (PRV-7 to PRV-10)", () => {
     );
   });
 
-  it("PRV-8: a month period lasts between 28 and 31 days a month, plus the grace days", () => {
-    const months = RETENTION_POLICIES.flatMap((policy) =>
-      policy.status === "aprovada" && policy.period.kind === "calendar_months"
-        ? [{ class: policy.class, ...policy.period }]
-        : []
+  it("PRV-7: a calendar-month class started on the last days of a month expires on the day the calendar says", () => {
+    expect(calendarMonthPeriods.length).toBeGreaterThan(0);
+    assertProperty(
+      property(
+        constantFrom(...calendarMonthPeriods),
+        monthEndInstant,
+        (period, from) => {
+          expect(retentionExpiry(period.class, from).getTime()).toBe(
+            addCalendarMonths(from, period.months, period.graceDays ?? 0)
+          );
+        }
+      )
     );
+  });
+
+  it("PRV-8: a month period lasts between 28 and 31 days a month, plus the grace days", () => {
+    const months = calendarMonthPeriods;
     expect(months.length).toBeGreaterThan(0);
     assertProperty(
       property(constantFrom(...months), instant, (period, from) => {
@@ -457,7 +589,19 @@ describe("retention periods (PRV-7 to PRV-10)", () => {
       property(
         constantFrom(...withPeriod),
         instant,
-        integer({ max: 3 * 366 * DAY_MS, min: 0 }),
+        oneof(
+          integer({ max: 3 * 366 * DAY_MS, min: 0 }),
+          constantFrom(
+            0,
+            1,
+            DAY_MS,
+            2 * DAY_MS,
+            3 * DAY_MS - 1,
+            3 * DAY_MS,
+            3 * DAY_MS + 1,
+            3 * 366 * DAY_MS
+          )
+        ),
         (period, from, gap) => {
           const first = retentionExpiry(period.class, from).getTime();
           const second = retentionExpiry(
@@ -552,12 +696,83 @@ function isLowerUuid(value: unknown): boolean {
   });
 }
 
-const looseId = oneof(
+// An ID of a given length made of valid characters, with now and then one bad character in the last place
+// (a dot, a space, a line break, an accented letter, an emoji, a slash). The length edges are the literals
+// of the rule: 1 to 64 characters.
+const edgeId = tuple(
+  constantFrom("a", "Z", "0", "_", "-"),
+  constantFrom(0, 1, 2, 63, 64, 65, 66),
+  constantFrom("", "", "", "", ".", " ", "\n", "é", "😀", "/")
+).map(([char, length, bad]) =>
+  bad === ""
+    ? char.repeat(length)
+    : `${char.repeat(Math.max(0, length - 1))}${bad}`
+);
+
+// A valid lowercase UUID with one position changed to a character on the edge of what that position allows
+// (version 0, 1, 8, 9; variant 7, 8, b, c; a non-hex letter; an uppercase letter; a dash in the wrong place),
+// or cut short or stretched by one.
+const replaceAt = (base: string, index: number, char: string) =>
+  `${base.slice(0, index)}${char}${base.slice(index + 1)}`;
+const validUuid = uuid().filter(isLowerUuid);
+const nearUuid = oneof(
+  // the version digit (position 14) at both sides of 1 to 8
+  {
+    arbitrary: tuple(validUuid, constantFrom("0", "1", "8", "9")).map(
+      ([base, char]) => replaceAt(base, 14, char)
+    ),
+    weight: 3,
+  },
+  // the variant digit (position 19) at both sides of 8 to b
+  {
+    arbitrary: tuple(validUuid, constantFrom("7", "8", "b", "c")).map(
+      ([base, char]) => replaceAt(base, 19, char)
+    ),
+    weight: 3,
+  },
+  // any position, any character on an edge of hex (a non-hex letter, an uppercase letter, a dash, a space)
+  tuple(
+    validUuid,
+    oneof(integer({ max: 35, min: 0 }), constantFrom(0, 7, 8, 13, 18, 23, 35)),
+    constantFrom("g", "A", "F", "-", " ", "0", "f")
+  ).map(([base, index, char]) => replaceAt(base, index, char)),
+  // one character short or long
+  validUuid.map((base) => base.slice(1)),
+  validUuid.map((base) => `${base}0`)
+);
+
+const looseText = oneof(
   stringMatching(/^[A-Za-z0-9_-]{1,64}$/),
   uuid(),
   uuid().map((value) => value.toUpperCase()),
   string({ maxLength: 70 }),
-  constant("")
+  constant(""),
+  edgeId,
+  nearUuid
+);
+
+// A value that is not text. Some of them turn into a valid ID if someone calls `String()` on them (a number,
+// an array of one ID, an object whose `toString` answers an ID, a boxed string): they must still be refused.
+const notText = oneof(
+  integer({ max: 1_000_000, min: -10 }),
+  double(),
+  boolean(),
+  constant(null),
+  constant(undefined),
+  bigInt(),
+  constant({}),
+  constant([]),
+  stringMatching(/^[a-z0-9]{1,20}$/).map((id) => [id]),
+  uuid().map((id) => [id]),
+  stringMatching(/^[a-z0-9]{1,20}$/).map((id) => ({ toString: () => id })),
+  stringMatching(/^[a-z0-9]{1,20}$/).map(
+    // biome-ignore lint/style/useConsistentBuiltinInstantiation: a boxed string is the very case under test.
+    (id): unknown => new String(id)
+  )
+);
+const looseId = oneof(
+  { arbitrary: looseText, weight: 4 },
+  { arbitrary: notText, weight: 1 }
 );
 
 const ORG_SLUG = /^[a-z0-9]{1,40}$/;
@@ -588,10 +803,10 @@ function ledgerEntityId(input: {
 
 // Inputs that are valid, or valid but for one field, so both branches of the model get exercised.
 const nearlyValidInput = record({
-  customerId: oneof(uuid(), looseId),
+  customerId: oneof(uuid(), looseText),
   mismatch: constantFrom(false, true),
-  organizationId: oneof(stringMatching(/^[a-z0-9]{1,20}$/), looseId),
-  privacyCaseId: oneof(constant(null), uuid(), looseId),
+  organizationId: oneof(stringMatching(/^[a-z0-9]{1,20}$/), looseText),
+  privacyCaseId: oneof(constant(null), uuid(), looseText),
   purge: constantFrom(false, true),
 }).map(({ customerId, mismatch, organizationId, privacyCaseId, purge }) => ({
   entityId: ledgerEntityId({ customerId, mismatch, organizationId, purge }),
@@ -600,7 +815,70 @@ const nearlyValidInput = record({
   organizationId,
   privacyCaseId,
 }));
-const ledgerInput = oneof(looseInput, nearlyValidInput);
+// A valid entry with one field (or, for an organization purge, both of the two that must be equal) replaced
+// by something that is not text: it is refused, even when the text of the value would have passed.
+function entityIdOf(input: {
+  field: string;
+  id: string;
+  junk: unknown;
+  organizationId: string;
+  purge: boolean;
+}): unknown {
+  if (input.field === "entityId" || input.field === "both") {
+    return input.junk;
+  }
+  return input.purge ? input.organizationId : input.id;
+}
+const nonTextEntry = record({
+  field: constantFrom("entityId", "organizationId", "both", "privacyCaseId"),
+  junk: notText.filter((value) => value !== null && value !== undefined),
+  organizationId: stringMatching(ORG_SLUG),
+  purge: constantFrom(false, true),
+  uuid: uuid().filter(isLowerUuid),
+}).map(({ field, junk, organizationId, purge, uuid: id }) => ({
+  entityId: entityIdOf({ field, id, junk, organizationId, purge }),
+  entityType: purge ? "organization" : "customer",
+  operation: purge ? "purge" : "anonymize",
+  organizationId:
+    field === "organizationId" || field === "both" ? junk : organizationId,
+  privacyCaseId: field === "privacyCaseId" ? junk : id,
+}));
+// A valid entry but for the length of the organization ID: 0 to 66 valid characters (the rule is 1 to 64;
+// for a purge the entity ID is the same text).
+const lengthEntry = record({
+  id: tuple(
+    constantFrom("a", "Z", "0", "_", "-"),
+    constantFrom(0, 1, 2, 63, 64, 65, 66)
+  ).map(([char, length]) => char.repeat(length)),
+  purge: constantFrom(false, true),
+  uuid: validUuid,
+}).map(({ id, purge, uuid: valid }) => ({
+  entityId: purge ? id : valid,
+  entityType: purge ? "organization" : "customer",
+  operation: purge ? "purge" : "anonymize",
+  organizationId: id,
+  privacyCaseId: valid,
+}));
+// A valid customer entry but for one UUID (the customer or the case) with one character on an edge of the rule.
+const uuidEntry = record({
+  near: nearUuid,
+  uuid: validUuid,
+  which: constantFrom("entityId", "privacyCaseId"),
+}).map(({ near, uuid: valid, which }) => ({
+  entityId: which === "entityId" ? near : valid,
+  entityType: "customer",
+  operation: "anonymize",
+  organizationId: "org1",
+  privacyCaseId: which === "privacyCaseId" ? near : valid,
+}));
+const ledgerInput = oneof(
+  looseInput,
+  nearlyValidInput,
+  nonTextEntry,
+  lengthEntry,
+  uuidEntry,
+  uuidEntry
+);
 
 /** The rules of the ledger, restated: a known pair, opaque IDs, and the entity rule of each kind. */
 function ledgerModelAccepts(input: DeletionLedgerEntryInput): boolean {

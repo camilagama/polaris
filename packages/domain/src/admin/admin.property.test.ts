@@ -22,11 +22,6 @@ import {
 import {
   DEFAULT_ACCESS_MINUTES,
   InvalidSupportRequestError,
-  MAX_ACCESS_MINUTES,
-  MAX_CASE_CONTEXT_LENGTH,
-  MAX_CASE_REASON_LENGTH,
-  MAX_LEGAL_HOLD_REVIEW_DAYS,
-  MIN_ACCESS_MINUTES,
   normalizeAccessMinutes,
   normalizeLegalHoldReviewAt,
   normalizeOpenCase,
@@ -115,19 +110,35 @@ describe("platform capabilities (ADM-1 to ADM-2)", () => {
 
 describe("support access window (ADM-3)", () => {
   it("ADM-3: a duration is accepted exactly when it is a whole number of minutes from 5 to 240, and nothing is the default hour", () => {
+    // The edges are written as literals of the rule (5 and 240), not as the constants of the code, so
+    // moving a constant without moving the rule fails here; they carry most of the weight, since a
+    // wide integer range almost never lands on them.
     const minutes = oneof(
-      constant(undefined),
-      integer({ max: MAX_ACCESS_MINUTES + 50, min: -20 }),
-      constantFrom(
-        MIN_ACCESS_MINUTES - 1,
-        MIN_ACCESS_MINUTES,
-        MAX_ACCESS_MINUTES,
-        MAX_ACCESS_MINUTES + 1,
-        Number.NaN,
-        Number.POSITIVE_INFINITY,
-        Number.NEGATIVE_INFINITY
-      ),
-      double({ max: 300, min: -10, noNaN: true })
+      { arbitrary: constant(undefined), weight: 1 },
+      { arbitrary: integer({ max: 290, min: -20 }), weight: 1 },
+      {
+        arbitrary: constantFrom(
+          4,
+          5,
+          6,
+          239,
+          240,
+          241,
+          0,
+          -1,
+          60,
+          4.5,
+          4.999,
+          5.5,
+          239.5,
+          240.001,
+          Number.NaN,
+          Number.POSITIVE_INFINITY,
+          Number.NEGATIVE_INFINITY
+        ),
+        weight: 4,
+      },
+      { arbitrary: double({ max: 300, min: -10, noNaN: true }), weight: 1 }
     );
     assertProperty(
       property(minutes, (value) => {
@@ -166,13 +177,42 @@ const awkwardChar = constantFrom(
 const shortText = array(awkwardChar, { maxLength: 8 }).map((chars) =>
   chars.join("")
 );
-/** Long text around a limit: `length` code points of one symbol, so a count by UTF-16 units would be off for the emoji. */
-const textAround = (limit: number) =>
+// Clean text, and prose with line breaks and tabs inside (clean for a context, a control for a reason): the
+// two that a random mix of characters almost never produces, since one control character spoils it.
+const cleanShort = array(constantFrom("a", "ç", "😀", " "), {
+  maxLength: 8,
+}).map((chars) => chars.join(""));
+const prose = array(constantFrom("a", "ç", "😀", " ", "\n", "\r", "\t"), {
+  maxLength: 12,
+}).map((chars) => chars.join(""));
+const SYMBOLS = ["a", "ç", "😀"] as const;
+/**
+ * Long text around a limit, written with the literal of the rule: exactly limit - 1, limit and limit + 1
+ * code points most of the time (a count by UTF-16 units would be off for the emoji), made of two symbols,
+ * with blank padding that `trim` must remove before the count, and now and then one control character
+ * in the middle (a line break and a tab are allowed in the context only).
+ */
+const textAround = (limit: number, withControl = true) =>
   tuple(
-    integer({ max: limit + 3, min: Math.max(0, limit - 3) }),
-    constantFrom("a", "😀"),
-    constantFrom("", " ", "  ")
-  ).map(([length, symbol, pad]) => `${pad}${symbol.repeat(length)}${pad}`);
+    oneof(
+      { arbitrary: constantFrom(limit - 1, limit, limit + 1), weight: 4 },
+      {
+        arbitrary: integer({ max: limit + 3, min: Math.max(0, limit - 3) }),
+        weight: 1,
+      }
+    ),
+    constantFrom(...SYMBOLS),
+    constantFrom(...SYMBOLS),
+    constantFrom("", " ", "  ", "\n", "\t \r\n"),
+    constantFrom(
+      ...(withControl
+        ? ["", "", "", "", "\u0000", "\n", "\t", "\u007f", "\u001f"]
+        : [""])
+    )
+  ).map(([length, first, second, pad, injected]) => {
+    const half = Math.floor(length / 2);
+    return `${pad}${first.repeat(half)}${injected}${second.repeat(length - half)}${pad}`;
+  });
 
 function hasControl(text: string, allowLineBreaks: boolean): boolean {
   return [...text].some((char) => {
@@ -185,16 +225,34 @@ function hasControl(text: string, allowLineBreaks: boolean): boolean {
 
 describe("support case text (ADM-4)", () => {
   it("ADM-4: a case opens exactly when the kind is known and the trimmed reason and context respect the length and the control-character rules", () => {
-    const input = tuple(
-      constantFrom("support", "privacy", "other", "", "Support"),
-      oneof(shortText, textAround(MAX_CASE_REASON_LENGTH)),
+    const anyInput = tuple(
+      constantFrom(
+        "support",
+        "support",
+        "privacy",
+        "privacy",
+        "other",
+        "",
+        "Support"
+      ),
+      oneof(shortText, cleanShort, cleanShort, textAround(500)),
       oneof(
         constant(null),
         constant(undefined),
         shortText,
-        textAround(MAX_CASE_CONTEXT_LENGTH)
+        prose,
+        prose,
+        textAround(2000)
       )
     );
+    // Aimed at the edges: a known kind and a reason with no control character, so the length (or, in the
+    // context, the one control character) is what decides.
+    const edgeInput = tuple(
+      constantFrom("support", "privacy"),
+      oneof(cleanShort, textAround(500, false)),
+      oneof(prose, textAround(2000, false), textAround(2000))
+    );
+    const input = oneof(anyInput, edgeInput, edgeInput);
     let opened = 0;
     assertProperty(
       property(input, ([kind, reason, context]) => {
@@ -245,16 +303,30 @@ const two = (value: number) => String(value).padStart(2, "0");
 
 describe("legal hold review date (ADM-5 to ADM-6)", () => {
   it("ADM-5: an instant in any offset is accepted exactly when it is after now and at most 366 days away, and comes back in UTC", () => {
+    // The edges are written with the 366 of the rule, not with the constant of the code.
+    const limit = 366 * DAY_MS;
     const delta = oneof(
-      integer({ max: 400 * DAY_MS, min: -3 * DAY_MS }),
-      constantFrom(
-        0,
-        1,
-        -1,
-        MAX_LEGAL_HOLD_REVIEW_DAYS * DAY_MS,
-        MAX_LEGAL_HOLD_REVIEW_DAYS * DAY_MS + 1,
-        MAX_LEGAL_HOLD_REVIEW_DAYS * DAY_MS - 1
-      )
+      {
+        arbitrary: integer({ max: 400 * DAY_MS, min: -3 * DAY_MS }),
+        weight: 1,
+      },
+      {
+        arbitrary: constantFrom(
+          0,
+          1,
+          -1,
+          1000,
+          -1000,
+          limit - 1000,
+          limit - 1,
+          limit,
+          limit + 1,
+          limit + 1000,
+          limit - DAY_MS,
+          limit + DAY_MS
+        ),
+        weight: 4,
+      }
     );
     const offsetMinutes = integer({ max: 14 * 60, min: -12 * 60 });
     assertProperty(
@@ -284,7 +356,8 @@ describe("legal hold review date (ADM-5 to ADM-6)", () => {
   });
 
   it("ADM-6: a date that does not exist (30 February, hour 24, minute 60, month 13) is refused, never rolled over to a real one", () => {
-    const parts = tuple(
+    type Parts = [number, number, number, number, number, number];
+    const randomParts = tuple(
       integer({ max: 2027, min: 2026 }),
       integer({ max: 13, min: 0 }),
       integer({ max: 32, min: 0 }),
@@ -292,6 +365,38 @@ describe("legal hold review date (ADM-5 to ADM-6)", () => {
       integer({ max: 61, min: 0 }),
       integer({ max: 61, min: 0 })
     );
+    // Months inside the window (October 2026 to October 2027) with the day at the edges of the month
+    // (first, last, one past the last, zero) and the clock at the edges of its fields.
+    const windowMonths: [number, number][] = [
+      [2026, 10],
+      [2026, 11],
+      [2026, 12],
+      ...Array.from({ length: 10 }, (_, index): [number, number] => [
+        2027,
+        index + 1,
+      ]),
+    ];
+    const edgeParts = tuple(
+      constantFrom(...windowMonths),
+      constantFrom("first", "last", "past", "zero"),
+      constantFrom(0, 12, 23, 24),
+      constantFrom(0, 59, 60),
+      constantFrom(0, 59, 60)
+    ).map(([[year, month], where, hour, minute, second]): Parts => {
+      const last = daysInMonth(year, month);
+      const day = { first: 1, last, past: last + 1, zero: 0 }[where];
+      return [year, month, day, hour, minute, second];
+    });
+    // The two ends of the window (now, now + 366 days) and one second to each side of them.
+    const windowEnds = constantFrom<Parts[]>(
+      [2027, 10, 21, 12, 0, 0],
+      [2027, 10, 21, 12, 0, 1],
+      [2027, 10, 21, 11, 59, 59],
+      [2026, 10, 20, 12, 0, 0],
+      [2026, 10, 20, 12, 0, 1],
+      [2026, 10, 20, 11, 59, 59]
+    );
+    const parts = oneof(randomParts, edgeParts, edgeParts, windowEnds);
     let real = 0;
     assertProperty(
       property(parts, ([year, month, day, hour, minute, second]) => {
