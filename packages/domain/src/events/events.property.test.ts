@@ -1,5 +1,7 @@
 import {
+  type Arbitrary,
   anything,
+  bigInt,
   boolean,
   constant,
   constantFrom,
@@ -39,6 +41,7 @@ import {
   QUEUE_ENVELOPE_MAX_ATTEMPT,
   QUEUE_NAMES,
   queueEnvelope,
+  type QueueName,
   queueForEventType,
 } from "./queue-envelope";
 
@@ -75,20 +78,110 @@ function isLowerHexUuid(text: unknown): boolean {
 
 const opaqueId = stringMatching(/^[A-Za-z0-9_-]{1,64}$/);
 const token = stringMatching(/^[A-Za-z0-9._:-]{1,128}$/);
-// a value that is usually wrong: free text, spaces, e-mail-like, empty, too long
+// the lengths where the identifier rules change: an opaque ID holds 1 to 64 characters, a token 1 to 128
+const LENGTH_EDGES = [1, 63, 64, 65, 127, 128, 129] as const;
+// a value that is usually wrong: free text, spaces, e-mail-like, empty, or at the edge of a length limit
 const looseText = oneof(
   string({ maxLength: 80 }),
   constantFrom(
     "",
     "a b",
     "ana@example.com",
-    "x".repeat(65),
-    "x".repeat(129),
     "ação",
     "a/b",
-    "a.b"
+    "a.b",
+    ...LENGTH_EDGES.map((length) => "x".repeat(length))
   )
 );
+// what is not text at all, including numbers whose digits would pass a pattern if they were turned into text (EVT-2)
+const notText = oneof(
+  integer({ max: 99_999, min: 0 }),
+  constantFrom(
+    -1,
+    0.5,
+    Number.NaN,
+    true,
+    false,
+    null,
+    undefined,
+    {},
+    [],
+    ["abc"],
+    { toString: () => "abc" },
+    10n
+  ),
+  bigInt({ max: 99_999n, min: 0n })
+);
+
+// ---------------------------------------------------------------------------------------------
+// What each event type holds (EVT-0)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The model of the outbox types, written by hand and never read from the code under test: the keys the
+ * body of each type holds, exactly, a generator of a valid value for each, and the queue it travels on.
+ * A new type in `OUTBOX_EVENT_TYPES` fails EVT-0 until it has an entry here.
+ */
+interface EventModel {
+  keys: Readonly<Record<string, Arbitrary<string | number>>>;
+  queue: QueueName;
+}
+const EVENT_MODEL: Readonly<Record<string, EventModel>> = {
+  "billing.renewal_cancel_requested": {
+    // milliseconds since the epoch of the closure request
+    keys: { requestedAt: integer({ max: 8_640_000_000_000_000, min: 1 }) },
+    queue: "critical",
+  },
+  "data_export.requested": {
+    keys: { exportId: stringMatching(/^[A-Za-z0-9_-]{1,64}$/) },
+    queue: "default",
+  },
+};
+const MODEL_TYPES = Object.keys(EVENT_MODEL);
+const modelType = constantFrom(...MODEL_TYPES);
+
+function modelOf(type: string): EventModel {
+  const model = EVENT_MODEL[type];
+  if (!model) {
+    throw new Error(
+      `EVENT_MODEL has no entry for the outbox event type "${type}": add its body keys and queue to this test (EVT-0)`
+    );
+  }
+  return model;
+}
+
+/** A valid body for the type: exactly its keys, each with a valid value. */
+function validBody(type: string): Arbitrary<Record<string, string | number>> {
+  const keys = Object.entries(modelOf(type).keys);
+  return tuple(...keys.map(([, value]) => value)).map((values) =>
+    Object.fromEntries(keys.map(([key], index) => [key, values[index]]))
+  );
+}
+
+describe("what each event type holds (EVT-0)", () => {
+  it("EVT-0: every type the outbox declares has a model entry here, and every entry is a declared type", () => {
+    const declared = [...OUTBOX_EVENT_TYPES].sort();
+    const modelled = [...MODEL_TYPES].sort();
+    const missing = declared.filter((type) => !modelled.includes(type));
+    const stale = modelled.filter((type) => !declared.includes(type));
+    expect(
+      missing,
+      `outbox event type(s) without an entry in EVENT_MODEL: ${missing.join(", ")}. Add the keys of the body and the queue of each (EVT-0), so the oracle of EVT-2 to EVT-5 knows them`
+    ).toEqual([]);
+    expect(
+      stale,
+      `EVENT_MODEL entries for types the outbox no longer declares: ${stale.join(", ")}`
+    ).toEqual([]);
+  });
+
+  it("EVT-0: each declared type travels on the queue the model says", () => {
+    for (const type of OUTBOX_EVENT_TYPES) {
+      expect(queueForEventType(type), `queue of ${type}`).toBe(
+        modelOf(type).queue
+      );
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------------------------
 // Dispatch schedule
@@ -107,7 +200,9 @@ describe("outbox retry schedule (EVT-1)", () => {
   it("EVT-1: the delay follows the doubling model, never drops with more attempts, and stays between 30 s and an hour", () => {
     const attempts = oneof(
       integer({ max: 40, min: -3 }),
-      integer({ max: OUTBOX_MAX_DISPATCH_ATTEMPTS, min: 0 })
+      integer({ max: OUTBOX_MAX_DISPATCH_ATTEMPTS, min: 0 }),
+      // where the schedule turns: the first claim, the cap of an hour (the 8th claim), the cap of the exponent
+      constantFrom(-1, 0, 1, 2, 7, 8, 9, 16, 17, 18, 999, 1000, 1001)
     );
     assertProperty(
       property(attempts, (count) => {
@@ -137,52 +232,73 @@ const bodyValue = oneof(
   constant(undefined),
   constant({ nested: "x" })
 );
-const eventBody = oneof(
-  record({ exportId: bodyValue }),
-  record({ exportId: opaqueId }),
-  record({ exportId: opaqueId, note: bodyValue }),
-  record({ other: bodyValue }),
-  constant({}),
-  constant(null),
-  constant(["exportId"])
+/** The body of an event of the type, valid or with a part spoiled: wrong keys (another type's, an extra one, none), or a wrong value. */
+function eventBody(type: string): Arbitrary<unknown> {
+  const [key = "exportId"] = Object.keys(modelOf(type).keys);
+  const otherKeys = MODEL_TYPES.filter((other) => other !== type).flatMap(
+    (other) => Object.keys(modelOf(other).keys)
+  );
+  return oneof(
+    { arbitrary: validBody(type), weight: 3 },
+    record({ [key]: bodyValue }),
+    validBody(type).chain((body) =>
+      oneof(bodyValue, opaqueId).map((note) => ({ ...body, note }))
+    ),
+    constantFrom(...otherKeys, "other").chain((wrong) =>
+      record({ [wrong]: oneof(opaqueId, integer({ max: 9999, min: 1 })) })
+    ),
+    constant({}),
+    constant(null),
+    constant([key])
+  );
+}
+// a valid event with at most one part spoiled, so most cases reach the deep checks; a text field is spoiled
+// with text or with something that is not text, and a field that is not text must be refused as it is
+// (no turning a number into an ID that passes the pattern)
+const outboxInput = modelType.chain((type) =>
+  tuple(
+    record({
+      correlationId: oneof(constant(undefined), constant(null), token),
+      event: validBody(type),
+      idempotencyKey: token,
+      organizationId: opaqueId,
+      type: constant(type),
+    }),
+    constantFrom(
+      "correlationId",
+      "event",
+      "idempotencyKey",
+      "organizationId",
+      "type",
+      "none",
+      "none"
+    ),
+    oneof(looseText, notText),
+    eventBody(type)
+  ).map(([event, part, text, body]) => {
+    const input: Record<string, unknown> & {
+      event: unknown;
+      idempotencyKey: unknown;
+      organizationId: unknown;
+      type: unknown;
+    } = { ...event };
+    if (part === "event") {
+      input.event = body;
+    } else if (part !== "none") {
+      input[part] = text;
+    }
+    return input;
+  })
 );
-// a valid event with at most one part spoiled, so most cases reach the deep checks; the text fields are
-// spoiled with text, because the types promise strings (see "Achados" in docs/testing/property-invariants.md)
-const outboxInput = tuple(
-  record({
-    correlationId: oneof(constant(undefined), constant(null), token),
-    event: opaqueId.map((exportId) => ({ exportId })),
-    idempotencyKey: token,
-    organizationId: opaqueId,
-    type: constantFrom(...OUTBOX_EVENT_TYPES),
-  }),
-  constantFrom(
-    "correlationId",
-    "event",
-    "idempotencyKey",
-    "organizationId",
-    "type",
-    "none",
-    "none"
-  ),
-  looseText,
-  eventBody
-).map(([event, part, text, body]) => {
-  const input: Record<string, unknown> & {
-    event: unknown;
-    idempotencyKey: unknown;
-    organizationId: unknown;
-    type: unknown;
-  } = { ...event };
-  if (part === "event") {
-    input.event = body;
-  } else if (part !== "none") {
-    input[part] = text;
-  }
-  return input;
-});
 
-/** An event is valid when its type is declared, its body holds exactly the declared keys and only opaque IDs, integers or booleans. */
+function sameKeys(actual: string[], expected: string[]): boolean {
+  return (
+    actual.length === expected.length &&
+    [...actual].sort().join(",") === [...expected].sort().join(",")
+  );
+}
+
+/** An event is valid when its type is modelled, its body holds exactly the keys of the type and only opaque IDs, integers or booleans, and every text field is text. */
 function outboxModelAccepts(input: {
   correlationId?: unknown;
   event: unknown;
@@ -200,15 +316,18 @@ function outboxModelAccepts(input: {
     Number.isSafeInteger(value) ||
     isOpaqueId(value);
   return (
-    (OUTBOX_EVENT_TYPES as readonly unknown[]).includes(input.type) &&
+    typeof input.type === "string" &&
+    Object.hasOwn(EVENT_MODEL, input.type) &&
     isOpaqueId(input.organizationId) &&
     isToken(input.idempotencyKey) &&
     (input.correlationId === undefined ||
       input.correlationId === null ||
       isToken(input.correlationId)) &&
-    entries.length === 1 &&
-    entries[0]?.[0] === "exportId" &&
-    valueOk(entries[0]?.[1])
+    sameKeys(
+      entries.map(([key]) => key),
+      Object.keys(modelOf(input.type).keys)
+    ) &&
+    entries.every(([, value]) => valueOk(value))
   );
 }
 
@@ -233,29 +352,93 @@ describe("outbox event (EVT-2 to EVT-3)", () => {
     expect(accepted).toBeGreaterThanOrEqual(minimumSeen());
   });
 
+  it("EVT-2: a field that is not text is refused as it is, never turned into text (a number 123 is no organization ID)", () => {
+    const fields = constantFrom(
+      "correlationId",
+      "idempotencyKey",
+      "organizationId",
+      "type"
+    );
+    assertProperty(
+      property(modelType, fields, notText, (type, field, value) => {
+        // no correlation (null or absent) is allowed: it starts a trace of its own
+        if (
+          field === "correlationId" &&
+          (value === null || value === undefined)
+        ) {
+          return;
+        }
+        const input = {
+          correlationId: "trace-1",
+          event: Object.fromEntries(
+            Object.keys(modelOf(type).keys).map((key) => [key, "a"])
+          ),
+          idempotencyKey: `${type}:a`,
+          organizationId: "org1",
+          type,
+          [field]: value,
+        };
+        expect(() => outboxEvent(input as never)).toThrow(
+          InvalidOutboxEventError
+        );
+      })
+    );
+  });
+
+  it("EVT-2: the organization is 1 to 64 characters and the key and the correlation 1 to 128, at every edge", () => {
+    // literals, so moving a limit in the code turns this red
+    const limits = {
+      correlationId: 128,
+      idempotencyKey: 128,
+      organizationId: 64,
+    };
+    const fields = constantFrom(
+      "correlationId",
+      "idempotencyKey",
+      "organizationId"
+    );
+    const lengths = constantFrom(0, 1, 2, 63, 64, 65, 127, 128, 129, 130);
+    assertProperty(
+      property(modelType, fields, lengths, (type, field, length) => {
+        const input = {
+          correlationId: "trace-1",
+          event: Object.fromEntries(
+            Object.keys(modelOf(type).keys).map((key) => [key, "a"])
+          ),
+          idempotencyKey: `${type}:a`,
+          organizationId: "org1",
+          type,
+          [field]: "a".repeat(length),
+        };
+        if (length >= 1 && length <= limits[field]) {
+          expect(outboxEvent(input).type).toBe(type);
+        } else {
+          expect(() => outboxEvent(input)).toThrow(InvalidOutboxEventError);
+        }
+      })
+    );
+  });
+
   it("EVT-3: the idempotency key of a declared type and an opaque ID is itself a valid key, the same for the same thing and different for another", () => {
     assertProperty(
-      property(
-        constantFrom(...OUTBOX_EVENT_TYPES),
-        opaqueId,
-        opaqueId,
-        (type, id, other) => {
-          const key = outboxIdempotencyKey(type, id);
-          expect(key).toBe(outboxIdempotencyKey(type, id));
-          expect(isToken(key)).toBe(true);
-          expect(() =>
-            outboxEvent({
-              event: { exportId: id },
-              idempotencyKey: key,
-              organizationId: "org1",
-              type,
-            })
-          ).not.toThrow();
-          if (other !== id) {
-            expect(outboxIdempotencyKey(type, other)).not.toBe(key);
-          }
+      property(modelType, opaqueId, opaqueId, (type, id, other) => {
+        const key = outboxIdempotencyKey(type, id);
+        expect(key).toBe(outboxIdempotencyKey(type, id));
+        expect(isToken(key)).toBe(true);
+        expect(() =>
+          outboxEvent({
+            event: Object.fromEntries(
+              Object.keys(modelOf(type).keys).map((name) => [name, id])
+            ),
+            idempotencyKey: key,
+            organizationId: "org1",
+            type,
+          })
+        ).not.toThrow();
+        if (other !== id) {
+          expect(outboxIdempotencyKey(type, other)).not.toBe(key);
         }
-      )
+      })
     );
   });
 });
@@ -264,15 +447,17 @@ describe("outbox event (EVT-2 to EVT-3)", () => {
 // Queue envelope
 // ---------------------------------------------------------------------------------------------
 
-const validEnvelope = record({
-  attempt: integer({ max: QUEUE_ENVELOPE_MAX_ATTEMPT, min: 1 }),
-  correlationId: token,
-  event: opaqueId.map((exportId) => ({ exportId })),
-  eventId: uuid(),
-  idempotencyKey: token,
-  organizationId: opaqueId,
-  type: constantFrom(...OUTBOX_EVENT_TYPES),
-});
+const validEnvelope = modelType.chain((type) =>
+  record({
+    attempt: integer({ max: QUEUE_ENVELOPE_MAX_ATTEMPT, min: 1 }),
+    correlationId: token,
+    event: validBody(type),
+    eventId: uuid(),
+    idempotencyKey: token,
+    organizationId: opaqueId,
+    type: constant(type),
+  })
+);
 
 describe("queue envelope (EVT-4 to EVT-5)", () => {
   it("EVT-4: an envelope survives the queue (JSON out and in) unchanged, and parsing it again changes nothing", () => {
@@ -286,6 +471,7 @@ describe("queue envelope (EVT-4 to EVT-5)", () => {
         expect(afterQueue).toEqual(built);
         expect(parseQueueEnvelope(afterQueue)).toEqual(built);
         expect(QUEUE_NAMES).toContain(queueForEventType(built.type));
+        expect(queueForEventType(built.type)).toBe(modelOf(built.type).queue);
       })
     );
   });
@@ -296,8 +482,11 @@ describe("queue envelope (EVT-4 to EVT-5)", () => {
       integer({ max: 1010, min: -2 }),
       constantFrom(0.5, Number.NaN, "1", null, 2),
       looseText,
+      notText,
       uuid().map((value) => value.toUpperCase()),
-      constant({ exportId: "a b" })
+      constant({ exportId: "a b" }),
+      // the body of another type, which the envelope's type does not declare
+      constantFrom({ exportId: "a" }, { requestedAt: 1 })
     );
     const fields = [
       "attempt",
@@ -353,6 +542,23 @@ describe("queue envelope (EVT-4 to EVT-5)", () => {
       })
     );
     expect(accepted).toBeGreaterThanOrEqual(minimumSeen());
+  });
+
+  it("EVT-5: the attempt is accepted from 1 to 1000 and refused at 0 and 1001, at every edge", () => {
+    // written as literals: moving the limit in the code must turn this red
+    const edges = constantFrom(-1, 0, 1, 2, 999, 1000, 1001, 1002, 2 ** 31);
+    assertProperty(
+      property(validEnvelope, edges, (envelope, attempt) => {
+        const raw = { ...envelope, attempt, version: 1 };
+        if (attempt >= 1 && attempt <= 1000) {
+          expect(parseQueueEnvelope(raw).attempt).toBe(attempt);
+        } else {
+          expect(() => parseQueueEnvelope(raw)).toThrow(
+            InvalidQueueEnvelopeError
+          );
+        }
+      })
+    );
   });
 });
 
