@@ -1911,11 +1911,12 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Suíte | Escrita; o gate depende do CI | `apps/admin/src/worker.workerd-db.test.ts`, pelo `fetch` real do Worker no `workerd` (harness da T-121a) com o PostgreSQL do job: sem Access (sem token, malformado, expirado, chave estranha, audiência, time, desconhecido, desativado), dono, acesso JIT, cobrança e suspensão. O gate `admin-worker` (suítes `ci` e `gate9`, só PostgreSQL local) cria os logins e as fixtures, roda a suíte e confere o banco como dono. A primeira execução com banco é a do CI; a máquina da tarefa (área app) não sobe PostgreSQL. |
+| Suíte | Concluída (verde no CI) | `apps/admin/src/worker.workerd-db.test.ts`, pelo `fetch` real do Worker no `workerd` (harness da T-121a) com o PostgreSQL do job: sem Access (sem token, malformado, expirado, chave estranha, audiência, time, desconhecido, desativado), dono, acesso JIT, cobrança e suspensão. O gate `admin-worker` (suítes `ci` e `gate9`, só PostgreSQL local) cria os logins e as fixtures, roda a suíte e confere o banco como dono. A máquina da tarefa (área app) não sobe PostgreSQL, então a primeira execução com banco foi a do CI (22 testes, verde). |
 | Reembolso | Não existe no Admin | O ADR 0073 deixa o reembolso para depois do adaptador do provedor; a suíte prova que não há rota nem evento de reembolso e cobre o comando de cobrança que existe (conceder e encerrar entitlement, gravado antes e depois). |
 | Access simulado só no teste | Concluído | `access-mock-confinement.test.ts` (roda em `bun run test`): nenhum arquivo fora das configs de teste, dos testes e do gate nomeia a chave, o time de teste ou o assinador; os `wrangler.jsonc` e os workflows são conferidos por nome; o grafo de imports de `worker.ts` não alcança teste. Com caso de controle. |
 | Production guard | Concluído (parte estática) | `scripts/admin-production-guard.test.mjs`: `workers_dev` e `preview_urls` desligados no topo, no staging e na produção do Admin, nenhuma rota nem domínio, variáveis do Access na produção. A prova com o Access real é o item de go-live do Admin. |
-| Custo | A medir no CI | Estimado em +1 min no job `database`; sem job novo nem mudança de workflow. |
+| Custo | Medido | O gate leva 4 s; o job `database` ficou em 3 min 03 s contra 3 min 02 s da `main`; sem job novo nem mudança de workflow. |
+| Defeito do Admin | Registrado, não corrigido | O pool de `createBillingStore` não tem ouvinte de `error`; ao fechá-lo depois de cada comando de cobrança, o driver emite um erro não tratado ("This socket has been closed."). A config de teste deixa passar só esse erro, e o gate imprime uma nota. Detalhes no [runbook do harness](../docs/runbooks/workers-test-harness.md). |
 
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 
