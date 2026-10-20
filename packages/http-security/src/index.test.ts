@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTH_ENTRY_PATHS,
   createCspNonce,
   defaultCacheControl,
   renderStaticHeadersFile,
   type SecurityProfile,
   securityHeaders,
+  TURNSTILE_ORIGIN,
+  TURNSTILE_SCRIPT,
 } from "./index";
 
 const PROFILES: readonly SecurityProfile[] = [
   "admin",
   "api",
   "app-shell",
+  "auth-entry",
   "public-document",
   "public-media",
 ];
@@ -73,6 +77,14 @@ describe("the headers of every profile", () => {
     expect(policy).not.toContain("strict-dynamic");
     for (const [directive, sources] of parsed) {
       for (const source of sources) {
+        // the one foreign origin of the platform: the challenge on the sign-in pages (asserted exactly below)
+        if (
+          profile === "auth-entry" &&
+          ((directive === "script-src" && source === TURNSTILE_SCRIPT) ||
+            (directive === "frame-src" && source === TURNSTILE_ORIGIN))
+        ) {
+          continue;
+        }
         // no wildcard, no scheme alone (http:, https:) and no foreign origin by default
         expect(source, `${profile} ${directive}`).not.toMatch(NO_WILDCARD);
         expect(source, `${profile} ${directive}`).not.toMatch(
@@ -94,7 +106,11 @@ describe("the headers of every profile", () => {
   });
 
   it("keeps the document profiles from running anything but their own scripts", () => {
-    for (const profile of ["app-shell", "public-document"] as const) {
+    for (const profile of [
+      "app-shell",
+      "auth-entry",
+      "public-document",
+    ] as const) {
       const parsed = directives(headersOf(profile)["Content-Security-Policy"]);
       expect(parsed.get("object-src")).toEqual(["'none'"]);
       expect(parsed.get("base-uri")).toEqual(["'self'"]);
@@ -215,6 +231,47 @@ describe("the policy of the app shell", () => {
   });
 });
 
+describe("the policy of the sign-in pages with the challenge", () => {
+  it("differs from the app shell by the Turnstile script and frame, and nothing else (AC-7)", () => {
+    const shell = directives(
+      securityHeaders("app-shell")["Content-Security-Policy"]
+    );
+    const entry = directives(
+      securityHeaders("auth-entry")["Content-Security-Policy"]
+    );
+    const changed = [...new Set([...shell.keys(), ...entry.keys()])].filter(
+      (name) =>
+        JSON.stringify(shell.get(name)) !== JSON.stringify(entry.get(name))
+    );
+
+    expect(changed.sort()).toEqual(["frame-src", "script-src"]);
+    expect(entry.get("script-src")).toEqual([
+      ...(shell.get("script-src") ?? []),
+      TURNSTILE_SCRIPT,
+    ]);
+    // the file, not the origin: no other script of Cloudflare's origin may run in the page
+    expect(entry.get("script-src")).not.toContain(TURNSTILE_ORIGIN);
+    expect(shell.get("frame-src")).toBeUndefined();
+    expect(entry.get("frame-src")).toEqual([TURNSTILE_ORIGIN]);
+    expect(entry.get("form-action")).toEqual(["'self'"]);
+    expect(entry.get("img-src")).toEqual(shell.get("img-src"));
+    // the other headers are the shell's
+    const { "Content-Security-Policy": _shellPolicy, ...shellRest } =
+      securityHeaders("app-shell");
+    const { "Content-Security-Policy": _entryPolicy, ...entryRest } =
+      securityHeaders("auth-entry");
+    expect(entryRest).toEqual(shellRest);
+  });
+
+  it("keeps the extra connect origins of the shell", () => {
+    const options = { connectSources: ["https://o1.ingest.example.com"] };
+    const entry = directives(
+      securityHeaders("auth-entry", options)["Content-Security-Policy"]
+    );
+    expect(entry.get("connect-src")).toContain("https://o1.ingest.example.com");
+  });
+});
+
 describe("the policy of the public documents", () => {
   it("allows the scripts of the site and the ones carrying this response's nonce", () => {
     const parsed = directives(
@@ -276,6 +333,26 @@ describe("the static headers file", () => {
       expect(file).toContain(`\n  ${name}: ${value}\n`);
     }
     expect(file).toContain("\n/sw.js\n  Cache-Control: no-cache\n");
+  });
+
+  it("detaches the shell policy on each sign-in page and sets the challenge one, on those pages only", () => {
+    const file = renderStaticHeadersFile();
+    const entryPolicy =
+      securityHeaders("auth-entry")["Content-Security-Policy"];
+
+    // each page twice: a rule matches the exact path, so `/entrar/` needs its own
+    for (const path of AUTH_ENTRY_PATHS.flatMap((page) => [page, `${page}/`])) {
+      expect(file).toContain(
+        `\n${path}\n  ! Content-Security-Policy\n  Content-Security-Policy: ${entryPolicy}\n`
+      );
+    }
+    // script-src and frame-src of each of the two rules
+    expect(file.split(TURNSTILE_ORIGIN)).toHaveLength(
+      AUTH_ENTRY_PATHS.length * 2 * 2 + 1
+    );
+    for (const path of ["/aceite", "/desbloquear", "/conta/seguranca"]) {
+      expect(file).not.toContain(`\n${path}\n`);
+    }
     expect(file.endsWith("\n")).toBe(true);
   });
 });

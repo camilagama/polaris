@@ -17,6 +17,11 @@ import { PAYMENT_FEE_MODES } from "@polaris/domain/sales/payment-profile";
 import { SALE_PAYMENT_METHODS } from "@polaris/domain/sales/sale-payment";
 import { z } from "zod";
 
+// The pages run under a CSP without 'unsafe-eval'. By default zod probes `new Function("")` to compile its
+// parsers, and a browser reports that probe as a violation (found by the real-Turnstile e2e). The Worker
+// never allowed it either (the probe returns false there), so nothing is lost.
+z.config({ jitless: true });
+
 export function categoryNameCodePointLength(name: string): number {
   return [...name.trim()].length;
 }

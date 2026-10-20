@@ -16,7 +16,8 @@ import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
 import {
   documentTitle,
-  isSignInPath,
+  type EntryPageId,
+  entryPageFor,
   type ResolvedRoute,
   type RouteId,
   resolveRoute,
@@ -25,8 +26,15 @@ import { NotFoundPage } from "./not-found-page";
 
 type Page = LazyExoticComponent<ComponentType>;
 
+const TRAILING_SLASHES = /\/+$/;
+
 /** Each area is its own chunk; a screen only loads when it is opened. */
 const pages: Readonly<Record<RouteId, Page>> = {
+  "account-security": lazy(() =>
+    import("../sign-in/change-password-page").then((module) => ({
+      default: module.ChangePasswordPage,
+    }))
+  ),
   attention: lazy(() =>
     import("../offline/runtime/attention-page").then((module) => ({
       default: module.AttentionPage,
@@ -105,11 +113,39 @@ const AcceptancePage = lazy(() =>
   }))
 );
 
-const SignInPage = lazy(() =>
-  import("../sign-in/sign-in-page").then((module) => ({
-    default: module.SignInPage,
-  }))
-);
+/** The sign-in group: each page its own chunk, all outside the shell (ADR 0100). */
+const entryPages: Record<EntryPageId, Page> = {
+  "confirm-email": lazy(() =>
+    import("../sign-in/confirm-email-page").then((module) => ({
+      default: module.ConfirmEmailPage,
+    }))
+  ),
+  "forgot-password": lazy(() =>
+    import("../sign-in/forgot-password-page").then((module) => ({
+      default: module.ForgotPasswordPage,
+    }))
+  ),
+  "reset-password": lazy(() =>
+    import("../sign-in/reset-password-page").then((module) => ({
+      default: module.ResetPasswordPage,
+    }))
+  ),
+  "sign-in": lazy(() =>
+    import("../sign-in/sign-in-page").then((module) => ({
+      default: module.SignInPage,
+    }))
+  ),
+  "sign-up": lazy(() =>
+    import("../sign-in/sign-up-page").then((module) => ({
+      default: module.SignUpPage,
+    }))
+  ),
+  unlock: lazy(() =>
+    import("../sign-in/unlock-page").then((module) => ({
+      default: module.UnlockPage,
+    }))
+  ),
+};
 
 function RouteContent({ route }: { route: ResolvedRoute }) {
   if (route.kind === "not-found") {
@@ -147,18 +183,22 @@ function UpdateSlot() {
  * The sign-in screen has no organization, no menu and no offline runtime: nobody is signed in yet, so
  * there is nothing to register or read. It only needs the error boundary and the update notice.
  */
-function SignInApp() {
+function SignInApp({ page }: { page: EntryPageId }) {
+  const EntryPage = entryPages[page];
   return (
     <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
       <UpdateSlot />
       <Suspense
         fallback={
-          <p className="app-status" role="status">
-            Carregando…
-          </p>
+          // inside `.ui-root`: its canvas color is what the page has in the dark theme, so there is no white flash
+          <div className="ui-root">
+            <p className="app-status" role="status">
+              Carregando…
+            </p>
+          </div>
         }
       >
-        <SignInPage />
+        <EntryPage />
       </Suspense>
     </ErrorBoundary>
   );
@@ -216,5 +256,14 @@ export function App() {
   if (isLegalAcceptancePath(window.location.pathname)) {
     return <AcceptanceApp />;
   }
-  return isSignInPath(window.location.pathname) ? <SignInApp /> : <StoreApp />;
+  const entryPage = entryPageFor(window.location.pathname);
+  if (entryPage && TRAILING_SLASHES.test(window.location.pathname)) {
+    // the CSP of `_headers` matches the exact path: `/entrar/` would get the shell's, without the challenge
+    const { hash, pathname, search } = window.location;
+    window.location.replace(
+      `${pathname.replace(TRAILING_SLASHES, "")}${search}${hash}`
+    );
+    return null;
+  }
+  return entryPage ? <SignInApp page={entryPage} /> : <StoreApp />;
 }

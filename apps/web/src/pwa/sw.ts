@@ -5,7 +5,9 @@
  *    manifest and icons) under a cache named after the build, so a deploy never
  *    mixes files of two builds;
  * 2. answers a navigation with the network when it can and with the cached shell
- *    when it cannot, so the app opens offline;
+ *    when it cannot, so the app opens offline. The sign-in pages with the challenge
+ *    have a copy of their own (`/entrar`, fetched at install): the policy of a
+ *    document comes with it, and theirs lets the Turnstile widget load (ADR 0100);
  * 3. serves the precached static files cache-first.
  *
  * It never touches anything else. In particular it never answers, stores or even
@@ -33,6 +35,17 @@ declare const POLARIS_BUILD: BuildManifest | undefined;
 
 export const SHELL_CACHE_PREFIX = "polaris-shell-";
 const SHELL_PATH = "/";
+/** The same shell under the policy of the sign-in pages (`auth-entry` in `public/_headers`). */
+const AUTH_ENTRY_SHELL_PATH = "/entrar";
+const TRAILING_SLASHES = /\/+$/;
+/** `AUTH_ENTRY_PATHS` of @polaris/http-security (this script is bundled alone; a test keeps them equal). */
+export const AUTH_ENTRY_PATHS: readonly string[] = [
+  "/entrar",
+  "/criar-conta",
+  "/esqueci-a-senha",
+  "/redefinir-senha",
+  "/confirmar-email",
+];
 /** Static files are the same for every requester, whatever the `Vary` header says. */
 const MATCH_OPTIONS = { ignoreVary: true };
 /** Paths owned by the Worker: never intercepted, never cached. */
@@ -51,6 +64,14 @@ function isWorkerPath(pathname: string): boolean {
     WORKER_EXACT_PATHS.includes(pathname) ||
     WORKER_PATHS.some((prefix) => pathname.startsWith(prefix))
   );
+}
+
+/** The cached copy a navigation falls back to when the network does not answer. */
+export function offlineShellFor(url: string): string {
+  const { pathname } = new URL(url);
+  return AUTH_ENTRY_PATHS.includes(pathname.replace(TRAILING_SLASHES, ""))
+    ? AUTH_ENTRY_SHELL_PATH
+    : SHELL_PATH;
 }
 
 /** Decides what the worker does with a request; `bypass` means: do not touch it. */
@@ -128,6 +149,11 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         await cache.addAll(
           build.precache.map((path) => new Request(path, { cache: "reload" }))
         );
+        // The sign-in copy is a bonus: without it a sign-in page offline gets the shell of / (the challenge
+        // then says to reload), so a failure here never stops the worker from installing.
+        await cache
+          .add(new Request(AUTH_ENTRY_SHELL_PATH, { cache: "reload" }))
+          .catch(() => undefined);
       })()
     );
   }) as never);
@@ -159,7 +185,10 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     if (route === "navigate") {
       event.respondWith(
         fetch(event.request).catch(
-          async () => (await lookup(SHELL_PATH)) ?? Response.error()
+          async () =>
+            (await lookup(offlineShellFor(event.request.url))) ??
+            (await lookup(SHELL_PATH)) ??
+            Response.error()
         )
       );
       return;

@@ -148,3 +148,25 @@
     justify-self: start;
   }
 }
+
+/* "Segurança": the way to the change of password, under the list of devices */
+.device-security {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: start;
+  margin-top: 1.5rem;
+}
+
+.device-security-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.device-security-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  text-decoration: none;
+}

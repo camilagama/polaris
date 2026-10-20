@@ -181,8 +181,12 @@
       }
     },
     {
-      // The public catalog reads only through the four public functions (ADR 0069).
-      "includes": ["apps/catalog/src/**"],
+      // The public catalog reads only through the four public functions (ADR 0069). Its Workers test with a database
+      // (T-121b) may name the driver to prove the role of the binding; the Worker's own files may not.
+      "includes": [
+        "apps/catalog/src/**",
+        "!apps/catalog/src/**/*.workerd-db.test.ts"
+      ],
       "linter": {
         "rules": {
           "style": {

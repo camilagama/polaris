@@ -1,6 +1,7 @@
 import {
   renderStaticHeadersFile,
   securityHeaders,
+  TURNSTILE_ORIGIN,
 } from "@polaris/http-security";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
@@ -37,9 +38,11 @@ describe("the headers of the app shell (public/_headers)", () => {
     );
   });
 
-  it("opens no origin beyond the app's own", () => {
+  it("opens no origin beyond the app's own, but the challenge on the sign-in pages", () => {
     expect(APP_SHELL_SECURITY_OPTIONS).toEqual({});
-    expect(staticHeadersFile).not.toMatch(HTTP_URL);
+    expect(
+      staticHeadersFile.replaceAll(TURNSTILE_ORIGIN, "TURNSTILE")
+    ).not.toMatch(HTTP_URL);
   });
 });
 

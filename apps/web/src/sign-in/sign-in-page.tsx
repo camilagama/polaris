@@ -1,4 +1,3 @@
-import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import {
   type RefObject,
   useCallback,
@@ -8,8 +7,17 @@ import {
 } from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import { parseSignInSearch } from "../lib/sign-in-path";
+import { ConfirmEmailPanel } from "./confirm-email-page";
+import { EmailSignInForm } from "./email-sign-in-form";
+import { LegalLinks } from "./entry-parts";
 import { GoogleLogo } from "./google-logo";
 import {
+  CONFIRM_PENDING_SIGN_IN,
+  OR_SEPARATOR,
+  SIGN_IN_SUPPORT_BOTH,
+} from "./password-texts";
+import {
+  type AuthMethodsView,
   googleStartOutcome,
   hasSession,
   loadAuthMethods,
@@ -23,9 +31,6 @@ import {
   GOOGLE_ERROR_HELP,
   GOOGLE_NOT_OFFERED,
   GOOGLE_RETRY,
-  LEGAL_LINKS_TITLE,
-  NEW_TAB_HINT,
-  PRIVACY_LINK,
   reasonText,
   SIGN_IN_BACK_ONLINE,
   SIGN_IN_CHECKING,
@@ -37,7 +42,6 @@ import {
   SIGN_IN_SUPPORT,
   SIGN_IN_TITLE,
   SIGN_IN_UNAVAILABLE,
-  TERMS_LINK,
 } from "./sign-in-texts";
 import "./sign-in.css";
 
@@ -54,33 +58,6 @@ const failureText: Readonly<Record<SignInFailure, string>> = {
   indisponivel: SIGN_IN_UNAVAILABLE,
   limite: SIGN_IN_LIMIT,
 };
-
-/** The two legal pages open in another tab, so a half-done sign-in is not lost (L1 of the legal pages). */
-function LegalLinks() {
-  return (
-    <fieldset className="sign-in-legal">
-      <legend className="sign-in-legal-title">{LEGAL_LINKS_TITLE}</legend>
-      <ul>
-        <li>
-          <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
-            {TERMS_LINK}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-          </a>
-        </li>
-        <li>
-          <a
-            href={LEGAL_PATHS.privacy}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {PRIVACY_LINK}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-          </a>
-        </li>
-      </ul>
-    </fieldset>
-  );
-}
 
 interface SignInAlertProps {
   alertRef: RefObject<HTMLParagraphElement | null>;
@@ -132,12 +109,78 @@ function ConnectionNotice({
   );
 }
 
+type Unverified = (unverified: {
+  email: string;
+  siteKey: string | null;
+}) => void;
+
+/** Whether the password form shows, and the key of its challenge; no answer means Google alone. */
+function passwordMethod(methods: AuthMethodsView | null): {
+  on: boolean;
+  siteKey: string | null;
+} {
+  return methods?.emailPassword
+    ? { on: true, siteKey: methods.turnstileSiteKey }
+    : { on: false, siteKey: null };
+}
+
+/** The lines under the title: Google alone, or Google and the password (AC-46). */
+function SupportLines({ passwordOn }: { passwordOn: boolean }) {
+  if (passwordOn) {
+    return <p className="sign-in-support">{SIGN_IN_SUPPORT_BOTH}</p>;
+  }
+  return (
+    <>
+      <p className="sign-in-support">{SIGN_IN_SUPPORT}</p>
+      <p className="sign-in-support">{SIGN_IN_FIRST_TIME}</p>
+    </>
+  );
+}
+
+/** "ou" and the e-mail and password form, under the Google button. */
+function PasswordSection({
+  onSignedIn,
+  onUnverified,
+  online,
+  password,
+  phase,
+}: {
+  onSignedIn: () => void;
+  onUnverified: Unverified;
+  online: boolean;
+  password: { on: boolean; siteKey: string | null };
+  phase: Phase;
+}) {
+  const { siteKey } = password;
+  const handleUnverified = useCallback(
+    (email: string) => onUnverified({ email, siteKey }),
+    [onUnverified, siteKey]
+  );
+  // only once the lookups are done: someone who is already in never sees the form flash
+  if (!password.on || phase !== "ready") {
+    return null;
+  }
+  return (
+    <>
+      <p aria-hidden="true" className="sign-in-separator">
+        <span>{OR_SEPARATOR}</span>
+      </p>
+      <EmailSignInForm
+        disabled={!online}
+        onSignedIn={onSignedIn}
+        onUnverified={handleUnverified}
+        siteKey={siteKey}
+      />
+    </>
+  );
+}
+
 /**
  * `/entrar` (ADR 0100): outside the app shell, with no organization. It only talks to the auth server:
  * the Google start, and a session lookup that sends someone who is already in (or just back from
  * Google) to `voltar`. Nothing is written to the browser: no token, no code, no e-mail.
  */
-export function SignInPage() {
+function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
   // read once: `voltar`, `motivo` and `erro` are the only things the address carries
   const [search] = useState(() => parseSignInSearch(window.location.search));
   const [online, setOnline] = useState(isOnline);
@@ -147,6 +190,12 @@ export function SignInPage() {
   );
   const [slowCheck, setSlowCheck] = useState(false);
   const [googleOff, setGoogleOff] = useState(false);
+  // the password form shows only with the password on (AC-46), and with it the public key of the challenge
+  const [password, setPassword] = useState<{
+    on: boolean;
+    siteKey: string | null;
+  }>({ on: false, siteKey: null });
+
   const [starting, setStarting] = useState(false);
   const [failure, setFailure] = useState<SignInFailure | null>(null);
   const [reconnected, setReconnected] = useState(false);
@@ -215,6 +264,7 @@ export function SignInPage() {
           return;
         }
         setGoogleOff(methods?.google === false);
+        setPassword(passwordMethod(methods));
         setPhase("ready");
       })
       .catch(() => {
@@ -255,6 +305,11 @@ export function SignInPage() {
       });
   }, [search.returnTo]);
 
+  const handleSignedIn = useCallback(() => {
+    setPhase("entering");
+    window.location.replace(search.returnTo ?? "/");
+  }, [search.returnTo]);
+
   const handleRetry = useCallback(() => {
     setSlowCheck(false);
     setPhase("checking");
@@ -290,8 +345,7 @@ export function SignInPage() {
             <span>Polaris</span>
           </p>
           <h1 id="sign-in-title">{SIGN_IN_TITLE}</h1>
-          <p className="sign-in-support">{SIGN_IN_SUPPORT}</p>
-          <p className="sign-in-support">{SIGN_IN_FIRST_TIME}</p>
+          <SupportLines passwordOn={password.on} />
           {reason ? <p className="sign-in-reason">{reason}</p> : null}
 
           {alertText ? (
@@ -339,9 +393,38 @@ export function SignInPage() {
             </button>
           ) : null}
 
+          <PasswordSection
+            online={online}
+            onSignedIn={handleSignedIn}
+            onUnverified={onUnverified}
+            password={password}
+            phase={phase}
+          />
+
           <LegalLinks />
         </section>
       </main>
     </div>
   );
+}
+
+/**
+ * `/entrar`, or "Confirme seu e-mail" after a right password on an e-mail not yet confirmed: the address
+ * stays in memory only (AC-50), never in the URL or in storage.
+ */
+export function SignInPage() {
+  const [unverified, setUnverified] = useState<{
+    email: string;
+    siteKey: string | null;
+  } | null>(null);
+  if (unverified) {
+    return (
+      <ConfirmEmailPanel
+        email={unverified.email}
+        intro={CONFIRM_PENDING_SIGN_IN}
+        siteKey={unverified.siteKey}
+      />
+    );
+  }
+  return <SignInScreen onUnverified={setUnverified} />;
 }

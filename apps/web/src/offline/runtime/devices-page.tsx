@@ -26,6 +26,7 @@ import {
 } from "./devices-model";
 import "./devices-page.css";
 import { signInPath } from "../../lib/sign-in-path";
+import { loadAuthMethods } from "../../sign-in/sign-in-model";
 import { forgetSessionCaches } from "./leave-browser";
 import { useLogout } from "./logout-control";
 import type { RuntimeSnapshot } from "./offline-runtime";
@@ -43,6 +44,44 @@ const DEVICES_SIGN_IN_AGAIN = signInPath({
   reason: "recente",
   returnTo: DEVICES_PATH,
 });
+
+/**
+ * "Trocar senha" lives under the devices, in a "Segurança" section of its own, as a 44 px secondary button
+ * (UX review of the P9: a text link in a paragraph was a 26 px target nobody found). Only with the password
+ * on (ADR 0100, AC-46).
+ */
+function SecuritySection() {
+  const [passwordOn, setPasswordOn] = useState(false);
+  useEffect(() => {
+    let current = true;
+    loadAuthMethods()
+      .then((methods) => {
+        if (current) {
+          setPasswordOn(methods?.emailPassword === true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+  return passwordOn ? (
+    <section
+      aria-labelledby="device-security-title"
+      className="device-security"
+    >
+      <h2 className="device-security-title" id="device-security-title">
+        Segurança
+      </h2>
+      <a
+        className="secondary-button device-security-button"
+        href="/conta/seguranca"
+      >
+        Trocar senha
+      </a>
+    </section>
+  ) : null;
+}
 
 interface SignInAgainProps {
   onDismiss: () => void;
@@ -468,27 +507,30 @@ export function DevicesPage() {
       {endedHere ? (
         <BrowserLeft keptWork={endedHere.keptWork} />
       ) : (
-        <ListSection
-          actionError={actionError}
-          busy={busy}
-          confirming={confirming}
-          devices={devices}
-          endOtherSessions={endOtherSessions}
-          loadFailed={loadFailed}
-          loading={loading}
-          notice={notice}
-          offline={!(online && knowsThisDevice)}
-          onAsk={handleAsk}
-          onCancel={handleCancel}
-          onChoose={setEndOtherSessions}
-          onDismiss={handleDismiss}
-          online={online}
-          onRetry={handleRetry}
-          onRevoke={handleRevokeEvent}
-          panel={panel}
-          recognition={recognition}
-          rows={rows}
-        />
+        <>
+          <ListSection
+            actionError={actionError}
+            busy={busy}
+            confirming={confirming}
+            devices={devices}
+            endOtherSessions={endOtherSessions}
+            loadFailed={loadFailed}
+            loading={loading}
+            notice={notice}
+            offline={!(online && knowsThisDevice)}
+            onAsk={handleAsk}
+            onCancel={handleCancel}
+            onChoose={setEndOtherSessions}
+            onDismiss={handleDismiss}
+            online={online}
+            onRetry={handleRetry}
+            onRevoke={handleRevokeEvent}
+            panel={panel}
+            recognition={recognition}
+            rows={rows}
+          />
+          <SecuritySection />
+        </>
       )}
     </div>
   );
