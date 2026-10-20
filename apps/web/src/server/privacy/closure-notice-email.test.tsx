@@ -117,23 +117,78 @@ describe("the content of a closure notice", () => {
     expect(formatCalendarDate("2027-01-18")).toBe("18 de janeiro de 2027");
   });
 
-  it("offers the copy until D when the notice is due before D", () => {
-    const body = bodyOf(
-      notice({ dueAt: new Date("2026-12-19T03:00:00.000Z"), milestone: "d30" })
-    );
-    expect(body).toContain("peça pelo painel antes de 18 de janeiro de 2027");
-    expect(body).not.toContain("já terminou");
+  it("offers the copy until 00h00 of D, the limit the server applies, in the notices before D", () => {
+    for (const [milestone, dueAt] of [
+      ["closure", new Date("2026-10-20T12:00:00.000Z")],
+      ["d30", new Date("2026-12-19T03:00:00.000Z")],
+      ["d7", new Date("2027-01-11T03:00:00.000Z")],
+    ] as const) {
+      const body = bodyOf(notice({ dueAt, milestone }));
+      expect(body).toContain(
+        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00h00 (horário da sua organização)."
+      );
+      expect(body).not.toContain("terminou");
+      expect(body).not.toContain("peça a cópia agora");
+    }
   });
 
-  it("says the time for the copy is over when the notice is due on D or later", () => {
-    for (const dueAt of [
-      new Date("2027-01-18T03:00:00.000Z"),
-      new Date("2027-01-25T12:00:00.000Z"),
-    ]) {
-      const body = bodyOf(notice({ dueAt, milestone: "deletion_day" }));
-      expect(body).toContain("já terminou");
-      expect(body).not.toContain("peça pelo painel antes de");
+  it("writes the limit of the copy as the first instant of D in the organization's time zone", () => {
+    const body = bodyOf(
+      notice({
+        deletableFrom: new Date("2027-01-18T04:00:00.000Z"),
+        milestone: "d30",
+        timeZone: "America/Manaus",
+      })
+    );
+    expect(body).toContain("até 18 de janeiro de 2027, 00h00");
+  });
+
+  it("never says the time for the copy is over: D, a d7 sent again and a rescheduled purge ask for it now", () => {
+    const asked = [
+      notice({
+        dueAt: new Date("2027-01-18T03:00:00.000Z"),
+        milestone: "deletion_day",
+      }),
+      notice({
+        dueAt: new Date("2027-01-25T12:00:00.000Z"),
+        milestone: "deletion_day",
+      }),
+      notice({
+        dueAt: new Date("2027-01-20T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      }),
+      notice({
+        dueAt: new Date("2027-01-12T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      }),
+      notice({
+        dueAt: new Date("2027-01-25T12:00:00.000Z"),
+        milestone: "rescheduled",
+        purgeFrom: new Date("2027-02-01T12:00:00.000Z"),
+      }),
+      // a late d7 of the job, due on D or later, does not promise a limit already gone
+      notice({ dueAt: new Date("2027-01-18T05:00:00.000Z"), milestone: "d7" }),
+    ];
+    for (const delivery of asked) {
+      const body = bodyOf(delivery);
+      expect(body).toContain(
+        "Se ainda não baixou seus dados, entre no painel e peça a cópia agora. Depois de apagados, não podem ser recuperados."
+      );
+      expect(body).not.toContain("terminou");
+      expect(body).not.toContain("peça pelo painel até");
+      expect(body.split("Depois de apagados").length).toBe(2);
     }
+  });
+
+  it("says in the headings of D minus 30 and minus 7 days what is coming", () => {
+    expect(closureNoticeContent(notice({ milestone: "d30" })).heading).toBe(
+      "Faltam 30 dias para os dados da loja poderem ser apagados"
+    );
+    expect(closureNoticeContent(notice({ milestone: "d7" })).heading).toBe(
+      "Faltam 7 dias para os dados da loja poderem ser apagados"
+    );
   });
 });
 

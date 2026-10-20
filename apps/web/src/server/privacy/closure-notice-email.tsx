@@ -95,11 +95,18 @@ export function closureNoticeContent(
   );
   const deletionDay = formatCalendarDate(delivery.deletionDate);
   const firstDay = formatCalendarDate(closureNoticeDeletionDate(delivery));
-  // the copy can be asked for until D (`exportOpenUntil`): a notice due on D or later says the time is over
-  const copyLine =
-    delivery.dueAt.getTime() < delivery.deletableFrom.getTime()
-      ? `Se quiser guardar uma cópia dos dados, peça pelo painel antes de ${deletionDay}.`
-      : "O prazo para pedir uma cópia dos dados já terminou.";
+  // The copy can be asked for until the first instant of D (`exportOpenUntil`, as `request_closed_export` refuses
+  // from it): the notices before D (the request, D minus 30 and the `d7` of the job) write that limit, 00h00 of D in the
+  // organization's calendar. The others (D, a `d7` sent again, `rescheduled`, or any notice due on D or later) never say
+  // the time is over, only to ask for it now: the text says no more than the panel, which follows the server.
+  const beforeDeletionDay =
+    (delivery.milestone === "closure" ||
+      delivery.milestone === "d30" ||
+      (delivery.milestone === "d7" && delivery.reissue === 0)) &&
+    delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
+  const copyLine = beforeDeletionDay
+    ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone).replace(":", "h")} (horário da sua organização).`
+    : "Se ainda não baixou seus dados, entre no painel e peça a cópia agora. Depois de apagados, não podem ser recuperados.";
   const signIn =
     "Para abrir o painel, entre no Polaris com a sua conta de dono da loja.";
   switch (delivery.milestone) {
@@ -119,7 +126,7 @@ export function closureNoticeContent(
     case "d30":
       return {
         actionLabel: "Abrir o painel",
-        heading: "Faltam 30 dias",
+        heading: "Faltam 30 dias para os dados da loja poderem ser apagados",
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${deletionDay}.`,
           copyLine,
@@ -131,9 +138,9 @@ export function closureNoticeContent(
     case "d7":
       return {
         actionLabel: "Abrir o painel",
-        heading: "Os dados da loja serão apagados",
+        heading: "Faltam 7 dias para os dados da loja poderem ser apagados",
         paragraphs: [
-          `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${firstDay}. Depois de apagados, não podem ser recuperados.`,
+          `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${firstDay}.${beforeDeletionDay ? " Depois de apagados, não podem ser recuperados." : ""}`,
           copyLine,
           signIn,
         ],
@@ -145,7 +152,7 @@ export function closureNoticeContent(
         actionLabel: "Abrir o painel",
         heading: "Os dados da loja podem ser apagados a partir de hoje",
         paragraphs: [
-          `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a qualquer momento a partir de hoje, ${deletionDay}. Depois de apagados, não podem ser recuperados.`,
+          `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a qualquer momento a partir de hoje, ${deletionDay}.`,
           copyLine,
           signIn,
         ],
@@ -158,7 +165,7 @@ export function closureNoticeContent(
         actionLabel: "Abrir o painel",
         heading: "Nova data para o apagamento dos dados",
         paragraphs: [
-          `O apagamento dos dados da loja ${store}, encerrada em ${requested}, foi adiado. Agora eles podem ser apagados a partir de ${firstDay}. Depois de apagados, não podem ser recuperados.`,
+          `O apagamento dos dados da loja ${store}, encerrada em ${requested}, foi adiado. Agora eles podem ser apagados a partir de ${firstDay}.`,
           copyLine,
           signIn,
         ],
