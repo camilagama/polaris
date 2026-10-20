@@ -2,7 +2,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
 import { vi } from "vitest";
-import type { LoginLockAttempt } from "./login-lock";
+import type { LoginLockAttempt, LoginLockStore } from "./login-lock";
 import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "../auth";
 import { createBetterAuth } from "../auth";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
@@ -324,4 +324,3 @@ export function createMemoryLoginLockStore() {
   const store: LoginLockStore = { begin, clear, failed, issueUnlock, unlock };
   return { begin, clear, failed, issueUnlock, rows, store, unlock };
 }
-

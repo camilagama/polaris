@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDatabaseLoginLockStore,
   handleEmailSignInWithLock,
-  type LoginLockAttempt,
   type LoginLockQueryable,
-  type LoginLockStore,
   loginLockedResponse,
   newUnlockToken,
   sha256,

@@ -8,9 +8,11 @@ import {
   verifyEmailWithToken,
 } from "./handler";
 import { newUnlockToken, sha256 } from "./login-lock";
+import { loginLockKey } from "./login-lock-key";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import {
   authTestHelpers,
+  createMemoryLoginLockStore,
   cookieHeader,
   createPasswordTestAuth,
   createVerifiedPasswordUser,
@@ -21,6 +23,7 @@ import {
   stubPwnedPasswordRange,
   testBaseURL,
   testPassword,
+  testSecret,
 } from "./password-test-support";
 
 const MINUTE = 60 * 1000;
@@ -938,5 +941,214 @@ describe("verification of the e-mail by the link of the e-mail (AC-48)", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+});
+
+describe("change of the password and the sign-in lock (same counter)", {
+  timeout: 30_000,
+}, () => {
+  const wrong = "a senha atual que não é esta, de jeito nenhum";
+
+  beforeEach(() => {
+    useFakeClock();
+    stubPwnedPasswordRange();
+    silenceLogs();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function lockedSetup(withLock = true) {
+    const parts = createPasswordTestAuth();
+    const email = "troca-trava@example.invalid";
+    await createVerifiedPasswordUser(parts.auth, email);
+    const cookie = await signInCookie(parts.auth, email);
+    const memory = createMemoryLoginLockStore();
+    const sendUnlock = vi.fn((_email: string, _key: string) =>
+      Promise.resolve()
+    );
+    const fx = createEffects(parts.auditEvents, () => Promise.resolve());
+    if (withLock) {
+      fx.effects.loginLock = {
+        secret: testSecret,
+        sendUnlock,
+        store: memory.store,
+      };
+    }
+    const key = await loginLockKey(testSecret, email);
+    const change = (body: Record<string, unknown>, headers = cookie) =>
+      handleChangePasswordRequest(
+        parts.auth,
+        jsonRequest("/api/auth/change-password", body, { cookie: headers }),
+        fx.effects
+      );
+    return { ...parts, ...memory, change, cookie, email, fx, key, sendUnlock };
+  }
+
+  it("five wrong current passwords lock, and the sixth with the right one is a 429 that changes nothing", async () => {
+    const ctx = await lockedSetup();
+
+    for (let count = 1; count <= 5; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      const response = await ctx.change({
+        currentPassword: wrong,
+        newPassword,
+      });
+      expect(response.status).toBe(400);
+    }
+    const locked = await ctx.change({
+      currentPassword: testPassword,
+      newPassword,
+    });
+
+    expect(locked.status).toBe(429);
+    expect(locked.headers.get("retry-after")).toBe("900");
+    expect(await locked.json()).toEqual({
+      error: { code: "auth_login_locked" },
+      retryAfterSeconds: 900,
+    });
+    expect(ctx.auditEvents).toEqual([]);
+    expect(ctx.fx.sendPasswordNotice).not.toHaveBeenCalled();
+    expect(await sessionOf(ctx.auth, ctx.cookie)).not.toBeNull();
+    // the password did not change: the old one signs in, the new one does not
+    await expect(signInCookie(ctx.auth, ctx.email)).resolves.toBeTruthy();
+    await expect(
+      signInCookie(ctx.auth, ctx.email, newPassword)
+    ).rejects.toThrow();
+  });
+
+  it("sends the unlock e-mail once, in the background, when the fifth failure locks", async () => {
+    const ctx = await lockedSetup();
+
+    for (let count = 1; count <= 4; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the attempts count one after the other
+      await ctx.change({ currentPassword: wrong, newPassword });
+    }
+    expect(ctx.sendUnlock).not.toHaveBeenCalled();
+    await ctx.change({ currentPassword: wrong, newPassword });
+    await ctx.change({ currentPassword: testPassword, newPassword });
+
+    expect(ctx.sendUnlock).toHaveBeenCalledTimes(1);
+    expect(ctx.sendUnlock).toHaveBeenCalledWith(ctx.email, ctx.key);
+    expect(ctx.fx.runInBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it("schedules the unlock e-mail when `begin` reports the lock as new", async () => {
+    const ctx = await lockedSetup();
+    ctx.begin.mockResolvedValueOnce({
+      allowed: false,
+      newlyLocked: true,
+      retryAfterSeconds: 900,
+    });
+
+    const response = await ctx.change({
+      currentPassword: testPassword,
+      newPassword,
+    });
+
+    expect(response.status).toBe(429);
+    expect(ctx.sendUnlock).toHaveBeenCalledWith(ctx.email, ctx.key);
+    expect(ctx.fx.runInBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it("failures of the change and of the sign-in add up on the same key", async () => {
+    const ctx = await lockedSetup();
+    const { handleEmailSignInWithLock } = await import("./login-lock");
+    const signInWrong = () =>
+      handleEmailSignInWithLock(
+        jsonRequest("/api/auth/sign-in/email", {
+          email: ctx.email,
+          password: wrong,
+        }),
+        {
+          recordRefusal: () => Promise.resolve(),
+          runInBackground: () => undefined,
+          secret: testSecret,
+          sendUnlock: () => Promise.resolve(),
+          signIn: (request) => ctx.auth.handler(request),
+          store: ctx.store,
+        }
+      );
+
+    await signInWrong();
+    await signInWrong();
+    await ctx.change({ currentPassword: wrong, newPassword });
+    await ctx.change({ currentPassword: wrong, newPassword });
+    expect(ctx.rows.size).toBe(1);
+    expect(ctx.rows.get(ctx.key)?.attempts).toBe(4);
+    const fifth = await signInWrong();
+    expect(fifth.status).toBe(401);
+
+    const sixth = await ctx.change({
+      currentPassword: testPassword,
+      newPassword,
+    });
+    expect(sixth.status).toBe(429);
+    const keys = new Set(ctx.begin.mock.calls.map(([key]) => key));
+    expect(keys).toEqual(new Set([ctx.key]));
+  });
+
+  it("a successful change forgets the count", async () => {
+    const ctx = await lockedSetup();
+
+    await ctx.change({ currentPassword: wrong, newPassword });
+    await ctx.change({ currentPassword: wrong, newPassword });
+    expect(ctx.rows.get(ctx.key)?.attempts).toBe(2);
+    const ok = await ctx.change({ currentPassword: testPassword, newPassword });
+
+    expect(ok.status).toBe(200);
+    expect(ctx.clear).toHaveBeenCalledWith(ctx.key);
+    expect(ctx.rows.has(ctx.key)).toBe(false);
+  });
+
+  it("a new password outside the policy does not reserve an attempt", async () => {
+    const ctx = await lockedSetup();
+
+    const response = await ctx.change({
+      currentPassword: wrong,
+      newPassword: "curta demais",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { code: "password_too_short" },
+    });
+    expect(ctx.begin).not.toHaveBeenCalled();
+    expect(ctx.failed).not.toHaveBeenCalled();
+    expect(ctx.clear).not.toHaveBeenCalled();
+  });
+
+  it("a request without a valid session is refused before the lock is touched", async () => {
+    const ctx = await lockedSetup();
+
+    const response = await ctx.change(
+      { currentPassword: testPassword, newPassword },
+      "better-auth.session_token=lixo"
+    );
+
+    // no session: refused before the lock
+    expect(response.status).toBe(401);
+    expect(ctx.begin).not.toHaveBeenCalled();
+  });
+
+  it("without loginLock the old behavior stands: no counter, wrong passwords never lock", async () => {
+    const ctx = await lockedSetup(false);
+
+    for (let count = 1; count <= 6; count += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: one after the other
+      const response = await ctx.change({
+        currentPassword: wrong,
+        newPassword,
+      });
+      expect(response.status).toBe(400);
+    }
+    const ok = await ctx.change({ currentPassword: testPassword, newPassword });
+
+    expect(ok.status).toBe(200);
+    expect(ctx.begin).not.toHaveBeenCalled();
+    expect(ctx.failed).not.toHaveBeenCalled();
+    expect(ctx.clear).not.toHaveBeenCalled();
   });
 });

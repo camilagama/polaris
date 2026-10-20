@@ -169,8 +169,17 @@ export interface EmailSignInLockOptions {
   /** Sends the unlock e-mail, if the e-mail has an account; runs in the background. */
   sendUnlock: (email: string, key: string) => Promise<void>;
   secret: string;
+  /** A failure of the lock after Better Auth answered: logged, never in the answer. */
+  onSettleError?: (error: unknown) => void;
   signIn: (request: Request) => Promise<Response>;
   store: LoginLockStore;
+}
+
+export function isJsonRequest(request: Request): boolean {
+  return (
+    request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ===
+    "application/json"
+  );
 }
 
 export function loginLockedResponse(retryAfterSeconds: number): Response {
@@ -195,6 +204,14 @@ export async function handleEmailSignInWithLock(
   request: Request,
   options: EmailSignInLockOptions
 ): Promise<Response> {
+  // Better Auth also reads a form body here; the lock reads JSON only, so any other body is refused
+  // before it could reach the password check without the counter.
+  if (!isJsonRequest(request)) {
+    return Response.json(
+      { error: { code: "unsupported_media_type" } },
+      { headers: { "cache-control": "no-store" }, status: 415 }
+    );
+  }
   const email = await typedEmail(request);
   if (email === undefined) {
     return options.signIn(request);
@@ -213,14 +230,19 @@ export async function handleEmailSignInWithLock(
   }
 
   const response = await options.signIn(request);
-  if (
-    response.ok ||
-    (response.status === 403 &&
-      (await responseErrorCode(response)) === "EMAIL_NOT_VERIFIED")
-  ) {
-    await options.store.clear(key);
-  } else if (response.status === 401 && (await options.store.failed(key))) {
-    sendUnlock();
+  // The answer of Better Auth stands even if the lock fails now: the session may already exist.
+  try {
+    if (
+      response.ok ||
+      (response.status === 403 &&
+        (await responseErrorCode(response)) === "EMAIL_NOT_VERIFIED")
+    ) {
+      await options.store.clear(key);
+    } else if (response.status === 401 && (await options.store.failed(key))) {
+      sendUnlock();
+    }
+  } catch (error) {
+    options.onSettleError?.(error);
   }
   return response;
 }

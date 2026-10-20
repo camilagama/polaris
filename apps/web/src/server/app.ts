@@ -182,7 +182,8 @@ export function createServerApp({
             error: { code: "auth_email_unavailable" },
             requestId: context.get("requestId"),
           },
-          503
+          503,
+          { "cache-control": "no-store" }
         );
       }
       const limited = await protectAuthLinkRequest(

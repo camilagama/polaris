@@ -142,6 +142,15 @@ function isTokenInUrlRoute(request: Request): boolean {
   );
 }
 
+/**
+ * `POST /verify-password` says whether a password is the current one for any live session, with no
+ * lock and no fresh-session window: a stolen session could guess the password there. Nothing in the
+ * app uses it, so it stays closed.
+ */
+function isClosedPasswordRoute(request: Request): boolean {
+  return isPostTo(request, "/verify-password");
+}
+
 function safeRequestIdOf(requestId: string | undefined): string {
   return requestId && requestIdPattern.test(requestId)
     ? requestId
@@ -257,9 +266,6 @@ async function bumpEpochAfterPasswordChange(
     try {
       await effects.bumpAuthorizationEpoch(userId);
     } catch (error) {
-      logger.error("password_change_epoch_bump_failed", {
-        requestId: effects.requestId,
-      });
       logServerError({
         error,
         method: "POST",
@@ -314,14 +320,24 @@ async function settleChangePasswordAttempt(
   if (!loginLock || key === undefined) {
     return;
   }
-  if (response.ok) {
-    await loginLock.store.clear(key);
-  } else if (
-    response.status === 400 &&
-    (await responseErrorCode(response)) === "INVALID_PASSWORD" &&
-    (await loginLock.store.failed(key))
-  ) {
-    effects.runInBackground(loginLock.sendUnlock(email, key));
+  // The password may have changed already: a failure of the lock is logged and the change goes on.
+  try {
+    if (response.ok) {
+      await loginLock.store.clear(key);
+    } else if (
+      response.status === 400 &&
+      (await responseErrorCode(response)) === "INVALID_PASSWORD" &&
+      (await loginLock.store.failed(key))
+    ) {
+      effects.runInBackground(loginLock.sendUnlock(email, key));
+    }
+  } catch (error) {
+    logServerError({
+      error,
+      method: "POST",
+      requestId: effects.requestId,
+      route: "/api/auth/change-password",
+    });
   }
 }
 
@@ -359,6 +375,8 @@ export async function handleChangePasswordRequest(
     return reserved.response;
   }
 
+  const forwardedHeaders = new Headers(request.headers);
+  forwardedHeaders.delete("content-length");
   const response = await auth.handler(
     new Request(request.url, {
       body: JSON.stringify({
@@ -366,7 +384,7 @@ export async function handleChangePasswordRequest(
         newPassword: body.newPassword,
         revokeOtherSessions: true,
       }),
-      headers: request.headers,
+      headers: forwardedHeaders,
       method: "POST",
     })
   );
@@ -459,6 +477,18 @@ export async function handleSetPasswordRequest(
       headers: request.headers,
     });
     if (response.ok && effects) {
+      // As a change: the other sessions end and the leases are invalidated; this session stays.
+      try {
+        await auth.api.revokeOtherSessions({ headers: request.headers });
+      } catch (error) {
+        logServerError({
+          error,
+          method: "POST",
+          requestId: effects.requestId,
+          route: "/api/auth/set-password",
+        });
+      }
+      await bumpEpochAfterPasswordChange(effects, checked.session.user.id);
       await recordPasswordEvent(
         effects,
         "password_set",
@@ -559,28 +589,34 @@ function openAuthRuntime(
       })
     : undefined;
 
-  const auth = createBetterAuth({
-    baseURL,
-    database: db,
-    ...(delivery ? { emailDelivery: delivery } : {}),
-    ...(googleClientId && googleClientSecret
-      ? {
-          googleProvider: {
-            accessType: "online",
-            clientId: googleClientId,
-            clientSecret: googleClientSecret,
-            disableIdTokenSignIn: true,
-            redirectURI: new URL(
-              "/api/auth/callback/google",
-              baseURL
-            ).toString(),
-          },
-        }
-      : {}),
-    requestId: safeRequestId,
-    runInBackground: background,
-    secret,
-  });
+  let auth: BetterAuthInstance;
+  try {
+    auth = createBetterAuth({
+      baseURL,
+      database: db,
+      ...(delivery ? { emailDelivery: delivery } : {}),
+      ...(googleClientId && googleClientSecret
+        ? {
+            googleProvider: {
+              accessType: "online",
+              clientId: googleClientId,
+              clientSecret: googleClientSecret,
+              disableIdTokenSignIn: true,
+              redirectURI: new URL(
+                "/api/auth/callback/google",
+                baseURL
+              ).toString(),
+            },
+          }
+        : {}),
+      requestId: safeRequestId,
+      runInBackground: background,
+      secret,
+    });
+  } catch (error) {
+    pool.end().catch(() => undefined);
+    throw error;
+  }
 
   const store = createDatabaseLoginLockStore(
     pool as unknown as LoginLockQueryable
@@ -593,7 +629,9 @@ function openAuthRuntime(
           await pool.end();
           return;
         }
-        const ended = Promise.allSettled(pending).then(() => pool.end());
+        const ended = Promise.allSettled(pending)
+          .then(() => pool.end())
+          .catch(() => undefined);
         if (runInBackground) {
           runInBackground(ended);
         } else {
@@ -644,7 +682,13 @@ async function sendLoginUnlock(
     email.toLowerCase(),
     { includeAccounts: true }
   );
-  if (!found?.accounts.some((account) => account.providerId === "credential")) {
+  // Only a verified account with a password: a lock of an address nobody proved never mails its owner.
+  if (
+    !(
+      found?.user.emailVerified &&
+      found.accounts.some((account) => account.providerId === "credential")
+    )
+  ) {
     return;
   }
   const token = newUnlockToken(found.user.id);
@@ -684,7 +728,7 @@ export async function handleBetterAuthRequest(
   ) {
     return jsonError(503, "auth_email_unavailable");
   }
-  if (isTokenInUrlRoute(request)) {
+  if (isTokenInUrlRoute(request) || isClosedPasswordRoute(request)) {
     return jsonError(404, "not_found");
   }
 
@@ -718,6 +762,13 @@ export async function handleBetterAuthRequest(
         runInBackground: runtime.runInBackground,
         secret,
         sendUnlock: (email, key) => sendLoginUnlock(runtime, email, key),
+        onSettleError: (error) =>
+          logServerError({
+            error,
+            method: "POST",
+            requestId: runtime.requestId,
+            route: "/api/auth/sign-in/email",
+          }),
         signIn: (signInRequest) => auth.handler(signInRequest),
         store: runtime.store,
       });
