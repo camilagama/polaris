@@ -96,7 +96,7 @@ export function closureNoticeContent(
   const deletionDay = formatCalendarDate(delivery.deletionDate);
   const firstDay = formatCalendarDate(closureNoticeDeletionDate(delivery));
   // The copy can be asked for until the first instant of D (`exportOpenUntil`, as `request_closed_export` refuses
-  // from it): the notices before D (the request, D minus 30 and the `d7` of the job) write that limit, 00h00 of D in the
+  // from it): the notices before D (the request, D minus 30 and the `d7` of the job) write that limit, 00:00 of D in the
   // organization's calendar. The others (D, a `d7` sent again, `rescheduled`, or any notice due on D or later) never say
   // the time is over, only to ask for it now: the text says no more than the panel, which follows the server.
   const beforeDeletionDay =
@@ -105,7 +105,7 @@ export function closureNoticeContent(
       (delivery.milestone === "d7" && delivery.reissue === 0)) &&
     delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
   const copyLine = beforeDeletionDay
-    ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone).replace(":", "h")} (horário da sua organização).`
+    ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua organização).`
     : "Se ainda não baixou seus dados, entre no painel e peça a cópia agora. Depois de apagados, não podem ser recuperados.";
   const signIn =
     "Para abrir o painel, entre no Polaris com a sua conta de dono da loja.";

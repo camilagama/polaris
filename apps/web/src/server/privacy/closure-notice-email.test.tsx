@@ -117,7 +117,7 @@ describe("the content of a closure notice", () => {
     expect(formatCalendarDate("2027-01-18")).toBe("18 de janeiro de 2027");
   });
 
-  it("offers the copy until 00h00 of D, the limit the server applies, in the notices before D", () => {
+  it("offers the copy until 00:00 of D, the limit the server applies, in the notices before D", () => {
     for (const [milestone, dueAt] of [
       ["closure", new Date("2026-10-20T12:00:00.000Z")],
       ["d30", new Date("2026-12-19T03:00:00.000Z")],
@@ -125,7 +125,7 @@ describe("the content of a closure notice", () => {
     ] as const) {
       const body = bodyOf(notice({ dueAt, milestone }));
       expect(body).toContain(
-        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00h00 (horário da sua organização)."
+        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua organização)."
       );
       expect(body).not.toContain("terminou");
       expect(body).not.toContain("peça a cópia agora");
@@ -140,7 +140,7 @@ describe("the content of a closure notice", () => {
         timeZone: "America/Manaus",
       })
     );
-    expect(body).toContain("até 18 de janeiro de 2027, 00h00");
+    expect(body).toContain("até 18 de janeiro de 2027, 00:00");
   });
 
   it("never says the time for the copy is over: D, a d7 sent again and a rescheduled purge ask for it now", () => {
