@@ -17,7 +17,7 @@ import { LogoutControl } from "../offline/runtime/logout-control";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { useSessionOver } from "../offline/runtime/session-ended";
-import { SyncStatus } from "../offline/runtime/sync-status";
+import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
 import { SessionEndedNotice } from "./session-ended-notice";
@@ -113,6 +113,7 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
         className={open ? "app-nav-wrap is-open" : "app-nav-wrap"}
         id="app-navigation"
       >
+        <SyncStatusMenuLine />
         <nav aria-label="Principal">
           <ul className="app-nav-list">
             {[

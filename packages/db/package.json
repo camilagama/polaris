@@ -49,6 +49,7 @@
     "./media-schema": "./src/schema/media.ts",
     "./media-repository": "./src/media-repository.ts",
     "./billing-store": "./src/billing-store.ts",
+    "./billing-repository": "./src/billing-repository.ts",
     "./media-cleanup": "./src/media-cleanup.ts",
     "./organization-closure-repository": "./src/organization-closure-repository.ts",
     "./closed-organization-repository": "./src/closed-organization-repository.ts",

@@ -3,6 +3,7 @@ import {
   addCalendarMonths,
   InvalidDueDateError,
   paidPeriodEndsAt,
+  saoPauloDateOf,
 } from "./provider-period";
 
 describe("addCalendarMonths", () => {
@@ -131,5 +132,25 @@ describe("paidPeriodEndsAt", () => {
     const late = paidPeriodEndsAt("2026-10-26", 1);
     expect(early).toEqual(late);
     expect(early.toISOString()).toBe("2026-11-27T03:00:00.000Z");
+  });
+});
+
+describe("saoPauloDateOf", () => {
+  it("is the day in São Paulo, which starts at 03:00 UTC", () => {
+    expect(saoPauloDateOf(new Date("2026-10-20T02:59:59.999Z"))).toBe(
+      "2026-10-19"
+    );
+    expect(saoPauloDateOf(new Date("2026-10-20T03:00:00.000Z"))).toBe(
+      "2026-10-20"
+    );
+    expect(saoPauloDateOf(new Date("2027-01-01T01:00:00.000Z"))).toBe(
+      "2026-12-31"
+    );
+  });
+
+  it("refuses an invalid instant", () => {
+    expect(() => saoPauloDateOf(new Date(Number.NaN))).toThrow(
+      "invalid_due_date"
+    );
   });
 });

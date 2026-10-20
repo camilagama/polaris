@@ -106,6 +106,37 @@ export interface AbandonedTrialCheckout {
   providerRef: string;
 }
 
+/**
+ * A fact that would have started a trial no reservation pays for
+ * (`trial_claim_missing`), left `unresolved` after its retries (ADR 0101). The
+ * subscription it names exists at the provider and will charge, without a
+ * trial, on the day the trial would have ended: it is cancelled there, never
+ * charged without the person's consent.
+ */
+export interface UnclaimedTrialEvent {
+  eventId: string;
+  organizationId: string;
+  provider: string;
+  /** The reference the event named (for Asaas, the checkout's ID). */
+  providerRef: string;
+  /** The provider's own ID of the subscription, when the event carried it. */
+  providerSubscriptionId: string | null;
+}
+
+/**
+ * `cancelled`: cancelled at the provider and recorded. `left_paid`: the same
+ * subscription already gives the organization Pro (it was paid for since), so it
+ * is left alone and only recorded. `not_pending`: someone else settled it first,
+ * or the event is no longer an unclaimed trial past its retries.
+ */
+export type UnclaimedTrialOutcome = "cancelled" | "left_paid" | "not_pending";
+
+/** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
+export interface ReplacedProviderReference {
+  provider: string;
+  providerRef: string;
+}
+
 export interface BillingStoreOptions {
   /**
    * Gives up, at the provider, the checkout of the organization a trial
@@ -136,12 +167,16 @@ export interface StoredEntitlementGrant {
 }
 
 export interface BillingStore {
-  /** Links the organization's subscription at a provider (the reference webhooks name). */
+  /**
+   * Links the organization's subscription at a provider (the reference webhooks
+   * name). Answers the reference it replaced, if any, so the caller can give
+   * that checkout up at the provider; null when nothing was replaced.
+   */
   attachProvider: (
     organizationId: string,
     provider: string,
     providerRef: string
-  ) => Promise<void>;
+  ) => Promise<ReplacedProviderReference | null>;
   close: () => Promise<void>;
   /**
    * Gives an organization a temporary entitlement (plan PR85): more than its plan,
@@ -167,6 +202,8 @@ export interface BillingStore {
   recordEvent: (
     input: RecordBillingEventInput
   ) => Promise<{ duplicate: boolean; id: string }>;
+  /** The unclaimed trials past their retries, oldest first (see `UnclaimedTrialEvent`). */
+  listUnclaimedTrials: (limit?: number) => Promise<UnclaimedTrialEvent[]>;
   /** Processes events that were received but not applied, and retries failed and unresolved ones. */
   retryPending: (now?: Date, limit?: number) => Promise<BillingRetryReport>;
   /** Ends a grant now (or, if it has not started, as soon as it could); ending one twice is one ending. */
@@ -190,7 +227,27 @@ export interface BillingStore {
     userId: string,
     now?: Date
   ) => Promise<BillingRecord>;
-  /** Applies what time itself causes to records whose access has run out. */
+  /**
+   * Settles one unclaimed trial: `cancel` is called with the event's own
+   * subscription (never the organization's current one) while the event is
+   * locked, and only when it succeeds is the event closed (`ignored`, the outcome
+   * kept as `trial_claim_missing`) and the decision written in the ledger
+   * (`unclaimed_trial_cancelled` or `unclaimed_trial_left_paid`, under
+   * `command:settle_unclaimed_trial:<eventId>`). A failure of `cancel` changes
+   * nothing, so the next pass tries again; `cancel` must be safe to repeat.
+   * `cancel` answers `paid` when the provider shows a charge of that
+   * subscription already paid: it cancels nothing and the event is recorded as
+   * `left_paid`, like a record that already gives Pro on that reference.
+   */
+  settleUnclaimedTrial: (
+    eventId: string,
+    cancel: (event: UnclaimedTrialEvent) => Promise<"cancelled" | "paid">,
+    now?: Date
+  ) => Promise<UnclaimedTrialOutcome>;
+  /**
+   * Applies what time itself causes: records whose access has run out, grants
+   * that ended, and trial setups abandoned (no checkout can still be finished).
+   */
   sweepDue: (now?: Date, limit?: number) => Promise<BillingSweepReport>;
 }
 
@@ -777,6 +834,108 @@ async function sweepOne(
   });
 }
 
+/**
+ * How long an organization may stay setting up its trial (`trial_setup`) with
+ * nothing happening before the setup counts as abandoned. "Nothing happening"
+ * is read from `updated_at`, which every write of the record moves (the opt-in,
+ * the link of a checkout, a fact that changes it): the time counts from the
+ * last of them, never less than from the opt-in. The hosted checkout
+ * expires within the hour, so after this nobody can still finish it; without
+ * the end, the person's reservation would stay held there and every other
+ * organization of the person would get `trial_in_progress` (ADR 0101).
+ */
+const TRIAL_SETUP_ABANDONED_AFTER_HOURS = 2;
+
+/**
+ * Ends one abandoned trial setup (back to Free, or Free Over Limit). The
+ * reservation is not consumed and stays with the organization, so a payment of
+ * the checkout that still arrives late starts the trial as before; once the
+ * reservation moves elsewhere, that payment is `trial_claim_missing`.
+ */
+async function abandonOne(
+  pool: Pool,
+  organizationId: string,
+  now: Date
+): Promise<boolean> {
+  return await inTransaction(pool, async (client) => {
+    const row = await lockRecord(client, organizationId);
+    const before = toRecord(row);
+    const stale = await client.query<{ updated_at: Date }>(
+      `SELECT updated_at FROM public.organization_billing
+        WHERE organization_id = $1 AND state = 'trial_setup'
+          AND updated_at < $2::timestamptz - make_interval(hours => $3)`,
+      [organizationId, now, TRIAL_SETUP_ABANDONED_AFTER_HOURS]
+    );
+    const [setup] = stale.rows;
+    if (!setup) {
+      // something happened since it was listed
+      return false;
+    }
+    const next: BillingRecord = {
+      ...before,
+      ...applyBillingEvent(
+        before,
+        { type: "abandon_trial_setup" },
+        {
+          now,
+          overFreeLimits: await exceedsFreeLimits(client, organizationId),
+          trialConsumed: before.trialConsumed,
+        }
+      ),
+    };
+    await saveRecord(client, organizationId, before, next, now);
+    await writeLedger(
+      client,
+      {
+        fact: { transition: "abandon_trial_setup", type: "time_elapsed" },
+        factType: "time_elapsed",
+        organizationId,
+        // one row per abandoned setup: running the sweep twice adds nothing
+        providerEventId: `time:${organizationId}:abandon_trial_setup:${setup.updated_at.toISOString()}`,
+        stateAfter: next.state,
+        stateBefore: before.state,
+      },
+      now
+    );
+    return true;
+  });
+}
+
+async function sweepAbandonedTrialSetups(
+  pool: Pool,
+  now: Date,
+  limit: number
+): Promise<BillingSweepReport> {
+  const stale = await pool.query<{ organization_id: string }>(
+    `SELECT organization_id FROM public.organization_billing
+      WHERE state = 'trial_setup'
+        AND updated_at < $1::timestamptz - make_interval(hours => $3)
+      ORDER BY updated_at, organization_id
+      LIMIT $2`,
+    [now, limit, TRIAL_SETUP_ABANDONED_AFTER_HOURS]
+  );
+  const report: BillingSweepReport = {
+    failed: 0,
+    scanned: stale.rows.length,
+    transitioned: 0,
+  };
+  for (const { organization_id: organizationId } of stale.rows) {
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: One organization at a time keeps the load on the billing role bounded.
+      if (await abandonOne(pool, organizationId, now)) {
+        report.transitioned += 1;
+      }
+    } catch (error: unknown) {
+      report.failed += 1;
+      logger.error("billing_trial_setup_sweep_failed", {
+        ...describeError(error),
+        organizationId: opaqueId(organizationId),
+      });
+    }
+  }
+  return report;
+}
+
 const LIMIT_KEYS_SQL =
   "('goals.active.max', 'images.active.max', 'images.per_product.max', 'variants.active.max')";
 /** A grant that ended more than this long ago no longer starts an adaptation window. */
@@ -1019,12 +1178,12 @@ export function createBillingStore(
 
   const store: BillingStore = {
     async attachProvider(organizationId, provider, providerRef) {
-      await inTransaction(pool, async (client) => {
+      return await inTransaction(pool, async (client) => {
         const row = await lockRecord(client, organizationId);
         const sameSubscription =
           row.provider === provider && row.provider_ref === providerRef;
         if (sameSubscription) {
-          return;
+          return null;
         }
         // a subscription that is live (a trial running, a paid period, grace) is not
         // replaced; one that is not (a checkout that was abandoned, a person who left
@@ -1039,6 +1198,13 @@ export function createBillingStore(
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [organizationId, provider, providerRef]
         );
+        // the checkout it replaces may still be open at the provider: the caller gives
+        // it up. One that a subscription already came from was finished: nothing to give up
+        return row.provider &&
+          row.provider_ref &&
+          row.provider_subscription_id === null
+          ? { provider: row.provider, providerRef: row.provider_ref }
+          : null;
       });
     },
     async close() {
@@ -1336,6 +1502,98 @@ export function createBillingStore(
       }
       return report;
     },
+    async listUnclaimedTrials(limit = 50) {
+      const found = await pool.query<{
+        id: string;
+        organization_id: string;
+        provider: string;
+        provider_ref: string;
+        provider_subscription_id: string | null;
+      }>(
+        `SELECT id, organization_id, provider, provider_ref, provider_subscription_id
+           FROM public.billing_events
+          WHERE status = 'unresolved' AND outcome_code = 'trial_claim_missing'
+            AND attempts >= $1
+            AND organization_id IS NOT NULL AND provider_ref IS NOT NULL
+          ORDER BY received_at
+          LIMIT $2`,
+        [MAX_BILLING_EVENT_ATTEMPTS, limit]
+      );
+      return found.rows.map((row) => ({
+        eventId: row.id,
+        organizationId: row.organization_id,
+        provider: row.provider,
+        providerRef: row.provider_ref,
+        providerSubscriptionId: row.provider_subscription_id,
+      }));
+    },
+    async settleUnclaimedTrial(eventId, cancel, now = new Date()) {
+      if (!uuidPattern.test(eventId)) {
+        return "not_pending";
+      }
+      return await inTransaction(pool, async (client) => {
+        // the provider is called with the locks held: a provider that hangs must not
+        // keep the billing connection (and this organization's webhooks) waiting
+        await client.query(
+          "SET LOCAL idle_in_transaction_session_timeout = '60s'"
+        );
+        // the event first, as `processEvent` locks it: a redelivery processed meanwhile waits here
+        const found = await client.query<{
+          organization_id: string | null;
+          provider: string;
+          provider_ref: string | null;
+          provider_subscription_id: string | null;
+        }>(
+          `SELECT organization_id, provider, provider_ref, provider_subscription_id
+             FROM public.billing_events
+            WHERE id = $1 AND status = 'unresolved' AND outcome_code = 'trial_claim_missing'
+              AND attempts >= $2
+            FOR UPDATE`,
+          [eventId, MAX_BILLING_EVENT_ATTEMPTS]
+        );
+        const [event] = found.rows;
+        if (!(event?.organization_id && event.provider_ref)) {
+          return "not_pending";
+        }
+        const organizationId = event.organization_id;
+        const row = await lockRecord(client, organizationId);
+        const before = toRecord(row);
+        // a subscription that gives Pro now was paid for: cancelling it would take what the person bought
+        const paid =
+          grantsPro(before.state) &&
+          row.provider === event.provider &&
+          row.provider_ref === event.provider_ref;
+        const result = paid
+          ? "paid"
+          : await cancel({
+              eventId,
+              organizationId,
+              provider: event.provider,
+              providerRef: event.provider_ref,
+              providerSubscriptionId: event.provider_subscription_id,
+            });
+        const outcome = result === "paid" ? "left_paid" : "cancelled";
+        const decision = `unclaimed_trial_${outcome}`;
+        await client.query(
+          "UPDATE public.billing_events SET status = 'ignored', processed_at = $2 WHERE id = $1",
+          [eventId, now]
+        );
+        await writeLedger(
+          client,
+          {
+            // the reason is in the type: the purge keeps only the keys of its list
+            fact: { type: decision },
+            factType: "command",
+            organizationId,
+            providerEventId: `command:settle_unclaimed_trial:${eventId}`,
+            stateAfter: before.state,
+            stateBefore: before.state,
+          },
+          now
+        );
+        return outcome;
+      });
+    },
     async startTrial(organizationId, userId, now = new Date()) {
       const { abandoned, record: started } = await inTransaction(
         pool,
@@ -1425,6 +1683,16 @@ export function createBillingStore(
       } catch (error: unknown) {
         report.failed += 1;
         logger.error("billing_grant_sweep_failed", describeError(error));
+      }
+      // and the trial setups whose checkout can no longer be finished (ADR 0101)
+      try {
+        const setups = await sweepAbandonedTrialSetups(pool, now, limit);
+        report.failed += setups.failed;
+        report.scanned += setups.scanned;
+        report.transitioned += setups.transitioned;
+      } catch (error: unknown) {
+        report.failed += 1;
+        logger.error("billing_trial_setup_sweep_failed", describeError(error));
       }
       return report;
     },

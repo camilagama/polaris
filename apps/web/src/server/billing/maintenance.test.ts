@@ -1,6 +1,9 @@
 import type { BillingStore } from "@polaris/db/billing-store";
-import { describe, expect, it, vi } from "vitest";
-import { runBillingMaintenance } from "./maintenance";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  runBillingMaintenance,
+  runUnclaimedTrialSettlement,
+} from "./maintenance";
 
 const now = new Date("2026-10-14T12:00:00.000Z");
 
@@ -90,5 +93,109 @@ describe("the hourly billing maintenance", () => {
     );
     expect(sweepThrows.calls).toEqual(["retry"]);
     logged.mockRestore();
+  });
+});
+
+describe("the hourly settling of unclaimed trials", () => {
+  const sandbox = {
+    ASAAS_API_KEY: "$aact_hmlg_fake",
+    ASAAS_BASE_URL: "https://api-sandbox.asaas.com/v3",
+    BETTER_AUTH_BASE_URL: "https://app.example.test",
+  };
+
+  function trialStore(
+    pending: { eventId: string; organizationId: string }[] = []
+  ) {
+    return {
+      listUnclaimedTrials: vi.fn(() =>
+        Promise.resolve(
+          pending.map((event) => ({
+            ...event,
+            provider: "asaas",
+            providerRef: "ref",
+            providerSubscriptionId: null,
+          }))
+        )
+      ),
+      settleUnclaimedTrial: vi.fn(),
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(["ASAAS_API_KEY", "ASAAS_BASE_URL", "BETTER_AUTH_BASE_URL"] as const)(
+    "does nothing and says so when %s is missing",
+    async (missing) => {
+      const warned = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const waiting = trialStore();
+
+      const report = await runUnclaimedTrialSettlement(
+        { ...sandbox, [missing]: undefined },
+        waiting,
+        now
+      );
+
+      expect(report).toBeNull();
+      expect(waiting.listUnclaimedTrials).not.toHaveBeenCalled();
+      expect(warned).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "billing_unclaimed_trials_not_configured",
+        })
+      );
+    }
+  );
+
+  it("reports zeros when no trial is waiting", async () => {
+    const waiting = trialStore();
+
+    await expect(
+      runUnclaimedTrialSettlement(sandbox, waiting, now)
+    ).resolves.toEqual({ cancelled: 0, failed: 0, leftPaid: 0, scanned: 0 });
+    expect(waiting.listUnclaimedTrials).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles what waits and reports it", async () => {
+    const waiting = trialStore([{ eventId: "e1", organizationId: "org-1" }]);
+    waiting.settleUnclaimedTrial.mockResolvedValue("cancelled");
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await expect(
+      runUnclaimedTrialSettlement(sandbox, waiting, now)
+    ).resolves.toEqual({ cancelled: 1, failed: 0, leftPaid: 0, scanned: 1 });
+    expect(waiting.settleUnclaimedTrial).toHaveBeenCalledWith(
+      "e1",
+      expect.any(Function),
+      now
+    );
+  });
+
+  it("reports itself as incomplete when one trial failed, after trying the others", async () => {
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const waiting = trialStore([
+      { eventId: "e1", organizationId: "org-1" },
+      { eventId: "e2", organizationId: "org-2" },
+    ]);
+    waiting.settleUnclaimedTrial
+      .mockRejectedValueOnce(new Error("provider down"))
+      .mockResolvedValueOnce("cancelled");
+
+    await expect(
+      runUnclaimedTrialSettlement(sandbox, waiting, now)
+    ).rejects.toThrow("billing_unclaimed_trials_incomplete");
+
+    expect(waiting.settleUnclaimedTrial).toHaveBeenCalledTimes(2);
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "billing_unclaimed_trials_incomplete",
+        failed: 1,
+      })
+    );
   });
 });

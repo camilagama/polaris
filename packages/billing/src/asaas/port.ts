@@ -73,7 +73,7 @@ function checkoutBody(
   reference: string,
   urls: CheckoutReturnUrls
 ): string {
-  if (input.payer.taxId !== undefined) {
+  if (input.payer?.taxId !== undefined) {
     // the card path never takes a tax ID (ADR 0101): only Pix Automático needs one
     throw new TypeError("tax_id_not_accepted_for_card");
   }
@@ -192,6 +192,11 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
         }
         throw error;
       }
+    },
+    async hasSubscription(providerRef, providerSubscriptionId) {
+      return (
+        (await subscriptionsOf(providerRef, providerSubscriptionId)).length > 0
+      );
     },
     async prepareSubscription(input) {
       const reference = newPolarisReference(config.randomUuid());
