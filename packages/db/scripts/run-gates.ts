@@ -193,6 +193,14 @@ gates.push(
     name: "admin-worker",
     script: "verify-admin-worker-gate.ts",
   },
+  // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
+  // Local Postgres only, like admin-worker. They run last of the suite: the scheduled jobs of the Web Worker run for real.
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "web-worker",
+    script: "verify-web-worker-gate.ts",
+  },
   // lives in apps/web: serves the PR11 route from a local server and runs the RLS gate against it.
   // Local Postgres only: on Neon the proof goes through the Worker and Hyperdrive (`poc:rls:verify`).
   {
@@ -283,6 +291,8 @@ const suites: Record<string, string[]> = {
     "media-upload",
     "tenant-context",
     "rls",
+    // last: its scheduled jobs run for real against what the gates before left
+    "web-worker",
   ],
   // Run it on a fresh database (the gates are not rerunnable on one that already ran them).
   // POLARIS_CONCURRENCY_REPEAT sets the rounds of each race (default 3 here, 1 in `ci`).
@@ -375,6 +385,7 @@ const suites: Record<string, string[]> = {
     "outbox-dispatcher",
     "dead-letter",
     "scheduled-jobs",
+    "web-worker",
   ],
 };
 

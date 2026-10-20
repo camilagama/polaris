@@ -1,0 +1,397 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createDatabase } from "../src/client";
+import { isLocalGateHost } from "./gate-hosts";
+import {
+  createTenantFixture,
+  disposableHostPattern,
+  gateBranchPattern,
+  journalMigrationCount,
+  poolerPattern,
+  redactedFailure,
+  requiredEnvironment,
+  runtimeRole,
+  type TenantFixture,
+} from "./sales-gate-support";
+import { runWorkerdVitest, temporaryLogins } from "./workerd-gate-support";
+
+/**
+ * The Web Worker through its own `fetch`, `scheduled` and `queue` handlers, inside workerd, against the PostgreSQL of
+ * the job (T-121b). This script makes what the Worker needs (one login per Hyperdrive binding, two organizations and the
+ * outbox events the test delivers), runs the Vitest project `web-workerd-db` (apps/web/worker/index.workerd-db.test.ts)
+ * and then reads the database as the owner: what the scheduler, the dispatcher and the consumers must have written.
+ * Local Postgres only (`CI=true`): the harness refuses any other host, and the Hyperdrive of this project is local
+ * (the Neon proof of the Worker is the T-123c smoke).
+ */
+const expectedDatabase =
+  process.env.POLARIS_GATE_DATABASE ??
+  process.env.POLARIS_SALES_GATE_DATABASE ??
+  "neondb";
+
+/** The Hyperdrive binding of the Worker, the group role its login belongs to, and a prefix for the login's name. */
+const BINDINGS = [
+  ["AUTH_HYPERDRIVE", "polaris_auth_runtime", "auth"],
+  ["BILLING_HYPERDRIVE", "polaris_billing_runtime", "billing"],
+  ["HYPERDRIVE", runtimeRole, "tenant"],
+  ["MEDIA_CLEANUP_HYPERDRIVE", "polaris_media_cleanup_runtime", "media"],
+  ["ONBOARDING_HYPERDRIVE", "polaris_onboarding_runtime", "onboarding"],
+  ["OUTBOX_HYPERDRIVE", "polaris_outbox_runtime", "outbox"],
+  ["PRIVACY_HYPERDRIVE", "polaris_privacy_runtime", "privacy"],
+] as const;
+const MAINTENANCE_JOBS = [
+  "auth.login_lock_expiry",
+  "billing.maintenance",
+  "media.maintenance",
+  "privacy.maintenance",
+];
+
+interface Envelope {
+  attempt: number;
+  correlationId: string;
+  event: Record<string, string | number | boolean>;
+  eventId: string;
+  idempotencyKey: string;
+  organizationId: string;
+  type: string;
+  version: number;
+}
+
+async function run() {
+  assert.equal(
+    process.env.CI,
+    "true",
+    "The Web Worker gate runs only against the Postgres of the CI job."
+  );
+  const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
+  assert.match(branch, gateBranchPattern);
+  const adminUrl = requiredEnvironment("POLARIS_SALES_GATE_DATABASE_URL");
+  const parsedAdminUrl = new URL(adminUrl);
+  assert.match(parsedAdminUrl.hostname, disposableHostPattern);
+  assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
+  assert.ok(
+    isLocalGateHost(parsedAdminUrl.hostname),
+    "The Web Worker gate needs the job's own Postgres."
+  );
+
+  const owner = createDatabase(adminUrl, { maxConnections: 2 });
+  const logins = temporaryLogins(owner, adminUrl);
+  const tests: string[] = [];
+
+  try {
+    const server = await owner.pool.query<{
+      database_name: string;
+      server_version: string;
+      server_version_num: string;
+    }>(
+      "SELECT current_database() AS database_name, current_setting('server_version') AS server_version, current_setting('server_version_num') AS server_version_num"
+    );
+    const [serverRow] = server.rows;
+    assert.ok(serverRow);
+    assert.equal(serverRow.database_name, expectedDatabase);
+    assert.ok(Number(serverRow.server_version_num) >= 180_000);
+    const migrations = await owner.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
+    );
+    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
+
+    // ------------------------------------------------- what the earlier gates left behind must not reach the Worker
+    // their events and exports would be claimed by the dispatcher and the privacy job, and a lane that ran already covers its window
+    await owner.pool.query(
+      "UPDATE public.event_outbox SET status = 'dispatched', locked_until = NULL, dispatched_at = now() WHERE status = 'pending'"
+    );
+    await owner.pool.query(
+      "UPDATE public.data_exports SET status = 'failed', error_code = 'gate_cleanup', locked_until = NULL WHERE status IN ('requested', 'running')"
+    );
+    await owner.pool.query("DELETE FROM public.scheduled_job_state");
+
+    // ------------------------------------------------- fixtures
+    const loginsByBinding: Record<string, { group: string; login: string }> =
+      {};
+    const urls: Record<string, string> = {};
+    for (const [binding, group, prefix] of BINDINGS) {
+      // biome-ignore lint/performance/noAwaitInLoops: one login at a time, for a clear failure
+      const url = await logins.login(group, `polaris_wkw_${prefix}`);
+      urls[`POLARIS_WEB_WORKER_${binding}_URL`] = url;
+      loginsByBinding[binding] = {
+        group,
+        login: decodeURIComponent(new URL(url).username),
+      };
+    }
+
+    const suffix = randomUUID().slice(0, 8);
+    const orgA = await createTenantFixture(
+      owner.pool,
+      `web worker A ${suffix}`,
+      "America/Sao_Paulo",
+      "pro"
+    );
+    const orgB = await createTenantFixture(
+      owner.pool,
+      `web worker B ${suffix}`,
+      "America/Sao_Paulo",
+      "pro"
+    );
+
+    /** An event the outbox holds, written as the owner (past the tenant policy); `settled` keeps the dispatcher away from it and makes it one the dispatcher sent once (the ledger of the consumer asks for that). */
+    const outboxEvent = async (
+      organization: TenantFixture,
+      type: string,
+      event: Envelope["event"],
+      entity: string,
+      settled: boolean
+    ): Promise<Envelope> => {
+      const idempotencyKey = `${type}:${entity}`;
+      const correlationId = randomUUID();
+      const inserted = await owner.pool.query<{ id: string }>(
+        `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id)
+         VALUES ($1, $2, $3::jsonb, $4, $5) RETURNING id`,
+        [
+          organization.organizationId,
+          type,
+          JSON.stringify(event),
+          idempotencyKey,
+          correlationId,
+        ]
+      );
+      const eventId = inserted.rows[0]?.id;
+      assert.ok(eventId);
+      if (settled) {
+        await owner.pool.query(
+          "UPDATE public.event_outbox SET status = 'dispatched', attempts = 1, locked_until = NULL, dispatched_at = now() WHERE id = $1",
+          [eventId]
+        );
+      }
+      return {
+        attempt: 1,
+        correlationId,
+        event,
+        eventId,
+        idempotencyKey,
+        organizationId: organization.organizationId,
+        type,
+        version: 1,
+      };
+    };
+    const closureNotice = (
+      organization: TenantFixture,
+      noticeId = randomUUID()
+    ) =>
+      outboxEvent(
+        organization,
+        "organization.closure_notice",
+        { noticeId },
+        noticeId,
+        true
+      );
+    const exportId = randomUUID();
+    const requestedAt = Date.now();
+    const events = {
+      closureNoticeDone: await closureNotice(orgA),
+      closureNoticePermanent: await closureNotice(orgA, "not-a-uuid"),
+      closureNoticeRetry: await closureNotice(orgB),
+      closureNoticeWrongQueue: await closureNotice(orgB),
+      dispatchExport: await outboxEvent(
+        orgA,
+        "data_export.requested",
+        { exportId },
+        exportId,
+        false
+      ),
+      dispatchRenewal: await outboxEvent(
+        orgB,
+        "billing.renewal_cancel_requested",
+        { requestedAt },
+        String(requestedAt),
+        false
+      ),
+    };
+    const forgedNotice = randomUUID();
+    const forged: Envelope = {
+      attempt: 1,
+      correlationId: randomUUID(),
+      event: { noticeId: forgedNotice },
+      eventId: randomUUID(),
+      idempotencyKey: `organization.closure_notice:${forgedNotice}`,
+      organizationId: orgA.organizationId,
+      type: "organization.closure_notice",
+      version: 1,
+    };
+
+    const incidentCount = async (cause: string, subject: string) =>
+      Number(
+        (
+          await owner.pool.query<{ n: string }>(
+            "SELECT coalesce(sum(occurrence_count), 0)::text AS n FROM public.operational_incidents WHERE kind = 'queue_dead_letter' AND cause = $1 AND subject = $2",
+            [cause, subject]
+          )
+        ).rows[0]?.n
+      );
+    const invalidBefore = await incidentCount("invalid_envelope", "unknown");
+    const misroutedBefore = await incidentCount(
+      "wrong_queue",
+      "organization.closure_notice"
+    );
+
+    // ------------------------------------------------- the Worker, through its own handlers
+    const result = await runWorkerdVitest("vitest.web-worker.config.ts", {
+      ...urls,
+      POLARIS_WEB_WORKER_FIXTURE: JSON.stringify({
+        events,
+        forged,
+        logins: loginsByBinding,
+        organizations: { a: orgA, b: orgB },
+      }),
+    });
+    if (result.code !== 0) {
+      // the runner of the gates shows only the last lines: the digest is what failed, the whole output only on request
+      const shown =
+        process.env.POLARIS_WORKERD_GATE_VERBOSE === "1"
+          ? result.lines
+          : result.digest;
+      for (const line of shown) {
+        console.error(line.slice(0, 220));
+      }
+      throw new Error(
+        "The Web Worker suite failed inside workerd (the lines above)."
+      );
+    }
+    tests.push(
+      "the Worker's own fetch, scheduled and queue handlers run in workerd with the seven Hyperdrive bindings of its wrangler file, each reaching PostgreSQL as its own login"
+    );
+
+    // ------------------------------------------------- what the database holds afterwards
+    const outbox = await owner.pool.query<{
+      dispatched: boolean;
+      id: string;
+      status: string;
+    }>(
+      "SELECT id, status, dispatched_at IS NOT NULL AS dispatched FROM public.event_outbox WHERE id = ANY($1)",
+      [[events.dispatchExport.eventId, events.dispatchRenewal.eventId]]
+    );
+    assert.equal(outbox.rowCount, 2);
+    for (const row of outbox.rows) {
+      assert.equal(row.status, "dispatched", "the dispatcher marked the event");
+      assert.ok(row.dispatched);
+    }
+    assert.equal(
+      Number(
+        (
+          await owner.pool.query<{ n: string }>(
+            "SELECT count(*)::text AS n FROM public.event_outbox WHERE status = 'pending'"
+          )
+        ).rows[0]?.n
+      ),
+      0,
+      "nothing is left pending"
+    );
+    tests.push(
+      "the outbox lane dispatched the two pending events and left nothing pending"
+    );
+
+    const jobs = await owner.pool.query<{
+      consecutive_failures: number;
+      job_id: string;
+      last_failure_at: string | null;
+      last_success_at: string | null;
+      leased: boolean;
+    }>(
+      "SELECT job_id, consecutive_failures, last_failure_at, last_success_at, lease_until IS NOT NULL AS leased FROM public.scheduled_job_state"
+    );
+    const job = (id: string) => jobs.rows.find((row) => row.job_id === id);
+    for (const id of ["outbox.dispatch", ...MAINTENANCE_JOBS]) {
+      const row = job(id);
+      assert.ok(row, `${id} has its state`);
+      assert.ok(row.last_success_at, `${id} finished`);
+      assert.equal(row.leased, false, `${id} gave its lease back`);
+      assert.equal(row.consecutive_failures, 0, `${id} ends clean`);
+    }
+    for (const id of ["outbox.dispatch", ...MAINTENANCE_JOBS]) {
+      // only the job whose database was down failed, once; the others never did
+      assert.equal(
+        job(id)?.last_failure_at !== null,
+        id === "auth.login_lock_expiry",
+        `${id} failure history`
+      );
+    }
+    tests.push(
+      "every job of the two lanes finished and holds no lease; only the sign-in lock expiry, whose database was down, has a failure in its history"
+    );
+
+    const processing = await owner.pool.query<{
+      event_id: string;
+      state: string;
+    }>(
+      "SELECT event_id, state FROM public.queue_processing WHERE event_id = ANY($1)",
+      [
+        [
+          events.closureNoticeDone,
+          events.closureNoticePermanent,
+          events.closureNoticeRetry,
+          events.closureNoticeWrongQueue,
+          forged,
+        ].map((event) => event.eventId),
+      ]
+    );
+    assert.deepEqual(
+      processing.rows.map((row) => [row.event_id, row.state]).sort(),
+      [
+        [events.closureNoticeDone.eventId, "done"],
+        [events.closureNoticeRetry.eventId, "done"],
+      ].sort(),
+      "done for the processed and the retried; no record for a forged, a permanent failure or a refused message"
+    );
+    tests.push(
+      "the consumer's record has the processed event and the one that finished after a retry, and none for a forged event, a failure for good or a message refused before the claim"
+    );
+
+    assert.equal(
+      await incidentCount("invalid_envelope", "unknown"),
+      invalidBefore + 1,
+      "one incident for the invalid envelope"
+    );
+    assert.equal(
+      await incidentCount("wrong_queue", "organization.closure_notice"),
+      misroutedBefore + 1,
+      "one incident for the misrouted event"
+    );
+    const dead = await owner.pool.query<{ state: string }>(
+      "SELECT state FROM public.queue_dead_letters WHERE event_id = $1",
+      [events.closureNoticeWrongQueue.eventId]
+    );
+    assert.deepEqual(
+      dead.rows.map((row) => row.state),
+      ["dead"],
+      "the misrouted event is kept as dead for the Admin to send again"
+    );
+    tests.push(
+      "each notice of the dead-letter queue became one incident, and the misrouted event is kept dead; the notice recorded while the database was down changed nothing"
+    );
+
+    console.log(
+      JSON.stringify(
+        {
+          branch,
+          database: serverRow.database_name,
+          serverVersion: serverRow.server_version,
+          status: "passed",
+          tests,
+        },
+        null,
+        2
+      )
+    );
+  } finally {
+    try {
+      await logins.drop();
+    } finally {
+      await owner.pool.end();
+    }
+  }
+}
+
+run().catch((error: unknown) => {
+  console.error(
+    `Web Worker PostgreSQL gate failed (${redactedFailure(error)})`
+  );
+  process.exitCode = 1;
+});
