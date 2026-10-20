@@ -547,8 +547,8 @@ async function noticeScenario(
     type: "organization.closure_notice",
     version: 1,
   };
-  await handleClosureNotice(maintenance, envelope);
-  await handleClosureNotice(maintenance, envelope);
+  await handleClosureNotice({ email: null, notices: maintenance }, envelope);
+  await handleClosureNotice({ email: null, notices: maintenance }, envelope);
   const settled = (await noticesOf(owner, seven.organizationId)).find(
     (notice) => notice.id === sevenSent.id
   );
@@ -733,12 +733,13 @@ async function noticeScenario(
   const visible = await asRole(
     owner,
     "polaris_purge_owner",
-    "SELECT milestone, sent_at IS NOT NULL AS sent FROM public.closure_notices"
+    "SELECT milestone, (sent_at IS NOT NULL OR dismissed_at IS NOT NULL) AS delivered FROM public.closure_notices"
   );
   assert.ok(visible.rows.length > 0);
+  // delivered, or dismissed by the support (0089): what lets a store be deleted
   for (const row of visible.rows) {
     assert.ok(["d7", "rescheduled"].includes(row.milestone));
-    assert.equal(row.sent, true);
+    assert.equal(row.delivered, true);
   }
   // the account of a user takes the rows of the user's notices along, with the table forced
   const leaving = randomUUID();

@@ -1,17 +1,19 @@
-import { configureLogging, logger } from "@polaris/observability/logger";
-import { createBillingStore } from "@polaris/db/billing-store";
 import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
+import { createBillingStore } from "@polaris/db/billing-store";
+import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
 import {
   createOutboxClient,
   type OutboxClient,
 } from "@polaris/db/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
+import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
+import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
+import { approvedRetention } from "@polaris/domain/privacy/retention";
+import { laneOfCron } from "@polaris/domain/scheduling/scheduled-jobs";
+import { configureLogging, logger } from "@polaris/observability/logger";
 import { app } from "../src/server/app";
-import {
-  reconcileRemovedMedia,
-  reconcileStagedMedia,
-} from "../src/server/media-reconciler";
 import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
@@ -22,7 +24,17 @@ import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
 } from "../src/server/billing/renewal-cancellation";
-import { handleClosureNotice } from "../src/server/privacy/closure-notice";
+import type { WorkerBindings } from "../src/server/environment";
+import {
+  reconcileRemovedMedia,
+  reconcileStagedMedia,
+} from "../src/server/media-reconciler";
+import {
+  type ClosureNoticeEmail,
+  closureNoticeEmailConfig,
+  handleClosureNotice,
+  handOverOwedClosureNotices,
+} from "../src/server/privacy/closure-notice";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
@@ -34,21 +46,15 @@ import {
   runPrivacyMaintenance,
 } from "../src/server/privacy/maintenance";
 import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
-import type { WorkerBindings } from "../src/server/environment";
-import {
-  handleDeadLetterBatch,
-  isDeadLetterQueue,
-} from "../src/server/queue/dead-letter";
 import {
   handleQueueBatch,
   PermanentHandlerError,
   type QueueBatch,
 } from "../src/server/queue/consumer";
-import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
-import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
-import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
-import { approvedRetention } from "@polaris/domain/privacy/retention";
-import { laneOfCron } from "@polaris/domain/scheduling/scheduled-jobs";
+import {
+  handleDeadLetterBatch,
+  isDeadLetterQueue,
+} from "../src/server/queue/dead-letter";
 import { dispatchOutbox } from "../src/server/queue/dispatcher";
 import {
   createDurableProcessingLedger,
@@ -274,6 +280,7 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
     } catch (error: unknown) {
       failures.push(error);
     }
+    await runClosureNoticeHandover(env, client, failures);
     const live = queuePathLive(env);
     if (live) {
       // the safety net of the queue path: an export still owed gets its event sent again
@@ -519,11 +526,60 @@ async function handleClosureNoticeEvent(
     throw new PermanentHandlerError("closure_notice_not_configured");
   }
   const client = createPrivacyMaintenanceClient(connectionString);
+  const email = closureNoticeEmailOf(env);
   try {
-    await handleClosureNotice(client, envelope);
+    await handleClosureNotice(
+      { email: email?.email ?? null, notices: client },
+      envelope
+    );
   } finally {
     await quietly(() => client.close());
+    if (email) {
+      await quietly(email.close);
+    }
   }
+}
+
+/**
+ * The notices left owed (the e-mail was off, or a delivery did not settle), only with the e-mail on: the latest of
+ * each cycle goes out (ADR 0102, amended).
+ */
+async function runClosureNoticeHandover(
+  env: WorkerBindings,
+  client: ReturnType<typeof createPrivacyMaintenanceClient>,
+  failures: unknown[]
+): Promise<void> {
+  const email = closureNoticeEmailOf(env);
+  if (!email) {
+    return;
+  }
+  try {
+    const handover = await handOverOwedClosureNotices({
+      email: email.email,
+      notices: client,
+    });
+    logger.info("closure_notice_handover_complete", { ...handover });
+  } catch (error: unknown) {
+    failures.push(error);
+  } finally {
+    await quietly(email.close);
+  }
+}
+
+/**
+ * The e-mail of the closure notices, or null while it is off (ADR 0102, amended): the switch, the provider's secrets
+ * and the authentication role, the only one that reads the address (`closure_notice_recipient`).
+ */
+function closureNoticeEmailOf(
+  env: WorkerBindings
+): { close: () => Promise<void>; email: ClosureNoticeEmail } | null {
+  const config = closureNoticeEmailConfig(env);
+  const authConnection = env.AUTH_HYPERDRIVE?.connectionString;
+  if (!(config && authConnection)) {
+    return null;
+  }
+  const recipients = createClosureNoticeRecipientClient(authConnection);
+  return { close: () => recipients.close(), email: { config, recipients } };
 }
 
 /** The ledger of an isolate without the outbox role (local development, or before it is provisioned). */

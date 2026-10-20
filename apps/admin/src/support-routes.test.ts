@@ -46,6 +46,19 @@ function support(
     close: vi.fn(() =>
       Promise.resolve({ changed: true, id: caseId, status: "closed" })
     ),
+    closureNotice: vi.fn(
+      (
+        _principal: string,
+        _case: string,
+        _organization: string,
+        action: { kind: string }
+      ) =>
+        Promise.resolve({
+          dismissed: action.kind === "dismiss",
+          noticeId: "0199a0a0-0000-7000-8000-0000000000f1",
+          reissue: 1,
+        })
+    ),
     customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
     // the purge confirms the organization named is the case's own (org_1)
     detail: vi.fn(() =>
@@ -701,6 +714,111 @@ describe("suspension and billing commands", () => {
       error: "organization_mismatch",
       message: organizationPurgeRefusalMessage("organization_mismatch"),
     });
+  });
+
+  it("sends the closure notice again or dismisses it, the operator from the login and the organization named", async () => {
+    const { send, support: calls } = setup();
+    const reissued = await send(
+      "POST",
+      `/api/support-cases/${caseId}/closure-notice/reissue`,
+      { organizationId: "org_1", principalId: "forged" }
+    );
+    expect(reissued.status).toBe(200);
+    expect(await reissued.json()).toEqual({
+      dismissed: false,
+      noticeId: "0199a0a0-0000-7000-8000-0000000000f1",
+      reissue: 1,
+    });
+    expect(calls.closureNotice).toHaveBeenCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      { kind: "reissue" },
+      bindings
+    );
+    const dismissed = await send(
+      "POST",
+      `/api/support-cases/${caseId}/closure-notice/dismiss`,
+      { organizationId: "org_1", reason: "owner_account_deleted" }
+    );
+    expect(dismissed.status).toBe(200);
+    expect(calls.closureNotice).toHaveBeenLastCalledWith(
+      principal.id,
+      caseId,
+      "org_1",
+      { kind: "dismiss", reason: "owner_account_deleted" },
+      bindings
+    );
+  });
+
+  it("refuses a closure notice act without the organization, a dismissal without a reason of the list, an unknown case or a missing capability", async () => {
+    const { send, support: calls } = setup();
+    const dismiss = `/api/support-cases/${caseId}/closure-notice/dismiss`;
+    const reissue = `/api/support-cases/${caseId}/closure-notice/reissue`;
+    const refused = await Promise.all([
+      send("POST", reissue, {}),
+      send("POST", reissue, { organizationId: "" }),
+      send("POST", reissue, { organizationId: "org\n1" }),
+      send("POST", dismiss, { organizationId: "org_1" }),
+      send("POST", dismiss, { organizationId: "org_1", reason: "outro" }),
+      send("POST", dismiss, {
+        organizationId: "org_1",
+        reason: "O dono pediu por telefone",
+      }),
+      send("POST", dismiss, { reason: "owner_account_deleted" }),
+    ]);
+    expect(refused.map((response) => response.status)).toEqual(
+      new Array(7).fill(400)
+    );
+    expect(
+      (
+        await send(
+          "POST",
+          "/api/support-cases/not-a-uuid/closure-notice/reissue",
+          { organizationId: "org_1" }
+        )
+      ).status
+    ).toBe(404);
+    const other = setup({}, "somebody_else");
+    expect(
+      (await other.send("POST", reissue, { organizationId: "org_1" })).status
+    ).toBe(403);
+    expect(calls.closureNotice).not.toHaveBeenCalled();
+    expect(other.support.closureNotice).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the reason when the closure notice act is refused", async () => {
+    for (const code of [
+      "organization_mismatch",
+      "organization_not_in_closure",
+      "closure_notice_not_due",
+      "closure_notice_pending",
+      "closure_notice_delivered",
+      "closure_notice_no_owner",
+      "privacy_case_required",
+      "privacy_case_not_decided",
+    ] as const) {
+      const { dependencies, send } = setup({
+        closureNotice: vi.fn(() =>
+          Promise.reject(new OrganizationPurgeRefusedError(code))
+        ),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: each code has its own app, answered in turn.
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/closure-notice/dismiss`,
+        { organizationId: "org_1", reason: "email_not_verified" }
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: code,
+        message: organizationPurgeRefusalMessage(code),
+      });
+      expect(dependencies.report).toHaveBeenCalledWith(
+        "organization_purge_refused",
+        { errorCode: code }
+      );
+    }
   });
 
   it("cancels a scheduled purge with a reason, the operator from the login and the organization named", async () => {

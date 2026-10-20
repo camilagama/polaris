@@ -9,6 +9,10 @@ import type {
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
 import { InvalidEntitlementGrantError } from "@polaris/domain/billing/grants";
 import {
+  type ClosureNoticeDismissalReason,
+  isClosureNoticeDismissalReason,
+} from "@polaris/domain/organization/closure-deadlines";
+import {
   InvalidSupportRequestError,
   isRevealableField,
   MAX_CASE_REASON_LENGTH,
@@ -35,6 +39,24 @@ import type { GrantCommand } from "./billing-commands";
  */
 
 export interface SupportDependencies {
+  /**
+   * The act of the support on the closure notice of the case's organization (ADR 0102, amended), under a privacy
+   * case: send the notice of D minus 7 days again (`reissue`), or dismiss it by the decision of the person
+   * responsible, with a reason of the closed list (`dismiss`). Never an UPDATE: a new `d7` of the cycle, audited.
+   */
+  closureNotice: (
+    principalId: string,
+    caseId: string,
+    organizationId: string,
+    action:
+      | { kind: "reissue" }
+      | { kind: "dismiss"; reason: ClosureNoticeDismissalReason },
+    bindings: AdminBindings
+  ) => Promise<{
+    dismissed: boolean;
+    noticeId: string;
+    reissue: number;
+  } | null>;
   /** Cancels a scheduled purge while no run holds it (the organization goes back to `closed`). */
   cancelPurge: (
     principalId: string,
@@ -559,6 +581,44 @@ export function supportRoutes(
       );
     }
   );
+
+  for (const action of ["reissue", "dismiss"] as const) {
+    routes.post(
+      `/support-cases/:caseId/closure-notice/${action}`,
+      requireCapability("organization:purge"),
+      async (context) => {
+        const caseId = idParam(context, "caseId");
+        if (!caseId) {
+          return notFound(context);
+        }
+        // the operator names the organization, as for the purge: a notice of the wrong case is refused (409); a
+        // dismissal names one reason of the closed list, never free text
+        const body = await readBody(context);
+        const organizationId = body?.organizationId;
+        const reason = body?.reason;
+        if (
+          typeof organizationId !== "string" ||
+          organizationId.length === 0 ||
+          organizationId.length > MAX_ID_LENGTH ||
+          controlCharacter(organizationId) ||
+          (action === "dismiss" && !isClosureNoticeDismissalReason(reason))
+        ) {
+          return invalid(context);
+        }
+        return context.json(
+          await dependencies.closureNotice(
+            principalOf(context),
+            caseId,
+            organizationId,
+            action === "dismiss" && isClosureNoticeDismissalReason(reason)
+              ? { kind: "dismiss", reason }
+              : { kind: "reissue" },
+            context.env
+          )
+        );
+      }
+    );
+  }
 
   routes.post(
     "/support-cases/:caseId/purge/cancel",

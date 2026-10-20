@@ -55,6 +55,7 @@ function noSupport() {
   const nothing = vi.fn(() => Promise.resolve(null));
   return {
     close: nothing,
+    closureNotice: nothing,
     customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
     detail: nothing,
     grant: nothing,

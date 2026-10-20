@@ -624,6 +624,13 @@
       "when": 1792492235805,
       "tag": "0088_avisos_de_encerramento",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792506766787,
+      "tag": "0089_email_dos_avisos_de_encerramento",
+      "breakpoints": true
     }
   ]
 }

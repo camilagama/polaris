@@ -90,6 +90,12 @@ export interface WorkerBindings {
    * leaves it off. Off in every environment until the go-live.
    */
   CLOSURE_AUTO_PURGE_ENABLED?: string;
+  /**
+   * `true` turns on the e-mail of the closure notices (ADR 0102, amended), with `RESEND_API_KEY`, `AUTH_EMAIL_FROM`,
+   * `BETTER_AUTH_BASE_URL` and `AUTH_HYPERDRIVE` (the address is read by the authentication role); anything else
+   * leaves every notice owed, neither sent nor failed. Off in every environment until the responsible turns it on.
+   */
+  CLOSURE_NOTICE_EMAIL_ENABLED?: string;
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;

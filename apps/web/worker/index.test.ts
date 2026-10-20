@@ -6,17 +6,20 @@ const mocks = vi.hoisted(() => ({
   billingClose: vi.fn(),
   createAuthLoginLockMaintenanceClient: vi.fn(),
   createBillingStore: vi.fn(),
+  createClosureNoticeRecipientClient: vi.fn(),
   createMediaCleanupClient: vi.fn(),
   createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
   dispatchOutbox: vi.fn(),
   handleClosureNotice: vi.fn(),
+  handOverOwedClosureNotices: vi.fn(),
   handleRenewalCancelRequested: vi.fn(),
   loginLockClose: vi.fn(),
   loginLockExpire: vi.fn(),
   mediaClose: vi.fn(),
   outboxClose: vi.fn(),
   privacyClose: vi.fn(),
+  recipientsClose: vi.fn(),
   rearmRenewalCancellations: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
@@ -53,8 +56,15 @@ vi.mock("../src/server/privacy/data-export-job", () => ({
 vi.mock("../src/server/privacy/organization-purge-job", () => ({
   runOrganizationPurges: mocks.runOrganizationPurges,
 }));
-vi.mock("../src/server/privacy/closure-notice", () => ({
+vi.mock("../src/server/privacy/closure-notice", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../src/server/privacy/closure-notice")
+  >()),
   handleClosureNotice: mocks.handleClosureNotice,
+  handOverOwedClosureNotices: mocks.handOverOwedClosureNotices,
+}));
+vi.mock("@polaris/db/closure-notice-recipient", () => ({
+  createClosureNoticeRecipientClient: mocks.createClosureNoticeRecipientClient,
 }));
 vi.mock("../src/server/privacy/data-export-reader", () => ({
   createClosedExportReader: vi.fn(() => vi.fn()),
@@ -135,6 +145,17 @@ describe("the scheduled maintenance", () => {
       close: mocks.privacyClose,
     });
     mocks.privacyClose.mockResolvedValue(undefined);
+    mocks.createClosureNoticeRecipientClient.mockReturnValue({
+      close: mocks.recipientsClose,
+    });
+    mocks.recipientsClose.mockResolvedValue(undefined);
+    mocks.handOverOwedClosureNotices.mockResolvedValue({
+      failed: 0,
+      handedOver: 0,
+      notVerified: 0,
+      retry: 0,
+      sent: 0,
+    });
     mocks.runPrivacyMaintenance.mockResolvedValue({ closedOrganizations: 0 });
     mocks.runDataExports.mockResolvedValue({
       deleted: 0,
@@ -352,6 +373,66 @@ describe("the scheduled maintenance", () => {
         privacy.PRIVACY_HYPERDRIVE.connectionString
       );
       expect(mocks.runPrivacyMaintenance).toHaveBeenCalledTimes(1);
+      expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    const emailOn = {
+      AUTH_EMAIL_FROM: "Polaris <avisos@example.invalid>",
+      AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
+      BETTER_AUTH_BASE_URL: "https://app.example.invalid",
+      CLOSURE_NOTICE_EMAIL_ENABLED: "true",
+      RESEND_API_KEY: "re_not_a_key",
+    };
+
+    it("hands the owed closure notices over only with the e-mail on, through the authentication role, and closes it (ADR 0102, amended)", async () => {
+      // the authentication role also runs the expiry of the sign-in lock on the same tick
+      mocks.createAuthLoginLockMaintenanceClient.mockReturnValue({
+        close: mocks.loginLockClose.mockResolvedValue(undefined),
+        expire: mocks.loginLockExpire.mockResolvedValue(0),
+      });
+      await runScheduled({ ...configured, ...privacy });
+      await runScheduled({
+        ...configured,
+        ...privacy,
+        ...emailOn,
+        CLOSURE_NOTICE_EMAIL_ENABLED: "TRUE",
+      });
+      const { AUTH_HYPERDRIVE: _auth, ...withoutAuth } = emailOn;
+      await runScheduled({ ...configured, ...privacy, ...withoutAuth });
+      expect(mocks.handOverOwedClosureNotices).not.toHaveBeenCalled();
+      expect(mocks.createClosureNoticeRecipientClient).not.toHaveBeenCalled();
+
+      await runScheduled({ ...configured, ...privacy, ...emailOn });
+      expect(mocks.createClosureNoticeRecipientClient).toHaveBeenCalledWith(
+        emailOn.AUTH_HYPERDRIVE.connectionString
+      );
+      expect(mocks.handOverOwedClosureNotices).toHaveBeenCalledTimes(1);
+      const [dependencies] =
+        mocks.handOverOwedClosureNotices.mock.calls[0] ?? [];
+      expect(dependencies.email.config).toEqual({
+        apiKey: emailOn.RESEND_API_KEY,
+        appOrigin: emailOn.BETTER_AUTH_BASE_URL,
+        from: emailOn.AUTH_EMAIL_FROM,
+      });
+      expect(mocks.recipientsClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports a failed handover without stopping the rest of the privacy job", async () => {
+      mocks.createAuthLoginLockMaintenanceClient.mockReturnValue({
+        close: mocks.loginLockClose.mockResolvedValue(undefined),
+        expire: mocks.loginLockExpire.mockResolvedValue(0),
+      });
+      mocks.handOverOwedClosureNotices.mockRejectedValueOnce(
+        new Error("handover_failed")
+      );
+      const error = await runScheduled({
+        ...configured,
+        ...privacy,
+        ...emailOn,
+      }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(Error);
+      expect(mocks.runOrganizationPurges).toHaveBeenCalledTimes(1);
+      expect(mocks.recipientsClose).toHaveBeenCalledTimes(1);
       expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
     });
 
@@ -892,6 +973,10 @@ describe("the queue consumer", () => {
       close: mocks.privacyClose,
     });
     mocks.privacyClose.mockResolvedValue(undefined);
+    mocks.createClosureNoticeRecipientClient.mockReturnValue({
+      close: mocks.recipientsClose,
+    });
+    mocks.recipientsClose.mockResolvedValue(undefined);
     mocks.runDataExports.mockResolvedValue({
       deleted: 0,
       expired: 0,
@@ -1010,6 +1095,50 @@ describe("the queue consumer", () => {
       });
       expect(sent.ack).toHaveBeenCalledTimes(1);
       expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("gives the consumer the e-mail only when it is on, and closes the authentication role", async () => {
+      mocks.handleClosureNotice.mockResolvedValue("not_configured");
+      // fresh events: the ledger of the isolate already holds the ones above
+      await runQueue(
+        { ...configured, ...privacy },
+        message({
+          ...noticeEvent,
+          event: { noticeId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a36" },
+          eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a34",
+          idempotencyKey:
+            "organization.closure_notice:0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a36",
+        })
+      );
+      const [off] = mocks.handleClosureNotice.mock.calls[0] ?? [];
+      expect(off.email).toBeNull();
+      expect(mocks.createClosureNoticeRecipientClient).not.toHaveBeenCalled();
+
+      mocks.handleClosureNotice.mockResolvedValue("sent");
+      await runQueue(
+        {
+          ...configured,
+          ...privacy,
+          AUTH_EMAIL_FROM: "Polaris <avisos@example.invalid>",
+          AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
+          BETTER_AUTH_BASE_URL: "https://app.example.invalid",
+          CLOSURE_NOTICE_EMAIL_ENABLED: "true",
+          RESEND_API_KEY: "re_not_a_key",
+        },
+        message({
+          ...noticeEvent,
+          event: { noticeId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a37" },
+          eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a35",
+          idempotencyKey:
+            "organization.closure_notice:0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a37",
+        })
+      );
+      const [on] = mocks.handleClosureNotice.mock.calls[1] ?? [];
+      expect(on.email?.config.appOrigin).toBe("https://app.example.invalid");
+      expect(mocks.createClosureNoticeRecipientClient).toHaveBeenCalledWith(
+        "postgresql://auth.invalid/db"
+      );
+      expect(mocks.recipientsClose).toHaveBeenCalledTimes(1);
     });
 
     it("acks without running where the privacy role is not provisioned", async () => {

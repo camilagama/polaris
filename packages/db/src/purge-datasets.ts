@@ -70,7 +70,7 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
     billing_trial_claims:
       "O teste grátis é por pessoa (ADR 0101): a reserva ou o consumo do trial de um usuário, com a organização em que foi usado e as datas, sem dado do pagador. Sobrevive ao purge da organização como antiabuso (quem apaga a loja não ganha outro trial) e sai com a conta do usuário (chave estrangeira em cascata); classe de retenção `billing_trial_claims`.",
     closure_notices:
-      "Os avisos do encerramento (ADR 0102 emendado): organização, ciclo, marco, datas e o usuário a quem cada aviso se destina, sem e-mail nem texto livre. Sobrevivem ao purge para o dono ainda ler quando os dados foram apagados; a chave estrangeira da organização é restritiva e a do usuário é em cascata (saem com a conta). Classe de retenção `closure_notice` (proposta: 6 meses depois do purge).",
+      "Os avisos do encerramento (ADR 0102 emendado): organização, ciclo, marco, datas, a reemissão do suporte e o usuário a quem cada aviso se destina (nenhum no aviso dispensado), sem e-mail nem texto livre. Sobrevivem ao purge para o dono ainda ler quando os dados foram apagados; a chave estrangeira da organização é restritiva e a do usuário é em cascata (saem com a conta). Classe de retenção `closure_notice` (proposta: 6 meses depois do purge).",
     deletion_ledger:
       "Tombstones para o restore: sobrevivem à organização, sem expiração (ADR 0080).",
     entitlement_grants:

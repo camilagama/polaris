@@ -1102,6 +1102,8 @@ async function run() {
       ),
       [
         "closure_requested_at:SELECT",
+        // a dismissal of the support counts as delivered (0089)
+        "dismissed_at:SELECT",
         "milestone:SELECT",
         "organization_id:SELECT",
         "sent_at:SELECT",

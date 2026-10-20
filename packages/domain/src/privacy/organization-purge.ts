@@ -143,6 +143,13 @@ export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "purge_in_progress",
   "purge_storage_touched",
   "purge_already_done",
+  // the act of the support on the closure notices (ADR 0102, amended)
+  "organization_not_in_closure",
+  "closure_notice_not_due",
+  "closure_notice_pending",
+  "closure_notice_delivered",
+  "closure_notice_no_owner",
+  "privacy_case_not_decided",
 ] as const);
 
 export type OrganizationPurgeRefusalCode =
@@ -152,16 +159,28 @@ export type OrganizationPurgeRefusalCode =
 const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
   Record<OrganizationPurgeRefusalCode, string>
 > = Object.freeze({
+  closure_notice_delivered:
+    "O aviso de 7 dias deste encerramento já foi entregue (ou dispensado): não há o que dispensar.",
+  closure_notice_no_owner:
+    "A organização não tem dono ativo para receber o aviso. Se ninguém pode ser avisado, dispense o aviso com a decisão do caso.",
+  closure_notice_not_due:
+    "O aviso de 7 dias deste encerramento ainda não venceu: não há o que reenviar nem dispensar.",
+  closure_notice_pending:
+    "Há um aviso deste encerramento esperando envio. Espere o envio ou, se ninguém pode ser avisado, dispense o aviso.",
   closure_period_not_elapsed: `A organização foi encerrada há menos de ${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} dias: o purge só começa depois desse prazo, para o dono poder ler e exportar os dados.`,
   legal_hold_active:
     "Há uma trava legal vigente na organização: o purge não é agendado nem executado enquanto ela não for liberada.",
   organization_mismatch: "A organização informada não é a do caso.",
   organization_not_closed:
     "A organização não está encerrada (ativa, suspensa ou ainda em encerramento).",
+  organization_not_in_closure:
+    "A organização não está em encerramento (ativa, suspensa, com o encerramento desfeito ou já apagada).",
   paid_access_running:
     "A organização ainda tem período de teste ou acesso pago em andamento.",
   privacy_case_not_accepted:
     "O pedido de exclusão ainda não foi decidido ou não foi aceito por inteiro.",
+  privacy_case_not_decided:
+    "O caso de privacidade ainda não tem decisão registrada de aceitar o pedido: a dispensa do aviso é uma decisão do responsável.",
   privacy_case_not_deletion:
     "O caso de privacidade não é um pedido de exclusão.",
   privacy_case_required:
