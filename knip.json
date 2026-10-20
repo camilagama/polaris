@@ -13,6 +13,10 @@
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },
+    "packages/db": {
+      "entry": ["src/index.ts", "scripts/*.ts"],
+      "project": ["src/**/*.ts", "scripts/**/*.ts"]
+    },
     "packages/observability": {
       "entry": [],
       "project": ["src/**/*.ts"]

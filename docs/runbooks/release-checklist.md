@@ -61,6 +61,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   | PR | O que mudou | O que a prova em Neon precisa conferir |
   | --- | --- | --- |
   | [#191](https://github.com/camilagama/polaris/pull/191) (POL-58) | `run-gates.ts` (suíte `concurrency`) e `concurrency-support.ts` (barreira de largada e observador de bloqueio) usados por 14 gates de `gates:all` | O observador lê `pg_stat_activity` e `pg_blocking_pids` de outros papéis, o que exige superusuário ou `pg_read_all_stats`. Confirmar que o `neondb_owner` enxerga os papéis de login dos gates; se não enxergar, os 14 gates falham aqui com a mensagem de dono sem acesso ao observador (não com "não competiu"), e a correção é do suporte, não dos gates. |
+  | T-124b | `run-gates.ts`: o gate `stock-property` entrou nas suítes `ci`, `gate4` e `all` | Que o `stock-property` passa em Neon com o papel de login temporário próprio (como os outros gates de venda). Antes da prova, a execução longa (`POLARIS_PROPERTY_RUNS=500`) num PostgreSQL 18 descartável, como diz a [seção do Gate 4](./gate-4-sales-core.md#propriedade-modelo--postgresql-estoque-e-devolução). |
 
 - Evidência: o resumo de cada gate (`"status": "passed"`), o nome da branch, a data e a confirmação de que a branch foi apagada, mais o resultado de `gates:concurrency` e a baixa das pendências acima. Sem connection string.
 
