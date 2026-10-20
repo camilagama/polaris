@@ -25,6 +25,7 @@ import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
 import { type PoolClient, Pool } from "pg";
+import { guardPoolErrors } from "./pool-errors";
 
 /**
  * The billing path (plan PR79 and PR81, ADR 0062): the one place that writes an
@@ -1263,12 +1264,14 @@ export function createBillingStore(
   connectionString: string,
   options: BillingStoreOptions = {}
 ): BillingStore {
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 5000,
-    max: 3,
-  });
+  const pool = guardPoolErrors(
+    new Pool({
+      connectionString,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 5000,
+      max: 3,
+    })
+  );
 
   const store: BillingStore = {
     async attachProvider(organizationId, provider, providerRef) {

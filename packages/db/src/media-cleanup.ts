@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { guardPoolErrors } from "./pool-errors";
 
 /** An image that was removed from its product: nothing links to its asset anymore. */
 export interface UnlinkedMediaAsset {
@@ -30,12 +31,14 @@ export interface MediaCleanupClient {
 export function createMediaCleanupClient(
   connectionString: string
 ): MediaCleanupClient {
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 5000,
-    max: 1,
-  });
+  const pool = guardPoolErrors(
+    new Pool({
+      connectionString,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 5000,
+      max: 1,
+    })
+  );
 
   return {
     async claimOrphan(storageKey) {

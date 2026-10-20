@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { guardPoolErrors } from "./pool-errors";
 import { authSchema } from "./schema/auth";
 import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
@@ -57,12 +58,14 @@ export function createDatabase(
   connectionString: string,
   options: DatabaseOptions = {}
 ) {
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5000,
-    idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
-    max: options.maxConnections ?? 5,
-  });
+  const pool = guardPoolErrors(
+    new Pool({
+      connectionString,
+      connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5000,
+      idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
+      max: options.maxConnections ?? 5,
+    })
+  );
 
   return {
     db: drizzle({ client: pool, schema: databaseSchema }),
