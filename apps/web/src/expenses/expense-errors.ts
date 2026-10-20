@@ -1,5 +1,4 @@
 import { rpcErrorCode } from "../lib/rpc-error";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 export type ExpenseAction =
   | "category-archive"
@@ -80,6 +79,26 @@ function fallbackMessage(action: ExpenseAction): string {
   return "Não foi possível concluir a operação. Tente novamente.";
 }
 
+const UNAUTHORIZED_TEXTS: Readonly<Record<ExpenseAction, string>> = {
+  "category-archive": "A categoria não foi arquivada.",
+  "category-create": "A categoria não foi criada.",
+  "category-rename": "A categoria não foi renomeada.",
+  "category-restore": "A categoria não foi restaurada.",
+  load: "Não foi possível carregar as despesas.",
+  restore: "A despesa não foi restaurada.",
+  "rule-archive": "A regra não foi pausada.",
+  "rule-load": "Não foi possível carregar as regras.",
+  "rule-restore": "A regra não foi retomada.",
+  "rule-save": "A regra não foi salva.",
+  save: "A despesa não foi salva.",
+  void: "A despesa não foi anulada.",
+};
+
+/** What did not happen, without the sentence about the session: the notice of the shell carries that one. */
+function unauthorizedText(action: ExpenseAction): string {
+  return UNAUTHORIZED_TEXTS[action];
+}
+
 /** Portuguese text for a failed expense, expense rule or expense category request. */
 export function expenseErrorMessage(
   error: unknown,
@@ -87,7 +106,7 @@ export function expenseErrorMessage(
 ): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return unauthorizedText(action);
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";

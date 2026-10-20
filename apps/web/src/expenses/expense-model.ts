@@ -8,6 +8,7 @@ import {
   MAX_EXPENSE_PAYEE_LENGTH,
 } from "@polaris/domain/expenses/expense";
 import { isCalendarDate } from "../lib/dates";
+import { isDraftChanged } from "../lib/unsent-work";
 
 /**
  * Pure helpers of the expenses screen: money typed by a person, calendar
@@ -208,6 +209,14 @@ export interface ExpenseDraft {
 }
 
 export type ExpenseDraftField = keyof ExpenseDraft;
+
+/** Whether the person typed or picked something: a field that still has its starting value is not work. */
+export function isExpenseDraftChanged(
+  draft: ExpenseDraft,
+  initial: ExpenseDraft
+): boolean {
+  return isDraftChanged(draft, initial);
+}
 export type ExpenseDraftErrors = Partial<
   Record<ExpenseDraftField, string | undefined>
 >;

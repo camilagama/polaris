@@ -11,9 +11,11 @@ import {
 } from "react";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   backToStockEditing,
   canCloseStock,
+  isStockDraftChanged,
   cancelDiscardStock,
   discardLockedStock,
   editStockField,
@@ -593,6 +595,7 @@ export function StockCommandPanel({
   const [state, setState] = useState(() =>
     startStockCommand(action, target, today)
   );
+  useReportUnsentWork(isStockDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const statusRef: RefObject<HTMLDivElement | null> = useRef(null);
   const panelRef: RefObject<HTMLElement | null> = useRef(null);

@@ -5,6 +5,7 @@ import {
   expenseGroupLabel,
   formatMonthLabel,
   groupByExpenseGroup,
+  isExpenseDraftChanged,
   isMonthValue,
   type MoneyInputError,
   monthBounds,
@@ -295,5 +296,39 @@ describe("validateExpenseDraft", () => {
     expect(
       validateExpenseDraft({ ...draft, payee: "p".repeat(120) }).input
     ).not.toBeNull();
+  });
+});
+
+describe("isExpenseDraftChanged (the sign that the session notice warns about)", () => {
+  const initial: ExpenseDraft = {
+    amount: "",
+    categoryId: "",
+    competenceOn: "2026-10-19",
+    description: "",
+    payee: "",
+  };
+
+  it("does not count a form that still has its starting values, today's date included", () => {
+    expect(isExpenseDraftChanged({ ...initial }, initial)).toBe(false);
+  });
+
+  it("counts a typed or picked field, and not one put back", () => {
+    expect(
+      isExpenseDraftChanged({ ...initial, amount: "12,00" }, initial)
+    ).toBe(true);
+    expect(
+      isExpenseDraftChanged({ ...initial, categoryId: "category-1" }, initial)
+    ).toBe(true);
+    expect(isExpenseDraftChanged({ ...initial, payee: "" }, initial)).toBe(
+      false
+    );
+  });
+
+  it("compares an edit with the expense it opened, not with an empty form", () => {
+    const opened = { ...initial, amount: "12,00", description: "Aluguel" };
+    expect(isExpenseDraftChanged({ ...opened }, opened)).toBe(false);
+    expect(isExpenseDraftChanged({ ...opened, amount: "13,00" }, opened)).toBe(
+      true
+    );
   });
 });

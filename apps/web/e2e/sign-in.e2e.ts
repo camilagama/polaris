@@ -284,7 +284,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
   test("a volta do Google mostra 'Entrando…' até o redirecionamento, sem o botão voltar a piscar (AC-4)", async ({
     page,
   }) => {
-    const server = newServer({ session: true, sessionDelayMs: 300 });
+    const server = newServer({ session: true, sessionDelayMs: 150 });
     await serve(page, server);
     // what the status line and the button showed, kept outside the page: it survives the navigation
     const statuses: string[] = [];
@@ -482,6 +482,62 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     await expect(alertBox(page)).toContainText(
       "A entrada com o Google não está disponível agora."
     );
+  });
+
+  test("com o Google desligado há um 'Tentar de novo' que consulta de novo e, com o Google de volta, habilita o botão", async ({
+    page,
+  }) => {
+    const server = newServer({
+      methods: { emailPassword: false, google: false },
+    });
+    await serve(page, server);
+    await page.goto("/entrar");
+    await expect(googleButton(page)).toBeDisabled();
+
+    server.methods = { emailPassword: false, google: true };
+    await page.getByRole("button", { name: "Tentar de novo" }).click();
+    await expect(googleButton(page)).toBeEnabled();
+    await expect(alertBox(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Tentar de novo" })
+    ).toHaveCount(0);
+  });
+
+  test("com a consulta lenta o botão já está ativo e a tela diz que verifica (V1)", async ({
+    page,
+  }) => {
+    await serve(page, newServer({ sessionDelayMs: 3000 }));
+    await page.goto("/entrar");
+
+    await expect(googleButton(page)).toBeEnabled();
+    await expect(
+      page.getByText("Verificando se você já entrou…")
+    ).toBeVisible();
+  });
+
+  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais em alvos de 44 px (V4, V5)", async ({
+    page,
+  }) => {
+    await serve(page, newServer());
+    await page.goto("/entrar");
+
+    await expect(
+      page.getByText(
+        "Primeira vez? É o mesmo botão: sua conta é criada ao continuar."
+      )
+    ).toBeVisible();
+    const legal = page.getByRole("group", {
+      name: "Leia antes de entrar",
+    });
+    await expect(legal).toBeVisible();
+    for (const name of ["Termos de Uso", "Política de Privacidade"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one link after the other
+      const box = await legal
+        .getByRole("link", { name: new RegExp(name) })
+        .boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await expect(legal).not.toContainText("Leia os");
   });
 
   test("sem resposta dos métodos, o botão do Google segue ativo", async ({

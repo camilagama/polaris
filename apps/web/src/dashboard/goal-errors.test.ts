@@ -3,8 +3,11 @@ import { goalErrorMessage } from "./goal-errors";
 
 describe("goalErrorMessage", () => {
   it("explains the codes every goal request can fail with", () => {
-    expect(goalErrorMessage({ code: "UNAUTHORIZED" }, "load")).toContain(
-      "sessão"
+    expect(goalErrorMessage({ code: "UNAUTHORIZED" }, "load")).toBe(
+      "Não foi possível carregar as metas."
+    );
+    expect(goalErrorMessage({ code: "UNAUTHORIZED" }, "update")).toBe(
+      "A meta não foi alterada."
     );
     expect(goalErrorMessage({ code: "FORBIDDEN" }, "create")).toContain(
       "não tem acesso"

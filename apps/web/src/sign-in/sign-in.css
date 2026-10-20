@@ -72,6 +72,10 @@
   color: var(--ui-muted);
 }
 
+.sign-in-support + .sign-in-support {
+  margin-top: -0.5rem;
+}
+
 .sign-in-reason {
   padding: 0.75rem 0.9rem;
   font-weight: 650;
@@ -99,7 +103,7 @@
 }
 
 .sign-in-alert:focus-visible {
-  outline: 3px solid var(--ui-accent);
+  outline: 3px solid var(--ui-danger-strong);
   outline-offset: 2px;
 }
 
@@ -168,12 +172,32 @@
 }
 
 .sign-in-legal {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.35rem;
-  align-items: center;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
   font-size: 0.88rem;
   color: var(--ui-muted);
+}
+
+.sign-in-legal-title {
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* side by side when they fit, one under the other at 360 px: each is a 44 px target */
+.sign-in-legal ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .sign-in-legal a {
@@ -181,6 +205,28 @@
   align-items: center;
   min-height: 2.75rem;
   color: var(--ui-accent-strong);
+}
+
+.sign-in-retry {
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ui-accent-strong);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--ui-accent-strong);
+  border-radius: 0.55rem;
+}
+
+.sign-in-retry:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.sign-in-retry:focus-visible {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

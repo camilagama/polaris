@@ -336,6 +336,11 @@
   border-radius: 0.85rem;
 }
 
+.session-ended-notice:focus-visible {
+  outline: 3px solid var(--ui-ink);
+  outline-offset: 2px;
+}
+
 .session-ended-notice p {
   margin: 0;
   line-height: 1.5;

@@ -1,4 +1,5 @@
 import { MediaUploadHttpError } from "../lib/media-upload";
+import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 /** Where a media failure happened; the same server code reads differently in each. */
 export type MediaFailureContext =
@@ -161,7 +162,7 @@ function codeMessage(code: string): MediaFailure | null {
       };
     case "session_required":
       return {
-        message: "Sua sessão expirou. Entre de novo para continuar.",
+        message: SESSION_ENDED_MESSAGE,
         reloadList: false,
       };
     case "invalid_media_order":

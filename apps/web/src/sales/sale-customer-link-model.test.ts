@@ -453,7 +453,9 @@ describe("error mapping", () => {
   });
 
   it("uses the existing generic messages for authorization errors", () => {
-    expect(mapLinkError({ code: "UNAUTHORIZED" }).message).toContain("sessão");
+    expect(mapLinkError({ code: "UNAUTHORIZED" }).message).toBe(
+      "O vínculo do cliente com a venda não foi alterado."
+    );
     const forbidden = mapLinkError({
       code: "FORBIDDEN",
       data: { reason: "sale_customer_archived" },

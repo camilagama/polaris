@@ -1,5 +1,4 @@
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 export type GoalAction = "cancel" | "create" | "history" | "load" | "update";
 
@@ -31,7 +30,12 @@ function fallbackMessage(action: GoalAction): string {
 export function goalErrorMessage(error: unknown, action: GoalAction): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    if (action === "load") {
+      return "Não foi possível carregar as metas.";
+    }
+    return action === "history"
+      ? "Não foi possível carregar o histórico do alvo."
+      : "A meta não foi alterada.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso às metas desta organização.";

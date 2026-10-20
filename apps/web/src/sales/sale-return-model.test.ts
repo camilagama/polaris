@@ -11,6 +11,7 @@ import {
   initialReturnState,
   isReturnLocked,
   mapReturnError,
+  isReturnDraftChanged,
   openReturn,
   prepareReturnSubmission,
   RETURN_EXPLANATION,
@@ -532,5 +533,19 @@ describe("unknown-outcome lock", () => {
 
   it("unlocks after a locked retry succeeds", () => {
     expect(isReturnLocked(returnSucceeded(result(true)))).toBe(false);
+  });
+});
+
+describe("isReturnDraftChanged (the sign that the session notice warns about)", () => {
+  it("does not count a closed panel, or one opened with nothing put in", () => {
+    expect(isReturnDraftChanged(initialReturnState())).toBe(false);
+    expect(isReturnDraftChanged(editing())).toBe(false);
+  });
+
+  it("counts a returned quantity, a reason or a note", () => {
+    expect(isReturnDraftChanged(editReturned(editing(), 0, "1"))).toBe(true);
+    expect(isReturnDraftChanged(editReturnReason(editing(), "defective"))).toBe(
+      true
+    );
   });
 });

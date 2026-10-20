@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   EXPENSE_GROUP_ORDER,
   type ExpenseGroupKey,
@@ -42,6 +43,7 @@ function CategoryRow({
 }: CategoryRowProps) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(category.name);
+  useReportUnsentWork(renaming && name !== category.name);
   const isBusy = busyKey !== null;
   const archived = category.status === "archived";
   const nameFieldId = `expense-category-name-${category.id}`;
@@ -143,6 +145,7 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
   const [group, setGroup] = useState<ExpenseGroupKey>("operational");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  useReportUnsentWork(name.trim() !== "");
 
   const handleGroup = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const match = EXPENSE_GROUP_ORDER.find(

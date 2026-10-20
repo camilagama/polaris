@@ -1,5 +1,6 @@
 import { type ChangeEvent, useCallback, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import "../catalog/categories-page.css";
 import "./sale-page.css";
 import "./sale-cancel-panel.css";
@@ -20,6 +21,7 @@ import {
   editCancelNote,
   editCancelReason,
   initialCancelState,
+  isCancelDraftChanged,
   isCancelLocked,
   mapCancelError,
   noteCounterText,
@@ -176,6 +178,7 @@ export function SaleCancelPanel({
   saleId,
 }: CancelPanelProps) {
   const [state, setState] = useState(initialCancelState);
+  useReportUnsentWork(isCancelDraftChanged(state));
   const inFlight = useRef<boolean>(false);
 
   const handleOpen = useCallback(

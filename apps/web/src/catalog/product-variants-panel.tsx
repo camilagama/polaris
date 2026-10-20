@@ -14,7 +14,6 @@ import {
 import { orpcClient } from "../lib/orpc";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
 import "./product-variants-panel.css";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 const optionChoices: ReadonlyArray<
   readonly [ProductVariantOptionName, string]
@@ -108,7 +107,7 @@ function rpcErrorCode(error: unknown): string | undefined {
 function variantErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return "Não foi possível carregar ou salvar as variantes.";
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
