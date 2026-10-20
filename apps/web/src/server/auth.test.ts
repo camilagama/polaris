@@ -1,3 +1,4 @@
+import { logger } from "@polaris/observability/logger";
 import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
@@ -1599,9 +1600,17 @@ describe("Sign-up legal acceptance (AC-68)", () => {
 
   it("does not take a failed record as a failed sign-up: the user is created and the response is 200", async () => {
     stubPwnedPasswordRange();
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const recorder = vi.fn(() => Promise.reject(new Error("record failed")));
+    const logged = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+    const recorder = vi.fn(() =>
+      Promise.reject(
+        Object.assign(new Error("record failed for ana@example.invalid"), {
+          code: "42501",
+        })
+      )
+    );
     const {
       app: testApp,
       auth,
@@ -1617,6 +1626,12 @@ describe("Sign-up legal acceptance (AC-68)", () => {
     expect(recorder).toHaveBeenCalled();
     expect(await findUserByEmail(auth, email)).not.toBeNull();
     expect(verificationEmails).toHaveLength(1);
+    // the named event the operational alert counts, with class and SQLSTATE and nothing personal
+    expect(logged).toHaveBeenCalledWith(
+      "legal_acceptance_signup_record_failed",
+      expect.objectContaining({ errorClass: "Error", sqlState: "42501" })
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("example.invalid");
   });
 
   it("only guards the email sign-up: the other auth routes need no acceptance", async () => {

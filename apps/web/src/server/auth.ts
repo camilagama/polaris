@@ -1,4 +1,5 @@
 import { logger } from "@polaris/observability/logger";
+import { describeError, isSqlState } from "@polaris/observability/wide-event";
 import { authSchema } from "@polaris/db/auth-schema";
 import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
 import type { createDatabase } from "@polaris/db/client";
@@ -946,11 +947,15 @@ export function createBetterAuth({
                 await recordSignUpAcceptance({ document, userId: user.id });
               }
             } catch (error) {
-              logServerError({
-                error,
-                method: "POST",
+              // the person is left with no proof of acceptance and nobody would know: a named event the
+              // operational alert counts (ADR 0100). Class and SQLSTATE only, never the user or the e-mail.
+              const described = describeError(error);
+              logger.error("legal_acceptance_signup_record_failed", {
+                errorClass: described.errorClass,
                 requestId: safeRequestId,
-                route: "/api/auth/sign-up/email",
+                sqlState: isSqlState(described.errorCode)
+                  ? described.errorCode
+                  : undefined,
               });
             }
           },
