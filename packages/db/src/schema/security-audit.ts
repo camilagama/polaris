@@ -17,6 +17,11 @@ export const authSecurityAuditEventType = pgEnum(
     "logout_succeeded",
     "logout_failed",
     "device_revoked",
+    "login_locked",
+    "login_unlocked",
+    "password_changed",
+    "password_reset_completed",
+    "password_set",
   ]
 );
 
