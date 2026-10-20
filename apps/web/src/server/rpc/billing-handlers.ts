@@ -141,9 +141,14 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
             data: { reason: "billing_not_configured" },
           });
         }
-        const payerLockSecret = context.bindings.BETTER_AUTH_SECRET ?? "";
-        if (input.method === "pix_automatic" && payerLockSecret.length < 32) {
-          // the payer's lock and customer key are keyed by the server's secret
+        const payerKey = context.bindings.BILLING_PAYER_KEY ?? "";
+        if (
+          input.method === "pix_automatic" &&
+          (payerKey.length < 32 ||
+            payerKey === context.bindings.BETTER_AUTH_SECRET)
+        ) {
+          // the payer's lock and customer key are keyed by the billing payer key (its own secret, ADR 0101):
+          // too short, or the session secret reused, is not configured
           throw new ORPCError("SERVICE_UNAVAILABLE", {
             data: { reason: "billing_not_configured" },
           });
@@ -167,7 +172,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
             return await startPixCheckout(
               {
                 ...dependencies.pixTiming,
-                payerLockSecret,
+                payerKey,
                 port,
                 store,
               },

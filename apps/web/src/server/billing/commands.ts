@@ -347,8 +347,8 @@ export interface StartPixCheckoutDependencies
   extends Omit<StartCheckoutDependencies, "store"> {
   /** A monotonic clock in ms (`performance.now`); a test gives its own. */
   elapsedMs?: () => number;
-  /** The server's secret the payer's lock and customer keys are derived from (`BETTER_AUTH_SECRET`); never sent anywhere. */
-  payerLockSecret: string;
+  /** The secret the payer's lock and customer keys are derived from (`BILLING_PAYER_KEY`, its own, never the session secret); never sent anywhere. */
+  payerKey: string;
   sleep?: (ms: number) => Promise<void>;
   store: StartCheckoutDependencies["store"] &
     Pick<BillingStore, "withPayerLock">;
@@ -407,9 +407,10 @@ export async function payerLockKey(
  * hex digits of the payer's tag (`polaris.billing.payer-customer.v1`). The
  * customer is created and read by it, so the document never goes into a URL
  * and no list of the account is read (ADR 0101, emenda do PR 6). It changes
- * with the secret: after a rotation, a customer created before is not found by
- * its key and its creation is refused (the document already has one), which
- * answers `payer_not_accepted` until support sorts it out (runbook).
+ * with the secret (`BILLING_PAYER_KEY`, never rotated by routine): after a
+ * rotation, a customer created before is not found by its key and its creation
+ * is refused (the document already has one), which answers `payer_not_accepted`
+ * until support sorts it out (runbook).
  */
 export async function payerCustomerKey(
   secret: string,
@@ -470,12 +471,9 @@ export async function startPixCheckout(
   const started = elapsed();
   const { payer } = input;
   try {
-    const lockKey = await payerLockKey(
-      dependencies.payerLockSecret,
-      payer.taxId
-    );
+    const lockKey = await payerLockKey(dependencies.payerKey, payer.taxId);
     const customerKey = await payerCustomerKey(
-      dependencies.payerLockSecret,
+      dependencies.payerKey,
       payer.taxId
     );
     const handoff = await openCheckout(dependencies, input, {

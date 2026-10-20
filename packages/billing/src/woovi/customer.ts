@@ -14,7 +14,8 @@ import { isTaxIdDigits, isWooviPayerCorrelationId } from "./ids";
  * Polaris creates the customer under its own key (`correlationID`, an HMAC of
  * the document) and reads it back by that key, one request, never a list of
  * the account. A customer whose name or e-mail differ from what the payer just
- * typed is refused, never updated: support sorts it out by hand. Nothing of
+ * typed (beyond case, composition and extra spaces; an e-mail beyond case and
+ * trim: Woovi's notices go to the e-mail stored) is refused, never updated: support sorts it out by hand. Nothing of
  * the customer is returned or kept.
  */
 
@@ -43,9 +44,14 @@ export class WooviCustomerMismatchError extends Error {
 
 const spaces = /\s+/g;
 
+/** Same name up to case, composition (NFC) and extra spaces: it is the payer's own name, typed twice. */
 function sameName(left: string, right: string): boolean {
   const normal = (value: string) =>
-    value.normalize("NFC").replace(spaces, " ").trim();
+    value
+      .normalize("NFC")
+      .replace(spaces, " ")
+      .trim()
+      .toLocaleLowerCase("pt-BR");
   return normal(left) === normal(right);
 }
 

@@ -154,6 +154,17 @@ export const alertSignals = [
     windowMinutes: 180,
   },
   {
+    id: "pix-cadastros-por-loja",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["billing_payer_customer_created"],
+    },
+    threshold: { atLeast: 5, kind: "count" },
+    title: "Muitos documentos novos no Pix de uma loja",
+    windowMinutes: 60,
+  },
+  {
     id: "erros-de-banco",
     notify: "wake",
     severity: "critical",

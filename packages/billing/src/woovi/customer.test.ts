@@ -74,6 +74,33 @@ describe("alignWooviCustomer", () => {
     expect(spies.createCustomer).not.toHaveBeenCalled();
   });
 
+  it('matches: "Maria Silva" is "MARIA  SILVA " (case and extra spaces)', async () => {
+    const { client, spies } = fakeClient({
+      found: stored({ name: "Maria Silva" }),
+    });
+    expect(
+      await alignWooviCustomer(client, { ...PAYER, name: "MARIA  SILVA " })
+    ).toBe("matches");
+    expect(spies.createCustomer).not.toHaveBeenCalled();
+  });
+
+  it("matches: case does not count in an accented name either", async () => {
+    const { client } = fakeClient({ found: stored({ name: "joão d'ávila" }) });
+    expect(
+      await alignWooviCustomer(client, { ...PAYER, name: "JOÃO D'ÁVILA" })
+    ).toBe("matches");
+  });
+
+  it("matches: a capital in the payer's e-mail is the stored e-mail", async () => {
+    const { client } = fakeClient({ found: stored() });
+    expect(
+      await alignWooviCustomer(client, {
+        ...PAYER,
+        email: "  Pagador.Teste@Example.COM",
+      })
+    ).toBe("matches");
+  });
+
   it("matches: a decomposed accent is the same name (NFC)", async () => {
     const { client } = fakeClient({
       found: stored({ name: "José da Silva" }),
@@ -112,7 +139,12 @@ describe("alignWooviCustomer", () => {
 
   it.each([
     ["another name", { name: "Nome Antigo" }],
+    ["another name that only looks alike", { name: "Pagadora de Testes" }],
     ["another e-mail", { email: "outro@example.com" }],
+    [
+      "an e-mail that differs beyond case",
+      { email: "pagador.teste@example.org" },
+    ],
     ["no e-mail", { email: null }],
     ["another document", { taxID: { taxID: "11144477735", type: "BR:CPF" } }],
     ["another document as a plain string", { taxID: "11144477735" }],

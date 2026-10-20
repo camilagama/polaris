@@ -749,13 +749,10 @@ describe("startPixCheckout", () => {
   const SECRET = "a".repeat(32);
 
   function startPix(
-    dependencies: Omit<StartPixCheckoutDependencies, "payerLockSecret">,
+    dependencies: Omit<StartPixCheckoutDependencies, "payerKey">,
     request: Parameters<typeof startPixCheckout>[1]
   ) {
-    return startPixCheckout(
-      { payerLockSecret: SECRET, ...dependencies },
-      request
-    );
+    return startPixCheckout({ payerKey: SECRET, ...dependencies }, request);
   }
 
   let consoleSpies: ReturnType<typeof vi.spyOn>[];

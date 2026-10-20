@@ -8,6 +8,7 @@ import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
+import { payerLockKey } from "../billing/commands";
 import type { WorkerBindings } from "../environment";
 import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
@@ -22,6 +23,7 @@ const CHECKOUT_URL = "https://sandbox.asaas.com/checkoutSession/show?id=abc";
 const baseBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
   BETTER_AUTH_SECRET: "a".repeat(32),
+  BILLING_PAYER_KEY: "b".repeat(32),
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   ONBOARDING_HYPERDRIVE: {
     connectionString: "postgresql://onboarding.invalid/neondb",
@@ -653,10 +655,10 @@ describe("billing.startCheckout by Pix Automático", () => {
     ["missing", undefined],
     ["shorter than 32 characters", "a".repeat(31)],
   ])(
-    "answers service unavailable (billing_not_configured) when BETTER_AUTH_SECRET is %s, before the store and the port",
+    "answers service unavailable (billing_not_configured) when BILLING_PAYER_KEY is %s (the session secret does not stand in), before the store and the port",
     async (_label, secret) => {
       const fixture = wooviSetup({
-        bindings: { ...billingBindings, BETTER_AUTH_SECRET: secret as never },
+        bindings: { ...billingBindings, BILLING_PAYER_KEY: secret as never },
       });
 
       await expect(
@@ -672,7 +674,24 @@ describe("billing.startCheckout by Pix Automático", () => {
     }
   );
 
-  it("keys the payer's lock with the server's secret, never putting the document in it", async () => {
+  it("answers service unavailable when BILLING_PAYER_KEY is the session secret reused", async () => {
+    const fixture = wooviSetup({
+      bindings: {
+        ...billingBindings,
+        BILLING_PAYER_KEY: billingBindings.BETTER_AUTH_SECRET as never,
+      },
+    });
+
+    await expect(
+      fixture.client.billing.startCheckout(pix)
+    ).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "billing_not_configured" },
+    });
+    expect(fixture.createBillingStore).not.toHaveBeenCalled();
+  });
+
+  it("keys the payer's lock with BILLING_PAYER_KEY (not the session secret), never putting the document in it", async () => {
     const fixture = wooviSetup();
 
     await fixture.client.billing.startCheckout(pix);
@@ -683,11 +702,15 @@ describe("billing.startCheckout by Pix Automático", () => {
     ][];
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).toMatch(EIGHT_HEX);
+    expect(calls[0]?.[0]).toBe(await payerLockKey("b".repeat(32), PAYER.taxId));
+    expect(calls[0]?.[0]).not.toBe(
+      await payerLockKey("a".repeat(32), PAYER.taxId)
+    );
   });
 
   it("does not ask the card checkout for the secret", async () => {
     const fixture = setup({
-      bindings: { ...billingBindings, BETTER_AUTH_SECRET: undefined as never },
+      bindings: { ...billingBindings, BILLING_PAYER_KEY: undefined as never },
     });
 
     await expect(fixture.client.billing.startCheckout(valid)).resolves.toEqual({
