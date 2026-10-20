@@ -1,7 +1,11 @@
-import { rpcErrorCode } from "../lib/rpc-error";
+import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
 
 /** Portuguese text for a failed period result request. */
 export function periodSummaryErrorMessage(error: unknown): string {
+  const unaccepted = legalAcceptanceMessage(error, "o resultado");
+  if (unaccepted !== undefined) {
+    return unaccepted;
+  }
   const code = rpcErrorCode(error);
   // the session notice says the rest; here only what did not happen
   if (code === "UNAUTHORIZED") {

@@ -106,7 +106,7 @@ export interface ClosureNoticeDelivery {
 interface ClosureNoticeDeliveryRow {
   deletableFrom: string;
   deletionDate: string;
-  /** Absent from a database before 0089. */
+  /** Absent from a database before 0091. */
   dueAt?: string;
   milestone: ClosureNoticeMilestone;
   noticeId: string;

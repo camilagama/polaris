@@ -13,38 +13,38 @@
 .product-variants-empty,
 .product-variants-message {
   margin: 0;
-  color: var(--ui-muted);
   font-size: 0.87rem;
   line-height: 1.55;
+  color: var(--ui-muted);
 }
 
 .product-variants-option-picker {
   padding: 0.9rem 1rem;
+  margin: 0;
   border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
-  margin: 0;
 }
 
 .product-variants-option-picker legend {
   padding: 0 0.35rem;
-  color: var(--ui-ink);
   font-size: 0.88rem;
   font-weight: 650;
+  color: var(--ui-ink);
 }
 
 .product-variants-option-choices {
   display: flex;
-  gap: 0.65rem 1.25rem;
   flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
 }
 
 .product-variants-checkbox {
   display: inline-flex;
-  min-height: 2.4rem;
-  align-items: center;
   gap: 0.5rem;
-  color: var(--ui-ink);
+  align-items: center;
+  min-height: 2.4rem;
   font-size: 0.9rem;
+  color: var(--ui-ink);
 }
 
 .product-variants-checkbox input {
@@ -64,12 +64,12 @@
   width: 100%;
   min-height: 2.8rem;
   padding: 0.65rem 0.8rem;
-  border: 1px solid var(--ui-line);
-  border-radius: 0.55rem;
-  color: var(--ui-ink);
-  background: var(--ui-surface);
   font: inherit;
   font-size: 0.92rem;
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 0.55rem;
 }
 
 .product-variants-values-grid textarea {
@@ -86,23 +86,23 @@
 
 .product-variants-field-error {
   margin: 0.45rem 0 0;
-  color: var(--ui-danger);
   font-size: 0.82rem;
   line-height: 1.4;
+  color: var(--ui-danger);
 }
 
 .product-variants-combinations-heading {
   display: flex;
+  gap: 1rem;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
 }
 
 .product-variants-combinations-heading h3 {
   margin: 0 0 0.25rem;
-  color: var(--ui-ink);
   font-size: 0.95rem;
   font-weight: 680;
+  color: var(--ui-ink);
 }
 
 .product-variants-combinations {
@@ -116,43 +116,43 @@
 .product-variants-combination {
   display: grid;
   grid-template-columns: auto repeat(3, minmax(0, 1fr)) auto;
-  align-items: end;
   gap: 0.7rem;
+  align-items: end;
   padding: 0.85rem;
+  background: color-mix(in srgb, var(--ui-surface) 88%, var(--ui-canvas));
   border: 1px solid var(--ui-line);
   border-radius: 0.65rem;
-  background: color-mix(in srgb, var(--ui-surface) 88%, var(--ui-canvas));
 }
 
 .product-variant-number {
   display: grid;
+  place-items: center;
+  align-self: center;
   width: 1.85rem;
   height: 1.85rem;
-  align-self: center;
-  place-items: center;
-  border-radius: 999px;
-  color: var(--ui-accent);
-  background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-surface));
   font-size: 0.78rem;
   font-weight: 700;
+  color: var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-surface));
+  border-radius: 999px;
 }
 
 .product-variants-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 0.7rem;
   flex-wrap: wrap;
+  gap: 0.7rem;
+  justify-content: space-between;
 }
 
 .product-variants-count {
   width: fit-content;
   padding: 0.3rem 0.65rem;
-  border-radius: 999px;
   margin: 0;
-  color: var(--ui-accent);
-  background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-surface));
   font-size: 0.78rem;
   font-weight: 650;
+  color: var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-surface));
+  border-radius: 999px;
 }
 
 .product-variant-list {
@@ -165,18 +165,18 @@
 
 .product-variant-row {
   display: flex;
-  min-height: 3.1rem;
-  align-items: center;
   gap: 0.8rem;
+  align-items: center;
+  min-height: 3.1rem;
   padding: 0.65rem 0.8rem;
+  background: var(--ui-surface);
   border: 1px solid var(--ui-line);
   border-radius: 0.6rem;
-  background: var(--ui-surface);
 }
 
 .product-variant-values {
-  color: var(--ui-ink);
   font-size: 0.9rem;
+  color: var(--ui-ink);
   overflow-wrap: anywhere;
 }
 
@@ -188,9 +188,9 @@
 
 .product-variant-sku-section h3 {
   margin: 0;
-  color: var(--ui-ink);
   font-size: 0.95rem;
   font-weight: 680;
+  color: var(--ui-ink);
 }
 
 .product-variant-sku-list {
@@ -204,12 +204,12 @@
 .product-variant-sku-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
   gap: 0.75rem;
+  align-items: end;
   padding: 0.7rem 0.8rem;
+  background: var(--ui-surface);
   border: 1px solid var(--ui-line);
   border-radius: 0.6rem;
-  background: var(--ui-surface);
 }
 
 .product-variant-sku-row .product-form-field {

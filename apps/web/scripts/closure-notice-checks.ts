@@ -736,7 +736,7 @@ async function noticeScenario(
     "SELECT milestone, (sent_at IS NOT NULL OR dismissed_at IS NOT NULL) AS delivered FROM public.closure_notices"
   );
   assert.ok(visible.rows.length > 0);
-  // delivered, or dismissed by the support (0089): what lets a store be deleted
+  // delivered, or dismissed by the support (0091): what lets a store be deleted
   for (const row of visible.rows) {
     assert.ok(["d7", "rescheduled"].includes(row.milestone));
     assert.equal(row.delivered, true);

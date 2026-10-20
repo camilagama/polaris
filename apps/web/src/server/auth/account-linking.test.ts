@@ -11,6 +11,7 @@ import {
   handleSetPasswordRequest,
 } from "../auth/handler";
 import type { WorkerBindings } from "../environment";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import {
   hostileRedirectTargets,
   validReturnCallbackURL,
@@ -217,7 +218,12 @@ async function createVerifiedPasswordSession(
   const signUp = await app.request(
     "/api/auth/sign-up/email",
     {
-      body: JSON.stringify({ email, name: "Account Link User", password }),
+      body: JSON.stringify({
+        email,
+        legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+        name: "Account Link User",
+        password,
+      }),
       headers: {
         "content-type": "application/json",
         origin: testBaseURL,

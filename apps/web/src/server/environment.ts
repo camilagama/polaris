@@ -99,6 +99,12 @@ export interface WorkerBindings {
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;
+  /**
+   * `true` turns on the server control of the legal acceptance (ADR 0100): without the acceptance of the
+   * versions in force, every authenticated request outside the exempt list is refused. Anything else
+   * (and absent) leaves it off; the sign-up and `/aceite` record the acceptance either way.
+   */
+  LEGAL_ACCEPTANCE_ENFORCED?: string;
   GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
   IMAGES?: MediaImagesBinding;

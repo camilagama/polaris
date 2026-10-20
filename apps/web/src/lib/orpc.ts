@@ -2,7 +2,8 @@ import { createORPCClient, onError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { PolarisRpcClient } from "@polaris/contracts";
 import { endSessionHere } from "../offline/runtime/session-ended";
-import { rpcErrorCode } from "./rpc-error";
+import { markLegalAcceptanceRequired } from "./legal-acceptance";
+import { isLegalAcceptanceRefusal, rpcErrorCode } from "./rpc-error";
 
 function createPolarisRpcClient(origin: string): PolarisRpcClient {
   const link = new RPCLink({
@@ -12,6 +13,9 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
       onError((error) => {
         if (rpcErrorCode(error) === "UNAUTHORIZED") {
           endSessionHere();
+        } else if (isLegalAcceptanceRefusal(error)) {
+          // not a refused session: nothing is dropped, the shell shows the fixed notice with `/aceite`
+          markLegalAcceptanceRequired();
         }
       }),
     ],

@@ -1,6 +1,6 @@
 {
   "id": "008d71d1-de90-4eff-85f0-f7cb4ad816bb",
-  "prevId": "9198d9a6-f9a4-4ac4-a5d7-6bbe706496a9",
+  "prevId": "774d802d-9f26-4100-8746-57e0e1a8c603",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -11617,7 +11617,12 @@
         "google_callback_failed",
         "logout_succeeded",
         "logout_failed",
-        "device_revoked"
+        "device_revoked",
+        "login_locked",
+        "login_unlocked",
+        "password_changed",
+        "password_reset_completed",
+        "password_set"
       ]
     },
     "public.auth_security_audit_outcome": {

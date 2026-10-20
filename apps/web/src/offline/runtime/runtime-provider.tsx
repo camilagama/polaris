@@ -1,5 +1,9 @@
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import { useOrganizationLoad } from "../../lib/current-organization";
+import {
+  isLegalAcceptanceRequired,
+  subscribeLegalAcceptance,
+} from "../../lib/legal-acceptance";
 import { orpcClient } from "../../lib/orpc";
 import { getUpdateStore } from "../../pwa/runtime";
 import { wipeLocalStore } from "../local-store";
@@ -131,6 +135,46 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
     });
   }, [reload, runtime]);
 
+  // The acceptance was recorded (in another tab, mostly: the notice opens it there when something is typed):
+  // read the organizations again if they were refused for it, and let the queue go out again.
+  const latest = useRef({ load, organizationId, reload });
+  latest.current = { load, organizationId, reload };
+  useEffect(() => {
+    let waiting = isLegalAcceptanceRequired();
+    return subscribeLegalAcceptance(() => {
+      const required = isLegalAcceptanceRequired();
+      if (waiting && !required) {
+        const { current } = latest;
+        if (current.load.status === "legal_acceptance_required") {
+          current.reload();
+        } else if (runtime && current.organizationId) {
+          const restart =
+            runtime.getSnapshot().phase === "unavailable"
+              ? runtime.start(current.organizationId)
+              : Promise.resolve();
+          restart.then(() => runtime.syncNow()).catch(() => undefined);
+        }
+      }
+      waiting = required;
+    });
+  }, [runtime]);
+
+  return (
+    <RuntimeContext.Provider value={runtime}>
+      {children}
+    </RuntimeContext.Provider>
+  );
+}
+
+/**
+ * A runtime that never starts, for a screen outside the store (the acceptance screen): it only lets
+ * "Sair" look at the queue of this device before ending the session. Nothing syncs or registers here.
+ */
+export function IdleRuntimeProvider({ children }: { children: ReactNode }) {
+  const runtime = useMemo(
+    () => (OFFLINE_RUNTIME_ENABLED ? createBrowserRuntime() : null),
+    []
+  );
   return (
     <RuntimeContext.Provider value={runtime}>
       {children}

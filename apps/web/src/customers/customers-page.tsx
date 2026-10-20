@@ -38,6 +38,7 @@ import {
   emptyCustomerDraft,
   isCustomerDraftChanged,
 } from "./customer-draft";
+import { legalAcceptanceMessage } from "../lib/rpc-error";
 
 type CustomerListStatus = "active" | "archived";
 type CustomerAction = "anonymize" | "archive" | "restore";
@@ -85,6 +86,13 @@ function errorMessage(
     error.message === "customer_has_pending_command"
   ) {
     return "Este cliente já tem uma alteração ou um cadastro aguardando envio. Espere o envio ou resolva em Pendências.";
+  }
+  const unaccepted = legalAcceptanceMessage(
+    error,
+    action === "load" ? "os clientes" : undefined
+  );
+  if (unaccepted !== undefined) {
+    return unaccepted;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {

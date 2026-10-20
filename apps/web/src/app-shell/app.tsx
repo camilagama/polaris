@@ -8,6 +8,7 @@ import {
 import { LegalApp } from "../legal/legal-app";
 import { resolveLegalRoute } from "../legal/legal-routes";
 import { OrganizationProvider } from "../lib/current-organization";
+import { isLegalAcceptancePath } from "../lib/legal-acceptance";
 import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
 import { getUpdateStore } from "../pwa/runtime";
 import { UpdateBanner } from "../pwa/update-banner";
@@ -98,6 +99,12 @@ const pages: Readonly<Record<RouteId, Page>> = {
   ),
 };
 
+const AcceptancePage = lazy(() =>
+  import("../legal/acceptance/acceptance-page").then((module) => ({
+    default: module.AcceptancePage,
+  }))
+);
+
 const SignInPage = lazy(() =>
   import("../sign-in/sign-in-page").then((module) => ({
     default: module.SignInPage,
@@ -157,6 +164,27 @@ function SignInApp() {
   );
 }
 
+/**
+ * `/aceite` stands apart as well (ADR 0100): the server refuses the store until the acceptance, so there
+ * is no organization to read. It keeps "Sair", with a runtime that never starts.
+ */
+function AcceptanceApp() {
+  return (
+    <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
+      <UpdateSlot />
+      <Suspense
+        fallback={
+          <p className="app-status" role="status">
+            Carregando…
+          </p>
+        }
+      >
+        <AcceptancePage />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
 function StoreApp() {
   const route = resolveRoute(window.location.pathname);
   const { title } = route;
@@ -178,12 +206,15 @@ function StoreApp() {
 
 /**
  * The legal pages and the sign-in screen are public and stand apart from the store: no organization,
- * no menu, no offline runtime.
+ * no menu, no offline runtime. The acceptance screen too, though it needs a session.
  */
 export function App() {
   const legalDocument = resolveLegalRoute(window.location.pathname);
   if (legalDocument) {
     return <LegalApp document={legalDocument} />;
+  }
+  if (isLegalAcceptancePath(window.location.pathname)) {
+    return <AcceptanceApp />;
   }
   return isSignInPath(window.location.pathname) ? <SignInApp /> : <StoreApp />;
 }

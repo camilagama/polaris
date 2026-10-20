@@ -2,7 +2,11 @@ import type {
   CustomerReadModel,
   SaleCustomerLinkReadModel,
 } from "@polaris/contracts";
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 import {
   type ChoiceOption,
   type Loadable,
@@ -533,6 +537,15 @@ function codeFailure(code: string | undefined): Omit<LinkFailure, "reason"> {
  * is a harmless version conflict, never a duplicate.
  */
 export function mapLinkError(error: unknown): LinkFailure {
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return {
+      message: unaccepted,
+      reason: null,
+      reloadCustomers: false,
+      reloadLink: false,
+    };
+  }
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error) ?? null;
   const refinable =

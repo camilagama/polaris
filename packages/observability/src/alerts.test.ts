@@ -250,6 +250,7 @@ describe("alert signals", () => {
       "media_transform_quota_exceeded",
       "sync_push_command_rejected",
       "auth_access_log_write_failed",
+      "legal_acceptance_signup_record_failed",
     ]) {
       expect(events.has(required), required).toBe(true);
     }

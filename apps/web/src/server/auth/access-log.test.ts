@@ -13,6 +13,7 @@ import {
   requestIp,
   requestIpForSessionRow,
 } from "./access-log";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
 const testBaseURL = "http://localhost";
@@ -294,6 +295,7 @@ async function registerUser(test: TestApp, email: string, password: string) {
   stubPwnedPasswordRange();
   const signUp = await post(test.app, "/api/auth/sign-up/email", {
     email,
+    legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
     name: "Access Log User",
     password,
   });

@@ -29,9 +29,31 @@ export function waitingOperations(snapshot: RuntimeSnapshot): number {
   return snapshot.counts.pending + snapshot.counts.sending;
 }
 
-export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
-  const { counts } = snapshot;
-  const waiting = waitingOperations(snapshot);
+/**
+ * The server waits for the legal acceptance: nothing was refused or lost, the send is only paused. The short
+ * chip stays "Envio pausado"; the sentence (menu line and tooltip) keeps the count of what needs attention.
+ */
+function pausedForAcceptance(
+  waiting: number,
+  rejected: number
+): SyncStatusLabel {
+  const parts = ["Envio pausado até o aceite dos termos"];
+  if (waiting > 0) {
+    parts.push(plural(waiting, "operação guardada", "operações guardadas"));
+  }
+  if (rejected > 0) {
+    parts.push(`${plural(rejected, "precisa", "precisam")} de atenção`);
+  }
+  return {
+    attention: false,
+    short: "Envio pausado",
+    text: parts.join(" · "),
+    tone: "offline",
+  };
+}
+
+/** Offline is not ready on this device: the access expired, offline is unavailable or it is still preparing. */
+function notReadyLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.phase === "expired") {
     return {
       attention: false,
@@ -49,13 +71,22 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
       tone: "offline",
     };
   }
+  return {
+    attention: false,
+    short: "Preparando",
+    text: "Preparando o modo offline…",
+    tone: "busy",
+  };
+}
+
+export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
+  const { counts } = snapshot;
+  const waiting = waitingOperations(snapshot);
+  if (snapshot.legalAcceptanceRequired && snapshot.online) {
+    return pausedForAcceptance(waiting, counts.rejected);
+  }
   if (snapshot.phase !== "ready") {
-    return {
-      attention: false,
-      short: "Preparando",
-      text: "Preparando o modo offline…",
-      tone: "busy",
-    };
+    return notReadyLabel(snapshot);
   }
   if (counts.rejected > 0) {
     return {

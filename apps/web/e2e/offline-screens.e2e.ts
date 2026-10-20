@@ -732,3 +732,88 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     await expect(page.getByTestId("server-records")).toHaveText("0");
   });
 });
+
+const LEGAL_REFUSAL = {
+  body: JSON.stringify({
+    json: {
+      code: "FORBIDDEN",
+      data: {
+        pending: [{ document: "terms", version: 1 }],
+        reason: "legal_acceptance_required",
+      },
+      defined: false,
+      message: "Forbidden",
+      status: 403,
+    },
+    meta: [],
+  }),
+  contentType: "application/json",
+  status: 403,
+};
+
+test.describe("sem o aceite dos termos (ADR 0100)", () => {
+  test("a fila da venda pausa: nada é recusado nem apagado, e a venda sai depois do aceite", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 2);
+    await keepSale(page).click();
+    await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
+
+    // the server now refuses for lack of the acceptance, and the network is back
+    await page.getByLabel("Falta aceitar os termos").check();
+    await page.getByLabel("Rede disponível").check();
+    await expect(chip(page)).toContainText(
+      "Envio pausado até o aceite dos termos · 1 operação guardada",
+      { timeout: 20_000 }
+    );
+    // the queue is intact and not refused, and the local collections are still there
+    await expect(page.getByText("Aguardando envio")).toBeVisible();
+    await expect(page.getByText("Recusada pelo servidor")).toHaveCount(0);
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+    // the local collections are still there: without a network the search reads them, with the queued sale
+    await page.getByLabel("Rede disponível").uncheck();
+    await page.getByLabel("Produto ou variante").fill("camiseta azul");
+    await expect(
+      page.getByRole("button", { name: SHIRT_WITH_THREE })
+    ).toBeVisible();
+
+    // accepted: the same sale goes out once
+    await page.getByLabel("Falta aceitar os termos").uncheck();
+    await page.getByLabel("Rede disponível").check();
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+  });
+
+  test("a venda com itens recebe o 403 do aceite e os itens não se perdem", async ({
+    page,
+  }) => {
+    await page.route("**/rpc/sale/confirm", (route) =>
+      route.fulfill(LEGAL_REFUSAL)
+    );
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    // the lab has no online catalog: the items are picked from the device, then the network comes back
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 2);
+    await page.getByLabel("Rede disponível").check();
+    await page.getByRole("button", { name: "Confirmar venda" }).click();
+
+    await expect(
+      page.getByText(
+        "A venda não foi registrada porque falta aceitar os Termos de Uso e a Política de Privacidade. Os itens continuam aqui."
+      )
+    ).toBeVisible();
+    // the item and its quantity are still on the form, nothing was sent or queued
+    await expect(page.locator(".sale-lines")).toContainText(
+      "Camiseta do laboratório — Azul"
+    );
+    await expect(page.getByLabel("Quantidade")).toHaveValue("2");
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+    expect(new URL(page.url()).pathname).toBe("/offline-screens-lab");
+  });
+});

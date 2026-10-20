@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isDefiniteRpcRejection,
+  isLegalAcceptanceRefusal,
   readErrorMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -49,5 +50,42 @@ describe("rpc error helpers", () => {
     expect(readErrorMessage(new Error("boom"), "o estoque")).toBe(
       "Não foi possível carregar o estoque. Tente novamente."
     );
+  });
+});
+
+describe("the refusal for lack of the legal acceptance", () => {
+  const refusal = {
+    code: "FORBIDDEN",
+    data: { reason: "legal_acceptance_required" },
+    status: 403,
+  };
+
+  it("is a FORBIDDEN with its own reason, and nothing else", () => {
+    expect(isLegalAcceptanceRefusal(refusal)).toBe(true);
+    expect(isLegalAcceptanceRefusal({ code: "FORBIDDEN" })).toBe(false);
+    expect(
+      isLegalAcceptanceRefusal({
+        code: "FORBIDDEN",
+        data: { reason: "other" },
+      })
+    ).toBe(false);
+    expect(
+      isLegalAcceptanceRefusal({
+        code: "UNAUTHORIZED",
+        data: { reason: "legal_acceptance_required" },
+      })
+    ).toBe(false);
+    expect(isLegalAcceptanceRefusal(new TypeError("Failed to fetch"))).toBe(
+      false
+    );
+    expect(isLegalAcceptanceRefusal(null)).toBe(false);
+  });
+
+  it("is a definite rejection, and a read says what is missing", () => {
+    expect(isDefiniteRpcRejection(refusal)).toBe(true);
+    const message = readErrorMessage(refusal, "o estoque");
+    expect(message).toContain("Termos de Uso");
+    expect(message).toContain("Política de Privacidade");
+    expect(message).not.toContain("organização");
   });
 });
