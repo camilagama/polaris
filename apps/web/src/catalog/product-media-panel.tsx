@@ -28,11 +28,14 @@ import {
   uploadProductMedia,
 } from "../lib/media-upload";
 import { orpcClient } from "../lib/orpc";
+import { useReportUnsentWork } from "../lib/unsent-work";
+import { endSessionHere } from "../offline/runtime/session-ended";
 import {
   describeMediaFailure,
   type ImageActionAvailability,
   imageActionAvailability,
   imageActionLabel,
+  isMediaSessionEnded,
   type MediaFailure,
   type MediaFailureContext,
   type MoveDirection,
@@ -127,6 +130,10 @@ function mediaFailure(
       message: "A área de recorte não é válida. Selecione uma área maior.",
       reloadList: false,
     };
+  }
+  if (isMediaSessionEnded(error)) {
+    // media calls are plain fetches, not oRPC: tell the shell here that the session is over, as the oRPC client does
+    endSessionHere();
   }
   return describeMediaFailure(context, error);
 }
@@ -422,6 +429,8 @@ export function ProductMediaPanel({
   const [running, setRunning] = useState<RunningCommand | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replacementPending, setReplacementPending] = useState(false);
+  // a photo picked and prepared that was not sent yet
+  useReportUnsentWork(preparedFile !== null);
   const fileSelectionGeneration = useRef(0);
   const assetsVersion = useRef(0);
   const commandLock = useRef<boolean>(false);

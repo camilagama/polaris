@@ -135,8 +135,8 @@ describe("preference storage", () => {
 
 describe("organizationLoadErrorMessage", () => {
   it("explains the session, availability and generic failures", () => {
-    expect(organizationLoadErrorMessage({ code: "UNAUTHORIZED" })).toContain(
-      "sessão"
+    expect(organizationLoadErrorMessage({ code: "UNAUTHORIZED" })).toBe(
+      "Não foi possível carregar suas organizações."
     );
     expect(
       organizationLoadErrorMessage({ code: "SERVICE_UNAVAILABLE" })

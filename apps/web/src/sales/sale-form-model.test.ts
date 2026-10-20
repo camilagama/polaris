@@ -719,8 +719,8 @@ describe("loading and empty states", () => {
   });
 
   it("maps load failures to actionable messages", () => {
-    expect(loadErrorMessage({ code: "UNAUTHORIZED" }, "produtos")).toContain(
-      "sessão"
+    expect(loadErrorMessage({ code: "UNAUTHORIZED" }, "produtos")).toBe(
+      "Não foi possível carregar produtos."
     );
     expect(loadErrorMessage({ code: "FORBIDDEN" }, "o estoque")).toBe(
       "Sua conta não tem acesso a esta organização ou ação."
@@ -958,7 +958,7 @@ describe("server errors", () => {
     );
     // the sentence about the session is the notice's, not the red box's
     expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).message).toBe(
-      "A venda não foi confirmada."
+      "A venda não foi registrada."
     );
     expect(mapSaleSubmitError({ code: "FORBIDDEN" }).message).toContain(
       "permissão"

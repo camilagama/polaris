@@ -6,8 +6,8 @@ import {
 
 describe("periodSummaryErrorMessage", () => {
   it("explains each code the server answers with", () => {
-    expect(periodSummaryErrorMessage({ code: "UNAUTHORIZED" })).toContain(
-      "sessão"
+    expect(periodSummaryErrorMessage({ code: "UNAUTHORIZED" })).toBe(
+      "Não foi possível carregar o resultado."
     );
     expect(periodSummaryErrorMessage({ code: "FORBIDDEN" })).toContain(
       "não tem acesso"
