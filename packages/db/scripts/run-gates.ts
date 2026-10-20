@@ -206,6 +206,21 @@ gates.push(
     name: "rls",
     needsPocFixture: true,
     script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
+  },
+  // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
+  // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
+  // suite): the scheduled jobs of the Web Worker run for real against what the gates before left.
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "web-worker",
+    script: "verify-web-worker-gate.ts",
+  },
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "catalog-worker",
+    script: "verify-catalog-worker-gate.ts",
   }
 );
 
@@ -283,6 +298,8 @@ const suites: Record<string, string[]> = {
     "media-upload",
     "tenant-context",
     "rls",
+    "web-worker",
+    "catalog-worker",
   ],
   // Run it on a fresh database (the gates are not rerunnable on one that already ran them).
   // POLARIS_CONCURRENCY_REPEAT sets the rounds of each race (default 3 here, 1 in `ci`).
@@ -347,7 +364,7 @@ const suites: Record<string, string[]> = {
     "entitlement-grants",
   ],
   // Phase 8 (public catalog): grows with every gate of the phase.
-  gate8: ["public-catalog"],
+  gate8: ["public-catalog", "catalog-worker"],
   // Phase 9 (admin): grows with every gate of the phase.
   gate9: [
     "platform-principals",
@@ -375,6 +392,7 @@ const suites: Record<string, string[]> = {
     "outbox-dispatcher",
     "dead-letter",
     "scheduled-jobs",
+    "web-worker",
   ],
 };
 

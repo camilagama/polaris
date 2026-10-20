@@ -9,10 +9,11 @@ import {
   harnessHyperdrives,
 } from "./workerd-harness.mjs";
 
+const CI_SUITE = /\n {2}ci: \[([^\]]*)\]/;
+const QUOTED_NAME = /"([\w-]+)"/g;
 const REFUSED = /Workers harness/;
 const ci = { CI: "true" };
 const notCi = {};
-const DATABASE_GATE_IN_CI = /ci: \[[^\]]*"admin-worker"/;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("workerd harness host guard", () => {
@@ -107,26 +108,50 @@ describe("workerd harness host guard", () => {
   });
 });
 
-/** Every `*.workerd.test.ts` and `*.workerd-db.test.ts` under apps/<app>/src. */
+/**
+ * The Workers tests that need PostgreSQL run through a gate, from a root config of their own (the `database` job).
+ * Where each app keeps them and which gate runs them.
+ */
+const DATABASE_APPS = {
+  admin: {
+    directory: "src",
+    gate: { name: "admin-worker", script: "verify-admin-worker-gate.ts" },
+    rootConfig: "vitest.admin-worker.config.ts",
+  },
+  catalog: {
+    directory: "src",
+    gate: { name: "catalog-worker", script: "verify-catalog-worker-gate.ts" },
+    rootConfig: "vitest.catalog-worker.config.ts",
+  },
+  web: {
+    directory: "worker",
+    gate: { name: "web-worker", script: "verify-web-worker-gate.ts" },
+    rootConfig: "vitest.web-worker.config.ts",
+  },
+};
+
+/** Every `*.workerd.test.ts` and `*.workerd-db.test.ts` under apps/<app>/src (the Web Worker's are under apps/web/worker). */
 function workerdTests() {
   const found = [];
   for (const app of readdirSync(join(root, "apps"), { withFileTypes: true })) {
     if (!app.isDirectory()) {
       continue;
     }
-    const src = join(root, "apps", app.name, "src");
-    let entries = [];
-    try {
-      entries = readdirSync(src, { recursive: true });
-    } catch {
-      // an app without src
-    }
-    for (const entry of entries) {
-      const file = String(entry);
-      if (file.endsWith(".workerd.test.ts")) {
-        found.push({ app: app.name, database: false, file });
-      } else if (file.endsWith(".workerd-db.test.ts")) {
-        found.push({ app: app.name, database: true, file });
+    for (const directory of ["src", "worker"]) {
+      const base = join(root, "apps", app.name, directory);
+      let entries = [];
+      try {
+        entries = readdirSync(base, { recursive: true });
+      } catch {
+        // an app without that directory
+      }
+      for (const entry of entries) {
+        const file = String(entry);
+        if (file.endsWith(".workerd.test.ts")) {
+          found.push({ app: app.name, database: false, directory, file });
+        } else if (file.endsWith(".workerd-db.test.ts")) {
+          found.push({ app: app.name, database: true, directory, file });
+        }
       }
     }
   }
@@ -140,33 +165,46 @@ function workerdTests() {
 describe("workerd harness discovery", () => {
   const tests = workerdTests();
   const rootConfig = readFileSync(join(root, "vitest.config.ts"), "utf8");
-  const databaseConfig = readFileSync(
-    join(root, "vitest.admin-worker.config.ts"),
-    "utf8"
-  );
   const gates = readFileSync(
     join(root, "packages/db/scripts/run-gates.ts"),
     "utf8"
   );
 
-  it("finds the Admin tests", () => {
-    expect(tests.map(({ app }) => app)).toContain("admin");
+  it("finds the tests of the three Workers", () => {
+    expect(new Set(tests.map(({ app }) => app))).toEqual(
+      new Set(["admin", "catalog", "web"])
+    );
     expect(tests.some(({ database }) => database)).toBe(true);
+    expect(tests.some(({ database }) => !database)).toBe(true);
   });
 
   it.each(tests)(
-    "runs $app/src/$file in a workers project",
-    ({ app, database }) => {
+    "runs $app/$directory/$file in a workers project",
+    ({ app, database, directory }) => {
       if (database) {
+        const setup = DATABASE_APPS[app];
+        expect(
+          setup,
+          `${app} has a gate for its tests with a database`
+        ).toBeDefined();
+        expect(directory).toBe(setup.directory);
         const configPath = `apps/${app}/vitest.workers-db.config.ts`;
-        expect(databaseConfig).toContain(`"${configPath}"`);
+        expect(readFileSync(join(root, setup.rootConfig), "utf8")).toContain(
+          `"${configPath}"`
+        );
         expect(rootConfig).not.toContain(configPath);
         expect(readFileSync(join(root, configPath), "utf8")).toContain(
-          '"src/**/*.workerd-db.test.ts"'
+          `"${setup.directory}/**/*.workerd-db.test.ts"`
         );
         // and a gate runs that config, in the suite of the `database` job
-        expect(gates).toContain("verify-admin-worker-gate.ts");
-        expect(gates).toMatch(DATABASE_GATE_IN_CI);
+        expect(gates).toContain(setup.gate.script);
+        expect(gates).toMatch(new RegExp(`ci: \\[[^\\]]*"${setup.gate.name}"`));
+        expect(
+          readFileSync(
+            join(root, "packages/db/scripts", setup.gate.script),
+            "utf8"
+          )
+        ).toContain(setup.rootConfig);
         return;
       }
       const configPath = `apps/${app}/vitest.workers.config.ts`;
@@ -191,7 +229,39 @@ describe("workerd harness discovery", () => {
     }
   });
 
-  it("keeps the database project out of `bun run test` and the node project away from both", () => {
+  it("lists, in each database project, every Hyperdrive binding of the app's wrangler file (one that is not listed would keep the app's own connection string, outside the guard)", () => {
+    const BINDING = /"binding":\s*"(\w*HYPERDRIVE)"/g;
+    const LISTED = /(?<!\w)(\w*HYPERDRIVE)(?!\w)/g;
+    for (const app of ["web", "catalog"]) {
+      const wrangler = readFileSync(
+        join(root, "apps", app, "wrangler.jsonc"),
+        "utf8"
+      );
+      const config = readFileSync(
+        join(root, "apps", app, "vitest.workers-db.config.ts"),
+        "utf8"
+      );
+      const declared = new Set(
+        [...wrangler.matchAll(BINDING)].map(([, name]) => name)
+      );
+      const listed = new Set(
+        [...config.matchAll(LISTED)].map(([, name]) => name)
+      );
+      expect(declared.size).toBeGreaterThan(0);
+      expect(listed, app).toEqual(declared);
+    }
+  });
+
+  // `web-worker` runs the scheduled jobs of the Web Worker for real, and they clear state the gates before it left (and
+  // would clear what a later gate set up): it and `catalog-worker` (which does not touch it) end the list of `ci`.
+  it("ends the `ci` suite with web-worker and catalog-worker, in that order", () => {
+    const list = gates.match(CI_SUITE)?.[1] ?? "";
+    const names = [...list.matchAll(QUOTED_NAME)].map(([, name]) => name);
+    expect(names.slice(-2)).toEqual(["web-worker", "catalog-worker"]);
+    expect(names.filter((name) => name === "web-worker")).toHaveLength(1);
+  });
+
+  it("keeps the database projects out of `bun run test` and the node project away from both", () => {
     expect(rootConfig).not.toContain("workers-db");
     expect(rootConfig).toContain('"**/*.workerd.test.ts"');
     expect(rootConfig).toContain('"**/*.workerd-db.test.ts"');

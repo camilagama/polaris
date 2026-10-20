@@ -37,6 +37,7 @@
         "e2e-pwa/**/*.e2e.ts"
       ],
       "ignoreBinaries": ["openssl"],
+      "ignoreDependencies": ["cloudflare"],
       "project": [
         "src/**/*.{ts,tsx}",
         "worker/**/*.ts",

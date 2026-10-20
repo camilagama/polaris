@@ -1918,6 +1918,16 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Custo | Medido | O gate leva 4 s; o job `database` ficou em 3 min 03 s contra 3 min 02 s da `main`; sem job novo nem mudança de workflow. |
 | Defeito do Admin | Registrado, não corrigido | O pool de `createBillingStore` não tem ouvinte de `error`; ao fechá-lo depois de cada comando de cobrança, o driver emite um erro não tratado ("This socket has been closed."). A config de teste deixa passar só esse erro, e o gate imprime uma nota. Detalhes no [runbook do harness](../docs/runbooks/workers-test-harness.md). |
 
+### Fase 13 — harness dos Workers Web e Catalog contra PostgreSQL (T-121b, POL-56; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| Web | Concluída (verde no gate local) | `apps/web/worker/index.workerd-db.test.ts` no `workerd`, com o `wrangler.jsonc` do app: os sete Hyperdrive (cada um chega como o seu login e só como o seu papel), o tenant sob RLS, os produtores de fila, o bucket, o `fetch`, o `scheduled` das duas faixas (despacho do outbox, os quatro jobs de manutenção, falha isolada e tick seguinte) e o `queue` (processar, duplicata, evento desconhecido, falha sem remédio, nova entrega, aviso para a fila morta e incidente). Gate `web-worker` (suítes `ci`, no fim, e `gate11`), que cria logins e eventos e confere `scheduled_job_state`, `event_outbox`, `queue_processing`, `operational_incidents` e `queue_dead_letters` como dono. |
+| Catalog | Concluída (verde no gate local) | `apps/catalog/src/server/catalog.workerd-db.test.ts`: o Hyperdrive do papel público, as leituras e a rota da imagem com o bucket. O `fetch` do Worker não carrega no harness (o handler do TanStack Start precisa do build do Vite) e fica com o e2e do app. Gate `catalog-worker` (suítes `ci` e `gate8`). |
+| Mocks confinados | Concluído | `scripts/workerd-db-confinement.test.mjs` (em `bun run test`), com caso de controle; `scripts/workerd-harness.test.mjs` agora exige a config e o gate de cada teste com banco. |
+| Custo | Medido localmente | Web 20 s e Catalog 6 s no gate; sem job novo nem mudança de workflow (os gates entram na suíte `ci` do job `database`). O CI dirá o valor real. |
+| Limites | Registrados | Não prova pooler nem Hyperdrive real, fila real (entrega, nova tentativa e fila morta pela plataforma), cron real, Images, sessão ponta a ponta (T-125a) nem o `fetch` do Catalog. |
+
 ### Fase 13 — jornadas e2e na pilha real local (T-125a, POL-60; sem migration)
 
 | Subetapa | Status | Evidência / dependência |
