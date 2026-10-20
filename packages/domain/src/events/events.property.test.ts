@@ -32,6 +32,7 @@ import {
 import {
   InvalidOutboxEventError,
   OUTBOX_EVENT_TYPES,
+  type OutboxEventType,
   outboxEvent,
   outboxIdempotencyKey,
 } from "./outbox";
@@ -138,7 +139,8 @@ const EVENT_MODEL: Readonly<Record<string, EventModel>> = {
   },
 };
 const MODEL_TYPES = Object.keys(EVENT_MODEL);
-const modelType = constantFrom(...MODEL_TYPES);
+// the model's types, typed as the outbox's so an envelope can carry them (EVT-0 proves the two lists are the same)
+const modelType = constantFrom(...MODEL_TYPES) as Arbitrary<OutboxEventType>;
 
 function modelOf(type: string): EventModel {
   const model = EVENT_MODEL[type];
@@ -153,14 +155,17 @@ function modelOf(type: string): EventModel {
 /** A valid body for the type: exactly its keys, each with a valid value. */
 function validBody(type: string): Arbitrary<Record<string, string | number>> {
   const keys = Object.entries(modelOf(type).keys);
-  return tuple(...keys.map(([, value]) => value)).map((values) =>
-    Object.fromEntries(keys.map(([key], index) => [key, values[index]]))
+  return tuple(...keys.map(([, value]) => value)).map(
+    (values) =>
+      Object.fromEntries(
+        keys.map(([key], index) => [key, values[index]])
+      ) as Record<string, string | number>
   );
 }
 
 describe("what each event type holds (EVT-0)", () => {
   it("EVT-0: every type the outbox declares has a model entry here, and every entry is a declared type", () => {
-    const declared = [...OUTBOX_EVENT_TYPES].sort();
+    const declared: string[] = [...OUTBOX_EVENT_TYPES].sort();
     const modelled = [...MODEL_TYPES].sort();
     const missing = declared.filter((type) => !modelled.includes(type));
     const stale = modelled.filter((type) => !declared.includes(type));

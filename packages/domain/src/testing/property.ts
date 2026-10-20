@@ -28,7 +28,7 @@ const COMMIT_SHA = /^[0-9a-f]{7,64}$/i;
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
-export type SeedSource = "environment" | "commit" | "fixed";
+type SeedSource = "environment" | "commit" | "fixed";
 
 export interface PropertySettings {
   numRuns: number;
