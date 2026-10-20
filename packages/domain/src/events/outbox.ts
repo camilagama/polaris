@@ -78,8 +78,13 @@ const INPUT_FIELDS = new Set([
   "type",
 ]);
 
-function isEventType(type: string): type is OutboxEventType {
-  return (OUTBOX_EVENT_TYPES as readonly string[]).includes(type);
+function isEventType(type: unknown): type is OutboxEventType {
+  return (OUTBOX_EVENT_TYPES as readonly unknown[]).includes(type);
+}
+
+/** A field that is not text is refused as it is: no `String()` turns a number into an ID that passes the pattern. */
+function matches(pattern: RegExp, value: unknown): boolean {
+  return typeof value === "string" && pattern.test(value);
 }
 
 function isBodyValue(value: unknown): value is OutboxEventValue {
@@ -121,13 +126,13 @@ export function outboxEvent(input: OutboxEventInput): OutboxEvent {
   if (
     !(
       body &&
-      isEventType(String(type)) &&
-      OPAQUE_ID.test(String(organizationId)) &&
-      TOKEN.test(String(idempotencyKey)) &&
-      (correlationId === null || TOKEN.test(String(correlationId))) &&
+      isEventType(type) &&
+      matches(OPAQUE_ID, organizationId) &&
+      matches(TOKEN, idempotencyKey) &&
+      (correlationId === null || matches(TOKEN, correlationId)) &&
       body.length <= OUTBOX_EVENT_MAX_KEYS &&
       body.every(([key, value]) => BODY_KEY.test(key) && isBodyValue(value)) &&
-      hasDeclaredKeys(type as OutboxEventType, body) &&
+      hasDeclaredKeys(type, body) &&
       JSON.stringify(event).length <= OUTBOX_EVENT_MAX_BYTES
     )
   ) {
@@ -138,6 +143,6 @@ export function outboxEvent(input: OutboxEventInput): OutboxEvent {
     event: input.event,
     idempotencyKey,
     organizationId,
-    type: type as OutboxEventType,
+    type,
   };
 }
