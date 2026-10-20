@@ -1873,9 +1873,9 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Gate | Concluído | `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`), nas suítes `ci`, `gate4` e `all`: fast-check gera sequências de recebimento, venda, baixa, contagem, devolução e cancelamento, aplicadas pelas funções reais como o papel do runtime e comparadas com um modelo em memória que não importa o domínio (saldo, custo médio, versão, razão, disponível para devolver, cancelamento). Invariantes I1–I6 no [runbook do Gate 4](../docs/runbooks/gate-4-sales-core.md#propriedade-modelo--postgresql-estoque-e-devolução). |
-| Custo | Concluído | 20 sequências por PR (10 s locais na suíte `ci`, dentro do +0,5 min do job `database`); a execução longa por `POLARIS_PROPERTY_RUNS` (500 em cerca de 5 min), sem job novo: o agendamento semanal fica com quem altera os workflows. |
-| Semente | Concluído | Semente nova a cada execução, impressa no início; na falha, a semente, o caminho e a sequência mínima em comandos concretos ficam nas últimas linhas, e `POLARIS_PROPERTY_SEED` e `POLARIS_PROPERTY_PATH` reproduzem. |
-| Prova por quebra | Concluída (20/10/2026) | Três quebras locais e descartadas, todas pegas: devolução acima do disponível, média antiga na reposição de custo desconhecido em saldo zero (pega só pelo exemplo fixo) e média truncada. Nenhum defeito do sistema foi achado. |
+| Custo | Concluído | 20 sequências sorteadas e 3 fixas por PR (10 s locais na suíte `ci`, dentro do +0,5 min do job `database`); a execução longa por `POLARIS_PROPERTY_RUNS` (500 em cerca de 5 min), sem job novo: o agendamento semanal fica com quem altera os workflows. |
+| Semente | Concluído | Semente nova a cada execução, impressa no início; na falha, a sequência mínima em comandos concretos, o motivo e o comando de reprodução (`POLARIS_PROPERTY_SEED` e `POLARIS_PROPERTY_PATH`) ficam nas últimas linhas. |
+| Prova por quebra | Concluída (20/10/2026) | Três quebras locais e descartadas, todas pegas: devolução acima do disponível, média antiga na reposição de custo desconhecido em saldo zero (pega só pelo exemplo fixo) e média truncada. Nenhum defeito do sistema foi achado; a revisão achou um do modelo (ordem das linhas da devolução), corrigido e fixado como exemplo. |
 
 ### Fase 14 — staging fixo: configuração, ADR e verificações (PR131; nada criado nem implantado)
 

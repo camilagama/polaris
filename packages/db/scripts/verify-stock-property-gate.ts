@@ -49,18 +49,23 @@ import {
  *   I5 a sale is either cancelled or has returns, never both, and a cancelled sale is cancelled once;
  *   I6 a rejected command (stock, version, cost, availability) leaves no trace and fails with the model's code.
  *
- * Runs: POLARIS_PROPERTY_RUNS (default 20, the `ci` budget); POLARIS_PROPERTY_SEED and
- * POLARIS_PROPERTY_PATH replay a printed failure.
+ * Runs: POLARIS_PROPERTY_RUNS drawn sequences (default 20, the `ci` budget) after
+ * the fixed examples; POLARIS_PROPERTY_SEED and POLARIS_PROPERTY_PATH replay a
+ * printed failure.
  */
 
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 const DEFAULT_RUNS = 20;
-const MAX_RUNS = 5000;
+// the runner stops a gate after 30 minutes; at up to 0.7 s a sequence this fits
+const MAX_RUNS = 2000;
 const VARIANTS = 2;
-const OCCURRED_ON = "2026-10-01";
+const OCCURRED_ON = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+}).format(new Date());
 const SCALE = 1_000_000n;
 const costPattern = /^(\d+)(?:\.(\d{1,6}))?$/;
 const domainCodePattern = /^[a-z][a-z_]+$/;
+const failingCommandPattern = /command #(\d+)/;
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
 
@@ -126,7 +131,8 @@ const costArb = fc.constantFrom(
 const variantArb = fc.integer({ max: VARIANTS - 1, min: 0 });
 const amountArb = fc.nat({ max: 5 });
 const oneInArb = (odds: number) =>
-  fc.nat({ max: odds - 1 }).map((draw) => draw === 0);
+  // shrinks toward 0, the common case
+  fc.nat({ max: odds - 1 }).map((draw) => draw === odds - 1);
 
 const drawArb: fc.Arbitrary<Draw> = fc.oneof(
   {
@@ -213,10 +219,11 @@ function within(amount: number, available: number, overdraw: boolean): number {
 }
 
 /**
- * Sequences that always run before the random ones: the restock rules turn on a
+ * Sequences that always run before the random ones. The restock rules turn on a
  * sale whose cost was unknown coming back to an empty balance whose average is
  * known again, about six commands in one order, which the random draws did not
- * reach in 400 runs. Each one is still checked step by step against the model.
+ * reach in 400 runs; and the lines of a return restock in position order, not in
+ * the order they were sent. Each one is still checked step by step against the model.
  */
 const unknownCostSale: Draw[] = [
   { kind: "count", physical: 3, stale: false, valuation: null, variant: 0 },
@@ -226,6 +233,29 @@ const unknownCostSale: Draw[] = [
   { amount: 0, kind: "write_off", overdraw: false, variant: 0 },
 ];
 const fixedExamples: [Draw[]][] = [
+  // one sale with two lines of the same variant, returned in the opposite order
+  [
+    [
+      { cost: "1.5", kind: "receive", quantity: 5, variant: 0 },
+      {
+        kind: "sale",
+        lines: [
+          { amount: 2, variant: 0 },
+          { amount: 1, variant: 0 },
+        ],
+        overdraw: false,
+      },
+      {
+        kind: "return",
+        lines: [
+          { amount: 1, position: 1, restockedPart: 2 },
+          { amount: 0, position: 0, restockedPart: 1 },
+        ],
+        overdraw: false,
+        sale: 0,
+      },
+    ],
+  ],
   [[...unknownCostSale, { kind: "cancel", sale: 0 }]],
   [
     [
@@ -457,7 +487,10 @@ function applyToModel(
     case "return": {
       const sale = model.sales[command.sale];
       assert.ok(sale);
-      const { lines } = command;
+      // the server restocks in position order, whatever order the lines were sent in
+      const lines = [...command.lines].sort(
+        (left, right) => left.position - right.position
+      );
       if (sale.cancelled) {
         return "sale_not_returnable";
       }
@@ -540,6 +573,8 @@ function resolveReturn(
       });
     }
   }
+  // the server restocks a variant's lines in position order, whatever order they were sent in
+  lines.sort((left, right) => left.position - right.position);
   return { kind: "return", lines, sale: index };
 }
 
@@ -822,16 +857,14 @@ async function assertFinalState(
       ),
       `I2 ledger of variant ${index}`
     );
+    const balance = await admin.pool.query<{ quantity: number }>(
+      "SELECT quantity FROM public.inventory_balances WHERE organization_id = $1 AND variant_id = $2",
+      [world.tenant.organizationId, variantId]
+    );
+    const quantity = balance.rows[0]?.quantity ?? 0;
     const total = ledger.rows.reduce((sum, row) => sum + row.quantity_delta, 0);
-    assert.equal(
-      total,
-      expected.quantity,
-      `I3 sum of the ledger of variant ${index}`
-    );
-    assert.ok(
-      expected.quantity >= 0,
-      `I3 nonnegative balance of variant ${index}`
-    );
+    assert.equal(quantity, total, `I3 sum of the ledger of variant ${index}`);
+    assert.ok(quantity >= 0, `I3 nonnegative balance of variant ${index}`);
   }
   for (const [index, sale] of model.sales.entries()) {
     // biome-ignore lint/performance/noAwaitInLoops: one read per sale
@@ -896,6 +929,152 @@ function seedFromEnvironment(): number {
   return seed;
 }
 
+/** A fresh organization with its variants, one per sequence (and per shrink attempt). */
+async function createWorld(
+  admin: RuntimeDatabase,
+  database: RuntimeDatabase,
+  label: string
+): Promise<World> {
+  const tenant = await createTenantFixture(admin.pool, label);
+  const variants: string[] = [];
+  for (let index = 0; index < VARIANTS; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: products are created one at a time
+    const product = await withTenantAs(
+      database.db,
+      tenant,
+      "product:create",
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: `Produto ${index}`,
+          requestId: randomUUID(),
+        })
+    );
+    const variant = await admin.pool.query<{ id: string }>(
+      "SELECT id FROM public.product_variants WHERE organization_id = $1 AND product_id = $2",
+      [tenant.organizationId, product.id]
+    );
+    assert.ok(variant.rows[0]);
+    variants.push(variant.rows[0].id);
+  }
+  return { database, tenant, variants };
+}
+
+/**
+ * Prints the failure for the runner, which keeps only the last 14 lines of a
+ * failed gate, each cut at 220 characters: the smallest sequence (up to the
+ * failing command) first, then the reason, and the replay command last.
+ */
+function reportFailure(details: fc.RunDetails<[Draw[]]>) {
+  const message =
+    details.errorInstance instanceof Error
+      ? details.errorInstance.message
+      : String(details.errorInstance);
+  const failing = failingCommandPattern.exec(message);
+  const smallest = concreteSequence(details.counterexample?.[0] ?? []);
+  const shown = failing ? smallest.slice(0, Number(failing[1]) + 1) : smallest;
+  for (const [index, command] of shown.entries()) {
+    console.error(`  #${index} ${describe(command)}`);
+  }
+  console.error(
+    `property failed after ${details.numRuns} runs and ${details.numShrinks} shrinks; the smallest sequence is above (${smallest.length} commands)`
+  );
+  console.error(
+    `reason: ${message
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("+ actual - expected"))
+      .slice(0, 8)
+      .join(" | ")}`
+  );
+  console.error(
+    `replay: CI=true POLARIS_PROPERTY_SEED=${details.seed} POLARIS_PROPERTY_PATH=${details.counterexamplePath ?? ""} bun scripts/run-gates.ts stock-property`
+  );
+}
+
+interface Tally {
+  commands: number;
+  rejected: number;
+  rejectedBy: Record<string, number>;
+}
+
+async function checkProperty(
+  admin: RuntimeDatabase,
+  database: RuntimeDatabase,
+  options: { path: string | undefined; runs: number; seed: number },
+  tally: Tally
+) {
+  let organizations = 0;
+  // a broken database is not a counterexample: once setup fails, every later
+  // run (and shrink attempt) passes at once and the error is rethrown below
+  let infrastructureFailure: { error: unknown } | undefined;
+  const property = fc.asyncProperty(
+    fc.array(drawArb, { maxLength: 16, minLength: 1, size: "max" }),
+    async (sequence) => {
+      if (infrastructureFailure) {
+        return;
+      }
+      organizations += 1;
+      let world: World;
+      try {
+        world = await createWorld(admin, database, `property ${organizations}`);
+      } catch (error) {
+        infrastructureFailure = { error };
+        return;
+      }
+      const model = emptyModel();
+      let index = 0;
+      for (const draw of sequence) {
+        const command = resolve(model, draw);
+        if (!command) {
+          continue;
+        }
+        // biome-ignore lint/performance/noAwaitInLoops: the commands of a sequence run in order
+        const real = await runOnDatabase(world, model, command);
+        const expected = applyToModel(model, command, () => real.saleId ?? "");
+        const label = `command #${index} (${command.kind})`;
+        assert.equal(real.outcome, expected, `I6 outcome of ${label}`);
+        tally.commands += 1;
+        if (expected !== "ok") {
+          tally.rejected += 1;
+          tally.rejectedBy[expected] = (tally.rejectedBy[expected] ?? 0) + 1;
+        }
+        await assertBalances(world, model, label);
+        index += 1;
+      }
+      await assertFinalState(world, admin, model);
+    }
+  );
+
+  const details = await fc.check(property, {
+    examples: fixedExamples,
+    // the fixed examples count as runs: add them so the drawn ones stay `runs`
+    numRuns: options.runs + fixedExamples.length,
+    seed: options.seed,
+    ...(options.path ? { path: options.path } : {}),
+  });
+  if (infrastructureFailure) {
+    throw infrastructureFailure.error;
+  }
+  return details;
+}
+
+async function assertGateDatabase(admin: RuntimeDatabase) {
+  const server = await admin.pool.query<{
+    database_name: string;
+    server_version_num: string;
+  }>(
+    "SELECT current_database() AS database_name, current_setting('server_version_num') AS server_version_num"
+  );
+  const [serverRow] = server.rows;
+  assert.ok(serverRow);
+  assert.equal(serverRow.database_name, expectedDatabase);
+  assert.ok(Number(serverRow.server_version_num) >= 180_000);
+  const migrations = await admin.pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
+  );
+  assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
+}
+
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -910,159 +1089,69 @@ async function run() {
   console.log(`seed=${seed} runs=${runs}${path ? ` path=${path}` : ""}`);
 
   const admin = createDatabase(adminUrl, { maxConnections: 2 });
-  let runtime: RuntimeDatabase | undefined;
-  let loginRole: string | undefined;
-  const tests: string[] = [];
+  const loginRole = `polaris_property_gate_${randomUUID().replaceAll("-", "")}`;
+  let loginRoleCreated = false;
   try {
-    const server = await admin.pool.query<{
-      database_name: string;
-      server_version_num: string;
-    }>(
-      "SELECT current_database() AS database_name, current_setting('server_version_num') AS server_version_num"
-    );
-    const [serverRow] = server.rows;
-    assert.ok(serverRow);
-    assert.equal(serverRow.database_name, expectedDatabase);
-    assert.ok(Number(serverRow.server_version_num) >= 180_000);
-    const migrations = await admin.pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations"
-    );
-    assert.equal(Number(migrations.rows[0]?.count), journalMigrationCount());
-    tests.push("PostgreSQL 18 with every migration replayed from scratch");
-
-    loginRole = `polaris_property_gate_${randomUUID().replaceAll("-", "")}`;
+    await assertGateDatabase(admin);
     const loginPassword = randomBytes(24).toString("hex");
     await admin.pool.query(
       `CREATE ROLE "${loginRole}" WITH LOGIN INHERIT PASSWORD '${loginPassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
     );
+    loginRoleCreated = true;
     await admin.pool.query(`GRANT "${runtimeRole}" TO "${loginRole}"`);
     const database = createDatabase(
       temporaryRuntimeUrl(adminUrl, loginRole, loginPassword),
-      {
-        maxConnections: 1,
-      }
+      { maxConnections: 1 }
     );
-    runtime = database;
-
-    let organizations = 0;
-    let commands = 0;
-    let rejected = 0;
-    const rejectedBy: Record<string, number> = {};
-    const property = fc.asyncProperty(
-      fc.array(drawArb, { maxLength: 16, minLength: 1, size: "max" }),
-      async (sequence) => {
-        // each run (and each shrink attempt) gets its own organization and variants
-        organizations += 1;
-        const tenant = await createTenantFixture(
-          admin.pool,
-          `property ${organizations}`
-        );
-        const variants: string[] = [];
-        for (let index = 0; index < VARIANTS; index += 1) {
-          // biome-ignore lint/performance/noAwaitInLoops: products are created one at a time
-          const product = await withTenantAs(
-            database.db,
-            tenant,
-            "product:create",
-            (transaction, identity) =>
-              createProduct(transaction, identity, {
-                name: `Produto ${index}`,
-                requestId: randomUUID(),
-              })
-          );
-          const variant = await admin.pool.query<{ id: string }>(
-            "SELECT id FROM public.product_variants WHERE organization_id = $1 AND product_id = $2",
-            [tenant.organizationId, product.id]
-          );
-          assert.ok(variant.rows[0]);
-          variants.push(variant.rows[0].id);
-        }
-        const world: World = { database, tenant, variants };
-        const model = emptyModel();
-        for (const [step, draw] of sequence.entries()) {
-          const command = resolve(model, draw);
-          if (!command) {
-            continue;
-          }
-          // biome-ignore lint/performance/noAwaitInLoops: the commands of a sequence run in order
-          const real = await runOnDatabase(world, model, command);
-          const expected = applyToModel(
-            model,
-            command,
-            () => real.saleId ?? ""
-          );
-          const label = `step ${step} ${describe(command)}`;
-          assert.equal(real.outcome, expected, `I6 outcome of ${label}`);
-          commands += 1;
-          if (expected !== "ok") {
-            rejected += 1;
-            rejectedBy[expected] = (rejectedBy[expected] ?? 0) + 1;
-          }
-          await assertBalances(world, model, label);
-        }
-        await assertFinalState(world, admin, model);
-      }
-    );
-
-    const details = await fc.check(property, {
-      examples: fixedExamples,
-      numRuns: runs,
-      seed,
-      ...(path ? { path } : {}),
-    });
+    const tally: Tally = { commands: 0, rejected: 0, rejectedBy: {} };
+    let details: fc.RunDetails<[Draw[]]>;
+    try {
+      details = await checkProperty(
+        admin,
+        database,
+        { path, runs, seed },
+        tally
+      );
+    } finally {
+      await database.pool.end();
+    }
     if (details.failed) {
-      const reason =
-        details.errorInstance instanceof Error
-          ? details.errorInstance.message.split("\n").slice(0, 6).join(" | ")
-          : String(details.errorInstance);
-      const smallest = concreteSequence(details.counterexample?.[0] ?? []);
-      // the runner keeps only the tail of a failed gate: these lines come last and stay short
-      console.error(
-        `property failed after ${details.numRuns} runs and ${details.numShrinks} shrinks`
-      );
-      console.error(
-        `replay: POLARIS_PROPERTY_SEED=${details.seed} POLARIS_PROPERTY_PATH=${details.counterexamplePath ?? ""}`
-      );
-      console.error(`reason: ${reason.slice(0, 600)}`);
-      console.error(`smallest sequence (${smallest.length} commands):`);
-      for (const command of smallest) {
-        console.error(`  ${describe(command)}`);
-      }
+      reportFailure(details);
       process.exitCode = 1;
       return;
     }
-    tests.push(
-      `${details.numRuns} generated sequences (${commands} commands, ${rejected} rejected as the model predicted) matched the model: balance, average cost, version, ledger, returnable quantities, cancellations`
-    );
-
     console.log(
       JSON.stringify(
         {
           branch,
-          commands,
           gate: "stock-property",
-          rejected,
-          rejectedBy,
-          runs: details.numRuns,
+          ...tally,
           seed,
           status: "passed",
-          tests,
+          tests: [
+            "PostgreSQL 18 with every migration replayed from scratch",
+            `${runs} drawn and ${fixedExamples.length} fixed sequences (${tally.commands} commands, ${tally.rejected} rejected as the model predicted) matched the model: balance, average cost, version, ledger, returnable quantities, cancellations`,
+          ],
         },
         null,
         2
       )
     );
   } finally {
-    await runtime?.pool.end();
-    if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
-      await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+    try {
+      if (loginRoleCreated) {
+        await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
+        await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+      }
+    } finally {
+      await admin.pool.end();
     }
-    await admin.pool.end();
   }
 }
 
 run().catch((error: unknown) => {
-  console.error(redactedFailure(error).split("\n").slice(0, 3).join("\n"));
+  console.error(
+    `Stock property gate failed: ${redactedFailure(error).split("\n").slice(0, 3).join("\n")}`
+  );
   process.exitCode = 1;
 });

@@ -67,7 +67,10 @@ Mais rodadas (`POLARIS_CONCURRENCY_REPEAT=10`, o máximo) servem para investigar
 
 O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, nas suítes `ci`, `gate4` e `all`) gera com fast-check sequências de comandos nomeados (recebimento, venda, baixa, contagem, devolução e cancelamento, o estorno da venda inteira) sobre duas variantes de uma organização nova a cada sequência. Cada comando passa pelas funções reais do repositório como o papel do runtime (`FORCE RLS` e os gatilhos deferidos do commit) e por um **modelo em memória** escrito no próprio gate. O modelo não importa o domínio: a média é aritmética própria em micro-reais, meio-para-cima em 6 casas, com as regras de [estoque](../business-rules/inventory.md#custo-médio) e da [reposição](../business-rules/inventory.md#reposição-por-cancelamento-ou-devolução).
 
-**Gerador.** As quantidades são sorteadas em relação ao estado (de 1 até o que existe; o sorteio 0 leva tudo, para o saldo chegar a zero com frequência), então a maior parte dos comandos é válida. Um em oito pede de propósito mais do que há (`overdraw`), uma contagem em sete manda versão desatualizada e as contagens com valoração e os recebimentos sobre média desconhecida exercitam as recusas de custo; o modelo prevê o resultado de cada comando (aceito ou o código do erro). Duas sequências fixas (`examples`) rodam sempre antes das sorteadas: a venda de custo desconhecido que volta, por cancelamento e por devolução, a um saldo zero de média já conhecida. Esse caso pede uns seis comandos numa ordem só e o sorteio não chegou nele em 400 sequências.
+**Gerador.** As quantidades são sorteadas em relação ao estado (de 1 até o que existe; o sorteio 0 leva tudo, para o saldo chegar a zero com frequência), então a maior parte dos comandos é válida. Um em oito pede de propósito mais do que há (`overdraw`), uma contagem em sete manda versão desatualizada e as contagens com valoração e os recebimentos sobre média desconhecida exercitam as recusas de custo; o modelo prevê o resultado de cada comando (aceito ou o código do erro). As linhas de uma devolução vão ao servidor na ordem sorteada, e o modelo repõe por posição, como o servidor. Três sequências fixas (`examples`) rodam sempre antes das sorteadas:
+
+- a venda de custo desconhecido que volta, por cancelamento e por devolução, a um saldo zero de média já conhecida. Esse caso pede uns seis comandos numa ordem só, e o sorteio não chegou nele em 400 sequências;
+- a devolução de duas linhas da mesma variante enviadas fora da ordem de posição.
 
 **Invariantes** (conferidos depois de cada comando, I1 e I6, e ao final, os demais):
 
@@ -84,24 +87,28 @@ O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, na
 
 | Quando | Sequências | Tempo |
 | --- | --- | --- |
-| Todo PR (`gates:ci`) | 20, o padrão | cerca de 10 s |
-| Execução longa | `POLARIS_PROPERTY_RUNS=500` (máximo 5000; o executor para um gate em 30 min) | cerca de 5 min |
+| Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 3 fixas | cerca de 10 s |
+| Execução longa | `POLARIS_PROPERTY_RUNS=500` (máximo 2000, o que cabe nos 30 min em que o executor para um gate) | cerca de 5 min |
 
 A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Rode à mão num banco descartável (como em [Passos](#passos)), em PR que mude estoque, venda, devolução ou cancelamento e antes de cada prova de release:
 
     CI=true POLARIS_PROPERTY_RUNS=500 bun scripts/run-gates.ts stock-property   # a partir de packages/db
 
-**Semente e reprodução.** Cada execução sorteia uma semente nova e a imprime na primeira linha (`seed=...`), então o CI explora sequências diferentes a cada PR. Na falha, as últimas linhas (as que o executor mostra) trazem a semente e o caminho do encolhimento, o motivo e a **sequência mínima** em comandos concretos. Para reproduzir:
+**Semente e reprodução.** Cada execução sorteia uma semente nova e a imprime na primeira linha (`seed=...`), então o CI explora sequências diferentes a cada PR. Na falha, as últimas linhas (as que o executor mostra) trazem a **sequência mínima** em comandos concretos até o comando que falhou, o motivo e, por último, o comando que reproduz a falha:
 
     CI=true POLARIS_PROPERTY_SEED=<semente> POLARIS_PROPERTY_PATH=<caminho> bun scripts/run-gates.ts stock-property
+
+Um erro de infraestrutura (banco fora do ar, organização que não se cria) não é tratado como contraexemplo: o gate para sem encolher e mostra o erro.
 
 **Prova por quebra** (20/10/2026, local, descartada; semente 20261020):
 
 | Quebra no código | Resultado |
 | --- | --- |
-| Devolução limitada ao vendido, e não ao disponível (`planSaleReturn`) | Falhou na 6ª sequência. A mínima tem 4 comandos (recebe 1, vende 1, devolve 1, devolve 1): o banco recusou no commit (`sql:23514`) onde o modelo esperava `sale_return_exceeds_available`. |
-| Reposição de custo desconhecido em saldo zero mantém a média antiga (o comportamento anterior à revisão do Gate 4) | Falhou no exemplo fixo (6 comandos): média `1.500000` onde o modelo diz desconhecida. Sem o exemplo fixo, 60, 150 e 400 sequências sorteadas não pegaram. |
-| Média truncada em vez de meio-para-cima | Falhou na 6ª sequência. A mínima recebe 1 a 0, 1 a 0 e 4 a 1: a média ficou `0.666666` onde o modelo diz `0.666667`. |
+| Devolução limitada ao vendido, e não ao disponível (`planSaleReturn`) | Com 60 sequências, falhou na 39ª. A mínima recebe 1, vende 1, devolve 1 e devolve 1 de novo: o banco recusou no commit (`sql:23514`) onde o modelo esperava `sale_return_exceeds_available`. |
+| Reposição de custo desconhecido em saldo zero mantém a média antiga (o comportamento anterior à revisão do Gate 4) | Falhou no exemplo fixo (6 comandos): média `1.500000` onde o modelo diz desconhecida. Sem o exemplo fixo, 60, 150 e 400 sequências sorteadas não pegaram. O `review-hardening` cobre o mesmo caso com um cenário escrito à mão. |
+| Média truncada em vez de meio-para-cima | Com 60 sequências, falhou na 7ª. A mínima recebe 1 a 0, 1 a 0 e 4 a 1: a média ficou `0.666666` onde o modelo diz `0.666667`. |
+
+O próprio exemplo das linhas fora de ordem nasceu de um defeito do **modelo**, achado na revisão: o modelo repunha na ordem enviada, e o servidor repõe por posição. O exemplo falhou antes da correção do modelo e passa depois.
 
 ## Prova antes de liberação em Neon
 
