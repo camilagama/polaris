@@ -134,7 +134,8 @@ function isTokenInUrlRoute(request: Request): boolean {
   }
   const path = new URL(request.url).pathname.replace(trailingSlashPattern, "");
   return (
-    path.endsWith("/verify-email") || resetPasswordCallbackPathPattern.test(path)
+    path.endsWith("/verify-email") ||
+    resetPasswordCallbackPathPattern.test(path)
   );
 }
 
@@ -180,7 +181,11 @@ async function freshVerifiedSession(
   request: Request
 ): Promise<
   | { response: Response }
-  | { session: NonNullable<Awaited<ReturnType<BetterAuthInstance["api"]["getSession"]>>> }
+  | {
+      session: NonNullable<
+        Awaited<ReturnType<BetterAuthInstance["api"]["getSession"]>>
+      >;
+    }
 > {
   const session = await auth.api.getSession({
     headers: request.headers,
@@ -211,7 +216,12 @@ async function recordPasswordEvent(
       passwordAuditEvent(eventType, user.id, effects.requestId)
     );
   } catch (error) {
-    logServerError({ error, method: "POST", requestId: effects.requestId, route });
+    logServerError({
+      error,
+      method: "POST",
+      requestId: effects.requestId,
+      route,
+    });
   }
   if (effects.sendPasswordNotice) {
     effects.runInBackground(
@@ -510,13 +520,17 @@ function openAuthRuntime(
           bumpUserAuthorizationEpoch(db, userId),
         requestId: safeRequestId,
         runInBackground: background,
-        ...(delivery ? { sendPasswordNotice: delivery.sendPasswordNotice } : {}),
+        ...(delivery
+          ? { sendPasswordNotice: delivery.sendPasswordNotice }
+          : {}),
         writeAuditEvent: databaseAuditEventWriter(db),
       },
       pool: pool as unknown as LoginLockQueryable,
       requestId: safeRequestId,
       runInBackground: background,
-      store: createDatabaseLoginLockStore(pool as unknown as LoginLockQueryable),
+      store: createDatabaseLoginLockStore(
+        pool as unknown as LoginLockQueryable
+      ),
     },
   };
 }
@@ -539,9 +553,7 @@ async function sendLoginUnlock(
     email.toLowerCase(),
     { includeAccounts: true }
   );
-  if (
-    !found?.accounts.some((account) => account.providerId === "credential")
-  ) {
+  if (!found?.accounts.some((account) => account.providerId === "credential")) {
     return;
   }
   const token = newUnlockToken(found.user.id);
@@ -669,34 +681,54 @@ export async function handleLoginUnlockRequest(
   }
   const { runtime } = opened;
   try {
-    const token = await linkToken(request);
-    const userId = token === undefined ? undefined : unlockTokenUserId(token);
-    if (
-      token === undefined ||
-      userId === undefined ||
-      (await runtime.store.unlock(await sha256(token))) !== "unlocked"
-    ) {
-      return jsonError(400, "unlock_link_invalid");
-    }
-    try {
-      await runtime.effects.writeAuditEvent(
-        passwordAuditEvent("login_unlocked", userId, runtime.requestId)
-      );
-    } catch (error) {
-      logServerError({
-        error,
-        method: "POST",
-        requestId: runtime.requestId,
-        route: "/api/login-unlock",
-      });
-    }
-    return Response.json(
-      { status: "unlocked" },
-      { headers: { "cache-control": "no-store" } }
-    );
+    return await unlockWithToken(request, {
+      requestId: runtime.requestId,
+      store: runtime.store,
+      writeAuditEvent: runtime.effects.writeAuditEvent,
+    });
   } finally {
     await runtime.close();
   }
+}
+
+/** The unlock itself, given the lock and the audit: 200 `unlocked` or the one 400. */
+export async function unlockWithToken(
+  request: Request,
+  {
+    requestId,
+    store,
+    writeAuditEvent,
+  }: {
+    requestId: string;
+    store: Pick<LoginLockStore, "unlock">;
+    writeAuditEvent: AuthSecurityAuditEventWriter;
+  }
+): Promise<Response> {
+  const token = await linkToken(request);
+  const userId = token === undefined ? undefined : unlockTokenUserId(token);
+  if (
+    token === undefined ||
+    userId === undefined ||
+    (await store.unlock(await sha256(token))) !== "unlocked"
+  ) {
+    return jsonError(400, "unlock_link_invalid");
+  }
+  try {
+    await writeAuditEvent(
+      passwordAuditEvent("login_unlocked", userId, requestId)
+    );
+  } catch (error) {
+    logServerError({
+      error,
+      method: "POST",
+      requestId,
+      route: "/api/login-unlock",
+    });
+  }
+  return Response.json(
+    { status: "unlocked" },
+    { headers: { "cache-control": "no-store" } }
+  );
 }
 
 /**
@@ -717,12 +749,24 @@ export async function handleEmailVerificationRequest(
   }
   const { runtime } = opened;
   try {
+    return await verifyEmailWithToken(runtime.auth, request);
+  } finally {
+    await runtime.close();
+  }
+}
+
+/** The verification itself, given Better Auth: 200 `verified` or a 400 that says expired or invalid. */
+export async function verifyEmailWithToken(
+  auth: BetterAuthInstance,
+  request: Request
+): Promise<Response> {
+  {
     const token = await linkToken(request);
     if (token === undefined) {
       return jsonError(400, "verification_link_invalid");
     }
     try {
-      await runtime.auth.api.verifyEmail({
+      await auth.api.verifyEmail({
         headers: request.headers,
         query: { token },
       });
@@ -742,7 +786,5 @@ export async function handleEmailVerificationRequest(
       { status: "verified" },
       { headers: { "cache-control": "no-store" } }
     );
-  } finally {
-    await runtime.close();
   }
 }

@@ -698,6 +698,20 @@ function sessionFromGetSession(returned: unknown): StoredSession | undefined {
   return session as StoredSession;
 }
 
+function databaseLoginLockClearer(
+  database: PolarisDatabase | undefined,
+  secret: string
+): LoginLockClearer | undefined {
+  if (!database) {
+    return undefined;
+  }
+  return async (email) => {
+    await createDatabaseLoginLockStore(
+      database.$client as unknown as LoginLockQueryable
+    ).clear(await loginLockKey(secret, email));
+  };
+}
+
 export function createBetterAuth({
   accessLogWriter,
   auditEventWriter,
@@ -718,15 +732,8 @@ export function createBetterAuth({
   const writeAuditEvent =
     auditEventWriter ??
     (database ? databaseAuditEventWriter(database) : undefined);
-  const clearLoginLock: LoginLockClearer | undefined =
-    loginLockClearer ??
-    (database
-      ? async (email: string) => {
-          await createDatabaseLoginLockStore(
-            database.$client as unknown as LoginLockQueryable
-          ).clear(await loginLockKey(secret, email));
-        }
-      : undefined);
+  const clearLoginLock =
+    loginLockClearer ?? databaseLoginLockClearer(database, secret);
 
   // Without a database or a writer (the test adapter) nothing is recorded.
   const accessLogEnabled = Boolean(accessLogWriter ?? database);

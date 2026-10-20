@@ -41,7 +41,11 @@ describe("Resend authentication email delivery", () => {
     const fetcher = vi.fn<typeof fetch>();
     fetcher.mockResolvedValue(Response.json({ id: "resend-email-id" }));
     vi.stubGlobal("fetch", fetcher);
-    const delivery = createResendAuthEmailDelivery({ apiKey, appBaseURL, from });
+    const delivery = createResendAuthEmailDelivery({
+      apiKey,
+      appBaseURL,
+      from,
+    });
     const token = "verification-secret-token";
     const url = `https://polaris.example.invalid/api/auth/verify-email?token=${token}`;
 
@@ -82,7 +86,11 @@ describe("Resend authentication email delivery", () => {
     const fetcher = vi.fn<typeof fetch>();
     fetcher.mockResolvedValue(Response.json({ id: "resend-email-id" }));
     vi.stubGlobal("fetch", fetcher);
-    const delivery = createResendAuthEmailDelivery({ apiKey, appBaseURL, from });
+    const delivery = createResendAuthEmailDelivery({
+      apiKey,
+      appBaseURL,
+      from,
+    });
     const token = "reset-secret-token";
     const url = `https://polaris.example.invalid/api/auth/reset-password/${token}`;
 
@@ -125,7 +133,11 @@ describe("Resend authentication email delivery", () => {
     const loggerSpy = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
-    const delivery = createResendAuthEmailDelivery({ apiKey, appBaseURL, from });
+    const delivery = createResendAuthEmailDelivery({
+      apiKey,
+      appBaseURL,
+      from,
+    });
 
     await expect(
       delivery.sendPasswordReset(
@@ -158,7 +170,11 @@ describe("Resend authentication email delivery", () => {
     const fetcher = vi.fn<typeof fetch>();
     fetcher.mockResolvedValue(Response.json({ id: "resend-email-id" }));
     vi.stubGlobal("fetch", fetcher);
-    const delivery = createResendAuthEmailDelivery({ apiKey, appBaseURL, from });
+    const delivery = createResendAuthEmailDelivery({
+      apiKey,
+      appBaseURL,
+      from,
+    });
     const token = "user-1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     await delivery.sendLoginUnlock({ to: recipient, token });
@@ -186,7 +202,11 @@ describe("Resend authentication email delivery", () => {
     const fetcher = vi.fn<typeof fetch>();
     fetcher.mockResolvedValue(Response.json({ id: "resend-email-id" }));
     vi.stubGlobal("fetch", fetcher);
-    const delivery = createResendAuthEmailDelivery({ apiKey, appBaseURL, from });
+    const delivery = createResendAuthEmailDelivery({
+      apiKey,
+      appBaseURL,
+      from,
+    });
 
     await delivery.sendPasswordNotice({
       eventId: "user-1:req-1",
@@ -220,7 +240,11 @@ describe("Resend authentication email delivery", () => {
     const fetcher = vi.fn<typeof fetch>();
     fetcher.mockResolvedValue(Response.json({ id: "resend-email-id" }));
     vi.stubGlobal("fetch", fetcher);
-    const delivery = createResendAuthEmailDelivery({ apiKey, appBaseURL, from });
+    const delivery = createResendAuthEmailDelivery({
+      apiKey,
+      appBaseURL,
+      from,
+    });
 
     await delivery.sendExistingAccount?.({
       user: { email: recipient, id: "user-test-id" },
@@ -232,7 +256,10 @@ describe("Resend authentication email delivery", () => {
     expect(key).toBe(
       `polaris-exists-${await sha256Hex("user-test-id")}-${day}`
     );
-    const body = JSON.parse(String(init?.body)) as { subject: string; text: string };
+    const body = JSON.parse(String(init?.body)) as {
+      subject: string;
+      text: string;
+    };
     expect(body.subject).toBe("Você já tem conta no Polaris");
     expect(body.text).toContain(`${appBaseURL}/entrar`);
   });

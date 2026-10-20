@@ -133,7 +133,9 @@ export function PasswordNoticeEmail({
     <AuthActionEmail
       actionLabel="Redefinir a senha"
       actionURL={url}
-      heading={kind === "changed" ? "Sua senha foi trocada" : "Sua conta tem uma senha"}
+      heading={
+        kind === "changed" ? "Sua senha foi trocada" : "Sua conta tem uma senha"
+      }
       notice="Se foi você, não precisa fazer nada."
       preview={what}
       purpose={`${what} Se não foi você, redefina a senha agora pelo botão abaixo.`}

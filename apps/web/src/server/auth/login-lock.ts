@@ -13,6 +13,7 @@ const LOGIN_LOCK_QUERY_TIMEOUT_MS = 5000;
 /** The unlock token: the user's ID, a dot and 32 bytes of CSPRNG in base64url (43 characters). */
 const unlockTokenPattern = /^([A-Za-z0-9_-]{1,64})\.[A-Za-z0-9_-]{43}$/;
 const trailingSlashPattern = /\/+$/;
+const base64PaddingPattern = /[=]+$/;
 
 /** The part of a `pg` pool (or client) this module uses. */
 export interface LoginLockQueryable {
@@ -52,7 +53,7 @@ export function createDatabaseLoginLockStore(
         "SELECT allowed, retry_after_seconds, newly_locked FROM public.auth_login_lock_begin($1::text)",
         [key]
       );
-      const row = rows[0];
+      const [row] = rows;
       return {
         allowed: row?.allowed === true,
         newlyLocked: row?.newly_locked === true,
@@ -100,7 +101,7 @@ function base64Url(bytes: Uint8Array): string {
   return btoa(binary)
     .replaceAll("+", "-")
     .replaceAll("/", "_")
-    .replace(/=+$/, "");
+    .replace(base64PaddingPattern, "");
 }
 
 /**

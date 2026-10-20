@@ -147,7 +147,11 @@ export function createResendAuthEmailDelivery({
         ...common,
         event: "exists",
         idempotencyKey: `polaris-exists-${await sha256Hex(user.id)}-${day}`,
-        react: <ExistingAccountEmail url={new URL("/entrar", appBaseURL).toString()} />,
+        react: (
+          <ExistingAccountEmail
+            url={new URL("/entrar", appBaseURL).toString()}
+          />
+        ),
         subject: "Você já tem conta no Polaris",
         to: user.email,
       });
@@ -158,7 +162,9 @@ export function createResendAuthEmailDelivery({
         event: "unlock",
         idempotencyKey: await tokenIdempotencyKey("unlock", token),
         react: (
-          <LoginUnlockEmail url={appTokenURL(appBaseURL, "/desbloquear", token)} />
+          <LoginUnlockEmail
+            url={appTokenURL(appBaseURL, "/desbloquear", token)}
+          />
         ),
         subject: "Pausamos a entrada na sua conta do Polaris",
         to,
