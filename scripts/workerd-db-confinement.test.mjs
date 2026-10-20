@@ -59,6 +59,9 @@ const SKIPPED_DIRECTORIES = new Set([
 ]);
 const TEXT_FILE = /\.(c|m)?(j|t)sx?$|\.jsonc?$|\.ya?ml$|\.toml$|\.sh$|\.md$/;
 const IMPORT = /(?:from|import)\s*\(?\s*["']([^"']+)["']/g;
+const TYPESCRIPT_FILE = /\.tsx?$/;
+const TEST_FILE = /\.test\.|workerd-db|workerd\.test/;
+const SCRIPT_FILE = /\.(c|m)?js$/;
 const EXTENSIONS = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
 
 function walk(directory) {
@@ -113,7 +116,7 @@ function graphOf(entry) {
       }
       const base = resolve(dirname(file), specifier);
       const target = EXTENSIONS.map((extension) => `${base}${extension}`).find(
-        (candidate) => /\.tsx?$/.test(candidate) && existsSync(candidate)
+        (candidate) => TYPESCRIPT_FILE.test(candidate) && existsSync(candidate)
       );
       if (target) {
         pending.push(target);
@@ -222,7 +225,7 @@ describe("the Workers test fixtures stay in the test configuration", () => {
       it("reaches no test file, no test declaration and no test runtime", () => {
         for (const [file, { specifiers, text }] of graph) {
           const name = relative(root, file);
-          expect(name).not.toMatch(/\.test\.|workerd-db|workerd\.test/);
+          expect(name).not.toMatch(TEST_FILE);
           for (const specifier of specifiers) {
             for (const forbidden of FORBIDDEN_SPECIFIERS) {
               expect(specifier, `${name} imports ${specifier}`).not.toMatch(
@@ -245,7 +248,7 @@ describe("the Workers test fixtures stay in the test configuration", () => {
     for (const app of ["web", "catalog"]) {
       const dist = join(root, "apps", app, "dist");
       const built = existsSync(dist)
-        ? walk(dist).filter((path) => /\.(c|m)?js$/.test(path))
+        ? walk(dist).filter((path) => SCRIPT_FILE.test(path))
         : [];
       // not built yet: `bun run build` runs before the tests in CI, and the check then has a bundle to read
       it.skipIf(built.length === 0)(
