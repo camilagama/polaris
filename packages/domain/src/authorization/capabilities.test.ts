@@ -27,6 +27,7 @@ describe("tenant capability map", () => {
       "organization:manage",
       "organization:close",
       "organization:export",
+      "billing:manage",
       "organization:closed_export",
       "sync:push",
       "sync:read",

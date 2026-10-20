@@ -45,6 +45,7 @@ const base = new Date();
 const at = (days: number) => new Date(base.getTime() + days * DAY);
 const TRIAL_IN_PROGRESS = /trial_in_progress/;
 const TRIAL_ALREADY_USED = /trial_already_used/;
+const PROVIDER_UNAVAILABLE = /provider_unavailable/;
 const BACKFILL_STATEMENT =
   /INSERT INTO public\.billing_trial_claims \(user_id, organization_id, reserved_at, consumed_at\)[\s\S]*?ON CONFLICT \(user_id\) DO NOTHING;/;
 const TRIAL_MIGRATION = /^\d{4}_trial_por_pessoa\.sql$/;
@@ -1300,6 +1301,268 @@ async function main() {
     } finally {
       await discarding.close();
       await failing.close();
+    }
+
+    // -------- 11. a trial no reservation paid for is settled; an idle setup ends (PR 3)
+    {
+      /** A checkout paid after its person took the reservation elsewhere: an unresolved fact. */
+      const unclaimed = async (label: string) => {
+        const owner = await newTenant(label);
+        const moved = await newTenant(`${label} elsewhere`);
+        await addOwner(moved.organizationId, owner.userId, at(0));
+        await billing.startTrial(owner.organizationId, owner.userId, at(0));
+        const ref = `chk_${label.replaceAll(" ", "_")}_${run}`;
+        const sub = `sub_${label.replaceAll(" ", "_")}_${run}`;
+        await billing.attachProvider(owner.organizationId, "fake", ref);
+        await abandon(owner.organizationId);
+        await billing.startTrial(moved.organizationId, owner.userId, at(0.1));
+        const late = await deliver(ref, methodReady(at(0.2)), sub);
+        assert.equal(late.status, "unresolved");
+        assert.equal(late.outcomeCode, "trial_claim_missing");
+        return { eventId: late.eventId, moved, owner, ref, sub };
+      };
+      const listedUnclaimed = async (eventId: string) =>
+        (await billing.listUnclaimedTrials(1000)).filter(
+          (entry) => entry.eventId === eventId
+        );
+      const eventRow = async (eventId: string) =>
+        (
+          await admin.pool.query<{
+            outcome_code: string | null;
+            status: string;
+          }>(
+            "SELECT status, outcome_code FROM public.billing_events WHERE id = $1",
+            [eventId]
+          )
+        ).rows[0];
+      const settlement = async (eventId: string) =>
+        (
+          await admin.pool.query<{ fact: { type: string }; fact_type: string }>(
+            "SELECT fact, fact_type FROM public.billing_events WHERE provider = 'polaris' AND provider_event_id = $1",
+            [`command:settle_unclaimed_trial:${eventId}`]
+          )
+        ).rows;
+      const exhaust = async (eventId: string) => {
+        await admin.pool.query(
+          "UPDATE public.billing_events SET attempts = 5 WHERE id = $1",
+          [eventId]
+        );
+      };
+
+      const cancelledCase = await unclaimed("unclaimed cancel");
+      // still within its retries: the reprocess may yet find the reservation
+      assert.deepEqual(await listedUnclaimed(cancelledCase.eventId), []);
+      assert.equal(
+        await billing.settleUnclaimedTrial(
+          cancelledCase.eventId,
+          () => Promise.reject(new Error("must_not_be_called")),
+          at(0.3)
+        ),
+        "not_pending"
+      );
+      await exhaust(cancelledCase.eventId);
+      assert.deepEqual(await listedUnclaimed(cancelledCase.eventId), [
+        {
+          eventId: cancelledCase.eventId,
+          organizationId: cancelledCase.owner.organizationId,
+          provider: "fake",
+          providerRef: cancelledCase.ref,
+          providerSubscriptionId: cancelledCase.sub,
+        },
+      ]);
+      // the provider fails: nothing changes, the next pass tries again
+      await assert.rejects(
+        () =>
+          billing.settleUnclaimedTrial(
+            cancelledCase.eventId,
+            () => Promise.reject(new Error("provider_unavailable")),
+            at(0.3)
+          ),
+        PROVIDER_UNAVAILABLE
+      );
+      assert.equal((await listedUnclaimed(cancelledCase.eventId)).length, 1);
+      assert.deepEqual(await settlement(cancelledCase.eventId), []);
+      const cancelCalls: unknown[] = [];
+      assert.equal(
+        await billing.settleUnclaimedTrial(
+          cancelledCase.eventId,
+          (event) => {
+            cancelCalls.push(event);
+            return Promise.resolve("cancelled" as const);
+          },
+          at(0.3)
+        ),
+        "cancelled"
+      );
+      assert.deepEqual(cancelCalls, [
+        {
+          eventId: cancelledCase.eventId,
+          organizationId: cancelledCase.owner.organizationId,
+          provider: "fake",
+          providerRef: cancelledCase.ref,
+          providerSubscriptionId: cancelledCase.sub,
+        },
+      ]);
+      assert.deepEqual(await eventRow(cancelledCase.eventId), {
+        outcome_code: "trial_claim_missing",
+        status: "ignored",
+      });
+      assert.deepEqual(await settlement(cancelledCase.eventId), [
+        { fact: { type: "unclaimed_trial_cancelled" }, fact_type: "command" },
+      ]);
+      // settled once: a repeat neither calls the provider nor writes again
+      assert.equal(
+        await billing.settleUnclaimedTrial(
+          cancelledCase.eventId,
+          () => Promise.reject(new Error("must_not_be_called")),
+          at(0.4)
+        ),
+        "not_pending"
+      );
+      assert.equal((await settlement(cancelledCase.eventId)).length, 1);
+      assert.deepEqual(await listedUnclaimed(cancelledCase.eventId), []);
+      // nothing else moved: no trial on either organization, the reservation unspent
+      assert.equal(
+        (await billingRow(cancelledCase.owner.organizationId))
+          ?.trial_started_at,
+        null
+      );
+      assert.deepEqual(await claimOf(cancelledCase.owner.userId), {
+        consumed_at: null,
+        organization_id: cancelledCase.moved.organizationId,
+        reserved_at: at(0.1),
+      });
+
+      // the same subscription was paid since and gives Pro: it is left alone
+      const paidCase = await unclaimed("unclaimed paid");
+      await deliver(paidCase.ref, {
+        amount: { currency: "BRL", value: "24.90" },
+        cycleMonths: 1,
+        occurredAt: at(0.3),
+        periodEndsAt: at(30.3),
+        type: "charge_succeeded",
+      });
+      assert.equal(
+        (await billingRow(paidCase.owner.organizationId))?.state,
+        "active"
+      );
+      await exhaust(paidCase.eventId);
+      assert.equal(
+        await billing.settleUnclaimedTrial(
+          paidCase.eventId,
+          () => Promise.reject(new Error("must_not_be_called")),
+          at(0.4)
+        ),
+        "left_paid"
+      );
+      assert.deepEqual(await settlement(paidCase.eventId), [
+        { fact: { type: "unclaimed_trial_left_paid" }, fact_type: "command" },
+      ]);
+      assert.equal(
+        (await billingRow(paidCase.owner.organizationId))?.state,
+        "active"
+      );
+      // the provider shows a charge of it already paid, before the record knows: left alone too
+      const providerPaid = await unclaimed("unclaimed provider paid");
+      await exhaust(providerPaid.eventId);
+      assert.equal(
+        await billing.settleUnclaimedTrial(
+          providerPaid.eventId,
+          () => Promise.resolve("paid" as const),
+          at(0.4)
+        ),
+        "left_paid"
+      );
+      assert.deepEqual(await settlement(providerPaid.eventId), [
+        { fact: { type: "unclaimed_trial_left_paid" }, fact_type: "command" },
+      ]);
+      tests.push(
+        "a trial no reservation paid for is settled only after its retries: the event's own subscription (reference and sub_) is handed to the provider's cancel under the event's lock, and only when it succeeds is the event closed as ignored (trial_claim_missing kept) with unclaimed_trial_cancelled in the ledger, once; a failure changes nothing, and a subscription paid since (Pro on the record, or a paid charge at the provider) is left alone (unclaimed_trial_left_paid)"
+      );
+
+      // a setup with no checkout finished for more than two hours ends, without spending the trial
+      const idle = await newTenant("idle setup");
+      await billing.startTrial(idle.organizationId, idle.userId, at(0));
+      await billing.sweepDue(new Date(at(0).getTime() + 3_600_000));
+      assert.equal(
+        (await billingRow(idle.organizationId))?.state,
+        "trial_setup"
+      );
+      const swept = await billing.sweepDue(at(0.2));
+      assert.equal(swept.failed, 0);
+      assert.equal((await billingRow(idle.organizationId))?.state, "free");
+      assert.deepEqual(await claimOf(idle.userId), {
+        consumed_at: null,
+        organization_id: idle.organizationId,
+        reserved_at: at(0),
+      });
+      await billing.sweepDue(at(0.3));
+      const abandonedRows = await admin.pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM public.billing_events WHERE organization_id = $1 AND fact_type = 'time_elapsed' AND fact->>'transition' = 'abandon_trial_setup'",
+        [idle.organizationId]
+      );
+      assert.equal(Number(abandonedRows.rows[0]?.count), 1);
+      // the reservation is free to go: the person starts the trial in another organization
+      const next = await newTenant("idle setup next");
+      await addOwner(next.organizationId, idle.userId, at(0));
+      await billing.startTrial(next.organizationId, idle.userId, at(0.3));
+      assert.equal(
+        (await claimOf(idle.userId))?.organization_id,
+        next.organizationId
+      );
+      // a second checkout replaces the first: attachProvider names the one replaced, once
+      const twice = await newTenant("checkout twice");
+      assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_first_${run}`
+        ),
+        null
+      );
+      assert.deepEqual(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_second_${run}`
+        ),
+        { provider: "fake", providerRef: `chk_first_${run}` }
+      );
+      // a checkout a subscription came from was finished: it is not named as one to give up
+      await admin.pool.query(
+        "UPDATE public.organization_billing SET provider_subscription_id = $2 WHERE organization_id = $1",
+        [twice.organizationId, `sub_second_${run}`]
+      );
+      assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_third_${run}`
+        ),
+        null
+      );
+      // attaching the reference already on the record is a repeat: nothing replaced
+      assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_third_${run}`
+        ),
+        null
+      );
+      // the third checkout is open (attaching it cleared the subscription): going back to
+      // another reference names it, so the caller gives it up and no open checkout is left behind
+      assert.deepEqual(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_second_${run}`
+        ),
+        { provider: "fake", providerRef: `chk_third_${run}` }
+      );
+      tests.push(
+        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person; and a new checkout's attachProvider names the reference it replaced (null for the first, for a repeat of the current reference and for a finished checkout; the open checkout it replaced otherwise, including when going back to an earlier reference)"
+      );
     }
 
     console.log(

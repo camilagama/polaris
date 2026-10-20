@@ -7,6 +7,7 @@
     "build:offline-poc": "vite build --config vite.offline.config.ts --mode offline-poc --outDir dist/offline-poc",
     "check": "bun run typecheck",
     "dev": "vite --host 127.0.0.1",
+    "gate7:asaas": "bun scripts/gate7-asaas.ts",
     "preview": "vite preview --host 127.0.0.1",
     "test:auth-gate": "bun scripts/test-better-auth-gate.ts",
     "test:gate2-worker": "bun scripts/test-gate2-worker.ts",

@@ -9,7 +9,11 @@ import { Outbox } from "../outbox/outbox";
 import { logoutDestination } from "../../lib/sign-in-path";
 import { discardAndLeave, startLogout } from "./logout-flow";
 import type { RuntimeSnapshot } from "./offline-runtime";
-import { SyncStatusView, syncStatusLabel } from "./sync-status";
+import {
+  SyncStatusMenuLineView,
+  SyncStatusView,
+  syncStatusLabel,
+} from "./sync-status";
 
 const snapshot = (
   overrides: Partial<RuntimeSnapshot> = {}
@@ -39,7 +43,7 @@ describe("the sync status in the header", () => {
   it("says everything is synchronized when online and nothing is waiting", () => {
     expect(syncStatusLabel(snapshot())).toEqual({
       attention: false,
-      short: "Em dia",
+      short: "Sincronizado",
       text: "Tudo sincronizado",
       tone: "ok",
     });
@@ -141,6 +145,35 @@ describe("the sync status in the header", () => {
     );
     expect(attention).toContain('href="/attention"');
     expect(attention).toContain("Atenção: 2 operações precisam de atenção");
+  });
+});
+
+describe("the sync status line in the open menu", () => {
+  it("shows the whole sentence of the state with the colour dot, hidden from assistive technology", () => {
+    const cases = [
+      snapshot({ counts: counts({ pending: 3 }), online: false }),
+      snapshot({ reason: "sync_failed" }),
+      snapshot({ phase: "unavailable", reason: "no_lease_offline" }),
+      snapshot({ counts: counts({ rejected: 2 }) }),
+      snapshot(),
+    ];
+    for (const item of cases) {
+      const label = syncStatusLabel(item);
+      const html = renderToStaticMarkup(
+        <SyncStatusMenuLineView snapshot={item} />
+      );
+      expect(html).toContain('aria-hidden="true"');
+      expect(html).toContain(`data-tone="${label.tone}"`);
+      expect(html).toContain('<span class="sync-status-dot"></span>');
+      expect(html).toContain(label.text);
+    }
+  });
+
+  it("uses words that do not read as something else", () => {
+    expect(syncStatusLabel(snapshot()).short).toBe("Sincronizado");
+    expect(syncStatusLabel(snapshot({ phase: "unavailable" })).short).toBe(
+      "Sem offline"
+    );
   });
 });
 

@@ -54,3 +54,12 @@ export function paidPeriodEndsAt(
   const start = new Date(`${lastDay}T00:00:00.000${SAO_PAULO_OFFSET}`);
   return new Date(start.getTime() + DAY_MS);
 }
+
+/** The calendar day (`AAAA-MM-DD`) an instant falls on in São Paulo. */
+export function saoPauloDateOf(instant: Date): string {
+  const time = instant.getTime();
+  if (!Number.isFinite(time)) {
+    throw new InvalidDueDateError();
+  }
+  return new Date(time - 3 * 3_600_000).toISOString().slice(0, 10);
+}
