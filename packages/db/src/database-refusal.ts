@@ -58,7 +58,7 @@ export function sqlStateOf(error: unknown): string | undefined {
   let current: unknown = error;
   while (typeof current === "object" && current !== null) {
     if (visited.has(current)) {
-      return;
+      return undefined;
     }
     visited.add(current);
     const candidate = current as { cause?: unknown; code?: unknown };
@@ -67,5 +67,5 @@ export function sqlStateOf(error: unknown): string | undefined {
     }
     current = candidate.cause;
   }
-  return;
+  return undefined;
 }

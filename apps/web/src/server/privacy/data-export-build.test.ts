@@ -163,7 +163,10 @@ describe("the organization's own row", () => {
       rewriteOrganization: (row) => ({ ...row, nome: "reescrito" }),
     });
     const files = Object.fromEntries(
-      collected.entries.map((entry) => [entry.name, decoder.decode(entry.bytes)])
+      collected.entries.map((entry) => [
+        entry.name,
+        decoder.decode(entry.bytes),
+      ])
     );
     expect(files["data/alfa.json"]).toContain('"nome":"reescrito"');
     expect(files["data/beta.json"]).not.toContain("reescrito");
