@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { polarisContract } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
@@ -229,5 +232,40 @@ describe("the exempt /api routes", () => {
       "/api/closed-exports/:exportId/files/:ordinal",
       "/api/data-exports/:exportId/files/:ordinal",
     ]);
+  });
+});
+
+const WEB_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const BATCH_PLUGIN = /Batch(?:Handler|Link)Plugin|@orpc\/[a-z-]+\/plugins/;
+const SOURCE_FILE = /\.(?:ts|tsx|mjs)$/;
+const TEST_FILE = /\.test\./;
+const SKIPPED = new Set([".wrangler", "dist", "node_modules"]);
+
+/**
+ * The exemption is a mark on the HTTP request (`exemptRpcRequest`), so it takes one procedure per request.
+ * The oRPC batch plugin would put several calls in one request: an exempt call in the batch would exempt
+ * the controlled ones next to it. Turning the plugin on (server or client) has to break this test and
+ * make whoever does it carry the exemption another way.
+ */
+describe("the oRPC batch plugin", () => {
+  function sourceFiles(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return SKIPPED.has(entry.name) ? [] : sourceFiles(path);
+      }
+      return SOURCE_FILE.test(entry.name) && !TEST_FILE.test(entry.name)
+        ? [path]
+        : [];
+    });
+  }
+
+  it("is not turned on, in the server handler or in the client link", () => {
+    const using = ["src", "worker"]
+      .flatMap((folder) => sourceFiles(join(WEB_ROOT, folder)))
+      .filter((path) => BATCH_PLUGIN.test(readFileSync(path, "utf8")))
+      .map((path) => relative(WEB_ROOT, path));
+
+    expect(using).toEqual([]);
   });
 });
