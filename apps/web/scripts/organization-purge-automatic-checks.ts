@@ -323,7 +323,8 @@ export async function setAsideOthers(owner: Pool) {
 
 export async function acceptedDeletionCase(
   context: AutomaticPurgeContext,
-  organizationId: string
+  organizationId: string,
+  requesterKind: "data_subject" | "organization_owner" = "organization_owner"
 ): Promise<string> {
   const { admin, principal } = context;
   const opened = await openPrivacyCase(admin, principal, {
@@ -333,7 +334,7 @@ export async function acceptedDeletionCase(
     organizationId,
     reason: "Pedido de exclusão da organização",
     receivedAt: null,
-    requesterKind: "organization_owner",
+    requesterKind,
     requestType: "deletion",
   });
   assert.ok(opened);

@@ -243,12 +243,10 @@ describe("the sender of the provider", () => {
     return { cancel, fetchMock, json, text };
   }
 
-  const providerError = (name: string) =>
-    JSON.stringify({
-      message: "Invalid `to` field: dono@example.invalid",
-      name,
-      statusCode: 422,
-    });
+  const providerError = (
+    name: string,
+    message = "Invalid `to` field: dono@example.invalid"
+  ) => JSON.stringify({ message, name, statusCode: 422 });
 
   it("posts to the provider with the idempotency key and the bearer key, and never reads the body", async () => {
     const { cancel, fetchMock, json, text } = stubFetch(200);
@@ -285,6 +283,18 @@ describe("the sender of the provider", () => {
       expect(JSON.stringify(result)).not.toContain("dono@example.invalid");
     });
   }
+
+  it("asks for a retry on a validation_error about another field (the reply-to is ours to fix)", async () => {
+    stubFetch(
+      422,
+      providerError("validation_error", "Invalid `reply_to` field.")
+    );
+    expect(await sender(message)).toEqual({
+      code: "validation_error",
+      outcome: "retry",
+      status: 422,
+    });
+  });
 
   it("asks for a retry on a 422 that is a mistake of ours (the sender), not the message's", async () => {
     stubFetch(422, providerError("invalid_from_address"));

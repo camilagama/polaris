@@ -4,7 +4,8 @@
 --
 -- 1. The address, read by a function of the authentication role only (`closure_notice_recipient`, executed by
 --    `polaris_auth_runtime`, owned by the new `polaris_notice_recipient_owner`): it answers the e-mail of the user a
---    notice still owed is for, joined with `closure_notices`, and only whether it is verified; never a free read of the
+--    notice still owed is for, joined with `closure_notices`, and only whether it is verified (an address not verified
+--    is noted on the notice, `unverified_at`, the fact a dismissal for that reason needs); never a free read of the
 --    table of users, and never the name. The privacy role, which claims the notice, still reads no account.
 -- 2. The act of the support (`admin_reissue_closure_notice` and `admin_dismiss_closure_notice`), under a privacy case and
 --    with the platform audit, never an UPDATE by hand: a new `d7` notice of the same cycle (`reissue` 1, 2...), sent to
@@ -17,7 +18,7 @@
 --    of the current cycle still owed, the latest is handed to the privacy job to send, and the earlier ones are settled
 --    `skipped`, so the owner never gets the old ones in a row.
 --
--- Expand only (ADR 0096): two new columns with a default, `user_id` nullable (a dismissed notice has none), the unique key
+-- Expand only (ADR 0096): three new columns (`reissue` with a default, `dismissed_at` and `unverified_at`), `user_id` nullable (a dismissed notice has none), the unique key
 -- of the cycle recreated with the reissue (same name, so `ON CONFLICT ON CONSTRAINT` still finds it), a new check, two
 -- new types of the platform audit, a new owner role and new functions; recreated with the same signature, owner and
 -- grants: `organization_purge_blocker` and `closed_organization_purge_wait` (the gate `purge-functions` compares them
@@ -28,6 +29,7 @@ ALTER TABLE "platform_audit_events" DROP CONSTRAINT "platform_audit_events_type_
 ALTER TABLE "closure_notices" ALTER COLUMN "user_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "closure_notices" ADD COLUMN "dismissed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "closure_notices" ADD COLUMN "reissue" smallint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "closure_notices" ADD COLUMN "unverified_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "closure_notices" ADD CONSTRAINT "closure_notices_cycle_milestone_unique" UNIQUE NULLS NOT DISTINCT("organization_id","closure_requested_at","milestone","purge_from","reissue");--> statement-breakpoint
 ALTER TABLE "closure_notices" ADD CONSTRAINT "closure_notices_dismissal_coherent" CHECK (("closure_notices"."dismissed_at" IS NULL OR ("closure_notices"."sent_at" IS NULL AND "closure_notices"."failed_at" IS NULL AND NOT "closure_notices"."skipped"))
         AND (("closure_notices"."user_id" IS NULL) = ("closure_notices"."dismissed_at" IS NOT NULL))
@@ -183,7 +185,7 @@ END
 $roles$;--> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO polaris_notice_recipient_owner;--> statement-breakpoint
 GRANT SELECT (id, email, email_verified) ON TABLE public."user" TO polaris_notice_recipient_owner;--> statement-breakpoint
-GRANT SELECT (id, organization_id, user_id, skipped, sent_at, failed_at, dismissed_at) ON TABLE public.closure_notices TO polaris_notice_recipient_owner;--> statement-breakpoint
+GRANT SELECT (id, organization_id, user_id, skipped, sent_at, failed_at, dismissed_at, unverified_at) ON TABLE public.closure_notices TO polaris_notice_recipient_owner;--> statement-breakpoint
 GRANT SELECT (organization_id, user_id, role, status) ON TABLE public.memberships TO polaris_notice_recipient_owner;--> statement-breakpoint
 -- whether the user is still an owner of the organization: only the owners, in four columns
 CREATE POLICY memberships_recipient_owner_select_owner ON public.memberships
@@ -192,6 +194,13 @@ CREATE POLICY memberships_recipient_owner_select_owner ON public.memberships
 CREATE POLICY closure_notices_recipient_owner_select_owed ON public.closure_notices
   AS PERMISSIVE FOR SELECT TO polaris_notice_recipient_owner
   USING (NOT skipped AND sent_at IS NULL AND failed_at IS NULL AND dismissed_at IS NULL AND user_id IS NOT NULL);--> statement-breakpoint
+-- the one thing it writes: when it found the address of a notice still owed not verified (the fact the dismissal
+-- `email_not_verified` needs), on that notice alone
+GRANT UPDATE (unverified_at) ON TABLE public.closure_notices TO polaris_notice_recipient_owner;--> statement-breakpoint
+CREATE POLICY closure_notices_recipient_owner_update_owed ON public.closure_notices
+  AS PERMISSIVE FOR UPDATE TO polaris_notice_recipient_owner
+  USING (NOT skipped AND sent_at IS NULL AND failed_at IS NULL AND dismissed_at IS NULL AND user_id IS NOT NULL)
+  WITH CHECK (NOT skipped AND sent_at IS NULL AND failed_at IS NULL AND dismissed_at IS NULL AND user_id IS NOT NULL);--> statement-breakpoint
 GRANT CREATE ON SCHEMA public TO polaris_notice_recipient_owner;--> statement-breakpoint
 GRANT polaris_notice_recipient_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 SET ROLE polaris_notice_recipient_owner;--> statement-breakpoint
@@ -199,17 +208,22 @@ SET ROLE polaris_notice_recipient_owner;--> statement-breakpoint
 -- for a notice still owed (neither sent, failed, skipped nor dismissed), by its ID and organization, and only the e-mail of
 -- the user it is for, joined with the notice and only while that user is still an owner of the organization (one who
 -- left gets nothing, even between the claim and this read): never a free read of the users. A user whose e-mail is not verified gets
--- `{"verified": false}` and no address (the notice is left unresolved, not failed); a notice not owed, null. The name of
--- the user is never read. Volatile, so no cache answers it. Only the authentication runtime executes it.
+-- `{"verified": false}` and no address (the notice is left unresolved, not failed), and the notice keeps the instant
+-- (`unverified_at`): the fact, read by the database itself, that the dismissal `email_not_verified` needs; an address
+-- found verified later clears it. A notice not owed, null. The name of the user is never read. Volatile, so no cache
+-- answers it. Only the authentication runtime executes it.
 CREATE FUNCTION public.closure_notice_recipient(p_notice uuid, p_organization text)
 RETURNS jsonb
-LANGUAGE sql
+LANGUAGE plpgsql
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $function$
-  SELECT CASE WHEN account.email_verified
-              THEN pg_catalog.jsonb_build_object('verified', true, 'email', account.email)
-              ELSE pg_catalog.jsonb_build_object('verified', false) END
+DECLARE
+  verified boolean;
+  address text;
+BEGIN
+  SELECT account.email_verified, account.email INTO verified, address
     FROM public.closure_notices AS notice
     JOIN public."user" AS account ON account.id = notice.user_id
    WHERE notice.id = p_notice AND notice.organization_id = p_organization
@@ -218,7 +232,18 @@ AS $function$
        SELECT 1 FROM public.memberships AS membership
         WHERE membership.organization_id = notice.organization_id AND membership.user_id = notice.user_id
           AND membership.role = 'owner' AND membership.status = 'active'
-     )
+     );
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+  IF verified THEN
+    UPDATE public.closure_notices AS notice SET unverified_at = NULL
+     WHERE notice.id = p_notice AND notice.unverified_at IS NOT NULL;
+    RETURN pg_catalog.jsonb_build_object('verified', true, 'email', address);
+  END IF;
+  UPDATE public.closure_notices AS notice SET unverified_at = pg_catalog.now() WHERE notice.id = p_notice;
+  RETURN pg_catalog.jsonb_build_object('verified', false);
+END;
 $function$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.closure_notice_recipient(uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_outbox_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.closure_notice_recipient(uuid, text) TO polaris_auth_runtime;--> statement-breakpoint
@@ -484,10 +509,10 @@ $function$;--> statement-breakpoint
 -- an owner refuses it (it goes out first, or is dismissed).
 -- Dismissed (`p_dismiss_reason` one of the closed list): no user and `dismissed_at` filled, so the purge may go on 7 days
 -- later, and the notices still owed of the cycle are settled `skipped`. The reason must fit the facts the database
--- holds: `owner_account_deleted` with no owner left; `email_undeliverable` with a notice of the cycle the provider refused
--- (`email_rejected`) and none still owed to an owner; `email_not_verified` with a notice still owed to an owner for more
--- than 3 days after its date (`CLOSURE_NOTICE_OVERDUE_DAYS`: the address is never read here, so its verification
--- cannot be; the owed notice past the alert is the trace it leaves). Internal to the two functions of the Admin below,
+-- holds: `owner_account_deleted` with no owner left; `email_undeliverable` with a `d7` of the cycle the provider refused
+-- (`email_rejected`) for a user who is still an owner, and none still owed to an owner; `email_not_verified` with a `d7`
+-- still owed to an owner whose address `closure_notice_recipient` found not verified (`unverified_at`: the e-mail was on
+-- and the consumer tried; the address is never read here). Internal to the two functions of the Admin below,
 -- which check the case and write the audit: only the Admin owner executes it.
 CREATE FUNCTION public.closure_notice_support_reissue(p_organization text, p_dismiss_reason text)
 RETURNS jsonb
@@ -503,7 +528,7 @@ DECLARE
   next_reissue smallint;
   written uuid;
   owed_to_owner integer;
-  overdue_to_owner integer;
+  unverified_to_owner integer;
 BEGIN
   IF p_organization IS NULL
      OR (p_dismiss_reason IS NOT NULL
@@ -538,8 +563,8 @@ BEGIN
    WHERE notice.organization_id = p_organization AND notice.closure_requested_at = cycle AND notice.milestone = 'd7';
   -- the notices still owed of the cycle to a user who is still an owner (the others never go out)
   SELECT pg_catalog.count(*)::integer,
-         pg_catalog.count(*) FILTER (WHERE notice.due_at + interval '72 hours' <= pg_catalog.now())::integer
-    INTO owed_to_owner, overdue_to_owner
+         pg_catalog.count(*) FILTER (WHERE notice.milestone = 'd7' AND notice.unverified_at IS NOT NULL)::integer
+    INTO owed_to_owner, unverified_to_owner
     FROM public.closure_notices AS notice
    WHERE notice.organization_id = p_organization AND notice.closure_requested_at = cycle
      AND NOT notice.skipped AND notice.sent_at IS NULL AND notice.failed_at IS NULL AND notice.dismissed_at IS NULL
@@ -558,12 +583,17 @@ BEGIN
     IF p_dismiss_reason = 'email_undeliverable' AND (owed_to_owner > 0 OR NOT EXISTS (
       SELECT 1 FROM public.closure_notices AS notice
        WHERE notice.organization_id = p_organization AND notice.closure_requested_at = cycle
-         AND notice.failure_code = 'email_rejected'
+         AND notice.milestone = 'd7' AND notice.failure_code = 'email_rejected'
+         AND EXISTS (
+           SELECT 1 FROM public.memberships AS membership
+            WHERE membership.organization_id = notice.organization_id AND membership.user_id = notice.user_id
+              AND membership.role = 'owner' AND membership.status = 'active'
+         )
     )) THEN
       RAISE EXCEPTION 'closure_notice_not_refused' USING ERRCODE = '55000';
     END IF;
-    IF p_dismiss_reason = 'email_not_verified' AND overdue_to_owner = 0 THEN
-      RAISE EXCEPTION 'closure_notice_not_overdue' USING ERRCODE = '55000';
+    IF p_dismiss_reason = 'email_not_verified' AND unverified_to_owner = 0 THEN
+      RAISE EXCEPTION 'closure_notice_not_unverified' USING ERRCODE = '55000';
     END IF;
     UPDATE public.closure_notices AS notice
        SET skipped = true
@@ -644,7 +674,8 @@ END;
 $function$;--> statement-breakpoint
 -- The person responsible dismisses the notice of D minus 7 days (ADR 0102 amended): nobody can be told (the owner's
 -- account is gone, the address is not verified or refuses the e-mail). Under an open privacy case of the organization
--- that is a deletion asked by the owner and accepted in whole (`decided` or `executed`), naming the organization, with
+-- that is a deletion asked by the owner (by a data subject only with `owner_account_deleted`) and accepted in whole
+-- (`decided` or `executed`), naming the organization, with
 -- one reason of a closed list that must fit the facts (`closure_notice_support_reissue`), audited as
 -- `closure_notice.dismissed` with the reason as its detail. The purge may then go on 7 days later.
 CREATE FUNCTION public.admin_dismiss_closure_notice(p_principal uuid, p_case uuid, p_organization text, p_reason text)
@@ -675,12 +706,13 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'privacy_case_required' USING ERRCODE = '55000';
   END IF;
-  -- as strict as the Admin's purge (0087) where it matters: a deletion asked by the owner (or by the owner as the data
-  -- subject, when the account is what goes) and accepted in whole
+  -- as strict as the Admin's purge (0087) where it matters: a deletion asked by the owner and accepted in whole; a data
+  -- subject only when no owner is left (the account is what went), never to silence the notice of an owner
   IF privacy_type IS DISTINCT FROM 'deletion' THEN
     RAISE EXCEPTION 'privacy_case_not_deletion' USING ERRCODE = '55000';
   END IF;
-  IF privacy_requester NOT IN ('organization_owner', 'data_subject') THEN
+  IF privacy_requester IS DISTINCT FROM 'organization_owner'
+     AND NOT (privacy_requester = 'data_subject' AND p_reason = 'owner_account_deleted') THEN
     RAISE EXCEPTION 'privacy_requester_not_owner' USING ERRCODE = '55000';
   END IF;
   IF privacy_stage NOT IN ('decided', 'executed') OR privacy_decision IS DISTINCT FROM 'accept' THEN

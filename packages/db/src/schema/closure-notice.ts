@@ -71,6 +71,11 @@ export const closureNotices = pgTable(
     /** An earlier milestone found together with a later one: written, never sent. */
     skipped: boolean("skipped").default(false).notNull(),
     /**
+     * When `closure_notice_recipient` last found the address of the notice's user not verified (the notice stays owed;
+     * cleared once it is found verified): the fact the dismissal `email_not_verified` needs, never the address.
+     */
+    unverifiedAt: timestamp("unverified_at", { withTimezone: true }),
+    /**
      * The owner the notice is for, when it was written (an internal ID, never a name or an e-mail). Null only for a
      * dismissed notice: nobody is told.
      */

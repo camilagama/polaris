@@ -797,7 +797,7 @@ describe("suspension and billing commands", () => {
       "closure_notice_no_owner",
       "closure_notice_owner_present",
       "closure_notice_not_refused",
-      "closure_notice_not_overdue",
+      "closure_notice_not_unverified",
       "privacy_case_required",
       "privacy_case_not_deletion",
       "privacy_case_not_accepted",

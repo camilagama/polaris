@@ -286,29 +286,49 @@ export async function renderClosureNoticeEmail(
 
 const PROVIDER_CODE = /^[a-z][a-z0-9_]{0,63}$/;
 
-/** The provider's error name, and nothing else of its answer (its message may echo the address). */
-async function providerCode(response: Response): Promise<string | null> {
+// how Resend names the field of the recipient in the message of a `validation_error` ("Invalid `to` field...")
+const RECIPIENT_FIELD = /`to`/;
+
+/**
+ * The provider's error name, and whether its message is about the recipient field: nothing else of its answer is kept
+ * (the message may echo the address, so it is only tested, never returned or logged).
+ */
+async function providerError(
+  response: Response
+): Promise<{ aboutRecipient: boolean; code: string | null }> {
   try {
     const body: unknown = await response.json();
-    const name =
-      typeof body === "object" && body !== null && "name" in body
-        ? body.name
-        : null;
-    return typeof name === "string" && PROVIDER_CODE.test(name) ? name : null;
+    if (typeof body !== "object" || body === null) {
+      return { aboutRecipient: false, code: null };
+    }
+    const name = "name" in body ? body.name : null;
+    const message = "message" in body ? body.message : null;
+    return {
+      aboutRecipient:
+        typeof message === "string" && RECIPIENT_FIELD.test(message),
+      code: typeof name === "string" && PROVIDER_CODE.test(name) ? name : null,
+    };
   } catch {
-    return null;
+    return { aboutRecipient: false, code: null };
   }
 }
 
 /**
- * Only a field of the request the provider does not accept is the message's fault (400 or 422 with
- * `validation_error`, which is how an address it refuses is answered): the notice then fails for good. Everything else
- * is tried again, so a mistake of ours (a wrong sender, a key, a quota) never fails a notice that a fix would send:
- * 401 and 403 (the key, or the sender's domain), 409 (the same key in flight, or another message under it: Resend keeps
- * a key 24 hours), 422 with another name (`invalid_from_address`), 429 and 5xx.
+ * Only an address the provider refuses is the message's fault (400 or 422 with `validation_error` about the `to`
+ * field): the notice then fails for good. Everything else is tried again, so a mistake of ours (a wrong sender or
+ * reply-to, a key, a quota, a field of the body) never fails a notice that a fix would send: 401 and 403 (the key, or
+ * the sender's domain), 409 (the same key in flight, or another message under it: Resend keeps a key 24 hours), a
+ * `validation_error` about another field, 422 with another name (`invalid_from_address`), 429 and 5xx.
  */
-function refusedForGood(status: number, code: string | null): boolean {
-  return (status === 400 || status === 422) && code === "validation_error";
+function refusedForGood(
+  status: number,
+  error: { aboutRecipient: boolean; code: string | null }
+): boolean {
+  return (
+    (status === 400 || status === 422) &&
+    error.code === "validation_error" &&
+    error.aboutRecipient
+  );
 }
 
 export function createResendClosureNoticeSender(
@@ -344,10 +364,10 @@ export function createResendClosureNoticeSender(
       await response.body?.cancel();
       return { outcome: "sent" };
     }
-    const code = await providerCode(response);
-    if (refusedForGood(response.status, code)) {
-      return { code, outcome: "rejected", status: response.status };
+    const error = await providerError(response);
+    if (refusedForGood(response.status, error)) {
+      return { code: error.code, outcome: "rejected", status: response.status };
     }
-    return { code, outcome: "retry", status: response.status };
+    return { code: error.code, outcome: "retry", status: response.status };
   };
 }

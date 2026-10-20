@@ -255,9 +255,29 @@ async function emailScenario(
     { verified: false },
     "an e-mail not verified is not answered"
   );
+  const unverifiedAt = async () =>
+    (
+      await owner.query<{ unverified_at: Date | null }>(
+        "SELECT unverified_at FROM public.closure_notices WHERE id = $1",
+        [notice.id]
+      )
+    ).rows[0]?.unverified_at ?? null;
+  assert.ok(
+    await unverifiedAt(),
+    "the function notes on the notice that the address was found not verified"
+  );
   await owner.query(
     'UPDATE public."user" SET email_verified = true WHERE id = $1',
     [store.userId]
+  );
+  assert.deepEqual(
+    await recipients.recipient(notice.id, store.organizationId),
+    { email: address, verified: true }
+  );
+  assert.equal(
+    await unverifiedAt(),
+    null,
+    "an address found verified later clears the note"
   );
   assert.equal(
     await recipients.recipient(notice.id, "org_not_this_one"),
@@ -319,6 +339,7 @@ async function emailScenario(
       "closure_notices.organization_id",
       "closure_notices.sent_at",
       "closure_notices.skipped",
+      "closure_notices.unverified_at",
       "closure_notices.user_id",
       "memberships.organization_id",
       "memberships.role",
@@ -329,6 +350,22 @@ async function emailScenario(
       "user.id",
     ],
     "the owner of the function reads three columns of the users (never the name), the notices and who is an owner"
+  );
+  const ownerWrites = await owner.query<{
+    column_name: string;
+    privilege_type: string;
+    table_name: string;
+  }>(
+    `SELECT table_name, column_name, privilege_type FROM information_schema.column_privileges
+      WHERE grantee = 'polaris_notice_recipient_owner' AND privilege_type <> 'SELECT' AND table_schema = 'public'
+      ORDER BY table_name, column_name, privilege_type`
+  );
+  assert.deepEqual(
+    ownerWrites.rows.map(
+      (row) => `${row.table_name}.${row.column_name}:${row.privilege_type}`
+    ),
+    ["closure_notices.unverified_at:UPDATE"],
+    "the owner of the function writes only the note of an address not verified"
   );
   const ownerAttributes = await owner.query<{
     rolbypassrls: boolean;
@@ -928,6 +965,10 @@ async function emailScenario(
     context,
     neverVerified.organizationId
   );
+  await owner.query(
+    "UPDATE public.closure_notices SET due_at = due_at - interval '4 days' WHERE id = $1",
+    [neverVerifiedNotice.id]
+  );
   await refusedWith(
     () =>
       dismissClosureNotice(
@@ -937,8 +978,8 @@ async function emailScenario(
         neverVerified.organizationId,
         "email_not_verified"
       ),
-    "closure_notice_not_overdue",
-    "an e-mail not verified is dismissed only once its notice is past the alert"
+    "closure_notice_not_unverified",
+    "a notice owed past the alert is not proof of an e-mail not verified (the e-mail may be off): nobody tried yet"
   );
   await refusedWith(
     () =>
@@ -952,9 +993,34 @@ async function emailScenario(
     "closure_notice_not_refused",
     "no address was refused here"
   );
+  // the consumer tries, and the function of the address finds it not verified: the fact the dismissal needs
   await owner.query(
-    "UPDATE public.closure_notices SET due_at = due_at - interval '4 days' WHERE id = $1",
-    [neverVerifiedNotice.id]
+    'UPDATE public."user" SET email_verified = false WHERE id = $1',
+    [neverVerified.userId]
+  );
+  assert.deepEqual(
+    await recipients.recipient(
+      neverVerifiedNotice.id,
+      neverVerified.organizationId
+    ),
+    { verified: false }
+  );
+  const subjectCase = await acceptedDeletionCase(
+    context,
+    neverVerified.organizationId,
+    "data_subject"
+  );
+  await refusedWith(
+    () =>
+      dismissClosureNotice(
+        admin,
+        principal,
+        subjectCase,
+        neverVerified.organizationId,
+        "email_not_verified"
+      ),
+    "privacy_requester_not_owner",
+    "a data subject's deletion never silences the notice of an owner"
   );
   const overdueBefore = (await record()).overdue;
   await dismissClosureNotice(
@@ -1003,7 +1069,7 @@ async function emailScenario(
     );
   }
   tests.push(
-    "the person responsible dismisses the d7 (an account gone with its notices, an address refused, an e-mail never verified past the alert) only under a privacy case of deletion asked by the owner and accepted, with a reason of the list that fits the facts (no owner left; a refused address; an owed notice past the alert): a new d7 with no user and no event, audited as closure_notice.dismissed with the reason, that settles the notices still owed, leaves the alert, and lets the store be deleted only 7 days later; a second dismissal, or a reissue after a delivery or a dismissal, is refused, and only the Admin's functions write it"
+    "the person responsible dismisses the d7 (an account gone with its notices, an address refused, an e-mail the consumer found not verified) only under a privacy case of deletion asked by the owner (a data subject's only with no owner left) and accepted, with a reason of the list that fits the facts (no owner left; a d7 refused for an owner; a d7 owed to an owner whose address the function of the address found not verified): a new d7 with no user and no event, audited as closure_notice.dismissed with the reason, that settles the notices still owed, leaves the alert, and lets the store be deleted only 7 days later; a second dismissal, or a reissue after a delivery or a dismissal, is refused, and only the Admin's functions write it"
   );
   return tests;
 }

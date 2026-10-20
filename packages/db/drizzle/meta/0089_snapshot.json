@@ -1929,6 +1929,12 @@
           "notNull": true,
           "default": false
         },
+        "unverified_at": {
+          "name": "unverified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "user_id": {
           "name": "user_id",
           "type": "text",
