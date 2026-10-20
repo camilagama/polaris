@@ -3,6 +3,8 @@ import {
   type RenewalCancellationStatus,
   renewalCancellationStatus,
 } from "@polaris/domain/billing/renewal-cancellation";
+import { describeError } from "@polaris/observability/wide-event";
+import { logger } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
 import { billingProviderHandled } from "./provider-ports";
 
@@ -12,17 +14,20 @@ import { billingProviderHandled } from "./provider-ports";
  * screen, so it never promises a cancellation that does not exist. The caller
  * has already proved the session user owns these organizations (the closed
  * status functions); this reads only their billing records, on the billing role.
+ * A record that cannot be read now is `null` (unknown), never a guess: the
+ * panel, where the owner also undoes the closure and asks for the copy, still
+ * opens.
  */
 export type RenewalStatusReader = (
   bindings: WorkerBindings,
   organizationIds: readonly string[]
-) => Promise<ReadonlyMap<string, RenewalCancellationStatus>>;
+) => Promise<ReadonlyMap<string, RenewalCancellationStatus | null>>;
 
 export function createRenewalStatusReader(
   createStore: typeof createBillingStore = createBillingStore
 ): RenewalStatusReader {
   return async (bindings, organizationIds) => {
-    const statuses = new Map<string, RenewalCancellationStatus>();
+    const statuses = new Map<string, RenewalCancellationStatus | null>();
     if (organizationIds.length === 0) {
       return statuses;
     }
@@ -34,8 +39,9 @@ export function createRenewalStatusReader(
       }
       return statuses;
     }
-    const store = createStore(connectionString);
+    let store: ReturnType<typeof createBillingStore> | null = null;
     try {
+      store = createStore(connectionString);
       for (const id of organizationIds) {
         // biome-ignore lint/performance/noAwaitInLoops: Two organizations at most (one open, two closed per person).
         const [record, link] = await Promise.all([
@@ -47,9 +53,16 @@ export function createRenewalStatusReader(
           renewalCancellationStatus(record, link, billingProviderHandled)
         );
       }
-      return statuses;
+    } catch (error: unknown) {
+      logger.warn("billing_renewal_status_unavailable", {
+        ...describeError(error),
+      });
+      for (const id of organizationIds) {
+        statuses.set(id, null);
+      }
     } finally {
-      await store.close().catch(() => undefined);
+      await store?.close().catch(() => undefined);
     }
+    return statuses;
   };
 }

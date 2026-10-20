@@ -176,8 +176,11 @@ async function run() {
         "UPDATE public.event_outbox SET status = 'dispatched', attempts = attempts + 1, dispatched_at = now() - $2 * interval '1 second' WHERE id = $1",
         [eventId, ago]
       );
-    const rearm = (minAge = 3600, limit = 1000) =>
-      store.rearmRenewalCancellations(minAge, limit);
+    const rearm = (
+      minAge = 3600,
+      limit = 1000,
+      providers: readonly string[] = ["asaas"]
+    ) => store.rearmRenewalCancellations(minAge, limit, providers);
 
     // ------------------------------------------------- 1. the closure writes the request, in its transaction
     const linked = await fixture("linked");
@@ -334,8 +337,32 @@ async function run() {
       "42501",
       "the tenant runtime cannot write it at all"
     );
+    const visible = async (organizationId: string) => {
+      const client = await owner.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          "GRANT polaris_privacy_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
+        );
+        await client.query("SET LOCAL ROLE polaris_privacy_owner");
+        const result = await client.query(
+          "SELECT organization_id, state, provider, provider_ref, cancel_at_period_end FROM public.organization_billing WHERE organization_id = $1",
+          [organizationId]
+        );
+        return result.rowCount;
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+      }
+    };
+    assert.equal(await visible(linked.organizationId), 1);
+    assert.equal(
+      await visible(rolledBack.organizationId),
+      0,
+      "the privacy owner reads the billing record only of an organization in closure"
+    );
     tests.push(
-      "only the privacy owner (the closure function's owner) writes the event, and only for an organization in closure, with the very cycle of its closure record as the body's only key (an integer) and the key the type and that cycle; the tenant runtime cannot write the type at all"
+      "only the privacy owner (the closure function's owner) reads the billing record of an organization in closure (never of an open one) and writes the event, and only for an organization in closure, with the very cycle of its closure record as the body's only key (an integer) and the key the type and that cycle; the tenant runtime cannot write the type at all"
     );
 
     // ------------------------------------------------- 3. the retry by state (V6)
@@ -503,6 +530,51 @@ async function run() {
     );
     assert.equal(afterReclose[1]?.status, "pending");
 
+    // a provider Polaris does not cancel through is the person's: never asked again, unless the app lists it
+    const woovi = await fixture("woovi");
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET provider = 'woovi', provider_ref = $2 WHERE organization_id = $1",
+      [woovi.organizationId, refOf("woovi")]
+    );
+    await close(woovi);
+    const [wooviEvent] = await events(woovi.organizationId);
+    assert.ok(wooviEvent);
+    await dispatched(wooviEvent.id, 7200);
+    assert.deepEqual(
+      await rearm(),
+      { inserted: 0, rearmed: 0 },
+      "a provider not listed is not asked again"
+    );
+    assert.deepEqual(
+      await rearm(3600, 1000, ["asaas", "woovi"]),
+      { inserted: 0, rearmed: 1 },
+      "the day its adapter exists, the app lists it"
+    );
+
+    // an event sent 200 times is left to the incident: it does not cycle until the purge
+    await owner.pool.query(
+      "UPDATE public.event_outbox SET status = 'dispatched', attempts = 200, dispatched_at = now() - interval '2 hours' WHERE id = $1",
+      [wooviEvent.id]
+    );
+    assert.deepEqual(
+      await rearm(3600, 1000, ["asaas", "woovi"]),
+      { inserted: 0, rearmed: 0 },
+      "past 200 sends it is the incident's"
+    );
+    await owner.pool.query(
+      "UPDATE public.event_outbox SET attempts = 199 WHERE id = $1",
+      [wooviEvent.id]
+    );
+    assert.deepEqual(
+      await rearm(3600, 1000, ["asaas", "woovi"]),
+      { inserted: 0, rearmed: 1 },
+      "below it, still asked again"
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET provider = NULL, provider_ref = NULL WHERE organization_id = $1",
+      [woovi.organizationId]
+    );
+
     // a batch never passes its limit
     const many: TenantFixture[] = [];
     for (const label of ["batch 1", "batch 2"]) {
@@ -520,26 +592,30 @@ async function run() {
     for (const tenant of many) {
       assert.equal((await events(tenant.organizationId)).length, 1);
     }
-    for (const [minAge, limit] of [
-      [899, 10],
-      [86_401, 10],
-      [3600, 0],
-      [3600, 1001],
+    for (const [minAge, limit, providers] of [
+      [899, 10, ["asaas"]],
+      [86_401, 10, ["asaas"]],
+      [3600, 0, ["asaas"]],
+      [3600, 1001, ["asaas"]],
+      [3600, 10, []],
+      [3600, 10, ["Asaas"]],
+      [3600, 10, ["asaas; drop"]],
+      [3600, 10, Array.from({ length: 9 }, (_, index) => `p${index}`)],
     ] as const) {
       await expectSqlState(
-        () => rearm(minAge, limit),
+        () => rearm(minAge, limit, providers),
         "22023",
-        `the hourly run refuses an age of ${minAge} s or a batch of ${limit}`
+        `the hourly run refuses an age of ${minAge} s, a batch of ${limit} or the providers ${JSON.stringify(providers)}`
       );
     }
     tests.push(
-      "the retry is by state (V6): a pending request and one dispatched less than the minimum age are left alone; one dispatched earlier is sent back to pending, the same row and key, once; the cycle's request is written when it is missing, once; nothing is asked once the cancellation is recorded (whose second delivery is a duplicate), without a provider, with a checkout not paid, on Free, for an open organization or for a closure undone; closing again after an undo has a request of its own and the old cycle is not sent again; the batch respects its limit and the arguments are checked"
+      "the retry is by state (V6), only at the providers the app lists and below 200 sends: a pending request and one dispatched less than the minimum age are left alone; one dispatched earlier is sent back to pending, the same row and key, once; the cycle's request is written when it is missing, once; nothing is asked once the cancellation is recorded (whose second delivery is a duplicate), without a provider, with a checkout not paid, on Free, for an open organization or for a closure undone; closing again after an undo has a request of its own and the old cycle is not sent again; the batch respects its limit and the arguments are checked"
     );
 
     // ------------------------------------------------- 4. the same predicate as the domain
     const definition = (
       await owner.pool.query<{ source: string }>(
-        "SELECT prosrc AS source FROM pg_proc WHERE oid = 'public.rearm_renewal_cancellations(integer, integer)'::regprocedure"
+        "SELECT prosrc AS source FROM pg_proc WHERE oid = 'public.rearm_renewal_cancellations(integer, integer, text[])'::regprocedure"
       )
     ).rows[0]?.source as string;
     const listed = [...definition.matchAll(STATES_LISTED)]
@@ -572,7 +648,7 @@ async function run() {
     );
 
     // ------------------------------------------------- 5. who may do what
-    const fn = "public.rearm_renewal_cancellations(integer, integer)";
+    const fn = "public.rearm_renewal_cancellations(integer, integer, text[])";
     const [meta] = (
       await owner.pool.query<{
         config: string[] | null;

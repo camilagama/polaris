@@ -404,18 +404,19 @@ describe("organization.closedStatus", () => {
     expect(readRenewalStatuses).not.toHaveBeenCalled();
   });
 
-  it("fails instead of guessing when the billing record cannot be read", async () => {
+  it("still opens, with the renewal unknown, when the billing record cannot be read", async () => {
     const client = createClient({
       closureRepository: {
         getClosedOrganizationStatus: () => Promise.resolve(closedView),
       },
-      readRenewalStatuses: () => Promise.reject(new Error("billing_down")),
+      readRenewalStatuses: (_bindings: unknown, ids: readonly string[]) =>
+        Promise.resolve(new Map(ids.map((id) => [id, null]))),
       withAuthenticatedRequestContext: authenticated(),
     });
 
     await expect(
       client.organization.closedStatus({ organizationId })
-    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+    ).resolves.toEqual({ organization: { ...closedReadModel, renewal: null } });
   });
 
   it("answers a null organization when the repository finds none", async () => {

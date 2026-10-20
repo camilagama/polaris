@@ -1019,7 +1019,7 @@ async function run() {
         "memberships_privacy_owner_update",
         "offline_grants_privacy_owner_select",
         "offline_grants_privacy_owner_update",
-        "organization_billing_privacy_owner_select",
+        "organization_billing_privacy_owner_select_closed",
         "organization_closures_privacy_owner_insert",
         "organization_closures_privacy_owner_select",
         "organization_closures_privacy_owner_update",

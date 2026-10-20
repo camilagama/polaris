@@ -18,7 +18,12 @@ export interface BillingPortOptions {
 }
 
 /** The providers Polaris acts through (cancels, refunds, reconciles): the ones with an outbound port. */
-const HANDLED_PROVIDERS: ReadonlySet<string> = new Set(["asaas"]);
+export const HANDLED_BILLING_PROVIDERS: readonly string[] = Object.freeze([
+  "asaas",
+]);
+const HANDLED_PROVIDERS: ReadonlySet<string> = new Set(
+  HANDLED_BILLING_PROVIDERS
+);
 
 /**
  * Whether Polaris acts through this provider at all, whatever the settings of

@@ -10,12 +10,16 @@
 -- cycle (`billing.renewal_cancel_requested:<requestedAt>`, unique with the organization), so a closure undone and
 -- requested again has an event of its own, and the retry of one cycle rearms that cycle's row.
 --
--- What the privacy owner (owner of the closure functions) needs besides what it had: whether the organization's
--- renewal is alive (five columns of its billing record), and the outbox rows of this type (insert, read, rearm).
+-- What the privacy owner (owner of the closure functions) needs besides what it had: whether the renewal of an
+-- organization in closure is alive (five columns of its billing record, only while the organization is in closure),
+-- and the outbox rows of this type (insert, read, rearm).
 GRANT SELECT (organization_id, state, provider, provider_ref, cancel_at_period_end) ON TABLE public.organization_billing TO polaris_privacy_owner;--> statement-breakpoint
-CREATE POLICY organization_billing_privacy_owner_select ON public.organization_billing
-  AS PERMISSIVE FOR SELECT TO polaris_privacy_owner USING (true);--> statement-breakpoint
-GRANT SELECT (idempotency_key, attempts, locked_until) ON TABLE public.event_outbox TO polaris_privacy_owner;--> statement-breakpoint
+CREATE POLICY organization_billing_privacy_owner_select_closed ON public.organization_billing
+  AS PERMISSIVE FOR SELECT TO polaris_privacy_owner
+  USING (EXISTS (SELECT 1 FROM public.organizations AS closure_scope
+                  WHERE closure_scope.id = organization_billing.organization_id
+                    AND closure_scope.status IN ('closing', 'closed', 'purge_pending')));--> statement-breakpoint
+GRANT SELECT (idempotency_key, attempts) ON TABLE public.event_outbox TO polaris_privacy_owner;--> statement-breakpoint
 -- only this type, only pending and untouched, the key of the cycle the body names, and only for an organization in
 -- closure whose closure record has that very request instant: the body carries nothing but the cycle
 CREATE POLICY event_outbox_privacy_owner_insert_renewal_cancel ON public.event_outbox
@@ -105,6 +109,7 @@ BEGIN
     (organization_id, actor_user_id, entity_type, entity_id, event_type)
   VALUES (target, actor, 'organization', target, 'organization.closure_requested');
   requested_ms := (pg_catalog.floor(EXTRACT(epoch FROM requested) * 1000))::bigint;
+  -- one event per cycle: a second closure in the same millisecond cannot happen (an undo comes in between)
   INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id)
   VALUES (
     target, 'billing.renewal_cancel_requested', pg_catalog.jsonb_build_object('requestedAt', requested_ms),
@@ -115,12 +120,14 @@ BEGIN
 END;
 $function$;--> statement-breakpoint
 -- The retry by state (V6), for the hourly billing run: every organization in closure (not undone) whose renewal is
--- still alive (a provider linked, a state that gives Pro, no cancellation at the end of the period) gets its cycle's
--- event written when it has none (closed before this migration, or a checkout paid after the closure), or sent back
--- to pending when it was dispatched at least `p_min_age_seconds` ago and the state still says the renewal is alive
--- (the queue gave up, or the provider found nothing yet). A pending event is left to the dispatcher. It reads no
--- name and no provider answer; it moves only the outbox rows of this type.
-CREATE FUNCTION public.rearm_renewal_cancellations(p_min_age_seconds integer, p_limit integer)
+-- still alive (a provider Polaris cancels through, `p_providers`, a state that gives Pro, no cancellation at the end
+-- of the period) gets its cycle's event written when it has none (closed before this migration, or a checkout paid
+-- after the closure), or sent back to pending when it was dispatched at least `p_min_age_seconds` ago and the state
+-- still says the renewal is alive (the queue gave up, or the provider found nothing yet). A pending event is left to
+-- the dispatcher; one sent 200 times is left to the incident (the dead-letter queue already told), so a renewal the
+-- provider never finds does not cycle until the purge. Each part takes at most `p_limit` rows. It reads no name and
+-- no provider answer; it moves only the outbox rows of this type.
+CREATE FUNCTION public.rearm_renewal_cancellations(p_min_age_seconds integer, p_limit integer, p_providers text[])
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -131,7 +138,10 @@ DECLARE
   rearmed integer;
 BEGIN
   IF p_min_age_seconds IS NULL OR p_min_age_seconds < 900 OR p_min_age_seconds > 86400
-     OR p_limit IS NULL OR p_limit < 1 OR p_limit > 1000 THEN
+     OR p_limit IS NULL OR p_limit < 1 OR p_limit > 1000
+     OR p_providers IS NULL OR pg_catalog.cardinality(p_providers) < 1 OR pg_catalog.cardinality(p_providers) > 8
+     OR EXISTS (SELECT 1 FROM pg_catalog.unnest(p_providers) AS listed(name)
+                 WHERE listed.name IS NULL OR listed.name !~ '^[a-z][a-z0-9_]{0,31}$') THEN
     RAISE EXCEPTION 'invalid_limit' USING ERRCODE = '22023';
   END IF;
   WITH owed AS (
@@ -143,6 +153,7 @@ BEGIN
      WHERE organization.status IN ('closing', 'closed', 'purge_pending')
        AND closure.recovered_at IS NULL
        AND billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
+       AND billing.provider = ANY (p_providers)
        AND billing.state IN ('trialing', 'active', 'grace')
        AND NOT billing.cancel_at_period_end
   ), missing AS (
@@ -173,11 +184,13 @@ BEGIN
      WHERE outbox_row.type = 'billing.renewal_cancel_requested'
        AND outbox_row.status = 'dispatched'
        AND outbox_row.dispatched_at <= pg_catalog.now() - p_min_age_seconds * interval '1 second'
+       AND outbox_row.attempts < 200
        AND outbox_row.idempotency_key = 'billing.renewal_cancel_requested:'
            || (pg_catalog.floor(EXTRACT(epoch FROM closure.requested_at) * 1000))::bigint::text
        AND organization.status IN ('closing', 'closed', 'purge_pending')
        AND closure.recovered_at IS NULL
        AND billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
+       AND billing.provider = ANY (p_providers)
        AND billing.state IN ('trialing', 'active', 'grace')
        AND NOT billing.cancel_at_period_end
      ORDER BY outbox_row.dispatched_at, outbox_row.id
@@ -192,8 +205,8 @@ BEGIN
   RETURN pg_catalog.jsonb_build_object('inserted', inserted, 'rearmed', rearmed);
 END;
 $function$;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.rearm_renewal_cancellations(integer, integer) FROM PUBLIC, polaris_pr11_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_outbox_runtime;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.rearm_renewal_cancellations(integer, integer) TO polaris_billing_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.rearm_renewal_cancellations(integer, integer, text[]) FROM PUBLIC, polaris_pr11_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_outbox_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.rearm_renewal_cancellations(integer, integer, text[]) TO polaris_billing_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_privacy_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_privacy_owner;

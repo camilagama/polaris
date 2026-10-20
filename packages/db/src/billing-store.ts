@@ -209,13 +209,15 @@ export interface BillingStore {
   /**
    * The retry by state of the renewal cancellations the closures asked for
    * (ADR 0074, L4): every organization in closure whose renewal is still alive
-   * gets its cycle's `billing.renewal_cancel_requested` written, or sent again
-   * when it was dispatched at least `minAgeSeconds` ago. Never a new key for the
-   * same cycle; a pending event is left to the dispatcher.
+   * at a provider of `providers` (the ones Polaris cancels through) gets its
+   * cycle's `billing.renewal_cancel_requested` written, or sent again when it
+   * was dispatched at least `minAgeSeconds` ago (and fewer than 200 times).
+   * Never a new key for the same cycle; a pending event is left to the dispatcher.
    */
   rearmRenewalCancellations: (
     minAgeSeconds: number,
-    limit: number
+    limit: number,
+    providers: readonly string[]
   ) => Promise<RenewalCancellationRearmReport>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
@@ -1443,12 +1445,12 @@ export function createBillingStore(
       const [row] = result.rows;
       return row ? toRecord(row) : null;
     },
-    async rearmRenewalCancellations(minAgeSeconds, limit) {
+    async rearmRenewalCancellations(minAgeSeconds, limit, providers) {
       const result = await pool.query<{
         result: RenewalCancellationRearmReport;
       }>(
-        "SELECT public.rearm_renewal_cancellations($1::integer, $2::integer) AS result",
-        [minAgeSeconds, limit]
+        "SELECT public.rearm_renewal_cancellations($1::integer, $2::integer, $3::text[]) AS result",
+        [minAgeSeconds, limit, [...providers]]
       );
       const report = result.rows[0]?.result;
       return {

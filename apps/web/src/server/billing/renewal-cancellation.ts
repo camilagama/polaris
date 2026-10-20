@@ -9,6 +9,7 @@ import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { PermanentHandlerError } from "../queue/consumer";
 import { cancelRenewal, type OperatorCommandDependencies } from "./commands";
+import { HANDLED_BILLING_PROVIDERS } from "./provider-ports";
 
 /**
  * Closing the organization cancels the renewal of its subscription (ADR 0074,
@@ -119,14 +120,17 @@ export async function handleRenewalCancelRequested(
 
 /**
  * The hourly retry by state (V6): never a new key for the same closure cycle,
- * only the cycle's own event written when missing or sent back to pending.
+ * only the cycle's own event written when missing or sent back to pending, and
+ * only at a provider Polaris cancels through (another is the person's to cancel:
+ * asking again every hour would change nothing).
  */
 export async function rearmRenewalCancellations(
   store: Pick<BillingStore, "rearmRenewalCancellations">
 ): Promise<RenewalCancellationRearmReport> {
   const report = await store.rearmRenewalCancellations(
     RENEWAL_CANCEL_REARM_MIN_AGE_SECONDS,
-    RENEWAL_CANCEL_REARM_BATCH
+    RENEWAL_CANCEL_REARM_BATCH,
+    HANDLED_BILLING_PROVIDERS
   );
   if (report.inserted > 0 || report.rearmed > 0) {
     // each one is a renewal still alive an hour or more after its closure: the alert reads this

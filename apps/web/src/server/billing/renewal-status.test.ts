@@ -72,15 +72,42 @@ describe("the renewal status of closed organizations", () => {
     expect(createStore).not.toHaveBeenCalled();
   });
 
-  it("opens nothing for no organization, and closes the connection when a read fails", async () => {
-    const store = fakeStore();
-    store.readRecord.mockRejectedValue(new Error("billing_down"));
-    const createStore = vi.fn(() => store);
+  it("opens nothing for no organization", async () => {
+    const createStore = vi.fn();
     const read = createRenewalStatusReader(createStore as never);
 
     await expect(read(bindings, [])).resolves.toEqual(new Map());
     expect(createStore).not.toHaveBeenCalled();
-    await expect(read(bindings, ["alive"])).rejects.toThrow("billing_down");
+  });
+
+  it("says unknown (null), never a guess, when the record cannot be read, and closes the connection", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const store = fakeStore();
+    store.readRecord.mockRejectedValue(new Error("billing_down"));
+    const read = createRenewalStatusReader((() => store) as never);
+
+    const statuses = await read(bindings, ["alive", "cancelled"]);
+
+    expect(Object.fromEntries(statuses)).toEqual({
+      alive: null,
+      cancelled: null,
+    });
     expect(store.close).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "billing_renewal_status_unavailable" })
+    );
+    warn.mockRestore();
+  });
+
+  it("says unknown when the billing connection cannot even open", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const read = createRenewalStatusReader((() => {
+      throw new Error("bad_url");
+    }) as never);
+
+    await expect(read(bindings, ["alive"])).resolves.toEqual(
+      new Map([["alive", null]])
+    );
+    vi.restoreAllMocks();
   });
 });

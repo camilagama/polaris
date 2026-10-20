@@ -46,7 +46,7 @@ interface OrganizationRpcDependencies {
 /** What the owner reads of a closed organization: dates as ISO instants, D as a calendar date. */
 function closedOrganizationReadModel(
   organization: ClosedOrganizationView,
-  renewal: RenewalCancellationStatus
+  renewal: RenewalCancellationStatus | null
 ) {
   return {
     canRecover: organization.canRecover,
@@ -134,7 +134,7 @@ export function createOrganizationRpcHandlers(
     return organizations.map((organization) =>
       closedOrganizationReadModel(
         organization,
-        renewals.get(organization.id) ?? "not_handled"
+        renewals.get(organization.id) ?? null
       )
     );
   };

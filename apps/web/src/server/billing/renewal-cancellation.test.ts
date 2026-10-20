@@ -313,7 +313,9 @@ describe("rearmRenewalCancellations", () => {
     });
     expect(store.rearmRenewalCancellations).toHaveBeenCalledWith(
       RENEWAL_CANCEL_REARM_MIN_AGE_SECONDS,
-      RENEWAL_CANCEL_REARM_BATCH
+      RENEWAL_CANCEL_REARM_BATCH,
+      // only the providers Polaris cancels through: another is the person's to cancel
+      ["asaas"]
     );
     expect(RENEWAL_CANCEL_REARM_MIN_AGE_SECONDS).toBe(3600);
     expect(warn).toHaveBeenCalledWith(
