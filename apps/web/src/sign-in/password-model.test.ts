@@ -52,6 +52,21 @@ describe("the token of a link", () => {
     expect(take(`#token=${"a".repeat(2049)}`).token).toBeNull();
   });
 
+  it("is read before the address changes, as `window.location` is live", () => {
+    const location = {
+      hash: "#token=vivo",
+      pathname: "/confirmar-email",
+      search: "",
+    };
+    const history = {
+      replaceState: vi.fn(() => {
+        location.hash = "";
+      }),
+    };
+    expect(takeFragmentToken(location, history)).toBe("vivo");
+    expect(location.hash).toBe("");
+  });
+
   it("is absent after a reload, and then nothing touches the address", () => {
     const { replaceState, token } = take("");
     expect(token).toBeNull();

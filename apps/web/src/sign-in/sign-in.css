@@ -449,7 +449,8 @@
   min-width: 0;
 }
 
-.sign-in-challenge:has(> div:empty):has(> p:empty) {
+/* takes no room while the widget is invisible and nothing is said; the alert of a blocked script always shows */
+.sign-in-challenge:has(> div:empty):has(> p:empty):not(:has(> .sign-in-alert)) {
   display: none;
 }
 

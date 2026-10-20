@@ -85,11 +85,13 @@ export function takeFragmentToken(
   location: Pick<Location, "hash" | "pathname" | "search">,
   history: Pick<History, "replaceState">
 ): string | null {
-  if (!location.hash) {
+  // `window.location` is live: the fragment is read before the address changes
+  const { hash, pathname, search } = location;
+  if (!hash) {
     return null;
   }
-  history.replaceState(null, "", `${location.pathname}${location.search}`);
-  const match = TOKEN_FRAGMENT.exec(location.hash);
+  history.replaceState(null, "", `${pathname}${search}`);
+  const match = TOKEN_FRAGMENT.exec(hash);
   if (!match?.[1]) {
     return null;
   }
