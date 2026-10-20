@@ -56,8 +56,12 @@ describe.skipIf(!enabled)("Asaas sandbox", () => {
       expect(new URL(prepared.handoff.url).hostname).toMatch(ASAAS_HOST);
     } finally {
       // the checkout is cancelled even if an expectation fails
-      await port.discardCheckout(prepared.checkoutId);
+      expect(await port.discardCheckout(prepared.checkoutId)).toBe("discarded");
     }
+    // giving it up again is safe: Asaas answers 400, the port already_closed
+    expect(await port.discardCheckout(prepared.checkoutId)).toBe(
+      "already_closed"
+    );
     // no subscription exists for a checkout nobody finished
     expect(await port.readState(prepared.providerRef, new Date())).toEqual([]);
     expect(await port.cancelRenewal(prepared.providerRef)).toBe(

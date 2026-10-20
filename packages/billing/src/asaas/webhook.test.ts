@@ -1,6 +1,8 @@
 import {
+  type BillingFact,
   type BillingRecord,
   reconcileFact,
+  serializeBillingFact,
 } from "@polaris/domain/billing/facts";
 import { describe, expect, it, vi } from "vitest";
 import { parseProviderJson } from "../json";
@@ -124,6 +126,8 @@ const occurredAt = new Date("2026-10-26T12:15:00.000Z");
 const clock = new Date("2026-10-26T13:00:00.000Z");
 /** 26/10 + 1 month, through the end of 26/11 in São Paulo. */
 const monthlyEnd = new Date("2026-11-27T03:00:00.000Z");
+/** The exact text of the charge value in the resource read back (never the body's). */
+const chargeAmount = { currency: "BRL", value: "24.90" } as const;
 
 describe("AC-1a: the Asaas token, compared in constant time", () => {
   it("accepts the current token and, during a rotation, the next one", async () => {
@@ -361,6 +365,7 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
     expect(await factsOf(webhookBody("PAYMENT_CONFIRMED"))).toEqual([
       {
         fact: {
+          amount: chargeAmount,
           cycleMonths: 1,
           occurredAt,
           periodEndsAt: monthlyEnd,
@@ -373,10 +378,25 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
     ]);
   });
 
+  it("a charge of no value keeps its fact without an amount (never a refusal that would make Asaas resend it)", async () => {
+    const api = fakeApi({ payments: [paymentJson({ value: 0 })] });
+    const [confirmed] = await factsOf(webhookBody("PAYMENT_CONFIRMED"), api);
+    expect(confirmed?.fact).toEqual({
+      cycleMonths: 1,
+      occurredAt,
+      periodEndsAt: monthlyEnd,
+      type: "charge_succeeded",
+    });
+    expect(() =>
+      serializeBillingFact(confirmed?.fact as BillingFact)
+    ).not.toThrow();
+  });
+
   it("PAYMENT_RECEIVED → charge_succeeded (the same period: a duplicate by value)", async () => {
     const api = fakeApi({ payments: [paymentJson({ status: "RECEIVED" })] });
     const [received] = await factsOf(webhookBody("PAYMENT_RECEIVED"), api);
     expect(received?.fact).toEqual({
+      amount: chargeAmount,
       cycleMonths: 1,
       occurredAt,
       periodEndsAt: monthlyEnd,
@@ -425,7 +445,12 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
     const api = fakeApi({ payments: [paymentJson({ status: "REFUNDED" })] });
     expect(await factsOf(webhookBody("PAYMENT_REFUNDED"), api)).toEqual([
       {
-        fact: { occurredAt, periodEndsAt: monthlyEnd, type: "charge_refunded" },
+        fact: {
+          amount: chargeAmount,
+          occurredAt,
+          periodEndsAt: monthlyEnd,
+          type: "charge_refunded",
+        },
         providerEventId: EVENT_ID,
         providerRef: CHECKOUT_ID,
         providerSubscriptionId: SUBSCRIPTION_ID,
@@ -441,6 +466,7 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
       (await factsOf(webhookBody("PAYMENT_CHARGEBACK_REQUESTED"), disputed))[0]
         ?.fact
     ).toEqual({
+      amount: chargeAmount,
       occurredAt,
       periodEndsAt: monthlyEnd,
       type: "charge_disputed",
@@ -456,6 +482,7 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
         )
       )[0]?.fact
     ).toEqual({
+      amount: chargeAmount,
       occurredAt,
       periodEndsAt: monthlyEnd,
       type: "dispute_reversed",
@@ -635,6 +662,7 @@ describe("S1.3: the fact is tied to the organization by the checkout ID, not by 
     expect(await factsOf(webhookBody("PAYMENT_CONFIRMED"), api)).toEqual([
       {
         fact: {
+          amount: chargeAmount,
           cycleMonths: 1,
           occurredAt,
           periodEndsAt: monthlyEnd,
@@ -730,6 +758,7 @@ describe("AC-1c: the fact comes from the resource read back, never from the body
     // the charge is really confirmed, due 26/10: its period is the one that counts
     const [fact] = await factsOf(forged);
     expect(fact?.fact).toEqual({
+      amount: chargeAmount,
       cycleMonths: 1,
       occurredAt,
       periodEndsAt: monthlyEnd,
@@ -832,6 +861,7 @@ describe("AC-1c: the fact comes from the resource read back, never from the body
     expect(await factsOf(webhookBody("PAYMENT_CONFIRMED"), refunded)).toEqual([
       {
         fact: {
+          amount: chargeAmount,
           cycleMonths: 1,
           occurredAt,
           periodEndsAt: monthlyEnd,
@@ -911,6 +941,7 @@ describe("AC-5: the period is the due date of the charge plus the cycle, never n
     expect(
       (await factsOf(webhookBody("PAYMENT_REFUNDED"), api))[0]?.fact
     ).toEqual({
+      amount: chargeAmount,
       occurredAt,
       periodEndsAt: monthlyEnd,
       type: "charge_refunded",
@@ -997,9 +1028,14 @@ describe("AC-3: no personal or card data leaves the mapper", () => {
     for (const { fact } of results) {
       expect(Object.keys(fact).sort()).toEqual(
         fact.type === "charge_succeeded"
-          ? ["cycleMonths", "occurredAt", "periodEndsAt", "type"]
-          : ["occurredAt", "periodEndsAt", "type"]
+          ? ["amount", "cycleMonths", "occurredAt", "periodEndsAt", "type"]
+          : ["amount", "occurredAt", "periodEndsAt", "type"]
       );
+      // the amount is the exact text of the resource, with the currency only
+      expect("amount" in fact ? fact.amount : undefined).toStrictEqual({
+        currency: "BRL",
+        value: "24.90",
+      });
     }
     const serialized = JSON.stringify(results);
     for (const leaked of [

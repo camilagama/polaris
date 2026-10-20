@@ -178,8 +178,17 @@ describe("review state", () => {
     }
   });
 
-  it("has every class decided by the user on 19/10/2026", () => {
+  it("has every class decided by the user on 19/10/2026, but the one created after it", () => {
+    // the trial per person came later (ADR 0101): its period waits for the responsible person
+    const undecided = ["billing_trial_claims"];
     for (const policy of RETENTION_POLICIES) {
+      if (undecided.includes(policy.class)) {
+        expect(policy.review, policy.class).toEqual({
+          state: "pendente_juridica",
+        });
+        expect(policy.status, policy.class).toBe("proposta");
+        continue;
+      }
       expect(policy.review, policy.class).toEqual({
         at: "2026-10-19",
         by: "usuário (19/10/2026)",

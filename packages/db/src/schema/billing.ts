@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { user } from "./auth";
 import { organizations } from "./organization";
 import { activeTenantScope, productVariants } from "./product";
 
@@ -159,6 +160,13 @@ export const organizationBilling = pgTable(
     provider: text("provider"),
     providerRef: text("provider_ref"),
     /**
+     * The provider's own ID of the subscription (Asaas `sub_`), stored from the
+     * first fact that matched `provider_ref` (ADR 0101): the commands find the
+     * subscription by it instead of listing the newest ones. Cleared when a new
+     * reference is attached. Opaque, no personal data; the tenant does not read it.
+     */
+    providerSubscriptionId: text("provider_subscription_id"),
+    /**
      * What is remembered of a payment taken back (PR84): the end of the period
      * that was paid for, why (`refund`, `chargeback`, or `won`: a chargeback
      * reversed before it was applied) and what the subscription was. A refund or
@@ -241,10 +249,18 @@ export const organizationBilling = pgTable(
         )
       `
     ),
+    check(
+      "organization_billing_provider_subscription_coherent",
+      sql`${table.providerSubscriptionId} IS NULL OR (${table.providerRef} IS NOT NULL AND char_length(${table.providerSubscriptionId}) BETWEEN 1 AND 128)`
+    ),
     // one subscription at a provider belongs to one organization
     uniqueIndex("organization_billing_provider_ref_unique")
       .on(table.provider, table.providerRef)
       .where(sql`${table.providerRef} IS NOT NULL`),
+    // and so does its subscription ID there
+    uniqueIndex("organization_billing_provider_subscription_unique")
+      .on(table.provider, table.providerSubscriptionId)
+      .where(sql`${table.providerSubscriptionId} IS NOT NULL`),
     // the sweep of expired access reads this
     index("organization_billing_due_idx")
       .on(table.accessEndsAt)
@@ -349,13 +365,15 @@ export const billingEvents = pgTable(
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "restrict",
     }),
-    /** `not_applicable`, `stale` and `reference_mismatch` for ignored facts, `unknown_organization` and `error` for failed ones. */
+    /** `not_applicable`, `stale` and `reference_mismatch` for ignored facts, `unknown_organization` and `error` for failed ones, `trial_claim_missing` for an unresolved one. */
     outcomeCode: text("outcome_code"),
     processedAt: timestamp("processed_at", { withTimezone: true }),
     provider: text("provider").notNull(),
     providerEventId: text("provider_event_id").notNull(),
     /** The subscription reference the provider reported. */
     providerRef: text("provider_ref"),
+    /** The provider's own ID of the subscription, when the fact carries one (Asaas `sub_`). */
+    providerSubscriptionId: text("provider_subscription_id"),
     receivedAt: timestamp("received_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -373,16 +391,20 @@ export const billingEvents = pgTable(
       sql`${table.providerRef} IS NULL OR char_length(${table.providerRef}) BETWEEN 1 AND 128`
     ),
     check(
+      "billing_events_provider_subscription_length",
+      sql`${table.providerSubscriptionId} IS NULL OR char_length(${table.providerSubscriptionId}) BETWEEN 1 AND 128`
+    ),
+    check(
       "billing_events_fact_type_allowed",
       sql`${table.factType} IN ('trial_method_ready', 'charge_succeeded', 'charge_failed', 'subscription_cancelled', 'cycle_change_scheduled', 'charge_refunded', 'charge_disputed', 'dispute_reversed', 'time_elapsed', 'command')`
     ),
     check(
       "billing_events_status_allowed",
-      sql`${table.status} IN ('received', 'applied', 'ignored', 'failed')`
+      sql`${table.status} IN ('received', 'applied', 'ignored', 'failed', 'unresolved')`
     ),
     check(
       "billing_events_outcome_allowed",
-      sql`${table.outcomeCode} IS NULL OR ${table.outcomeCode} IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error')`
+      sql`${table.outcomeCode} IS NULL OR ${table.outcomeCode} IN ('not_applicable', 'stale', 'reference_mismatch', 'unknown_organization', 'error', 'trial_claim_missing')`
     ),
     check(
       "billing_events_fact_is_small_object",
@@ -400,12 +422,58 @@ export const billingEvents = pgTable(
     // what the retry pass reads
     index("billing_events_pending_idx")
       .on(table.receivedAt)
-      .where(sql`${table.status} IN ('received', 'failed')`),
+      .where(sql`${table.status} IN ('received', 'failed', 'unresolved')`),
     // a person sees the billing history of their own organization, never writes it
     pgPolicy("billing_events_current_tenant_select", {
       for: "select",
       to: runtimeRole,
       using: sql`${table.organizationId} IS NOT NULL AND ${activeTenantScope(table.organizationId)}`,
+    }),
+  ]
+).enableRLS();
+
+const billingRuntimeRole = "polaris_billing_runtime";
+
+/**
+ * The trial is offered once per person, not per organization (ADR 0101, Q15):
+ * one row per user who opted into a trial. `startTrial` reserves it for an
+ * organization (and moves it from one whose checkout was abandoned), and the
+ * fact that starts the trial consumes it, in the same statement that records
+ * `trial_started_at`. Only the billing role reads or writes it; the tenant sees
+ * nothing. It outlives the purge of the organization (anti-abuse) and goes with
+ * the account (cascade): the retention class `billing_trial_claims`.
+ */
+export const billingTrialClaims = pgTable(
+  "billing_trial_claims",
+  {
+    /** When the trial actually started on the organization; null while only reserved. */
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    reservedAt: timestamp("reserved_at", { withTimezone: true }).notNull(),
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    // what the consumption of a trial reads (by the organization that starts it)
+    index("billing_trial_claims_organization_idx").on(table.organizationId),
+    pgPolicy("billing_trial_claims_billing_runtime_select", {
+      for: "select",
+      to: billingRuntimeRole,
+      using: sql`true`,
+    }),
+    pgPolicy("billing_trial_claims_billing_runtime_insert", {
+      for: "insert",
+      to: billingRuntimeRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("billing_trial_claims_billing_runtime_update", {
+      for: "update",
+      to: billingRuntimeRole,
+      using: sql`true`,
+      withCheck: sql`true`,
     }),
   ]
 ).enableRLS();

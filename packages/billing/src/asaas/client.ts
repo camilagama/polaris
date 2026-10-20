@@ -44,7 +44,10 @@ export interface AsaasClient {
    * no `checkoutSession` filter (it ignores the parameter: sandbox, 19/10/2026),
    * so the list is read newest first and filtered here, stopping at the page
    * where the checkout is found. A checkout makes one subscription. A checkout
-   * not found within the pages read is an error, never an empty answer.
+   * not found within the pages read is an error, never an empty answer. Only for
+   * a checkout whose subscription ID is not stored yet (no webhook matched): the
+   * port reads a stored `sub_` directly. The port checks the `checkoutSession`
+   * of what this returns again, on purpose (defense in depth).
    */
   listSubscriptionsByCheckout: (checkoutId: string) => Promise<unknown[]>;
   refundPayment: (paymentId: string) => Promise<unknown>;
