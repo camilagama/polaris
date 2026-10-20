@@ -142,12 +142,24 @@ export interface RuntimeSnapshot {
    * or written by a screen), so a screen that reads them knows to read again.
    */
   dataVersion: number;
+  /**
+   * The offline access ended with the app open (the timer at the lease's `exp`, or a sync that
+   * found it ended), not at start: the page that was open was taken off the screen, with
+   * whatever was being typed in it. Only meaningful while the phase is `expired`.
+   */
+  expiredWhileOpen: boolean;
   lastSyncAt: string | null;
   leaseExpiresAt: string | null;
   online: boolean;
   phase: RuntimePhase;
   /** Why the runtime is unavailable or the last sync failed; null when fine. */
   reason: string | null;
+  /**
+   * While `expired`: the server answered the renewal with a refusal that is not about the
+   * session (an unknown device, a lease it does not issue). Waiting for the network does not
+   * fix it; the next try (a sync, or opening the app again) may.
+   */
+  renewalRefused: boolean;
   /**
    * The server answered the last sync with "not signed in" or "not allowed": the
    * session ended or the membership was withdrawn while the app was open. The
@@ -252,11 +264,13 @@ export class OfflineRuntime {
     bootstrapped: false,
     counts: EMPTY_COUNTS,
     dataVersion: 0,
+    expiredWhileOpen: false,
     lastSyncAt: null,
     leaseExpiresAt: null,
     online: true,
     phase: "off",
     reason: null,
+    renewalRefused: false,
     sessionRefused: false,
     syncing: false,
   };
@@ -566,10 +580,12 @@ export class OfflineRuntime {
     this.set({
       ...this.snapshot,
       counts: EMPTY_COUNTS,
+      expiredWhileOpen: false,
       lastSyncAt: null,
       leaseExpiresAt: null,
       phase: "off",
       reason: null,
+      renewalRefused: false,
       sessionRefused: false,
       syncing: false,
     });
@@ -1015,10 +1031,12 @@ export class OfflineRuntime {
       ...this.snapshot,
       bootstrapped,
       dataVersion: this.snapshot.dataVersion + 1,
+      expiredWhileOpen: false,
       leaseExpiresAt: new Date(claims.exp * 1000).toISOString(),
       online: this.dependencies.isOnline(),
       phase: "ready",
       reason: null,
+      renewalRefused: false,
     });
     this.scheduleExpiry(claims.exp * 1000, generation);
     await this.refreshCounts();
@@ -1060,6 +1078,7 @@ export class OfflineRuntime {
       online: this.dependencies.isOnline(),
       phase: "expired",
       reason: "offline_access_expired",
+      renewalRefused: false,
       syncing: false,
     });
     await this.refreshCounts();
@@ -1113,6 +1132,7 @@ export class OfflineRuntime {
     this.set({
       ...this.snapshot,
       dataVersion: this.snapshot.dataVersion + 1,
+      expiredWhileOpen: true,
       phase: "expired",
       reason: "offline_access_expired",
       syncing: false,
@@ -1151,7 +1171,15 @@ export class OfflineRuntime {
         this.dependencies.keyValues.remove(SESSION_USER_KEY);
         await this.dropLocalCopy(run, { forgetDevice: false });
       } else if (run.generation === this.generation) {
-        this.set({ ...this.snapshot, syncing: false });
+        // no answer is the same as offline; any other answer is a refusal that waiting does not fix
+        this.set({
+          ...this.snapshot,
+          renewalRefused: !(
+            error instanceof OfflineAccessExpiredError ||
+            (error instanceof Error && error.message === "no_lease_offline")
+          ),
+          syncing: false,
+        });
       }
       return false;
     }
@@ -1295,8 +1323,10 @@ export class OfflineRuntime {
       this.set({
         ...this.snapshot,
         dataVersion: this.snapshot.dataVersion + 1,
+        expiredWhileOpen: false,
         phase: "ready",
         reason: null,
+        renewalRefused: false,
       });
     }
     return true;

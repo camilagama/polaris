@@ -1,6 +1,12 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { RuntimeSnapshot } from "./offline-runtime";
-import { useRuntimeSnapshot } from "./runtime-context";
+import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
  * The offline access of this device expired (the own lease passed its `exp`
@@ -15,6 +21,19 @@ export const ACCESS_EXPIRED_TITLE = "O acesso sem internet venceu";
 export const ACCESS_EXPIRED_BODY =
   "Este aparelho ficou muito tempo sem se conectar à internet. Conecte-se para continuar.";
 export const ACCESS_RENEWING = "Conexão de volta. Renovando o acesso…";
+/** Only when the access ended with the app open: the page that was on the screen is gone, and so is what was typed in it. */
+export const ACCESS_SALE_NOT_KEPT =
+  "A venda que você estava montando não foi guardada. Quando o acesso voltar, monte de novo.";
+export const ACCESS_RETURNS_BY_ITSELF =
+  "Quando a internet voltar, o acesso volta sozinho.";
+export const ACCESS_RENEW_FAILED =
+  "Há internet, mas não conseguimos renovar o acesso agora. Vamos tentar de novo em instantes.";
+export const ACCESS_RENEW_REFUSED =
+  "Não conseguimos renovar o acesso deste aparelho. Feche e abra o app com internet. Se continuar, fale com o suporte.";
+export const ACCESS_RETRY = "Tentar agora";
+export const ACCESS_RENEWED = "Acesso renovado.";
+/** How long "Acesso renovado." stays on the page. */
+const RENEWED_NOTICE_MS = 5000;
 
 /** Every operation still on the device: waiting, being sent or refused; none of them is lost. */
 function storedOperations(snapshot: RuntimeSnapshot): number {
@@ -31,17 +50,39 @@ export function storedOperationsText(count: number): string {
     : `Há ${count} operações guardadas neste aparelho. Elas não se perdem.`;
 }
 
+/** What the status line says: renewing, refused for good, or (online, not renewing) that it will try again. */
+function renewalText(snapshot: RuntimeSnapshot): string {
+  if (snapshot.online && snapshot.syncing) {
+    return ACCESS_RENEWING;
+  }
+  if (snapshot.renewalRefused) {
+    return ACCESS_RENEW_REFUSED;
+  }
+  return snapshot.online ? ACCESS_RENEW_FAILED : "";
+}
+
 export function OfflineAccessExpiredView({
+  onRetry,
   snapshot,
 }: {
+  /** Tries to renew the access now; without it no button is drawn. */
+  onRetry?: (() => void) | undefined;
   snapshot: RuntimeSnapshot;
 }) {
-  const renewing = snapshot.online && snapshot.syncing;
+  const canRetry =
+    onRetry !== undefined &&
+    snapshot.online &&
+    !(snapshot.syncing || snapshot.renewalRefused);
   const noticeRef = useRef<HTMLElement>(null);
   // it takes the place of the page, maybe under the person's finger: the focus moves to it and it is announced
   useEffect(() => {
     noticeRef.current?.focus({ preventScroll: true });
   }, []);
+  // the button leaves while it renews: the focus stays in the notice
+  const retry = useCallback(() => {
+    noticeRef.current?.focus({ preventScroll: true });
+    onRetry?.();
+  }, [onRetry]);
   return (
     <section
       aria-labelledby="offline-access-expired-title"
@@ -52,12 +93,21 @@ export function OfflineAccessExpiredView({
     >
       <h1 id="offline-access-expired-title">{ACCESS_EXPIRED_TITLE}</h1>
       <p>{ACCESS_EXPIRED_BODY}</p>
+      {snapshot.expiredWhileOpen ? <p>{ACCESS_SALE_NOT_KEPT}</p> : null}
       <p data-testid="offline-access-expired-queue">
         {storedOperationsText(storedOperations(snapshot))}
       </p>
+      {snapshot.online || snapshot.renewalRefused ? null : (
+        <p>{ACCESS_RETURNS_BY_ITSELF}</p>
+      )}
       <p aria-live="polite" role="status">
-        {renewing ? ACCESS_RENEWING : ""}
+        {renewalText(snapshot)}
       </p>
+      {canRetry ? (
+        <button className="secondary-button" onClick={retry} type="button">
+          {ACCESS_RETRY}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -70,20 +120,68 @@ export function useOfflineAccessExpired(): boolean {
 /** The page, or the notice in its place while the offline access is expired (null: no runtime). */
 export function OfflineAccessGateView({
   children,
+  onRetry,
+  renewed = false,
   snapshot,
 }: {
   children: ReactNode;
+  onRetry?: (() => void) | undefined;
+  /** The access came back a moment ago: a line says so above the page. */
+  renewed?: boolean;
   snapshot: RuntimeSnapshot | null;
 }) {
   if (snapshot?.phase === "expired") {
-    return <OfflineAccessExpiredView snapshot={snapshot} />;
+    return <OfflineAccessExpiredView onRetry={onRetry} snapshot={snapshot} />;
   }
-  return <>{children}</>;
+  // the status region stays mounted (empty) so a screen reader announces the text when it fills in
+  return (
+    <>
+      {snapshot ? (
+        <p className="offline-access-renewed" role="status">
+          {renewed ? ACCESS_RENEWED : ""}
+        </p>
+      ) : null}
+      {children}
+    </>
+  );
+}
+
+/** True for a few seconds after the access went from expired back to ready. */
+function useAccessRenewedNotice(snapshot: RuntimeSnapshot | null): boolean {
+  const phase = snapshot?.phase;
+  const wasExpired = useRef(false);
+  const [renewed, setRenewed] = useState(false);
+  useEffect(() => {
+    if (phase === "expired") {
+      wasExpired.current = true;
+      setRenewed(false);
+      return;
+    }
+    if (phase === "ready" && wasExpired.current) {
+      wasExpired.current = false;
+      setRenewed(true);
+      const timer = setTimeout(() => setRenewed(false), RENEWED_NOTICE_MS);
+      return () => clearTimeout(timer);
+    }
+    wasExpired.current = false;
+    setRenewed(false);
+  }, [phase]);
+  return renewed;
 }
 
 export function OfflineAccessGate({ children }: { children: ReactNode }) {
+  const runtime = useOfflineRuntime();
+  const snapshot = useRuntimeSnapshot();
+  const renewed = useAccessRenewedNotice(snapshot);
+  const retry = useCallback(() => {
+    runtime?.syncNow().catch(() => undefined);
+  }, [runtime]);
   return (
-    <OfflineAccessGateView snapshot={useRuntimeSnapshot()}>
+    <OfflineAccessGateView
+      onRetry={runtime ? retry : undefined}
+      renewed={renewed}
+      snapshot={snapshot}
+    >
       {children}
     </OfflineAccessGateView>
   );

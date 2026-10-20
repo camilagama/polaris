@@ -35,7 +35,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   if (snapshot.phase === "expired") {
     return {
       attention: false,
-      short: "Sem acesso",
+      short: "Conecte-se",
       text: "O acesso sem internet venceu",
       tone: "offline",
     };

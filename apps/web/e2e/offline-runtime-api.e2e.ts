@@ -659,7 +659,19 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
     await expect(page.getByText(SHIRT_OPTION)).toHaveCount(0);
     // the remembered organization only drew the screen: hidden now
     await expect(page.locator(".app-org-name")).toHaveCount(0);
-    await expect(chip(page)).toContainText("Sem acesso");
+    await expect(chip(page)).toContainText("Conecte-se");
+    // it ended with the app open: what was being put together is gone, and the notice says so
+    await expect(
+      page.getByText(
+        "A venda que você estava montando não foi guardada. Quando o acesso voltar, monte de novo."
+      )
+    ).toBeVisible();
+    await expect(
+      page.getByText("Quando a internet voltar, o acesso volta sozinho.")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Tentar agora" })
+    ).toHaveCount(0);
     await expect(chip(page)).toHaveAttribute("title", EXPIRED_TITLE);
     expect(new URL(page.url()).pathname).toBe("/sales");
     expect(await outboxCommands(page)).toEqual(queued);
@@ -670,6 +682,9 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
 
     await expect(saleHeading(page)).toBeVisible({ timeout: 30_000 });
     await expect(notice(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("status").getByText("Acesso renovado.")
+    ).toBeVisible();
     expect(server.leasesIssued).toBe(leases + 1);
     // the very same work goes out, once each
     await expect
@@ -705,6 +720,18 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
     ).toBeVisible();
     await expect(saleHeading(page)).toHaveCount(0);
     await expect(page.locator(".app-org-name")).toHaveCount(0);
+    // opened already expired: nothing was being put together
+    await expect(
+      page.getByText("A venda que você estava montando não foi guardada.", {
+        exact: false,
+      })
+    ).toHaveCount(0);
+    // online but the server does not answer: it says so and offers another try
+    await expect(
+      page.getByText(
+        "Há internet, mas não conseguimos renovar o acesso agora. Vamos tentar de novo em instantes."
+      )
+    ).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/sales");
     expect(await outboxCommands(page)).toEqual(queued);
     expect(server.registered).toBe(1);
@@ -715,7 +742,7 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
     // the connection comes back
     server.connection = "up";
     server.clockOffsetMs = PAST_EXP;
-    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await page.getByRole("button", { name: "Tentar agora" }).click();
 
     await expect(saleHeading(page)).toBeVisible({ timeout: 30_000 });
     await expect

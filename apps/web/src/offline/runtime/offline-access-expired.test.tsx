@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   ACCESS_EXPIRED_BODY,
   ACCESS_EXPIRED_TITLE,
+  ACCESS_RENEW_FAILED,
+  ACCESS_RENEW_REFUSED,
+  ACCESS_RENEWED,
   ACCESS_RENEWING,
+  ACCESS_RETRY,
+  ACCESS_RETURNS_BY_ITSELF,
+  ACCESS_SALE_NOT_KEPT,
   OfflineAccessExpiredView,
   OfflineAccessGateView,
   storedOperationsText,
@@ -17,11 +23,13 @@ const snapshot = (
   bootstrapped: false,
   counts: { pending: 0, rejected: 0, sending: 0 },
   dataVersion: 0,
+  expiredWhileOpen: false,
   lastSyncAt: null,
   leaseExpiresAt: "2026-10-17T12:00:00.000Z",
   online: false,
   phase: "expired",
   reason: "offline_access_expired",
+  renewalRefused: false,
   sessionRefused: false,
   syncing: false,
   ...overrides,
@@ -72,11 +80,17 @@ describe("the notice of the offline access that expired", () => {
     expect(failed).not.toContain(ACCESS_RENEWING);
   });
 
-  it("has no technical code, no date, no promise of renewal and no 72 hours (AC-42)", () => {
+  it("has no technical code, no date and no 72 hours (AC-42)", () => {
     const texts = [
       ACCESS_EXPIRED_TITLE,
       ACCESS_EXPIRED_BODY,
       ACCESS_RENEWING,
+      ACCESS_SALE_NOT_KEPT,
+      ACCESS_RETURNS_BY_ITSELF,
+      ACCESS_RENEW_FAILED,
+      ACCESS_RENEW_REFUSED,
+      ACCESS_RETRY,
+      ACCESS_RENEWED,
       storedOperationsText(0),
       storedOperationsText(1),
       storedOperationsText(2),
@@ -91,10 +105,73 @@ describe("the notice of the offline access that expired", () => {
   it("the header chip says the access expired", () => {
     expect(syncStatusLabel(snapshot())).toEqual({
       attention: false,
-      short: "Sem acesso",
+      short: "Conecte-se",
       text: "O acesso sem internet venceu",
       tone: "offline",
     });
+  });
+});
+
+const noRetry = () => undefined;
+const render = (overrides: Partial<RuntimeSnapshot> = {}) =>
+  renderToStaticMarkup(
+    <OfflineAccessExpiredView
+      onRetry={noRetry}
+      snapshot={snapshot(overrides)}
+    />
+  );
+
+describe("the sale that was being put together when the access ended", () => {
+  it("tells it was not kept when the access ended with the app open", () => {
+    expect(render({ expiredWhileOpen: true })).toContain(ACCESS_SALE_NOT_KEPT);
+  });
+
+  it("says nothing of it when the page was already opened expired", () => {
+    expect(render({ expiredWhileOpen: false })).not.toContain(
+      ACCESS_SALE_NOT_KEPT
+    );
+  });
+});
+
+describe("the way out of the notice", () => {
+  it("offline: says the access comes back by itself, with no retry button", () => {
+    const html = render({ online: false });
+    expect(html).toContain(ACCESS_RETURNS_BY_ITSELF);
+    expect(html).not.toContain(ACCESS_RETRY);
+    expect(html).not.toContain(ACCESS_RENEW_FAILED);
+  });
+
+  it("online and not renewing: says it could not renew, will try again, and offers 'Tentar agora'", () => {
+    const html = render({ online: true, syncing: false });
+    expect(html).toContain(ACCESS_RENEW_FAILED);
+    expect(html).toContain(ACCESS_RETRY);
+    expect(html).toContain('class="secondary-button"');
+    expect(html).not.toContain(ACCESS_RETURNS_BY_ITSELF);
+    expect(html).not.toContain(ACCESS_RENEW_REFUSED);
+  });
+
+  it("online and renewing: only the renewing line, no button", () => {
+    const html = render({ online: true, syncing: true });
+    expect(html).toContain(ACCESS_RENEWING);
+    expect(html).not.toContain(ACCESS_RETRY);
+    expect(html).not.toContain(ACCESS_RENEW_FAILED);
+  });
+
+  it("refused for another reason than the session: its own text, no button and no promise that it comes back alone", () => {
+    for (const online of [true, false]) {
+      const html = render({ online, renewalRefused: true });
+      expect(html).toContain(ACCESS_RENEW_REFUSED);
+      expect(html).not.toContain(ACCESS_RETRY);
+      expect(html).not.toContain(ACCESS_RETURNS_BY_ITSELF);
+      expect(html).not.toContain(ACCESS_RENEW_FAILED);
+    }
+  });
+
+  it("draws no button when nobody can act on it", () => {
+    const html = renderToStaticMarkup(
+      <OfflineAccessExpiredView snapshot={snapshot({ online: true })} />
+    );
+    expect(html).not.toContain(ACCESS_RETRY);
   });
 });
 
@@ -123,5 +200,21 @@ describe("the gate of the page", () => {
       expect(html).toContain("Camiseta");
       expect(html).not.toContain(ACCESS_EXPIRED_TITLE);
     }
+  });
+
+  it("says the access was renewed above the page, only when asked to", () => {
+    const screen = <p>Tela da venda</p>;
+    const ready = snapshot({ phase: "ready", reason: null });
+    const shown = renderToStaticMarkup(
+      <OfflineAccessGateView renewed snapshot={ready}>
+        {screen}
+      </OfflineAccessGateView>
+    );
+    expect(shown).toContain(`role="status">${ACCESS_RENEWED}`);
+    expect(shown).toContain("Tela da venda");
+    const hidden = renderToStaticMarkup(
+      <OfflineAccessGateView snapshot={ready}>{screen}</OfflineAccessGateView>
+    );
+    expect(hidden).not.toContain(ACCESS_RENEWED);
   });
 });

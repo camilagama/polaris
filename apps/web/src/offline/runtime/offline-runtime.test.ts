@@ -1430,6 +1430,108 @@ describe("the offline access that expired (emenda do ADR 0047)", () => {
     );
   });
 
+  it("tells apart an access that ended with the app open from one that was already ended at start", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    expect(first.getSnapshot().expiredWhileOpen).toBe(false);
+    w.advance(72);
+    w.fireDueTimers();
+    expect(first.getSnapshot()).toMatchObject({
+      expiredWhileOpen: true,
+      phase: "expired",
+    });
+
+    await first.stop();
+    const second = w.make();
+    await second.start(organizationId);
+    expect(second.getSnapshot()).toMatchObject({
+      expiredWhileOpen: false,
+      phase: "expired",
+    });
+
+    w.network.online = true;
+    await first.start(organizationId);
+    expect(first.getSnapshot()).toMatchObject({
+      expiredWhileOpen: false,
+      phase: "ready",
+    });
+  });
+
+  it("the renewed access forgets that it ended with the app open", async () => {
+    const { runtime, w } = await queuedOffline();
+    w.advance(72);
+    w.fireDueTimers();
+    expect(runtime.getSnapshot().expiredWhileOpen).toBe(true);
+
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      expiredWhileOpen: false,
+      phase: "ready",
+    });
+  });
+
+  it("a renewal the server refuses for another reason than the session is marked refused; no answer is not, and the next good one clears it", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    w.network.online = true;
+    w.failures.issueLease.push(
+      Object.assign(new Error("server down"), {
+        code: "INTERNAL_SERVER_ERROR",
+      }),
+      Object.assign(new Error("unknown device"), { code: "NOT_FOUND" })
+    );
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "expired",
+      renewalRefused: false,
+      syncing: false,
+    });
+
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      online: true,
+      phase: "expired",
+      renewalRefused: true,
+      syncing: false,
+    });
+    // the queue is intact and nothing was forgotten
+    expect(runtime.getSnapshot().counts.pending).toBe(1);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
+
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "ready",
+      renewalRefused: false,
+    });
+  });
+
+  it("a refusal followed by no answer from the server is no longer a refusal", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId); // offline: expired, nothing tried
+    w.network.online = true;
+    w.failures.issueLease.push(
+      Object.assign(new Error("unknown device"), { code: "NOT_FOUND" }),
+      Object.assign(new Error("server down"), {
+        code: "INTERNAL_SERVER_ERROR",
+      })
+    );
+
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().renewalRefused).toBe(true);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      online: true,
+      phase: "expired",
+      renewalRefused: false,
+      syncing: false,
+    });
+  });
+
   it("a timer that has not fired yet (a tab in the background) never lets a command in after the exp, and the next sync ends the access", async () => {
     const { runtime, w } = await queuedOffline();
     w.advance(72);
