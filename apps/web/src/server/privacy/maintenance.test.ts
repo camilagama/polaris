@@ -14,7 +14,7 @@ const on = { autoPurgeEnabled: true };
 
 const nothingToSchedule = () =>
   vi.fn((_limit: number) =>
-    Promise.resolve({ scheduled: 0, scheduledLastDay: 0 })
+    Promise.resolve({ overdue: 0, scheduled: 0, scheduledLastDay: 0 })
   );
 
 describe("the closure sweep", () => {
@@ -30,6 +30,7 @@ describe("the closure sweep", () => {
       )
     ).resolves.toEqual({
       closedOrganizations: 0,
+      overduePurges: 0,
       purgeSchedulingEnabled: false,
       scheduledPurges: 0,
       scheduledPurgesLastDay: 0,
@@ -107,6 +108,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     const scheduleClosedOrganizationPurges = vi
       .fn<
         (limit: number) => Promise<{
+          overdue: number;
           scheduled: number;
           scheduledLastDay: number;
         }>
@@ -114,6 +116,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
       .mockImplementationOnce(() => {
         calls.push("schedule");
         return Promise.resolve({
+          overdue: 1,
           scheduled: CLOSURE_SWEEP_BATCH,
           scheduledLastDay: CLOSURE_SWEEP_BATCH,
         });
@@ -121,6 +124,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
       .mockImplementationOnce(() => {
         calls.push("schedule");
         return Promise.resolve({
+          overdue: 1,
           scheduled: 2,
           scheduledLastDay: CLOSURE_SWEEP_BATCH + 2,
         });
@@ -135,6 +139,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     );
     expect(report).toEqual({
       closedOrganizations: 3,
+      overduePurges: 1,
       purgeSchedulingEnabled: true,
       scheduledPurges: CLOSURE_SWEEP_BATCH + 2,
       scheduledPurgesLastDay: CLOSURE_SWEEP_BATCH + 2,
@@ -144,6 +149,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
   it("is bounded like the closure sweep", async () => {
     const scheduleClosedOrganizationPurges = vi.fn(() =>
       Promise.resolve({
+        overdue: 0,
         scheduled: CLOSURE_SWEEP_BATCH,
         scheduledLastDay: CLOSURE_SWEEP_BATCH,
       })
@@ -171,6 +177,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     expect(CLOSURE_AUTO_PURGE_ALERT_PER_DAY).toBe(5);
     const report = (scheduledPurgesLastDay: number) => ({
       closedOrganizations: 0,
+      overduePurges: 0,
       purgeSchedulingEnabled: true,
       scheduledPurges: 0,
       scheduledPurgesLastDay,

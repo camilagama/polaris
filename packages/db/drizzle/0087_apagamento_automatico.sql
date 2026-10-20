@@ -98,6 +98,8 @@ CREATE TRIGGER organizations_purge_owner_transition
   BEFORE UPDATE ON public.organizations
   FOR EACH ROW WHEN (CURRENT_USER = 'polaris_purge_owner')
   EXECUTE FUNCTION public.organizations_purge_owner_transition();--> statement-breakpoint
+-- like the immutability triggers of the audit (0080): it fires under session_replication_role = replica too
+ALTER TABLE public.organizations ENABLE ALWAYS TRIGGER organizations_purge_owner_transition;--> statement-breakpoint
 GRANT polaris_purge_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 GRANT CREATE ON SCHEMA public TO polaris_purge_owner;--> statement-breakpoint
 SET ROLE polaris_purge_owner;--> statement-breakpoint
@@ -149,8 +151,9 @@ $function$;--> statement-breakpoint
 -- schedule, the legal hold and the purge take), skipping one another transaction holds. Each one is checked again under
 -- the lock, becomes `purge_pending` with `not_before` = the later of D plus 48 hours and now plus 7 days, and is audited
 -- as the system's. An organization already scheduled is no longer `closed`, so a second run, or two at once, schedule it
--- once. It answers how many it scheduled now and how many the closure period scheduled in the last 24 hours (the alert
--- above 5 a day).
+-- once. It answers how many it scheduled now, how many the closure period scheduled in the last 24 hours (the alert
+-- above 5 a day) and how many closed organizations are still waiting 30 days after D with no legal hold (the alert of
+-- a store left behind: a cancellation of the Admin, a renewal alive or an access of the Admin keeps it closed).
 CREATE FUNCTION public.schedule_closed_organization_purges(p_limit integer)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -164,6 +167,7 @@ DECLARE
   due timestamptz;
   scheduled integer := 0;
   last_day integer;
+  overdue integer;
 BEGIN
   IF p_limit IS NULL OR p_limit < 1 OR p_limit > 1000 THEN
     RAISE EXCEPTION 'invalid_limit' USING ERRCODE = '22023';
@@ -215,7 +219,18 @@ BEGIN
   SELECT pg_catalog.count(*)::integer INTO last_day
     FROM public.organization_purges AS purge
    WHERE purge.trigger = 'closure_period' AND purge.scheduled_at > pg_catalog.now() - interval '24 hours';
-  RETURN pg_catalog.jsonb_build_object('scheduled', scheduled, 'scheduledLastDay', last_day);
+  SELECT pg_catalog.count(*)::integer INTO overdue
+    FROM public.organizations AS organization
+    JOIN public.organization_closures AS closure ON closure.organization_id = organization.id
+    CROSS JOIN LATERAL public.closure_deadlines(closure.requested_at, organization.timezone) AS deadline
+   WHERE organization.status = 'closed'
+     AND closure.closed_at IS NOT NULL
+     AND deadline.deletable_from + interval '720 hours' <= pg_catalog.now()
+     AND NOT EXISTS (
+       SELECT 1 FROM public.organization_legal_holds AS hold
+        WHERE hold.organization_id = organization.id AND hold.released_at IS NULL
+     );
+  RETURN pg_catalog.jsonb_build_object('scheduled', scheduled, 'scheduledLastDay', last_day, 'overdue', overdue);
 END;
 $function$;--> statement-breakpoint
 -- The purge as in 0084, with two changes. A closed organization is now visible to this role (the schedule above reads

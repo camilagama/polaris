@@ -177,16 +177,76 @@ async function asRole(
   }
 }
 
-/** Waits past local midnight when the run is about to cross it: "today" must be the same day for the whole scenario. */
+const ZONES = [ZONE, "America/Manaus", "America/New_York"];
+
+/**
+ * Waits past local midnight when the run is about to cross it in any zone of the scenario: "today" must be the same
+ * day for the whole scenario, which takes well under the 5 minutes of margin.
+ */
 async function awayFromMidnight(owner: Pool) {
   const result = await owner.query<{ seconds: number }>(
-    "SELECT EXTRACT(epoch FROM public.closure_local_day_start((now() AT TIME ZONE $1)::date + 1, $1) - now())::float8 AS seconds",
-    [ZONE]
+    `SELECT min(EXTRACT(epoch FROM public.closure_local_day_start((now() AT TIME ZONE zone)::date + 1, zone) - now()))::float8 AS seconds
+       FROM unnest($1::text[]) AS zone`,
+    [ZONES]
   );
   const seconds = Number(result.rows[0]?.seconds ?? 0);
   if (seconds < 300) {
     await new Promise((resolve) => setTimeout(resolve, (seconds + 2) * 1000));
   }
+}
+
+/**
+ * What the scenario changes outside its own organizations, to be put back at the end: the closures of the other
+ * closed organizations (moved so the schedule, which takes the whole database, does not reach them) and the lease of
+ * the other purges (held so the claim, which takes the oldest due one, reaches the scenario's).
+ */
+async function setAsideOthers(owner: Pool) {
+  const closures = (
+    await owner.query<{
+      organization_id: string;
+      recover_until: Date;
+      requested_at: Date;
+    }>(
+      `SELECT closure.organization_id, closure.requested_at, closure.recover_until
+         FROM public.organization_closures AS closure
+         JOIN public.organizations AS organization ON organization.id = closure.organization_id
+        WHERE organization.status = 'closed'`
+    )
+  ).rows;
+  const leases = (
+    await owner.query<{ locked_until: Date | null; organization_id: string }>(
+      "SELECT organization_id, locked_until FROM public.organization_purges WHERE swept_at IS NULL"
+    )
+  ).rows;
+  await owner.query(
+    `UPDATE public.organization_closures
+        SET requested_at = now() - interval '31 days', recover_until = now() - interval '1 day'
+      WHERE organization_id = ANY ($1::text[])`,
+    [closures.map((row) => row.organization_id)]
+  );
+  return async () => {
+    await owner.query(
+      `UPDATE public.organization_closures AS closure
+          SET requested_at = saved.requested_at, recover_until = saved.recover_until
+         FROM unnest($1::text[], $2::timestamptz[], $3::timestamptz[]) AS saved(organization_id, requested_at, recover_until)
+        WHERE closure.organization_id = saved.organization_id`,
+      [
+        closures.map((row) => row.organization_id),
+        closures.map((row) => row.requested_at),
+        closures.map((row) => row.recover_until),
+      ]
+    );
+    await owner.query(
+      `UPDATE public.organization_purges AS purge
+          SET locked_until = saved.locked_until
+         FROM unnest($1::text[], $2::timestamptz[]) AS saved(organization_id, locked_until)
+        WHERE purge.organization_id = saved.organization_id`,
+      [
+        leases.map((row) => row.organization_id),
+        leases.map((row) => row.locked_until),
+      ]
+    );
+  };
 }
 
 async function acceptedDeletionCase(
@@ -239,18 +299,20 @@ async function supportCaseOf(
 export async function verifyAutomaticPurge(
   context: AutomaticPurgeContext
 ): Promise<string[]> {
+  await awayFromMidnight(context.owner);
+  // other gates (and the purge above) may leave closed organizations past D minus 7: while the scenario runs their
+  // closure is moved to a month ago (still closed, window over, D far ahead), and everything is put back at the end
+  const restoreOthers = await setAsideOthers(context.owner);
+  try {
+    return await scenario(context);
+  } finally {
+    await restoreOthers();
+  }
+}
+
+async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
   const { maintenance, owner } = context;
   const tests: string[] = [];
-  await awayFromMidnight(owner);
-
-  // other gates (and the purge above) may leave closed organizations past D minus 7: they must not be scheduled by
-  // this run, so their closure is moved to a month ago (still closed, window over, D far ahead)
-  await owner.query(
-    `UPDATE public.organization_closures AS closure
-        SET requested_at = now() - interval '31 days', recover_until = now() - interval '1 day'
-       FROM public.organizations AS organization
-      WHERE organization.id = closure.organization_id AND organization.status = 'closed'`
-  );
   const schedule = () => maintenance.scheduleClosedOrganizationPurges(1000);
   assert.deepEqual((await schedule()).scheduled, 0);
 
@@ -279,14 +341,14 @@ export async function verifyAutomaticPurge(
   const newYork = await closedOrganization(owner, "new york", newYorkRequest, {
     zone: "America/New_York",
   });
-  // the recovery window is not over (a second less than the end is enough): not scheduled, whatever D says
+  // the recovery window ends in an hour: not scheduled, whatever D says
   const windowOpen = await closedOrganization(
     owner,
     "window open",
     await localDayStart(owner, ZONE, -85),
     { recoverUntil: new Date((await dbNow(owner)).getTime() + HOUR_MS) }
   );
-  // closed, undone and closed again: the request of the new cycle counts, not the first one
+  // a closure requested 40 days ago (undone and requested again, the record holds only the new request): D is far ahead
   const reclosed = await closedOrganization(
     owner,
     "closed again",
@@ -306,8 +368,9 @@ export async function verifyAutomaticPurge(
   }
   assert.equal(first.scheduled, scheduledIds.length);
   assert.ok(first.scheduledLastDay >= scheduledIds.length);
+  assert.equal(first.overdue, 0);
   tests.push(
-    "the purge is scheduled from D minus 7 local days, to the second: a request at 00:00:00 of the local day 82 days ago is not, one at 23:59:59 of the day before is (also in America/Manaus and in a zone with daylight saving time); never while the recovery window is open, and a closure undone and requested again counts from its new request"
+    "the purge is scheduled from D minus 7 local days, by the request to the second: a request at 00:00:00 of the local day 82 days ago is not, one at 23:59:59 of the day before is (also in America/Manaus and America/New_York, in their own calendars); not while the recovery window is open, and a closure requested again counts from its new request (the change of daylight saving time is in the unit test of the domain and in the comparison of closure_deadlines with it)"
   );
 
   // the date it may run: the later of D plus 48 hours and the schedule plus 7 days, as the domain computes it
@@ -543,6 +606,30 @@ export async function verifyAutomaticPurge(
     "it does not schedule under a legal hold, with a temporary access of the Admin live, after a cancellation of the Admin in this closure, or with a renewal still alive at a provider (active or in grace); a cancellation of an earlier closure, a renewal already cancelled and a paid access with no provider do not stop it"
   );
 
+  // a store left behind: still closed 30 days after D (a renewal alive keeps it), with no legal hold, is counted for
+  // the alert; one held is not
+  const longAgo = await localDayStart(owner, ZONE, -125);
+  const leftBehind = await closedOrganization(owner, "left behind", longAgo);
+  await billing(leftBehind.organizationId, {
+    cancelAtPeriodEnd: false,
+    provider: true,
+    state: "active",
+  });
+  const heldLongAgo = await closedOrganization(owner, "held long ago", longAgo);
+  await placeOrganizationLegalHold(
+    context.admin,
+    context.principal,
+    await supportCaseOf(context, heldLongAgo.organizationId),
+    heldLongAgo.organizationId,
+    new Date(Date.now() + 30 * DAY_MS).toISOString()
+  );
+  const counted = await schedule();
+  assert.equal(counted.scheduled, 0);
+  assert.equal(counted.overdue, 1);
+  tests.push(
+    "a closed store still waiting 30 days after D with no legal hold is counted for the alert of a store left behind; one under a legal hold is not"
+  );
+
   // only the privacy runtime runs it, and with no organization to name
   for (const [label, pool] of [
     ["tenant", context.runtimes.tenant],
@@ -713,8 +800,8 @@ export async function verifyAutomaticPurge(
     "a legal hold placed after the schedule keeps the run away; its release does not let the purge go on, but pushes it to the release plus 7 days, and never brings a later date closer"
   );
 
-  // the clock reaches not_before (10 days pass: the closure is 93 days old): before it, the run waits; at it, the purge
-  // runs with no operator
+  // the clock reaches not_before (10 days pass: the closure is 93 days old): an hour before it, the run waits; at it, the
+  // purge runs with no operator
   await owner.query(
     `UPDATE public.organization_closures
         SET requested_at = requested_at - interval '10 days', recover_until = recover_until - interval '10 days',
@@ -779,18 +866,33 @@ export async function verifyAutomaticPurge(
     (await owner.query(restoreCheck, [onTime.organizationId])).rowCount,
     1
   );
-  // the runbook: the row came back with the backup (trigger and empty references kept); the reapplication reopens it
-  await owner.query(
-    "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1 AND status <> 'purged'",
-    [onTime.organizationId]
-  );
-  await owner.query(
-    `UPDATE public.organization_purges
-        SET not_before = now(), attempts = 0, locked_until = NULL, last_error_code = NULL,
-            purged_at = NULL, swept_at = NULL, storage_touched_at = now()
-      WHERE organization_id = $1`,
-    [onTime.organizationId]
-  );
+  // the runbook's block for an automatic purge, as it is written there (the row came back with the backup: the
+  // conflict reopens it, keeping the trigger and the empty references)
+  const restoreClient = await owner.connect();
+  try {
+    await restoreClient.query("BEGIN");
+    await restoreClient.query(
+      "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1 AND status <> 'purged'",
+      [onTime.organizationId]
+    );
+    await restoreClient.query(
+      `INSERT INTO public.organization_purges (organization_id, trigger, not_before, storage_touched_at)
+       VALUES ($1, 'closure_period', now(), now())
+       ON CONFLICT (organization_id) DO UPDATE
+          SET not_before = now(), attempts = 0, locked_until = NULL,
+              last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = now()`,
+      [onTime.organizationId]
+    );
+    await restoreClient.query("COMMIT");
+  } catch (error) {
+    await restoreClient.query("ROLLBACK");
+    throw error;
+  } finally {
+    restoreClient.release();
+  }
+  const reopened = await purgeRow(owner, onTime.organizationId);
+  assert.equal(reopened?.trigger, "closure_period");
+  assert.equal(reopened?.scheduled_by, null);
   await keepOthersAway(onTime.organizationId);
   assert.deepEqual(
     await runOrganizationPurges({

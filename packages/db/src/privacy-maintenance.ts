@@ -61,6 +61,8 @@ export interface ScheduledClosurePurges {
   scheduled: number;
   /** Organizations the closure period put into the purge in the last 24 hours, this call included. */
   scheduledLastDay: number;
+  /** Closed organizations still waiting 30 days after D with no legal hold (left behind). */
+  overdue: number;
 }
 
 export interface PrivacyMaintenanceClient {
@@ -249,7 +251,11 @@ export function createPrivacyMaintenanceClient(
     },
     async scheduleClosedOrganizationPurges(limit) {
       const result = await pool.query<{
-        scheduled: { scheduled: number; scheduledLastDay: number };
+        scheduled: {
+          overdue: number;
+          scheduled: number;
+          scheduledLastDay: number;
+        };
       }>(
         "SELECT public.schedule_closed_organization_purges($1::integer) AS scheduled",
         [limit]
@@ -258,6 +264,7 @@ export function createPrivacyMaintenanceClient(
       return {
         scheduled: Number(scheduled?.scheduled ?? 0),
         scheduledLastDay: Number(scheduled?.scheduledLastDay ?? 0),
+        overdue: Number(scheduled?.overdue ?? 0),
       };
     },
     async listClosedExportMedia(exportId, leaseToken, afterAssetId, limit) {

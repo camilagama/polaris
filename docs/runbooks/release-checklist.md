@@ -178,7 +178,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 22. Freio do apagamento automático (BLOCK)
 
-- Critério: `CLOSURE_AUTO_PURGE_ENABLED` está `"false"` no ambiente promovido, a menos que a promoção seja o go-live que o liga ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md), decisão N1 do corte da loja encerrada). Ligar em produção exige, antes: a prova de fiação em staging com datas retroagidas registrada (agendamento em D menos 7 e execução a partir de D mais 48 horas numa loja sintética), os critérios AC-47, AC-49 e AC-61 verdes e a revisão de advogado dos termos. O sinal `apagamento-automatico` do [runbook de alertas](./alertas.md) precisa estar ligado no mesmo deploy.
+- Critério: `CLOSURE_AUTO_PURGE_ENABLED` está `"false"` no ambiente promovido, a menos que a promoção seja o go-live que o liga ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md), decisão N1 do corte da loja encerrada). Ligar em produção exige, antes:
+  1. a prova de fiação em staging com datas retroagidas registrada (agendamento em D menos 7 e execução a partir de D mais 48 horas numa loja sintética);
+  2. os critérios AC-47, AC-49 e AC-61 verdes;
+  3. o lojista avisado antes de os dados saírem: os avisos por marco (D − 30, D − 7, D e o reagendamento depois de uma trava) e o e-mail ligados em produção, com o domínio definitivo (AC-30, AC-50 e AC-51), e o painel da loja encerrada com o pedido de cópia no ar; ou uma exceção registrada pelo responsável;
+  4. a revisão de advogado dos termos;
+  5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 

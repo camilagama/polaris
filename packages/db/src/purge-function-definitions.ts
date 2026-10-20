@@ -5,6 +5,7 @@ import {
 import {
   CLOSURE_PURGE_GRACE_HOURS,
   CLOSURE_PURGE_MIN_NOTICE_DAYS,
+  CLOSURE_PURGE_OVERDUE_DAYS,
 } from "@polaris/domain/organization/closure-deadlines";
 import {
   ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS,
@@ -314,13 +315,14 @@ function factKeysDifferences(sql: string): string[] {
 
 /**
  * The intervals of the automatic schedule (ADR 0102), each once: the grace after D (`CLOSURE_PURGE_GRACE_HOURS`), the
- * notice after the schedule (`CLOSURE_PURGE_MIN_NOTICE_DAYS`, in hours so the session's time zone never changes it)
- * and the day of the alert. D itself comes from `closure_deadlines`, never from an interval written here.
+ * notice after the schedule (`CLOSURE_PURGE_MIN_NOTICE_DAYS`, in hours so the session's time zone never changes it),
+ * the day of the alert and the 30 days after D of a store left behind (`CLOSURE_PURGE_OVERDUE_DAYS`). D itself comes from `closure_deadlines`, never from an interval written here.
  */
 const SCHEDULE_INTERVALS = Object.freeze([
   `${CLOSURE_PURGE_GRACE_HOURS} hours`,
   `${CLOSURE_PURGE_MIN_NOTICE_DAYS * 24} hours`,
   "24 hours",
+  `${CLOSURE_PURGE_OVERDUE_DAYS * 24} hours`,
 ]);
 
 const SCHEDULE_CLOSED_USAGE = [
@@ -359,7 +361,10 @@ function scheduleClosedDifferences(sql: string): string[] {
   const intervals = [...sql.matchAll(INTERVAL_LITERAL)].map(
     (match) => match[1] ?? ""
   );
-  if (!sameSet(intervals, SCHEDULE_INTERVALS) || intervals.length !== 3) {
+  if (
+    !sameSet(intervals, SCHEDULE_INTERVALS) ||
+    intervals.length !== SCHEDULE_INTERVALS.length
+  ) {
     problems.push(
       `${name}: its intervals must be ${show(SCHEDULE_INTERVALS)}, each once (found ${show(intervals)})`
     );
@@ -385,9 +390,12 @@ const RENEWAL_ALIVE_STATES = BILLING_STATES.filter(grantsPro);
 const PURGE_WAIT_USAGE = [
   [
     "the legal hold in force",
-    /organization_legal_holds[\s\S]*released_at\s+IS\s+NULL/i,
+    /organization_legal_holds\s+AS\s+hold\s+WHERE\s+hold\.organization_id\s*=\s*p_organization\s+AND\s+hold\.released_at\s+IS\s+NULL/i,
   ],
-  ["the live temporary access", /tenant_access_grants/i],
+  [
+    "the live temporary access",
+    /tenant_access_grants[\s\S]*revoked_at\s+IS\s+NULL[\s\S]*expires_at\s*>\s*pg_catalog\.now\(\)/i,
+  ],
   ["the cancellation of this closure", /cancelled_at\s*>=\s*p_requested_at/i],
   [
     "the renewal not cancelled at the provider",

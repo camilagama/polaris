@@ -9,6 +9,11 @@ export const CLOSURE_AUTO_PURGE_ALERT_PER_DAY = 5;
 
 export interface PrivacyMaintenanceReport {
   closedOrganizations: number;
+  /**
+   * Closed organizations still waiting 30 days after D with no legal hold (0 with the switch off): a store left
+   * behind by a cancellation of the Admin, a renewal still alive or a temporary access (`closure_purge_overdue`).
+   */
+  overduePurges: number;
   /** Whether the automatic schedule ran: `CLOSURE_AUTO_PURGE_ENABLED` is on (ADR 0102). */
   purgeSchedulingEnabled: boolean;
   /** Organizations this run put into the purge (0 with the switch off). */
@@ -59,6 +64,7 @@ export async function runPrivacyMaintenance(
   }
   let scheduledPurges = 0;
   let scheduledPurgesLastDay = 0;
+  let overduePurges = 0;
   if (options.autoPurgeEnabled) {
     for (let batch = 0; batch < CLOSURE_SWEEP_MAX_BATCHES; batch += 1) {
       const result =
@@ -66,6 +72,7 @@ export async function runPrivacyMaintenance(
         await client.scheduleClosedOrganizationPurges(CLOSURE_SWEEP_BATCH);
       scheduledPurges += result.scheduled;
       scheduledPurgesLastDay = result.scheduledLastDay;
+      overduePurges = result.overdue;
       if (result.scheduled < CLOSURE_SWEEP_BATCH) {
         break;
       }
@@ -73,6 +80,7 @@ export async function runPrivacyMaintenance(
   }
   return {
     closedOrganizations,
+    overduePurges,
     purgeSchedulingEnabled: options.autoPurgeEnabled,
     scheduledPurges,
     scheduledPurgesLastDay,

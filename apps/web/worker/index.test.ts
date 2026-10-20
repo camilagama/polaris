@@ -347,6 +347,7 @@ describe("the scheduled maintenance", () => {
     it("warns when more than 5 stores entered the purge on their own in a day", async () => {
       const report = (scheduledPurgesLastDay: number) => ({
         closedOrganizations: 0,
+        overduePurges: 0,
         purgeSchedulingEnabled: true,
         scheduledPurges: 1,
         scheduledPurgesLastDay,
@@ -362,6 +363,29 @@ describe("the scheduled maintenance", () => {
         expect.objectContaining({
           event: "closure_auto_purge_volume_high",
           scheduledPurgesLastDay: 6,
+        })
+      );
+    });
+
+    it("warns when a closed store is still waiting 30 days after D with no legal hold", async () => {
+      const report = (overduePurges: number) => ({
+        closedOrganizations: 0,
+        overduePurges,
+        purgeSchedulingEnabled: true,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+      });
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(0));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "closure_purge_overdue" })
+      );
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(2));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "closure_purge_overdue",
+          overduePurges: 2,
         })
       );
     });

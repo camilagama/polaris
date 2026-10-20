@@ -24,6 +24,12 @@ export const CLOSURE_PURGE_GRACE_HOURS = 48;
  * (`interval '168 hours'`), so the session's time zone never changes it.
  */
 export const CLOSURE_PURGE_MIN_NOTICE_DAYS = 7;
+/**
+ * A closed organization still not purged this many days after D, with no legal hold, was left behind (a cancellation
+ * of the Admin, a renewal still alive, a temporary access of the Admin): the privacy job raises an alert (ADR 0102).
+ * The database writes it in hours (`interval '720 hours'`).
+ */
+export const CLOSURE_PURGE_OVERDUE_DAYS = 30;
 /** The first notice before D goes out this many days before it. */
 export const CLOSURE_FIRST_NOTICE_LEAD_DAYS = 30;
 

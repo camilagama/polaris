@@ -245,6 +245,12 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           scheduledPurgesLastDay: report.scheduledPurgesLastDay,
         });
       }
+      if (report.overduePurges > 0) {
+        // closed stores still waiting a month after D with no legal hold: a person decides each one (ADR 0102)
+        logger.warn("closure_purge_overdue", {
+          overduePurges: report.overduePurges,
+        });
+      }
     } catch (error: unknown) {
       failures.push(error);
     }
