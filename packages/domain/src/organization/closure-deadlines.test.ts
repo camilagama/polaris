@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   CLOSURE_DELETABLE_AFTER_DAYS,
   CLOSURE_PURGE_GRACE_HOURS,
+  CLOSURE_PURGE_MIN_NOTICE_DAYS,
   CLOSURE_PURGE_SCHEDULE_LEAD_DAYS,
   closureDeadlines,
   closurePhaseAt,
+  closurePurgeNotBefore,
+  closurePurgeSchedulable,
   localDayStart,
 } from "./closure-deadlines";
 
@@ -125,5 +128,62 @@ describe("the phase of a closed organization", () => {
   it("keeps the schedule's numbers in one place", () => {
     expect(CLOSURE_PURGE_SCHEDULE_LEAD_DAYS).toBe(7);
     expect(CLOSURE_PURGE_GRACE_HOURS).toBe(48);
+  });
+});
+
+describe("the automatic schedule of the purge (ADR 0102)", () => {
+  const requestedAt = new Date("2026-10-19T15:00:00.000Z");
+  const zone = "America/Sao_Paulo";
+
+  it("starts at the first instant of D minus 7 local days, to the second", () => {
+    expect(CLOSURE_PURGE_SCHEDULE_LEAD_DAYS).toBe(7);
+    // D is 2027-01-17 local; D - 7 is 2027-01-10 local, which starts at 03:00 UTC
+    expect(
+      closurePurgeSchedulable(
+        requestedAt,
+        zone,
+        new Date("2027-01-10T02:59:59.000Z")
+      )
+    ).toBe(false);
+    expect(
+      closurePurgeSchedulable(
+        requestedAt,
+        zone,
+        new Date("2027-01-10T03:00:00.000Z")
+      )
+    ).toBe(true);
+  });
+
+  it("never runs before D plus 48 hours when scheduled on time", () => {
+    expect(CLOSURE_PURGE_GRACE_HOURS).toBe(48);
+    expect(
+      iso(
+        closurePurgeNotBefore(
+          requestedAt,
+          zone,
+          new Date("2027-01-10T03:00:00.000Z")
+        )
+      )
+    ).toBe("2027-01-19T03:00:00.000Z");
+  });
+
+  it("never runs before the schedule plus 7 days when the sweep was late", () => {
+    expect(CLOSURE_PURGE_MIN_NOTICE_DAYS).toBe(7);
+    const late = new Date("2027-01-15T10:30:00.000Z");
+    expect(iso(closurePurgeNotBefore(requestedAt, zone, late))).toBe(
+      "2027-01-22T10:30:00.000Z"
+    );
+  });
+
+  it("counts D in the organization's zone, across a change of daylight saving time", () => {
+    // New York: the clock goes forward on 2027-03-14; D - 7 is in standard time and D in daylight time
+    const requested = new Date("2026-12-16T17:00:00.000Z");
+    const deadlines = closureDeadlines(requested, "America/New_York");
+    expect(deadlines.deletionDate).toBe("2027-03-16");
+    expect(iso(deadlines.d7At)).toBe("2027-03-09T05:00:00.000Z");
+    expect(iso(deadlines.deletableFrom)).toBe("2027-03-16T04:00:00.000Z");
+    expect(
+      iso(closurePurgeNotBefore(requested, "America/New_York", deadlines.d7At))
+    ).toBe("2027-03-18T04:00:00.000Z");
   });
 });

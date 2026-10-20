@@ -279,7 +279,8 @@ async function run() {
       ],
     });
     const platformTables = {
-      // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081)
+      // the purge record: the schedule writes it, and writes it again after a restore (ADR 0081), an operator's again
+      // over a row the closure period wrote (`trigger`, ADR 0102)
       organization_purges: [
         "attempts",
         "last_error_code",
@@ -292,6 +293,7 @@ async function run() {
         "storage_touched_at",
         "support_case_id",
         "swept_at",
+        "trigger",
       ],
       // the legal holds: placed by the Admin, and afterwards only released or renewed (a later review date, ADR 0081)
       organization_legal_holds: ["released_at", "released_by", "review_at"],

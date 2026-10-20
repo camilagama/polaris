@@ -1,5 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import {
+  CLOSURE_PURGE_GRACE_HOURS,
+  CLOSURE_PURGE_MIN_NOTICE_DAYS,
+} from "@polaris/domain/organization/closure-deadlines";
+import {
   ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS,
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
 } from "@polaris/domain/privacy/organization-purge";
@@ -14,6 +18,8 @@ import {
 const list = (names: readonly string[]) =>
   names.map((name) => `'${name}'`).join(", ");
 const days = `${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} days`;
+const grace = `${CLOSURE_PURGE_GRACE_HOURS} hours`;
+const notice = `${CLOSURE_PURGE_MIN_NOTICE_DAYS * 24} hours`;
 
 /** The shape `pg_get_functiondef` prints for the three functions, filled from the domain. */
 function definitions(): Record<PurgeFunctionName, string> {
@@ -57,6 +63,44 @@ BEGIN
   END LOOP;
   UPDATE public.billing_events SET fact = (SELECT 1 WHERE entry.key = ANY (kept_fact_keys));
 END;`,
+    schedule_closed_organization_purges: `CREATE OR REPLACE FUNCTION public.schedule_closed_organization_purges(p_limit integer)
+BEGIN
+  FOR candidate IN
+    SELECT organization.id FROM public.organizations AS organization
+      CROSS JOIN LATERAL public.closure_deadlines(closure.requested_at, organization.timezone) AS deadline
+     WHERE closure.recover_until <= pg_catalog.now() AND deadline.d7_at <= pg_catalog.now()
+       AND public.closed_organization_purge_wait(organization.id, closure.requested_at) IS NULL
+  LOOP
+    PERFORM 1 FROM public.organizations WHERE id = candidate.id FOR UPDATE SKIP LOCKED;
+    SELECT 1 FROM public.organizations AS organization
+      CROSS JOIN LATERAL public.closure_deadlines(closure.requested_at, organization.timezone) AS deadline
+     WHERE closure.recover_until <= pg_catalog.now() AND deadline.d7_at <= pg_catalog.now();
+    CONTINUE WHEN public.closed_organization_purge_wait(candidate.id, requested) IS NOT NULL;
+    due := GREATEST(deletable + interval '${grace}', pg_catalog.now() + interval '${notice}');
+    INSERT INTO public.organization_purges (trigger) VALUES ('closure_period');
+  END LOOP;
+  SELECT 1 WHERE purge.scheduled_at > pg_catalog.now() - interval '24 hours';
+  SELECT 1 WHERE deadline.deletable_from + interval '720 hours' <= pg_catalog.now();
+END;`,
+    closed_organization_purge_wait: `CREATE OR REPLACE FUNCTION public.closed_organization_purge_wait(p_organization text, p_requested_at timestamptz)
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.organization_legal_holds AS hold WHERE hold.organization_id = p_organization AND hold.released_at IS NULL) THEN
+    RETURN 'legal_hold_active';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tenant_access_grants AS access_grant
+              WHERE access_grant.revoked_at IS NULL AND access_grant.expires_at > pg_catalog.now()) THEN
+    RETURN 'tenant_access_active';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.organization_purge_cancellations AS cancellation
+              WHERE cancellation.cancelled_at >= p_requested_at) THEN
+    RETURN 'purge_cancelled';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.organization_billing AS billing
+              WHERE billing.provider IS NOT NULL AND billing.provider_ref IS NOT NULL
+                AND billing.state IN ('trialing', 'active', 'grace') AND NOT billing.cancel_at_period_end) THEN
+    RETURN 'renewal_alive';
+  END IF;
+END;`,
   };
 }
 
@@ -76,7 +120,77 @@ describe("purgeFunctionDifferences", () => {
     expect(purgeFunctionDifferences(definitions())).toEqual([]);
   });
 
-  it("covers the three functions the gate is mandatory for", () => {
+  it("fails when the automatic schedule runs sooner than D plus 48 hours or the notice of 7 days", () => {
+    expect(
+      mutated("schedule_closed_organization_purges", (sql) =>
+        sql.replace(`interval '${grace}'`, "interval '24 hours'")
+      ).join("\n")
+    ).toContain("the due date");
+    expect(
+      mutated("schedule_closed_organization_purges", (sql) =>
+        sql.replace(`interval '${notice}'`, "interval '7 days'")
+      ).join("\n")
+    ).toContain("its intervals must be");
+  });
+
+  it("fails when the automatic schedule stops reading D from closure_deadlines or skips the check under the lock", () => {
+    expect(
+      mutated("schedule_closed_organization_purges", (sql) =>
+        sql.replace("deadline.d7_at <= pg_catalog.now();", "true;")
+      )[0]
+    ).toContain("D minus 7 days");
+    expect(
+      mutated("schedule_closed_organization_purges", (sql) =>
+        sql.replace(
+          "CONTINUE WHEN public.closed_organization_purge_wait(candidate.id, requested) IS NOT NULL;",
+          ""
+        )
+      )[0]
+    ).toContain("the reasons to wait");
+    expect(
+      mutated("schedule_closed_organization_purges", (sql) =>
+        sql.replace("SKIP LOCKED", "")
+      )[0]
+    ).toContain("the lock of the organization");
+  });
+
+  it("fails when the automatic schedule deletes anything", () => {
+    expect(
+      mutated(
+        "schedule_closed_organization_purges",
+        (sql) =>
+          `${sql.replace("END;", "")}DELETE FROM public.sales WHERE organization_id = candidate.id;\nEND;`
+      ).join("\n")
+    ).toContain("deletes, truncates or runs dynamic SQL");
+  });
+
+  it("fails when a live renewal no longer stops the schedule, or its states drift from the domain", () => {
+    expect(
+      mutated("closed_organization_purge_wait", (sql) =>
+        sql.replace("'trialing', 'active', 'grace'", "'active'")
+      )[0]
+    ).toContain("the states of a live renewal");
+    expect(
+      mutated("closed_organization_purge_wait", (sql) =>
+        sql.replace("AND NOT billing.cancel_at_period_end", "")
+      )[0]
+    ).toContain("the renewal not cancelled at the provider is gone");
+    expect(
+      mutated("closed_organization_purge_wait", (sql) =>
+        sql.replace(
+          "cancellation.cancelled_at >= p_requested_at",
+          "cancellation.cancelled_at IS NOT NULL"
+        )
+      )[0]
+    ).toContain("the cancellation of this closure is gone");
+    expect(
+      mutated("closed_organization_purge_wait", (sql) =>
+        sql.replace("access_grant.expires_at > pg_catalog.now()", "true")
+      )[0]
+    ).toContain("the live temporary access is gone");
+  });
+
+  it("covers the five functions the gate is mandatory for", () => {
     expect(Object.keys(definitions()).sort()).toEqual(
       [...PURGE_FUNCTIONS].sort()
     );
@@ -307,7 +421,7 @@ describe("the migrations", () => {
     return definition;
   }
 
-  it("leave the three purge functions as the domain says, with no database", () => {
+  it("leave the purge functions as the domain says, with no database", () => {
     const final = Object.fromEntries(
       PURGE_FUNCTIONS.map((name) => [name, lastDefinition(name)])
     ) as Record<PurgeFunctionName, string>;

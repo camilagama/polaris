@@ -18,11 +18,13 @@ const purgeOwnerRole = "polaris_purge_owner";
 const adminOwnerRole = "polaris_admin_owner";
 
 /**
- * The purge of a closed organization (plan PR107, ADR 0081): who scheduled it, under which case,
+ * The purge of a closed organization (plan PR107, ADR 0081 and 0102): who scheduled it, under which case,
  * from when it may run, and how far it went. One row per organization; it survives the purge with
  * the organization's tombstone row, without personal data (IDs, times and an error code). The Admin
- * creates it through `admin_schedule_organization_purge`; the purge functions, owned by a role that
- * is never a login, claim and finish it. No runtime role reads or writes it directly.
+ * creates it through `admin_schedule_organization_purge` (`trigger = 'admin'`, with the operator and the
+ * privacy case), and the privacy job through `schedule_closed_organization_purges` once the closure period
+ * ends (`trigger = 'closure_period'`, with neither); the purge functions, owned by a role that is never a
+ * login, claim and finish it. No runtime role reads or writes it directly.
  */
 export const organizationPurges = pgTable(
   "organization_purges",
@@ -36,24 +38,32 @@ export const organizationPurges = pgTable(
     organizationId: text("organization_id")
       .primaryKey()
       .references(() => organizations.id, { onDelete: "restrict" }),
-    /** The deletion case that accepted the purge (always a privacy case): it goes to the deletion ledger tombstone. */
-    privacyCaseId: uuid("privacy_case_id").notNull(),
+    /**
+     * The deletion case that accepted the purge (always a privacy case): it goes to the deletion ledger tombstone.
+     * Null when the closure period scheduled it (ADR 0102).
+     */
+    privacyCaseId: uuid("privacy_case_id"),
     purgedAt: timestamp("purged_at", { withTimezone: true }),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    scheduledBy: uuid("scheduled_by")
-      .notNull()
-      .references(() => platformPrincipals.id),
+    /** The operator who scheduled it; null when the closure period did (ADR 0102). */
+    scheduledBy: uuid("scheduled_by").references(() => platformPrincipals.id),
     /**
      * Set by `mark_organization_purge_storage_touched` before the first object is removed from the
      * storage, and never undone: from then on the purge cannot be cancelled (ADR 0081).
      */
     storageTouchedAt: timestamp("storage_touched_at", { withTimezone: true }),
-    supportCaseId: uuid("support_case_id")
-      .notNull()
-      .references(() => supportCases.id, { onDelete: "restrict" }),
+    /** Null when the closure period scheduled it (ADR 0102). */
+    supportCaseId: uuid("support_case_id").references(() => supportCases.id, {
+      onDelete: "restrict",
+    }),
     sweptAt: timestamp("swept_at", { withTimezone: true }),
+    /**
+     * What scheduled it: `admin` (an operator, under an accepted privacy case) or `closure_period` (the privacy
+     * job, once the owner's closure reached D minus 7 days, ADR 0102).
+     */
+    trigger: text("trigger").default("admin").notNull(),
   },
   (table) => [
     index("organization_purges_due_idx").on(table.notBefore),
@@ -67,10 +77,25 @@ export const organizationPurges = pgTable(
       sql`(${table.sweptAt} IS NULL OR ${table.purgedAt} IS NOT NULL)
         AND ${table.privacyCaseId} = ${table.supportCaseId}`
     ),
+    check(
+      "organization_purges_trigger_allowed",
+      sql`${table.trigger} IN ('admin', 'closure_period')`
+    ),
+    check(
+      "organization_purges_trigger_coherent",
+      sql`(${table.trigger} = 'admin' AND ${table.scheduledBy} IS NOT NULL AND ${table.supportCaseId} IS NOT NULL AND ${table.privacyCaseId} IS NOT NULL)
+        OR (${table.trigger} = 'closure_period' AND ${table.scheduledBy} IS NULL AND ${table.supportCaseId} IS NULL AND ${table.privacyCaseId} IS NULL)`
+    ),
     pgPolicy("organization_purges_purge_owner_select", {
       for: "select",
       to: purgeOwnerRole,
       using: sql`true`,
+    }),
+    // the privacy job schedules a purge of the closure period, never one of the Admin (ADR 0102)
+    pgPolicy("organization_purges_purge_owner_insert", {
+      for: "insert",
+      to: purgeOwnerRole,
+      withCheck: sql`trigger = 'closure_period'`,
     }),
     pgPolicy("organization_purges_purge_owner_update", {
       for: "update",

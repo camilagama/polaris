@@ -55,7 +55,10 @@ vi.mock("../src/server/privacy/data-export-reader", () => ({
   createClosedExportReader: vi.fn(() => vi.fn()),
   createRequesterReader: vi.fn(),
 }));
-vi.mock("../src/server/privacy/maintenance", () => ({
+vi.mock("../src/server/privacy/maintenance", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../src/server/privacy/maintenance")
+  >()),
   runPrivacyMaintenance: mocks.runPrivacyMaintenance,
 }));
 vi.mock("../src/server/app", () => ({ app: { fetch: vi.fn() } }));
@@ -318,6 +321,73 @@ describe("the scheduled maintenance", () => {
       );
       expect(mocks.runPrivacyMaintenance).toHaveBeenCalledTimes(1);
       expect(mocks.privacyClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the automatic schedule of the purge off unless the switch says exactly true (ADR 0102)", async () => {
+      await runScheduled({ ...configured, ...privacy });
+      await runScheduled({
+        ...configured,
+        ...privacy,
+        CLOSURE_AUTO_PURGE_ENABLED: "false",
+      });
+      await runScheduled({
+        ...configured,
+        ...privacy,
+        CLOSURE_AUTO_PURGE_ENABLED: "true",
+      });
+      expect(
+        mocks.runPrivacyMaintenance.mock.calls.map((call) => call[1])
+      ).toEqual([
+        { autoPurgeEnabled: false },
+        { autoPurgeEnabled: false },
+        { autoPurgeEnabled: true },
+      ]);
+    });
+
+    it("warns when more than 5 stores entered the purge on their own in a day", async () => {
+      const report = (scheduledPurgesLastDay: number) => ({
+        closedOrganizations: 0,
+        overduePurges: 0,
+        purgeSchedulingEnabled: true,
+        scheduledPurges: 1,
+        scheduledPurgesLastDay,
+      });
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(5));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "closure_auto_purge_volume_high" })
+      );
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(6));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "closure_auto_purge_volume_high",
+          scheduledPurgesLastDay: 6,
+        })
+      );
+    });
+
+    it("warns when a closed store is still waiting 30 days after D with no legal hold", async () => {
+      const report = (overduePurges: number) => ({
+        closedOrganizations: 0,
+        overduePurges,
+        purgeSchedulingEnabled: true,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+      });
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(0));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "closure_purge_overdue" })
+      );
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(2));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "closure_purge_overdue",
+          overduePurges: 2,
+        })
+      );
     });
 
     it("is skipped, without failing, where the privacy role is not provisioned", async () => {
