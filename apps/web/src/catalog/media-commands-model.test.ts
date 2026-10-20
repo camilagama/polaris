@@ -4,6 +4,7 @@ import {
   describeMediaFailure,
   imageActionAvailability,
   imageActionLabel,
+  isMediaSessionEnded,
   movedAssetOrder,
   movedNotice,
   removeConfirmationText,
@@ -187,9 +188,22 @@ describe("describeMediaFailure", () => {
     expect(
       describeMediaFailure("reorder", http("tenant_access_denied", 403)).message
     ).toContain("permissão");
+  });
+
+  it("says only what did not happen when the session is over (the notice says the rest)", () => {
+    expect(
+      describeMediaFailure("upload", http("session_required", 401)).message
+    ).toBe("A foto não foi enviada.");
+    // a 401 with any body is the same
+    expect(describeMediaFailure("upload", http("whatever", 401)).message).toBe(
+      "A foto não foi enviada."
+    );
     expect(
       describeMediaFailure("remove", http("session_required", 401)).message
-    ).toContain("sessão");
+    ).toBe("A imagem não foi removida.");
+    expect(isMediaSessionEnded(http("session_required", 401))).toBe(true);
+    expect(isMediaSessionEnded(http("forbidden", 403))).toBe(false);
+    expect(isMediaSessionEnded(new TypeError("Failed to fetch"))).toBe(false);
   });
 
   it("turns a network error into a try-again message", () => {

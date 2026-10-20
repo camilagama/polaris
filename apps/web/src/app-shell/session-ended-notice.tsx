@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { currentReturnPath } from "../lib/sign-in-path";
 import {
   SESSION_ENDED_MESSAGE,
   SIGN_IN_AGAIN_BUTTON,
   SIGN_IN_AGAIN_OPENING,
   UNSENT_INPUT_WARNING,
 } from "../lib/session-ended-text";
+import { currentReturnPath } from "../lib/sign-in-path";
 import { useHasUnsentWork } from "../lib/unsent-work";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { leaveSessionOver } from "../offline/runtime/session-over";
@@ -35,17 +35,20 @@ export function SessionEndedNotice({
   // each screen says by itself that it holds something typed or picked and not sent
   const unsent = useHasUnsentWork();
   const noticeRef = useRef<HTMLElement>(null);
-  // the notice can appear far from where the person is (a long sale): bring it into view and put the focus on it
+  // the notice can appear far from where the person is (a long sale): bring it into view and put the focus on it,
+  // unless a field is active
   useEffect(() => {
     const notice = noticeRef.current;
-    notice?.scrollIntoView?.({ block: "center" });
-    // never take the focus from a field the person is typing in: the keys would be lost without a word
+    // with a field active the person is typing, maybe with the keyboard open: the page must not move
+    // (the field would leave the screen) and the keys must not be lost, so the notice only appears (it is a status)
     const typing = document.activeElement?.closest(
       "input, textarea, select, [contenteditable='true']"
     );
-    if (!typing) {
-      notice?.focus({ preventScroll: true });
+    if (typing) {
+      return;
     }
+    notice?.scrollIntoView?.({ block: "center" });
+    notice?.focus({ preventScroll: true });
   }, []);
   const handleClick = useCallback(() => {
     setLeaving(true);
@@ -54,7 +57,7 @@ export function SessionEndedNotice({
 
   return (
     <section
-      aria-label="Sessão"
+      aria-label="Sua sessão acabou"
       className="session-ended-notice"
       ref={noticeRef}
       role={alone ? "alert" : "status"}

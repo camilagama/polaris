@@ -1,5 +1,4 @@
 import { MediaUploadHttpError } from "../lib/media-upload";
-import { SESSION_ENDED_MESSAGE } from "../lib/session-ended-text";
 
 /** Where a media failure happened; the same server code reads differently in each. */
 export type MediaFailureContext =
@@ -152,17 +151,36 @@ function defaultMessage(context: MediaFailureContext): string {
   }
 }
 
+/** What did not happen when the session is over; the session notice says the rest. */
+function sessionEndedMessage(context: MediaFailureContext): string {
+  switch (context) {
+    case "list":
+      return "Não foi possível carregar as imagens.";
+    case "remove":
+      return "A imagem não foi removida.";
+    case "reorder":
+      return "A ordem das imagens não foi alterada.";
+    case "upload":
+      return "A foto não foi enviada.";
+    default:
+      return "A foto não foi preparada.";
+  }
+}
+
+/** True when the media request was refused for lack of a session (the shell then offers "Entrar de novo"). */
+export function isMediaSessionEnded(error: unknown): boolean {
+  return (
+    error instanceof MediaUploadHttpError &&
+    (error.status === 401 || error.code === "session_required")
+  );
+}
+
 function codeMessage(code: string): MediaFailure | null {
   switch (code) {
     case "forbidden":
     case "tenant_access_denied":
       return {
         message: "Sua conta não tem permissão para alterar este produto.",
-        reloadList: false,
-      };
-    case "session_required":
-      return {
-        message: SESSION_ENDED_MESSAGE,
         reloadList: false,
       };
     case "invalid_media_order":
@@ -238,6 +256,9 @@ export function describeMediaFailure(
   context: MediaFailureContext,
   error: unknown
 ): MediaFailure {
+  if (isMediaSessionEnded(error)) {
+    return { message: sessionEndedMessage(context), reloadList: false };
+  }
   if (error instanceof MediaUploadHttpError) {
     return (
       codeMessage(error.code) ?? {

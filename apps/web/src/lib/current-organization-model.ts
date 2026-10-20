@@ -1,6 +1,5 @@
 import type { OrganizationMembershipReadModel } from "@polaris/contracts";
 import { rpcErrorCode } from "./rpc-error";
-import { SESSION_ENDED_MESSAGE } from "./session-ended-text";
 
 export type Organization = OrganizationMembershipReadModel;
 
@@ -244,8 +243,9 @@ export function selectOrganization(
 
 export function organizationLoadErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
+  // the session notice says the rest; here only what did not happen
   if (code === "UNAUTHORIZED") {
-    return SESSION_ENDED_MESSAGE;
+    return "Não foi possível carregar suas organizações.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O Polaris está temporariamente indisponível. Tente novamente.";

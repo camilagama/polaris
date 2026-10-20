@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { orpcClient } from "../lib/orpc";
+import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
 import "./product-variants-panel.css";
 
@@ -381,6 +382,12 @@ function ProductVariantConfigurationForm({
   const [variants, setVariants] = useState<VariantDraft[]>([]);
   const [isPending, setIsPending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // picked options, typed values or combinations that were not saved yet
+  useReportUnsentWork(
+    selectedOptions.length > 0 ||
+      variants.length > 0 ||
+      isDraftChanged(valueLines, emptyValueLines)
+  );
   const optionNames = selectedOptionNames(selectedOptions);
   const optionValues = productOptionValues(valueLines);
   const validation = validateVariantDrafts(optionNames, optionValues, variants);
@@ -631,6 +638,7 @@ function ProductVariantSkuRow({
   variant,
 }: ProductVariantSkuRowProps) {
   const [sku, setSku] = useState(variant.sku ?? "");
+  useReportUnsentWork(sku !== (variant.sku ?? ""));
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
