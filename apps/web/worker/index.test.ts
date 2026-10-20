@@ -49,6 +49,7 @@ vi.mock("../src/server/privacy/organization-purge-job", () => ({
   runOrganizationPurges: mocks.runOrganizationPurges,
 }));
 vi.mock("../src/server/privacy/data-export-reader", () => ({
+  createClosedExportReader: vi.fn(() => vi.fn()),
   createRequesterReader: vi.fn(),
 }));
 vi.mock("../src/server/privacy/maintenance", () => ({
@@ -282,6 +283,8 @@ describe("the scheduled maintenance", () => {
         expect.objectContaining({
           bucket: configured.MEDIA_BUCKET,
           client: expect.objectContaining({ close: mocks.privacyClose }),
+          // a closed organization's copy is read through the privacy role (ADR 0081)
+          readClosedExport: expect.any(Function),
         })
       );
       expect(mocks.createPrivacyMaintenanceClient).toHaveBeenCalledTimes(1);

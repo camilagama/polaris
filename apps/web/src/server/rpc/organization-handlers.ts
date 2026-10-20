@@ -1,6 +1,11 @@
 import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import type {
+  ClosedOrganizationView,
+  getClosedOrganizationStatus,
+  listClosedOrganizations,
+} from "@polaris/db/closed-organization-repository";
+import type {
   listOrganizationsInClosure,
   recoverOrganizationClosure,
   requestOrganizationClosure,
@@ -18,6 +23,8 @@ interface OrganizationRpcContext {
 
 /** The closure functions the handlers call; tests replace any of them. */
 export interface ClosureRepository {
+  getClosedOrganizationStatus: typeof getClosedOrganizationStatus;
+  listClosedOrganizations: typeof listClosedOrganizations;
   listOrganizationsInClosure: typeof listOrganizationsInClosure;
   recoverOrganizationClosure: typeof recoverOrganizationClosure;
   requestOrganizationClosure: typeof requestOrganizationClosure;
@@ -30,6 +37,28 @@ interface OrganizationRpcDependencies {
   toRpcError: (error: unknown) => never;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
+}
+
+/** What the owner reads of a closed organization: dates as ISO instants, D as a calendar date. */
+function closedOrganizationReadModel(organization: ClosedOrganizationView) {
+  return {
+    canRecover: organization.canRecover,
+    deletableFrom: organization.deletableFrom.toISOString(),
+    deletionDate: organization.deletionDate,
+    exportOpenUntil: organization.exportOpenUntil.toISOString(),
+    id: organization.id,
+    milestones: {
+      closure: organization.milestones.closure.toISOString(),
+      d30: organization.milestones.d30.toISOString(),
+      d7: organization.milestones.d7.toISOString(),
+      deletionDay: organization.milestones.deletionDay.toISOString(),
+    },
+    name: organization.name,
+    phase: organization.phase,
+    recoverUntil: organization.recoverUntil.toISOString(),
+    requestedAt: organization.requestedAt.toISOString(),
+    timezone: organization.timezone,
+  };
 }
 
 /**
@@ -85,6 +114,44 @@ export function createOrganizationRpcHandlers(
         .catch(dependencies.toRpcError)
   );
 
+  const listClosed = implementContract.organization.listClosed.handler(
+    ({ context }) =>
+      dependencies
+        .withAuthenticatedRequestContext({
+          bindings: context.bindings,
+          // the user comes from the verified session: the database lists only what they own
+          operation: async (database, session) => ({
+            organizations: (
+              await closure.listClosedOrganizations(database, session.user.id)
+            ).map(closedOrganizationReadModel),
+          }),
+          request: context.request,
+        })
+        .catch(dependencies.toRpcError)
+  );
+
+  const closedStatus = implementContract.organization.closedStatus.handler(
+    ({ context, input }) =>
+      dependencies
+        .withAuthenticatedRequestContext({
+          bindings: context.bindings,
+          operation: async (database, session) => {
+            const organization = await closure.getClosedOrganizationStatus(
+              database,
+              session.user.id,
+              input.organizationId
+            );
+            return {
+              organization: organization
+                ? closedOrganizationReadModel(organization)
+                : null,
+            };
+          },
+          request: context.request,
+        })
+        .catch(dependencies.toRpcError)
+  );
+
   const recoverClosure = implementContract.organization.recoverClosure.handler(
     ({ context, input }) =>
       dependencies
@@ -126,5 +193,12 @@ export function createOrganizationRpcHandlers(
         .catch(dependencies.toRpcError)
   );
 
-  return { listClosing, listMine, recoverClosure, requestClosure };
+  return {
+    closedStatus,
+    listClosed,
+    listClosing,
+    listMine,
+    recoverClosure,
+    requestClosure,
+  };
 }

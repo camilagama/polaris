@@ -10,8 +10,15 @@ const claimed: ClaimedDataExport = {
   attempt: 1,
   formats: ["json", "images"],
   id: exportId,
+  leaseToken: null,
+  mode: "active",
   organizationId,
   requestedBy: "user_1",
+};
+const closedClaim: ClaimedDataExport = {
+  ...claimed,
+  leaseToken: "0199c2d0-0000-7000-8000-0000000000bb",
+  mode: "closed",
 };
 const prefix = `exports/v1/${organizationId}/${exportId}/`;
 const now = new Date("2026-10-17T12:00:00.000Z");
@@ -32,8 +39,10 @@ function fixture(input: {
   claims?: (ClaimedDataExport | null)[];
   collect?: ReturnType<typeof vi.fn>;
   deletable?: { id: string; organizationId: string }[];
+  closedImages?: { assetId: string; byteSize: number; storageKey: string }[];
   images?: { assetId: string; byteSize: number; storageKey: string }[];
   objects?: Map<string, Uint8Array>;
+  withClosedReader?: boolean;
 }) {
   const objects = input.objects ?? new Map<string, Uint8Array>();
   const claims = [...(input.claims ?? [claimed, null])];
@@ -49,6 +58,14 @@ function fixture(input: {
     expireDataExports: vi.fn(() => Promise.resolve(2)),
     failDataExport: vi.fn((_id: string, _code: string, final: boolean) =>
       Promise.resolve(final)
+    ),
+    listClosedExportMedia: vi.fn(
+      (
+        _exportId: string,
+        _lease: string,
+        _after: string | null,
+        _limit: number
+      ) => Promise.resolve(input.closedImages ?? [])
     ),
     listDataExportsToDelete: vi.fn(() =>
       Promise.resolve(input.deletable ?? [])
@@ -97,6 +114,12 @@ function fixture(input: {
       operation: (transaction: never) => Promise<unknown>
     ) => operation({} as never)
   );
+  const readClosedExport = vi.fn(
+    (
+      _claimed: ClaimedDataExport,
+      operation: (transaction: never) => Promise<unknown>
+    ) => operation({} as never)
+  );
   return {
     bucket,
     client,
@@ -107,11 +130,69 @@ function fixture(input: {
       collect,
       now: () => now,
       readAsRequester,
+      ...(input.withClosedReader === false ? {} : { readClosedExport }),
     } as never,
     objects,
     readAsRequester,
+    readClosedExport,
   };
 }
+
+describe("the export of a closed organization", () => {
+  it("reads as the closed organization's reader, never as the requester, and lists the images through the run's lease", async () => {
+    const collect = vi.fn(
+      async (
+        _transaction: unknown,
+        _organizationId: string,
+        _formats: string[],
+        readImages?: (after: string | null, rows: number) => Promise<unknown[]>
+      ) => ({
+        entries: [{ bytes: new Uint8Array([1]), name: "data/a.json" }],
+        images: readImages ? await readImages(null, 500) : [],
+        summaries: [{ columns: ["id"], name: "a", rows: 1 }],
+      })
+    );
+    const f = fixture({
+      claims: [closedClaim, null],
+      closedImages: [],
+      collect,
+    });
+    const report = await runDataExports(f.deps);
+    expect(report.ready).toBe(1);
+    expect(f.readClosedExport).toHaveBeenCalledWith(
+      closedClaim,
+      expect.any(Function)
+    );
+    expect(f.readAsRequester).not.toHaveBeenCalled();
+    expect(f.client.listClosedExportMedia).toHaveBeenCalledWith(
+      exportId,
+      closedClaim.leaseToken,
+      null,
+      500
+    );
+  });
+
+  it("fails for good, keeping nothing, when the job has no reader for it", async () => {
+    const f = fixture({ claims: [closedClaim, null], withClosedReader: false });
+    const report = await runDataExports(f.deps);
+    expect(report.failed).toBe(1);
+    expect(f.client.failDataExport).toHaveBeenCalledWith(
+      exportId,
+      "export_not_authorized",
+      true
+    );
+    expect(f.readAsRequester).not.toHaveBeenCalled();
+    expect(f.collect).not.toHaveBeenCalled();
+    expect([...f.objects.keys()]).toEqual([]);
+  });
+
+  it("reads an active export as the requester, with the images of its own transaction", async () => {
+    const f = fixture({});
+    await runDataExports(f.deps);
+    expect(f.readClosedExport).not.toHaveBeenCalled();
+    expect(f.collect.mock.calls[0]?.[3]).toBeUndefined();
+  });
+});
 
 describe("the data export job", () => {
   it("builds the archive as the requester, stores it, records it and finishes", async () => {

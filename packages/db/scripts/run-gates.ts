@@ -78,6 +78,11 @@ const gates: Gate[] = [
   ["privacy-cases", "verify-privacy-cases-gate.ts"],
   ["data-export", "verify-data-export-gate.ts"],
   ["organization-closure", "verify-organization-closure-gate.ts"],
+  // the closed organization, read-only until the purge (ADR 0081): its state, its copy, the reader and the two barriers
+  [
+    "closed-organization-readonly",
+    "verify-closed-organization-readonly-gate.ts",
+  ],
   ["customer-anonymization", "verify-customer-anonymization-gate.ts"],
   ["deletion-ledger", "verify-deletion-ledger-gate.ts"],
   // lives in apps/web: it runs the real purge job against the database, with an in-memory bucket
@@ -222,6 +227,7 @@ const suites: Record<string, string[]> = {
     "privacy-cases",
     "data-export",
     "organization-closure",
+    "closed-organization-readonly",
     "customer-anonymization",
     "deletion-ledger",
     "organization-purge",
@@ -308,6 +314,7 @@ const suites: Record<string, string[]> = {
   // Phase 10 (privacy): grows with every gate of the phase.
   gate10: [
     "organization-closure",
+    "closed-organization-readonly",
     "customer-anonymization",
     "deletion-ledger",
     "privacy-cases",

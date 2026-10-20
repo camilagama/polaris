@@ -7,6 +7,7 @@ import {
   normalizeExportFormats,
 } from "@polaris/domain/privacy/data-export";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { hasConstraint } from "./database-refusal";
 import { recordOutboxEvent } from "./event-outbox";
 import { dataExportFiles, dataExports } from "./schema/data-export";
 import { recordTenantAuditEvent } from "./tenant-audit";
@@ -50,24 +51,6 @@ function requireCapability(identity: TenantRequestIdentity) {
   if (identity.capability !== CAPABILITY) {
     throw new TenantAuthorizationError("capability_denied");
   }
-}
-
-function hasConstraint(error: unknown, constraint: string): boolean {
-  const seen = new Set<object>();
-  let current: unknown = error;
-  while (
-    typeof current === "object" &&
-    current !== null &&
-    !seen.has(current)
-  ) {
-    seen.add(current);
-    const candidate = current as { cause?: unknown; constraint?: unknown };
-    if (candidate.constraint === constraint) {
-      return true;
-    }
-    current = candidate.cause;
-  }
-  return false;
 }
 
 /** The owner asks for a copy. One at a time, and at most three a day. */

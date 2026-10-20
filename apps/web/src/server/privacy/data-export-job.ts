@@ -21,6 +21,7 @@ import {
   type CollectedExport,
   collectExport,
   ExportTooLargeError,
+  type ImagePageReader,
 } from "./data-export-build";
 import { deleteObjectsUnderPrefix } from "./storage-prefix";
 
@@ -45,6 +46,7 @@ type ExportClient = Pick<
   | "completeDataExport"
   | "expireDataExports"
   | "failDataExport"
+  | "listClosedExportMedia"
   | "listDataExportsToDelete"
   | "markDataExportFilesDeleted"
   | "recordDataExportFile"
@@ -71,6 +73,15 @@ export interface DataExportJobDependencies {
     operation: (transaction: TenantRequestTransaction) => Promise<T>
   ) => Promise<T>;
   /**
+   * Runs `operation` for a closed organization's export (ADR 0081): a read-only snapshot as the closed
+   * organization's reader, scoped to the export and the lease this run holds. Without it a closed export
+   * fails for good, as one the job cannot read.
+   */
+  readClosedExport?: <T>(
+    claimed: ClaimedDataExport,
+    operation: (transaction: TenantRequestTransaction) => Promise<T>
+  ) => Promise<T>;
+  /**
    * Whether the run also expires the exports whose time is up and removes their files (default
    * true: the hourly run). The queue consumer leaves it to the hourly run, so a message does not
    * repeat the sweep.
@@ -88,15 +99,64 @@ function exportObjectPrefix(organizationId: string, exportId: string) {
   return `exports/v1/${organizationId}/${exportId}/`;
 }
 
+/** The export is a closed organization's, and the job has no reader for it: nothing can be read. */
+class ClosedExportUnreadableError extends Error {
+  constructor() {
+    super("closed_export_unreadable");
+    this.name = "ClosedExportUnreadableError";
+  }
+}
+
 /** A refusal of authorization means the person can no longer read the data: that is final, not retried. */
 function failureOf(error: unknown): { code: string; final: boolean } {
   if (error instanceof ExportTooLargeError) {
     return { code: error.code, final: true };
   }
-  if (error instanceof TenantAuthorizationError) {
+  if (
+    error instanceof TenantAuthorizationError ||
+    error instanceof ClosedExportUnreadableError
+  ) {
     return { code: "export_not_authorized", final: true };
   }
   return { code: "export_failed", final: false };
+}
+
+/** How the claimed export is read: as the person who asked, or as the closed organization's reader. */
+function readFor(
+  claimed: ClaimedDataExport,
+  dependencies: DataExportJobDependencies
+): <T>(
+  operation: (transaction: TenantRequestTransaction) => Promise<T>
+) => Promise<T> {
+  if (claimed.mode !== "closed") {
+    return (operation) => dependencies.readAsRequester(claimed, operation);
+  }
+  const { readClosedExport } = dependencies;
+  if (!readClosedExport) {
+    return () => Promise.reject(new ClosedExportUnreadableError());
+  }
+  return (operation) => readClosedExport(claimed, operation);
+}
+
+/** The images of a closed export, through the lease of the run that holds it. */
+function closedImagePages(
+  client: ExportClient,
+  exportId: string,
+  leaseToken: string
+): ImagePageReader {
+  return async (afterAssetId, pageRows) =>
+    (
+      await client.listClosedExportMedia(
+        exportId,
+        leaseToken,
+        afterAssetId,
+        pageRows
+      )
+    ).map((image) => ({
+      assetId: image.assetId,
+      byteSize: image.byteSize,
+      storageKey: image.storageKey,
+    }));
 }
 
 async function buildAndStore(
@@ -111,9 +171,18 @@ async function buildAndStore(
   await deleteObjectsUnderPrefix(bucket, prefix);
 
   const collect = dependencies.collect ?? collectExport;
-  const collected: CollectedExport = await dependencies.readAsRequester(
+  const collected: CollectedExport = await readFor(
     claimed,
-    (transaction) => collect(transaction, claimed.organizationId, formats)
+    dependencies
+  )((transaction) =>
+    collect(
+      transaction,
+      claimed.organizationId,
+      formats,
+      claimed.mode === "closed" && claimed.leaseToken
+        ? closedImagePages(client, claimed.id, claimed.leaseToken)
+        : undefined
+    )
   );
 
   const store = async (file: {

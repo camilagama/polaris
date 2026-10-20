@@ -1,4 +1,5 @@
 import {
+  AnotherOrganizationActiveError,
   ClosureConfirmationError,
   ClosureNotRecoverableError,
   CLOSURE_RECOVERY_WINDOW_DAYS,
@@ -6,6 +7,7 @@ import {
   OrganizationNotActiveError,
 } from "@polaris/domain/organization/closure";
 import { eq, sql } from "drizzle-orm";
+import { raised } from "./database-refusal";
 import { organizations } from "./schema/organization";
 import {
   TenantAuthorizationError,
@@ -38,32 +40,6 @@ export interface OrganizationInClosure {
   id: string;
   name: string;
   recoverUntil: Date;
-}
-
-/**
- * True when the database raised exactly this refusal: its SQLSTATE and the message
- * the closure functions give it. 42501 is also PostgreSQL's "insufficient privilege",
- * so the code alone would turn a missing grant into a polite refusal instead of an error.
- */
-function raised(error: unknown, state: string, message: string): boolean {
-  const visited = new Set<object>();
-  let current: unknown = error;
-  while (typeof current === "object" && current !== null) {
-    if (visited.has(current)) {
-      return false;
-    }
-    visited.add(current);
-    const candidate = current as {
-      cause?: unknown;
-      code?: unknown;
-      message?: unknown;
-    };
-    if (typeof candidate.code === "string" && candidate.code.length === 5) {
-      return candidate.code === state && candidate.message === message;
-    }
-    current = candidate.cause;
-  }
-  return false;
 }
 
 function rows<T>(result: unknown): T[] {
@@ -126,9 +102,10 @@ export async function requestOrganizationClosure(
 }
 
 /**
- * The owner undoes a closure while the recovery window is open. The organization
- * is no longer active, so this takes only the authenticated user (a server-verified
- * session): the database function checks the owner's membership itself.
+ * The owner undoes a closure while the recovery window is open, and while no owner of
+ * the organization has another open one (decision L6). The organization is no longer
+ * active, so this takes only the authenticated user (a server-verified session): the
+ * database function checks the owner's membership itself.
  */
 export function recoverOrganizationClosure(
   database: Database,
@@ -154,6 +131,10 @@ export function recoverOrganizationClosure(
         if (raised(error, INVALID_PARAMETER, "closure_not_recoverable")) {
           // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks it.
           throw new ClosureNotRecoverableError();
+        }
+        if (raised(error, NOT_IN_STATE, "another_organization_active")) {
+          // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks it.
+          throw new AnotherOrganizationActiveError();
         }
         throw error;
       }

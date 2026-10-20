@@ -56,6 +56,10 @@ import {
 } from "@polaris/db/inventory-repository";
 import { issueOfflineLeaseGrant } from "@polaris/db/offline-lease-repository";
 import {
+  getClosedOrganizationStatus,
+  listClosedOrganizations,
+} from "@polaris/db/closed-organization-repository";
+import {
   listOrganizationsInClosure,
   recoverOrganizationClosure,
   requestOrganizationClosure,
@@ -206,6 +210,7 @@ import {
 } from "@polaris/domain/offline/offline-grant";
 import { OfflineLeaseNotAvailableError } from "@polaris/domain/offline/offline-lease";
 import {
+  AnotherOrganizationActiveError,
   ClosureConfirmationError,
   ClosureNotRecoverableError,
   isOrganizationStatus,
@@ -571,6 +576,7 @@ function initialOrganizationErrorCode(
       return "UNAUTHORIZED";
     case "multiple_existing_organizations":
     case "organization_not_available":
+    case "organization_limit_reached":
       return "CONFLICT";
     case "invalid_user_id":
     case "invalid_organization_id":
@@ -611,7 +617,15 @@ function toRpcError(error: unknown): never {
   }
 
   if (matchesRpcError(error, [TenantAuthorizationError])) {
-    throw new ORPCError("FORBIDDEN", { cause: error });
+    // a member of a closed organization is told so (the device keeps its queue and goes to the closed
+    // organization's panel); every other refusal of authorization stays without a reason
+    throw new ORPCError("FORBIDDEN", {
+      cause: error,
+      data:
+        (error as TenantAuthorizationError).code === "organization_closed"
+          ? { reason: "organization_closed" }
+          : undefined,
+    });
   }
 
   // the session was ended (a device revocation) while it was in use
@@ -664,6 +678,11 @@ function toRpcError(error: unknown): never {
   if (error instanceof CreateInitialOrganizationError) {
     throw new ORPCError(initialOrganizationErrorCode(error.code), {
       cause: error,
+      // the ceiling has its own text on the screen (decision L6); the other codes stay without a reason
+      data:
+        error.code === "organization_limit_reached"
+          ? { reason: error.code }
+          : undefined,
     });
   }
 
@@ -799,6 +818,7 @@ const conflictRpcErrors = [
     PublicCatalogProductUnavailableError,
     OrganizationNotActiveError,
     ClosureNotRecoverableError,
+    AnotherOrganizationActiveError,
   ],
   [
     ProductDeletedError,
@@ -1331,6 +1351,8 @@ export function createRpcRouter(
   });
   const organizationHandlers = createOrganizationRpcHandlers({
     closureRepository: {
+      getClosedOrganizationStatus,
+      listClosedOrganizations,
       listOrganizationsInClosure,
       recoverOrganizationClosure,
       requestOrganizationClosure,
@@ -1356,6 +1378,7 @@ export function createRpcRouter(
     dataExportRepository: overrides.dataExportRepository,
     requestAuditId,
     toRpcError,
+    withAuthenticatedRequestContext: authenticatedRequest,
     withTenantRequestContext: tenantRequest,
   });
   const goalHandlers = createGoalRpcHandlers({
@@ -1944,6 +1967,8 @@ export function createRpcRouter(
     offline: offlineHandlers.offline,
     organization: {
       createInitial,
+      closedStatus: organizationHandlers.closedStatus,
+      listClosed: organizationHandlers.listClosed,
       listClosing: organizationHandlers.listClosing,
       listMine: organizationHandlers.listMine,
       recoverClosure: organizationHandlers.recoverClosure,

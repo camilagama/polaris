@@ -1113,6 +1113,8 @@ async function run() {
             attempt: 1,
             formats: ["json"],
             id: pendingExport.id,
+            leaseToken: null,
+            mode: "active",
             organizationId: target.organizationId,
             requestedBy: target.userId,
           },

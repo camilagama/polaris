@@ -1,6 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import {
+  AnotherOrganizationActiveError,
   ClosureConfirmationError,
   ClosureNotRecoverableError,
   OrganizationNotActiveError,
@@ -47,6 +48,8 @@ function createClient(overrides: Record<string, unknown>) {
         }>;
       }>;
       recoverClosure: (input: unknown) => Promise<{ recovered: true }>;
+      listClosed: () => Promise<{ organizations: unknown[] }>;
+      closedStatus: (input: unknown) => Promise<{ organization: unknown }>;
       requestClosure: (
         input: unknown
       ) => Promise<{ recoverUntil: string; revokedLeases: number }>;
@@ -240,5 +243,125 @@ describe("organization.recoverClosure", () => {
     await expect(
       client.organization.recoverClosure({ organizationId })
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+const closedView = {
+  canRecover: true,
+  deletableFrom: new Date("2027-01-15T03:00:00.000Z"),
+  deletionDate: "2027-01-15",
+  exportOpenUntil: new Date("2027-01-15T03:00:00.000Z"),
+  id: organizationId,
+  milestones: {
+    closure: new Date("2026-10-16T12:00:00.000Z"),
+    d7: new Date("2027-01-08T03:00:00.000Z"),
+    d30: new Date("2026-12-16T03:00:00.000Z"),
+    deletionDay: new Date("2027-01-15T03:00:00.000Z"),
+  },
+  name: "Loja Horizonte",
+  phase: "closed" as const,
+  recoverUntil,
+  requestedAt: new Date("2026-10-16T12:00:00.000Z"),
+  timezone: "America/Sao_Paulo",
+};
+
+const closedReadModel = {
+  canRecover: true,
+  deletableFrom: "2027-01-15T03:00:00.000Z",
+  deletionDate: "2027-01-15",
+  exportOpenUntil: "2027-01-15T03:00:00.000Z",
+  id: organizationId,
+  milestones: {
+    closure: "2026-10-16T12:00:00.000Z",
+    d7: "2027-01-08T03:00:00.000Z",
+    d30: "2026-12-16T03:00:00.000Z",
+    deletionDay: "2027-01-15T03:00:00.000Z",
+  },
+  name: "Loja Horizonte",
+  phase: "closed",
+  recoverUntil: "2026-11-16T12:00:00.000Z",
+  requestedAt: "2026-10-16T12:00:00.000Z",
+  timezone: "America/Sao_Paulo",
+};
+
+describe("organization.listClosed", () => {
+  it("lists the session user's closed organizations with dates as ISO text and D as a calendar date", async () => {
+    const listClosedOrganizations = vi.fn(
+      async (_database: unknown, _userId: string) => [closedView]
+    );
+    const client = createClient({
+      closureRepository: { listClosedOrganizations },
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(client.organization.listClosed()).resolves.toEqual({
+      organizations: [closedReadModel],
+    });
+    expect(listClosedOrganizations.mock.calls[0]?.[1]).toBe(session.user.id);
+  });
+
+  it("answers 401 without a session", async () => {
+    const client = createClient({
+      withAuthenticatedRequestContext: () =>
+        Promise.reject(new TenantRequestContextError("session_required")),
+    });
+
+    await expect(client.organization.listClosed()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+});
+
+describe("organization.closedStatus", () => {
+  it("reads one closed organization for the session user", async () => {
+    const getClosedOrganizationStatus = vi.fn(
+      async (_database: unknown, _userId: string, _organizationId: string) =>
+        closedView
+    );
+    const client = createClient({
+      closureRepository: { getClosedOrganizationStatus },
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(
+      client.organization.closedStatus({ organizationId })
+    ).resolves.toEqual({ organization: closedReadModel });
+    expect(getClosedOrganizationStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      session.user.id,
+      organizationId
+    );
+  });
+
+  it("answers a null organization when the repository finds none", async () => {
+    const client = createClient({
+      closureRepository: {
+        getClosedOrganizationStatus: () => Promise.resolve(null),
+      },
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(
+      client.organization.closedStatus({ organizationId })
+    ).resolves.toEqual({ organization: null });
+  });
+});
+
+describe("organization.recoverClosure with another organization active", () => {
+  it("answers a conflict with its reason", async () => {
+    const client = createClient({
+      closureRepository: {
+        recoverOrganizationClosure: () =>
+          Promise.reject(new AnotherOrganizationActiveError()),
+      },
+      withAuthenticatedRequestContext: authenticated(),
+    });
+
+    await expect(
+      client.organization.recoverClosure({ organizationId })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "another_organization_active" },
+    });
   });
 });

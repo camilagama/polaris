@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { CategoryNameConflictError } from "@polaris/domain/catalog/category";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
+import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { TenantRequestContextError } from "../request-context-error";
+import { CreateInitialOrganizationError } from "../use-cases/create-initial-organization";
 import { createRpcRouter } from "./router";
 
 const requestIdPattern = /^[0-9a-f-]{36}$/i;
@@ -387,5 +389,65 @@ describe("tenant RPCs", () => {
       testBindings.ONBOARDING_HYPERDRIVE.connectionString,
       { maxConnections: 1 }
     );
+  });
+
+  it("tells a member of a closed organization so, with the reason", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext: () =>
+          Promise.reject(new TenantAuthorizationError("organization_closed")),
+      })
+    );
+
+    await expect(
+      client.category.list({ organizationId: "org-requested" })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "organization_closed" },
+    });
+  });
+
+  it("keeps every other authorization refusal without a reason", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext: () =>
+          Promise.reject(new TenantAuthorizationError("tenant_access_denied")),
+      })
+    );
+
+    const error = await client.category
+      .list({ organizationId: "org-requested" })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "FORBIDDEN" });
+    expect((error as { data?: unknown }).data).toBeUndefined();
+  });
+
+  it("answers a conflict with the reason when the organization ceiling is reached", async () => {
+    const session = { user: { emailVerified: true, id: "session-user-17" } };
+    const client = createRpcClient(
+      createRpcRouter({
+        createInitialOrganization: () =>
+          Promise.reject(
+            new CreateInitialOrganizationError("organization_limit_reached")
+          ),
+        createOnboardingDatabase: () => ({
+          db: {},
+          pool: { end: () => Promise.resolve() },
+        }),
+        withAuthenticatedRequestContext: (input: {
+          operation: (database: unknown, current: typeof session) => unknown;
+        }) => Promise.resolve(input.operation({}, session)),
+      } as unknown as Parameters<typeof createRpcRouter>[0])
+    );
+
+    await expect(
+      client.organization.createInitial({
+        name: "Polaris",
+        timezone: "America/Sao_Paulo",
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "organization_limit_reached" },
+    });
   });
 });

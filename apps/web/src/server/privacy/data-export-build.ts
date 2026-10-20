@@ -107,20 +107,18 @@ async function readTable(
   return { csvLines, jsonLines, rows, shape };
 }
 
-async function readImages(
-  transaction: TenantRequestTransaction,
-  organizationId: string
-): Promise<ExportImage[]> {
+/** One page of the organization's images after the given asset ID, oldest first. */
+export type ImagePageReader = (
+  afterAssetId: string | null,
+  pageRows: number
+) => Promise<ExportImage[]>;
+
+async function readImages(readPage: ImagePageReader): Promise<ExportImage[]> {
   const images: ExportImage[] = [];
   let afterAssetId: string | null = null;
   for (;;) {
     // biome-ignore lint/performance/noAwaitInLoops: each page starts where the one before ended.
-    const page = await readImagePage(
-      transaction,
-      organizationId,
-      afterAssetId,
-      IMAGE_PAGE
-    );
+    const page = await readPage(afterAssetId, IMAGE_PAGE);
     images.push(...page);
     // each image is a read from storage and the run has a ceiling on those: fail before any work, not in the middle
     if (images.length > MAX_EXPORT_IMAGES) {
@@ -137,11 +135,14 @@ async function readImages(
  * Reads everything the person who asked may read, in the snapshot of the transaction the caller
  * opened, and turns each table into the JSON and CSV files that were asked for (an images-only
  * copy reads no table). Only memory work happens between queries, so the transaction stays short.
+ * The images are read in the same transaction, unless the caller names another reader (a closed
+ * organization's reader does not read the storage keys: the run reads them through its lease).
  */
 export async function collectExport(
   transaction: TenantRequestTransaction,
   organizationId: string,
-  formats: readonly ExportFormat[]
+  formats: readonly ExportFormat[],
+  readImagePageWith?: ImagePageReader
 ): Promise<CollectedExport> {
   const entries: CollectedExport["entries"] = [];
   const summaries: ExportDatasetSummary[] = [];
@@ -182,7 +183,11 @@ export async function collectExport(
   }
 
   const images = formats.includes("images")
-    ? await readImages(transaction, organizationId)
+    ? await readImages(
+        readImagePageWith ??
+          ((afterAssetId, pageRows) =>
+            readImagePage(transaction, organizationId, afterAssetId, pageRows))
+      )
     : [];
   return { entries, images, summaries };
 }

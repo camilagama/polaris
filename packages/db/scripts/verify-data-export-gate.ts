@@ -874,12 +874,19 @@ async function run() {
         "error_code",
         "expires_at",
         "files_deleted_at",
+        // the token of a run, which the reader of a closed organization checks (ADR 0081)
+        "lease_token",
         "locked_until",
         "ready_at",
         "started_at",
         "status",
         "total_bytes",
       ]
+    );
+    assert.deepEqual(
+      await columns("polaris_privacy_owner", "data_exports", "INSERT"),
+      ["formats", "mode", "organization_id", "requested_by_user_id"],
+      "the privacy owner inserts only a closed organization's request (ADR 0081)"
     );
     assert.deepEqual(
       await privileges("polaris_privacy_owner", "data_export_files"),
@@ -903,6 +910,8 @@ async function run() {
         "data_export_files:data_export_files_purge_owner_select",
         "data_exports:data_exports_current_owner_insert",
         "data_exports:data_exports_current_tenant_select",
+        // the request of a closed organization's copy, only `closed` (ADR 0081)
+        "data_exports:data_exports_privacy_owner_insert_closed",
         "data_exports:data_exports_privacy_owner_select",
         "data_exports:data_exports_privacy_owner_update",
         "data_exports:data_exports_purge_owner_delete",

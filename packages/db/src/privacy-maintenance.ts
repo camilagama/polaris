@@ -5,14 +5,46 @@ import { Pool } from "pg";
  * 0081 and 0084). It runs under its own database role, which can execute a few functions and read
  * nothing: closing organizations whose recovery window ended, the data exports (claim a request,
  * record its files, finish or fail it, expire it, and send its outbox event again while it is
- * still owed) and the purges an operator scheduled.
+ * still owed; the images of a closed organization's export) and the purges an operator scheduled.
  */
 export interface ClaimedDataExport {
   attempt: number;
   formats: string[];
   id: string;
+  /** The run's own token: the reader of a closed organization reads only with it (ADR 0081). */
+  leaseToken: string | null;
+  /** `active`: read as the person who asked (ADR 0078); `closed`: read by the closed organization's reader. */
+  mode: "active" | "closed";
   organizationId: string;
   requestedBy: string;
+}
+
+/** What a claim answers, before it is checked: a database before 0084 has no mode and no token. */
+interface ClaimedDataExportRow {
+  attempt: number;
+  formats: string[];
+  id: string;
+  leaseToken?: string | null;
+  mode?: string;
+  organizationId: string;
+  requestedBy: string;
+}
+
+function claimedExport(
+  row: ClaimedDataExportRow | null | undefined
+): ClaimedDataExport | null {
+  if (!row) {
+    return null;
+  }
+  return {
+    attempt: row.attempt,
+    formats: row.formats,
+    id: row.id,
+    leaseToken: row.leaseToken ?? null,
+    mode: row.mode === "closed" ? "closed" : "active",
+    organizationId: row.organizationId,
+    requestedBy: row.requestedBy,
+  };
 }
 
 /** A purge held by this run: `purge` removes storage and rows; `sweep` only looks at the storage again. */
@@ -58,6 +90,16 @@ export interface PrivacyMaintenanceClient {
   ) => Promise<boolean>;
   /** Marks the recovery windows that ended as closed, at most `limit` organizations; returns how many. */
   finalizeExpiredClosures: (limit: number) => Promise<number>;
+  /**
+   * The images of a closed organization's export, for the run that holds it (its export and lease token), after the
+   * given asset ID: the reader does not read the storage keys.
+   */
+  listClosedExportMedia: (
+    exportId: string,
+    leaseToken: string,
+    afterAssetId: string | null,
+    limit: number
+  ) => Promise<{ assetId: string; byteSize: number; storageKey: string }[]>;
   listDataExportsToDelete: (
     limit: number
   ) => Promise<{ id: string; organizationId: string }[]>;
@@ -117,21 +159,12 @@ export function createPrivacyMaintenanceClient(
   });
   return {
     async claimDataExport(leaseSeconds) {
-      const result = await pool.query<{ claimed: ClaimedDataExport | null }>(
-        "SELECT public.claim_data_export($1::integer) AS claimed",
-        [leaseSeconds]
-      );
-      const claimed = result.rows[0]?.claimed as
-        | {
-            attempt: number;
-            formats: string[];
-            id: string;
-            organizationId: string;
-            requestedBy: string;
-          }
-        | null
-        | undefined;
-      return claimed ?? null;
+      const result = await pool.query<{
+        claimed: ClaimedDataExportRow | null;
+      }>("SELECT public.claim_data_export($1::integer) AS claimed", [
+        leaseSeconds,
+      ]);
+      return claimedExport(result.rows[0]?.claimed);
     },
     async claimOrganizationPurge(leaseSeconds) {
       const result = await pool.query<{
@@ -142,11 +175,13 @@ export function createPrivacyMaintenanceClient(
       return result.rows[0]?.claimed ?? null;
     },
     async claimDataExportById(exportId, organizationId, leaseSeconds) {
-      const result = await pool.query<{ claimed: ClaimedDataExport | null }>(
+      const result = await pool.query<{
+        claimed: ClaimedDataExportRow | null;
+      }>(
         "SELECT public.claim_data_export_by_id($1::uuid, $2::text, $3::integer) AS claimed",
         [exportId, organizationId, leaseSeconds]
       );
-      return result.rows[0]?.claimed ?? null;
+      return claimedExport(result.rows[0]?.claimed);
     },
     async close() {
       await pool.end();
@@ -194,6 +229,21 @@ export function createPrivacyMaintenanceClient(
         [limit]
       );
       return Number(result.rows[0]?.finalized ?? 0);
+    },
+    async listClosedExportMedia(exportId, leaseToken, afterAssetId, limit) {
+      const result = await pool.query<{
+        byte_size: number | string;
+        id: string;
+        storage_key: string;
+      }>(
+        "SELECT id, byte_size, storage_key FROM public.list_closed_export_media($1::uuid, $2::uuid, $3::uuid, $4::integer)",
+        [exportId, leaseToken, afterAssetId, limit]
+      );
+      return result.rows.map((row) => ({
+        assetId: row.id,
+        byteSize: Number(row.byte_size),
+        storageKey: row.storage_key,
+      }));
     },
     async listDataExportsToDelete(limit) {
       const result = await pool.query<{ id: string; organization_id: string }>(
