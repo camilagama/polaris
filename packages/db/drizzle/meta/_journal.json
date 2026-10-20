@@ -635,7 +635,7 @@
     {
       "idx": 90,
       "version": "7",
-      "when": 1792581201552,
+      "when": 1792530000000,
       "tag": "0091_email_dos_avisos_de_encerramento",
       "breakpoints": true
     }
