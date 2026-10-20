@@ -58,14 +58,20 @@ function AuthActionEmail({
               boxSizing: "border-box",
               color: "#ffffff",
               display: "inline-block",
-              padding: "12px 20px",
+              padding: "14px 20px",
               textDecoration: "none",
             }}
           >
             {actionLabel}
           </Button>
+          {/* the link carries a long token with no break point: without this it widens a 360 px screen */}
           <Text
-            style={{ color: "#374151", fontSize: "14px", lineHeight: "21px" }}
+            style={{
+              color: "#374151",
+              fontSize: "14px",
+              lineHeight: "21px",
+              overflowWrap: "anywhere",
+            }}
           >
             Se o botão não funcionar, abra este link: {actionURL}
           </Text>

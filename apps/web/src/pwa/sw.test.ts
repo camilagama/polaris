@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { AUTH_ENTRY_PATHS as HEADERS_AUTH_ENTRY_PATHS } from "@polaris/http-security";
 import { transformWithEsbuild } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import { buildId, precacheList } from "../../pwa/service-worker-plugin";
 import {
+  AUTH_ENTRY_PATHS,
   cachesToDelete,
   isSkipWaitingMessage,
   routeFor,
@@ -182,7 +184,7 @@ async function runWorker(build: {
   const listeners: Record<string, (event: never) => void> = {};
   const stores = new Map<string, Map<string, string>>();
   const fetched: string[] = [];
-  const network: { online: boolean } = { online: true };
+  const network: { failPath?: string; online: boolean } = { online: true };
   const skipWaiting = vi.fn(() => Promise.resolve());
   const scope = {
     addEventListener: (type: string, listener: (event: never) => void) => {
@@ -214,6 +216,10 @@ async function runWorker(build: {
       const store = stores.get(name) ?? new Map<string, string>();
       stores.set(name, store);
       return Promise.resolve({
+        add: async (request: { url: string }) => {
+          const response = (await fakeFetch(request)) as { body: string };
+          store.set(keyOf(request), response.body);
+        },
         addAll: async (requests: { url: string }[]) => {
           const responses = await Promise.all(
             requests.map((request) => fakeFetch(request))
@@ -236,7 +242,7 @@ async function runWorker(build: {
   };
   const fakeFetch = (request: { url: string }) => {
     fetched.push(keyOf(request));
-    return network.online
+    return network.online && keyOf(request) !== network.failPath
       ? Promise.resolve({ body: `net:${keyOf(request)}` })
       : Promise.reject(new TypeError("offline"));
   };
@@ -281,7 +287,7 @@ describe("the worker as the browser runs it", () => {
     await worker.run("install", {});
     const cache = worker.stores.get(shellCacheName(build));
     expect([...(cache?.keys() ?? [])].sort()).toEqual(
-      ["/", "/assets/index-BBB.js"].sort()
+      ["/", "/assets/index-BBB.js", "/entrar"].sort()
     );
     expect(worker.skipWaiting).not.toHaveBeenCalled();
   });
@@ -301,6 +307,45 @@ describe("the worker as the browser runs it", () => {
     expect(await worker.run("fetch", { request: navigate })).toEqual({
       body: "net:/",
     });
+  });
+
+  it("opens a sign-in page offline from its own copy, which carries the challenge policy (ADR 0100)", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    worker.network.online = false;
+    const answers = async (paths: string[]) =>
+      Promise.all(
+        paths.map((path) =>
+          worker.run("fetch", {
+            request: {
+              method: "GET",
+              mode: "navigate",
+              url: `${origin}${path}`,
+            },
+          })
+        )
+      );
+    expect(
+      await answers(["/entrar", "/redefinir-senha", "/confirmar-email/"])
+    ).toEqual(new Array(3).fill({ body: "net:/entrar" }));
+    // the unlock page and the rest of the app keep the shell of /
+    expect(await answers(["/desbloquear", "/conta/seguranca"])).toEqual(
+      new Array(2).fill({ body: "net:/" })
+    );
+  });
+
+  it("installs even when the sign-in copy cannot be fetched: the copy is a bonus", async () => {
+    const worker = await runWorker(build);
+    worker.network.failPath = "/entrar";
+    await worker.run("install", {});
+    const cache = worker.stores.get(shellCacheName(build));
+    expect([...(cache?.keys() ?? [])].sort()).toEqual(
+      ["/", "/assets/index-BBB.js"].sort()
+    );
+  });
+
+  it("lists the same sign-in pages as the headers file", () => {
+    expect([...AUTH_ENTRY_PATHS]).toEqual([...HEADERS_AUTH_ENTRY_PATHS]);
   });
 
   it("serves precached files from the cache and leaves everything else to the network untouched", async () => {

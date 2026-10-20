@@ -1,6 +1,12 @@
+import { render } from "react-email";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthEmailDelivery } from "../auth";
 import { createResendAuthEmailDelivery } from "./email";
+import {
+  EmailVerificationEmail,
+  LoginUnlockEmail,
+  PasswordResetEmail,
+} from "./emails";
 import { LOGIN_LOCK_MINUTES } from "./login-lock";
 
 const apiKey = "re_test_api_key";
@@ -289,5 +295,29 @@ describe("Resend authentication email delivery", () => {
     expect(body.text).toContain(`${appBaseURL}/entrar`);
     expect(body.text).toContain("“Continuar com o Google”");
     expect(body.text).toContain("“Esqueci a senha”");
+  });
+});
+
+const FALLBACK_LINK_BREAKS_ANYWHERE =
+  /<p[^>]*overflow-wrap:anywhere[^>]*>Se o botão não funcionar/;
+
+describe("the layout of the e-mails with a link token", () => {
+  // tokens of the real size: a verification JWT, a reset token and an unlock token (`<user>.<32 bytes>`)
+  const links = {
+    reset: `https://polaris.example.invalid/redefinir-senha#token=${"r".repeat(24)}`,
+    unlock: `https://polaris.example.invalid/desbloquear#token=${"u".repeat(32)}.${"A".repeat(43)}`,
+    verification: `https://polaris.example.invalid/confirmar-email#token=${"e".repeat(36)}.${"J".repeat(180)}.${"s".repeat(43)}`,
+  };
+
+  it("breaks the fallback link anywhere and gives the button a 14 px padding, in the three e-mails", async () => {
+    const html = await Promise.all([
+      render(<EmailVerificationEmail url={links.verification} />),
+      render(<PasswordResetEmail url={links.reset} />),
+      render(<LoginUnlockEmail url={links.unlock} />),
+    ]);
+    for (const page of html) {
+      expect(page).toMatch(FALLBACK_LINK_BREAKS_ANYWHERE);
+      expect(page).toContain("padding:14px 20px");
+    }
   });
 });
