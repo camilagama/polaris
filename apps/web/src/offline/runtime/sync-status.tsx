@@ -32,6 +32,15 @@ export function waitingOperations(snapshot: RuntimeSnapshot): number {
 export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   const { counts } = snapshot;
   const waiting = waitingOperations(snapshot);
+  if (snapshot.phase === "expired") {
+    return {
+      attention: false,
+      // with internet "Conecte-se" would ask for what the person already has
+      short: snapshot.online ? "Sem acesso" : "Conecte-se",
+      text: "O acesso sem internet venceu",
+      tone: "offline",
+    };
+  }
   if (snapshot.phase === "unavailable") {
     return {
       attention: false,
