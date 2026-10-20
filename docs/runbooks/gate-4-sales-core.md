@@ -67,10 +67,11 @@ Mais rodadas (`POLARIS_CONCURRENCY_REPEAT=10`, o máximo) servem para investigar
 
 O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, nas suítes `ci`, `gate4` e `all`) gera com fast-check sequências de comandos nomeados (recebimento, venda, baixa, contagem, devolução e cancelamento, o estorno da venda inteira) sobre duas variantes de uma organização nova a cada sequência. Cada comando passa pelas funções reais do repositório como o papel do runtime (`FORCE RLS` e os gatilhos deferidos do commit) e por um **modelo em memória** escrito no próprio gate. O modelo não importa o domínio: a média é aritmética própria em micro-reais, meio-para-cima em 6 casas, com as regras de [estoque](../business-rules/inventory.md#custo-médio) e da [reposição](../business-rules/inventory.md#reposição-por-cancelamento-ou-devolução).
 
-**Gerador.** As quantidades são sorteadas em relação ao estado (de 1 até o que existe; o sorteio 0 leva tudo, para o saldo chegar a zero com frequência), então a maior parte dos comandos é válida. Um em oito pede de propósito mais do que há (`overdraw`), uma contagem em sete manda versão desatualizada e as contagens com valoração e os recebimentos sobre média desconhecida exercitam as recusas de custo; o modelo prevê o resultado de cada comando (aceito ou o código do erro). As linhas de uma devolução vão ao servidor na ordem sorteada, e o modelo repõe por posição, como o servidor. Três sequências fixas (`examples`) rodam sempre antes das sorteadas:
+**Gerador.** As quantidades são sorteadas em relação ao estado (de 1 até o que existe; o sorteio 0 leva tudo, para o saldo chegar a zero com frequência), então a maior parte dos comandos é válida. Um em oito pede de propósito mais do que há (`overdraw`), uma contagem em sete manda uma versão velha, que o saldo já deixou para trás (a anterior à atual; com o saldo na versão 0, que não tem anterior, a seguinte), e as contagens com valoração e os recebimentos sobre média desconhecida exercitam as recusas de custo; o modelo prevê o resultado de cada comando (aceito ou o código do erro). As linhas de uma devolução vão ao servidor na ordem sorteada, e o modelo repõe por posição, como o servidor. Sete sequências fixas (`examples`) rodam sempre antes das sorteadas:
 
 - a venda de custo desconhecido que volta, por cancelamento e por devolução, a um saldo zero de média já conhecida. Esse caso pede uns seis comandos numa ordem só, e o sorteio não chegou nele em 400 sequências;
-- a devolução de duas linhas da mesma variante enviadas fora da ordem de posição.
+- a devolução de duas linhas da mesma variante enviadas fora da ordem de posição;
+- as bordas de grandeza, que o sorteio não alcança (recebimentos de 1 a 6 unidades e custos de uma lista de seis valores): o recebimento até o teto exato de `MAX_INVENTORY_QUANTITY` (2.147.483.647), o seguinte acima do teto e um recebimento único acima dele, ambos recusados com `inventory_quantity_limit`; a venda do teto inteiro, devolvida em partes (uma delas pedindo mais do que resta) e cancelada de volta ao teto; e custos de 18 dígitos inteiros (aceito, inclusive na média ponderada com 2 bilhões de unidades) e de 19 (recusado com `inventory_cost_limit`).
 
 **Invariantes** (conferidos depois de cada comando, I1 e I6, e ao final, os demais):
 
@@ -87,18 +88,27 @@ O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, na
 
 | Quando | Sequências | Tempo |
 | --- | --- | --- |
-| Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 3 fixas | de 10 a 13 s |
+| Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 7 fixas | de 10 a 13 s |
 | Execução longa | `POLARIS_PROPERTY_RUNS=500` (máximo 2000, o que cabe nos 30 min em que o executor para um gate) | cerca de 5 min |
 
-A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Rode à mão num banco descartável (como em [Passos](#passos)), em PR que mude estoque, venda, devolução ou cancelamento e antes de cada prova de release:
+A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Ela é **obrigatória** em PR que mexa em estoque, venda, devolução, cancelamento ou custo médio, e o autor registra o resultado (a semente e o `passed`) em "Verificação" do PR: 20 sequências deixam passar uma quebra comum em cerca de uma execução em cinco. Ela também é BLOCK no item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block). Rode à mão num banco descartável (como em [Passos](#passos)):
 
     CI=true POLARIS_PROPERTY_RUNS=500 bun scripts/run-gates.ts stock-property   # a partir de packages/db
 
-**Semente e reprodução.** Cada execução sorteia uma semente nova e a imprime na primeira linha (`seed=...`), então o CI explora sequências diferentes a cada PR. Na falha, as últimas linhas (as que o executor mostra) trazem a **sequência mínima** em comandos concretos até o comando que falhou, o motivo e, por último, o comando que reproduz a falha:
+**Semente e reprodução.** Cada execução sorteia uma semente nova e a imprime na primeira linha (`seed=...`) e na linha `note:` do executor, que a repete no JSON final (`results[].notes`) também quando o gate passa, então o CI explora sequências diferentes a cada PR e fica registrado quais já passaram. Na falha, as últimas linhas (as que o executor mostra) trazem a **sequência mínima** em comandos concretos até o comando que falhou, o motivo e, por último, o comando que reproduz a falha:
 
     CI=true POLARIS_PROPERTY_SEED=<semente> POLARIS_PROPERTY_PATH=<caminho> bun scripts/run-gates.ts stock-property
 
+**Reexecutar o job não limpa a falha:** a semente muda e o defeito continua, só que numa sequência que talvez o sorteio não repita. O procedimento é abrir o item com a linha `replay:` (issue com a etiqueta `bots`, pelo Arrascaeta), e não repetir o job até passar.
+
 Uma falha ao preparar uma sequência (banco fora do ar, organização ou produto que não se cria) não é tratada como contraexemplo: o gate para sem encolher e mostra o erro. Uma queda no meio de uma sequência ainda aparece como resultado `sql:...` ou `error:...` de um comando e é encolhida como uma falha comum.
+
+**Limites.** O gate não cobre:
+
+- produto removido, plano Free (variantes não operacionais), replays e conflitos de `commandId`;
+- corridas (a suíte `gates:concurrency` cobre);
+- dinheiro: as vendas não têm perfil de pagamento nem ajustes, porque o gate olha estoque e devolução;
+- o espaço de valores do sorteio: 2 variantes, vendas e devoluções de até 2 linhas, até 16 comandos, quantidades de 1 a 6 por recebimento e seis custos. O que depende de uma grandeza fora dele (o teto de quantidade, o limite de 18 dígitos de custo) só é visto pelos exemplos fixos, e uma sequência rara e longa também depende de exemplo fixo.
 
 **Prova por quebra** (20/10/2026, local, descartada; semente 20261020):
 
@@ -107,6 +117,9 @@ Uma falha ao preparar uma sequência (banco fora do ar, organização ou produto
 | Devolução limitada ao vendido, e não ao disponível (`planSaleReturn`) | Com 60 sequências, falhou na 39ª. A mínima recebe 1, vende 1, devolve 1 e devolve 1 de novo: o banco recusou no commit (`sql:23514`) onde o modelo esperava `sale_return_exceeds_available`. |
 | Reposição de custo desconhecido em saldo zero mantém a média antiga (o comportamento anterior à revisão do Gate 4) | Falhou no exemplo fixo (6 comandos): média `1.500000` onde o modelo diz desconhecida. Sem o exemplo fixo, 60, 150 e 400 sequências sorteadas não pegaram. O `review-hardening` cobre o mesmo caso com um cenário escrito à mão. |
 | Média truncada em vez de meio-para-cima | Com 60 sequências, falhou na 7ª. A mínima recebe 1 a 0, 1 a 0 e 4 a 1: a média ficou `0.666666` onde o modelo diz `0.666667`. |
+| Contagem que aceita versão velha (`!==` vira `<` em `inventory-repository.ts`) | 5 sementes de 5 falharam (`I6`: o modelo espera `inventory_version_conflict`, o banco aceitou). Com a versão do futuro que o gate mandava antes, a quebra passava em 5 de 5. |
+| Teto de quantidade que recusa o valor exato (`nextQuantity > MAX` vira `>=` em `projectInventoryQuantity`) | 5 sementes de 5 falharam, no exemplo fixo do teto exato. O sorteio nunca chega lá. |
+| Limite de custo deslocado (`whole.length > 18` vira `>= 18`, e vira `> 19`) | As duas falharam nos exemplos fixos de 18 e de 19 dígitos (o `>= 18` recusou o custo de 18 dígitos que devia ser aceito; o `> 19` aceitou, e o banco recusou com `sql:23514`, o de 19). |
 
 O próprio exemplo das linhas fora de ordem nasceu de um defeito do **modelo**, achado na revisão: o modelo repunha na ordem enviada, e o servidor repõe por posição. O exemplo falhou antes da correção do modelo e passa depois.
 

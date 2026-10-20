@@ -63,9 +63,13 @@ const OCCURRED_ON = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
 }).format(new Date());
 const SCALE = 1_000_000n;
+// the limits of inventory.md (a PostgreSQL integer balance; 18 integer digits of cost), written here and not imported
+const MAX_QUANTITY = 2_147_483_647;
+const MAX_COST_INTEGER_DIGITS = 18;
 const costPattern = /^(\d+)(?:\.(\d{1,6}))?$/;
 const domainCodePattern = /^[a-z][a-z_]+$/;
 const failingCommandPattern = /command #(\d+)/;
+const leadingZerosPattern = /^0+/;
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
 
@@ -232,6 +236,19 @@ const unknownCostSale: Draw[] = [
   { cost: "1.5", kind: "receive", quantity: 2, variant: 0 },
   { amount: 0, kind: "write_off", overdraw: false, variant: 0 },
 ];
+// the generator draws receipts of 1 to 6 units at six costs, so the edges of the limits need fixed sequences
+const CEILING = MAX_QUANTITY;
+const receive = (variant: number, quantity: number, cost: string): Draw => ({
+  cost,
+  kind: "receive",
+  quantity,
+  variant,
+});
+const sellAll = (variant: number): Draw => ({
+  kind: "sale",
+  lines: [{ amount: 0, variant }],
+  overdraw: false,
+});
 const fixedExamples: [Draw[]][] = [
   // one sale with two lines of the same variant, returned in the opposite order
   [
@@ -254,6 +271,72 @@ const fixedExamples: [Draw[]][] = [
         overdraw: false,
         sale: 0,
       },
+    ],
+  ],
+  // the balance up to the exact ceiling in two receipts, then one unit past it, then a single receipt past it
+  [
+    [
+      receive(0, CEILING - 1, "1.5"),
+      receive(0, 1, "2.333333"),
+      receive(0, 1, "1"),
+      receive(1, CEILING + 1, "1"),
+      {
+        kind: "count",
+        physical: CEILING,
+        stale: false,
+        valuation: null,
+        variant: 0,
+      },
+      { amount: 0, kind: "write_off", overdraw: false, variant: 0 },
+      receive(0, CEILING, "10.000001"),
+    ],
+  ],
+  // a sale of the whole ceiling, returned in two parts (the second asks for more than is left), and another sale cancelled back to the ceiling
+  [
+    [
+      receive(0, CEILING, "1.5"),
+      sellAll(0),
+      {
+        kind: "return",
+        lines: [
+          { amount: 1_500_000_000, position: 0, restockedPart: 1_000_000_000 },
+        ],
+        overdraw: false,
+        sale: 0,
+      },
+      {
+        kind: "return",
+        lines: [{ amount: 0, position: 0, restockedPart: CEILING }],
+        overdraw: true,
+        sale: 0,
+      },
+      {
+        kind: "return",
+        lines: [{ amount: 0, position: 0, restockedPart: CEILING }],
+        overdraw: false,
+        sale: 0,
+      },
+      receive(0, CEILING, "7.10"),
+    ],
+  ],
+  [
+    [
+      receive(1, CEILING, "7.10"),
+      sellAll(1),
+      { kind: "cancel", sale: 0 },
+      receive(1, 1, "7.10"),
+    ],
+  ],
+  // costs of 18 integer digits, and one of 19: the limit
+  [
+    [
+      receive(0, 1, "999999999999999999"),
+      receive(0, 1, "1000000000000000000"),
+      receive(0, 2_000_000_000, "999999999999999999.999999"),
+      sellAll(0),
+      { kind: "cancel", sale: 0 },
+      receive(1, 3, "1000000000000000000.5"),
+      receive(1, 3, "999999999999999999.5"),
     ],
   ],
   [[...unknownCostSale, { kind: "cancel", sale: 0 }]],
@@ -314,6 +397,12 @@ function micro(value: string): bigint {
   return BigInt(whole) * SCALE + BigInt(fraction.padEnd(6, "0"));
 }
 
+function wholeDigits(cost: string): number {
+  const match = costPattern.exec(cost);
+  assert.ok(match, `cost ${cost}`);
+  return (match[1] ?? "").replace(leadingZerosPattern, "").length;
+}
+
 function microOrNull(value: string | null): bigint | null {
   return value === null ? null : micro(value);
 }
@@ -364,6 +453,11 @@ function restock(
   state.ledger.push({ delta: added, type, unitCost: cost });
 }
 
+/** A version the balance has already moved past (version 0 has none: the next one will do). */
+function olderVersion(version: number): number {
+  return version > 0 ? version - 1 : version + 1;
+}
+
 function emptyModel(): Model {
   return {
     sales: [],
@@ -392,6 +486,15 @@ function applyToModel(
   switch (command.kind) {
     case "receive": {
       const state = variantOf(model, command.variant);
+      if (command.quantity > MAX_QUANTITY) {
+        return "inventory_quantity_limit";
+      }
+      if (wholeDigits(command.cost) > MAX_COST_INTEGER_DIGITS) {
+        return "inventory_cost_limit";
+      }
+      if (state.quantity + command.quantity > MAX_QUANTITY) {
+        return "inventory_quantity_limit";
+      }
       if (state.quantity > 0 && state.average === null) {
         return "inventory_cost_unavailable";
       }
@@ -713,7 +816,7 @@ async function runOnDatabase(
         );
         return { outcome: "ok" };
       case "count": {
-        // the client reads the version first; a stale count sends one that is no longer current
+        // the client reads the version first; a stale count sends one the balance has already moved past
         const { version } = variantOf(model, command.variant);
         await withTenantAs(
           database.db,
@@ -723,7 +826,7 @@ async function runOnDatabase(
             inventoryCount(transaction, identity, {
               commandId: randomUUID(),
               commandVersion: 1,
-              expectedVersion: command.stale ? version + 1 : version,
+              expectedVersion: command.stale ? olderVersion(version) : version,
               occurredOn: OCCURRED_ON,
               physicalQuantity: command.physical,
               valuationUnitCost: command.valuation,
@@ -1089,6 +1192,8 @@ async function run() {
   const seed = seedFromEnvironment();
   const path = process.env.POLARIS_PROPERTY_PATH || undefined;
   console.log(`seed=${seed} runs=${runs}${path ? ` path=${path}` : ""}`);
+  // the runner keeps this line in its final JSON, so a passing run still says which sequences it drew
+  console.log(`gate-note: seed=${seed} runs=${runs}`);
 
   const admin = createDatabase(adminUrl, { maxConnections: 2 });
   const loginRole = `polaris_property_gate_${randomUUID().replaceAll("-", "")}`;
