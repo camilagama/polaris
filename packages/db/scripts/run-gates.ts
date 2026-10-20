@@ -185,6 +185,14 @@ gates.push(
     needsPocFixture: true,
     script: "verify-tenant-context-gate.ts",
   },
+  // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
+  // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "admin-worker",
+    script: "verify-admin-worker-gate.ts",
+  },
   // lives in apps/web: serves the PR11 route from a local server and runs the RLS gate against it.
   // Local Postgres only: on Neon the proof goes through the Worker and Hyperdrive (`poc:rls:verify`).
   {
@@ -238,6 +246,7 @@ const suites: Record<string, string[]> = {
     "admin-diagnostics",
     "admin-support",
     "admin-suspension",
+    "admin-worker",
     "privacy-cases",
     "data-export",
     "organization-closure",
@@ -345,6 +354,7 @@ const suites: Record<string, string[]> = {
     "admin-diagnostics",
     "admin-support",
     "admin-suspension",
+    "admin-worker",
   ],
   // Phase 10 (privacy): grows with every gate of the phase.
   gate10: [
