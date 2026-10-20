@@ -573,8 +573,6 @@ function resolveReturn(
       });
     }
   }
-  // the server restocks a variant's lines in position order, whatever order they were sent in
-  lines.sort((left, right) => left.position - right.position);
   return { kind: "return", lines, sale: index };
 }
 
@@ -978,14 +976,14 @@ function reportFailure(details: fc.RunDetails<[Draw[]]>) {
   console.error(
     `property failed after ${details.numRuns} runs and ${details.numShrinks} shrinks; the smallest sequence is above (${smallest.length} commands)`
   );
-  console.error(
-    `reason: ${message
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("+ actual - expected"))
-      .slice(0, 8)
-      .join(" | ")}`
+  // the label, then only the diverging lines of the diff, so the cut at 220 characters keeps them
+  const [label = "", ...rest] = message.split("\n").map((line) => line.trim());
+  const diverging = rest.filter(
+    (line) =>
+      (line.startsWith("+") || line.startsWith("-")) &&
+      !line.startsWith("+ actual - expected")
   );
+  console.error(`reason: ${[label, ...diverging].join(" | ")}`);
   console.error(
     `replay: CI=true POLARIS_PROPERTY_SEED=${details.seed} POLARIS_PROPERTY_PATH=${details.counterexamplePath ?? ""} bun scripts/run-gates.ts stock-property`
   );
@@ -1053,6 +1051,10 @@ async function checkProperty(
     ...(options.path ? { path: options.path } : {}),
   });
   if (infrastructureFailure) {
+    // a counterexample found before the database broke is still worth printing
+    if (details.failed) {
+      reportFailure(details);
+    }
     throw infrastructureFailure.error;
   }
   return details;
@@ -1140,7 +1142,7 @@ async function run() {
   } finally {
     try {
       if (loginRoleCreated) {
-        await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
+        // dropping the role also drops its membership in the runtime role
         await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
       }
     } finally {

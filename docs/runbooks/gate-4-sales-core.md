@@ -87,7 +87,7 @@ O gate `stock-property` (`packages/db/scripts/verify-stock-property-gate.ts`, na
 
 | Quando | Sequências | Tempo |
 | --- | --- | --- |
-| Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 3 fixas | cerca de 10 s |
+| Todo PR (`gates:ci`) | 20 sorteadas, o padrão, mais as 3 fixas | de 10 a 13 s |
 | Execução longa | `POLARIS_PROPERTY_RUNS=500` (máximo 2000, o que cabe nos 30 min em que o executor para um gate) | cerca de 5 min |
 
 A execução longa não tem job: nenhum workflow novo foi criado, e um agendamento semanal fica com quem altera `.github/workflows`. Rode à mão num banco descartável (como em [Passos](#passos)), em PR que mude estoque, venda, devolução ou cancelamento e antes de cada prova de release:
@@ -98,7 +98,7 @@ A execução longa não tem job: nenhum workflow novo foi criado, e um agendamen
 
     CI=true POLARIS_PROPERTY_SEED=<semente> POLARIS_PROPERTY_PATH=<caminho> bun scripts/run-gates.ts stock-property
 
-Um erro de infraestrutura (banco fora do ar, organização que não se cria) não é tratado como contraexemplo: o gate para sem encolher e mostra o erro.
+Uma falha ao preparar uma sequência (banco fora do ar, organização ou produto que não se cria) não é tratada como contraexemplo: o gate para sem encolher e mostra o erro. Uma queda no meio de uma sequência ainda aparece como resultado `sql:...` ou `error:...` de um comando e é encolhida como uma falha comum.
 
 **Prova por quebra** (20/10/2026, local, descartada; semente 20261020):
 
