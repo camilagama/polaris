@@ -12,7 +12,10 @@ import {
   reconcileRemovedMedia,
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
-import { runBillingMaintenance } from "../src/server/billing/maintenance";
+import {
+  runBillingMaintenance,
+  runUnclaimedTrialSettlement,
+} from "../src/server/billing/maintenance";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import { createRequesterReader } from "../src/server/privacy/data-export-reader";
 import { runPrivacyMaintenance } from "../src/server/privacy/maintenance";
@@ -113,7 +116,10 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
   return finished(failures);
 }
 
-/** Applies the events that were received but not processed, then what time itself causes. */
+/**
+ * Applies the events that were received but not processed, then what time itself
+ * causes, then settles the trials no reservation paid for (ADR 0101).
+ */
 async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
   if (!connectionString) {
@@ -127,18 +133,28 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   } catch (error: unknown) {
     return finished([error]);
   }
+  const failures: unknown[] = [];
   try {
     const report = await runBillingMaintenance(store);
     logger.info("billing_maintenance_complete", {
       retry: { ...report.retry },
       sweep: { ...report.sweep },
     });
-    return finished([]);
   } catch (error: unknown) {
-    return finished([error]);
+    failures.push(error);
+  }
+  try {
+    // after the retry pass, which is what leaves an unclaimed trial past its retries
+    const settled = await runUnclaimedTrialSettlement(env, store);
+    if (settled) {
+      logger.info("billing_unclaimed_trials_complete", { ...settled });
+    }
+  } catch (error: unknown) {
+    failures.push(error);
   } finally {
     await quietly(() => store.close());
   }
+  return finished(failures);
 }
 
 /** The data export job (ADR 0078) on a connection the caller owns; the hourly run and the queue consumer share it. */

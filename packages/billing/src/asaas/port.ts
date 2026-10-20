@@ -73,7 +73,7 @@ function checkoutBody(
   reference: string,
   urls: CheckoutReturnUrls
 ): string {
-  if (input.payer.taxId !== undefined) {
+  if (input.payer?.taxId !== undefined) {
     // the card path never takes a tax ID (ADR 0101): only Pix Automático needs one
     throw new TypeError("tax_id_not_accepted_for_card");
   }

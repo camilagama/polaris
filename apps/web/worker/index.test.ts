@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   runDataExports: vi.fn(),
   runOrganizationPurges: vi.fn(),
   runPrivacyMaintenance: vi.fn(),
+  runUnclaimedTrialSettlement: vi.fn(),
 }));
 
 vi.mock("@polaris/db/auth-login-lock-maintenance", () => ({
@@ -61,6 +62,7 @@ vi.mock("../src/server/media-reconciler", () => ({
 }));
 vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
+  runUnclaimedTrialSettlement: mocks.runUnclaimedTrialSettlement,
 }));
 
 const { default: worker } = await import("./index");
@@ -107,6 +109,7 @@ describe("the scheduled maintenance", () => {
     mocks.reconcileStagedMedia.mockResolvedValue({});
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
+    mocks.runUnclaimedTrialSettlement.mockResolvedValue(null);
     mocks.createPrivacyMaintenanceClient.mockReturnValue({
       close: mocks.privacyClose,
     });
@@ -202,6 +205,29 @@ describe("the scheduled maintenance", () => {
 
     expect(mocks.createBillingStore).not.toHaveBeenCalled();
     expect(mocks.runBillingMaintenance).not.toHaveBeenCalled();
+  });
+
+  it("settles the unclaimed trials after the maintenance, even when the maintenance failed", async () => {
+    mocks.runBillingMaintenance.mockRejectedValue(
+      new Error("billing_maintenance_incomplete")
+    );
+
+    await expect(runScheduled(configured)).rejects.toThrow(
+      "billing_maintenance_incomplete"
+    );
+    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed settling of the unclaimed trials", async () => {
+    mocks.runUnclaimedTrialSettlement.mockRejectedValue(
+      new Error("billing_unclaimed_trials_incomplete")
+    );
+
+    await expect(runScheduled(configured)).rejects.toThrow(
+      "billing_unclaimed_trials_incomplete"
+    );
+    expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
   });
 
   it("does not let a connection that fails to close replace what the job found", async () => {

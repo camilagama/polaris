@@ -284,6 +284,10 @@ import {
   createInitialOrganization,
 } from "../use-cases/create-initial-organization";
 import { pingSystem } from "../use-cases/system-ping";
+import {
+  type BillingRpcOverrides,
+  createBillingRpcHandlers,
+} from "./billing-handlers";
 import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createDataExportRpcHandlers } from "./data-export-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
@@ -328,6 +332,7 @@ interface RpcRouterDependencies {
   archiveCustomer: typeof archiveCustomer;
   archivePaymentProfile: typeof archivePaymentProfile;
   archiveProduct: typeof archiveProduct;
+  billing: BillingRpcOverrides;
   closureRepository: Partial<ClosureRepository>;
   cancelSale: typeof cancelSale;
   changeSaleCustomerLink: typeof changeSaleCustomerLink;
@@ -1364,6 +1369,11 @@ export function createRpcRouter(
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });
+  const billingHandlers = createBillingRpcHandlers({
+    ...overrides.billing,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
   const planHandlers = createPlanRpcHandlers({
     planRepository: overrides.planRepository,
     requestAuditId,
@@ -1928,6 +1938,7 @@ export function createRpcRouter(
   );
 
   return implementContract.router({
+    billing: billingHandlers,
     category: { archive, create, delete: remove, list, rename, restore },
     customer: customerHandlers,
     dataExport: dataExportHandlers,

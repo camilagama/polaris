@@ -209,6 +209,14 @@ describe("prepareSubscription", () => {
     expect(body).not.toContain("customerData");
   });
 
+  it("needs no payer at all: the card command sends none", async () => {
+    const { calls, fetch } = fakeAsaas(checkoutCreated);
+    const { payer: _payer, ...withoutPayer } = input();
+    const prepared = await portWith(fetch).prepareSubscription(withoutPayer);
+    expect(prepared.providerRef).toBe(CHECKOUT_ID);
+    expect(calls).toHaveLength(1);
+  });
+
   it("refuses a payer with a tax ID before calling fetch", async () => {
     const { calls, fetch } = fakeAsaas(checkoutCreated);
     await expect(

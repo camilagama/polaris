@@ -1096,6 +1096,16 @@ const bootstrapPageOutput = z.discriminatedUnion("collection", [
 
 export type BootstrapPageReadModel = z.infer<typeof bootstrapPageOutput>;
 
+/** The Pro cycles the checkout may offer; a cycle with no active price is refused by the server. */
+export const billingStartCheckoutInput = z
+  .object({
+    cycleMonths: z.union([z.literal(1), z.literal(6), z.literal(12)]),
+    method: z.literal("card"),
+    organizationId: z.string().trim().min(1),
+    trial: z.boolean(),
+  })
+  .strict();
+
 export const polarisContract = {
   category: {
     archive: oc
@@ -1417,6 +1427,22 @@ export const polarisContract = {
         })
       )
       .output(z.object({ unpublished: z.number().int().nonnegative() })),
+  },
+  billing: {
+    // Starts the Pro subscription at the payment provider (ADR 0101): the
+    // provider's hosted page, where the payer types the card. Only the owner
+    // (`billing:manage`); the organization is the server's. The input is strict:
+    // a card number, a tax ID or any other key is refused, because the card path
+    // sends Polaris nothing of the payer. The price, the dates and the return
+    // URLs are the server's. The link is the payer's alone and is never logged.
+    startCheckout: oc.input(billingStartCheckoutInput).output(
+      z.object({
+        handoff: z.object({
+          kind: z.literal("redirect"),
+          url: z.string().url(),
+        }),
+      })
+    ),
   },
   plan: {
     // Where the organization stands against the Free variant limit and which

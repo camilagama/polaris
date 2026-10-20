@@ -61,11 +61,11 @@ export interface PrepareSubscriptionInput {
   /** The day of the first charge, `AAAA-MM-DD` in America/Sao_Paulo (the end of the trial, or today). */
   firstChargeOn: string;
   /**
-   * The payer, never stored by Polaris. The card checkout sends none of it (the
+   * The payer, never stored by Polaris. The card checkout takes none of it (the
    * payer types it on the provider's page) and refuses a tax ID; Pix
    * Automático needs the name, the CPF or CNPJ and the e-mail.
    */
-  payer: { email: string; name: string; taxId?: string };
+  payer?: { email: string; name: string; taxId?: string };
 }
 
 export type CheckoutHandoff =
