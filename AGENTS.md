@@ -24,6 +24,7 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - packages/domain contém TypeScript independente de framework. Não importar React, Hono, oRPC, Drizzle, Cloudflare, Better Auth, providers, logging ou DB nesse pacote.
 - packages/contracts descreve contratos de transporte e não importa banco nem driver.
 - Ao mudar imports, packages ou dependências, executar **bun run boundaries** e **bun run knip**.
+- Dependência nova em `apps/web` entra pela lista de `apps/web/scripts/ui-supply-chain.ts` (versão exata nos pacotes de interface; fechamento das transitivas em `apps/web/ui-dependency-closure.txt`, que se atualiza com `UI_CLOSURE_UPDATE=1`). `trustedDependencies` fica vazio, `apps/web/src/ui/` não aceita `<style`, `innerHTML` nem pacote fora da lista, e segredo não entra no passo de `bun install` nem no de build dos workflows ([ADR 0103](docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md)).
 - Em operações tenant, autenticar o usuário, verificar membership e capability e usar contexto de organização definido pelo servidor dentro da transação.
 - O ID de organização enviado pelo cliente é contexto solicitado, nunca prova de autorização.
 
