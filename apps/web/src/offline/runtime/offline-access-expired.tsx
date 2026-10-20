@@ -18,8 +18,10 @@ import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
  */
 export const ACCESS_EXPIRED_TITLE = "O acesso sem internet venceu";
 // Not "72 horas": the lease is renewed only in its last 12 hours, so the device may have been offline for less.
-export const ACCESS_EXPIRED_BODY =
-  "Este aparelho ficou muito tempo sem se conectar à internet. Conecte-se para continuar.";
+export const ACCESS_EXPIRED_BODY_ONLINE =
+  "Este aparelho ficou muito tempo sem se conectar à internet.";
+/** Offline the body also says what to do; with internet the person is already connected, so "Conecte-se" would mislead. */
+export const ACCESS_EXPIRED_BODY = `${ACCESS_EXPIRED_BODY_ONLINE} Conecte-se para continuar.`;
 export const ACCESS_RENEWING = "Conexão de volta. Renovando o acesso…";
 /** Only when the access ended with the app open: the page that was on the screen is gone, and so is what was typed in it. */
 export const ACCESS_SALE_NOT_KEPT =
@@ -29,7 +31,7 @@ export const ACCESS_RETURNS_BY_ITSELF =
 export const ACCESS_RENEW_FAILED =
   "Há internet, mas não conseguimos renovar o acesso agora. Vamos tentar de novo em instantes.";
 export const ACCESS_RENEW_REFUSED =
-  "Não conseguimos renovar o acesso deste aparelho. Feche e abra o app com internet. Se continuar, fale com o suporte.";
+  "Não conseguimos renovar o acesso deste aparelho. Feche e abra o app com internet.";
 export const ACCESS_RETRY = "Tentar agora";
 export const ACCESS_RENEWED = "Acesso renovado.";
 /** How long "Acesso renovado." stays on the page. */
@@ -92,7 +94,9 @@ export function OfflineAccessExpiredView({
       tabIndex={-1}
     >
       <h1 id="offline-access-expired-title">{ACCESS_EXPIRED_TITLE}</h1>
-      <p>{ACCESS_EXPIRED_BODY}</p>
+      <p>
+        {snapshot.online ? ACCESS_EXPIRED_BODY_ONLINE : ACCESS_EXPIRED_BODY}
+      </p>
       {snapshot.expiredWhileOpen ? <p>{ACCESS_SALE_NOT_KEPT}</p> : null}
       <p data-testid="offline-access-expired-queue">
         {storedOperationsText(storedOperations(snapshot))}

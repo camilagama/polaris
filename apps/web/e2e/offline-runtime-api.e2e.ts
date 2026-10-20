@@ -726,7 +726,15 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
         exact: false,
       })
     ).toHaveCount(0);
-    // online but the server does not answer: it says so and offers another try
+    // online but the server does not answer: the chip and the body do not ask for a connection that is already there
+    await expect(chip(page)).toContainText("Sem acesso");
+    await expect(
+      page.getByText(
+        "Este aparelho ficou muito tempo sem se conectar à internet.",
+        { exact: true }
+      )
+    ).toBeVisible();
+    // it says so and offers another try
     await expect(
       page.getByText(
         "Há internet, mas não conseguimos renovar o acesso agora. Vamos tentar de novo em instantes."

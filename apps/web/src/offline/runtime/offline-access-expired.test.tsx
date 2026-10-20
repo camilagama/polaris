@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   ACCESS_EXPIRED_BODY,
+  ACCESS_EXPIRED_BODY_ONLINE,
   ACCESS_EXPIRED_TITLE,
   ACCESS_RENEW_FAILED,
   ACCESS_RENEW_REFUSED,
@@ -84,6 +85,7 @@ describe("the notice of the offline access that expired", () => {
     const texts = [
       ACCESS_EXPIRED_TITLE,
       ACCESS_EXPIRED_BODY,
+      ACCESS_EXPIRED_BODY_ONLINE,
       ACCESS_RENEWING,
       ACCESS_SALE_NOT_KEPT,
       ACCESS_RETURNS_BY_ITSELF,
@@ -96,10 +98,51 @@ describe("the notice of the offline access that expired", () => {
       storedOperationsText(2),
       syncStatusLabel(snapshot()).text,
       syncStatusLabel(snapshot()).short,
+      syncStatusLabel(snapshot({ online: true })).short,
     ];
     for (const text of texts) {
       expect(text).not.toMatch(TECHNICAL);
     }
+  });
+
+  it("offline: the body asks to connect; with internet it only says what happened", () => {
+    expect(ACCESS_EXPIRED_BODY).toBe(
+      "Este aparelho ficou muito tempo sem se conectar à internet. Conecte-se para continuar."
+    );
+    expect(ACCESS_EXPIRED_BODY_ONLINE).toBe(
+      "Este aparelho ficou muito tempo sem se conectar à internet."
+    );
+    const offline = renderToStaticMarkup(
+      <OfflineAccessExpiredView snapshot={snapshot({ online: false })} />
+    );
+    expect(offline).toContain("Conecte-se para continuar.");
+    for (const overrides of [
+      { online: true },
+      { online: true, syncing: true },
+      { online: true, renewalRefused: true },
+    ]) {
+      const html = renderToStaticMarkup(
+        <OfflineAccessExpiredView snapshot={snapshot(overrides)} />
+      );
+      expect(html).toContain(ACCESS_EXPIRED_BODY_ONLINE);
+      expect(html).not.toContain("Conecte-se");
+    }
+  });
+
+  it("the final refusal does not send the person to a support channel the app does not have", () => {
+    expect(ACCESS_RENEW_REFUSED).toBe(
+      "Não conseguimos renovar o acesso deste aparelho. Feche e abra o app com internet."
+    );
+    expect(ACCESS_RENEW_REFUSED.toLowerCase()).not.toContain("suporte");
+  });
+
+  it("with internet the chip says 'Sem acesso' (not 'Conecte-se'), and the long text does not change", () => {
+    expect(syncStatusLabel(snapshot({ online: true }))).toEqual({
+      attention: false,
+      short: "Sem acesso",
+      text: "O acesso sem internet venceu",
+      tone: "offline",
+    });
   });
 
   it("the header chip says the access expired", () => {
