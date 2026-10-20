@@ -640,7 +640,15 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
 test("a entrada carrega o desafio sob a CSP do _headers, sem violação (AC-7)", async ({
   page,
 }) => {
-  const server = newServer();
+  // a refused sign-in: the page stays, for the next check
+  const server = newServer({
+    answers: {
+      "/api/auth/sign-in/email": {
+        body: { code: "INVALID_EMAIL_OR_PASSWORD" },
+        status: 401,
+      },
+    },
+  });
   await serve(page, server);
   const violations: string[] = [];
   page.on("console", (message) => {
@@ -674,7 +682,10 @@ test("a entrada carrega o desafio sob a CSP do _headers, sem violação (AC-7)",
   expect(violations.filter((text) => CSP_VIOLATION.test(text))).toEqual([]);
 
   // `/entrar/` would not match its rule in `_headers`: the app goes to the exact path first
-  await page.goto("/redefinir-senha/?x=1#token=abc");
+  // the page replaces itself at once: the navigation ends the context of the call, which is expected
+  await page
+    .evaluate(() => window.location.assign("/redefinir-senha/?x=1#token=abc"))
+    .catch(() => undefined);
   await expect(page).toHaveURL(RESET_EXACT);
   await expect(newPasswordField(page)).toBeVisible();
 
