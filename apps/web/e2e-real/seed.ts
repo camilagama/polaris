@@ -1,10 +1,41 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { PolarisRpcClient } from "@polaris/contracts";
+import { uuidV5 } from "./journey-names";
 
 /**
  * The starting data of a journey, through the Worker's own commands (the same `/rpc` the screens call), never
  * by SQL: ledger, snapshot and RLS apply to it like to anything the user does.
  */
+
+const seedPattern = /^[a-f0-9]{16}$/;
+
+/**
+ * The seed of the command ids: `E2E_SEED` (16 lowercase hex digits) reproduces them; without it the global setup
+ * draws one for the run. The fixtures print it when a test fails.
+ */
+export function commandSeed(): string {
+  const given = process.env.E2E_SEED;
+  if (given !== undefined && !seedPattern.test(given)) {
+    throw new Error("E2E_SEED must be 16 hexadecimal digits (lowercase).");
+  }
+  process.env.E2E_SEED = given ?? randomBytes(8).toString("hex");
+  return process.env.E2E_SEED;
+}
+
+let scope = "";
+let issued = 0;
+
+/** Starts the ids of one test attempt (the journey name): the same seed and scope give the same ids, in order. */
+export function startCommandIds(name: string): void {
+  scope = name;
+  issued = 0;
+}
+
+/** The next `commandId`: a UUID v5 of the seed, the scope and a counter, never `randomUUID()`. */
+export function nextCommandId(): string {
+  issued += 1;
+  return uuidV5(`${commandSeed()}/${scope}/${issued}`);
+}
 
 export interface SeededVariant {
   productId: string;
@@ -48,7 +79,7 @@ export async function seedStock(
   occurredOn: string
 ): Promise<void> {
   await rpc.inventory.receiveStock({
-    commandId: randomUUID(),
+    commandId: nextCommandId(),
     commandVersion: 1,
     occurredOn,
     organizationId,
@@ -66,7 +97,7 @@ export async function seedCashSale(
 ): Promise<string> {
   const result = await rpc.sale.confirm({
     adjustments: [],
-    commandId: randomUUID(),
+    commandId: nextCommandId(),
     commandVersion: 1,
     items: items.map((item) => ({
       chargedUnitPrice: item.price,

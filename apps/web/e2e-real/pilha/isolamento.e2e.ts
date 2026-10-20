@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
 import { localDate } from "../calendar";
 import {
@@ -14,7 +13,7 @@ import {
   ownerDatabaseUrl,
   runConnectionString,
 } from "../run-environment";
-import { seedCashSale, seedProduct, seedStock } from "../seed";
+import { nextCommandId, seedCashSale, seedProduct, seedStock } from "../seed";
 
 const REFUSAL_CODE = /^(FORBIDDEN|NOT_FOUND)$/;
 
@@ -117,7 +116,7 @@ test("o usuário A não lê dados da organização B pela /rpc, com os ids reais
       // biome-ignore lint/performance/noAwaitInLoops: two refusals, one after the other
       await refusedWith(
         stranger.rpc.sale.cancel({
-          commandId: randomUUID(),
+          commandId: nextCommandId(),
           commandVersion: 1,
           organizationId,
           saleId,

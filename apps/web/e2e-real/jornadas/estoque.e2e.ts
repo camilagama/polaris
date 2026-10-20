@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { localDate } from "../calendar";
 import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
-import { seedProduct } from "../seed";
+import { nextCommandId, seedProduct } from "../seed";
 
 // a refusal of the rule, not a lost session, a network error or a crash of the server
 const BUSINESS_REFUSAL =
@@ -82,7 +81,7 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
   expect(
     await refusedWith(
       journey.user.rpc.inventory.writeOffStock({
-        commandId: randomUUID(),
+        commandId: nextCommandId(),
         commandVersion: 1,
         occurredOn: localDate(runT0(), ZONE),
         organizationId,

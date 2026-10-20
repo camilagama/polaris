@@ -19,6 +19,7 @@ import {
   ownerDatabaseUrl,
   runDatabaseName,
 } from "./run-environment";
+import { commandSeed, startCommandIds } from "./seed";
 
 /**
  * The fixture of the journeys (T-125a): one user, one organization and one browser context per test and attempt.
@@ -191,8 +192,21 @@ export async function openJourney(
 export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
   contexts: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright fixtures need the object pattern as first argument
-    async ({}, use) => {
+    async ({}, use, testInfo) => {
+      // the command ids of this attempt come from the seed: printed on failure, `E2E_SEED` reproduces them
+      startCommandIds(
+        `${testInfo.project.name}/${testInfo.titlePath.join("/")}/t${testInfo.retry}`
+      );
       await use(undefined);
+      if (testInfo.status !== testInfo.expectedStatus) {
+        console.error(
+          `E2E_SEED=${commandSeed()} reproduces the command ids of this attempt.`
+        );
+        testInfo.annotations.push({
+          description: commandSeed(),
+          type: "E2E_SEED",
+        });
+      }
       await Promise.all(
         openContexts.splice(0).map((context) => context.close())
       );
