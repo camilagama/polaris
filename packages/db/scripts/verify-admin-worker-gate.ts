@@ -36,12 +36,15 @@ const VITEST_TIMEOUT_MS = 5 * 60_000;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const failureLine =
   /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
+const KNOWN_DEFECT_LINE = "known defect, not failing";
 const lineBreak = /\r?\n/;
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
 interface RunResult {
   code: number;
   digest: string[];
+  /** How many times the config let the known billing-pool error through (vitest.admin-worker.config.ts). */
+  knownDefects: number;
 }
 
 /** Runs the Vitest project and keeps the lines that say what failed (the runner prints only the last lines of a gate). */
@@ -85,6 +88,8 @@ function runVitest(environment: Record<string, string>): Promise<RunResult> {
       resolve({
         code: code ?? 1,
         digest: lines.filter((line) => failureLine.test(line)).slice(-30),
+        knownDefects: lines.filter((line) => line.includes(KNOWN_DEFECT_LINE))
+          .length,
       });
     });
   });
@@ -258,6 +263,12 @@ async function run() {
       }
       throw new Error(
         "The Admin Worker suite failed inside workerd (the lines above)."
+      );
+    }
+    if (result.knownDefects > 0) {
+      // goes into the final JSON of the runner, passed or not: the defect stays visible until it is fixed
+      console.log(
+        `gate-note: the billing store's pool left ${result.knownDefects} unhandled socket error(s) after billing commands (known defect of the Admin, not fixed by this gate)`
       );
     }
     tests.push(
