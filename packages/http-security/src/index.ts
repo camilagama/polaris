@@ -7,6 +7,10 @@
  * - `app-shell`: the single-page app of apps/web (index.html, JS, CSS, the worker script). It is served
  *   by Workers Static Assets, which never runs the Worker, so the same headers are also rendered into
  *   `public/_headers` by `renderStaticHeadersFile` and a test keeps the file equal to the render.
+ * - `auth-entry`: the same shell on the sign-in pages that show the Cloudflare Turnstile challenge (ADR 0100).
+ *   Exactly two differences from `app-shell`: `script-src` takes the Turnstile origin and `frame-src` opens
+ *   to it (the widget is an iframe); nothing else changes. Rendered into `public/_headers` for
+ *   `AUTH_ENTRY_PATHS` only, so no other page of the app may load a third-party script.
  * - `api`: JSON and file answers of the Worker of apps/web. Nothing is ever loaded from them.
  * - `admin`: the Admin Worker. Like `api`, with no referrer at all (the host is behind Cloudflare Access).
  * - `public-document`: the HTML of the public catalog, rendered on the server. Its hydration scripts are
@@ -23,6 +27,7 @@ export type SecurityProfile =
   | "admin"
   | "api"
   | "app-shell"
+  | "auth-entry"
   | "public-document"
   | "public-media";
 
@@ -54,6 +59,20 @@ export interface SecurityHeaderSet {
 type Directives = ReadonlyArray<readonly [string, readonly string[]]>;
 
 const SELF = "'self'";
+/** The one origin of the Turnstile script and of its iframe. */
+export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+
+/**
+ * The pages that show the challenge (sign in, create an account, forgotten password, new password and the
+ * verification resend). `/desbloquear`, `/aceite`, the legal pages and the change of password have none.
+ */
+export const AUTH_ENTRY_PATHS = [
+  "/entrar",
+  "/criar-conta",
+  "/esqueci-a-senha",
+  "/redefinir-senha",
+  "/confirmar-email",
+] as const;
 const NONE = "'none'";
 
 // a host name of at least two labels whose last one starts with a letter (an IP address is not one)
@@ -108,6 +127,20 @@ function appShellPolicy(connect: readonly string[], img: readonly string[]) {
     ["form-action", [SELF]],
     ["frame-ancestors", [NONE]],
   ] satisfies Directives;
+}
+
+/** The shell with the challenge: its script and its iframe, and not one source more. */
+function authEntryPolicy(connect: readonly string[], img: readonly string[]) {
+  return appShellPolicy(connect, img).flatMap(([directive, sources]) =>
+    directive === "script-src"
+      ? [[directive, [...sources, TURNSTILE_ORIGIN]] as const]
+      : directive === "connect-src"
+        ? [
+            [directive, sources] as const,
+            ["frame-src", [TURNSTILE_ORIGIN]] as const,
+          ]
+        : [[directive, sources] as const]
+  ) satisfies Directives;
 }
 
 /** A response that is data, not a page: it may load nothing and cannot be framed or submit forms. */
@@ -166,6 +199,9 @@ function policyFor(
   }
   if (profile === "app-shell") {
     return serialize(appShellPolicy(connect, img));
+  }
+  if (profile === "auth-entry") {
+    return serialize(authEntryPolicy(connect, img));
   }
   if (connect.length > 0 || img.length > 0) {
     throw new Error(`${profile} loads nothing: it takes no sources`);
@@ -227,6 +263,9 @@ export function defaultCacheControl(profile: SecurityProfile): string | null {
 /**
  * The content of `public/_headers` of apps/web, which Workers Static Assets applies to the shell (the
  * Worker does not run for it). A test fails when the committed file differs from this text.
+ *
+ * The rules of `_headers` add up, and a page under two policies obeys both (the widget would be blocked),
+ * so each sign-in page first detaches (`!`) the policy of `/*` and then sets its own.
  */
 export function renderStaticHeadersFile(
   options: SecurityHeadersOptions = {}
@@ -241,6 +280,13 @@ export function renderStaticHeadersFile(
     ...Object.entries(securityHeaders("app-shell", options)).map(
       ([name, value]) => `  ${name}: ${value}`
     ),
+    "",
+    "# The sign-in pages with the Turnstile challenge (ADR 0100): the policy of /* is detached, then replaced.",
+    ...AUTH_ENTRY_PATHS.flatMap((path) => [
+      path,
+      "  ! Content-Security-Policy",
+      `  Content-Security-Policy: ${policyFor("auth-entry", options)}`,
+    ]),
     "",
     "# The service worker script is always revalidated, so a new build is found at once.",
     "/sw.js",

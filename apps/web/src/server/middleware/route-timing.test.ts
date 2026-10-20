@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEnv } from "../environment";
 import { requestIdMiddleware } from "./request-id";
 import { routeTimingMiddleware } from "./route-timing";

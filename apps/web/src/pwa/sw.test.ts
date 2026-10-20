@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { AUTH_ENTRY_PATHS as HEADERS_AUTH_ENTRY_PATHS } from "@polaris/http-security";
 import { transformWithEsbuild } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import { buildId, precacheList } from "../../pwa/service-worker-plugin";
 import {
+  AUTH_ENTRY_PATHS,
   cachesToDelete,
   isSkipWaitingMessage,
   routeFor,
@@ -281,7 +283,7 @@ describe("the worker as the browser runs it", () => {
     await worker.run("install", {});
     const cache = worker.stores.get(shellCacheName(build));
     expect([...(cache?.keys() ?? [])].sort()).toEqual(
-      ["/", "/assets/index-BBB.js"].sort()
+      ["/", "/assets/index-BBB.js", "/entrar"].sort()
     );
     expect(worker.skipWaiting).not.toHaveBeenCalled();
   });
@@ -301,6 +303,31 @@ describe("the worker as the browser runs it", () => {
     expect(await worker.run("fetch", { request: navigate })).toEqual({
       body: "net:/",
     });
+  });
+
+  it("opens a sign-in page offline from its own copy, which carries the challenge policy (ADR 0100)", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    worker.network.online = false;
+    for (const path of ["/entrar", "/redefinir-senha", "/confirmar-email/"]) {
+      expect(
+        await worker.run("fetch", {
+          request: { method: "GET", mode: "navigate", url: `${origin}${path}` },
+        })
+      ).toEqual({ body: "net:/entrar" });
+    }
+    // the unlock page and the rest of the app keep the shell of /
+    for (const path of ["/desbloquear", "/conta/seguranca"]) {
+      expect(
+        await worker.run("fetch", {
+          request: { method: "GET", mode: "navigate", url: `${origin}${path}` },
+        })
+      ).toEqual({ body: "net:/" });
+    }
+  });
+
+  it("lists the same sign-in pages as the headers file", () => {
+    expect([...AUTH_ENTRY_PATHS]).toEqual([...HEADERS_AUTH_ENTRY_PATHS]);
   });
 
   it("serves precached files from the cache and leaves everything else to the network untouched", async () => {

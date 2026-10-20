@@ -301,9 +301,9 @@ describe("Resend authentication email delivery", () => {
 describe("the layout of the e-mails with a link token", () => {
   // tokens of the real size: a verification JWT, a reset token and an unlock token (`<user>.<32 bytes>`)
   const links = {
+    reset: `https://polaris.example.invalid/redefinir-senha#token=${"r".repeat(24)}`,
     unlock: `https://polaris.example.invalid/desbloquear#token=${"u".repeat(32)}.${"A".repeat(43)}`,
     verification: `https://polaris.example.invalid/confirmar-email#token=${"e".repeat(36)}.${"J".repeat(180)}.${"s".repeat(43)}`,
-    reset: `https://polaris.example.invalid/redefinir-senha#token=${"r".repeat(24)}`,
   };
 
   it("breaks the fallback link anywhere and gives the button a 14 px padding, in the three e-mails", async () => {
