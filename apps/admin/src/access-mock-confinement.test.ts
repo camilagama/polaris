@@ -19,12 +19,24 @@ const MARKERS = [
   "polaris-test.cloudflareaccess.com",
   "polaris-down.cloudflareaccess.com",
   "workerd-access",
+  "signAccessToken",
+  "TEST_FIXTURE",
+  "POLARIS_ADMIN_WORKER_",
   "outboundService",
+];
+/** What the deployed bundle must not carry; the generic words are left out (a dependency may say "vitest" in a comment). */
+const BUNDLE_MARKERS = [
+  "TEST_ACCESS_",
+  "TEST_FIXTURE",
+  "cloudflare:test",
+  "polaris-test.cloudflareaccess.com",
+  "signAccessToken",
+  "workerd-access",
 ];
 
 /** The files that may name a marker: the test configuration and the tests. Nothing a deploy reads is here. */
 const ALLOWED = [
-  /^apps\/admin\/vitest\.workers(-db)?\.config\.ts$/,
+  /^apps\/[\w-]+\/vitest\.workers(-db)?\.config\.ts$/,
   /^apps\/admin\/src\/workerd-access\.ts$/,
   /^apps\/admin\/src\/workerd(-db)?-env\.d\.ts$/,
   /^apps\/admin\/src\/[\w-]+\.workerd(-db)?\.test\.ts$/,
@@ -41,7 +53,8 @@ const SKIPPED_DIRECTORIES = new Set([
   "node_modules",
 ]);
 const TEST_OR_SIMULATION_FILE = /\.test\.ts$|workerd/;
-const BYPASS_FLAG = /\b(BYPASS|SKIP_AUTH|DISABLE_AUTH|NO_AUTH)\w*/i;
+const BYPASS_FLAG =
+  /\b(SKIP_?AUTH|DISABLE_?AUTH|NO_?AUTH|AUTH_?BYPASS|BYPASS_?AUTH|DEV_?AUTH)\w*/i;
 const TEXT_FILE = /\.(c|m)?(j|t)sx?$|\.jsonc?$|\.ya?ml$|\.toml$|\.sh$|\.md$/;
 
 function walk(directory: string): string[] {
@@ -180,11 +193,44 @@ describe("the simulated Access stays in the test configuration", () => {
     });
 
     it("reads no variable that skips the verification of the token", () => {
-      const worker = graph.get(join(adminSrc, "worker.ts")) ?? "";
-      const app = graph.get(join(adminSrc, "app.ts")) ?? "";
       // the only Access inputs are the two the wrangler file names; nothing like a bypass flag exists
-      expect(worker + app).not.toMatch(BYPASS_FLAG);
-      expect(worker).toContain("verifyAccessJwt(");
+      for (const [file, text] of graph) {
+        expect(text, relative(adminSrc, file)).not.toMatch(BYPASS_FLAG);
+      }
+      expect(graph.get(join(adminSrc, "worker.ts"))).toContain(
+        "verifyAccessJwt("
+      );
+    });
+  });
+
+  describe("the deployable artifact and the app directory", () => {
+    const dist = join(root, "apps/admin/dist");
+    let built: string[] = [];
+    try {
+      built = readdirSync(dist).filter((name) => name.endsWith(".js"));
+    } catch {
+      // not built yet: `bun run build` runs before the tests in CI, and the check then has a bundle to read
+    }
+
+    it.skipIf(built.length === 0)(
+      "has a bundle (made by `wrangler deploy --dry-run`) without the simulation",
+      () => {
+        for (const name of built) {
+          const text = readFileSync(join(dist, name), "utf8");
+          for (const marker of BUNDLE_MARKERS) {
+            expect(text.includes(marker), `${name} carries ${marker}`).toBe(
+              false
+            );
+          }
+        }
+      }
+    );
+
+    it("has no local variables file that a deploy or a local run could read", () => {
+      const variableFiles = readdirSync(join(root, "apps/admin")).filter(
+        (name) => name.startsWith(".dev.vars") || name.startsWith(".env")
+      );
+      expect(variableFiles).toEqual([]);
     });
   });
 });

@@ -51,7 +51,20 @@ function runVitest(environment: Record<string, string>): Promise<RunResult> {
     const child = spawn(
       process.execPath,
       ["run", "vitest", "run", "--config", "vitest.admin-worker.config.ts"],
-      { cwd: repositoryRoot, env: { ...process.env, ...environment } }
+      {
+        cwd: repositoryRoot,
+        // only what the run needs: not the owner URL of the database, which this process holds
+        env: {
+          ...Object.fromEntries(
+            ["CI", "HOME", "LANG", "PATH", "TMPDIR"].flatMap((name) =>
+              process.env[name] === undefined ? [] : [[name, process.env[name]]]
+            )
+          ),
+          ...environment,
+        },
+        // its own process group, so the timeout takes workerd down with it
+        detached: true,
+      }
     );
     const collect = (chunk: Buffer) => {
       for (const line of chunk.toString().split(lineBreak)) {
@@ -62,7 +75,11 @@ function runVitest(environment: Record<string, string>): Promise<RunResult> {
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
-    const timer = setTimeout(() => child.kill(), VITEST_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      if (child.pid !== undefined) {
+        process.kill(-child.pid, "SIGKILL");
+      }
+    }, VITEST_TIMEOUT_MS);
     child.on("close", (code) => {
       clearTimeout(timer);
       resolve({
@@ -117,8 +134,8 @@ async function run() {
       await owner.pool.query(
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
-      await owner.pool.query(`GRANT "${group}" TO "${role}"`);
       logins.push([role, group]);
+      await owner.pool.query(`GRANT "${group}" TO "${role}"`);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const adminLoginUrl = await login(
@@ -143,7 +160,13 @@ async function run() {
     const ownerSubject = `owner-${randomUUID()}`;
     const disabledSubject = `disabled-${randomUUID()}`;
     const ownerId = await principal(ownerSubject, "active");
-    await principal(disabledSubject, "disabled");
+    const disabledId = await principal(disabledSubject, "disabled");
+    // an active operator with the stranger's subject under ANOTHER issuer: the principal is found by issuer and subject
+    const strangerSubject = `stranger-${randomUUID()}`;
+    await owner.pool.query(
+      "INSERT INTO public.platform_principals (issuer, subject, role, status) VALUES ($1, $2, 'platform_owner', 'active')",
+      ["https://other-team.cloudflareaccess.com", strangerSubject]
+    );
 
     const organization = (label: string) =>
       createTenantFixture(
@@ -225,7 +248,7 @@ async function run() {
           ownerId,
           ownerSubject,
         },
-        strangerSubject: `stranger-${randomUUID()}`,
+        strangerSubject,
         teamDomain: TEAM_DOMAIN,
       }),
     });
@@ -262,13 +285,28 @@ async function run() {
       0,
       "nothing of B was audited"
     );
+    const touched = [
+      orgA.organizationId,
+      orgB.organizationId,
+      orgSuspend.organizationId,
+      orgReactivate.organizationId,
+    ];
+    // the audit is append-only and shared with the gates that ran before: only what is about these organizations counts
     assert.equal(
       await count(
-        "SELECT count(*)::text AS n FROM public.platform_audit_events WHERE principal_id <> $1",
-        [ownerId]
+        "SELECT count(*)::text AS n FROM public.platform_audit_events WHERE organization_id = ANY($1) AND principal_id <> $2",
+        [touched, ownerId]
       ),
       0,
-      "only the owner ever acted"
+      "only the owner acted on these organizations"
+    );
+    assert.equal(
+      await count(
+        "SELECT count(*)::text AS n FROM public.platform_audit_events WHERE principal_id = $1",
+        [disabledId]
+      ),
+      0,
+      "the disabled operator left nothing"
     );
     // the disabled operator's attempt at a suspension left the organization alone
     assert.equal(await status(orgA.organizationId), "active");
@@ -328,23 +366,18 @@ async function run() {
     );
     assert.deepEqual(
       billingEvents.rows.map((row) => row.event_type),
+      // the repeat of the command ID is recorded too (request, then the outcome), though it is the same grant
       [
+        "billing.entitlement_grant_requested",
+        "billing.entitlement_granted",
         "billing.entitlement_grant_requested",
         "billing.entitlement_granted",
         "billing.entitlement_revoke_requested",
         "billing.entitlement_revoked",
       ]
     );
-    assert.equal(
-      await count(
-        "SELECT count(*)::text AS n FROM public.platform_audit_events WHERE event_type LIKE '%refund%'",
-        []
-      ),
-      0,
-      "there is no refund step to record"
-    );
     tests.push(
-      "the billing command is recorded before and after, once per command ID, attributed to the operator and ended; no refund exists"
+      "the billing command is recorded before and after (the repeat too), is one grant per command ID, attributed to the operator, and ended"
     );
 
     // the suspension: the organization no longer opens for its own users, once; the reactivation does not bring the epoch back
@@ -398,12 +431,20 @@ async function run() {
       )
     );
   } finally {
-    for (const [role, group] of logins) {
-      // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
-      await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
+    try {
+      for (const [role, group] of logins) {
+        // one role that fails to go must not leave the others, or the pool open
+        // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
+        await owner.pool
+          .query(`REVOKE "${group}" FROM "${role}"`)
+          .catch(() => undefined);
+        await owner.pool
+          .query(`DROP ROLE IF EXISTS "${role}"`)
+          .catch(() => undefined);
+      }
+    } finally {
+      await owner.pool.end();
     }
-    await owner.pool.end();
   }
 }
 

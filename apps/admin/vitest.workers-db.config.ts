@@ -72,7 +72,10 @@ export default defineProject({
     }),
   ],
   test: {
+    // each request signs a token and opens its own connections (SCRAM) through the local Hyperdrive; a flow makes a dozen
+    hookTimeout: 60_000,
     include: ["src/**/*.workerd-db.test.ts"],
     name: "admin-workerd-db",
+    testTimeout: 60_000,
   },
 });

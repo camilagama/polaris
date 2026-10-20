@@ -176,6 +176,21 @@ describe("workerd harness discovery", () => {
     }
   );
 
+  it("points every Workers project's Hyperdrive through the host guard", () => {
+    for (const { app } of tests) {
+      const files = readdirSync(join(root, "apps", app)).filter((name) =>
+        name.startsWith("vitest.workers")
+      );
+      expect(files.length).toBeGreaterThan(0);
+      for (const file of files) {
+        const text = readFileSync(join(root, "apps", app, file), "utf8");
+        if (text.includes("hyperdrives")) {
+          expect(text, file).toContain("harnessHyperdrives(");
+        }
+      }
+    }
+  });
+
   it("keeps the database project out of `bun run test` and the node project away from both", () => {
     expect(rootConfig).not.toContain("workers-db");
     expect(rootConfig).toContain('"**/*.workerd.test.ts"');

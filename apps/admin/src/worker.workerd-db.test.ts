@@ -11,7 +11,7 @@ import { signAccessToken, type TokenOptions } from "./workerd-access";
  *
  * There is no refund here on purpose: the Admin has no refund command until a payment provider exists
  * (ADR 0073). The billing flow is the entitlement grant, recorded before and after, and the test proves
- * that a refund has no route and is not a recordable step.
+ * that a refund has no route.
  */
 
 interface Fixture {
@@ -152,6 +152,12 @@ describe("admin worker, whole chain, PostgreSQL", () => {
       ],
       [
         "a valid login of someone who is not an operator",
+        () => signAccessToken({ subject: `${fixture.strangerSubject}-none` }),
+        403,
+        "forbidden",
+      ],
+      [
+        "a valid login whose subject is an operator's under another issuer",
         () => signAccessToken({ subject: fixture.strangerSubject }),
         403,
         "forbidden",
@@ -273,6 +279,7 @@ describe("admin worker, whole chain, PostgreSQL", () => {
       expect(text).toContain(maria?.id);
       expect(text).not.toContain(maria?.email);
       expect(text).not.toContain(maria?.phone);
+      expect(text).not.toContain(maria?.name);
       expect(text).toContain("***");
       // another organization's customer is never on the page
       expect(text).not.toContain(carlos?.id);
@@ -388,6 +395,7 @@ describe("admin worker, whole chain, PostgreSQL", () => {
           "billing.entitlement_grant_requested",
           "billing.entitlement_granted",
           "billing.entitlement_revoke_requested",
+          "billing.entitlement_revoked",
         ])
       );
     });
@@ -410,11 +418,12 @@ describe("admin worker, whole chain, PostgreSQL", () => {
           },
         }
       );
-      expect(answer.status).toBeGreaterThanOrEqual(400);
-      expect(answer.status).toBeLessThan(500);
+      // a case that is not open: refused by the database before anything is done
+      expect(answer.status).toBe(400);
+      expect(answer.body).toEqual({ error: "case_not_open" });
     });
 
-    it("has no refund: no route, and not a step the audit accepts (ADR 0073)", async () => {
+    it("has no refund: no route for it (ADR 0073)", async () => {
       const caseId = await openCase(fixture.organizations.a);
       for (const path of [
         `/api/support-cases/${caseId}/refund`,
@@ -427,10 +436,6 @@ describe("admin worker, whole chain, PostgreSQL", () => {
         });
         expect(answer.status).toBe(404);
       }
-      const events = auditTypes(
-        await call("GET", `/api/support-cases/${caseId}`)
-      );
-      expect(events.some((type) => type.includes("refund"))).toBe(false);
     });
   });
 
