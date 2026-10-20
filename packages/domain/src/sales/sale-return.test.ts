@@ -435,13 +435,13 @@ describe("the quantity limits of a return (property, at the edges)", () => {
           isQuantity(returned, 1) &&
           isQuantity(restocked, 0) &&
           restocked <= returned;
-        if (!shapeOk) {
-          expect(() => planSaleReturn(facts, [line])).toThrow(
-            InvalidSaleReturnError
-          );
-        } else {
+        if (shapeOk) {
           expect(planSaleReturn(facts, [line])[0]?.returnedQuantity).toBe(
             returned
+          );
+        } else {
+          expect(() => planSaleReturn(facts, [line])).toThrow(
+            InvalidSaleReturnError
           );
         }
       })

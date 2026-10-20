@@ -1,4 +1,4 @@
-import { constantFrom, integer, oneof, property } from "fast-check";
+import { constantFrom, integer, property } from "fast-check";
 import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
 import {

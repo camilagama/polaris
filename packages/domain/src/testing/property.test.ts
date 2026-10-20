@@ -44,7 +44,7 @@ describe("the property test settings", () => {
     const settings = propertySettings({ GITHUB_SHA: sha });
     expect(settings).toEqual({
       numRuns: DEFAULT_PROPERTY_RUNS,
-      seed: Number.parseInt("69dbbed1", 16) % 2 ** 31,
+      seed: 0x69_db_be_d1 % 2 ** 31,
       source: "commit",
     });
     expect(propertySettings({ GITHUB_SHA: sha }).seed).toBe(settings.seed);
