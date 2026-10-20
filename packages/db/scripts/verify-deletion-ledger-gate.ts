@@ -706,13 +706,21 @@ async function run() {
         [bystander.id, tenantB.organizationId].sort(),
         "a customer that is not anonymized and an organization that still exists are listed"
       );
+      // the tombstone of a purge the closure period scheduled has no privacy case (ADR 0102): it is listed all the same
+      const automatic = await simulated.query<{
+        privacy_case_id: string | null;
+      }>(
+        "SELECT privacy_case_id FROM public.deletion_ledger WHERE organization_id = $1 AND entity_type = 'organization' AND operation = 'purge'",
+        [tenantB.organizationId]
+      );
+      assert.deepEqual(automatic.rows, [{ privacy_case_id: null }]);
     } finally {
       await simulated.query("ROLLBACK");
       simulated.release();
     }
     assert.equal((await ledgerRows()).length, 2);
     tests.push(
-      "the completeness checks of the runbook (an anonymized customer without a tombstone; a tombstone for a customer that was not anonymized) are empty, and the verification query of the runbook is empty when every tombstone has taken effect and lists a customer that came back with data and an organization that came back"
+      "the completeness checks of the runbook (an anonymized customer without a tombstone; a tombstone for a customer that was not anonymized) are empty, and the verification query of the runbook is empty when every tombstone has taken effect and lists a customer that came back with data and an organization that came back, its purge tombstone without a privacy case as an automatic purge leaves it"
     );
 
     // the backfill of the migration: a tombstone the owner removes comes back when the same INSERT ... SELECT runs again

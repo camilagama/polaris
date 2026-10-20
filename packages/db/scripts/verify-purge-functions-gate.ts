@@ -15,14 +15,16 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The three purge functions, as the database holds them after every migration, agree with the domain (ADR 0081).
+ * The purge functions, as the database holds them after every migration, agree with the domain (ADR 0081 and 0102).
  * Two migrations that recreate the same function do not conflict in git: the later body silently wins, and a value
  * the earlier one fixed (the 90 days, the scope without the audit, the list of tables) can come back. This gate reads
  * `pg_get_functiondef` of `admin_schedule_organization_purge`, `organization_purge_blocker` and
  * `purge_organization_data` and compares: the `whole_organization` scope with `ORGANIZATION_PURGE_REQUIRED_SCOPE`, the
  * period with `ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS`, and the tables deleted (names and order) with
- * `PURGE_DELETE_ORDER`, besides the keys a billing fact keeps and the one DELETE. It is mandatory before any pull
- * request that recreates one of the three functions. The comparison is `purgeFunctionDifferences`, and its unit test
+ * `PURGE_DELETE_ORDER`, besides the keys a billing fact keeps and the one DELETE; and the automatic schedule
+ * (`schedule_closed_organization_purges` and `closed_organization_purge_wait`): D read from `closure_deadlines`, the
+ * grace of 48 hours and the notice of 7 days, the check under the lock, no DELETE, and the states of a live renewal
+ * with `renewalAlive`. It is mandatory before any pull request that recreates one of these functions. The comparison is `purgeFunctionDifferences`, and its unit test
  * proves it fails on the regressions above.
  */
 const expectedDatabase =
@@ -58,7 +60,7 @@ async function run() {
 
     const definitions = new Map<PurgeFunctionName, string>();
     for (const name of PURGE_FUNCTIONS) {
-      // biome-ignore lint/performance/noAwaitInLoops: three probes, one at a time, for a clear failure
+      // biome-ignore lint/performance/noAwaitInLoops: a few probes, one at a time, for a clear failure
       const found = await owner.pool.query<{ definition: string }>(
         `SELECT pg_catalog.pg_get_functiondef(p.oid) AS definition
            FROM pg_catalog.pg_proc AS p
@@ -92,7 +94,8 @@ async function run() {
           status: "passed",
           tests: [
             "disposable direct connection is PostgreSQL 18 with every migration replayed from scratch",
-            "the whole_organization scope, the closure period, the tables deleted (names and order), the billing fact keys and the single DELETE of the three purge functions agree with the domain",
+            "the whole_organization scope, the closure period, the tables deleted (names and order), the billing fact keys and the single DELETE of the purge functions agree with the domain",
+            "the automatic schedule reads D from closure_deadlines, waits D plus 48 hours and 7 days of notice, checks again under the lock, deletes nothing, and waits for a live renewal in the states the domain says",
           ],
         },
         null,

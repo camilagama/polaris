@@ -1,4 +1,12 @@
 import {
+  BILLING_STATES,
+  grantsPro,
+} from "@polaris/domain/billing/entitlements";
+import {
+  CLOSURE_PURGE_GRACE_HOURS,
+  CLOSURE_PURGE_MIN_NOTICE_DAYS,
+} from "@polaris/domain/organization/closure-deadlines";
+import {
   ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS,
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
 } from "@polaris/domain/privacy/organization-purge";
@@ -13,12 +21,15 @@ import {
  * that recreates one of these functions replaces the whole body, and git does not see two migrations that
  * write the same function as a conflict: the gate `purge-functions` reads `pg_get_functiondef` of the live
  * functions and fails on any difference below. It is mandatory before a pull request that recreates
- * `admin_schedule_organization_purge`, `organization_purge_blocker` or `purge_organization_data`.
+ * `admin_schedule_organization_purge`, `organization_purge_blocker`, `purge_organization_data`,
+ * `schedule_closed_organization_purges` or `closed_organization_purge_wait` (the automatic schedule, ADR 0102).
  */
 export const PURGE_FUNCTIONS = Object.freeze([
   "admin_schedule_organization_purge",
   "organization_purge_blocker",
   "purge_organization_data",
+  "schedule_closed_organization_purges",
+  "closed_organization_purge_wait",
 ] as const);
 
 export type PurgeFunctionName = (typeof PURGE_FUNCTIONS)[number];
@@ -28,6 +39,9 @@ const DELAY_INTERVAL = /p_delay_seconds\s*\*\s*interval\s+'1 second'/gi;
 const OTHER_INTERVAL_FORM = /::\s*interval\b|\bmake_interval\b/i;
 const DELETE_STATEMENT = /\bDELETE\s+FROM\b[^;']*/gi;
 const QUOTED = /'([^']*)'/g;
+const ANY_DELETE = /\bDELETE\s+FROM\b/i;
+const ANY_EXECUTE = /\bEXECUTE\b/i;
+const RENEWAL_STATES = /billing\.state\s+IN\s*\(([^)]*)\)/i;
 const TRUNCATE_STATEMENT = /\bTRUNCATE\b/i;
 const WHITESPACE = /\s+/g;
 const NOT_LIST_PUNCTUATION = /[\s,]/g;
@@ -35,12 +49,19 @@ const PERFORM_STATEMENT = /\bPERFORM\b/i;
 const EXECUTE_STATEMENT = /\bEXECUTE\b/gi;
 
 /** How many times each function counts the closure period: the schedule checks it and computes the due date. */
-const CLOSURE_PERIOD_USES: Readonly<Record<PurgeFunctionName, number>> =
-  Object.freeze({
-    admin_schedule_organization_purge: 2,
-    organization_purge_blocker: 1,
-    purge_organization_data: 0,
-  });
+const CLOSURE_PERIOD_USES: Readonly<
+  Record<
+    Exclude<
+      PurgeFunctionName,
+      "closed_organization_purge_wait" | "schedule_closed_organization_purges"
+    >,
+    number
+  >
+> = Object.freeze({
+  admin_schedule_organization_purge: 2,
+  organization_purge_blocker: 1,
+  purge_organization_data: 0,
+});
 
 /**
  * The SQL without its comments (a comment may quote a number or a name that is not in the code), keeping the
@@ -145,7 +166,10 @@ function scopeDifferences(sql: string): string[] {
 }
 
 /** The closure period is ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS, as many times as each function counts it. */
-function periodDifferences(name: PurgeFunctionName, sql: string): string[] {
+function periodDifferences(
+  name: keyof typeof CLOSURE_PERIOD_USES,
+  sql: string
+): string[] {
   const period = `${ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS} days`;
   const intervals = periodIntervals(sql);
   const problems = intervals
@@ -289,6 +313,109 @@ function factKeysDifferences(sql: string): string[] {
 }
 
 /**
+ * The intervals of the automatic schedule (ADR 0102), each once: the grace after D (`CLOSURE_PURGE_GRACE_HOURS`), the
+ * notice after the schedule (`CLOSURE_PURGE_MIN_NOTICE_DAYS`, in hours so the session's time zone never changes it)
+ * and the day of the alert. D itself comes from `closure_deadlines`, never from an interval written here.
+ */
+const SCHEDULE_INTERVALS = Object.freeze([
+  `${CLOSURE_PURGE_GRACE_HOURS} hours`,
+  `${CLOSURE_PURGE_MIN_NOTICE_DAYS * 24} hours`,
+  "24 hours",
+]);
+
+const SCHEDULE_CLOSED_USAGE = [
+  [
+    "the scan and the check under the lock of D minus 7 days from closure_deadlines",
+    /(?:public\.closure_deadlines\s*\(\s*closure\.requested_at\s*,\s*organization\.timezone\s*\)[\s\S]*){2}/i,
+  ],
+  [
+    "the start at D minus 7 days, in the scan and under the lock",
+    /(?:deadline\.d7_at\s*<=\s*pg_catalog\.now\(\)[\s\S]*){2}/i,
+  ],
+  [
+    "the end of the recovery window, in the scan and under the lock",
+    /(?:closure\.recover_until\s*<=\s*pg_catalog\.now\(\)[\s\S]*){2}/i,
+  ],
+  [
+    "the reasons to wait, in the scan and under the lock",
+    /(?:public\.closed_organization_purge_wait\s*\([\s\S]*){2}/i,
+  ],
+  ["the lock of the organization", /FOR\s+UPDATE\s+SKIP\s+LOCKED/i],
+  [
+    "the due date, the later of D plus the grace and the schedule plus the notice",
+    new RegExp(
+      `due\\s*:=\\s*GREATEST\\s*\\(\\s*deletable\\s*\\+\\s*interval\\s+'${CLOSURE_PURGE_GRACE_HOURS} hours'\\s*,\\s*pg_catalog\\.now\\(\\)\\s*\\+\\s*interval\\s+'${CLOSURE_PURGE_MIN_NOTICE_DAYS * 24} hours'\\s*\\)`,
+      "i"
+    ),
+  ],
+  ["the purge row of the closure period", /'closure_period'/i],
+] as const;
+
+function scheduleClosedDifferences(sql: string): string[] {
+  const name = "schedule_closed_organization_purges";
+  const problems = SCHEDULE_CLOSED_USAGE.filter(
+    ([, pattern]) => !pattern.test(sql)
+  ).map(([label]) => `${name}: ${label} is gone`);
+  const intervals = [...sql.matchAll(INTERVAL_LITERAL)].map(
+    (match) => match[1] ?? ""
+  );
+  if (!sameSet(intervals, SCHEDULE_INTERVALS) || intervals.length !== 3) {
+    problems.push(
+      `${name}: its intervals must be ${show(SCHEDULE_INTERVALS)}, each once (found ${show(intervals)})`
+    );
+  }
+  if (OTHER_INTERVAL_FORM.test(sql)) {
+    problems.push(
+      `${name}: a period written as ::interval or make_interval is not compared`
+    );
+  }
+  if (
+    ANY_DELETE.test(sql) ||
+    TRUNCATE_STATEMENT.test(sql) ||
+    ANY_EXECUTE.test(sql)
+  ) {
+    problems.push(`${name}: it deletes, truncates or runs dynamic SQL`);
+  }
+  return problems;
+}
+
+/** The states a renewal is alive in are the ones that give Pro (`renewalAlive` of the domain). */
+const RENEWAL_ALIVE_STATES = BILLING_STATES.filter(grantsPro);
+
+const PURGE_WAIT_USAGE = [
+  [
+    "the legal hold in force",
+    /organization_legal_holds[\s\S]*released_at\s+IS\s+NULL/i,
+  ],
+  ["the live temporary access", /tenant_access_grants/i],
+  ["the cancellation of this closure", /cancelled_at\s*>=\s*p_requested_at/i],
+  [
+    "the renewal not cancelled at the provider",
+    /provider_ref\s+IS\s+NOT\s+NULL[\s\S]*NOT\s+billing\.cancel_at_period_end/i,
+  ],
+] as const;
+
+function purgeWaitDifferences(sql: string): string[] {
+  const name = "closed_organization_purge_wait";
+  const problems: string[] = [];
+  const states = RENEWAL_STATES.exec(sql);
+  const listed = states
+    ? [...(states[1] ?? "").matchAll(QUOTED)].map((match) => match[1] ?? "")
+    : null;
+  if (listed === null || !sameSet(listed, RENEWAL_ALIVE_STATES)) {
+    problems.push(
+      `${name}: the states of a live renewal must be ${show(RENEWAL_ALIVE_STATES)} (found ${show(listed ?? [])})`
+    );
+  }
+  for (const [label, pattern] of PURGE_WAIT_USAGE) {
+    if (!pattern.test(sql)) {
+      problems.push(`${name}: ${label} is gone`);
+    }
+  }
+  return problems;
+}
+
+/**
  * The differences between the live definitions and the domain; empty when they agree. `definitions` maps each
  * function to its `pg_get_functiondef` text.
  */
@@ -304,6 +431,12 @@ export function purgeFunctionDifferences(
     ),
     purge_organization_data: withoutComments(
       definitions.purge_organization_data
+    ),
+    schedule_closed_organization_purges: withoutComments(
+      definitions.schedule_closed_organization_purges
+    ),
+    closed_organization_purge_wait: withoutComments(
+      definitions.closed_organization_purge_wait
     ),
   };
   return [
@@ -328,5 +461,7 @@ export function purgeFunctionDifferences(
       ["deleted_tables", "kept_fact_keys"]
     ),
     ...factKeysDifferences(sql.purge_organization_data),
+    ...scheduleClosedDifferences(sql.schedule_closed_organization_purges),
+    ...purgeWaitDifferences(sql.closed_organization_purge_wait),
   ];
 }

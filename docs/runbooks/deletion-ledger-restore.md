@@ -125,9 +125,20 @@ ON CONFLICT (organization_id) DO UPDATE
 COMMIT;
 ```
 
-- `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou e o caso; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger` (todo purge nasce de um caso de privacidade de exclusão, ADR 0081).
+- `scheduled_by` e o caso são os do agendamento original. Se o agendamento foi feito antes do backup, a linha já existe no backup e o `ON CONFLICT` só reabre o purge, mantendo quem agendou, o caso e o `trigger`; se não, a linha é criada e o caso é o `privacy_case_id` do próprio tombstone no `deletion_ledger`.
+- **Purge automático** ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md)): o tombstone vem com `privacy_case_id` nulo, porque ninguém agendou. Se a linha não estava no backup, crie-a como o período a criou, sem operador nem caso (a tabela recusa uma linha do período com qualquer um dos três preenchido), no lugar do `INSERT` acima:
+
+  ```sql
+  INSERT INTO public.organization_purges (organization_id, trigger, not_before, storage_touched_at)
+  VALUES ('<ID da organização>', 'closure_period', now(), now())
+  ON CONFLICT (organization_id) DO UPDATE
+     SET not_before = now(), attempts = 0, locked_until = NULL,
+         last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = now();
+  ```
+
+  A conclusão reaplicada é auditada de novo como do sistema. O freio `CLOSURE_AUTO_PURGE_ENABLED` não interfere: ele só liga o agendamento, não a execução de um purge já agendado.
 - `storage_touched_at` vai preenchido de propósito: o tombstone só existe porque o purge original já apagou o R2, então o purge reaplicado não pode ser cancelado (a função de cancelamento recusa com `purge_storage_touched`) e deixar a organização `closed` com mídia e exportações que apontam para objetos que não existem mais.
-- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e os dois não podem ser nulos: use o ID do caso de privacidade nos dois. Se o caso de privacidade foi aberto depois do instante do backup, ele não existe no ambiente restaurado e o `INSERT` falha pela chave estrangeira: pare, não reabra o ambiente e acione o responsável (recriar o caso é decisão dele, com o registro do atendimento original).
+- A tabela exige que `support_case_id` e `privacy_case_id` sejam o mesmo ID, e num purge do Admin (`trigger = 'admin'`, o padrão) os dois e `scheduled_by` não podem ser nulos: use o ID do caso de privacidade nos dois. Se o caso de privacidade foi aberto depois do instante do backup, ele não existe no ambiente restaurado e o `INSERT` falha pela chave estrangeira: pare, não reabra o ambiente e acione o responsável (recriar o caso é decisão dele, com o registro do atendimento original).
 - Não execute o bloco para organização que já está `purged` no ambiente restaurado: o `ON CONFLICT` zera `purged_at` e `swept_at`, e o `UPDATE` não muda nada nela.
 - O purge reaplicado também refaz a pseudonimização da cobrança (o `fact` de `billing_events`, só com as chaves de `PURGE_BILLING_FACT_KEYS`; as referências do provedor continuam) e a troca do texto livre dos casos de suporte e de privacidade, dos cancelamentos e dos motivos das concessões. Isso acontece no job de privacidade, na mesma transação das linhas; não há passo SQL à parte para isso.
 - A trava dos 90 dias não impede a reaplicação. O tombstone `organization`/`purge` já está no ledger (o passo 3 o recoloca), e o purge confere o prazo por ele, não pela data de encerramento do backup, que pode não ter voltado.

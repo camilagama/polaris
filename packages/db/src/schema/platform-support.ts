@@ -162,6 +162,12 @@ export const tenantAccessGrants = pgTable(
 export const platformAuditEvents = pgTable(
   "platform_audit_events",
   {
+    /**
+     * Who acted: an operator (`principal`, the principal is required) or Polaris itself (`system`, no
+     * principal and no case): only the purge of a closed organization scheduled and completed on its own
+     * (ADR 0102). A system event has no case, so the case views of the Admin never list one.
+     */
+    actor: text("actor").default("principal").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -172,9 +178,8 @@ export const platformAuditEvents = pgTable(
     eventType: text("event_type").notNull(),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     organizationId: text("organization_id"),
-    principalId: uuid("principal_id")
-      .notNull()
-      .references(() => platformPrincipals.id),
+    /** Null only for an event of the system (`actor = 'system'`). */
+    principalId: uuid("principal_id").references(() => platformPrincipals.id),
     supportCaseId: uuid("support_case_id"),
   },
   (table) => [
@@ -191,6 +196,12 @@ export const platformAuditEvents = pgTable(
       "platform_audit_events_detail_allowed",
       sql`${table.detail} IS NULL OR char_length(${table.detail}) <= 200`
     ),
+    check(
+      "platform_audit_events_actor_coherent",
+      sql`(${table.actor} = 'principal' AND ${table.principalId} IS NOT NULL)
+        OR (${table.actor} = 'system' AND ${table.principalId} IS NULL AND ${table.supportCaseId} IS NULL
+            AND ${table.eventType} IN ('organization.purge_scheduled', 'organization.purge_completed'))`
+    ),
     pgPolicy("platform_audit_events_admin_owner_select", {
       for: "select",
       to: ownerRole,
@@ -201,16 +212,26 @@ export const platformAuditEvents = pgTable(
       to: ownerRole,
       withCheck: sql`true`,
     }),
-    // the one event the purge writes itself (ADR 0081): the completion, once the organization is `purged`
+    // the events the purge writes itself (ADR 0081 and 0102): the completion, once the organization is `purged`, by
+    // whoever scheduled it (the operator and the case, or the system with neither); and the schedule of the system,
+    // once the organization is `purge_pending` by the closure period
     pgPolicy("platform_audit_events_purge_owner_insert", {
       for: "insert",
       to: "polaris_purge_owner",
-      withCheck: sql`event_type = 'organization.purge_completed'
-        AND entity_type = 'organization'
+      withCheck: sql`entity_type = 'organization'
         AND entity_id = organization_id
         AND detail IS NULL
-        AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
-        AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id AND purge_plan.scheduled_by = platform_audit_events.principal_id AND purge_plan.support_case_id = platform_audit_events.support_case_id)`,
+        AND ((event_type = 'organization.purge_completed'
+              AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purged')
+              AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id
+                            AND purge_plan.scheduled_by IS NOT DISTINCT FROM platform_audit_events.principal_id
+                            AND purge_plan.support_case_id IS NOT DISTINCT FROM platform_audit_events.support_case_id
+                            AND platform_audit_events.actor = CASE purge_plan.trigger WHEN 'closure_period' THEN 'system' ELSE 'principal' END))
+          OR (event_type = 'organization.purge_scheduled'
+              AND actor = 'system'
+              AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purge_pending')
+              AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id
+                            AND purge_plan.trigger = 'closure_period' AND purge_plan.purged_at IS NULL)))`,
     }),
   ]
 ).enableRLS();

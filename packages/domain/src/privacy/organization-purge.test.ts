@@ -37,8 +37,8 @@ const approvedClosedOrganization: RetentionPolicy = {
   status: "aprovada",
 };
 
-describe("the delay between the end of the recovery window and the purge", () => {
-  it("adds nothing while the closed organization class is only proposed", () => {
+describe("the delay the Admin's schedule adds after the closure period", () => {
+  it("adds nothing: the closure period is approved in calendar days, not as a delay", () => {
     expect(purgeDelayAfterWindowMs()).toBe(0);
   });
 
@@ -51,17 +51,55 @@ describe("the delay between the end of the recovery window and the purge", () =>
   });
 });
 
-describe("automatic scheduling", () => {
-  it("is not allowed while the closed organization class is proposed", () => {
-    expect(automaticPurgeSchedulingAllowed()).toBe(false);
+describe("automatic scheduling (ADR 0102)", () => {
+  it("is allowed: the class is approved with the closure period and its job", () => {
+    expect(automaticPurgeSchedulingAllowed()).toBe(true);
+    const policy = RETENTION_POLICIES.find(
+      (candidate) => candidate.class === "closed_organization"
+    );
+    expect(policy?.status).toBe("aprovada");
+    expect(policy?.period).toEqual({
+      days: ORGANIZATION_PURGE_CLOSURE_PERIOD_DAYS,
+      kind: "closure_calendar_days",
+    });
   });
 
-  it("would need the class approved with a period", () => {
+  it("is turned off by a class put back to proposed, or by a period other than the database's", () => {
     expect(
       automaticPurgeSchedulingAllowed(
         withClosedOrganization(approvedClosedOrganization)
       )
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      automaticPurgeSchedulingAllowed(
+        withClosedOrganization({
+          basis: "decisao",
+          class: "closed_organization",
+          data: ["x"],
+          period: { kind: "undecided" },
+          proposed: "x",
+          review: { state: "pendente_juridica" },
+          rule: "x",
+          sources: ["x"],
+          status: "proposta",
+        })
+      )
+    ).toBe(false);
+    expect(
+      automaticPurgeSchedulingAllowed(
+        withClosedOrganization({
+          basis: "decisao",
+          class: "closed_organization",
+          data: ["x"],
+          job: "privacy.closure_purge_schedule",
+          period: { days: 60, kind: "closure_calendar_days" },
+          review: { state: "pendente_juridica" },
+          rule: "x",
+          sources: ["x"],
+          status: "aprovada",
+        })
+      )
+    ).toBe(false);
   });
 });
 

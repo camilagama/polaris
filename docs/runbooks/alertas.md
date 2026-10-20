@@ -28,6 +28,7 @@
 | [`cota-de-transformacao`](#cota-de-transformacao) | `media_transform_quota_exceeded` | 60 min | 1 | warning | não |
 | [`rejeicao-no-sync`](#rejeicao-no-sync) | `sync_push_command_rejected` | 15 min | 10 | warning | não |
 | [`registro-de-acesso`](#registro-de-acesso) | `auth_access_log_write_failed` | 15 min | 3 | critical | sim |
+| [`apagamento-automatico`](#apagamento-automatico) | `closure_auto_purge_volume_high` | 24 h | 1 | critical | sim |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -150,3 +151,14 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 **Como confirmar.** Workers Logs: o evento, por `reason` e `sqlState`. Leitura do `reason` (detalhe no [runbook do registro de acesso](./registro-de-acesso.md)): `error` é falha do banco (confira o `sqlState`; `42501` é privilégio revogado, trate como incidente); `timeout` é o banco que não respondeu em cerca de 300 ms (lento ou acordando; a linha pode ter entrado depois); `writer_threw` (o gravador lançou exceção), `unexpected_result` (resposta que o código não conhece), `invalid_event`, `invalid_user`, `invalid_ip` e `invalid_request` são defeito de código. A requisição sem IP é outro evento, `auth_access_log_skipped`, descrito no mesmo runbook.
 
 **O que fazer.** Siga [erros-de-banco](#erros-de-banco) se o banco está com problema; depois registre a janela da lacuna (início e fim, quantidade de eventos) conforme o runbook do registro de acesso, porque o período sem registro precisa ser conhecido. Não tente refazer o registro à mão; a correção de um defeito de código é um commit, não uma alteração na tabela.
+
+<a id="apagamento-automatico"></a>
+
+### apagamento-automatico — muitas lojas encerradas entrando no apagamento automático
+
+**O que significa.** Com `CLOSURE_AUTO_PURGE_ENABLED` ligado, a varredura horária de privacidade agenda sozinha o purge de cada loja encerrada que chegou a D menos 7 dias ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md)). O evento `closure_auto_purge_volume_high` (nível `warn`) sai quando, nas últimas 24 horas, **mais de 5** lojas entraram no purge por esse caminho (campo `scheduledPurgesLastDay`, só a contagem, sem ID). É o freio do apagamento automático: um volume acima do esperado pode ser um defeito de datas (fuso, relógio, migration) que apagaria lojas antes da hora. Nenhum dado sai no agendamento: o purge só roda a partir do maior entre D mais 48 horas e o agendamento mais 7 dias.
+
+**Como confirmar.** Workers Logs: `event = "closure_auto_purge_volume_high"` e o `privacy_maintenance_complete` da mesma execução (`scheduledPurges`, `scheduledPurgesLastDay`). Banco, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT organization_id, scheduled_at, not_before FROM organization_purges WHERE trigger = 'closure_period' AND scheduled_at > now() - interval '24 hours'`, e para cada uma confira `organization_closures.requested_at` e o fuso da organização (`closure_deadlines`): o agendamento só é legítimo a partir de D menos 7 dias locais.
+
+**O que fazer.** Se as datas estão certas (um lote real de encerramentos de 90 dias atrás), registre e siga. Se não estão, **desligue o freio** (`CLOSURE_AUTO_PURGE_ENABLED` = `false`, deploy pelo responsável) e cancele cada purge errado pelo Admin (`admin_cancel_organization_purge`, com caso e motivo) antes do `not_before`: o cancelamento devolve a loja a `closed` e pausa o caminho automático dela neste encerramento. Abra a correção por PR.
+

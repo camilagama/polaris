@@ -2,10 +2,11 @@ import { Pool } from "pg";
 
 /**
  * What the privacy role does in the background (plan PR101, PR104 and PR107, ADRs 0074, 0078,
- * 0081 and 0084). It runs under its own database role, which can execute a few functions and read
- * nothing: closing organizations whose recovery window ended, the data exports (claim a request,
- * record its files, finish or fail it, expire it, and send its outbox event again while it is
- * still owed; the images of a closed organization's export) and the purges an operator scheduled.
+ * 0081, 0084 and 0102). It runs under its own database role, which can execute a few functions and read
+ * nothing: closing organizations whose recovery window ended, scheduling the purge of the closures that
+ * reached D minus 7 days, the data exports (claim a request, record its files, finish or fail it, expire
+ * it, and send its outbox event again while it is still owed; the images of a closed organization's
+ * export) and the purges scheduled by the closure period or by an operator.
  */
 export interface ClaimedDataExport {
   attempt: number;
@@ -54,6 +55,14 @@ export interface ClaimedOrganizationPurge {
   phase: "purge" | "sweep";
 }
 
+/** What one call of the automatic schedule did (ADR 0102). */
+export interface ScheduledClosurePurges {
+  /** Organizations this call put into the purge. */
+  scheduled: number;
+  /** Organizations the closure period put into the purge in the last 24 hours, this call included. */
+  scheduledLastDay: number;
+}
+
 export interface PrivacyMaintenanceClient {
   /** Takes the oldest export that is waiting (or whose run stopped); null when there is none. */
   claimDataExport: (leaseSeconds: number) => Promise<ClaimedDataExport | null>;
@@ -90,6 +99,14 @@ export interface PrivacyMaintenanceClient {
   ) => Promise<boolean>;
   /** Marks the recovery windows that ended as closed, at most `limit` organizations; returns how many. */
   finalizeExpiredClosures: (limit: number) => Promise<number>;
+  /**
+   * Schedules the purge of at most `limit` closed organizations whose D minus 7 local days arrived (ADR 0102),
+   * skipping one under a legal hold, a live temporary access of the Admin, a cancellation of the Admin in this
+   * closure or a renewal still alive.
+   */
+  scheduleClosedOrganizationPurges: (
+    limit: number
+  ) => Promise<ScheduledClosurePurges>;
   /**
    * The images of a closed organization's export, for the run that holds it (its export and lease token), after the
    * given asset ID: the reader does not read the storage keys.
@@ -229,6 +246,19 @@ export function createPrivacyMaintenanceClient(
         [limit]
       );
       return Number(result.rows[0]?.finalized ?? 0);
+    },
+    async scheduleClosedOrganizationPurges(limit) {
+      const result = await pool.query<{
+        scheduled: { scheduled: number; scheduledLastDay: number };
+      }>(
+        "SELECT public.schedule_closed_organization_purges($1::integer) AS scheduled",
+        [limit]
+      );
+      const scheduled = result.rows[0]?.scheduled;
+      return {
+        scheduled: Number(scheduled?.scheduled ?? 0),
+        scheduledLastDay: Number(scheduled?.scheduledLastDay ?? 0),
+      };
     },
     async listClosedExportMedia(exportId, leaseToken, afterAssetId, limit) {
       const result = await pool.query<{
