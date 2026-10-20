@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { assertAllowedGateUrl } from "../../../packages/db/scripts/gate-hosts";
+import {
+  assertAllowedGateUrl,
+  isLocalGateHost,
+} from "../../../packages/db/scripts/gate-hosts";
+import { PREVIEW_VARIABLES } from "./closed-environment";
 
 /**
  * What every process of one e2e run shares (T-125a): the run id, the Better Auth secret, the password of each
@@ -32,6 +36,9 @@ export function hyperdriveVariable(binding: HyperdriveBinding): string {
 const RUN_ID = "E2E_RUN_ID";
 const RUN_SECRET = "E2E_RUN_SECRET";
 const runIdPattern = /^[a-f0-9]{12}$/;
+// the secret and the passwords enter SQL (CREATE ROLE ... PASSWORD) and a URL: a value set by hand must be hex
+const secretPattern = /^[a-f0-9]{64}$/;
+const passwordPattern = /^[a-f0-9]{48}$/;
 
 export interface RunEnvironment {
   runId: string;
@@ -58,6 +65,18 @@ export function ensureRunEnvironment(
   const runId = environment[RUN_ID] as string;
   if (!runIdPattern.test(runId)) {
     throw new Error(`${RUN_ID} must be 12 hexadecimal characters.`);
+  }
+  if (!secretPattern.test(environment[RUN_SECRET] as string)) {
+    throw new Error(`${RUN_SECRET} must be 64 hexadecimal characters.`);
+  }
+  for (const binding of HYPERDRIVE_BINDINGS) {
+    if (
+      !passwordPattern.test(environment[passwordVariable(binding)] as string)
+    ) {
+      throw new Error(
+        `${passwordVariable(binding)} must be 48 hexadecimal characters.`
+      );
+    }
   }
   return {
     passwords: Object.fromEntries(
@@ -98,7 +117,21 @@ export function ownerDatabaseUrl(
       "POLARIS_E2E_DATABASE_URL is required: the owner URL of the local PostgreSQL 18 (CI=true)."
     );
   }
-  return assertAllowedGateUrl(url, environment.CI === "true");
+  return assertLocalUrl(url, environment.CI === "true");
+}
+
+/**
+ * The list of gate-hosts.ts, narrowed to the local PostgreSQL (and only with `CI=true`): its Neon pattern also
+ * matches production and staging, and this harness creates databases and logins, so it never goes there.
+ */
+function assertLocalUrl(value: string, ci = true): URL {
+  const url = assertAllowedGateUrl(value, ci);
+  if (!isLocalGateHost(url.hostname, ci)) {
+    throw new Error(
+      "The e2e database must be the local PostgreSQL (localhost or 127.0.0.1, with CI=true), never Neon."
+    );
+  }
+  return url;
 }
 
 export function runConnectionString(
@@ -160,7 +193,7 @@ export function previewEnvironment(
       inherited[name] = value;
     }
   }
-  return {
+  const closed: Record<string, string> = {
     ...inherited,
     BETTER_AUTH_BASE_URL: assertLoopbackBaseUrl(baseURL).origin,
     BETTER_AUTH_SECRET: run.secret,
@@ -175,6 +208,7 @@ export function previewEnvironment(
       ])
     ),
   };
+  return { ...closed, [PREVIEW_VARIABLES]: Object.keys(closed).join(",") };
 }
 
 /** Refuses a preview environment that misses a binding or leaves one on the wrangler.jsonc fallback. */
@@ -187,7 +221,7 @@ export function assertRunHyperdrives(
     if (!value) {
       throw new Error(`${hyperdriveVariable(binding)} is missing.`);
     }
-    const url = assertAllowedGateUrl(value, true);
+    const url = assertLocalUrl(value);
     if (
       url.username !== runLoginName(runId, binding) ||
       url.pathname !== `/${runDatabaseName(runId)}` ||

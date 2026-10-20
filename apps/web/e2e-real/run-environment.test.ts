@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { closedEnvironment } from "./closed-environment";
 import {
   assertLoopbackBaseUrl,
   assertRunHyperdrives,
@@ -13,6 +14,10 @@ const DATABASE_URL_REQUIRED = /POLARIS_E2E_DATABASE_URL is required/;
 const LOOPBACK_ONLY = /loopback/;
 const OUTBOX_NOT_RUN_LOGIN = /OUTBOX_HYPERDRIVE is not the run login/;
 const PRIVACY_MISSING = /PRIVACY_HYPERDRIVE is missing/;
+const LOCAL_ONLY = /must be the local PostgreSQL/;
+const SECRET_NOT_HEX = /E2E_RUN_SECRET must be/;
+const PASSWORD_NOT_HEX = /E2E_LOGIN_PASSWORD_HYPERDRIVE must be/;
+const PREVIEW_VARIABLES_MISSING = /E2E_PREVIEW_VARIABLES is missing/;
 
 const OWNER = "postgresql://owner:secret@localhost:5432/postgres";
 
@@ -111,6 +116,66 @@ describe("the environment of an e2e run", () => {
     ).toThrow();
     expect(() => ownerDatabaseUrl({ CI: "true" })).toThrow(
       DATABASE_URL_REQUIRED
+    );
+    // the remote pattern of gate-hosts.ts also matches production: this harness creates databases, so only local
+    expect(() =>
+      ownerDatabaseUrl({
+        CI: "true",
+        POLARIS_E2E_DATABASE_URL: `postgresql://u:p@ep-cool-name-123456.c-2.sa-east-1.aws.${"neon"}.tech/db`,
+      })
+    ).toThrow(LOCAL_ONLY);
+  });
+
+  it("refuses a secret or a password set by hand that is not hex (they enter SQL and URLs)", () => {
+    const valid = ensureRunEnvironment({});
+    expect(() =>
+      ensureRunEnvironment({ E2E_RUN_SECRET: "x' ; select 1; --" })
+    ).toThrow(SECRET_NOT_HEX);
+    expect(() =>
+      ensureRunEnvironment({
+        E2E_LOGIN_PASSWORD_HYPERDRIVE: "a'b",
+        E2E_RUN_SECRET: valid.secret,
+      })
+    ).toThrow(PASSWORD_NOT_HEX);
+  });
+
+  it("closes the environment of the build and of the preview to the names of the config", () => {
+    const run = ensureRunEnvironment({});
+    const config = previewEnvironment(
+      new URL(OWNER),
+      run,
+      "http://127.0.0.1:4321",
+      false,
+      { PATH: "/bin" }
+    );
+    // what Playwright hands a web server: the whole environment of its process plus the config's
+    const leaked = [
+      "ASAAS_API_KEY",
+      "CLOUDFLARE_API_TOKEN",
+      "CLOUDFLARE_ENV",
+      "POLARIS_E2E_DATABASE_URL",
+      "RESEND_API_KEY",
+      "VITE_SENTRY_DSN",
+    ];
+    const merged = {
+      ...config,
+      ...Object.fromEntries(leaked.map((name) => [name, "value"])),
+    };
+    const preview = closedEnvironment(merged, "preview");
+    const build = closedEnvironment(merged, "build");
+    for (const name of leaked) {
+      expect(preview[name], name).toBeUndefined();
+      expect(build[name], name).toBeUndefined();
+    }
+    expect(preview.BETTER_AUTH_SECRET).toBe(run.secret);
+    expect(() => assertRunHyperdrives(preview, run.runId)).not.toThrow();
+    expect(build.BETTER_AUTH_SECRET).toBeUndefined();
+    expect(
+      Object.keys(build).some((name) => name.startsWith("CLOUDFLARE_"))
+    ).toBe(false);
+    expect(build.VITE_OFFLINE_RUNTIME_ENABLED).toBe("false");
+    expect(() => closedEnvironment({ PATH: "/bin" }, "preview")).toThrow(
+      PREVIEW_VARIABLES_MISSING
     );
   });
 });

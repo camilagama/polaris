@@ -1,25 +1,37 @@
-import { readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { dropRunDatabase } from "./run-database";
 import { ensureRunEnvironment, ownerDatabaseUrl } from "./run-environment";
 
 /**
- * Drops the run database and its logins (and fails if any is left), and removes the `.dev.vars` the Vite plugin
- * writes into each build with the environment of the build (the run secret and the login passwords).
+ * Drops the run database and its logins (and fails if any is left). Then removes what the builds leave behind:
+ * the `.dev.vars` the Vite plugin writes next to each Worker bundle (the build gets no secret, so it should be
+ * empty; removed anyway) and `.wrangler/deploy`, which points at the last e2e build: a later `wrangler deploy`
+ * without a build must not follow it.
  */
 export default async function globalTeardown(): Promise<void> {
-  const builds = new URL("../dist-e2e/", import.meta.url);
-  for (const project of readdirSync(builds, { withFileTypes: true })) {
-    if (project.isDirectory()) {
-      rmSync(new URL(`${project.name}/polaris_web_local/.dev.vars`, builds), {
-        force: true,
-      });
+  try {
+    if (process.env.E2E_KEEP_DATABASE === "1") {
+      console.warn(
+        "E2E_KEEP_DATABASE=1: the run database and its logins were kept."
+      );
+    } else if (process.env.POLARIS_E2E_DATABASE_URL) {
+      await dropRunDatabase(ownerDatabaseUrl(), ensureRunEnvironment());
     }
+  } finally {
+    const builds = new URL("../dist-e2e/", import.meta.url);
+    const projects = existsSync(builds)
+      ? readdirSync(builds, { withFileTypes: true })
+      : [];
+    for (const project of projects) {
+      if (project.isDirectory()) {
+        rmSync(new URL(`${project.name}/polaris_web_local/.dev.vars`, builds), {
+          force: true,
+        });
+      }
+    }
+    rmSync(new URL("../.wrangler/deploy", import.meta.url), {
+      force: true,
+      recursive: true,
+    });
   }
-  if (process.env.E2E_KEEP_DATABASE === "1") {
-    console.warn(
-      "E2E_KEEP_DATABASE=1: the run database and its logins were kept."
-    );
-    return;
-  }
-  await dropRunDatabase(ownerDatabaseUrl(), ensureRunEnvironment());
 }

@@ -43,9 +43,40 @@ const BUNDLE_MARKERS = [
 const E2E_VARIABLES =
   /\bE2E_(RUN_ID|RUN_SECRET|LOGIN_PASSWORD_\w+|T0)\b|POLARIS_E2E_DATABASE_URL/;
 const importPattern =
-  /(?:import|export)\s[^"']*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
+  /(?:import|export)\s[^"']*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|import\s*["']([^"']+)["']/g;
+const SCRIPT_EXTENSION = /\.(m?js)$/;
+const WORKSPACE_SPECIFIER = /^@polaris\/([\w-]+)(\/.*)?$/;
 
-/** The local files the given entry imports, transitively (relative imports; packages are checked by marker). */
+/** `@polaris/<name>/<path>` → the file its package.json exports (the Worker bundles the workspace packages). */
+function workspaceFile(specifier: string): string | undefined {
+  const [, name, subpath] = WORKSPACE_SPECIFIER.exec(specifier) ?? [];
+  if (!name) {
+    return;
+  }
+  for (const directory of readdirSafe(join(repositoryRoot, "packages")) ?? []) {
+    const manifest = join(
+      repositoryRoot,
+      "packages",
+      directory,
+      "package.json"
+    );
+    if (existsSync(manifest)) {
+      const pkg = JSON.parse(readFileSync(manifest, "utf8")) as {
+        name?: string;
+        exports?: Record<string, string>;
+      };
+      const target =
+        pkg.name === `@polaris/${name}`
+          ? pkg.exports?.[`.${subpath ?? ""}`]
+          : undefined;
+      if (typeof target === "string") {
+        return join(repositoryRoot, "packages", directory, target);
+      }
+    }
+  }
+}
+
+/** The files the given entry imports, transitively: relative imports and the workspace packages (`@polaris/*`). */
 export function importGraph(entry: string): Map<string, string> {
   const seen = new Map<string, string>();
   const visit = (file: string) => {
@@ -55,11 +86,18 @@ export function importGraph(entry: string): Map<string, string> {
     const source = readFileSync(file, "utf8");
     seen.set(file, source);
     for (const match of source.matchAll(importPattern)) {
-      const specifier = match[1] ?? match[2] ?? "";
+      const specifier = match[1] ?? match[2] ?? match[3] ?? "";
       if (!specifier.startsWith(".")) {
+        const workspace = workspaceFile(specifier);
+        if (workspace && existsSync(workspace)) {
+          visit(workspace);
+        }
         continue;
       }
-      const base = resolve(dirname(file), specifier);
+      const base = resolve(
+        dirname(file),
+        specifier.replace(SCRIPT_EXTENSION, "")
+      );
       const candidate = [
         base,
         `${base}.ts`,
@@ -91,7 +129,7 @@ export function leaks(graph: Map<string, string>): string[] {
   const found: string[] = [];
   for (const [file, source] of graph) {
     for (const match of source.matchAll(importPattern)) {
-      const specifier = match[1] ?? match[2] ?? "";
+      const specifier = match[1] ?? match[2] ?? match[3] ?? "";
       if (IMPORT_MARKERS.some((marker) => marker.test(specifier))) {
         found.push(`${relative(repositoryRoot, file)}: ${specifier}`);
       }
@@ -113,7 +151,11 @@ export function deployLeaks(
   workflows: string[]
 ): string[] {
   const found: string[] = [];
-  const environments = wranglerSource.slice(wranglerSource.indexOf('"env"'));
+  const start = wranglerSource.indexOf('"env"');
+  if (start < 0) {
+    found.push("wrangler.jsonc has no env block to check");
+  }
+  const environments = wranglerSource.slice(Math.max(start, 0));
   if (E2E_VARIABLES.test(environments)) {
     found.push("wrangler.jsonc env");
   }
@@ -151,6 +193,10 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
   it("the Worker's import graph reaches no test-only module", () => {
     const graph = importGraph(join(appRoot, "worker/index.ts"));
     expect(graph.size).toBeGreaterThan(50);
+    // the workspace packages the Worker bundles are walked as well
+    expect(
+      [...graph.keys()].some((file) => file.includes("/packages/db/src/"))
+    ).toBe(true);
     expect(leaks(graph)).toEqual([]);
   });
 
@@ -180,7 +226,12 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
   });
 
   it("the bundles of the Worker, when built, carry no marker of testUtils or of the harness", () => {
-    for (const bundle of workerBundles()) {
+    const bundles = workerBundles();
+    // the e2e job runs this file again after its builds, with E2E_REQUIRE_BUNDLES=1: then an empty list fails
+    if (process.env.E2E_REQUIRE_BUNDLES === "1") {
+      expect(bundles.length).toBeGreaterThan(0);
+    }
+    for (const bundle of bundles) {
       expect(
         bundleLeaks(readFileSync(bundle, "utf8")),
         relative(appRoot, bundle)
@@ -240,12 +291,18 @@ describe("testUtils and the e2e harness stay out of the deployed Worker", () => 
           'import { openJourney } from "../e2e-real/fixtures";\nexport const app = openJourney;\n'
         );
         expect(leaks(importGraph(join(directory, "index.ts")))).toHaveLength(1);
+        // a side-effect import with a .js extension is followed too
+        writeFileSync(join(directory, "index.ts"), 'import "./app.js";\n');
+        expect(leaks(importGraph(join(directory, "index.ts")))).toHaveLength(1);
       } finally {
         rmSync(directory, { force: true, recursive: true });
       }
     });
 
     it("in a wrangler.jsonc and a workflow", () => {
+      expect(deployLeaks('{ "name": "x" }', [])).toEqual([
+        "wrangler.jsonc has no env block to check",
+      ]);
       const wrangler =
         '{ "name": "x", "env": { "staging": { "vars": { "E2E_RUN_SECRET": "x" } } } }';
       expect(deployLeaks(wrangler, [])).toEqual(["wrangler.jsonc env"]);
