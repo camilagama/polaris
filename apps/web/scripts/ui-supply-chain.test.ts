@@ -481,19 +481,9 @@ describe("policy of the CSP fixture (condition 2)", () => {
   });
 });
 
-describe("exceptions with an expiry", () => {
-  it("keeps the Zod CSP exception until the base PR, which drops it with z.config({ jitless: true })", () => {
-    // Recorded on 2026-10-20 (ADR 0103, PR 0). KNOWN_HARMLESS in apps/web/e2e/csp-fixture.ts only
-    // lists the Zod 4 `allowsEval` probe. The base PR (the first one that adds an interface package)
-    // sets `z.config({ jitless: true })` at startup and empties the list. This test keeps the
-    // reminder alive: when that PR lands, remove it with the entry.
-    expect(KNOWN_HARMLESS.map((known) => known.reason)).toEqual([
-      "zod allowsEval probe",
-    ]);
-    expect(
-      declaredInterfacePackages(webManifest),
-      "an interface package is declared: this is the base PR, so drop KNOWN_HARMLESS and add z.config({ jitless: true })"
-    ).toEqual([]);
+describe("CSP exceptions", () => {
+  it("has no known harmless violation: every violation fails the e2e", () => {
+    expect(KNOWN_HARMLESS).toEqual([]);
   });
 });
 

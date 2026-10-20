@@ -61,24 +61,17 @@ interface CspEvent {
 }
 
 /**
- * Violations that are known and harmless, each with the reason. Keep it as short as it can be: a new
- * entry needs the same justification in review.
- *
- * - Zod 4 probes `Function("")` inside a try/catch to decide whether it may compile validators
- *   (the `allowsEval` check, bundled in the orpc chunk). The CSP blocks it, the catch turns the JIT off,
- *   and nothing else happens. Dropping this entry takes `z.config({ jitless: true })` at startup.
- *   Recorded on 2026-10-20 (ADR 0103, PR 0): it leaves in the base PR, the first one that adds an interface
- *   package, together with that `z.config` call (not applied here: PR 0 changes no application code).
- *   `ui-supply-chain.test.ts` fails in that PR until this list is emptied.
+ * Violations that are known and harmless, each with the reason. It is empty and stays that way: a new
+ * entry needs the same justification in review (`ui-supply-chain.test.ts` fails while the list is not
+ * empty). The Zod 4 `allowsEval` probe that used to be listed is gone since `z.config({ jitless: true })`
+ * runs at startup in `packages/contracts/src/index.ts`.
  */
-export const KNOWN_HARMLESS = [
-  {
-    blocked: "eval",
-    directive: "script-src",
-    file: /\/assets\/orpc-[\w-]+\.js$/,
-    reason: "zod allowsEval probe",
-  },
-];
+export const KNOWN_HARMLESS: readonly {
+  blocked: string;
+  directive: string;
+  file: RegExp;
+  reason: string;
+}[] = [];
 
 function isKnownHarmless(event: CspEvent) {
   return KNOWN_HARMLESS.some(
