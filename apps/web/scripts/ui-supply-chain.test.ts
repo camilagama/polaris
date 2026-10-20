@@ -3,6 +3,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  KNOWN_HARMLESS,
+  policyOfBlock,
+  productionPolicy,
+} from "../e2e/csp-fixture";
+import {
   BASELINE_PACKAGES,
   declaredInterfacePackages,
   inexactInterfaceVersions,
@@ -27,8 +32,40 @@ const webManifest = readJson("apps/web/package.json");
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
 const WORKFLOW_FILE = /\.ya?ml$/;
-const BUNFIG_RELEASE_AGE =
-  /^\[install\][^[]*^minimumReleaseAge\s*=\s*604800\s*$/m;
+const BUNFIG_RELEASE_AGE = /^minimumReleaseAge\s*=\s*604800\s*$/m;
+const BUNFIG_AGE_KEYS = /^\s*(minimumReleaseAge\w*)\s*=/gm;
+const TABLE_HEADER = /^\s*\[/;
+
+/** The lines of the `[install]` table of a bunfig.toml, up to the next table. */
+function installSection(bunfig: string) {
+  const lines = bunfig.split("\n");
+  const start = lines.findIndex((line) => line.trim() === "[install]");
+  if (start === -1) {
+    return "";
+  }
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => TABLE_HEADER.test(line));
+  return (end === -1 ? rest : rest.slice(0, end)).join("\n");
+}
+
+const BUNFIG_EXCLUDES = /^\s*minimumReleaseAgeExcludes\s*=\s*\[([^\]]*)\]/m;
+const BUN_VERSION_FILE = /^\s*bun-version-file:\s*\.bun-version\s*$/m;
+const STEP_START = /^\s*- /;
+const BUN_VERSION_PIN = /^\s*bun-version:/m;
+const MIN_BUN_VERSION = "1.4.3";
+
+/** Compares `major.minor.patch` numerically; a pre-release suffix is ignored. */
+function isAtLeast(version: string, minimum: string) {
+  const parse = (text: string) =>
+    text.split(".").map((part) => Number.parseInt(part, 10));
+  const [a, b] = [parse(version), parse(minimum)];
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] ?? 0) !== (b[index] ?? 0)) {
+      return (a[index] ?? 0) > (b[index] ?? 0);
+    }
+  }
+  return true;
+}
 
 const CLOSURE_FILE = "apps/web/ui-dependency-closure.txt";
 
@@ -342,7 +379,121 @@ describe("minimumReleaseAge (condition 4)", () => {
   });
 
   it("is 7 days (604800 seconds) for Bun", () => {
-    expect(readRoot("bunfig.toml")).toMatch(BUNFIG_RELEASE_AGE);
+    const install = installSection(readRoot("bunfig.toml"));
+    expect(install).toMatch(BUNFIG_RELEASE_AGE);
+    // A misspelled key or one in another table is ignored by Bun: only these two names exist.
+    expect(
+      [...readRoot("bunfig.toml").matchAll(BUNFIG_AGE_KEYS)]
+        .map((match) => match[1])
+        .filter(
+          (key) =>
+            key !== "minimumReleaseAge" && key !== "minimumReleaseAgeExcludes"
+        )
+    ).toEqual([]);
+    expect(
+      installSection(
+        '[install]\nminimumReleaseAgeExcludes = ["x"]\nminimumReleaseAge = 604800\n[run]\nbun = true\n'
+      )
+    ).toMatch(BUNFIG_RELEASE_AGE);
+    expect(installSection("[run]\nminimumReleaseAge = 604800\n")).not.toMatch(
+      BUNFIG_RELEASE_AGE
+    );
+  });
+
+  it("excludes from the age only the packages of an urgent update, one by one", () => {
+    // docs/runbooks/dependency-audit.md: the urgent PR lists the package here and in bunfig.toml;
+    // the PR that removes the entry (after 7 days) empties this list again.
+    const URGENT_EXCLUDES: string[] = [];
+    const entry = BUNFIG_EXCLUDES.exec(installSection(readRoot("bunfig.toml")));
+    const excluded = (entry?.[1] ?? "")
+      .split(",")
+      .map((name) => name.trim().replace(/^"|"$/g, ""))
+      .filter((name) => name.length > 0);
+    expect(excluded).toEqual(URGENT_EXCLUDES);
+    expect(excluded.filter((name) => name.includes("*"))).toEqual([]);
+  });
+
+  const readBunVersion = () => readRoot(".bun-version").trim();
+
+  it("is enforced by a Bun that honors it: .bun-version is 1.4.3 or newer", () => {
+    expect(isAtLeast(readBunVersion(), MIN_BUN_VERSION)).toBe(true);
+    expect(isAtLeast("1.4.2", MIN_BUN_VERSION)).toBe(false);
+    expect(isAtLeast("1.3.9", MIN_BUN_VERSION)).toBe(false);
+    expect(isAtLeast("1.4.3", MIN_BUN_VERSION)).toBe(true);
+    expect(isAtLeast("1.10.0", MIN_BUN_VERSION)).toBe(true);
+    expect(isAtLeast("2.0.0", MIN_BUN_VERSION)).toBe(true);
+  });
+
+  it("is the Bun of packageManager and of every setup-bun step", () => {
+    const version = readBunVersion();
+    expect(readJson("package.json")).toMatchObject({
+      packageManager: `bun@${version}`,
+    });
+    const workflowDir = join(root, ".github/workflows");
+    let steps = 0;
+    for (const name of readdirSync(workflowDir).filter((file) =>
+      WORKFLOW_FILE.test(file)
+    )) {
+      const lines = readFileSync(join(workflowDir, name), "utf8").split("\n");
+      lines.forEach((line, index) => {
+        if (!line.includes("oven-sh/setup-bun@")) {
+          return;
+        }
+        steps += 1;
+        // The CI picks Bun by the file: no pinned `bun-version` that could drift from it.
+        const following = lines.slice(index + 1);
+        const stepEnd = following.findIndex((next) => STEP_START.test(next));
+        const withBlock = (
+          stepEnd === -1 ? following : following.slice(0, stepEnd)
+        ).join("\n");
+        expect(withBlock, `${name}:${index + 1}`).toMatch(BUN_VERSION_FILE);
+        expect(withBlock, `${name}:${index + 1}`).not.toMatch(BUN_VERSION_PIN);
+      });
+    }
+    expect(steps).toBeGreaterThan(0);
+  });
+});
+
+describe("policy of the CSP fixture (condition 2)", () => {
+  const file = `# comment
+/sw.js
+  Content-Security-Policy: default-src 'none'
+  Cache-Control: no-cache
+
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'
+  Referrer-Policy: no-referrer
+
+/other
+  Content-Security-Policy: default-src 'self' evil.example
+`;
+
+  it("reads the block of the path asked, not the first CSP line of the file", () => {
+    expect(policyOfBlock(file, "/*")).toBe("default-src 'self'");
+    expect(policyOfBlock(file, "/sw.js")).toBe("default-src 'none'");
+    expect(policyOfBlock(file, "/missing")).toBe("");
+  });
+
+  it("is the policy of the `/*` block of the real _headers file", () => {
+    expect(productionPolicy).toContain("default-src 'self'");
+    expect(productionPolicy).toContain("frame-ancestors 'none'");
+  });
+});
+
+describe("exceptions with an expiry", () => {
+  it("keeps the Zod CSP exception until the base PR, which drops it with z.config({ jitless: true })", () => {
+    // Recorded on 2026-10-20 (ADR 0103, PR 0). KNOWN_HARMLESS in apps/web/e2e/csp-fixture.ts only
+    // lists the Zod 4 `allowsEval` probe. The base PR (the first one that adds an interface package)
+    // sets `z.config({ jitless: true })` at startup and empties the list. This test keeps the
+    // reminder alive: when that PR lands, remove it with the entry.
+    expect(KNOWN_HARMLESS.map((known) => known.reason)).toEqual([
+      "zod allowsEval probe",
+    ]);
+    expect(
+      declaredInterfacePackages(webManifest),
+      "an interface package is declared: this is the base PR, so drop KNOWN_HARMLESS and add z.config({ jitless: true })"
+    ).toEqual([]);
   });
 });
 

@@ -17,6 +17,17 @@ Procedimento e registro de exceções do job "Dependency audit" do CI, que roda 
 
 O `bun audit` não lê arquivo de exceções; o `--ignore` só vale na linha de comando. Por isso o workflow `.github/workflows/ci.yml` passa um `--ignore` para cada exceção vigente da tabela abaixo, com a data de revisão em comentário, e o job volta a ficar vermelho só com aviso novo. Ao remover uma exceção, remover também o `--ignore` correspondente.
 
+## Atraso de 7 dias para versões novas (`minimumReleaseAge`)
+
+O Renovate (`minimumReleaseAge: "7 days"`, com `internalChecksFilter: "strict"`) não cria o branch antes dos 7 dias, e o Bun (`minimumReleaseAge = 604800` na tabela `[install]` do `bunfig.toml`) recusa resolver versão publicada há menos de 7 dias. O `.bun-version` é 1.4.3 ou mais novo (um teste confere; provado em 20/10/2026 com `bun add` de um pacote de 1 dia, recusado com `blocked by minimum-release-age`), e o CI escolhe o Bun por esse arquivo. A ADR 0103 (condição 4) explica o porquê.
+
+- **Com `--frozen-lockfile`, o atraso só vale quando o `bun.lock` muda.** O `bun install --frozen-lockfile` instala o que o lock já fixa, sem resolver nada: uma versão com menos de 7 dias que já esteja no lock é instalada sem recusa. O controle está em quem muda o lock (`bun add`, `bun update`, Renovate), e por isso o PR que muda `bun.lock` é o ponto de revisão: conferir a data de publicação das versões novas (`bun pm view <pacote> time`).
+- **Atualização de segurança urgente (versão corrigida com menos de 7 dias):**
+  1. Em um PR só para isso, acrescentar ao `bunfig.toml`, na tabela `[install]` (em qualquer ordem em relação ao `minimumReleaseAge`), `minimumReleaseAgeExcludes = ["<pacote>"]`, **uma entrada por pacote** (nunca curinga), e rodar `bun add <pacote>@<versão exata>` (ou `bun update <pacote>`).
+  2. Explicar no PR o aviso (GHSA ou CVE), a versão escolhida, a data de publicação e a conferência do conteúdo (changelog e diff do pacote publicado). O Arrascaeta (merge) e a revisão de segurança aprovam o PR.
+  3. Depois dos 7 dias, abrir PR removendo a entrada. O teste de `apps/web/scripts/ui-supply-chain.test.ts` só aceita no `bunfig.toml` os pacotes da lista `URGENT_EXCLUDES` dele (vazia por padrão, sem curinga): o PR urgente inclui o pacote nas duas e o PR de remoção esvazia as duas.
+  4. O Renovate continua com os 7 dias: a atualização urgente é manual.
+
 ## Rollback ou forward-fix
 
 Se um override ou atualização quebrar `bun run build`, `bun run check` ou um gate, reverter o `package.json` e o `bun.lock` do commit e registrar o aviso como exceção (só se for de ferramenta de desenvolvimento) até haver versão compatível. Não há dado nem recurso de produção envolvido.

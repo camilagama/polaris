@@ -2,13 +2,40 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 
-/** The Content-Security-Policy of the SPA shell, read from the file the Worker serves (ADR 0090). */
+/**
+ * The Content-Security-Policy of the SPA shell, read from the file the Worker serves (ADR 0090): the one
+ * in the `/*` block, the rule that covers every path, not the first CSP line the file happens to have.
+ */
 const headers = readFileSync(
   new URL("../public/_headers", import.meta.url),
   "utf8"
 );
-export const productionPolicy =
-  /Content-Security-Policy: (.*)/.exec(headers)?.[1] ?? "";
+
+const INDENTED_LINE = /^[ \t]+\S/;
+const CSP_LINE = /^Content-Security-Policy: (.+)$/m;
+
+/** The indented lines under a path rule of a Cloudflare `_headers` file, up to the next rule. */
+function headersBlock(file: string, path: string) {
+  const lines = file.split("\n");
+  const start = lines.findIndex((line) => line.trimEnd() === path);
+  if (start === -1) {
+    return "";
+  }
+  const block: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!INDENTED_LINE.test(line)) {
+      break;
+    }
+    block.push(line.trim());
+  }
+  return block.join("\n");
+}
+
+export function policyOfBlock(file: string, path: string) {
+  return CSP_LINE.exec(headersBlock(file, path))?.[1] ?? "";
+}
+
+export const productionPolicy = policyOfBlock(headers, "/*");
 
 /**
  * Serves the documents, scripts and workers of the page under the production policy, as the static
@@ -40,8 +67,11 @@ interface CspEvent {
  * - Zod 4 probes `Function("")` inside a try/catch to decide whether it may compile validators
  *   (the `allowsEval` check, bundled in the orpc chunk). The CSP blocks it, the catch turns the JIT off,
  *   and nothing else happens. Dropping this entry takes `z.config({ jitless: true })` at startup.
+ *   Recorded on 2026-10-20 (ADR 0103, PR 0): it leaves in the base PR, the first one that adds an interface
+ *   package, together with that `z.config` call (not applied here: PR 0 changes no application code).
+ *   `ui-supply-chain.test.ts` fails in that PR until this list is emptied.
  */
-const KNOWN_HARMLESS = [
+export const KNOWN_HARMLESS = [
   {
     blocked: "eval",
     directive: "script-src",
