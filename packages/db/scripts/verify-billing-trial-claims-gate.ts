@@ -208,7 +208,7 @@ async function main() {
     );
     const keys = await admin.pool.query<{ action: string; target: string }>(
       `SELECT confrelid::regclass::text AS target, confdeltype::text AS action
-         FROM pg_catalog.pg_constraint WHERE conrelid = 'public.billing_trial_claims'::regclass AND contype = 'f' ORDER BY 1`
+         FROM pg_catalog.pg_constraint WHERE conrelid = 'public.billing_trial_claims'::regclass AND contype = 'f' ORDER BY confrelid::regclass::text COLLATE "C"`
     );
     assert.deepEqual(keys.rows, [
       { action: "c", target: '"user"' },
