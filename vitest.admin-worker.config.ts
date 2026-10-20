@@ -20,7 +20,7 @@ export default defineConfig({
   resolve: { alias: pgWorkerdAliases },
   test: {
     onUnhandledError(error) {
-      const client = (error as { client?: { user?: unknown } }).client;
+      const { client } = error as { client?: { user?: unknown } };
       if (
         error.message === KNOWN_SOCKET_ERROR &&
         typeof client?.user === "string" &&
