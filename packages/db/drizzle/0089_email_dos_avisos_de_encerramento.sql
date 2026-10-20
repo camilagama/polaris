@@ -16,7 +16,8 @@
 --    writes the notices and their outbox events), executed only by the Admin owner.
 -- 3. The handover of the notices left unresolved while the e-mail was off (`list_owed_closure_notices`): of the notices
 --    of the current cycle still owed, the latest is handed to the privacy job to send, and the earlier ones are settled
---    `skipped`, so the owner never gets the old ones in a row.
+--    `skipped`, so the owner never gets the old ones in a row. One owed to a user who left is not taken, and the ones
+--    found not verified go to the end of the batch, so they never keep a notice that can go out from it.
 --
 -- Expand only (ADR 0096): three new columns (`reissue` with a default, `dismissed_at` and `unverified_at`), `user_id` nullable (a dismissed notice has none), the unique key
 -- of the cycle recreated with the reissue (same name, so `ON CONFLICT ON CONSTRAINT` still finds it), a new check, two
@@ -247,6 +248,33 @@ END;
 $function$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.closure_notice_recipient(uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_outbox_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.closure_notice_recipient(uuid, text) TO polaris_auth_runtime;--> statement-breakpoint
+-- Whether the owner a notice still owed is for has, right now, an e-mail not verified (review of 20/10/2026): the check
+-- the dismissal `email_not_verified` makes of the present, not only of the instant a delivery found it so
+-- (`unverified_at`), since the owner may have verified it since. Only a boolean, never the address; false for a notice
+-- not owed, or for a user who is no longer an owner. Only the owner of the act of the support executes it.
+CREATE FUNCTION public.closure_notice_owner_unverified(p_notice uuid, p_organization text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.closure_notices AS notice
+      JOIN public."user" AS account ON account.id = notice.user_id
+     WHERE notice.id = p_notice AND notice.organization_id = p_organization
+       AND NOT notice.skipped AND notice.sent_at IS NULL AND notice.failed_at IS NULL AND notice.dismissed_at IS NULL
+       AND account.email_verified IS NOT TRUE
+       AND EXISTS (
+         SELECT 1 FROM public.memberships AS membership
+          WHERE membership.organization_id = notice.organization_id AND membership.user_id = notice.user_id
+            AND membership.role = 'owner' AND membership.status = 'active'
+       )
+  );
+$function$;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.closure_notice_owner_unverified(uuid, text) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_outbox_runtime, polaris_auth_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.closure_notice_owner_unverified(uuid, text) TO polaris_privacy_owner;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_notice_recipient_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_notice_recipient_owner;--> statement-breakpoint
@@ -443,7 +471,10 @@ $function$;--> statement-breakpoint
 -- cycle owed for 15 minutes or more (the consumer had its turn), the latest owed one is answered to be sent, and the
 -- earlier owed ones of the cycle are settled `skipped`, so the owner never gets the old ones in a row. A latest one
 -- recorded in the last 15 minutes is left to the consumer. One organization at a time, under the same lock as the act
--- of the support. Only the privacy runtime executes it.
+-- of the support. A cycle whose latest owed notice is for a user who is no longer an owner is not taken (it never goes
+-- out; the support sends it again), and the cycles go by `unverified_at` (never found not verified first, then the
+-- oldest), so the batch takes turns and the notices that cannot go out now never keep the others out of it. Only the
+-- privacy runtime executes it.
 CREATE FUNCTION public.list_owed_closure_notices(p_limit integer)
 RETURNS TABLE (owed_notice uuid, owed_organization text)
 LANGUAGE plpgsql
@@ -462,6 +493,16 @@ BEGIN
     SELECT organization.id AS organization_id, closure.requested_at
       FROM public.organizations AS organization
       JOIN public.organization_closures AS closure ON closure.organization_id = organization.id
+      -- the latest owed notice of the cycle, the one that would go out
+      CROSS JOIN LATERAL (
+        SELECT notice.user_id, notice.unverified_at
+          FROM public.closure_notices AS notice
+         WHERE notice.organization_id = organization.id AND notice.closure_requested_at = closure.requested_at
+           AND NOT notice.skipped AND notice.sent_at IS NULL AND notice.failed_at IS NULL
+           AND notice.dismissed_at IS NULL AND notice.user_id IS NOT NULL
+         ORDER BY notice.due_at DESC, notice.reissue DESC, notice.recorded_at DESC, notice.id DESC
+         LIMIT 1
+      ) AS latest_owed
      WHERE organization.status IN ('closing', 'closed', 'purge_pending')
        AND closure.recovered_at IS NULL
        AND EXISTS (
@@ -471,7 +512,17 @@ BEGIN
             AND notice.dismissed_at IS NULL AND notice.user_id IS NOT NULL
             AND notice.recorded_at <= pg_catalog.now() - interval '15 minutes'
        )
-     ORDER BY closure.requested_at, organization.id
+       -- one owed to a user who is no longer an owner never goes out (the support sends it again to the owner of now):
+       -- it is not taken, so it never holds a place of the batch
+       AND EXISTS (
+         SELECT 1 FROM public.memberships AS membership
+          WHERE membership.organization_id = organization.id AND membership.user_id = latest_owed.user_id
+            AND membership.role = 'owner' AND membership.status = 'active'
+       )
+     -- the ones never found not verified first, then the ones found so longest ago: each delivery that finds the address
+     -- not verified writes `unverified_at` again, so the notices that cannot go out now take turns at the end of the
+     -- batch and never keep the others out of it
+     ORDER BY latest_owed.unverified_at NULLS FIRST, closure.requested_at, organization.id
      LIMIT p_limit
   LOOP
     PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('closure_notice:' || candidate.organization_id, 0));
@@ -594,6 +645,16 @@ BEGIN
     END IF;
     IF p_dismiss_reason = 'email_not_verified' AND unverified_to_owner = 0 THEN
       RAISE EXCEPTION 'closure_notice_not_unverified' USING ERRCODE = '55000';
+    END IF;
+    -- the fact of a past delivery is not enough: the owner may have verified the e-mail since, and then the notice is
+    -- sent again, never dismissed (the address is not read here, only whether it is verified now)
+    IF p_dismiss_reason = 'email_not_verified' AND NOT EXISTS (
+      SELECT 1 FROM public.closure_notices AS notice
+       WHERE notice.organization_id = p_organization AND notice.closure_requested_at = cycle
+         AND notice.milestone = 'd7' AND notice.unverified_at IS NOT NULL
+         AND public.closure_notice_owner_unverified(notice.id, notice.organization_id)
+    ) THEN
+      RAISE EXCEPTION 'closure_notice_owner_verified' USING ERRCODE = '55000';
     END IF;
     UPDATE public.closure_notices AS notice
        SET skipped = true

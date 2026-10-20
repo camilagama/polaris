@@ -152,6 +152,7 @@ export const ORGANIZATION_PURGE_REFUSALS = Object.freeze([
   "closure_notice_owner_present",
   "closure_notice_not_refused",
   "closure_notice_not_unverified",
+  "closure_notice_owner_verified",
 ] as const);
 
 export type OrganizationPurgeRefusalCode =
@@ -169,6 +170,8 @@ const ORGANIZATION_PURGE_REFUSAL_MESSAGES: Readonly<
     "O provedor de e-mail não recusou o aviso de 7 dias deste encerramento para o dono atual (ou ainda há um aviso esperando envio): reenvie o aviso antes de dispensá-lo.",
   closure_notice_not_unverified:
     "Nenhuma tentativa de envio do aviso de 7 dias encontrou o e-mail do dono sem verificação: com o e-mail dos avisos ligado, espere a tentativa ou reenvie o aviso.",
+  closure_notice_owner_verified:
+    "O dono já verificou o e-mail depois da última tentativa de envio do aviso de 7 dias: reenvie o aviso em vez de dispensá-lo.",
   closure_notice_owner_present:
     "A organização ainda tem dono ativo: a conta do dono não foi apagada. Reenvie o aviso ou use o motivo que corresponde ao caso.",
   closure_notice_not_due:

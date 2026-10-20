@@ -398,7 +398,15 @@ async function emailScenario(
   assert.ok(message);
   assert.equal(message.idempotencyKey, notice.id);
   assert.equal(message.to, address);
-  assert.ok(message.html.includes("https://app.example.invalid/"));
+  // every link of the message is the panel: the app's origin, with no path, query or token
+  const links = [...message.html.matchAll(/href="([^"]*)"/g)].map(
+    (match) => new URL(match[1] ?? "")
+  );
+  assert.ok(links.length > 0, "the message links to the panel");
+  for (const link of links) {
+    assert.equal(link.origin, new URL(CONFIG.appOrigin).origin);
+    assert.equal(`${link.pathname}${link.search}${link.hash}`, "/");
+  }
   assert.ok(!message.html.includes(address), "the address is not in the text");
   const delivered = (await rowsOf(owner, store.organizationId)).find(
     (row) => row.id === notice.id
@@ -628,6 +636,104 @@ async function emailScenario(
   }
   tests.push(
     "the handover (with the e-mail on) sends the latest notice owed of each cycle and settles the earlier owed ones skipped, leaves one recorded in the last 15 minutes to its consumer, takes a bounded batch, and only the privacy runtime runs it"
+  );
+
+  // the handover takes turns: 21 cycles that cannot go out now (an address not verified, requested earlier) and 3 owed
+  // to a user who left never keep a notice that can go out out of a batch of 20
+  const stuck: { noticeId: string; organizationId: string }[] = [];
+  for (let index = 0; index < 21; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: each store is written in turn, as the scenario needs.
+    const store = await closed(
+      `stuck ${index}`,
+      await localDayStart(owner, ZONE, -85)
+    );
+    await record();
+    const stuckNotice = await owedOf(owner, store.organizationId);
+    await owner.query(
+      'UPDATE public."user" SET email_verified = false WHERE id = $1',
+      [store.userId]
+    );
+    assert.deepEqual(
+      await recipients.recipient(stuckNotice.id, store.organizationId),
+      { verified: false }
+    );
+    stuck.push({
+      noticeId: stuckNotice.id,
+      organizationId: store.organizationId,
+    });
+  }
+  const formerOwners: { noticeId: string; organizationId: string }[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: each store is written in turn, as the scenario needs.
+    const store = await closed(
+      `former owner ${index}`,
+      await localDayStart(owner, ZONE, -86)
+    );
+    await record();
+    const goneNotice = await owedOf(owner, store.organizationId);
+    await owner.query(
+      "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
+      [store.organizationId, store.userId]
+    );
+    formerOwners.push({
+      noticeId: goneNotice.id,
+      organizationId: store.organizationId,
+    });
+  }
+  const sendable = await closed("sendable");
+  await record();
+  const sendableNotice = await owedOf(owner, sendable.organizationId);
+  const turns = [
+    ...stuck,
+    ...formerOwners,
+    { noticeId: sendableNotice.id, organizationId: sendable.organizationId },
+  ];
+  await owner.query(
+    "UPDATE public.closure_notices SET recorded_at = now() - interval '20 minutes' WHERE id = ANY($1::uuid[])",
+    [turns.map((turn) => turn.noticeId)]
+  );
+  owed = await maintenance.listOwedClosureNotices(20);
+  assert.ok(
+    owed.some((row) => row.noticeId === sendableNotice.id),
+    "the notice that can go out is in the batch, ahead of the ones found not verified"
+  );
+  assert.ok(
+    !owed.some((row) =>
+      formerOwners.some((turn) => turn.noticeId === row.noticeId)
+    ),
+    "a notice owed to a user who left is never taken"
+  );
+  assert.equal(
+    owed.filter((row) => stuck.some((turn) => turn.noticeId === row.noticeId))
+      .length,
+    19,
+    "the ones found not verified fill the rest of the batch"
+  );
+  // the delivery finds them not verified again: they go to the end, and the one left out comes in
+  const leftOut = stuck.filter(
+    (turn) => !owed.some((row) => row.noticeId === turn.noticeId)
+  );
+  assert.equal(leftOut.length, 2);
+  for (const row of owed) {
+    if (row.noticeId !== sendableNotice.id) {
+      // biome-ignore lint/performance/noAwaitInLoops: each delivery reads its own address, in turn.
+      await recipients.recipient(row.noticeId, row.organizationId);
+    }
+  }
+  const nextBatch = await maintenance.listOwedClosureNotices(20);
+  for (const turn of leftOut) {
+    assert.ok(
+      nextBatch.some((row) => row.noticeId === turn.noticeId),
+      "the batch takes turns: the cycle left out is taken next"
+    );
+  }
+  // they are settled, so they leave the rest of the scenario alone
+  await owner.query(
+    "UPDATE public.closure_notices SET skipped = true WHERE id = ANY($1::uuid[])",
+    [turns.map((turn) => turn.noticeId)]
+  );
+  tests.push(
+    "the handover never takes a cycle whose latest notice is owed to a user who left, and takes the cycles by when a delivery last found the address not verified (never first): 21 notices that cannot go out now never keep the one that can out of a batch of 20, and the batch takes turns"
   );
 
   // the act of the support: a new d7 of the cycle sent again, under a privacy case, with the audit; never an UPDATE
@@ -1022,6 +1128,33 @@ async function emailScenario(
     "privacy_requester_not_owner",
     "a data subject's deletion never silences the notice of an owner"
   );
+  // the owner verifies the e-mail after the delivery found it not verified: the dismissal reads the present, and refuses
+  await owner.query(
+    'UPDATE public."user" SET email_verified = true WHERE id = $1',
+    [neverVerified.userId]
+  );
+  await refusedWith(
+    () =>
+      dismissClosureNotice(
+        admin,
+        principal,
+        neverVerifiedCase,
+        neverVerified.organizationId,
+        "email_not_verified"
+      ),
+    "closure_notice_owner_verified",
+    "an e-mail verified after unverified_at is not dismissed: the notice is sent again"
+  );
+  assert.ok(
+    (await rowsOf(owner, neverVerified.organizationId)).every(
+      (row) => row.dismissed_at === null
+    ),
+    "a refused dismissal writes nothing"
+  );
+  await owner.query(
+    'UPDATE public."user" SET email_verified = false WHERE id = $1',
+    [neverVerified.userId]
+  );
   const overdueBefore = (await record()).overdue;
   await dismissClosureNotice(
     admin,
@@ -1069,7 +1202,7 @@ async function emailScenario(
     );
   }
   tests.push(
-    "the person responsible dismisses the d7 (an account gone with its notices, an address refused, an e-mail the consumer found not verified) only under a privacy case of deletion asked by the owner (a data subject's only with no owner left) and accepted, with a reason of the list that fits the facts (no owner left; a d7 refused for an owner; a d7 owed to an owner whose address the function of the address found not verified): a new d7 with no user and no event, audited as closure_notice.dismissed with the reason, that settles the notices still owed, leaves the alert, and lets the store be deleted only 7 days later; a second dismissal, or a reissue after a delivery or a dismissal, is refused, and only the Admin's functions write it"
+    "the person responsible dismisses the d7 (an account gone with its notices, an address refused, an e-mail the consumer found not verified) only under a privacy case of deletion asked by the owner (a data subject's only with no owner left) and accepted, with a reason of the list that fits the facts (no owner left; a d7 refused for an owner; a d7 owed to an owner whose address the function of the address found not verified, and still not verified now): a new d7 with no user and no event, audited as closure_notice.dismissed with the reason, that settles the notices still owed, leaves the alert, and lets the store be deleted only 7 days later; a second dismissal, or a reissue after a delivery or a dismissal, is refused, and only the Admin's functions write it"
   );
   return tests;
 }
