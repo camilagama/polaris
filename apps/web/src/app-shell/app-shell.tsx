@@ -14,6 +14,10 @@ import { currentReturnPath } from "../lib/sign-in-path";
 import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
 import { LogoutControl } from "../offline/runtime/logout-control";
+import {
+  OfflineAccessGate,
+  useOfflineAccessExpired,
+} from "../offline/runtime/offline-access-expired";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { useSessionOver } from "../offline/runtime/session-ended";
@@ -215,11 +219,13 @@ export function AppShell({
 }: AppShellProps) {
   const { load, select } = useOrganizationLoad();
   const sessionOver = useSessionOver();
+  // the remembered organizations only draw the screen: with the offline access expired they are hidden, not deleted
+  const accessExpired = useOfflineAccessExpired();
   // the devices screen has its own panels for this (with the same button); the gate says it itself
   const showNotice =
     sessionOver && navId !== "devices" && load.status !== "session_ended";
   const organization: CurrentOrganization | null =
-    load.status === "ready"
+    load.status === "ready" && !accessExpired
       ? {
           organization: load.current,
           organizationId: load.current.id,
@@ -235,11 +241,13 @@ export function AppShell({
       <AppHeader navId={navId} organization={organization} />
       <main className="categories-content" id="conteudo">
         {showNotice ? <SessionEndedNotice /> : null}
-        {requiresOrganization ? (
-          <OrganizationGate>{children}</OrganizationGate>
-        ) : (
-          children
-        )}
+        <OfflineAccessGate>
+          {requiresOrganization ? (
+            <OrganizationGate>{children}</OrganizationGate>
+          ) : (
+            children
+          )}
+        </OfflineAccessGate>
       </main>
     </div>
   );

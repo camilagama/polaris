@@ -241,6 +241,31 @@
   color: var(--ui-muted);
 }
 
+/* the status line of the expired offline access is empty until the network returns: no gap for it */
+.offline-access-expired [role="status"]:empty {
+  margin-top: -1rem;
+}
+
+.offline-access-expired .secondary-button {
+  justify-self: start;
+}
+
+/* shown for a few seconds when the access comes back, above the page that returns */
+.offline-access-renewed {
+  margin: 0;
+}
+
+.offline-access-renewed:not(:empty) {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--ui-muted);
+}
+
+.offline-access-expired:focus-visible {
+  outline: 3px solid var(--ui-ink);
+  outline-offset: 2px;
+}
+
 .app-gate .categories-message {
   color: var(--ui-danger-strong);
 }

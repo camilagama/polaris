@@ -60,6 +60,11 @@ class RpcServer {
   checked = 0;
   sessionLookups = 0;
   readonly pushed: PushedCommand[][] = [];
+  /** Every call is dropped as if the connection were gone (the browser still says it is online). */
+  connection: "down" | "up" = "up";
+  /** How far the page's simulated clock is ahead of this process, so a lease issued now is current there. */
+  clockOffsetMs = 0;
+  leasesIssued = 0;
 
   constructor(userId: string) {
     this.sessionUser = userId;
@@ -91,9 +96,15 @@ class RpcServer {
 
   async install(page: Page) {
     await page.route("**/api/auth/get-session", (route) =>
-      this.answerSession(route)
+      this.connection === "down"
+        ? route.abort("internetdisconnected")
+        : this.answerSession(route)
     );
-    await page.route("**/rpc/**", (route) => this.answerRpc(route));
+    await page.route("**/rpc/**", (route) =>
+      this.connection === "down"
+        ? route.abort("internetdisconnected")
+        : this.answerRpc(route)
+    );
   }
 
   private async answerSession(route: Route) {
@@ -196,7 +207,8 @@ class RpcServer {
   }
 
   private async issueLease(userId: string, deviceId: string) {
-    const issuedAt = new Date();
+    this.leasesIssued += 1;
+    const issuedAt = new Date(Date.now() + this.clockOffsetMs);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
@@ -605,5 +617,147 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     ]);
     // nothing reached the server's stock
     expect(server.stock.executions).toBe(0);
+  });
+});
+
+test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", () => {
+  const EXPIRED_TITLE = "O acesso sem internet venceu";
+  // a moment past the exp of the lease issued at the start (72 h)
+  const PAST_EXP = 72 * HOUR + 1000;
+
+  const notice = (page: Page) =>
+    page.getByRole("heading", { name: EXPIRED_TITLE });
+  const saleHeading = (page: Page) =>
+    page.getByRole("heading", { exact: true, name: "Nova venda" });
+
+  test("vence com o app aberto: o temporizador tira a venda na hora, a fila fica igual, e com a rede de volta o acesso se renova e a tela volta sem recarregar (AC-38)", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.clock.install();
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    await queueSales(page, 2);
+    const queued = await outboxCommands(page);
+    expect(queued).toHaveLength(2);
+    const leases = server.leasesIssued;
+
+    await page.clock.fastForward(PAST_EXP);
+
+    await expect(notice(page)).toBeVisible();
+    await expect(
+      page.getByText(
+        "Há 2 operações guardadas neste aparelho. Elas não se perdem."
+      )
+    ).toBeVisible();
+    // no screen draws the copy and nothing new can be kept: the sale screen is gone
+    await expect(saleHeading(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Guardar venda neste aparelho" })
+    ).toHaveCount(0);
+    await expect(page.getByText(SHIRT_OPTION)).toHaveCount(0);
+    // the remembered organization only drew the screen: hidden now
+    await expect(page.locator(".app-org-name")).toHaveCount(0);
+    await expect(chip(page)).toContainText("Conecte-se");
+    // it ended with the app open: what was being put together is gone, and the notice says so
+    await expect(
+      page.getByText(
+        "A venda que você estava montando não foi guardada. Quando o acesso voltar, monte de novo."
+      )
+    ).toBeVisible();
+    await expect(
+      page.getByText("Quando a internet voltar, o acesso volta sozinho.")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Tentar agora" })
+    ).toHaveCount(0);
+    await expect(chip(page)).toHaveAttribute("title", EXPIRED_TITLE);
+    expect(new URL(page.url()).pathname).toBe("/sales");
+    expect(await outboxCommands(page)).toEqual(queued);
+    expect(server.leasesIssued).toBe(leases); // no network, no try
+
+    server.clockOffsetMs = PAST_EXP;
+    await page.context().setOffline(false);
+
+    await expect(saleHeading(page)).toBeVisible({ timeout: 30_000 });
+    await expect(notice(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("status").getByText("Acesso renovado.")
+    ).toBeVisible();
+    expect(server.leasesIssued).toBe(leases + 1);
+    // the very same work goes out, once each
+    await expect
+      .poll(() => outboxCommands(page), { timeout: 30_000 })
+      .toEqual([]);
+    expect(server.pushed.flat().map(({ commandId }) => commandId)).toEqual(
+      queued.map(({ commandId }) => commandId)
+    );
+    expect(new URL(page.url()).pathname).toBe("/sales");
+  });
+
+  test("aberto com o lease vencido e sem resposta do servidor: mostra o aviso com a fila, não vai a /entrar, não registra outro aparelho, e renova quando a conexão volta (AC-37)", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.clock.install();
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    await queueSales(page, 1);
+    const queued = await outboxCommands(page);
+    await page.clock.fastForward(PAST_EXP);
+    await expect(notice(page)).toBeVisible();
+
+    // a second visit, the device reaching no server at all
+    server.connection = "down";
+    await page.context().setOffline(false);
+    await page.reload();
+
+    await expect(notice(page)).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByText("Há 1 operação guardada neste aparelho. Ela não se perde.")
+    ).toBeVisible();
+    await expect(saleHeading(page)).toHaveCount(0);
+    await expect(page.locator(".app-org-name")).toHaveCount(0);
+    // opened already expired: nothing was being put together
+    await expect(
+      page.getByText("A venda que você estava montando não foi guardada.", {
+        exact: false,
+      })
+    ).toHaveCount(0);
+    // online but the server does not answer: the chip and the body do not ask for a connection that is already there
+    await expect(chip(page)).toContainText("Sem acesso");
+    await expect(
+      page.getByText(
+        "Este aparelho ficou muito tempo sem se conectar à internet.",
+        { exact: true }
+      )
+    ).toBeVisible();
+    // it says so and offers another try
+    await expect(
+      page.getByText(
+        "Há internet, mas não conseguimos renovar o acesso agora. Vamos tentar de novo em instantes."
+      )
+    ).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/sales");
+    expect(await outboxCommands(page)).toEqual(queued);
+    expect(server.registered).toBe(1);
+    expect(await stored(page, leaseKey(user))).not.toBeNull();
+    expect(await stored(page, SESSION_USER_KEY)).toBe(user);
+    expect(await collectionFiles(page)).toBe(1);
+
+    // the connection comes back
+    server.connection = "up";
+    server.clockOffsetMs = PAST_EXP;
+    await page.getByRole("button", { name: "Tentar agora" }).click();
+
+    await expect(saleHeading(page)).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(() => outboxCommands(page), { timeout: 30_000 })
+      .toEqual([]);
+    expect(server.pushed.flat().map(({ commandId }) => commandId)).toEqual(
+      queued.map(({ commandId }) => commandId)
+    );
   });
 });
