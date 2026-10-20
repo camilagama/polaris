@@ -1,0 +1,107 @@
+---
+status: accepted
+---
+
+# Base de componentes: shadcn na variante Base UI com Tailwind 4
+
+> O número deste ADR (0103) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0102 é o último na `main` e o 0099 está reservado ao backup); pode mudar se outro entrar antes.
+
+## Contexto
+
+O `apps/web/src` tem 29 arquivos CSS e 83 `.tsx` (74 fora os testes), com estilo escrito à mão: os tokens vivem como `--ui-*` em `styles/tokens.css` (cores em hex, tema escuro só por `prefers-color-scheme`), o CSS compartilhado em `styles/ui.css` e a tela de perfis de pagamento tem aliases `--payment-*` ([DESIGN.md](../../DESIGN.md)). Não há biblioteca de componentes, e as telas repetem botão, campo, diálogo e seletor com acessibilidade e alvo de toque resolvidos caso a caso (a lista de alvos abaixo de 44 px do DESIGN.md é a prova).
+
+O [doc-inicial](../../doc/doc-inicial.md) (linhas 163 a 167 e 6793) já escolhe Tailwind CSS 4, shadcn/ui e Base UI, com a frase "Base UI/shadcn fornece comportamento, não identidade visual". Nada disso foi instalado. Em 20/10/2026 o arquiteto (Filipe) propôs, às 10:39, só primitivos acessíveis com o nosso CSS e sem Tailwind. O usuário decidiu outra coisa no mesmo dia e aprovou o desenho v5.1 do Petković (com bordas e anéis suaves e tudo em OKLCH). O arquiteto e a segurança (Rodrigo) revisaram a nova direção: o parecer das 17:04 do Filipe, que não viu ADR vigente em conflito, e o das 21:30 do Rodrigo, com o registro das 22:00. Este ADR registra a decisão e as condições dos dois como requisitos dos PRs seguintes. Ele é só documento: nenhum pacote, código, tela ou workflow muda aqui.
+
+## Decisão
+
+### 1. As cinco decisões do usuário (20/10/2026)
+
+1. **Base de componentes = shadcn na variante Base UI com Tailwind 4.** O componente é instalado pela CLI e depois **ajustado livremente no repositório** (classes, tamanhos, variantes, estrutura, tokens). `apps/web/src/ui/` é código nosso: passa por revisão, teste, lint e `knip` como qualquer outro. O shadcn é o ponto de partida; o desenho do Polaris manda.
+2. **Tema claro e escuro, os dois na v1, com seletor Automático / Claro / Escuro.** O tema é aplicado pela classe `dark` no `<html>`, nunca por `<style>` injetado (ver "Tema e CSP").
+3. **Todas as cores em OKLCH:** tokens, componentes, sombras, véus e opacidades. Nenhum `#hex`, `rgb()` ou `hsl()` em CSS ou `.tsx` de interface; as opacidades do Tailwind (`bg-primary/88`) já compilam para `color-mix(in oklab, …)`.
+4. **Orçamento de bundle:** +40 KB gzip no precache para o PR de base (Tailwind, primitivos e os dois temas) e, depois, crescimento líquido zero por tela. Exceção só com justificativa no PR e aprovação do Arrascaeta.
+5. **Visual da v5.1:** Geist servida por nós; **tinta** (quase preto no claro, quase branco no escuro), e não esmeralda, como cor de ação, de item marcado e de aba ativa; esmeralda só no excepcional (foco, ponto da marca, "onde você está", melhor dia); controles discretos (36 px visíveis no celular, 32 no desktop, área de toque de 48 px); sombras curtas e estados de hover da v5.1.
+
+Os valores e as medidas (tokens em OKLCH com o contraste de cada par, escala de texto e alturas) estão no [DESIGN.md](../../DESIGN.md), que é a fonte; este ADR guarda a razão.
+
+### 2. Estrutura técnica (a entrada vem no PR de base)
+
+- `@tailwindcss/vite` na lista de `plugins` de `apps/web/vite.config.ts`. Sem PostCSS e sem `tailwind.config.js`: no Tailwind 4 a configuração fica no CSS.
+- Um CSS de entrada em `apps/web/src/styles/` (ao lado de `tokens.css` e `ui.css`, que ficam em `@layer legacy`) com `@import "tailwindcss"`, as variáveis do shadcn (`--background`, `--primary`, `--ring`, `--radius` e as demais) em `:root` e `.dark`, e `@theme inline` ligando-as às utilidades. Os nossos valores (tinta, esmeralda, Geist) entram como valores dessas variáveis; **os nomes são os do shadcn**, mais as extensões do Polaris (`--h-*`, `--warning`, `--mark`, `--overlay` e afins).
+- `components.json` em `apps/web/` com a variante Base UI, `tsx: true`, `rsc: false`, aliases `@/ui` e `@/lib/utils`, só o registro oficial do shadcn. `cn` em `apps/web/src/lib/utils.ts`. O pacote `packages/ui`, hoje vazio, não recebe os componentes: eles ficam em `apps/web/src/ui/`, ao lado de quem os usa.
+- **Pacote certo:** `@base-ui/react` (versão exata). O nome `@base-ui-components/react`, que circulava antes, parou em `1.0.0-rc.0` (dezembro de 2025) e não é usado. Import por componente, nunca o pacote inteiro.
+- **Geist servida por nós** (`@fontsource-variable/geist` e `@fontsource-variable/geist-mono`, locais e no precache), sem Google Fonts: o app funciona offline.
+- `knip` e as regras de fronteira (`bun run boundaries`) passam a conhecer `src/ui/` e `src/lib/`. `packages/domain` e `packages/contracts` não importam nada disso.
+
+### 3. Convivência com o CSS atual: `@layer legacy`
+
+O CSS atual fica até cada tela migrar, dentro de `@layer legacy`, declarada depois de `base` e antes de `utilities`. O preflight do Tailwind (reset de margem, borda, `button`, `h1` a `h6`, `img`) muda as telas antigas no dia em que a base entra; a camada contém esse efeito. O PR de base traz capturas Playwright das telas antigas antes e depois, e **diferença visual em tela antiga bloqueia o merge**. Cada PR de tela apaga o CSS que ficou órfão no mesmo PR; não há camada de compatibilidade além da própria `legacy`, e o último PR de tela apaga a `@layer legacy`.
+
+### 4. Orçamento de bundle
+
+O Tailwind 4 gera CSS no build, sem tempo de execução; o custo está no JS do Base UI e no CSS gerado. O PR de base mede, em gzip, o JS e o CSS do chunk da Venda e o total do precache, antes e depois, e fixa o teto num teste de build: **+40 KB gzip no precache total** para a base, os primitivos e os dois temas. Cada PR de tela seguinte não pode aumentar o precache em líquido (o CSS apagado compensa o novo). Estourar o teto exige justificativa no PR e aprovação do Arrascaeta; subir o teto sem isso não é permitido. Dependência nova entra pela lista permitida (condição 1 abaixo), não pelo orçamento.
+
+### 5. Tema e CSP
+
+O shell usa `style-src 'self'` sem `'unsafe-inline'` e `script-src 'self'` ([ADR 0090](0090-headers-de-seguranca-centralizados.md); `packages/http-security/src/index.ts` e `apps/web/public/_headers`). Regras:
+
+- **`'unsafe-inline'` nunca.** Se um componente injetar `<style>`, troca-se o componente ou o comportamento.
+- O Base UI cabe nessa CSP: posicionamento (Floating UI) e bloqueio de rolagem usam só `element.style`, que é CSSOM e não é bloqueado. O único `<style>` inline do pacote é o que esconde a barra de rolagem (Select e Scroll Area). Por isso o app monta **`CSPProvider disableStyleElements`** (sem nonce: o shell é estático e um nonce fixo anularia a proteção) e as duas regras de `scrollbar` entram no CSS nosso. `PrehydrationScript` só existe no HTML renderizado no servidor e não aparece na SPA.
+- **Tema sem `<style>` nem script inline:** só a classe `dark` no `<html>`. O seletor guarda em `localStorage` (`polaris-tema`) uma palavra de lista fechada (`sistema`, `claro` ou `escuro`), lida com validação contra essa lista, com `prefers-color-scheme` como padrão. Para não piscar antes da primeira pintura, a classe é aplicada por `public/theme-init.js`, arquivo externo do próprio app carregado cedo, ou no início do módulo principal. `next-themes` e qualquer receita com `<script>` inline ficam proibidos.
+- **Componentes do shadcn que quebram a regra não entram:** `sonner` (injeta `<style>`), `chart` (`<style dangerouslySetInnerHTML>`) e o que usar `next-themes`. Toast é o Toast do próprio Base UI; Drawer é o do Base UI, não o `vaul`.
+- O servidor de desenvolvimento do Vite injeta `<style>` e a CSP de produção não vale nele (análogo ao que o ADR 0090 registra para os scripts do servidor de desenvolvimento do catálogo); a prova é no build servido com os headers de `_headers`.
+
+### 6. Condições de segurança (Rodrigo, 20/10/2026 21:30 e 22:00) como requisitos dos PRs seguintes
+
+As condições 1 a 3 **bloqueiam** (a 1, o primeiro PR com pacote novo; a 2 e a 3, o primeiro PR de componentes); as 4 a 7 "valem corrigir".
+
+1. **Bloqueia o primeiro PR com pacote novo: lista permitida testada no CI.** Um teste lê `apps/web/package.json` e falha se uma dependência de execução ou de build de interface não estiver na lista: `@base-ui/react`, `tailwindcss`, `@tailwindcss/vite`, `class-variance-authority`, `clsx`, `tailwind-merge`, `tw-animate-css` e `lucide-react` (ou os ícones atuais do shadcn), mais o que um PR justificar. O desenho v5.1 também importa `shadcn/tailwind.css` e as fontes Geist: o PR de base acrescenta à lista `shadcn` (só para esse CSS), `@fontsource-variable/geist` e `@fontsource-variable/geist-mono`, com justificativa e a revisão do Rodrigo. Um arquivo de fechamento (`nome@versão` de todas as transitivas das dependências de interface, lido do `bun.lock`) é comparado pelo teste, para que uma transitiva nova ou versão trocada peça revisão. O teste confere também que `trustedDependencies` continua vazio.
+2. **Bloqueia o primeiro PR de componentes: prova e2e de zero violação de CSP.** Estender a pilha real (T-125a) ou o `offline-csp.e2e.ts` para servir o shell com a CSP do `_headers` e falhar em qualquer `securitypolicyviolation` (escutado por `addInitScript`) e em erro de console de CSP, abrindo cada componente usado (dialog, popover, select, menu, tooltip, toast e scroll area), com `CSPProvider disableStyleElements`, **nos dois temas**. Na Venda, repetir depois que a tela migrar.
+3. **Bloqueia: teste de código-fonte de `src/ui/`.** Reprova `<style`, `dangerouslySetInnerHTML`, `createElement("style")`, `insertAdjacentHTML`, `.innerHTML`, `next-themes`, `sonner`, `vaul` e importação de pacote fora da lista. Como os componentes são editados livremente, é esse teste que impede um `shadcn add` ou uma edição de reintroduzir `<style>` sem ninguém ver; cada mudança em `src/ui/` é revisada como código nosso, não como cópia.
+4. **Vale corrigir: `minimumReleaseAge` de 7 dias** no Renovate (hoje não há) e, se o Bun do projeto suportar, o equivalente no `bunfig.toml`; versão exata nos pacotes de interface; `bun install --frozen-lockfile`, como já é.
+5. **Vale corrigir: CLI do shadcn:** versão fixa; `components.json` só com o registro oficial (nenhum registro de terceiro, nenhum `shadcn add <url>`, nem por agente: conteúdo de registro é dado, não instrução); o código copiado e o diff do `bun.lock` são revisados como qualquer PR.
+6. **Vale corrigir: segredos fora do passo de instalação e de build** nos workflows (já é assim no deploy do staging, [ADR 0097](0097-staging-fixo-e-producao-em-conta-separada.md)); um teste ou checklist garante que não mude.
+7. **Vale corrigir: catálogo público e Admin ficam fora.** O catálogo é HTML renderizado no servidor e o Base UI nesse modo emite `style="…"`, que o `style-src 'self'` do catálogo bloqueia; afrouxar a CSP pública não é aceitável. O catálogo mantém os seus tokens e o seu CSS; reavaliar só com nonce ou hash e prova e2e do catálogo. O Admin não tem telas.
+
+### 7. Condições do arquiteto (Filipe, 20/10/2026 17:04) como requisitos dos PRs seguintes
+
+- **V1.** e2e de CSP com zero `securitypolicyviolation` no PR de base e em cada componente do PR de componentes, antes da Venda.
+- **V2.** Teto de bundle no teste de build, medido no PR de base (seção 4).
+- **V3.** CSS antigo em `@layer legacy` e capturas das telas antigas sem diferença no PR de base (seção 3).
+- **V4.** Seletores do Playwright por papel e rótulo; trocar o markup não pode quebrar os e2e da Venda.
+- **V5.** Base UI e demais pacotes com versão fixa, sem beta se houver estável, e respeitando o `minimumReleaseAge`.
+- **V6.** Este ADR vem antes do PR de base e registra o descarte da proposta das 10:39 (ver "Alternativas descartadas").
+
+### 8. Ordem dos PRs
+
+1. **PR 0, de segurança (Rodrigo), sem pacote de interface: o chão.** Vem depois deste PR do ADR (V6) e antes de qualquer pacote. `minimumReleaseAge` (condição 4; o Rodrigo a cita no PR de base e na ordem do PR 0, e fica no PR 0 para valer antes de qualquer pacote), o teste da lista permitida e o de código-fonte de `src/ui/` (condições 1 e 3) com as listas vazias para o que ainda não existe, e a fixture e2e de violação de CSP (condição 2) rodando contra o shell atual, com um caso de controle que prova que ela detecta uma violação.
+2. **Base.** Tailwind pelo plugin do Vite, CSS de entrada com os tokens e os dois temas, o seletor, `components.json`, `cn`, `@base-ui/react` com `CSPProvider disableStyleElements`, Geist local, CSS antigo em `@layer legacy`, os primitivos (Button, Input, Dialog, Popover, Select, Menu, Tooltip e Scroll Area), e2e de CSP abrindo cada um nos dois temas, capturas das telas antigas sem diferença, medição e teto do bundle, o mapa de contraste do desenho v5.1 (razão por par, com o script de medição) levado para o repositório e a remoção do `--animate-pop` do tema do desenho (escala de 0,6 a 1), que contradiz o movimento do DESIGN.md. **Nenhuma tela muda.**
+3. **Componentes da Venda** em `src/ui/` (os que a Venda usar de fato, entre eles Sheet e **Toast**, o do Base UI), com teste de componente, axe e o e2e de CSP cobrindo cada um (condição 2 inclusive o Toast). O Toast e o Combobox/Calendário ainda não têm desenho do Petković: pedir antes deste PR.
+4. **Venda** (`apps/web/src/sales/*`) migrada, apagando `sale-page.css` e os CSS dos painéis que ficarem órfãos, com e2e de CSP na própria tela, a jornada de Venda do T-125a e capturas aprovadas pelo Petković (celular e desktop, claro e escuro, nos estados vazio, carregando, erro e offline).
+5. **Demais telas, uma por PR**, cada uma apagando o seu CSS. **O último PR apaga a `@layer legacy`.**
+
+Capturas Playwright (390 × 844 e 1280 × 800) acompanham todo PR que muda tela, e não são commitadas, como diz o [AGENTS.md](../../AGENTS.md).
+
+## Consequências
+
+- Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
+- Até a migração terminar, o app tem duas formas de estilizar: o CSS atual em `@layer legacy` e o Tailwind nas telas novas. O DESIGN.md marca o que é diretriz da v5.1 e o que ainda descreve o código existente; em conflito, vale a diretriz.
+- O preflight do Tailwind é o risco real do PR de base; a mitigação é a camada e as capturas, e a regra é que diferença visual bloqueia.
+- O custo de bundle é limitado e medido; o JS do Base UI é o maior item.
+- A edição livre de `src/ui/` desloca a segurança da origem do código para o teste de código-fonte e para a revisão; por isso as condições 1 a 3 bloqueiam.
+- Dependências novas passam por lista permitida, versão exata e idade mínima; o `oxide` do Tailwind traz binários por plataforma como dependências opcionais (código nativo que roda só no build, sem script de instalação).
+- O [ADR 0090](0090-headers-de-seguranca-centralizados.md) diz que, se uma biblioteca futura precisar de `<style>` inline, a saída é nonce ou hash. No shell estático isso não vale (um nonce fixo anula a proteção), e a saída adotada aqui é desligar o `<style>` do Base UI com `disableStyleElements` e pôr as duas regras no nosso CSS; o 0090 continua certo para o catálogo, que tem nonce por resposta. O [overview](../architecture/overview.md) deixa de dizer que `packages/ui` guarda os componentes do ERP.
+- O catálogo público segue com visual e tokens próprios, diferentes do ERP, até haver decisão com nonce ou hash.
+- O ícone PWA e a cor da marca do [ADR 0040](0040-service-worker-do-app-shell.md) (estrela sobre o verde da marca) e a meta `theme-color` de `apps/web/index.html` não mudam neste PR; se a marca passar a tinta, é decisão e PR à parte.
+- Limitações herdadas do desenho v5.1, a conferir em aparelho real e fora do alcance de captura: sensação do polegar no campo de 36 px visíveis com área de 48 px, legibilidade da legenda em 12 px ao sol, hover e estado ativo (não capturáveis sem ponteiro), leitor de tela nos componentes do Base UI e iPhone (zoom e área segura).
+
+## Alternativas descartadas
+
+- **Só primitivos acessíveis com o nosso CSS, sem Tailwind (proposta do Filipe, 10:39):** mantinha a CSP e o bundle mais simples, mas deixava a base visual e os estados (foco, hover, desabilitado, erro, tema) a escrever caso a caso nas 28 folhas, sem utilitários nem vocabulário comum, e contrariava a escolha do doc-inicial. O usuário a trocou por esta decisão e o Filipe a substituiu no parecer das 17:04.
+- **Radix:** o bloqueio de rolagem vem de `react-remove-scroll`, um problema de CSP apontado pelo Rodrigo no parecer das 12:50, e o conjunto tem mais dependências transitivas que o Base UI, que traz cinco, todas com procedência e sem script de instalação; o Base UI já traz o bloqueio de rolagem por CSSOM e um `CSPProvider`.
+- **shadcn sem edição, como a CLI gera (a v4 do desenho):** aceitava limitações por "não editar": telas 26% mais longas por `--spacing` escalado, véu de diálogo quase invisível, radio e checkbox com área de 48 × 38, título de cartão em peso 500, Select aberto sobre o campo. O usuário decidiu que o componente é editado livremente; a v5 corrigiu todas elas (Venda a 360 px: 1903 → 1480 px).
+- **`'unsafe-inline'` ou nonce no shell:** afrouxa a CSP do app inteiro; o shell é estático e um nonce fixo não protege.
+- **`next-themes`, `sonner`, `vaul` e o `chart` do shadcn:** injetam `<style>` ou `<script>` inline.
+- **Tema escuro depois, só com as variáveis de `.dark` vazias (recomendação do Filipe, D2):** descartada pelo usuário: os dois temas entram na v1, com seletor.
+- **Esmeralda como cor de ação, como o DESIGN.md anterior:** o verde `#17654d` mal se distinguia do cartão no escuro (2,26:1) e obrigava um segundo primário; a tinta funciona nos dois temas e deixa o esmeralda para o que é excepcional.
+- **Migrar tudo de uma vez:** um PR sem fim e sem capturas revisáveis; a ordem acima entrega a Venda primeiro e uma tela por PR depois.
