@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
+import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { configureLogging } from "@polaris/observability/logger";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -210,7 +211,16 @@ async function run() {
     const signUp = await call(
       requestOf(0),
       "/api/auth/sign-up/email",
-      json({ email, name: "Access Log Gate", password: PASSWORD })
+      json({
+        email,
+        // the sign-up is refused without the acceptance of the versions in force (ADR 0100)
+        legalAcceptance: {
+          privacy: LEGAL_DOCUMENTS.privacy.version,
+          terms: LEGAL_DOCUMENTS.terms.version,
+        },
+        name: "Access Log Gate",
+        password: PASSWORD,
+      })
     );
     assert.equal(signUp.status, 200);
     const userId = (
@@ -221,6 +231,25 @@ async function run() {
     ).rows[0]?.id;
     assert.ok(userId);
     userIds.push(userId);
+    // the sign-up recorded both acceptances through the authentication runtime, with the server's hash
+    const acceptances = await owner.pool.query<{
+      document: string;
+      origin: string;
+      text_sha256: string;
+      version: number;
+    }>(
+      "SELECT document, origin, text_sha256, version FROM public.legal_acceptance WHERE user_id = $1 ORDER BY document",
+      [userId]
+    );
+    assert.deepEqual(
+      acceptances.rows,
+      (["privacy", "terms"] as const).map((document) => ({
+        document,
+        origin: "signup",
+        text_sha256: LEGAL_DOCUMENTS[document].sha256,
+        version: LEGAL_DOCUMENTS[document].version,
+      }))
+    );
     const verification = verificationEmails.at(-1);
     assert.ok(verification);
     const verify = await call(

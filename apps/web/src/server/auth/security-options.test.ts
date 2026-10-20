@@ -1,6 +1,7 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBetterAuth } from "../auth";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import { betterAuthSecurityOptions } from "./security-options";
 
 const httpsBaseURL = "https://polaris.example.invalid";
@@ -86,6 +87,7 @@ function createHarness(
 async function signUpAndVerify(harness: ReturnType<typeof createHarness>) {
   const signUp = await harness.post("/sign-up/email", {
     email,
+    legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
     name: "Security Options",
     password,
   });
@@ -210,6 +212,7 @@ describe("Better Auth security options", () => {
 
     const signUp = await harness.post("/sign-up/email", {
       email,
+      legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
       name: "Background Email",
       password,
     });
@@ -242,6 +245,7 @@ describe("Better Auth security options", () => {
 
     const signUp = await harness.post("/sign-up/email", {
       email,
+      legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
       name: "Background Failure",
       password,
     });

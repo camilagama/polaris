@@ -3,11 +3,15 @@ import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { DataExportUnavailableError } from "@polaris/domain/privacy/data-export";
 import { type Context, Hono } from "hono";
 import type { ServerEnv } from "../environment";
+import { exemptRouteRequest } from "../legal-acceptance";
 import {
   logServerErrorFromContext,
   logServerEvent,
 } from "../observability/server-log";
-import { TenantRequestContextError } from "../request-context-error";
+import {
+  requestContextErrorStatus,
+  TenantRequestContextError,
+} from "../request-context-error";
 import { withTenantRequestContext } from "../tenant-request-context";
 
 const UUID =
@@ -41,7 +45,7 @@ function failureResponse(
     return refusal(context, 404, "not_found");
   }
   if (error instanceof TenantRequestContextError) {
-    const status = error.code === "session_required" ? 401 : 503;
+    const status = requestContextErrorStatus(error.code);
     if (status === 503) {
       logServerErrorFromContext(context, error, status);
     }
@@ -91,6 +95,11 @@ export function createDataExportRoutes(
     if (!bucket) {
       return refusal(context, 503, "export_storage_unavailable");
     }
+    // a copy of the data is a request of the data subject: it never waits for the legal acceptance (ADR 0100)
+    exemptRouteRequest(
+      context.req.raw,
+      "/api/data-exports/:exportId/files/:ordinal"
+    );
     try {
       const file = await tenantRequest({
         bindings: context.env,

@@ -4,11 +4,15 @@ import { DataExportUnavailableError } from "@polaris/domain/privacy/data-export"
 import { type Context, Hono } from "hono";
 import { withAuthenticatedRequestContext } from "../authenticated-request-context";
 import type { ServerEnv } from "../environment";
+import { exemptRouteRequest } from "../legal-acceptance";
 import {
   logServerErrorFromContext,
   logServerEvent,
 } from "../observability/server-log";
-import { TenantRequestContextError } from "../request-context-error";
+import {
+  requestContextErrorStatus,
+  TenantRequestContextError,
+} from "../request-context-error";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,7 +45,7 @@ function failureResponse(
     return refusal(context, 404, "not_found");
   }
   if (error instanceof TenantRequestContextError) {
-    const status = error.code === "session_required" ? 401 : 503;
+    const status = requestContextErrorStatus(error.code);
     if (status === 503) {
       logServerErrorFromContext(context, error, status);
     }
@@ -86,6 +90,11 @@ export function createClosedExportRoutes(
     if (!bucket) {
       return refusal(context, 503, "export_storage_unavailable");
     }
+    // a copy of the data is a request of the data subject: it never waits for the legal acceptance (ADR 0100)
+    exemptRouteRequest(
+      context.req.raw,
+      "/api/closed-exports/:exportId/files/:ordinal"
+    );
     try {
       const file = await authenticatedRequest({
         bindings: context.env,

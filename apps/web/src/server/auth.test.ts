@@ -9,6 +9,7 @@ import { createBetterAuth } from "./auth";
 import type { AccessLogWriter } from "./auth/access-log";
 import { createResendAuthEmailDelivery } from "./auth/email";
 import { handleBetterAuthRequest } from "./auth/handler";
+import { SIGN_UP_LEGAL_ACCEPTANCE } from "./auth/legal-acceptance-test-support";
 import {
   hostileRedirectTargets,
   validReturnCallbackURL,
@@ -56,7 +57,14 @@ const testGoogleProvider: GoogleOptions = {
   verifyIdToken: async () => true,
 };
 
-function createGoogleTestApp(accessLogWriter?: AccessLogWriter) {
+type LegalAcceptanceRecorder = NonNullable<
+  Parameters<typeof createBetterAuth>[0]["legalAcceptanceRecorder"]
+>;
+
+function createGoogleTestApp(
+  accessLogWriter?: AccessLogWriter,
+  legalAcceptanceRecorder?: LegalAcceptanceRecorder
+) {
   const auditEvents: AuthSecurityAuditEvent[] = [];
   const databaseAdapter = memoryAdapter({
     account: [],
@@ -73,6 +81,7 @@ function createGoogleTestApp(accessLogWriter?: AccessLogWriter) {
     baseURL: testBaseURL,
     databaseAdapter,
     googleProvider: testGoogleProvider,
+    ...(legalAcceptanceRecorder ? { legalAcceptanceRecorder } : {}),
     plugins: [testUtils() as unknown as BetterAuthPlugin],
     requestId: "pr14-oauth-test-request",
     secret: testSecret,
@@ -87,7 +96,10 @@ function createGoogleTestApp(accessLogWriter?: AccessLogWriter) {
 }
 function createEmailPasswordTestApp(
   emailDeliveryOverride?: AuthEmailDelivery,
-  options: { failEpochBump?: boolean } = {}
+  options: {
+    failEpochBump?: boolean;
+    legalAcceptanceRecorder?: LegalAcceptanceRecorder;
+  } = {}
 ) {
   const auditEvents: AuthSecurityAuditEvent[] = [];
   const verificationEmails: Array<{
@@ -131,6 +143,9 @@ function createEmailPasswordTestApp(
     baseURL: testBaseURL,
     databaseAdapter,
     emailDelivery: emailDeliveryOverride ?? emailDelivery,
+    ...(options.legalAcceptanceRecorder
+      ? { legalAcceptanceRecorder: options.legalAcceptanceRecorder }
+      : {}),
     requestId: "pr15-email-auth-test-request",
     secret: testSecret,
   });
@@ -374,7 +389,12 @@ describe("Email/password authentication", () => {
     const signUp = await testApp.request(
       "/api/auth/sign-up/email",
       {
-        body: JSON.stringify({ email, name: "Password User", password }),
+        body: JSON.stringify({
+          email,
+          legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+          name: "Password User",
+          password,
+        }),
         headers: {
           "content-type": "application/json",
           origin: testBaseURL,
@@ -451,6 +471,7 @@ describe("Email/password authentication", () => {
       {
         body: JSON.stringify({
           email,
+          legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
           name: "Reset User",
           password: oldPassword,
         }),
@@ -609,6 +630,7 @@ describe("Email/password authentication", () => {
       {
         body: JSON.stringify({
           email,
+          legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
           name: "Unicode Password",
           password: fullWidthPassword,
         }),
@@ -669,6 +691,7 @@ describe("Email/password authentication", () => {
       {
         body: JSON.stringify({
           email,
+          legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
           name: "Password Change",
           password: currentPassword,
         }),
@@ -760,6 +783,7 @@ describe("Email/password authentication", () => {
       );
     await post("/api/auth/sign-up/email", {
       email,
+      legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
       name: "Reset Bump Failure",
       password: oldPassword,
     });
@@ -873,7 +897,12 @@ describe("Email/password authentication", () => {
     const signUp = await testApp.request(
       "/api/auth/sign-up/email",
       {
-        body: JSON.stringify({ email, name: "Resend Outage", password }),
+        body: JSON.stringify({
+          email,
+          legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+          name: "Resend Outage",
+          password,
+        }),
         headers: {
           "content-type": "application/json",
           origin: testBaseURL,
@@ -962,6 +991,7 @@ describe("Email/password authentication", () => {
       {
         body: JSON.stringify({
           email: "hibp-down@example.invalid",
+          legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
           name: "HIBP Down",
           password,
         }),
@@ -1230,6 +1260,7 @@ describe("Google OAuth and security audit", () => {
     const request = new Request(`${testBaseURL}/api/auth/sign-up/email`, {
       body: JSON.stringify({
         email: "user@example.invalid",
+        legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
         name: "Test User",
         password: "A long enough test password!",
       }),
@@ -1414,5 +1445,221 @@ describe("redirect targets of the Google sign-in start (open redirect)", () => {
       expect(response.status).toBe(403);
       expect(response.headers.get("location")).toBeNull();
     });
+  });
+});
+
+describe("Sign-up legal acceptance (AC-68)", () => {
+  const password = "frase longa e segura para o cadastro 2026";
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function signUp(
+    testApp: ReturnType<typeof createEmailPasswordTestApp>["app"],
+    email: string,
+    legalAcceptance?: unknown
+  ) {
+    return await testApp.request(
+      "/api/auth/sign-up/email",
+      {
+        body: JSON.stringify({
+          email,
+          ...(legalAcceptance === undefined ? {} : { legalAcceptance }),
+          name: "Legal User",
+          password,
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: testBaseURL,
+        },
+        method: "POST",
+      },
+      testBindings
+    );
+  }
+
+  async function findUserByEmail(
+    auth: ReturnType<typeof createEmailPasswordTestApp>["auth"],
+    email: string
+  ) {
+    const context = (await auth.$context) as unknown as {
+      internalAdapter: {
+        findUserByEmail: (email: string) => Promise<unknown>;
+      };
+    };
+    return await context.internalAdapter.findUserByEmail(email);
+  }
+
+  it.each([
+    ["without legalAcceptance", undefined],
+    ["with an empty legalAcceptance", {}],
+    ["with only the terms", { terms: SIGN_UP_LEGAL_ACCEPTANCE.terms }],
+    [
+      "with only the privacy policy",
+      { privacy: SIGN_UP_LEGAL_ACCEPTANCE.privacy },
+    ],
+    ["with a boolean instead of the versions", { privacy: true, terms: true }],
+    ["with the versions as strings", { privacy: "1", terms: "1" }],
+    [
+      "with an older version of the terms",
+      { ...SIGN_UP_LEGAL_ACCEPTANCE, terms: 0 },
+    ],
+    [
+      "with a newer version of the privacy policy",
+      {
+        ...SIGN_UP_LEGAL_ACCEPTANCE,
+        privacy: SIGN_UP_LEGAL_ACCEPTANCE.privacy + 1,
+      },
+    ],
+    ["with the acceptance as a string", "terms,privacy"],
+    ["with the acceptance as null", null],
+  ])(
+    "refuses the sign-up %s with 400 legal_acceptance_required and creates no user",
+    async (_name, legalAcceptance) => {
+      const hibp = stubPwnedPasswordRange();
+      const recorder = vi.fn(async () => undefined);
+      const {
+        app: testApp,
+        auth,
+        verificationEmails,
+      } = createEmailPasswordTestApp(undefined, {
+        legalAcceptanceRecorder: recorder,
+      });
+      const email = "no-acceptance@example.invalid";
+
+      const response = await signUp(testApp, email, legalAcceptance);
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        code: "legal_acceptance_required",
+      });
+      expect(await findUserByEmail(auth, email)).toBeNull();
+      expect(verificationEmails).toHaveLength(0);
+      expect(recorder).not.toHaveBeenCalled();
+      expect(hibp.calls()).toBe(0);
+
+      const login = await testApp.request(
+        "/api/auth/sign-in/email",
+        {
+          body: JSON.stringify({ email, password }),
+          headers: { "content-type": "application/json", origin: testBaseURL },
+          method: "POST",
+        },
+        testBindings
+      );
+      expect(login.status).not.toBe(200);
+    }
+  );
+
+  it("creates the user and records the acceptance of terms and privacy with the new user id", async () => {
+    stubPwnedPasswordRange();
+    const recorder = vi.fn(
+      async (_entry: { document: string; userId: string }) => undefined
+    );
+    const {
+      app: testApp,
+      auth,
+      verificationEmails,
+    } = createEmailPasswordTestApp(undefined, {
+      legalAcceptanceRecorder: recorder,
+    });
+    const email = "accepted@example.invalid";
+
+    const response = await signUp(testApp, email, SIGN_UP_LEGAL_ACCEPTANCE);
+
+    expect(response.status).toBe(200);
+    const user = (await findUserByEmail(auth, email)) as {
+      user: { id: string };
+    } | null;
+    expect(user?.user.id).toBeTruthy();
+    expect(verificationEmails).toHaveLength(1);
+    expect(recorder.mock.calls.map(([entry]) => entry)).toEqual([
+      { document: "terms", userId: user?.user.id },
+      { document: "privacy", userId: user?.user.id },
+    ]);
+  });
+
+  it("accepts the sign-up with the acceptance even when it carries extra keys", async () => {
+    stubPwnedPasswordRange();
+    const recorder = vi.fn(async () => undefined);
+    const { app: testApp } = createEmailPasswordTestApp(undefined, {
+      legalAcceptanceRecorder: recorder,
+    });
+
+    const response = await signUp(testApp, "extra-keys@example.invalid", {
+      ...SIGN_UP_LEGAL_ACCEPTANCE,
+      cookies: 1,
+    });
+
+    expect(response.status).toBe(200);
+    expect(recorder).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not take a failed record as a failed sign-up: the user is created and the response is 200", async () => {
+    stubPwnedPasswordRange();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const recorder = vi.fn(() => Promise.reject(new Error("record failed")));
+    const {
+      app: testApp,
+      auth,
+      verificationEmails,
+    } = createEmailPasswordTestApp(undefined, {
+      legalAcceptanceRecorder: recorder,
+    });
+    const email = "record-fails@example.invalid";
+
+    const response = await signUp(testApp, email, SIGN_UP_LEGAL_ACCEPTANCE);
+
+    expect(response.status).toBe(200);
+    expect(recorder).toHaveBeenCalled();
+    expect(await findUserByEmail(auth, email)).not.toBeNull();
+    expect(verificationEmails).toHaveLength(1);
+  });
+
+  it("only guards the email sign-up: the other auth routes need no acceptance", async () => {
+    stubPwnedPasswordRange();
+    const { app: testApp } = createEmailPasswordTestApp();
+
+    const response = await testApp.request(
+      "/api/auth/sign-in/email",
+      {
+        body: JSON.stringify({ email: "nobody@example.invalid", password }),
+        headers: { "content-type": "application/json", origin: testBaseURL },
+        method: "POST",
+      },
+      testBindings
+    );
+
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).not.toBe("legal_acceptance_required");
+  });
+
+  it("does not record an acceptance for a login by Google (it is asked for at the first access)", async () => {
+    const recorder = vi.fn(async () => undefined);
+    const { app: testApp } = createGoogleTestApp(undefined, recorder);
+    stubGoogleTokenExchange();
+    const start = await beginGoogleLogin(testApp);
+
+    const callback = await testApp.request(
+      "/api/auth/callback/google?code=fake-code&state=" +
+        encodeURIComponent(start.state),
+      { headers: { cookie: start.cookies } },
+      testBindings
+    );
+    const session = await testApp.request(
+      "/api/auth/get-session",
+      { headers: { cookie: cookieHeader(callback.headers) } },
+      testBindings
+    );
+
+    expect(callback.status).toBe(302);
+    // the user was created by this login, and still nothing was recorded for it
+    expect(
+      ((await session.json()) as { user?: { id?: string } }).user?.id
+    ).toBeTruthy();
+    expect(recorder).not.toHaveBeenCalled();
   });
 });

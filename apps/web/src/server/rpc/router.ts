@@ -279,6 +279,11 @@ import type { PlanRepository } from "./plan-handlers";
 import type { PublicCatalogRepository } from "./public-catalog-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
 import { SyncPayloadHashUnavailableError } from "../sync/payload-hash";
+import {
+  exemptRpcRequest,
+  type readAcceptedLegalVersions,
+  type recordLegalAcceptance,
+} from "../legal-acceptance";
 import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
@@ -300,6 +305,7 @@ import { createPlanRpcHandlers } from "./plan-handlers";
 import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
 import { createInventoryRpcHandlers } from "./inventory-handlers";
 import { createReportRpcHandlers } from "./report-handlers";
+import { createAccountRpcHandlers } from "./account-handlers";
 import { createOfflineRpcHandlers } from "./offline-handlers";
 import {
   createRenewalStatusReader,
@@ -362,6 +368,8 @@ interface RpcRouterDependencies {
   planRepository: Partial<PlanRepository>;
   publicCatalogRepository: Partial<PublicCatalogRepository>;
   readPeriodResult: typeof readPeriodResult;
+  readAcceptedLegalVersions: typeof readAcceptedLegalVersions;
+  recordLegalAcceptance: typeof recordLegalAcceptance;
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
@@ -563,9 +571,12 @@ function productVariantValues(input: {
 
 function tenantContextErrorCode(
   code: TenantRequestContextError["code"]
-): "UNAUTHORIZED" | "SERVICE_UNAVAILABLE" | "BAD_REQUEST" {
+): "UNAUTHORIZED" | "FORBIDDEN" | "SERVICE_UNAVAILABLE" | "BAD_REQUEST" {
   if (code === "session_required") {
     return "UNAUTHORIZED";
+  }
+  if (code === "legal_acceptance_required") {
+    return "FORBIDDEN";
   }
   if (code === "authentication_unavailable") {
     return "SERVICE_UNAVAILABLE";
@@ -622,9 +633,25 @@ function clientRpcError(
   });
 }
 
+/**
+ * The refusal for a missing legal acceptance says so, with what is pending: the client pauses the sync and
+ * offers `/aceite`, and never takes it for a refused session (ADR 0100). The other codes carry no reason.
+ */
+function tenantContextRpcError(
+  error: TenantRequestContextError
+): ORPCError<ReturnType<typeof tenantContextErrorCode>, unknown> {
+  return new ORPCError(tenantContextErrorCode(error.code), {
+    cause: error,
+    data:
+      error.code === "legal_acceptance_required"
+        ? { pending: error.pending, reason: error.code }
+        : undefined,
+  });
+}
+
 function toRpcError(error: unknown): never {
   if (error instanceof TenantRequestContextError) {
-    throw new ORPCError(tenantContextErrorCode(error.code), { cause: error });
+    throw tenantContextRpcError(error);
   }
 
   if (matchesRpcError(error, [TenantAuthorizationError])) {
@@ -1417,6 +1444,12 @@ export function createRpcRouter(
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });
+  const accountHandlers = createAccountRpcHandlers({
+    readAcceptedLegalVersions: overrides.readAcceptedLegalVersions,
+    recordLegalAcceptance: overrides.recordLegalAcceptance,
+    toRpcError,
+    withAuthenticatedRequestContext: authenticatedRequest,
+  });
   const reportHandlers = createReportRpcHandlers({
     readPeriodResult: overrides.readPeriodResult,
     toRpcError,
@@ -1968,61 +2001,69 @@ export function createRpcRouter(
     }
   );
 
-  return implementContract.router({
-    billing: billingHandlers,
-    category: { archive, create, delete: remove, list, rename, restore },
-    customer: customerHandlers,
-    dataExport: dataExportHandlers,
-    device: offlineHandlers.device,
-    expense: expenseHandlers,
-    goal: goalHandlers,
-    inventory: {
-      getBalance: inventoryHandlers.getBalance,
-      inventoryCount: inventoryHandlers.count,
-      listBalances: inventoryHandlers.listBalances,
-      receiveStock: receiveStockRecord,
-      writeOffStock: writeOffStockRecord,
-    },
-    offline: offlineHandlers.offline,
-    organization: {
-      createInitial,
-      closedStatus: organizationHandlers.closedStatus,
-      listClosed: organizationHandlers.listClosed,
-      listClosing: organizationHandlers.listClosing,
-      listMine: organizationHandlers.listMine,
-      recoverClosure: organizationHandlers.recoverClosure,
-      requestClosure: organizationHandlers.requestClosure,
-    },
-    plan: planHandlers,
-    publicCatalog: publicCatalogHandlers,
-    report: reportHandlers,
-    paymentProfile: paymentProfileHandlers,
-    product: {
-      archive: archiveProductRecord,
-      configureVariants: configureProductVariantsRecord,
-      create: createProductRecord,
-      delete: deleteProductRecord,
-      getVariants: getProductVariantsRecord,
-      list: listProduct,
-      restore: restoreProductRecord,
-      setVariantListPrice: setProductVariantListPriceRecord,
-      setVariantSku: setProductVariantSkuRecord,
-      update: updateProductRecord,
-    },
-    sale: {
-      assignCustomer: saleHandlers.assignCustomer,
-      cancel: saleHandlers.cancel,
-      confirm: saleHandlers.confirm,
-      get: saleHandlers.get,
-      getCustomerLink: saleHandlers.getCustomerLink,
-      list: saleHandlers.list,
-      reassignCustomer: saleHandlers.reassignCustomer,
-      return: saleHandlers.return,
-      unassignCustomer: saleHandlers.unassignCustomer,
-    },
-    sync: syncHandlers,
-    system: { ping },
-  });
+  // The exempt procedures of the legal acceptance control are marked by the path oRPC matched, so the
+  // single control in the request context lets them through and nothing else (ADR 0100).
+  return implementContract
+    .use(({ context, next, path }) => {
+      exemptRpcRequest(context.request, path);
+      return next();
+    })
+    .router({
+      account: accountHandlers,
+      billing: billingHandlers,
+      category: { archive, create, delete: remove, list, rename, restore },
+      customer: customerHandlers,
+      dataExport: dataExportHandlers,
+      device: offlineHandlers.device,
+      expense: expenseHandlers,
+      goal: goalHandlers,
+      inventory: {
+        getBalance: inventoryHandlers.getBalance,
+        inventoryCount: inventoryHandlers.count,
+        listBalances: inventoryHandlers.listBalances,
+        receiveStock: receiveStockRecord,
+        writeOffStock: writeOffStockRecord,
+      },
+      offline: offlineHandlers.offline,
+      organization: {
+        createInitial,
+        closedStatus: organizationHandlers.closedStatus,
+        listClosed: organizationHandlers.listClosed,
+        listClosing: organizationHandlers.listClosing,
+        listMine: organizationHandlers.listMine,
+        recoverClosure: organizationHandlers.recoverClosure,
+        requestClosure: organizationHandlers.requestClosure,
+      },
+      plan: planHandlers,
+      publicCatalog: publicCatalogHandlers,
+      report: reportHandlers,
+      paymentProfile: paymentProfileHandlers,
+      product: {
+        archive: archiveProductRecord,
+        configureVariants: configureProductVariantsRecord,
+        create: createProductRecord,
+        delete: deleteProductRecord,
+        getVariants: getProductVariantsRecord,
+        list: listProduct,
+        restore: restoreProductRecord,
+        setVariantListPrice: setProductVariantListPriceRecord,
+        setVariantSku: setProductVariantSkuRecord,
+        update: updateProductRecord,
+      },
+      sale: {
+        assignCustomer: saleHandlers.assignCustomer,
+        cancel: saleHandlers.cancel,
+        confirm: saleHandlers.confirm,
+        get: saleHandlers.get,
+        getCustomerLink: saleHandlers.getCustomerLink,
+        list: saleHandlers.list,
+        reassignCustomer: saleHandlers.reassignCustomer,
+        return: saleHandlers.return,
+        unassignCustomer: saleHandlers.unassignCustomer,
+      },
+      sync: syncHandlers,
+      system: { ping },
+    });
 }
 
 export const rpcRouter = createRpcRouter();

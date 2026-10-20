@@ -12,6 +12,11 @@ import {
   isAPIError,
 } from "better-auth/api";
 import type { GoogleOptions } from "better-auth/social-providers";
+import {
+  LEGAL_DOCUMENT_IDS,
+  LEGAL_DOCUMENTS,
+  type LegalDocumentId,
+} from "@polaris/domain/legal/legal-documents";
 import { isSafeAuthCallbackPath } from "../lib/return-path";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
@@ -36,6 +41,10 @@ import {
   SESSION_IDLE_TTL_SECONDS,
   SESSION_REFRESH_INTERVAL_SECONDS,
 } from "./auth/session-policy";
+import {
+  type LegalAcceptanceQueryable,
+  recordLegalAcceptance,
+} from "./legal-acceptance";
 import { logServerError } from "./observability/server-log";
 
 type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
@@ -75,6 +84,11 @@ export interface AuthEmailDelivery {
 type AuthSecurityAuditEventWriter = (
   event: AuthSecurityAuditEvent
 ) => Promise<void>;
+/** Records the acceptance, at sign-up, of the version in force of one legal document. */
+type SignUpLegalAcceptanceRecorder = (entry: {
+  document: LegalDocumentId;
+  userId: string;
+}) => Promise<unknown>;
 /** Invalidates every offline lease of a user after a security event. */
 type AuthorizationEpochBumper = (userId: string) => Promise<void>;
 
@@ -88,6 +102,8 @@ interface CreateBetterAuthOptions {
   databaseAdapter?: BetterAuthOptions["database"];
   emailDelivery?: AuthEmailDelivery;
   googleProvider?: GoogleOptions;
+  /** Records the acceptance given at sign-up; the default writes through `database`, none without one. */
+  legalAcceptanceRecorder?: SignUpLegalAcceptanceRecorder;
   plugins?: BetterAuthOptions["plugins"];
   requestId?: string;
   runInBackground?: BackgroundTaskHandler;
@@ -291,6 +307,29 @@ function validateAuthRedirectTargets(context: AuthBeforeHookContext): void {
         });
       }
     }
+  }
+}
+
+/**
+ * The sign-up carries `legalAcceptance: { terms, privacy }` with the versions in force (ADR 0100,
+ * AC-68): without them, or with another version, it is refused before any user is created. The box
+ * on the screen is not the proof; this is.
+ */
+function validateSignUpLegalAcceptance(context: AuthBeforeHookContext): void {
+  if (context.path !== "/sign-up/email") {
+    return;
+  }
+  const acceptance = asRecord(asRecord(context.body)?.legalAcceptance);
+  const accepted =
+    acceptance !== undefined &&
+    LEGAL_DOCUMENT_IDS.every(
+      (document) => acceptance[document] === LEGAL_DOCUMENTS[document].version
+    );
+  if (!accepted) {
+    throw APIError.from("BAD_REQUEST", {
+      code: "legal_acceptance_required",
+      message: "Accept the terms of use and the privacy policy in force.",
+    });
   }
 }
 
@@ -619,6 +658,7 @@ export function createBetterAuth({
   databaseAdapter,
   emailDelivery,
   googleProvider,
+  legalAcceptanceRecorder,
   plugins,
   requestId,
   runInBackground,
@@ -658,6 +698,18 @@ export function createBetterAuth({
         }
       : undefined);
 
+  // The acceptance given at sign-up is recorded once the user exists. Without a database or a recorder (the
+  // test adapter) nothing is recorded.
+  const recordSignUpAcceptance: SignUpLegalAcceptanceRecorder | undefined =
+    legalAcceptanceRecorder ??
+    (database
+      ? (entry) =>
+          recordLegalAcceptance(
+            database.$client as unknown as LegalAcceptanceQueryable,
+            { ...entry, origin: "signup", requestId: safeRequestId }
+          )
+      : undefined);
+
   if (!writeAuditEvent) {
     throw new Error(
       "An audit event writer is required for the test database adapter."
@@ -680,6 +732,7 @@ export function createBetterAuth({
   let capturedLogoutActorId: string | null = null;
   const captureLogoutSession = createAuthMiddleware(async (context) => {
     validateAuthRedirectTargets(context);
+    validateSignUpLegalAcceptance(context);
     await validateVerifiedAccountLinkingRequest(context);
     await normalizeAndValidatePasswordRequest(context);
 
@@ -873,6 +926,34 @@ export function createBetterAuth({
         },
         update: {
           before: async (data) => ({ data: { ...data, idToken: null } }),
+        },
+      },
+      user: {
+        create: {
+          // Only the sign-up by email carries an acceptance (checked by the before hook). A failed record
+          // leaves the user without it: the acceptance control then asks for it at the first access,
+          // because what lets the person in is the row, never this request.
+          after: async (user, hookContext) => {
+            if (
+              hookContext?.path !== "/sign-up/email" ||
+              !recordSignUpAcceptance
+            ) {
+              return;
+            }
+            try {
+              for (const document of LEGAL_DOCUMENT_IDS) {
+                // biome-ignore lint/performance/noAwaitInLoops: two rows, one after the other
+                await recordSignUpAcceptance({ document, userId: user.id });
+              }
+            } catch (error) {
+              logServerError({
+                error,
+                method: "POST",
+                requestId: safeRequestId,
+                route: "/api/auth/sign-up/email",
+              });
+            }
+          },
         },
       },
     },
