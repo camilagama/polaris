@@ -1392,7 +1392,7 @@ async function main() {
           cancelledCase.eventId,
           (event) => {
             cancelCalls.push(event);
-            return Promise.resolve();
+            return Promise.resolve("cancelled" as const);
           },
           at(0.3)
         ),
@@ -1466,8 +1466,22 @@ async function main() {
         (await billingRow(paidCase.owner.organizationId))?.state,
         "active"
       );
+      // the provider shows a charge of it already paid, before the record knows: left alone too
+      const providerPaid = await unclaimed("unclaimed provider paid");
+      await exhaust(providerPaid.eventId);
+      assert.equal(
+        await billing.settleUnclaimedTrial(
+          providerPaid.eventId,
+          () => Promise.resolve("paid" as const),
+          at(0.4)
+        ),
+        "left_paid"
+      );
+      assert.deepEqual(await settlement(providerPaid.eventId), [
+        { fact: { type: "unclaimed_trial_left_paid" }, fact_type: "command" },
+      ]);
       tests.push(
-        "a trial no reservation paid for is settled only after its retries: the event's own subscription (reference and sub_) is handed to the provider's cancel under the event's lock, and only when it succeeds is the event closed as ignored (trial_claim_missing kept) with unclaimed_trial_cancelled in the ledger, once; a failure changes nothing, and a subscription paid since that gives Pro is left alone (unclaimed_trial_left_paid)"
+        "a trial no reservation paid for is settled only after its retries: the event's own subscription (reference and sub_) is handed to the provider's cancel under the event's lock, and only when it succeeds is the event closed as ignored (trial_claim_missing kept) with unclaimed_trial_cancelled in the ledger, once; a failure changes nothing, and a subscription paid since (Pro on the record, or a paid charge at the provider) is left alone (unclaimed_trial_left_paid)"
       );
 
       // a setup with no checkout finished for more than two hours ends, without spending the trial
@@ -1500,8 +1514,34 @@ async function main() {
         (await claimOf(idle.userId))?.organization_id,
         next.organizationId
       );
+      // a second checkout replaces the first: attachProvider names the one replaced, once
+      const twice = await newTenant("checkout twice");
+      assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_first_${run}`
+        ),
+        null
+      );
+      assert.deepEqual(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_second_${run}`
+        ),
+        { provider: "fake", providerRef: `chk_first_${run}` }
+      );
+      assert.equal(
+        await billing.attachProvider(
+          twice.organizationId,
+          "fake",
+          `chk_second_${run}`
+        ),
+        null
+      );
       tests.push(
-        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person"
+        "a trial setup idle for more than two hours goes back to Free in the time sweep (not before), once, without consuming the reservation, which can then move to another organization of the person; and a new checkout's attachProvider names the reference it replaced (null for the first and for a repeat)"
       );
     }
 

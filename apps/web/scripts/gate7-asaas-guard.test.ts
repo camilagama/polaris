@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   assertAsaasSandbox,
   assertGate7Database,
+  assertGate7DatabaseUrl,
+  assertSameDatabase,
   checkedLinkFile,
   cycleOf,
   Gate7RefusedError,
@@ -83,37 +85,53 @@ describe("assertGate7Database", () => {
   const local = "postgresql://postgres@localhost:5432/polaris_gate";
 
   it("accepts a database marked staging", () => {
-    expect(() => assertGate7Database(remote, "staging")).not.toThrow();
-    expect(() => assertGate7Database(remote, " Staging ")).not.toThrow();
+    expect(() =>
+      assertGate7Database(remote, { current: null, stored: "staging" })
+    ).not.toThrow();
+    expect(() =>
+      assertGate7Database(remote, { current: "staging", stored: " Staging " })
+    ).not.toThrow();
   });
 
   it.each(["localhost", "127.0.0.1"])("accepts %s without a marker", (host) => {
     expect(() =>
-      assertGate7Database(`postgres://postgres@${host}:5432/db`, null)
+      assertGate7Database(`postgres://postgres@${host}:5432/db`, {
+        current: null,
+        stored: null,
+      })
     ).not.toThrow();
     expect(() =>
-      assertGate7Database(`postgres://postgres@${host}:5432/db`, "")
+      assertGate7Database(`postgres://postgres@${host}:5432/db`, {
+        current: "",
+        stored: "",
+      })
     ).not.toThrow();
   });
 
   it("refuses the production marker, even on localhost", () => {
     for (const url of [remote, local]) {
-      expect(refusal(() => assertGate7Database(url, "production")).code).toBe(
-        "gate7_database_not_staging"
-      );
+      expect(
+        refusal(() =>
+          assertGate7Database(url, { current: null, stored: "production" })
+        ).code
+      ).toBe("gate7_database_not_staging");
     }
   });
 
   it("refuses a remote host without a marker", () => {
-    expect(refusal(() => assertGate7Database(remote, null)).code).toBe(
-      "gate7_database_not_staging"
-    );
+    expect(
+      refusal(() =>
+        assertGate7Database(remote, { current: null, stored: null })
+      ).code
+    ).toBe("gate7_database_not_staging");
   });
 
   it("refuses any other marker", () => {
-    expect(refusal(() => assertGate7Database(remote, "preview")).code).toBe(
-      "gate7_database_not_staging"
-    );
+    expect(
+      refusal(() =>
+        assertGate7Database(remote, { current: null, stored: "preview" })
+      ).code
+    ).toBe("gate7_database_not_staging");
   });
 
   it.each([
@@ -122,16 +140,78 @@ describe("assertGate7Database", () => {
     "not a url",
     "",
   ])("refuses %j, which is not a PostgreSQL URL", (url) => {
-    expect(refusal(() => assertGate7Database(url, "staging")).code).toBe(
+    expect(
+      refusal(() =>
+        assertGate7Database(url, { current: null, stored: "staging" })
+      ).code
+    ).toBe("gate7_database_url_invalid");
+  });
+
+  it("does not put the connection string in the error", () => {
+    const error = refusal(() =>
+      assertGate7Database(remote, { current: null, stored: "production" })
+    );
+
+    expect(error.message).not.toContain("pw");
+    expect(error.message).not.toContain("neon.tech");
+  });
+});
+
+describe("the database checks before connecting", () => {
+  const remote = "postgresql://user:pw@ep-fake.sa-east-1.aws.neon.tech/neondb";
+
+  it.each([
+    `${remote}?host=prod.example`,
+    `${remote}?hostaddr=10.0.0.1`,
+    `${remote}?options=-c%20polaris.environment%3Dstaging`,
+    `${remote}?service=prod`,
+  ])("refuses %s, which connects elsewhere or fakes the marker", (url) => {
+    expect(refusal(() => assertGate7DatabaseUrl(url)).code).toBe(
       "gate7_database_url_invalid"
     );
   });
 
-  it("does not put the connection string in the error", () => {
-    const error = refusal(() => assertGate7Database(remote, "production"));
+  it("refuses a staging marker of the session alone, and a session that hides a protected one", () => {
+    expect(
+      refusal(() =>
+        assertGate7Database(remote, { current: "staging", stored: null })
+      ).code
+    ).toBe("gate7_database_not_staging");
+    expect(
+      refusal(() =>
+        assertGate7Database(remote, { current: "", stored: "production" })
+      ).code
+    ).toBe("gate7_database_not_staging");
+    expect(
+      refusal(() =>
+        assertGate7Database("postgres://postgres@localhost/db", {
+          current: "",
+          stored: "staging-old",
+        })
+      ).code
+    ).toBe("gate7_database_not_staging");
+  });
 
-    expect(error.message).not.toContain("pw");
-    expect(error.message).not.toContain("neon.tech");
+  it("asks the tenant and the billing URLs for the same database", () => {
+    const billing =
+      "postgresql://billing:pw@ep-fake.sa-east-1.aws.neon.tech/neondb";
+    expect(() => assertSameDatabase(remote, billing)).not.toThrow();
+    expect(
+      refusal(() =>
+        assertSameDatabase(
+          remote,
+          "postgresql://billing:pw@ep-other.sa-east-1.aws.neon.tech/neondb"
+        )
+      ).code
+    ).toBe("gate7_databases_differ");
+    expect(
+      refusal(() =>
+        assertSameDatabase(
+          remote,
+          "postgresql://billing:pw@ep-fake.sa-east-1.aws.neon.tech/other"
+        )
+      ).code
+    ).toBe("gate7_databases_differ");
   });
 });
 

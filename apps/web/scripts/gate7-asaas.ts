@@ -19,8 +19,8 @@
  * See docs/runbooks/billing-providers.md (Gate 7).
  */
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { open, realpath, rm } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { listBillingPrices } from "@polaris/db/billing-repository";
 import { createBillingStore } from "@polaris/db/billing-store";
@@ -40,6 +40,8 @@ import { billingProviderPortOf } from "../src/server/billing/provider-ports";
 import {
   assertAsaasSandbox,
   assertGate7Database,
+  assertGate7DatabaseUrl,
+  assertSameDatabase,
   checkedLinkFile,
   cycleOf,
   Gate7RefusedError,
@@ -74,17 +76,41 @@ function print(result: Record<string, unknown>): void {
 
 const environment = process.env;
 
-/** Reads the `polaris.environment` marker of a database before it is used; never prints the URL. */
+// the same two readings as packages/db/scripts/gate-target.ts: a session option
+// can hide the stored marker, never add to a refusal
+const MARKERS_SQL = `SELECT current_setting('polaris.environment', true) AS current,
+       (SELECT substring(c FROM '^polaris\\.environment=(.*)$')
+          FROM pg_db_role_setting s
+          JOIN pg_database d ON d.oid = s.setdatabase,
+               unnest(s.setconfig) AS c
+         WHERE d.datname = current_database() AND s.setrole = 0
+           AND c LIKE 'polaris.environment=%'
+         LIMIT 1) AS stored`;
+
+/**
+ * Checks a database before it is used: the URL first, before any connection
+ * (host overrides and session options refused), then its environment marker.
+ * The tenant and billing URLs must name the same database. Never prints a URL.
+ */
 async function checkedDatabaseUrl(
   name: "BILLING_DATABASE_URL" | "DATABASE_URL"
 ): Promise<string> {
   const url = required(name.toLowerCase(), environment[name]);
+  assertGate7DatabaseUrl(url);
+  assertSameDatabase(
+    required("database_url", environment.DATABASE_URL),
+    required("billing_database_url", environment.BILLING_DATABASE_URL)
+  );
   const { pool } = createDatabase(url, { maxConnections: 1 });
   try {
-    const { rows } = await pool.query<{ marker: string | null }>(
-      "SELECT current_setting('polaris.environment', true) AS marker"
-    );
-    assertGate7Database(url, rows[0]?.marker ?? null);
+    const { rows } = await pool.query<{
+      current: string | null;
+      stored: string | null;
+    }>(MARKERS_SQL);
+    assertGate7Database(url, {
+      current: rows[0]?.current ?? null,
+      stored: rows[0]?.stored ?? null,
+    });
   } finally {
     await pool.end();
   }
@@ -143,34 +169,59 @@ async function authorizeCheckout(cycleMonths: 1 | 6 | 12) {
   }
 }
 
+/**
+ * The link file: outside the repository by its real path too (a symlinked
+ * parent is resolved), created empty with mode 0600 before the checkout, so a
+ * path that cannot be written stops the run before anything is created.
+ */
+async function openLinkFile(path: string) {
+  const asked = checkedLinkFile(path, REPOSITORY_ROOT);
+  const real = checkedLinkFile(
+    join(await realpath(dirname(asked)), basename(asked)),
+    await realpath(REPOSITORY_ROOT)
+  );
+  return { file: await open(real, "wx", 0o600), path: real };
+}
+
 async function checkout(): Promise<void> {
-  const linkFile = checkedLinkFile(
-    required("link_file", values["link-file"]),
-    REPOSITORY_ROOT
-  );
   const cycleMonths = cycleOf(values.cycle);
-  const authorized = await authorizeCheckout(cycleMonths);
-  const port = billingProviderPortOf(bindings(), "asaas");
-  const store = createBillingStore(
-    await checkedDatabaseUrl("BILLING_DATABASE_URL"),
-    {
-      discardCheckout: (abandoned) =>
-        billingProviderPortOf(bindings(), abandoned.provider).discardCheckout(
-          abandoned.providerRef
-        ),
-    }
-  );
+  const link = await openLinkFile(required("link_file", values["link-file"]));
+  let written = false;
   try {
-    const { handoff } = await startCardCheckout(
-      { port, store },
-      { ...authorized, cycleMonths, trial: values.trial }
+    const authorized = await authorizeCheckout(cycleMonths);
+    const port = billingProviderPortOf(bindings(), "asaas");
+    const store = createBillingStore(
+      await checkedDatabaseUrl("BILLING_DATABASE_URL"),
+      {
+        discardCheckout: (abandoned) =>
+          billingProviderPortOf(bindings(), abandoned.provider).discardCheckout(
+            abandoned.providerRef
+          ),
+      }
     );
-    // the link is the payer's: a private file for the QA, never the terminal
-    await writeFile(linkFile, `${handoff.url}\n`, { flag: "wx", mode: 0o600 });
+    try {
+      const { handoff } = await startCardCheckout(
+        { port, store },
+        { ...authorized, cycleMonths, trial: values.trial }
+      );
+      // the link is the payer's: a private file for the QA, never the terminal
+      await link.file.writeFile(`${handoff.url}\n`);
+      written = true;
+    } finally {
+      await store.close();
+    }
   } finally {
-    await store.close();
+    await link.file.close();
+    if (!written) {
+      await rm(link.path, { force: true });
+    }
   }
-  print({ checkout: "created", cycleMonths, linkFile, trial: values.trial });
+  print({
+    checkout: "created",
+    cycleMonths,
+    linkFile: link.path,
+    trial: values.trial,
+  });
 }
 
 async function readState(organizationId: string) {

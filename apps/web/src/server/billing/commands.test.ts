@@ -203,6 +203,83 @@ describe("startCardCheckout", () => {
     });
   });
 
+  it("gives up, after the link, the checkout this one replaced (a second tab or a retry), and only that one", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const OLD_CHECKOUT = "c6d42a6f-0000-4000-8000-0000000000aa";
+    const order: string[] = [];
+    const port = fakePort({
+      discardCheckout: vi.fn(() => {
+        order.push("discard");
+        return Promise.resolve("discarded" as const);
+      }),
+    });
+    const store = fakeStore({
+      attachProvider: vi.fn(() => {
+        order.push("attach");
+        return Promise.resolve({
+          provider: "asaas",
+          providerRef: OLD_CHECKOUT,
+        });
+      }),
+    });
+
+    await startCardCheckout({ now: () => now, port, store }, input);
+
+    expect(order).toEqual(["attach", "discard"]);
+    expect(port.discardCheckout).toHaveBeenCalledWith(OLD_CHECKOUT);
+    expect(port.discardCheckout).not.toHaveBeenCalledWith(CHECKOUT_ID);
+  });
+
+  it("gives nothing up when nothing was replaced, or the replaced reference is another provider's", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    for (const replaced of [
+      null,
+      { provider: "woovi", providerRef: "sub_woovi" },
+    ]) {
+      const port = fakePort();
+      // biome-ignore lint/performance/noAwaitInLoops: Two cases, in order.
+      await startCardCheckout(
+        {
+          now: () => now,
+          port,
+          store: fakeStore({
+            attachProvider: vi.fn(() => Promise.resolve(replaced)),
+          }),
+        },
+        input
+      );
+      expect(port.discardCheckout).not.toHaveBeenCalled();
+    }
+  });
+
+  it("still hands the link over when giving up the replaced checkout fails, and logs no link", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const port = fakePort({
+      discardCheckout: vi.fn(() => Promise.reject(new Error(CHECKOUT_URL))),
+    });
+
+    const result = await startCardCheckout(
+      {
+        now: () => now,
+        port,
+        store: fakeStore({
+          attachProvider: vi.fn(() =>
+            Promise.resolve({
+              provider: "asaas",
+              providerRef: "c6d42a6f-0000-4000-8000-0000000000bb",
+            })
+          ),
+        }),
+      },
+      input
+    );
+
+    expect(result.handoff.url).toBe(CHECKOUT_URL);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(CHECKOUT_URL);
+  });
+
   it("sends the price text, the cycle and the first charge on the day the trial ends, and no payer", async () => {
     const port = fakePort();
 
@@ -720,6 +797,79 @@ describe("settleUnclaimedTrials", () => {
       failed: 0,
       leftPaid: 0,
       scanned: 2,
+    });
+  });
+
+  /** A store whose settling runs the command's `cancel` on the one event and answers what it gave. */
+  function settlingStore(event: UnclaimedTrialEvent) {
+    return fakeStore({
+      listUnclaimedTrials: vi.fn(() => Promise.resolve([event])),
+      settleUnclaimedTrial: vi.fn(
+        async (
+          _id: string,
+          cancel: (entry: UnclaimedTrialEvent) => Promise<"cancelled" | "paid">
+        ) => ((await cancel(event)) === "paid" ? "left_paid" : "cancelled")
+      ),
+    });
+  }
+
+  it("reads the subscription of the event first: a paid charge there is never cancelled (left paid)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const port = fakePort({
+      readState: vi.fn(() =>
+        Promise.resolve([
+          {
+            fact: {
+              cycleMonths: 1 as const,
+              occurredAt: now,
+              periodEndsAt: new Date("2026-11-15T03:00:00.000Z"),
+              type: "charge_succeeded" as const,
+            },
+            providerEventId: "reconcile:pay_1:CONFIRMED",
+            providerRef: "event-ref-1",
+          },
+        ])
+      ),
+    });
+
+    const report = await settleUnclaimedTrials({
+      now: () => now,
+      portFor: () => port,
+      store: settlingStore(unclaimed("1")),
+    });
+
+    expect(port.readState).toHaveBeenCalledWith(
+      "event-ref-1",
+      now,
+      "sub_event_1"
+    );
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(report).toEqual({
+      cancelled: 0,
+      failed: 0,
+      leftPaid: 1,
+      scanned: 1,
+    });
+  });
+
+  it("a provider that finds nothing to cancel is a failure: the event stays for the next pass", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => Promise.resolve("nothing_to_cancel" as const)),
+    });
+
+    const report = await settleUnclaimedTrials({
+      now: () => now,
+      portFor: () => port,
+      store: settlingStore(unclaimed("1")),
+    });
+
+    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
+    expect(report).toEqual({
+      cancelled: 0,
+      failed: 1,
+      leftPaid: 0,
+      scanned: 1,
     });
   });
 

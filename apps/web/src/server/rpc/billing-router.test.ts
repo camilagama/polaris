@@ -4,6 +4,7 @@ import {
   type BillingProviderPort,
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
+import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
@@ -380,6 +381,25 @@ describe("billing.startCheckout", () => {
     expect(fixture.createBillingStore).not.toHaveBeenCalled();
     expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
   });
+
+  it.each(["capability_denied", "tenant_access_denied"] as const)(
+    "answers forbidden on %s, before any store, port or provider call",
+    async (code) => {
+      const fixture = setup();
+      fixture.withTenantRequestContext.mockImplementation(() =>
+        Promise.reject(new TenantAuthorizationError(code))
+      );
+
+      await expect(
+        fixture.client.billing.startCheckout(valid)
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      expect(fixture.listBillingPrices).not.toHaveBeenCalled();
+      expect(fixture.createBillingStore).not.toHaveBeenCalled();
+      expect(fixture.providerPortOf).not.toHaveBeenCalled();
+      expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+    }
+  );
 
   it("does not turn an unexpected failure into a reason the client can read", async () => {
     const fixture = setup({

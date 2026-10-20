@@ -1,6 +1,7 @@
 import type { BillingProviderPort } from "@polaris/billing/provider-port";
 import type {
   BillingStore,
+  UnclaimedTrialEvent,
   UnclaimedTrialOutcome,
 } from "@polaris/db/billing-store";
 import { grantsPro } from "@polaris/domain/billing/entitlements";
@@ -137,12 +138,13 @@ export async function startCardCheckout(
     firstChargeOn: firstChargeDateOf(now, input.trial),
   });
   const { handoff } = prepared;
+  let replaced: Awaited<ReturnType<typeof store.attachProvider>> = null;
   try {
     if (handoff.kind !== "redirect") {
       // the card is typed on the provider's page: anything else is not this checkout
       throw new Error("billing_unexpected_handoff");
     }
-    await store.attachProvider(
+    replaced = await store.attachProvider(
       input.organizationId,
       port.provider,
       prepared.providerRef
@@ -162,6 +164,20 @@ export async function startCardCheckout(
       throw new BillingCommandError("already_subscribed", { cause: error });
     }
     throw error;
+  }
+  if (
+    replaced &&
+    replaced.provider === port.provider &&
+    replaced.providerRef !== prepared.providerRef
+  ) {
+    // a checkout started before (a second tab, a retry) must not stay payable:
+    // its payment would find no organization while the provider charges it
+    await port.discardCheckout(replaced.providerRef).catch((discard) => {
+      logger.warn("billing_checkout_discard_failed", {
+        ...describeError(discard),
+        ...ids,
+      });
+    });
   }
   logger.info("billing_checkout_started", {
     ...ids,
@@ -317,6 +333,37 @@ export async function cancelRenewal(
   return result;
 }
 
+/**
+ * Cancels the subscription of an unclaimed trial at the provider, unless the
+ * provider shows one of its charges already paid (`paid`: the person was
+ * charged, and the paid access is not taken away here). The event proves the
+ * subscription exists, so a provider that finds nothing to cancel is an error:
+ * the event stays pending and the next pass reads it again.
+ */
+async function cancelUnclaimed(
+  dependencies: Pick<OperatorCommandDependencies, "portFor">,
+  unclaimed: UnclaimedTrialEvent,
+  now: Date
+): Promise<"cancelled" | "paid"> {
+  const port = dependencies.portFor(unclaimed.provider);
+  const state = await port.readState(
+    unclaimed.providerRef,
+    now,
+    unclaimed.providerSubscriptionId
+  );
+  if (state.some((event) => event.fact.type === "charge_succeeded")) {
+    return "paid";
+  }
+  const result = await port.cancelRenewal(
+    unclaimed.providerRef,
+    unclaimed.providerSubscriptionId
+  );
+  if (result === "nothing_to_cancel") {
+    throw new Error("billing_unclaimed_subscription_not_found");
+  }
+  return "cancelled";
+}
+
 export interface UnclaimedTrialsReport {
   cancelled: number;
   failed: number;
@@ -361,13 +408,7 @@ export async function settleUnclaimedTrials(
       // biome-ignore lint/performance/noAwaitInLoops: One provider call at a time, each under its own lock.
       const outcome = await store.settleUnclaimedTrial(
         event.eventId,
-        (unclaimed) =>
-          dependencies
-            .portFor(unclaimed.provider)
-            .cancelRenewal(
-              unclaimed.providerRef,
-              unclaimed.providerSubscriptionId
-            ),
+        (unclaimed) => cancelUnclaimed(dependencies, unclaimed, now),
         now
       );
       const key = counted[outcome];

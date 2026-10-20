@@ -131,6 +131,12 @@ export interface UnclaimedTrialEvent {
  */
 export type UnclaimedTrialOutcome = "cancelled" | "left_paid" | "not_pending";
 
+/** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
+export interface ReplacedProviderReference {
+  provider: string;
+  providerRef: string;
+}
+
 export interface BillingStoreOptions {
   /**
    * Gives up, at the provider, the checkout of the organization a trial
@@ -161,12 +167,16 @@ export interface StoredEntitlementGrant {
 }
 
 export interface BillingStore {
-  /** Links the organization's subscription at a provider (the reference webhooks name). */
+  /**
+   * Links the organization's subscription at a provider (the reference webhooks
+   * name). Answers the reference it replaced, if any, so the caller can give
+   * that checkout up at the provider; null when nothing was replaced.
+   */
   attachProvider: (
     organizationId: string,
     provider: string,
     providerRef: string
-  ) => Promise<void>;
+  ) => Promise<ReplacedProviderReference | null>;
   close: () => Promise<void>;
   /**
    * Gives an organization a temporary entitlement (plan PR85): more than its plan,
@@ -225,10 +235,13 @@ export interface BillingStore {
    * (`unclaimed_trial_cancelled` or `unclaimed_trial_left_paid`, under
    * `command:settle_unclaimed_trial:<eventId>`). A failure of `cancel` changes
    * nothing, so the next pass tries again; `cancel` must be safe to repeat.
+   * `cancel` answers `paid` when the provider shows a charge of that
+   * subscription already paid: it cancels nothing and the event is recorded as
+   * `left_paid`, like a record that already gives Pro on that reference.
    */
   settleUnclaimedTrial: (
     eventId: string,
-    cancel: (event: UnclaimedTrialEvent) => Promise<unknown>,
+    cancel: (event: UnclaimedTrialEvent) => Promise<"cancelled" | "paid">,
     now?: Date
   ) => Promise<UnclaimedTrialOutcome>;
   /**
@@ -828,7 +841,7 @@ async function sweepOne(
  * the end, the person's reservation would stay held there and every other
  * organization of the person would get `trial_in_progress` (ADR 0101).
  */
-const TRIAL_SETUP_ABANDONED_AFTER = "2 hours";
+const TRIAL_SETUP_ABANDONED_AFTER_HOURS = 2;
 
 /**
  * Ends one abandoned trial setup (back to Free, or Free Over Limit). The
@@ -847,8 +860,8 @@ async function abandonOne(
     const stale = await client.query<{ updated_at: Date }>(
       `SELECT updated_at FROM public.organization_billing
         WHERE organization_id = $1 AND state = 'trial_setup'
-          AND updated_at < $2::timestamptz - interval '${TRIAL_SETUP_ABANDONED_AFTER}'`,
-      [organizationId, now]
+          AND updated_at < $2::timestamptz - make_interval(hours => $3)`,
+      [organizationId, now, TRIAL_SETUP_ABANDONED_AFTER_HOURS]
     );
     const [setup] = stale.rows;
     if (!setup) {
@@ -893,10 +906,10 @@ async function sweepAbandonedTrialSetups(
   const stale = await pool.query<{ organization_id: string }>(
     `SELECT organization_id FROM public.organization_billing
       WHERE state = 'trial_setup'
-        AND updated_at < $1::timestamptz - interval '${TRIAL_SETUP_ABANDONED_AFTER}'
+        AND updated_at < $1::timestamptz - make_interval(hours => $3)
       ORDER BY updated_at, organization_id
       LIMIT $2`,
-    [now, limit]
+    [now, limit, TRIAL_SETUP_ABANDONED_AFTER_HOURS]
   );
   const report: BillingSweepReport = {
     failed: 0,
@@ -1162,12 +1175,12 @@ export function createBillingStore(
 
   const store: BillingStore = {
     async attachProvider(organizationId, provider, providerRef) {
-      await inTransaction(pool, async (client) => {
+      return await inTransaction(pool, async (client) => {
         const row = await lockRecord(client, organizationId);
         const sameSubscription =
           row.provider === provider && row.provider_ref === providerRef;
         if (sameSubscription) {
-          return;
+          return null;
         }
         // a subscription that is live (a trial running, a paid period, grace) is not
         // replaced; one that is not (a checkout that was abandoned, a person who left
@@ -1182,6 +1195,10 @@ export function createBillingStore(
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [organizationId, provider, providerRef]
         );
+        // the checkout it replaces may still be open at the provider: the caller gives it up
+        return row.provider && row.provider_ref
+          ? { provider: row.provider, providerRef: row.provider_ref }
+          : null;
       });
     },
     async close() {
@@ -1535,16 +1552,16 @@ export function createBillingStore(
           grantsPro(before.state) &&
           row.provider === event.provider &&
           row.provider_ref === event.provider_ref;
-        if (!paid) {
-          await cancel({
-            eventId,
-            organizationId,
-            provider: event.provider,
-            providerRef: event.provider_ref,
-            providerSubscriptionId: event.provider_subscription_id,
-          });
-        }
-        const outcome = paid ? "left_paid" : "cancelled";
+        const result = paid
+          ? "paid"
+          : await cancel({
+              eventId,
+              organizationId,
+              provider: event.provider,
+              providerRef: event.provider_ref,
+              providerSubscriptionId: event.provider_subscription_id,
+            });
+        const outcome = result === "paid" ? "left_paid" : "cancelled";
         const decision = `unclaimed_trial_${outcome}`;
         await client.query(
           "UPDATE public.billing_events SET status = 'ignored', processed_at = $2 WHERE id = $1",

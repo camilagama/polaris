@@ -4,7 +4,8 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
  * The guards of the Gate 7 script (ADR 0101): it runs only against the Asaas
  * sandbox, only on a staging or local billing database, and hands the checkout
  * link to the QA in a private file outside the repository, never on the
- * terminal. Nothing here opens a connection or calls the provider.
+ * terminal. These functions open no connection and call no provider; the
+ * script runs the URL checks before it connects.
  */
 
 const SANDBOX_KEY_PREFIX = "$aact_hmlg_";
@@ -41,30 +42,79 @@ export function assertAsaasSandbox(environment: {
   }
 }
 
+/** Query parameters that make the driver connect somewhere else, or set the marker for the session. */
+const OVERRIDING_PARAMETERS = ["host", "hostaddr", "options", "service"];
+
 /**
- * The billing database must be staging (`polaris.environment = 'staging'`) or
- * a local one: never production, never a database without the marker
- * somewhere else, because sandbox references would be mixed with real ones.
+ * Checked before any connection opens: a PostgreSQL URL whose host is the one
+ * it shows (no `?host=`, `?hostaddr=` or `?service=`) and that sets no session
+ * option (`?options=-c polaris.environment=…` would fake the marker).
+ */
+export function assertGate7DatabaseUrl(connectionString: string): URL {
+  const url = URL.parse(connectionString);
+  if (
+    !(url && ["postgres:", "postgresql:"].includes(url.protocol)) ||
+    url.hostname === "" ||
+    OVERRIDING_PARAMETERS.some((name) => url.searchParams.has(name))
+  ) {
+    throw new Gate7RefusedError("gate7_database_url_invalid");
+  }
+  return url;
+}
+
+/** The two readings of `polaris.environment`, as in `packages/db/scripts/gate-target.ts`. */
+export interface EnvironmentMarkers {
+  /** What the session sees (`current_setting`). */
+  current: string | null;
+  /** What `ALTER DATABASE … SET` wrote (`pg_db_role_setting`). */
+  stored: string | null;
+}
+
+const PROTECTED = ["production", "restore-drill"];
+
+/**
+ * The billing database must be staging (`ALTER DATABASE … SET
+ * polaris.environment = 'staging'`, the stored marker) or a local one with no
+ * marker at all: never production, never a remote database without the
+ * marker, because sandbox references would be mixed with real ones.
  */
 export function assertGate7Database(
   connectionString: string,
-  environmentMarker: string | null
+  markers: EnvironmentMarkers
 ): void {
-  const url = URL.parse(connectionString);
-  if (!(url && ["postgres:", "postgresql:"].includes(url.protocol))) {
-    throw new Gate7RefusedError("gate7_database_url_invalid");
-  }
-  const marker = (environmentMarker ?? "").trim().toLowerCase();
-  const local = LOCAL_HOSTS.includes(url.hostname) && marker === "";
-  if (!(marker === "staging" || local)) {
+  const url = assertGate7DatabaseUrl(connectionString);
+  const current = (markers.current ?? "").trim().toLowerCase();
+  const stored = (markers.stored ?? "").trim().toLowerCase();
+  const staging =
+    stored === "staging" && (current === "" || current === "staging");
+  const local =
+    LOCAL_HOSTS.includes(url.hostname) && current === "" && stored === "";
+  if (PROTECTED.includes(current) || PROTECTED.includes(stored)) {
     throw new Gate7RefusedError("gate7_database_not_staging");
+  }
+  if (!(staging || local)) {
+    throw new Gate7RefusedError("gate7_database_not_staging");
+  }
+}
+
+/** The tenant and the billing connections must reach the same database (host, port and name). */
+export function assertSameDatabase(first: string, second: string): void {
+  const a = assertGate7DatabaseUrl(first);
+  const b = assertGate7DatabaseUrl(second);
+  if (
+    a.hostname !== b.hostname ||
+    (a.port || "5432") !== (b.port || "5432") ||
+    a.pathname !== b.pathname
+  ) {
+    throw new Gate7RefusedError("gate7_databases_differ");
   }
 }
 
 /**
  * Where the checkout link goes: an absolute path outside the repository (a
  * file there could be committed). The script writes it with mode 0600 and
- * refuses a file that already exists.
+ * refuses a file that already exists. The script checks the real path of
+ * the parent directory again (a symlink into the repository is refused).
  */
 export function checkedLinkFile(path: string, repositoryRoot: string): string {
   if (!isAbsolute(path)) {
