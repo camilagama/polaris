@@ -41,7 +41,8 @@ GRANT CREATE ON SCHEMA public TO polaris_unverified_user_owner;--> statement-bre
 GRANT polaris_unverified_user_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 SET ROLE polaris_unverified_user_owner;--> statement-breakpoint
 -- The same function of the migration before, with one condition more, in the candidate query and in the DELETE: the date of
--- the last link is null or already past (a link valid to the second is a user kept). And the row of the end of the contract of
+-- the last link is null or already past (a link valid to the second is a user kept; the DELETE repeats the check for symmetry,
+-- and the row lock already holds the UPDATE of a resend until the delete ends). And the row of the end of the contract of
 -- each user deleted, in the same statement as the delete and the audit (a data-modifying CTE always runs; a conflict with a row
 -- that already exists keeps the earlier date). The ACL and the owner of the function are kept by CREATE OR REPLACE.
 CREATE OR REPLACE FUNCTION public.purge_unverified_users(p_limit integer)

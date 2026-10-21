@@ -1752,6 +1752,9 @@ describe("Verification link record (ADR 0100, P10)", () => {
 
   it("sends no e-mail when the end of its link could not be recorded: a link the purge does not know of must not exist", async () => {
     stubPwnedPasswordRange();
+    const logged = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
     const recorder = vi.fn(() => Promise.reject(new Error("database down")));
     const { app: testApp, verificationEmails } = createEmailPasswordTestApp(
       undefined,
@@ -1762,6 +1765,12 @@ describe("Verification link record (ADR 0100, P10)", () => {
 
     expect(recorder).toHaveBeenCalledTimes(1);
     expect(verificationEmails).toHaveLength(0);
+    // the named event, with the class of the error and nothing personal
+    expect(logged).toHaveBeenCalledWith(
+      "auth_verification_link_record_failed",
+      expect.objectContaining({ errorClass: "Error" })
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("example.invalid");
   });
 
   it("answers the resend without a session the same for an address that exists and one that does not, also when the record fails", async () => {
