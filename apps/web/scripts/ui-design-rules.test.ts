@@ -82,13 +82,13 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
   );
 
   it.each(["radio-group.tsx", "checkbox.tsx"])(
-    "%s grows to a 48 px touch area with touch (16 + 2 × 16 px)",
+    "%s grows to a touch area of at least 48 px with touch (18 + 2 × 16 = 50 px; measured in e2e-pwa/ui-components)",
     (file) => {
       expect(read(`src/ui/${file}`)).toContain("touch:after:-inset-4");
     }
   );
 
-  it("the app never imports axe-core (a test tool on the interface list)", () => {
+  it("nothing under src/ imports axe-core (a test tool, development only)", () => {
     const sources = (dir: string): string[] =>
       readdirSync(join(web, dir), { withFileTypes: true }).flatMap((entry) =>
         entry.isDirectory()

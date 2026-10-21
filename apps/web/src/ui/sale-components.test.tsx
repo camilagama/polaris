@@ -21,11 +21,19 @@ import { Separator } from "@/ui/separator";
 /**
  * The markup of the components of the sale (ADR 0103, section 8, item 3): the role and the name each one gives
  * the screen reader. The browser checks (e2e-pwa/ui-components.e2e.ts) find the same ones by role and label
- * and run axe; these stay here so a change of role fails without a browser.
+ * and run axe; these stay here so a change of role fails without a browser. The name a radio or a checkbox
+ * gets from its <label> is computed by the browser (Base UI ties it at runtime): the e2e proves that one.
  */
 const LABEL_FOR_PRICE =
   /<label [^>]*data-slot="field-label" for="preco">Preço cobrado<\/label>/;
 const FIELDSET_WITH_LEGEND = /^<fieldset[^>]*><legend[^>]*>Forma de pagamento/;
+const ALERT_REGION =
+  /^<div [^>]*role="status"[^>]*>.*Sem internet\..*Pode vender\..*<\/div>$/;
+const FIELD_TAG = /<div [^>]*data-slot="field"[^>]*>/;
+const GROUP_TAG = /<div [^>]*data-slot="input-group"[^>]*>/;
+const ROLE = /\srole=/;
+const ADDON_TEXT = /data-slot="input-group-addon"[^>]*>R\$<\/div>/;
+const HIDDEN_MARK = /<svg [^>]*aria-hidden="true"/;
 const BADGE_AS_TEXT = /^<span[^>]*>Offline · 3<\/span>$/;
 
 const html = (node: React.ReactNode) => renderToStaticMarkup(node);
@@ -39,20 +47,19 @@ describe("Alert", () => {
     expect(html(<Alert>x</Alert>)).toContain('role="status"');
   });
 
-  it("keeps title and description as text of the same region", () => {
+  it("keeps title and description inside the announced region", () => {
     const markup = html(
       <Alert variant="warning">
         <AlertTitle>Sem internet.</AlertTitle>
         <AlertDescription>Pode vender.</AlertDescription>
       </Alert>
     );
-    expect(markup).toContain("Sem internet.");
-    expect(markup).toContain("Pode vender.");
+    expect(markup).toMatch(ALERT_REGION);
   });
 });
 
 describe("Field", () => {
-  it("ties the label to the control and the help to its description", () => {
+  it("labels the control, adds no role of its own and keeps the R$ as text", () => {
     const markup = html(
       <Field>
         <FieldLabel htmlFor="preco">Preço cobrado</FieldLabel>
@@ -64,10 +71,10 @@ describe("Field", () => {
       </Field>
     );
     expect(markup).toMatch(LABEL_FOR_PRICE);
-    expect(markup).toContain('id="preco"');
-    expect(markup).toContain('aria-describedby="preco-ajuda"');
-    // the field itself is no nameless group
-    expect(markup).not.toContain('data-slot="field" role=');
+    // neither the field nor the "R$" wrapper is a nameless group, and the "R$" stays readable text
+    expect(markup.match(FIELD_TAG)?.[0]).not.toMatch(ROLE);
+    expect(markup.match(GROUP_TAG)?.[0]).not.toMatch(ROLE);
+    expect(markup).toMatch(ADDON_TEXT);
   });
 
   it("announces an error with role alert and an icon hidden from the screen reader", () => {
@@ -105,11 +112,16 @@ describe("RadioGroup and Checkbox", () => {
     expect(markup).toContain('aria-checked="false"');
   });
 
-  it("gives a checkbox with its state and no visible mark when unchecked", () => {
-    const markup = html(<Checkbox aria-label="Pretendo antecipar" />);
-    expect(markup).toContain('role="checkbox"');
-    expect(markup).toContain('aria-checked="false"');
-    expect(markup).toContain('aria-label="Pretendo antecipar"');
+  it("gives a checkbox with its state, and the mark (hidden from the screen reader) only when checked", () => {
+    const unchecked = html(<Checkbox aria-label="Pretendo antecipar" />);
+    expect(unchecked).toContain('role="checkbox"');
+    expect(unchecked).toContain('aria-checked="false"');
+    expect(unchecked).not.toContain("<svg");
+    const checked = html(
+      <Checkbox aria-label="Pretendo antecipar" defaultChecked />
+    );
+    expect(checked).toContain('aria-checked="true"');
+    expect(checked).toMatch(HIDDEN_MARK);
   });
 });
 
@@ -156,6 +168,9 @@ describe("cn", () => {
       "text-section text-destructive"
     );
     expect(cn("text-sm", "text-support")).toBe("text-support");
+    expect(cn("text-value-lg", "text-foreground")).toBe(
+      "text-value-lg text-foreground"
+    );
   });
 
   it("lets a later height replace a control height of the theme", () => {

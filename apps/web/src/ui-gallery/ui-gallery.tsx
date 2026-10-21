@@ -400,8 +400,11 @@ export function UiGallery() {
               </CardHeader>
               <CardContent className="grid gap-4">
                 <FieldSet>
-                  <FieldLegend variant="label">Forma de pagamento</FieldLegend>
+                  <FieldLegend id="galeria-forma-rotulo" variant="label">
+                    Forma de pagamento
+                  </FieldLegend>
                   <RadioGroup
+                    aria-labelledby="galeria-forma-rotulo"
                     className="grid-cols-2 md:grid-cols-3"
                     defaultValue="pix"
                   >

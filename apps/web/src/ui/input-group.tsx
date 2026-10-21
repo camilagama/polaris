@@ -6,7 +6,8 @@ import { type ComponentProps, type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 /* The Polaris text field. With touch the 48 px area comes from the group itself (touch-hit-field): a touch on the
-   band above or below the field focuses the text. */
+   band above or below the field focuses the text. No role: one field (with or without the "R$" beside it) is no
+   group of controls, and a nameless group would only add "group" to what the screen reader says. */
 function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
   const focusOnBand = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -21,9 +22,9 @@ function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
   );
   return (
     // The click only helps the pointer (the band around the field focuses it); the keyboard reaches the
-    // control itself, so the group needs no key handler. A group of controls, not a form section: no fieldset.
-    // biome-ignore lint/a11y/useSemanticElements: see above
+    // control itself, so the wrapper needs no key handler.
     // biome-ignore lint/a11y/noNoninteractiveElementInteractions: see above
+    // biome-ignore lint/a11y/noStaticElementInteractions: see above
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above
     <div
       className={cn(
@@ -32,7 +33,6 @@ function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
       )}
       data-slot="input-group"
       onClick={focusOnBand}
-      role="group"
       {...props}
     />
   );

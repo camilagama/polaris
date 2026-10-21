@@ -150,7 +150,9 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
   ).toBeVisible();
 
   // RadioGroup of choice cards inside a FieldSet: the legend names the group, each card names its radio
-  const methods = sale.getByRole("radiogroup");
+  const methods = sale.getByRole("radiogroup", {
+    name: "Forma de pagamento",
+  });
   await expect(
     sale.getByRole("group", { name: "Forma de pagamento" })
   ).toBeVisible();
@@ -160,7 +162,15 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
   await expect(methods.getByRole("radio", { name: "Dinheiro" })).toBeChecked();
   await expect(methods.getByRole("radio", { name: "Pix" })).not.toBeChecked();
   await page.keyboard.press("ArrowRight");
-  await expect(methods.getByRole("radio", { name: "Crédito" })).toBeFocused();
+  const credit = methods.getByRole("radio", { name: "Crédito" });
+  await expect(credit).toBeFocused();
+  // inside a choice card the card draws the focus outline: the radio adds no 3 px halo of its own
+  expect(
+    await credit.evaluate((radio) => ({
+      card: getComputedStyle(radio.closest("label") as Element).outlineWidth,
+      halo: getComputedStyle(radio).boxShadow,
+    }))
+  ).toEqual({ card: "3px", halo: expect.not.stringContaining("3px") });
 
   // Checkbox: named by its label, described by its help, toggled by the label
   const anticipation = sale.getByRole("checkbox", {

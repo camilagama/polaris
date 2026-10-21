@@ -3,18 +3,13 @@ import { cn } from "@/lib/utils";
 
 /* Polaris v5.1: 12 px of breathing room with touch, 16 with a mouse (`--card-spacing`); a 6% ring plus a short
    shadow, and in the dark theme a 1 px glow at the top (`--card-glow`, OKLCH). */
-function Card({
-  className,
-  size = "default",
-  ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] data-[size=sm]:[--card-spacing:--spacing(2.5)] md:[--card-spacing:--spacing(4)] md:data-[size=sm]:[--card-spacing:--spacing(3)]",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
         className
       )}
-      data-size={size}
       data-slot="card"
       {...props}
     />

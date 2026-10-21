@@ -13,16 +13,12 @@ import { dirname, resolve, sep } from "node:path";
  * The two `@fontsource-variable` packages came with the UI base (ADR 0103, section 2): the Geist files
  * served by the app itself, so it works offline and under `font-src 'self'`; CSS and woff2 only, no code
  * and no dependencies, imported by their latin subset file.
- * `axe-core` came with the components of the sale (ADR 0103, section 8, item 3): a development dependency only,
- * evaluated by the Playwright checks inside the page (axe with no violation in each theme). It has no
- * dependencies and no install script, and nothing under src/ imports it.
  */
 export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
   "@fontsource-variable/geist",
   "@fontsource-variable/geist-mono",
   "@tailwindcss/vite",
-  "axe-core",
   "class-variance-authority",
   "clsx",
   "lucide-react",
@@ -30,6 +26,14 @@ export const UI_ALLOWED_PACKAGES = [
   "tailwindcss",
   "tw-animate-css",
 ] as const;
+
+/**
+ * Test tools of the interface: development dependencies only, held like the list above (exact version,
+ * closure under review) but never importable by src/ui/ nor declared as a runtime dependency.
+ * `axe-core` came with the components of the sale (ADR 0103, section 8, item 3): the Playwright checks
+ * evaluate it inside the gallery (no violation in each theme). It has no dependencies and no install script.
+ */
+export const UI_TEST_PACKAGES = ["axe-core"] as const;
 
 /**
  * Everything apps/web depended on before this floor existed. These are not interface packages; the list
@@ -99,6 +103,7 @@ function declaredDependencies(manifest: PackageManifest) {
 export function unlistedDependencies(manifest: PackageManifest) {
   const allowed = new Set<string>([
     ...UI_ALLOWED_PACKAGES,
+    ...UI_TEST_PACKAGES,
     ...BASELINE_PACKAGES,
   ]);
   return declaredDependencies(manifest)
@@ -108,9 +113,9 @@ export function unlistedDependencies(manifest: PackageManifest) {
 
 const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 
-/** Interface packages declared with a range instead of an exact version (condition 4). */
+/** Interface packages (test tools included) declared with a range instead of an exact version (condition 4). */
 export function inexactInterfaceVersions(manifest: PackageManifest) {
-  const ui = new Set<string>(UI_ALLOWED_PACKAGES);
+  const ui = new Set<string>([...UI_ALLOWED_PACKAGES, ...UI_TEST_PACKAGES]);
   return declaredDependencies(manifest)
     .filter(({ name, range }) => ui.has(name) && !EXACT_VERSION.test(range))
     .map(({ name, range }) => `${name}@${range}`);
@@ -124,6 +129,14 @@ export function nonRegistryDependencies(manifest: PackageManifest) {
   return declaredDependencies(manifest)
     .filter(({ range }) => NON_REGISTRY_RANGE.test(range))
     .map(({ name, range }) => `${name}@${range}`);
+}
+
+/** Test tools of the interface declared anywhere but in `devDependencies`. */
+export function testPackagesOutsideDev(manifest: PackageManifest) {
+  const tools = new Set<string>(UI_TEST_PACKAGES);
+  return declaredDependencies(manifest)
+    .filter(({ field, name }) => tools.has(name) && field !== "devDependencies")
+    .map(({ field, name }) => `${name} in ${field}`);
 }
 
 /** `trustedDependencies` entries of a manifest: any one lets that package run install scripts. */
@@ -229,9 +242,9 @@ export function interfaceClosure(
   return [...seen].map((key) => (packages.get(key) as LockPackage).id).sort();
 }
 
-/** The interface packages the manifest declares today, in any dependency field. */
+/** The interface packages (test tools included) the manifest declares today, in any dependency field. */
 export function declaredInterfacePackages(manifest: PackageManifest) {
-  const ui = new Set<string>(UI_ALLOWED_PACKAGES);
+  const ui = new Set<string>([...UI_ALLOWED_PACKAGES, ...UI_TEST_PACKAGES]);
   return [
     ...new Set(
       declaredDependencies(manifest)
@@ -322,6 +335,24 @@ export function scanUiSource(
     }
   }
   return findings;
+}
+
+const TEST_FILE = /\.test\.[jt]sx?$/;
+const TEST_RUNNER_IMPORT = "import of vitest";
+
+/**
+ * `scanUiSource` for a file of src/ui/ or of the gallery, where a component test may sit beside the
+ * components: a `*.test.*` file may also import the test runner (`vitest` itself, nothing else), and every
+ * other rule still holds for it. The runner never reaches the bundle: no component imports a test file.
+ */
+export function scanUiFolderFile(
+  file: string,
+  source: string,
+  srcRoot?: string
+) {
+  return scanUiSource(file, source, srcRoot).filter(
+    ({ rule }) => !(TEST_FILE.test(file) && rule === TEST_RUNNER_IMPORT)
+  );
 }
 
 // What installs dependencies or runs repository code (a build, a test run that builds inside): none of it may hold a secret.
