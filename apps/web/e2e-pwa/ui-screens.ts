@@ -3,6 +3,7 @@
 import type { BrowserContext, Page } from "@playwright/test";
 import { entryStates } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
+import { productStates } from "./ui-product-states";
 import { saleStates } from "./ui-sale-states";
 
 /**
@@ -155,6 +156,42 @@ const saleScreen = (
   sourceDirs: SALE_SOURCES,
   status: "migrated",
 });
+
+/** The files of the products screen on the new interface: the images panel and the categories are still the old CSS. */
+const PRODUCT_SOURCES = [
+  "src/catalog/product-fields.tsx",
+  "src/catalog/product-form.tsx",
+  "src/catalog/product-list.tsx",
+  "src/catalog/product-variant-parts.tsx",
+  "src/catalog/product-variant-price-section.tsx",
+  "src/catalog/product-variant-sku-section.tsx",
+  "src/catalog/product-variants-form.tsx",
+  "src/catalog/product-variants-panel.tsx",
+  "src/catalog/products-page-parts.tsx",
+  "src/catalog/products-page.tsx",
+];
+
+/** One state of the products screen (`ui-product-states.ts`). */
+const productScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `produtos ${name}`,
+  open,
+  sourceDirs: PRODUCT_SOURCES,
+  status: "migrated",
+});
+
+/** Opens the menu of a row and closes it with Escape, so the motion recorder sees it. */
+async function exerciseProductMenu(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Mais ações para Calça jeans", role: "button" },
+    { role: "menu" }
+  );
+}
 
 async function exerciseSalePayment(page: Page) {
   await openAndClose(
@@ -315,4 +352,14 @@ export const SCREENS: UiScreen[] = [
   saleScreen("erro nos campos", saleStates.fieldErrors),
   saleScreen("confirmada", saleStates.confirmed),
   saleScreen("sem conexão", saleStates.offline),
+  productScreen("lista", productStates.list, exerciseProductMenu),
+  productScreen("vazia", productStates.empty),
+  productScreen("erro do nome", productStates.nameRequired),
+  productScreen("edição", productStates.edit),
+  productScreen("arquivados", productStates.archived),
+  productScreen("busca sem resultado", productStates.emptySearch),
+  productScreen("sem conexão", productStates.offline),
+  productScreen("variantes", productStates.variants),
+  productScreen("variantes, opções e combinação", productStates.variantsForm),
+  productScreen("variantes configuradas", productStates.variantsConfigured),
 ];
