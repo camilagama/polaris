@@ -97,6 +97,26 @@ describe("the periods the privacy policy cites (AC-7)", () => {
     expect(row("Registro de acesso")).toContain("mais 30 dias de folga");
   });
 
+  it("says 5 years for the acceptance and 6 months plus 30 days for who never verified the e-mail, as the registry does", () => {
+    const acceptance = RETENTION_POLICIES.find(
+      (item) => item.class === "legal_acceptance"
+    );
+    const unverified = RETENTION_POLICIES.find(
+      (item) => item.class === "legal_acceptance_unverified_user"
+    );
+    expect(acceptance?.period).toEqual({ kind: "calendar_months", months: 60 });
+    expect(unverified?.period).toEqual({
+      graceDays: 30,
+      kind: "calendar_months",
+      months: 6,
+    });
+    expect(row("Aceite dos termos")).toContain("5 anos");
+    expect(row("Aceite dos termos")).toContain("6 meses mais 30 dias de folga");
+    expect(flat(terms)).toContain("por 5 anos depois do fim do contrato");
+    expect(flat(terms)).not.toContain("10 anos");
+    expect(flat(privacy)).not.toContain("10 anos");
+  });
+
   it("uses the closure windows and the export rules of the domain", () => {
     expect(row("Loja encerrada")).toContain("90 dias");
     expect(row("Loja encerrada")).toContain(
@@ -118,7 +138,6 @@ describe("the periods the privacy policy cites (AC-7)", () => {
       "6 meses",
       "12 meses",
       "5 anos",
-      "10 anos",
       // the provider's rotation of backups (ADR 0099), not a retention class of the registry
       "35 dias",
     ]);

@@ -449,7 +449,7 @@ async function run() {
       "each deletion leaves one `unverified_user_deleted` row in the auth audit (succeeded, no actor, the user ID and the ID of the run), never the e-mail or the name, and nothing is audited for a user kept"
     );
 
-    // ---- the end of the contract: one row for each user deleted, from which the 10 years of the acceptance count
+    // ---- the end of the contract: one row for each user deleted, from which the 6 months and 30 days of the acceptance count
     const ended = await owner.pool.query<{
       ended_in_window: boolean;
       reason: string;
@@ -472,7 +472,7 @@ async function run() {
       deadline_after_acceptance: boolean;
       user_id: string;
     }>(
-      `SELECT a.user_id, (e.ended_at + interval '10 years') > a.accepted_at AS deadline_after_acceptance
+      `SELECT a.user_id, (e.ended_at + interval '6 months 30 days') > a.accepted_at AS deadline_after_acceptance
          FROM public.legal_acceptance AS a
          LEFT JOIN public.legal_acceptance_contract_end AS e ON e.user_id = a.user_id
         WHERE a.user_id = ANY ($1) ORDER BY a.user_id`,
@@ -485,7 +485,7 @@ async function run() {
     assert.equal(
       byUser.get(everything),
       true,
-      "the deleted user has the date its 10 years count from"
+      "the deleted user has the date its 6 months and 30 days count from"
     );
     assert.equal(
       byUser.get(google),
@@ -521,7 +521,7 @@ async function run() {
       "a user ID outside the shape"
     );
     tests.push(
-      "each deletion records, in the same statement, one row in `legal_acceptance_contract_end` (the user ID and the instant of the deletion, reason `unverified_user_deleted`), none for a user kept; the acceptance of the deleted user stays and its 10 years count from that date; the table refuses UPDATE, DELETE and TRUNCATE (23514, triggers) and an invalid reason or user ID"
+      "each deletion records, in the same statement, one row in `legal_acceptance_contract_end` (the user ID and the instant of the deletion, reason `unverified_user_deleted`), none for a user kept; the acceptance of the deleted user stays and its 6 months and 30 days count from that date; the table refuses UPDATE, DELETE and TRUNCATE (23514, triggers) and an invalid reason or user ID"
     );
 
     // ---- idempotent
