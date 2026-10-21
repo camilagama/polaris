@@ -13,6 +13,14 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
+  /**
+   * When the last e-mail link to verify the address stops working, by the database clock, written by the
+   * server each time it sends one (never read from the e-mail). The purge of the users who never verified
+   * waits for it (ADR 0100, P10): while a link is still valid the account is kept. Null: no link was sent.
+   */
+  verificationLinkExpiresAt: timestamp("verification_link_expires_at", {
+    withTimezone: true,
+  }),
 });
 
 export const session = pgTable(

@@ -57,6 +57,23 @@ type PolarisDatabase = ReturnType<typeof createDatabase>["db"];
 
 const requestIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
 
+/** How long the link of the verification e-mail works; the purge of the unverified users waits for it (ADR 0100, P10). */
+const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * The resend of the verification e-mail works only this long after the sign-up (`created_at`), so the purge of the
+ * unverified users cannot be postponed forever by resending (ADR 0100, P10; decision of 21/10/2026).
+ */
+const EMAIL_VERIFICATION_RESEND_CAP_SECONDS = 72 * 60 * 60;
+
+/** The user is past the cap of the resend: no date is recorded, no e-mail goes out, and the answer does not change. */
+class VerificationResendCapError extends Error {
+  constructor() {
+    super("The verification link was requested after the cap of the resend.");
+    this.name = "VerificationResendCapError";
+  }
+}
+
 export interface AuthSecurityAuditEvent {
   actorId: string | null;
   errorCode:
@@ -138,6 +155,15 @@ type SignUpLegalAcceptanceRecorder = (entry: {
 type AuthorizationEpochBumper = (userId: string) => Promise<void>;
 /** Forgets the sign-in lock of an e-mail (a password reset also unlocks, ADR 0100). */
 type LoginLockClearer = (email: string) => Promise<void>;
+/** Records, by the database clock, until when the link of the verification e-mail about to be sent works (ADR 0100, P10). */
+type VerificationLinkRecorder = (userId: string) => Promise<void>;
+
+interface VerificationLinkQueryable {
+  query: (
+    text: string,
+    values: unknown[]
+  ) => Promise<{ rowCount: number | null }>;
+}
 
 interface CreateBetterAuthOptions {
   /** Appends the record of access (ADR 0092); the default writes through `database`, none without one. */
@@ -157,6 +183,8 @@ interface CreateBetterAuthOptions {
   requestId?: string;
   runInBackground?: BackgroundTaskHandler;
   secret: string;
+  /** Records the end of the validity of each verification link sent; the default writes through `database`, none without one. */
+  verificationLinkRecorder?: VerificationLinkRecorder;
 }
 
 interface AuthHookContext {
@@ -712,6 +740,97 @@ function databaseLoginLockClearer(
   };
 }
 
+/**
+ * The UPDATE of the date of the link, by the database clock, only while the user is at most 72 hours old. A user row
+ * that is not there (the purge deleted it while the resend waited for its lock) is a failure: the e-mail must not
+ * carry a link for a user that no longer exists. A user past the cap is not a failure: nothing is recorded and the
+ * e-mail does not go out.
+ */
+export function databaseVerificationLinkRecorder(
+  database: PolarisDatabase | undefined
+): VerificationLinkRecorder | undefined {
+  if (!database) {
+    return undefined;
+  }
+  const client = database.$client as unknown as VerificationLinkQueryable;
+  return async (userId) => {
+    const result = await client.query(
+      'UPDATE public."user" SET verification_link_expires_at = pg_catalog.clock_timestamp() + pg_catalog.make_interval(secs => $2::integer) WHERE id = $1 AND created_at > pg_catalog.clock_timestamp() - pg_catalog.make_interval(secs => $3::integer)',
+      [
+        userId,
+        EMAIL_VERIFICATION_TTL_SECONDS,
+        EMAIL_VERIFICATION_RESEND_CAP_SECONDS,
+      ]
+    );
+    if (result.rowCount === 1) {
+      return;
+    }
+    // Only an UPDATE that matched nothing can be the cap; any other count is a failure of the record.
+    if (result.rowCount === 0) {
+      const exists = await client.query(
+        'SELECT 1 FROM public."user" WHERE id = $1',
+        [userId]
+      );
+      if (exists.rowCount === 1) {
+        throw new VerificationResendCapError();
+      }
+    }
+    throw new Error("The user of the verification link was not found.");
+  };
+}
+
+/**
+ * The verification e-mail goes out only after its end is recorded: a link the purge of the unverified users does not
+ * know about could be valid when it deletes the user. When the record fails the e-mail does not go out, and nothing
+ * is thrown: the resend without a session answers the same for an address that exists and one that does not (the
+ * failure is an event, the class and the SQLSTATE only, never the user or the address).
+ */
+function withRecordedVerificationLink(
+  send: EmailVerificationSender,
+  record: VerificationLinkRecorder | undefined
+): EmailVerificationSender {
+  if (!record) {
+    return send;
+  }
+  return async (data, request) => {
+    try {
+      await record(data.user.id);
+    } catch (error) {
+      if (error instanceof VerificationResendCapError) {
+        return;
+      }
+      const described = describeError(error);
+      logger.error("auth_verification_link_record_failed", {
+        errorClass: described.errorClass,
+        sqlState: isSqlState(described.errorCode)
+          ? described.errorCode
+          : undefined,
+      });
+      return;
+    }
+    await send(data, request);
+  };
+}
+
+function emailVerificationOptions(
+  emailDelivery: AuthEmailDelivery | undefined,
+  record: VerificationLinkRecorder | undefined
+): BetterAuthOptions["emailVerification"] {
+  if (!emailDelivery) {
+    return undefined;
+  }
+  return {
+    autoSignInAfterVerification: false,
+    expiresIn: EMAIL_VERIFICATION_TTL_SECONDS,
+    sendOnSignIn: false,
+    sendOnSignUp: true,
+    sendVerificationEmail: withRecordedVerificationLink(
+      emailDelivery.sendVerificationEmail,
+      record
+    ),
+  };
+}
+
 export function createBetterAuth({
   accessLogWriter,
   auditEventWriter,
@@ -727,6 +846,7 @@ export function createBetterAuth({
   requestId,
   runInBackground,
   secret,
+  verificationLinkRecorder,
 }: CreateBetterAuthOptions) {
   const safeRequestId = normalizeRequestId(requestId);
   const writeAuditEvent =
@@ -1076,15 +1196,10 @@ export function createBetterAuth({
           sendResetPassword: emailDelivery.sendPasswordReset,
         }
       : { enabled: false },
-    emailVerification: emailDelivery
-      ? {
-          autoSignInAfterVerification: false,
-          expiresIn: 24 * 60 * 60,
-          sendOnSignIn: false,
-          sendOnSignUp: true,
-          sendVerificationEmail: emailDelivery.sendVerificationEmail,
-        }
-      : undefined,
+    emailVerification: emailVerificationOptions(
+      emailDelivery,
+      verificationLinkRecorder ?? databaseVerificationLinkRecorder(database)
+    ),
     hooks: { after: auditHook, before: captureLogoutSession },
     logger: {
       level: "error",
