@@ -190,8 +190,9 @@ export async function openJourney(
     },
   });
   openContexts.push(context);
-  // checked when the test ends: every /rpc/ of the browser left with the journey's address, not 127.0.0.1
-  context.on("request", (request) => {
+  // checked when the test ends: every /rpc/ of the browser left with the journey's address, not 127.0.0.1 (only the
+  // finished ones: `allHeaders` of a request a navigation aborted never settles)
+  context.on("requestfinished", (request) => {
     if (new URL(request.url()).pathname.startsWith("/rpc/")) {
       rpcAddresses.push(
         request
