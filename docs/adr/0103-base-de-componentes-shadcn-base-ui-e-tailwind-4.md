@@ -88,6 +88,18 @@ As condições 1 a 3 **bloqueiam** (a 1, o primeiro PR com pacote novo; a 2 e a 
 
 Capturas Playwright (390 × 844 e 1280 × 800) acompanham todo PR que muda tela, e não são commitadas, como diz o [AGENTS.md](../../AGENTS.md).
 
+## Emenda: o reset e os padrões da página ficam em `[data-ui]` até a última tela (PR de base, 20/10/2026)
+
+A seção 3 supunha que `@layer legacy` bastasse para conter o preflight. Não basta: as telas antigas usam valores que o CSS delas nunca declarou e que vêm do navegador (borda de campo e de seletor, margem de título, preenchimento de botão, altura de linha), e o reset apaga exatamente esses valores; uma camada só decide entre regras que existem. Medido no PR de base, com o preflight global e o CSS antigo em `legacy`, as cinco telas comparadas (Venda, Produtos, Entrar, Aparelhos e Estoque, a 360 e 1280 px) mudaram em quase todos os pixels. Pelas mesmas razões, as regras da página da v5.1 no `<body>` (Geist, 14 px, fundo e tinta) mudariam a fonte e o tamanho herdados por elas.
+
+Decisão: até a última tela migrar, o preflight do Tailwind (cópia de `tailwindcss/preflight.css` com a versão em comentário, `apps/web/src/styles/preflight.css`) e as regras da página (`cv11`/`ss01`, `tabular-nums`, Geist, 14 px, fundo e tinta) valem só dentro de `@scope ([data-ui])`, na camada `base`. `data-ui` marca a raiz de cada tela migrada e cada portal dos componentes de `src/ui/` (um teste confere os portais). O CSS de entrada importa o Tailwind em três partes (tema, esse preflight e utilidades), em vez de `@import "tailwindcss"`. As telas antigas não mudam (as capturas do PR de base dão diferença zero), e as camadas da seção 3 continuam valendo para o que elas cobrem: CSS antigo vence o `base` e o `components` e perde para as utilidades. Quando a última tela migrar, o mesmo PR que apaga a `@layer legacy` apaga o escopo: o preflight volta a ser o do pacote e as regras da página vão para o `<body>`.
+
+Outros pontos do PR de base, para o registro:
+
+- **Primitivos:** Button, Input, Label, Dialog, Popover, Select, Menu, Tooltip, Toast e Scroll Area; o Toast é o do Base UI (o desenho v5.1 já o traz), e o seletor de tema existe como componente e aparece só na galeria de teste, nenhuma tela o mostra. A galeria (`/ui-galeria`) existe só nos builds de teste e de desenvolvimento.
+- **Orçamento:** a base mede o precache por um plugin do build de produção, que reprova o build acima do teto. O chunk do SDK do Sentry, que só existe num build com DSN ([ADR 0098](0098-sentry-no-navegador-so-erros-e-sanitizado.md)), fica fora da conta. Como nenhuma tela usa os primitivos, o JS do Base UI ainda não está no precache: os primitivos juntos (chunk da galeria) somam cerca de 92 KB gzip, e o primeiro PR de tela que usar todos passa do teto de +40 KB. O PR de base registra o número; a exceção, ou outro teto, é decisão do Arrascaeta antes da Venda.
+- **Prova de CSP:** o servidor estático das verificações de navegador (`apps/web/scripts/serve-static.mjs`) aplica o `_headers` do build como os assets estáticos do Worker, e a prova roda contra ele, sem a CSP reescrita pelo teste.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.

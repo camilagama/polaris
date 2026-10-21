@@ -1,44 +1,46 @@
-/*
- * Shared design tokens (see DESIGN.md). Light is the default and dark follows
- * the system setting. Components read these variables; they never hard-code
- * colors.
- */
-:root {
-  --ui-canvas: #f4f2eb;
-  --ui-surface: #fffefa;
-  --ui-surface-muted: #f7f6f0;
-  --ui-ink: #18221d;
-  --ui-muted: #607067;
-  --ui-line: #d9dfd8;
-  --ui-accent: #17654d;
-  --ui-accent-strong: #104b39;
-  --ui-accent-soft: #e5f0e9;
-  --ui-warning: #785c1d;
-  --ui-warning-soft: #f5efd9;
-  --ui-danger: #a84038;
-  --ui-danger-strong: #842e29;
-  --ui-danger-soft: #f7e9e6;
-  --ui-shadow: 0 18px 52px rgb(26 43 34 / 8%);
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer legacy {
+  /*
+   * Shared design tokens (see DESIGN.md). Light is the default and dark follows
+   * the system setting. Components read these variables; they never hard-code
+   * colors.
+   */
   :root {
-    --ui-canvas: #111915;
-    --ui-surface: #1b2520;
-    --ui-surface-muted: #202d27;
-    --ui-ink: #e8f0eb;
-    --ui-muted: #a0b0a6;
-    --ui-line: #35453c;
-    --ui-accent: #7fc7a5;
-    --ui-accent-strong: #a3dfbf;
-    --ui-accent-soft: #243d31;
-    --ui-warning: #dfc57d;
-    --ui-warning-soft: #3d3623;
-    --ui-danger: #f09a8e;
-    --ui-danger-strong: #ffb4a7;
-    --ui-danger-soft: #452b2a;
-    --ui-shadow: 0 18px 52px rgb(0 0 0 / 22%);
-    color-scheme: dark;
+    --ui-canvas: #f4f2eb;
+    --ui-surface: #fffefa;
+    --ui-surface-muted: #f7f6f0;
+    --ui-ink: #18221d;
+    --ui-muted: #607067;
+    --ui-line: #d9dfd8;
+    --ui-accent: #17654d;
+    --ui-accent-strong: #104b39;
+    --ui-accent-soft: #e5f0e9;
+    --ui-warning: #785c1d;
+    --ui-warning-soft: #f5efd9;
+    --ui-danger: #a84038;
+    --ui-danger-strong: #842e29;
+    --ui-danger-soft: #f7e9e6;
+    --ui-shadow: 0 18px 52px rgb(26 43 34 / 8%);
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ui-canvas: #111915;
+      --ui-surface: #1b2520;
+      --ui-surface-muted: #202d27;
+      --ui-ink: #e8f0eb;
+      --ui-muted: #a0b0a6;
+      --ui-line: #35453c;
+      --ui-accent: #7fc7a5;
+      --ui-accent-strong: #a3dfbf;
+      --ui-accent-soft: #243d31;
+      --ui-warning: #dfc57d;
+      --ui-warning-soft: #3d3623;
+      --ui-danger: #f09a8e;
+      --ui-danger-strong: #ffb4a7;
+      --ui-danger-soft: #452b2a;
+      --ui-shadow: 0 18px 52px rgb(0 0 0 / 22%);
+      color-scheme: dark;
+    }
   }
 }

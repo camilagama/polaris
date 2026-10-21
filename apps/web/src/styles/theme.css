@@ -1,0 +1,315 @@
+/*
+ * Tokens of the Polaris design v5.1 for the shadcn components (Base UI, Tailwind 4), ADR 0103 and DESIGN.md:
+ * the shadcn variable names in `:root` (light) and `.dark` (dark), with our values in OKLCH, the
+ * `@theme` that turns them into utilities, and the Polaris variant and utilities (`touch`, `touch-hit`,
+ * `touch-hit-field`, `focus-ring`). Taken from `polaris-theme.css` of the design, with two changes:
+ * `--text-support` (13/18) added and `--animate-pop` removed (a scale from 0.6, against the motion
+ * rules of DESIGN.md). The contrast of every pair is in docs/design/contrast-v5.1.md.
+ * Out of layer on purpose (the shadcn tokens): the out-of-layer test lists this file.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.65rem; /* blocos internos; controle 0,55 rem e painel 0,875 rem saem da escala abaixo (valores do DESIGN.md) */
+  --gutter: 1.5rem; /* uma só borda horizontal: cabeçalho, listas, tabelas, cartões */
+  --background: oklch(0.985 0.004 85);
+  --foreground: oklch(0.2 0.005 85);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.005 85);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.005 85);
+  --primary: oklch(0.2 0.005 85);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.962 0.005 85);
+  --secondary-foreground: oklch(0.2 0.005 85);
+  --muted: oklch(0.962 0.005 85);
+  --muted-foreground: oklch(0.43 0.005 85);
+  --accent: oklch(0.945 0.006 85);
+  --accent-foreground: oklch(0.2 0.005 85);
+  --destructive: oklch(0.47 0.17 27);
+  --border: oklch(0.915 0.005 85);
+  --input: oklch(0.64 0.005 85);
+  --ring: oklch(0.585 0.115 165);
+  --chart-1: oklch(0.6 0.125 165);
+  --chart-2: oklch(0.62 0.005 85);
+  --chart-3: oklch(0.47 0.005 85);
+  --chart-4: oklch(0.33 0.005 85);
+  --chart-5: oklch(0.2 0.005 85);
+  --sidebar: oklch(0.965 0.005 85);
+  --sidebar-foreground: oklch(0.36 0.005 85);
+  --sidebar-primary: oklch(0.2 0.005 85);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.93 0.006 85);
+  --sidebar-accent-foreground: oklch(0.2 0.005 85);
+  --sidebar-border: oklch(0.925 0.005 85);
+  --sidebar-ring: oklch(0.585 0.115 165);
+  /* extensões do Polaris, no padrão do shadcn: --x e --x-foreground */
+  --warning: oklch(0.45 0.094 75);
+  --warning-foreground: oklch(1 0 0);
+  --mark: oklch(0.6 0.125 165);
+  --mark-foreground: oklch(0.42 0.088 165);
+  --overlay: oklch(0.16 0.004 85 / 0.42);
+  --shadow-l: 0.28;
+  --shadow-c: 0.012;
+  --shadow-a: 1;
+  --btn-shine: oklch(1 0 0 / 0.14);
+  --btn-drop: oklch(0.28 0.012 85 / 0.2);
+  --card-glow: oklch(1 0 0 / 0);
+  /* alturas visíveis dos controles (mouse); com toque sobem um degrau no bloco abaixo */
+  --h-xs: 1.5rem;
+  --h-sm: 1.75rem;
+  --h-md: 2rem;
+  --h-lg: 2.25rem;
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(0.2 0.0035 85);
+  --foreground: oklch(0.945 0.005 85);
+  --card: oklch(0.235 0.0035 85);
+  --card-foreground: oklch(0.945 0.005 85);
+  --popover: oklch(0.26 0.0035 85);
+  --popover-foreground: oklch(0.945 0.005 85);
+  --primary: oklch(0.93 0.005 85);
+  --primary-foreground: oklch(0.2 0.0035 85);
+  --secondary: oklch(0.3 0.0035 85);
+  --secondary-foreground: oklch(0.945 0.005 85);
+  --muted: oklch(0.3 0.0035 85);
+  --muted-foreground: oklch(0.79 0.004 85);
+  --accent: oklch(0.33 0.0035 85);
+  --accent-foreground: oklch(0.945 0.005 85);
+  --destructive: oklch(0.77 0.13 25);
+  --border: oklch(0.32 0.0035 85);
+  --input: oklch(0.55 0.0035 85);
+  --ring: oklch(0.64 0.134 165);
+  --chart-1: oklch(0.74 0.14 165);
+  --chart-2: oklch(0.6 0.0035 85);
+  --chart-3: oklch(0.72 0.0035 85);
+  --chart-4: oklch(0.83 0.004 85);
+  --chart-5: oklch(0.945 0.005 85);
+  --sidebar: oklch(0.175 0.0035 85);
+  --sidebar-foreground: oklch(0.78 0.004 85);
+  --sidebar-primary: oklch(0.93 0.005 85);
+  --sidebar-primary-foreground: oklch(0.2 0.0035 85);
+  --sidebar-accent: oklch(0.28 0.0035 85);
+  --sidebar-accent-foreground: oklch(0.945 0.005 85);
+  --sidebar-border: oklch(0.275 0.0035 85);
+  --sidebar-ring: oklch(0.64 0.134 165);
+  /* extensões do Polaris, no padrão do shadcn: --x e --x-foreground */
+  --warning: oklch(0.81 0.11 80);
+  --warning-foreground: oklch(0.2 0.0035 85);
+  --mark: oklch(0.74 0.14 165);
+  --mark-foreground: oklch(0.82 0.14 165);
+  --overlay: oklch(0.08 0.004 85 / 0.66);
+  --shadow-l: 0;
+  --shadow-c: 0;
+  --shadow-a: 2.4;
+  --btn-shine: oklch(1 0 0 / 0);
+  --btn-drop: oklch(0 0 0 / 0.5);
+  --card-glow: oklch(1 0 0 / 0.04);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-mark: var(--mark);
+  --color-mark-foreground: var(--mark-foreground);
+  --color-overlay: var(--overlay);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.55rem;
+  --radius-lg: var(--radius);
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+  --radius-3xl: 1.375rem;
+  --radius-4xl: 1.625rem;
+  --spacing-ctl-xs: var(--h-xs);
+  --spacing-ctl-sm: var(--h-sm);
+  --spacing-ctl-md: var(--h-md);
+  --spacing-ctl-lg: var(--h-lg);
+}
+
+@theme {
+  --font-sans:
+    "Geist Variable", "Geist", ui-sans-serif, system-ui, "Segoe UI", Roboto,
+    sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono:
+    "Geist Mono Variable", "Geist Mono", ui-monospace, "Cascadia Mono", Menlo,
+    monospace;
+  /* escala de texto: 14 e 12 nos dois ponteiros; título e seção com peso e tracking próprios */
+  --breakpoint-md: 47.5rem; /* 760 px: onde as tabelas viram cartões e a lateral aparece (DESIGN.md) */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-support: 0.8125rem;
+  --text-support--line-height: 1.125rem;
+  --text-section: 0.9375rem;
+  --text-section--line-height: 1.25rem;
+  --text-section--font-weight: 600;
+  --text-section--letter-spacing: -0.011em;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-title--font-weight: 600;
+  --text-title--letter-spacing: -0.03em;
+  /* valores em dinheiro */
+  --text-value-md: 1.0625rem;
+  --text-value-md--line-height: 1.5rem;
+  --text-value-lg: 1.625rem;
+  --text-value-lg--line-height: 1.875rem;
+  --text-value-xl: 2.25rem;
+  --text-value-xl--line-height: 2.5rem;
+  --shadow-xs: 0 1px 2px 0
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.05 * var(--shadow-a)));
+  --shadow-sm:
+    0 1px 2px 0
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.06 * var(--shadow-a))),
+    0 1px 3px 0
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.04 * var(--shadow-a)));
+  --shadow-md:
+    0 12px 32px -8px
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.16 * var(--shadow-a))),
+    0 2px 6px -2px
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.07 * var(--shadow-a)));
+  --shadow-lg:
+    0 20px 44px -12px
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.22 * var(--shadow-a))),
+    0 4px 10px -4px
+    oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.08 * var(--shadow-a)));
+  --ease-soft: cubic-bezier(0.23, 1, 0.32, 1);
+  --default-transition-duration: 140ms;
+  --default-transition-timing-function: var(--ease-soft);
+  --animate-rise: rise 220ms var(--ease-soft) both;
+  @keyframes rise {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* Toque (celular, tablet) ou tela estreita: o visível sobe um degrau de altura, a margem lateral encolhe, o valor grande desce. O espaçamento NÃO escala. */
+@media (pointer: coarse), (max-width: 759.98px) {
+  :root {
+    --gutter: 1rem;
+    --h-xs: 1.75rem;
+    --h-sm: 2rem;
+    --h-md: 2.25rem;
+    --h-lg: 2.5rem;
+    --text-title: 1.375rem;
+    --text-title--line-height: 1.75rem;
+    --text-value-lg: 1.5rem;
+    --text-value-lg--line-height: 1.75rem;
+    --text-value-xl: 2rem;
+    --text-value-xl--line-height: 2.25rem;
+  }
+}
+
+/* Variante e utilitários do Polaris */
+/* Block form: the shorthand with a comma-separated media query compiles to a broken selector. */
+@custom-variant touch {
+  @media (pointer: coarse), (max-width: 759.98px) {
+    @slot;
+  }
+}
+
+/* Área de toque de 48 px em torno de um controle menor: pseudo-elemento invisível, só com toque */
+@utility touch-hit {
+  @media (pointer: coarse), (max-width: 759.98px) {
+    position: relative;
+    &::before {
+      position: absolute;
+      inset: min(0px, calc(50% - 24px));
+      content: "";
+    }
+  }
+}
+
+/* O mesmo para campo de texto (InputGroup): o pseudo-elemento fica ATRÁS do campo (z-index -1) para o toque no texto continuar posicionando o cursor */
+@utility touch-hit-field {
+  @media (pointer: coarse), (max-width: 759.98px) {
+    position: relative;
+    isolation: isolate;
+    &::before {
+      position: absolute;
+      inset: min(0px, calc(50% - 24px)) 0;
+      z-index: -1;
+      content: "";
+    }
+  }
+}
+
+/* Foco do teclado: contorno de 3 px (DESIGN.md) em --ring, folga de 2 px; --ring tem ≥ 3:1 sobre fundo, cartão, menu e hover (medido, MAPA-TOKENS.md) */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * The page defaults of the v5.1 (Geist with cv11/ss01, tabular figures, 14 px, the background and ink) on
+ * the root of the new interface, `[data-ui]`, and not yet on <body>: on <body> they would reach the old
+ * screens, which inherit the font and size of the page (ADR 0103, amendment in section 3). They move to
+ * <body> with the last screen, together with the preflight.
+ */
+@layer base {
+  @scope ([data-ui]) {
+    :scope {
+      font-feature-settings: "cv11", "ss01";
+      font-variant-numeric: tabular-nums;
+      @apply bg-background font-sans text-foreground text-sm antialiased;
+    }
+    * {
+      @apply border-border;
+    }
+    ::selection {
+      background: color-mix(in oklch, var(--mark) 24%, transparent);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      ::before,
+      ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  }
+}

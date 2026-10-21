@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
+import { uiBuild, uiPlugins } from "./vite.ui";
 
 /**
  * The production shell without the Worker, only for the browser checks of the
@@ -25,11 +26,14 @@ const variantMarker: Plugin = {
 };
 
 export default defineConfig({
+  ...uiBuild,
   build: {
+    ...uiBuild.build,
     emptyOutDir: true,
     outDir: "dist/pwa-e2e",
   },
   plugins: [
+    uiPlugins(),
     react(),
     variantMarker,
     serviceWorkerPlugin({

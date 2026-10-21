@@ -14,6 +14,9 @@
       media="(prefers-color-scheme: dark)"
       name="theme-color"
     >
+    <!-- the theme before the first paint (ADR 0103); external, the CSP runs no inline script -->
+    <!-- biome-ignore lint/performance/noSyncScripts: it must run before the first paint, or the page blinks -->
+    <script src="/theme-init.js"></script>
     <link href="/manifest.webmanifest" rel="manifest">
     <link href="/icons/apple-touch-icon.png" rel="apple-touch-icon">
     <meta content="yes" name="mobile-web-app-capable">

@@ -1,159 +1,161 @@
-.category-create-form {
-  display: flex;
-  gap: 0.85rem;
-  align-items: flex-end;
-  padding: 1.2rem;
-  margin-bottom: 1.1rem;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-line);
-  border-radius: 0.9rem;
-}
-
-.category-create-field {
-  flex: 1;
-  min-width: 12rem;
-}
-
-.category-table-wrap {
-  overflow-x: auto;
-}
-
-.category-table {
-  width: 100%;
-  text-align: left;
-  border-collapse: collapse;
-}
-
-.category-table th {
-  padding: 0.75rem 1.15rem;
-  font-size: 0.7rem;
-  font-weight: 800;
-  color: var(--ui-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  background: var(--ui-surface-muted);
-}
-
-.category-table td {
-  padding: 0.9rem 1.15rem;
-  font-size: 0.88rem;
-  vertical-align: middle;
-  color: var(--ui-ink);
-  border-top: 1px solid var(--ui-line);
-}
-
-.category-actions {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  justify-content: flex-end;
-  white-space: nowrap;
-}
-
-.category-inline-rename {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.category-inline-rename input {
-  width: min(12rem, 38vw);
-  min-height: 2.45rem;
-  padding: 0.5rem 0.65rem;
-}
-
-.category-rename-field {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.category-actions-cell {
-  min-width: 13rem;
-  text-align: right;
-}
-
-.delete-confirmation {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  justify-content: flex-end;
-  max-width: 31rem;
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--ui-danger);
-  text-align: left;
-}
-
-.tombstone-note {
-  font-size: 0.75rem;
-  color: var(--ui-muted);
-}
-
-.category-rename-field .field-help {
-  margin: 0;
-}
-
-@media (max-width: 760px) {
+@layer legacy {
   .category-create-form {
-    flex-direction: column;
-    align-items: stretch;
+    display: flex;
+    gap: 0.85rem;
+    align-items: flex-end;
+    padding: 1.2rem;
+    margin-bottom: 1.1rem;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: 0.9rem;
   }
 
-  .category-create-form .primary-button {
-    align-self: flex-start;
+  .category-create-field {
+    flex: 1;
+    min-width: 12rem;
   }
 
-  .category-table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  .category-table-wrap {
+    overflow-x: auto;
   }
 
-  .category-table tbody tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(7rem, auto);
-    gap: 0 0.8rem;
-    padding: 0.5rem 0.8rem;
-    border-top: 1px solid var(--ui-line);
+  .category-table {
+    width: 100%;
+    text-align: left;
+    border-collapse: collapse;
   }
 
-  .category-table td {
-    display: grid;
-    gap: 0.3rem;
-    padding: 0.6rem 0.3rem;
-    border: 0;
-  }
-
-  .category-table td::before {
-    font-size: 0.68rem;
+  .category-table th {
+    padding: 0.75rem 1.15rem;
+    font-size: 0.7rem;
     font-weight: 800;
     color: var(--ui-muted);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    content: attr(data-label);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    background: var(--ui-surface-muted);
   }
 
-  .category-table .category-actions-cell {
-    grid-column: 1 / -1;
-    min-width: 0;
+  .category-table td {
+    padding: 0.9rem 1.15rem;
+    font-size: 0.88rem;
+    vertical-align: middle;
+    color: var(--ui-ink);
+    border-top: 1px solid var(--ui-line);
   }
 
-  .category-actions-cell .category-actions {
-    justify-content: flex-start;
+  .category-actions {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
   }
 
   .category-inline-rename {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .category-inline-rename input {
+    width: min(12rem, 38vw);
+    min-height: 2.45rem;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .category-rename-field {
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .category-actions-cell {
+    min-width: 13rem;
+    text-align: right;
   }
 
   .delete-confirmation {
-    flex-direction: column;
-    align-items: flex-start;
-    margin-left: 0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: flex-end;
+    max-width: 31rem;
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--ui-danger);
+    text-align: left;
+  }
+
+  .tombstone-note {
+    font-size: 0.75rem;
+    color: var(--ui-muted);
+  }
+
+  .category-rename-field .field-help {
+    margin: 0;
+  }
+
+  @media (max-width: 760px) {
+    .category-create-form {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .category-create-form .primary-button {
+      align-self: flex-start;
+    }
+
+    .category-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+
+    .category-table tbody tr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(7rem, auto);
+      gap: 0 0.8rem;
+      padding: 0.5rem 0.8rem;
+      border-top: 1px solid var(--ui-line);
+    }
+
+    .category-table td {
+      display: grid;
+      gap: 0.3rem;
+      padding: 0.6rem 0.3rem;
+      border: 0;
+    }
+
+    .category-table td::before {
+      font-size: 0.68rem;
+      font-weight: 800;
+      color: var(--ui-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      content: attr(data-label);
+    }
+
+    .category-table .category-actions-cell {
+      grid-column: 1 / -1;
+      min-width: 0;
+    }
+
+    .category-actions-cell .category-actions {
+      justify-content: flex-start;
+    }
+
+    .category-inline-rename {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    .delete-confirmation {
+      flex-direction: column;
+      align-items: flex-start;
+      margin-left: 0;
+    }
   }
 }

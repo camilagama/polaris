@@ -34,10 +34,17 @@
         "poc/pr11.ts",
         "poc/pr12-offline.ts",
         "e2e/**/*.e2e.ts",
-        "e2e-pwa/**/*.e2e.ts"
+        "e2e-pwa/**/*.e2e.ts",
+        "vite.ui.ts"
       ],
       "ignoreBinaries": ["openssl"],
-      "ignoreDependencies": ["cloudflare"],
+      "ignoreDependencies": [
+        "cloudflare",
+        "@fontsource-variable/geist",
+        "@fontsource-variable/geist-mono",
+        "tailwindcss",
+        "tw-animate-css"
+      ],
       "project": [
         "src/**/*.{ts,tsx}",
         "worker/**/*.ts",

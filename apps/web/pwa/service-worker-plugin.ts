@@ -31,7 +31,7 @@ export function precacheList({ files }: PrecacheInput): string[] {
   return ["/", ...paths];
 }
 
-function listFiles(root: string, directory = root): string[] {
+export function listFiles(root: string, directory = root): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     return entry.isDirectory()

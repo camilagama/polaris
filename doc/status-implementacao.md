@@ -1979,3 +1979,11 @@ Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisado
 | P10: exclusão do não verificado (db) | Pendente | Usuário não verificado, só `credential`, sem sessão nem membership, depois de 24 horas. |
 | Limites | Registrados | Este PR não prova nada em execução: a verificação é `bun run check` e os links internos. Continuam com o usuário o domínio de envio e os dados da empresa, reembolso e foro das páginas legais (U1 a U5); a produção fica travada pelo aviso de rascunho até a revisão jurídica. |
 
+
+### Base de interface: shadcn na variante Base UI com Tailwind 4 (ADR 0103)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| PR 0: chão da cadeia de suprimentos | Em revisão (PR #213) | Lista permitida de pacotes de interface com versão exata, arquivo de fechamento do `bun.lock`, teste de código-fonte de `src/ui/`, `minimumReleaseAge` de 7 dias, fixture de violação de CSP com controle e teste de segredos fora de instalação e build. |
+| PR de base | Em revisão | Tailwind 4 pelo plugin do Vite; CSS de entrada com a ordem das camadas; tokens v5.1 em OKLCH (`:root` e `.dark`, `--text-support` criado, `--animate-pop` removido); as 29 folhas antigas em `@layer legacy`, com teste de CSS fora de camada; preflight e padrões da página escopados em `[data-ui]` (emenda do ADR 0103); Geist e Geist Mono locais, só latin (52.528 B), com `assetsInlineLimit` 0; tema por `public/theme-init.js` e `localStorage` `polaris-tema`; `components.json`, `cn` e aliases `@/ui` e `@/lib`; `CSPProvider disableStyleElements` na raiz; primitivos em `apps/web/src/ui/` (Button, Input, Label, Dialog, Popover, Select, Menu, Tooltip, Toast e Scroll Area) e seletor de tema, só na galeria de teste. Provas: e2e de CSP contra o shell servido com o `_headers` do build, nos dois temas, com página de caracteres das fontes; teto do precache no build de produção; capturas das cinco telas antigas sem diferença; mapa de contraste em [docs/design/contraste-v5.1.md](../docs/design/contraste-v5.1.md) conferido por teste. |
+| Componentes da Venda, Venda e demais telas | Pendentes | Ordem da seção 8 do ADR 0103. Antes da Venda: decidir o teto do bundle, porque os primitivos juntos somam cerca de 92 KB gzip (chunk da galeria) e o teto da base é +40 KB. |
