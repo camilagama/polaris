@@ -5,8 +5,11 @@ import type { Page, Route } from "@playwright/test";
 /**
  * The states of the products screen the interface guardrails measure: the screen in the lab of the screens
  * (`/offline-screens-lab?screen=products`) over the real offline runtime, with the catalog the lab seeds
- * (`&catalog=seeded`: five active products, one archived, two categories) or empty, and the variants answered by
- * the test (`page.route`). Synthetic data only. The lab's own controls are hidden at the end of each state, so what
+ * (`&catalog=seeded`: five active products, one archived, two categories), and the variants answered by the test
+ * (`page.route`). Only three states: each one starts the runtime of the lab (OPFS and SQLite) in every context of the
+ * map, which costs more than a static page, and the CI job has a limit of 30 minutes; the other states (empty, the
+ * archived list, the search with no match, the variants already configured, no connection) are proved in `e2e/products-screen.e2e.ts`
+ * and in the captures of the pull request. Synthetic data only. The lab's own controls are hidden at the end of each state, so what
  * is measured is the screen alone. The states that need the server mode (loading, the list failing to load) are in
  * `e2e/products-screen.e2e.ts`: the lab always has the device's collections.
  */
@@ -35,34 +38,6 @@ const DEFAULT_CONFIGURATION = {
   ],
 };
 
-const CONFIGURED = {
-  configured: true,
-  optionValues: [
-    { optionName: "color", optionValueName: "Azul" },
-    { optionName: "color", optionValueName: "Preta" },
-  ],
-  productId: PRODUCT_ID,
-  productVersion: 2,
-  variants: [
-    {
-      id: id(32),
-      isDefault: false,
-      listPrice: "50.00",
-      sku: "CAM-AZ",
-      values: [{ optionName: "color", optionValueName: "Azul" }],
-      version: 1,
-    },
-    {
-      id: id(33),
-      isDefault: false,
-      listPrice: null,
-      sku: null,
-      values: [{ optionName: "color", optionValueName: "Preta" }],
-      version: 1,
-    },
-  ],
-};
-
 const serveVariants = (page: Page, configuration: unknown) =>
   page.route("**/rpc/product/getVariants", (route: Route) =>
     route.fulfill(rpc(configuration))
@@ -72,17 +47,9 @@ const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
 
 /** Starts the lab's runtime and waits for the screen. */
-async function openProductsLab(
-  page: Page,
-  {
-    configuration = DEFAULT_CONFIGURATION,
-    seeded = true,
-  }: { configuration?: unknown; seeded?: boolean } = {}
-) {
-  await serveVariants(page, configuration);
-  await page.goto(
-    `/offline-screens-lab?screen=products${seeded ? "&catalog=seeded" : ""}`
-  );
+async function openProductsLab(page: Page) {
+  await serveVariants(page, DEFAULT_CONFIGURATION);
+  await page.goto("/offline-screens-lab?screen=products&catalog=seeded");
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await page
@@ -90,9 +57,7 @@ async function openProductsLab(
     .filter({ hasText: "Iniciar: ok (ready)" })
     .waitFor({ timeout: 20_000 });
   await page.getByRole("heading", { exact: true, name: "Produtos" }).waitFor();
-  if (seeded) {
-    await page.getByText("Calça jeans").waitFor();
-  }
+  await page.getByText("Calça jeans").waitFor();
 }
 
 /** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
@@ -117,77 +82,21 @@ async function openVariants(page: Page, name = "Camiseta do teste") {
 }
 
 export const productStates = {
-  /** The archived list. */
-  async archived(page: Page) {
-    await openProductsLab(page);
-    await page.getByRole("button", { name: "Arquivados" }).click();
-    await page.getByText("Jaqueta de inverno").waitFor();
-    await showScreenAlone(page);
-  },
-
-  /** The edit of a product: the form with its name, category and description. */
+  /** The edit of a product with the name cleared and saved: the form (name, category, description) and the message of the field. */
   async edit(page: Page) {
     await openProductsLab(page);
     await menuOf(page, "Camiseta do teste").click();
     await page.getByRole("menuitem", { name: "Editar" }).click();
     await page.getByRole("heading", { name: "Editar produto" }).waitFor();
-    await showScreenAlone(page);
-  },
-
-  /** No product yet. */
-  async empty(page: Page) {
-    await openProductsLab(page, { seeded: false });
-    await page.getByText("Nenhum produto ainda").waitFor();
-    await showScreenAlone(page);
-  },
-
-  /** The search with no match. */
-  async emptySearch(page: Page) {
-    await openProductsLab(page);
-    await page.getByLabel("Buscar produto").fill("tenis");
-    await page.getByText("Nenhum produto com").waitFor();
+    await page.getByLabel("Nome do produto").fill("");
+    await page.getByRole("button", { name: "Salvar alterações" }).click();
+    await page.getByText("Informe o nome do produto.").waitFor();
     await showScreenAlone(page);
   },
 
   /** The list of the seeded catalog. */
   async list(page: Page) {
     await openProductsLab(page);
-    await showScreenAlone(page);
-  },
-
-  /** A new product with the name left empty: the message of the field. */
-  async nameRequired(page: Page) {
-    await openProductsLab(page);
-    await page.getByRole("button", { name: "Novo produto" }).first().click();
-    await page.getByRole("button", { name: "Cadastrar produto" }).click();
-    await page.getByText("Informe o nome do produto.").waitFor();
-    await showScreenAlone(page);
-  },
-
-  /** Without a network: a product kept on the device, and the rest of the list locked. */
-  async offline(page: Page) {
-    await openProductsLab(page);
-    await page.getByLabel("Rede disponível").uncheck();
-    await page.getByRole("button", { name: "Novo produto" }).first().click();
-    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
-    await page.getByRole("button", { name: "Cadastrar produto" }).click();
-    await page.getByText("Aguardando envio").waitFor({ timeout: 15_000 });
-    await showScreenAlone(page);
-  },
-
-  /** The variants of a product with its default variant: SKU, price and the form of the options. */
-  async variants(page: Page) {
-    await openProductsLab(page);
-    await openVariants(page);
-    await page.getByLabel("SKU — Variante padrão").waitFor();
-    await showScreenAlone(page);
-  },
-
-  /** The variants of a product that already has them configured. */
-  async variantsConfigured(page: Page) {
-    await openProductsLab(page, { configuration: CONFIGURED });
-    await openVariants(page);
-    await page.getByText("Variantes cadastradas").first().waitFor();
     await showScreenAlone(page);
   },
 

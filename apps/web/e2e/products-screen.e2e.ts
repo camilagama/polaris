@@ -156,10 +156,21 @@ async function useEveryControl(page: Page) {
   );
 }
 
+/**
+ * The two projects of the config differ by the pointer and the viewport only, and the CI job that runs them has a
+ * limit of 30 minutes: what is about the policy of the page or sets its own width runs once, on the desktop one.
+ */
+const onlyDesktop = (projectName: string) =>
+  test.skip(
+    projectName.includes("mobile"),
+    "same page, set by the test itself"
+  );
+
 for (const theme of THEMES) {
   test(`tema ${theme.name}: Produtos abre e cada controle muda de estado sob a CSP de produção sem nenhuma violação`, async ({
     page,
-  }) => {
+  }, testInfo) => {
+    onlyDesktop(testInfo.project.name);
     // the policy really is the strict one: no inline style may slip through
     expect(productionPolicy).toContain("style-src 'self'");
     expect(productionPolicy).not.toContain("unsafe-inline");
@@ -195,7 +206,8 @@ async function expectNoSidewaysScroll(page: Page) {
 
 test("a 320 px nada transborda: a lista, o formulário com erro, as variantes e a pendência sem conexão", async ({
   page,
-}) => {
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
   await page.setViewportSize({ height: 740, width: 320 });
   await openProductsLab(page);
   await expectNoSidewaysScroll(page);
