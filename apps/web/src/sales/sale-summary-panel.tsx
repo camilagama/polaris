@@ -348,6 +348,10 @@ export function SummaryPanel({
               value={evaluation.dateText}
             />
             <DetailRow label="Pagamento" value={evaluation.methodText} />
+            <DetailRow
+              label="Perfil de pagamento"
+              value={evaluation.profileText}
+            />
           </dl>
           <FeePreviewDetails preview={evaluation.feePreview} />
         </CardContent>
@@ -355,7 +359,7 @@ export function SummaryPanel({
           <>
             <Perforation />
             <CardContent className="py-(--card-spacing)">
-              <dl>
+              <dl aria-live="polite">
                 <div className="flex items-baseline justify-between gap-3">
                   <dt className="font-medium text-muted-foreground">
                     {total.label}

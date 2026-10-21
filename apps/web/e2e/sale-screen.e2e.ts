@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { serveUnderProductionCsp, watchCspViolations } from "./csp-fixture";
+import {
+  productionPolicy,
+  serveUnderProductionCsp,
+  watchCspViolations,
+} from "./csp-fixture";
 
 /**
  * The sale screen on the components of src/ui (ADR 0103, PR 4), in the lab of the offline screens:
@@ -102,17 +106,30 @@ async function useEveryControl(page: Page) {
   await adjustment
     .getByRole("combobox", { exact: true, name: "Tipo de ajuste" })
     .click();
-  await page.getByRole("option", { exact: true, name: "Frete" }).click();
-  await adjustment.getByLabel("Valor (R$)").fill("12,00");
+  await page.getByRole("option", { exact: true, name: "Desconto" }).click();
+  await adjustment
+    .getByRole("combobox", { exact: true, name: "Como informar" })
+    .click();
+  await page
+    .getByRole("option", { exact: true, name: "Percentual (%)" })
+    .click();
+  await adjustment.getByLabel("Percentual (%)").fill("5");
+  const date = page.getByLabel("Data e hora da venda (opcional)");
+  await date.fill("2026-10-14T10:30");
+  await page.getByRole("button", { name: "Usar agora" }).click();
+  await expect(date).toHaveValue("");
   await expect(
     page.getByRole("complementary", { name: "Resumo" })
-  ).toContainText("Frete");
+  ).toContainText("Desconto (5");
 }
 
 for (const theme of THEMES) {
   test(`tema ${theme.name}: a Venda abre e cada controle muda de estado sob a CSP de produção sem nenhuma violação`, async ({
     page,
   }) => {
+    // the policy really is the strict one: no inline style may slip through
+    expect(productionPolicy).toContain("style-src 'self'");
+    expect(productionPolicy).not.toContain("unsafe-inline");
     await serveUnderProductionCsp(page);
     const csp = await watchCspViolations(page);
     await openSaleLab(page, theme.stored);

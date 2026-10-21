@@ -1,7 +1,7 @@
 import { type ChangeEvent, useCallback } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { PendingSalesPanel } from "./offline-sale-panels";
+import { PendingSalesPanel } from "./pending-sales-panel";
 import "./sale-legacy.css";
 import "./sale-history.css";
 import {
@@ -19,9 +19,9 @@ function isStatusFilter(value: string): value is HistoryStatusFilter {
 }
 
 interface FiltersProps {
+  filters: HistoryFilters;
   /** Without a connection the text search over the items is not available. */
   offline: boolean;
-  filters: HistoryFilters;
   onChange: (changes: Partial<HistoryFilters>) => void;
   onReset: () => void;
   period: string | null;

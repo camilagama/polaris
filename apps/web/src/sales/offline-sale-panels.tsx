@@ -1,26 +1,17 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import type { RefObject } from "react";
-import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Card, CardContent, CardHeader } from "@/ui/card";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import type { PendingSale } from "../offline/sale-confirm";
-import { pendingSales } from "../offline/sale-confirm";
+import {
+  pendingDateTime,
+  pendingStateLabels,
+  usePendingSales,
+} from "./pending-sales-panel";
 import type { QueuedSaleView } from "./sale-form-model";
-
-const dateTime = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
-
-const stateLabels: Record<PendingSale["state"], string> = {
-  needs_attention: "Precisa de atenção",
-  pending: "Aguardando envio",
-  rejected: "Recusada pelo servidor",
-  syncing: "Enviando…",
-};
 
 const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
@@ -105,31 +96,9 @@ const ATTENTION_STATES: ReadonlySet<PendingSale["state"]> = new Set([
   "rejected",
 ]);
 
-/** The sales this device still holds for the server, with their state. */
-export function PendingSalesPanel({
-  workspace,
-}: {
-  workspace: LocalWorkspace;
-}) {
-  const [sales, setSales] = useState<PendingSale[]>([]);
-  const { outbox } = workspace.stores;
-  const { dataVersion } = workspace;
-
-  useEffect(() => {
-    let current = true;
-    // dataVersion re-reads the queue after any sync or change
-    pendingSales(outbox)
-      .then((found) => {
-        if (current && dataVersion >= 0) {
-          setSales(found);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, [outbox, dataVersion]);
-
+/** The sales this device still holds for the server, with their state (the sale screen's card). */
+export function PendingSalesCard({ workspace }: { workspace: LocalWorkspace }) {
+  const sales = usePendingSales(workspace);
   if (sales.length === 0) {
     return null;
   }
@@ -151,12 +120,12 @@ export function PendingSalesPanel({
                   key={sale.commandId}
                 >
                   <span className="tabular-nums">
-                    {dateTime.format(new Date(sale.occurredAt))} ·{" "}
+                    {pendingDateTime.format(new Date(sale.occurredAt))} ·{" "}
                     {sale.itemCount} {sale.itemCount === 1 ? "item" : "itens"}
                   </span>
                   <span className="flex items-center gap-2">
                     <Badge variant={attention ? "destructive" : "outline"}>
-                      {stateLabels[sale.state]}
+                      {pendingStateLabels[sale.state]}
                     </Badge>
                     {attention ? (
                       <a className={`${LINK} text-support`} href="/attention">

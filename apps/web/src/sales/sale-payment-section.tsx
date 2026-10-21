@@ -71,6 +71,8 @@ const METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
 
 interface AdjustmentEditorProps {
   adjustment: AdjustmentDraft;
+  /** The Base UI Select is not turned off by the <fieldset disabled> around it on its own. */
+  disabled: boolean;
   error: string | undefined;
   index: number;
   onChange: (
@@ -82,6 +84,7 @@ interface AdjustmentEditorProps {
 
 function AdjustmentEditor({
   adjustment,
+  disabled,
   error,
   index,
   onChange,
@@ -133,6 +136,7 @@ function AdjustmentEditor({
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <SelectField
+          disabled={disabled}
           id={`${prefix}-kind`}
           label="Tipo de ajuste"
           onChange={handleKind}
@@ -142,6 +146,7 @@ function AdjustmentEditor({
         />
         {percentageAllowed ? (
           <SelectField
+            disabled={disabled}
             id={`${prefix}-type`}
             label="Como informar"
             onChange={handleType}
@@ -173,6 +178,7 @@ function AdjustmentEditor({
 
 interface AdjustmentsProps {
   adjustments: readonly AdjustmentDraft[];
+  disabled: boolean;
   errors: Record<string, string>;
   onAdd: () => void;
   onChange: AdjustmentEditorProps["onChange"];
@@ -181,6 +187,7 @@ interface AdjustmentsProps {
 
 function Adjustments({
   adjustments,
+  disabled,
   errors,
   onAdd,
   onChange,
@@ -206,6 +213,7 @@ function Adjustments({
       {adjustments.map((adjustment, index) => (
         <AdjustmentEditor
           adjustment={adjustment}
+          disabled={disabled}
           error={errors[adjustmentFieldKey(adjustment.draftId)]}
           index={index}
           key={adjustment.draftId}
@@ -357,7 +365,11 @@ export function PaymentSection({
               value={form.payment.method === "" ? null : form.payment.method}
             >
               {METHOD_CARDS.map(([method, label]) => (
-                <FieldLabel htmlFor={`sale-method-${method}`} key={method}>
+                <FieldLabel
+                  className="has-data-disabled:opacity-50"
+                  htmlFor={`sale-method-${method}`}
+                  key={method}
+                >
                   <Field orientation="horizontal">
                     <FieldContent>
                       <FieldTitle>{label}</FieldTitle>
@@ -388,6 +400,7 @@ export function PaymentSection({
                 value={form.payment.installments}
               />
               <SelectField
+                disabled={disabled}
                 error={errors[formFieldKeys.installmentPlan]}
                 id="sale-plan"
                 label="Modalidade do parcelamento"
@@ -402,6 +415,7 @@ export function PaymentSection({
             <Checkbox
               aria-describedby="sale-anticipation-hint"
               checked={form.payment.anticipationRequested}
+              className="data-disabled:opacity-50"
               disabled={disabled || !card}
               id="sale-anticipation"
               onCheckedChange={handleAnticipation}
@@ -422,6 +436,7 @@ export function PaymentSection({
           </Field>
           <Separator />
           <SelectField
+            disabled={disabled}
             error={errors[formFieldKeys.profile]}
             hint="O perfil define taxas e prazo estimados. Sem perfil, taxas e prazo ficam desconhecidos."
             id="sale-profile"
@@ -467,6 +482,7 @@ export function PaymentSection({
           )}
           <Adjustments
             adjustments={form.adjustments}
+            disabled={disabled}
             errors={errors}
             onAdd={onAddAdjustment}
             onChange={onAdjustmentChange}

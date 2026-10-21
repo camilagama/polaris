@@ -575,6 +575,21 @@ test.describe("venda sem resposta do servidor", () => {
     await expect(
       page.getByText("Sem resposta do servidor, a venda pode ser guardada")
     ).toBeVisible();
+    // locked: nothing of the sale can change (Base UI's radio, checkbox and select are not native controls, so
+    // the <fieldset disabled> alone would not turn them off)
+    for (const control of [
+      page.getByRole("radio", { name: "Pix" }),
+      page.getByRole("checkbox", {
+        name: "Pretendo antecipar este recebimento",
+      }),
+      page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" }),
+      page.getByLabel("Quantidade"),
+      page.getByRole("button", { name: "Adicionar item" }),
+      page.getByRole("button", { name: "Adicionar ajuste" }),
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one control after the other
+      await expect(control).toBeDisabled();
+    }
     await page
       .getByRole("button", { name: "Guardar esta venda neste aparelho" })
       .click();

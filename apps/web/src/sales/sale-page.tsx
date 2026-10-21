@@ -49,7 +49,7 @@ import {
 } from "./last-prices-model";
 import {
   OfflineSaleNotice,
-  PendingSalesPanel,
+  PendingSalesCard,
   QueuedSalePanel,
 } from "./offline-sale-panels";
 import {
@@ -620,7 +620,7 @@ export function SalePage() {
     >
       <h1 className="text-title">Nova venda</h1>
       {offline ? <OfflineSaleNotice /> : null}
-      {workspace ? <PendingSalesPanel workspace={workspace} /> : null}
+      {workspace ? <PendingSalesCard workspace={workspace} /> : null}
       {submission.phase === "queued" ? (
         <QueuedSalePanel panelRef={confirmedRef} sale={submission.sale} />
       ) : null}
