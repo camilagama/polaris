@@ -104,10 +104,8 @@ export function confirmSentText(email: string | null): string {
 export const CONFIRM_NOT_ARRIVED = "Não chegou?";
 export const RESEND_BUTTON = "Reenviar e-mail";
 export const RESEND_BUTTON_PENDING = "Reenviando…";
-/** The address came from the sign-up form kept in memory: the server really sent it. */
-export const RESENT = "Reenviamos. Veja o spam.";
-/** The address was typed here: the server answers the same whether or not it has an account (AC-49). */
-export const RESENT_TYPED =
+/** Always the same, whichever address: the server may not have sent it (cap of 72 h, limit) and answers alike with or without an account (AC-49). */
+export const RESENT =
   "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam.";
 export const CONFIRM_CHECKING = "Confirmando o e-mail…";
 export const CONFIRM_DONE_TITLE = "E-mail confirmado";
