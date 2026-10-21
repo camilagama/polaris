@@ -318,12 +318,29 @@ async function fillShirtSale(page: Page, quantity: number) {
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
   await page.getByRole("button", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill(String(quantity));
-  await page.getByLabel("Método de pagamento").selectOption({ label: "Pix" });
+  await payWith(page, "Pix");
   // the profile is a choice in both modes; these scenarios sell without one
-  await page.getByLabel("Perfil de pagamento").selectOption({
-    label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
-  });
+  await chooseProfile(page, "Sem perfil de pagamento");
 }
+
+/** The method is a group of choice cards. */
+async function payWith(page: Page, method: string) {
+  await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: method })
+    .check();
+}
+
+/** The profile is a Base UI Select: open it, then pick the option. */
+async function chooseProfile(page: Page, option: string) {
+  await page
+    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    .click();
+  await page.getByRole("option", { exact: true, name: option }).click();
+}
+
+const summary = (page: Page) =>
+  page.getByRole("complementary", { name: "Resumo" });
 
 const keepSale = (page: Page) =>
   page.getByRole("button", { name: "Guardar venda neste aparelho" });
@@ -355,7 +372,7 @@ test.describe("venda", () => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
     await expect(
-      page.getByText("Sem conexão. A venda será guardada")
+      page.getByRole("status").filter({ hasText: "Sem internet." })
     ).toBeVisible();
     // the profile is offered (the ones of the last connection), a typed date is not
     await expect(page.getByLabel("Perfil de pagamento")).toBeVisible();
@@ -549,9 +566,7 @@ test.describe("venda sem resposta do servidor", () => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
 
     await fillShirtSale(page, 1);
-    await page.getByLabel("Perfil de pagamento").selectOption({
-      label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
-    });
+    await chooseProfile(page, "Sem perfil de pagamento");
     await page.getByRole("button", { name: "Confirmar venda" }).click();
 
     await expect(
@@ -678,17 +693,13 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     ).toBeVisible();
 
     await fillShirtSale(page, 1);
-    await page.getByLabel("Método de pagamento").selectOption({
-      label: "Cartão de débito",
-    });
-    await page
-      .getByLabel("Perfil de pagamento")
-      .selectOption({ label: "Maquininha do laboratório (versão 3)" });
-    await expect(page.getByLabel("Perfil de pagamento")).toHaveValue(
-      "0199c2d0-0000-7000-8000-0000000000c1"
-    );
+    await payWith(page, "Débito");
+    await chooseProfile(page, "Maquininha do laboratório (versão 3)");
+    await expect(
+      page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    ).toContainText("Maquininha do laboratório (versão 3)");
     // the summary names the profile the sale is priced with
-    await expect(page.locator(".sale-details").first()).toContainText(
+    await expect(summary(page)).toContainText(
       "Maquininha do laboratório (versão 3)"
     );
     await keepSale(page).click();
@@ -712,12 +723,8 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
     await fillShirtSale(page, 1);
-    await page.getByLabel("Método de pagamento").selectOption({
-      label: "Cartão de débito",
-    });
-    await page
-      .getByLabel("Perfil de pagamento")
-      .selectOption({ label: "Maquininha do laboratório (versão 2)" });
+    await payWith(page, "Débito");
+    await chooseProfile(page, "Maquininha do laboratório (versão 2)");
     await keepSale(page).click();
     await expect(
       page
@@ -809,9 +816,9 @@ test.describe("sem o aceite dos termos (ADR 0100)", () => {
       )
     ).toBeVisible();
     // the item and its quantity are still on the form, nothing was sent or queued
-    await expect(page.locator(".sale-lines")).toContainText(
-      "Camiseta do laboratório — Azul"
-    );
+    await expect(
+      page.getByRole("group", { exact: true, name: "Item 1" })
+    ).toContainText("Camiseta do laboratório — Azul");
     await expect(page.getByLabel("Quantidade")).toHaveValue("2");
     await expect(page.getByTestId("server-records")).toHaveText("0");
     expect(new URL(page.url()).pathname).toBe("/offline-screens-lab");

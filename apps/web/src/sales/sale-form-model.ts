@@ -198,6 +198,23 @@ function parsePositiveInteger(text: string): FieldParse<number> {
   return value > MAX_QUANTITY ? { kind: "too_large" } : { kind: "ok", value };
 }
 
+/**
+ * The quantity after one tap of the − or + of the stepper, or null when that tap
+ * is not possible (below 1, above the maximum, or a text that is not a whole
+ * number, which the person fixes by typing). An empty field starts at 1.
+ */
+export function stepQuantity(text: string, step: 1 | -1): string | null {
+  const parse = parsePositiveInteger(text);
+  if (parse.kind === "empty") {
+    return step === 1 ? "1" : null;
+  }
+  if (parse.kind !== "ok") {
+    return null;
+  }
+  const next = parse.value + step;
+  return next < 1 || next > MAX_QUANTITY ? null : String(next);
+}
+
 /** Returns a normalized non-negative BRL string with exactly two decimals. */
 export function parseMoneyText(text: string): FieldParse<string> {
   const trimmed = text.trim();

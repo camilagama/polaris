@@ -57,6 +57,7 @@ import {
   selectPaymentMethod,
   selectProfileChoice,
   startSubmission,
+  stepQuantity,
   stockView,
   submitButtonLabel,
   updateAdjustment,
@@ -1681,5 +1682,47 @@ describe("isSaleFormDirty (the sign that the session notice warns about)", () =>
 
   it("counts a complete sale", () => {
     expect(isSaleFormDirty(validForm())).toBe(true);
+  });
+});
+
+describe("stepQuantity", () => {
+  it("adds and removes one unit", () => {
+    expect(stepQuantity("2", 1)).toBe("3");
+    expect(stepQuantity("2", -1)).toBe("1");
+    expect(stepQuantity(" 9 ", 1)).toBe("10");
+  });
+
+  it("never goes below 1", () => {
+    expect(stepQuantity("1", -1)).toBeNull();
+    expect(stepQuantity("1", 1)).toBe("2");
+  });
+
+  it("never goes above the maximum the server accepts", () => {
+    expect(stepQuantity("2147483646", 1)).toBe("2147483647");
+    expect(stepQuantity("2147483647", 1)).toBeNull();
+    expect(stepQuantity("2147483647", -1)).toBe("2147483646");
+  });
+
+  it("starts an empty field at 1 and cannot take from it", () => {
+    expect(stepQuantity("", 1)).toBe("1");
+    expect(stepQuantity("  ", -1)).toBeNull();
+  });
+
+  it("leaves a text that is not a whole number for the person to fix", () => {
+    for (const text of ["0", "1,5", "abc", "-2", "99999999999"]) {
+      expect(stepQuantity(text, 1)).toBeNull();
+      expect(stepQuantity(text, -1)).toBeNull();
+    }
+  });
+
+  it("gives a text the form accepts as the quantity", () => {
+    const form = validForm();
+    const item = lineOf(form);
+    const next = stepQuantity(item.quantity, 1);
+    expect(next).toBe("3");
+    const stepped = updateItem(form, item.draftId, { quantity: next ?? "" });
+    const evaluation = evaluate(stepped);
+    expect(evaluation.errors).toEqual({});
+    expect(evaluation.summary?.lines[0]?.quantity).toBe(3);
   });
 });

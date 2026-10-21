@@ -2,7 +2,7 @@ import { type ChangeEvent, useCallback } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { PendingSalesPanel } from "./offline-sale-panels";
-import "./sale-page.css";
+import "./sale-legacy.css";
 import "./sale-history.css";
 import {
   activeFilterCount,

@@ -2,7 +2,7 @@ import { type ChangeEvent, useCallback, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import "../catalog/categories-page.css";
-import "./sale-page.css";
+import "./sale-legacy.css";
 import "./sale-cancel-panel.css";
 import { OperationFailureNotice } from "./operation-failure-notice";
 import {

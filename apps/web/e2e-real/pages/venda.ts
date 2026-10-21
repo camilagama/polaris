@@ -6,12 +6,23 @@ const CONFIRMED_HEADLINE = /Venda confirmada|já estava confirmada/;
 /** The sale screen (/sales), by role and label only. */
 
 export interface SaleLineInput {
-  search: string;
-  option: RegExp;
-  quantity: number;
   charged: string;
   /** Filled when the catalog has no list price. */
   listed?: string;
+  option: RegExp;
+  quantity: number;
+  search: string;
+}
+
+/** Opens the select named `label` inside `scope` and picks the option named `option` (a Base UI Select). */
+export async function choose(
+  page: Page,
+  scope: Page | Locator,
+  label: string,
+  option: string
+): Promise<void> {
+  await scope.getByRole("combobox", { exact: true, name: label }).click();
+  await page.getByRole("option", { exact: true, name: option }).click();
 }
 
 /** The value (`<dd>`) of a row (`<dt>`) of a definition list inside `scope`. */
@@ -38,8 +49,8 @@ export async function fillSale(
       await page.getByRole("button", { name: "Adicionar item" }).click();
     }
     const item = page.getByRole("group", {
-      name: `Item ${index + 1}`,
       exact: true,
+      name: `Item ${index + 1}`,
     });
     await item.getByLabel("Produto ou variante").fill(line.search);
     await item
@@ -48,31 +59,26 @@ export async function fillSale(
       .click();
     await item.getByLabel("Quantidade").fill(String(line.quantity));
     if (line.listed !== undefined) {
-      await item.getByLabel("Preço de tabela (R$)").fill(line.listed);
+      await item.getByLabel("Preço de tabela").fill(line.listed);
     }
-    await item.getByLabel("Preço cobrado (R$)").fill(line.charged);
+    await item.getByLabel("Preço cobrado").fill(line.charged);
   }
   for (const [index, percent] of discountPercents.entries()) {
     // biome-ignore lint/performance/noAwaitInLoops: one adjustment after the other
     await page.getByRole("button", { name: "Adicionar ajuste" }).click();
     const adjustment = page.getByRole("group", {
-      name: `Ajuste ${index + 1}`,
       exact: true,
+      name: `Ajuste ${index + 1}`,
     });
-    await adjustment
-      .getByLabel("Tipo de ajuste")
-      .selectOption({ label: "Desconto" });
-    await adjustment
-      .getByLabel("Como informar")
-      .selectOption({ label: "Percentual (%)" });
+    await choose(page, adjustment, "Tipo de ajuste", "Desconto");
+    await choose(page, adjustment, "Como informar", "Percentual (%)");
     await adjustment.getByLabel("Percentual (%)").fill(percent);
   }
   await page
-    .getByLabel("Método de pagamento")
-    .selectOption({ label: "Dinheiro" });
-  await page.getByLabel("Perfil de pagamento").selectOption({
-    label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
-  });
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Dinheiro" })
+    .check();
+  await choose(page, page, "Perfil de pagamento", "Sem perfil de pagamento");
 }
 
 /** Confirms with a double tap (the WARN of the acceptance: one sale only) and returns the confirmed panel. */

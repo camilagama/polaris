@@ -2,36 +2,42 @@ import type {
   InventoryBalanceEntryReadModel,
   PaymentProfileReadModel,
 } from "@polaris/contracts";
+import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
-  type ChangeEvent,
   type FormEvent,
-  type ReactNode,
-  type RefObject,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { Button } from "@/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/card";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
 import { formatBrlAmount } from "../lib/format";
-import { useNow } from "../lib/use-now";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { useNow } from "../lib/use-now";
 import {
   filterLocalStockEntries,
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
-import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import "./sale-page.css";
-import { confirmOnServer } from "./confirm-on-server";
-import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import type {
   OfflineRuntime,
   RuntimeContext,
 } from "../offline/runtime/offline-runtime";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { confirmOnServer } from "./confirm-on-server";
+import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -51,40 +57,28 @@ import {
   sessionStorageOrNull,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
-import { SaleCustomerDisclosure } from "./sale-customer-panel";
+import { ConfirmedSalePanel } from "./sale-confirmed-panel";
 import {
-  ADJUSTMENT_KINDS,
   type AdjustmentDraft,
   acknowledgeProfileReview,
   addAdjustment,
   addItem,
-  adjustmentFieldKey,
   type CatalogView,
   type ChoiceOption,
-  type ConfirmedSaleView,
   cancelDiscard,
   canKeepLockedSaleOnDevice,
   canStartSubmission,
   createBlankSaleForm,
   discardLockedSale,
-  type EvaluationContext,
   editSaleDate,
   editSaleForm,
   evaluateSaleForm,
-  type FeeLine,
-  type FeePreview,
-  formFieldKeys,
   formForOfflineSale,
-  INSTALLMENT_PLANS,
   type ItemDraft,
   idleSubmission,
   isFormLocked,
   isSaleFormDirty,
-  isSubmitting,
-  itemFieldKey,
-  MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
-  NO_PROFILE_CHOICE,
   type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
@@ -92,54 +86,29 @@ import {
   rejectSubmission,
   removeAdjustment,
   removeItem,
-  saleModeIsOffline,
   requestDiscard,
-  SALE_DATE_HINT,
-  SALE_METHODS,
   type SaleAttempt,
-  type SaleEvaluation,
   type SaleFormState,
   type SaleMethod,
   type SaleSummary,
   type SubmissionState,
+  saleModeIsOffline,
   selectPaymentMethod,
   selectProfileChoice,
   startSubmission,
-  stockView,
-  submitButtonLabel,
   updateAdjustment,
   updateItem,
   updatePayment,
 } from "./sale-form-model";
-import { saleDetailHref } from "./sale-history-model";
-import { SaleSnapshot } from "./sale-snapshot";
-import { VariantSearch } from "./sale-variant-picker";
+import { ItemEditor } from "./sale-item-editor";
+import { PaymentSection } from "./sale-payment-section";
+import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
   clearedItemChanges,
   itemChangesForEntry,
   PICKER_RESULT_LIMIT,
 } from "./sale-variant-picker-model";
 import { useSaleCatalog } from "./use-sale-catalog";
-
-const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
-  ([id, label]) => ({ id, label })
-);
-const adjustmentTypeOptions: ChoiceOption[] = [
-  { id: "fixed", label: "Valor fixo (R$)" },
-  { id: "percentage", label: "Percentual (%)" },
-];
-const methodOptions: ChoiceOption[] = SALE_METHODS.map(([id, label]) => ({
-  id,
-  label,
-}));
-const planOptions: ChoiceOption[] = INSTALLMENT_PLANS.map(([id, label]) => ({
-  id,
-  label,
-}));
-const noProfileOption: ChoiceOption = {
-  id: NO_PROFILE_CHOICE,
-  label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
-};
 
 const newId = () => crypto.randomUUID();
 
@@ -154,914 +123,30 @@ type LocalSearch = (query: string) => Promise<{
 }>;
 
 /* -------------------------------------------------------------------------- */
-/* Small controls                                                             */
+/* Page                                                                       */
 /* -------------------------------------------------------------------------- */
-
-interface FieldShellProps {
-  children: ReactNode;
-  error: string | undefined;
-  hint: string | undefined;
-  id: string;
-  label: string;
-}
-
-function describedBy(
-  id: string,
-  error: string | undefined,
-  hint: string | undefined
-): string | undefined {
-  const ids = [error ? `${id}-error` : null, hint ? `${id}-hint` : null].filter(
-    (value): value is string => value !== null
-  );
-  return ids.length > 0 ? ids.join(" ") : undefined;
-}
-
-function FieldShell({ children, error, hint, id, label }: FieldShellProps) {
-  return (
-    <div className="sale-field">
-      <label htmlFor={id}>{label}</label>
-      {children}
-      {hint ? (
-        <p className="sale-hint" id={`${id}-hint`}>
-          {hint}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="sale-error" id={`${id}-error`} role="alert">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-interface TextFieldProps {
-  error?: string | undefined;
-  hint?: string | undefined;
-  id: string;
-  inputMode: "decimal" | "numeric";
-  label: string;
-  maxLength: number;
-  onChange: (value: string) => void;
-  placeholder?: string | undefined;
-  value: string;
-}
-
-function TextField({
-  error,
-  hint,
-  id,
-  inputMode,
-  label,
-  maxLength,
-  onChange,
-  placeholder,
-  value,
-}: TextFieldProps) {
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
-    [onChange]
-  );
-  return (
-    <FieldShell error={error} hint={hint} id={id} label={label}>
-      <input
-        aria-describedby={describedBy(id, error, hint)}
-        aria-invalid={error ? true : undefined}
-        autoComplete="off"
-        id={id}
-        inputMode={inputMode}
-        maxLength={maxLength}
-        onChange={handleChange}
-        placeholder={placeholder}
-        value={value}
-      />
-    </FieldShell>
-  );
-}
-
-interface SelectFieldProps {
-  disabled?: boolean;
-  error?: string | undefined;
-  hint?: string | undefined;
-  id: string;
-  label: string;
-  onChange: (value: string) => void;
-  options: readonly ChoiceOption[];
-  placeholder: string;
-  value: string;
-}
-
-function SelectField({
-  disabled,
-  error,
-  hint,
-  id,
-  label,
-  onChange,
-  options,
-  placeholder,
-  value,
-}: SelectFieldProps) {
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onChange(event.target.value),
-    [onChange]
-  );
-  return (
-    <FieldShell error={error} hint={hint} id={id} label={label}>
-      <select
-        aria-describedby={describedBy(id, error, hint)}
-        aria-invalid={error ? true : undefined}
-        disabled={disabled}
-        id={id}
-        onChange={handleChange}
-        value={value}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </FieldShell>
-  );
-}
-
-interface CatalogNoticeProps {
-  onRetry: () => void;
-  view: CatalogView | null;
-}
-
-/** Loading, error and empty states of a catalog read; renders nothing when ready. */
-function CatalogNotice({ onRetry, view }: CatalogNoticeProps) {
-  if (view === null || view.kind === "ready") {
-    return null;
-  }
-  if (view.kind === "loading") {
-    return (
-      <p className="sale-status" role="status">
-        {view.message}
-      </p>
-    );
-  }
-  if (view.kind === "error") {
-    return (
-      <p className="sale-message is-error" role="alert">
-        {view.message}{" "}
-        <button className="sale-link-button" onClick={onRetry} type="button">
-          Tentar novamente
-        </button>
-      </p>
-    );
-  }
-  return <p className="sale-empty">{view.message}</p>;
-}
 
 function optionsOf(view: CatalogView | null): readonly ChoiceOption[] {
   return view?.kind === "ready" ? view.options : [];
 }
 
-/* -------------------------------------------------------------------------- */
-/* Items                                                                      */
-/* -------------------------------------------------------------------------- */
-
-interface ItemEditorProps {
-  canRemove: boolean;
-  errors: Record<string, string>;
-  index: number;
-  item: ItemDraft;
-  /** Searches this device's collections instead of the server (no connection). */
-  localSearch: LocalSearch | undefined;
-  onChange: (draftId: string, changes: Partial<ItemDraft>) => void;
-  onClearVariant: (draftId: string) => void;
-  onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
-  onRemove: (draftId: string) => void;
-  organizationId: string;
-  priceHint: string | null;
-  stock: EvaluationContext["stock"];
-  stockWarning: string | undefined;
+/** The single payment of the sale, said under the methods. */
+function singlePaymentText(summary: SaleSummary | null): string {
+  const total = summary ? `: ${formatBrlAmount(summary.totalDue)}` : "";
+  return `A venda tem um único pagamento, igual ao total devido${total}. Não há pagamento parcial, e o método escolhido não comprova liquidação.`;
 }
 
-function ItemEditor({
-  canRemove,
-  errors,
-  index,
-  item,
-  localSearch,
-  onChange,
-  onClearVariant,
-  onPick,
-  onRemove,
-  organizationId,
-  priceHint,
-  stock,
-  stockWarning,
-}: ItemEditorProps) {
-  const prefix = `sale-item-${item.draftId}`;
-  const chosen = item.variantId !== "";
-  const stockState = chosen ? stockView(stock[item.variantId]) : null;
-  const pickError =
-    errors[itemFieldKey(item.draftId, "product")] ??
-    errors[itemFieldKey(item.draftId, "variant")];
-  const handlePick = useCallback(
-    (entry: InventoryBalanceEntryReadModel) => onPick(item.draftId, entry),
-    [item.draftId, onPick]
-  );
-  const handleClear = useCallback(
-    () => onClearVariant(item.draftId),
-    [item.draftId, onClearVariant]
-  );
-  const handleQuantity = useCallback(
-    (value: string) => onChange(item.draftId, { quantity: value }),
-    [item.draftId, onChange]
-  );
-  const handleListed = useCallback(
-    (value: string) => onChange(item.draftId, { listedUnitPrice: value }),
-    [item.draftId, onChange]
-  );
-  const handleCharged = useCallback(
-    (value: string) => onChange(item.draftId, { chargedUnitPrice: value }),
-    [item.draftId, onChange]
-  );
-  const handleRemove = useCallback(
-    () => onRemove(item.draftId),
-    [item.draftId, onRemove]
-  );
-  return (
-    <fieldset className="sale-item">
-      <legend>Item {index + 1}</legend>
-      {chosen ? (
-        <div className="sale-chosen">
-          <p className="sale-chosen-label">{item.label}</p>
-          <button
-            className="quiet-button sale-chosen-change"
-            onClick={handleClear}
-            type="button"
-          >
-            Trocar variante
-          </button>
-        </div>
-      ) : (
-        <VariantSearch
-          error={pickError}
-          id={prefix}
-          localSearch={localSearch}
-          onPick={handlePick}
-          organizationId={organizationId}
-        />
-      )}
-      {stockState ? (
-        <p
-          className={`sale-stock is-${stockState.tone}`}
-          id={`${prefix}-stock`}
-          role="status"
-        >
-          {stockState.text} {localSearch ? "" : stockState.costText}
-        </p>
-      ) : null}
-      {stockWarning ? (
-        <p className="sale-message is-warning" role="status">
-          {stockWarning}
-        </p>
-      ) : null}
-      <div className="sale-grid is-three">
-        <TextField
-          error={errors[itemFieldKey(item.draftId, "quantity")]}
-          id={`${prefix}-quantity`}
-          inputMode="numeric"
-          label="Quantidade"
-          maxLength={10}
-          onChange={handleQuantity}
-          value={item.quantity}
-        />
-        <TextField
-          error={errors[itemFieldKey(item.draftId, "listedUnitPrice")]}
-          hint="Preço de tabela por unidade."
-          id={`${prefix}-listed`}
-          inputMode="decimal"
-          label="Preço de tabela (R$)"
-          maxLength={22}
-          onChange={handleListed}
-          placeholder="Ex.: 59,90"
-          value={item.listedUnitPrice}
-        />
-        <TextField
-          error={errors[itemFieldKey(item.draftId, "chargedUnitPrice")]}
-          hint="Preço negociado por unidade."
-          id={`${prefix}-charged`}
-          inputMode="decimal"
-          label="Preço cobrado (R$)"
-          maxLength={22}
-          onChange={handleCharged}
-          placeholder="Ex.: 49,90"
-          value={item.chargedUnitPrice}
-        />
-      </div>
-      {priceHint ? (
-        <p className="sale-hint" role="note">
-          {priceHint}
-        </p>
-      ) : null}
-      {canRemove ? (
-        <button className="sale-remove" onClick={handleRemove} type="button">
-          Remover item {index + 1}
-        </button>
-      ) : null}
-    </fieldset>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Adjustments                                                                */
-/* -------------------------------------------------------------------------- */
-
-interface AdjustmentEditorProps {
-  adjustment: AdjustmentDraft;
-  error: string | undefined;
-  index: number;
-  onChange: (
-    draftId: string,
-    changes: Partial<Omit<AdjustmentDraft, "draftId">>
-  ) => void;
-  onRemove: (draftId: string) => void;
-}
-
-function AdjustmentEditor({
-  adjustment,
-  error,
-  index,
-  onChange,
-  onRemove,
-}: AdjustmentEditorProps) {
-  const prefix = `sale-adjustment-${adjustment.draftId}`;
-  const percentageAllowed =
-    adjustment.kind === "discount" || adjustment.kind === "surcharge";
-  const percentage = adjustment.valueType === "percentage";
-  const handleKind = useCallback(
-    (value: string) =>
-      onChange(adjustment.draftId, {
-        kind: value as AdjustmentDraft["kind"],
-      }),
-    [adjustment.draftId, onChange]
-  );
-  const handleType = useCallback(
-    (value: string) =>
-      onChange(adjustment.draftId, {
-        valueType: value as AdjustmentDraft["valueType"],
-      }),
-    [adjustment.draftId, onChange]
-  );
-  const handleValue = useCallback(
-    (value: string) => onChange(adjustment.draftId, { value }),
-    [adjustment.draftId, onChange]
-  );
-  const handleRemove = useCallback(
-    () => onRemove(adjustment.draftId),
-    [adjustment.draftId, onRemove]
-  );
-  return (
-    <fieldset className="sale-item">
-      <legend>Ajuste {index + 1}</legend>
-      <div className="sale-grid is-three">
-        <SelectField
-          id={`${prefix}-kind`}
-          label="Tipo de ajuste"
-          onChange={handleKind}
-          options={adjustmentKindOptions}
-          placeholder="Escolha o tipo"
-          value={adjustment.kind}
-        />
-        {percentageAllowed ? (
-          <SelectField
-            id={`${prefix}-type`}
-            label="Como informar"
-            onChange={handleType}
-            options={adjustmentTypeOptions}
-            placeholder="Escolha"
-            value={adjustment.valueType}
-          />
-        ) : null}
-        <TextField
-          error={error}
-          hint={
-            percentage
-              ? "Em pontos percentuais: 2,5 = 2,5%. Incide sobre o subtotal e não compõe com outros ajustes."
-              : undefined
-          }
-          id={`${prefix}-value`}
-          inputMode="decimal"
-          label={percentage ? "Percentual (%)" : "Valor (R$)"}
-          maxLength={22}
-          onChange={handleValue}
-          placeholder={percentage ? "Ex.: 2,5" : "Ex.: 15,00"}
-          value={adjustment.value}
-        />
-      </div>
-      <button className="sale-remove" onClick={handleRemove} type="button">
-        Remover ajuste {index + 1}
-      </button>
-    </fieldset>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Payment                                                                    */
-/* -------------------------------------------------------------------------- */
-
-interface DateSectionProps {
-  disabled: boolean;
-  error: string | undefined;
-  onChange: (value: string) => void;
-  value: string;
-}
-
-/** The optional commercial date and time; empty means now. */
-function DateSection({ disabled, error, onChange, value }: DateSectionProps) {
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
-    [onChange]
-  );
-  const handleClear = useCallback(() => onChange(""), [onChange]);
-  return (
-    <fieldset className="sale-section" disabled={disabled}>
-      <legend>Data e hora da venda</legend>
-      <div className="sale-field">
-        <label htmlFor="sale-occurred-at">
-          Data e hora da venda (opcional)
-        </label>
-        <input
-          aria-describedby={
-            error
-              ? "sale-occurred-at-error sale-occurred-at-hint"
-              : "sale-occurred-at-hint"
-          }
-          aria-invalid={error ? true : undefined}
-          id="sale-occurred-at"
-          onChange={handleChange}
-          type="datetime-local"
-          value={value}
-        />
-        <p className="sale-hint" id="sale-occurred-at-hint">
-          {SALE_DATE_HINT}
-        </p>
-        {error ? (
-          <p className="sale-error" id="sale-occurred-at-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
-      {value === "" ? null : (
-        <button className="quiet-button" onClick={handleClear} type="button">
-          Usar agora
-        </button>
-      )}
-    </fieldset>
-  );
-}
-
-interface PaymentSectionProps {
-  disabled: boolean;
-  errors: Record<string, string>;
-  evaluation: SaleEvaluation;
-  form: SaleFormState;
-  /** Without a connection there are no payment profiles to choose from. */
-  offline: boolean;
-  onAcknowledgeReview: () => void;
-  onAnticipationChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onInstallmentPlanChange: (value: string) => void;
-  onInstallmentsChange: (value: string) => void;
-  onMethodChange: (value: string) => void;
-  onProfileChange: (value: string) => void;
-  onRetry: () => void;
-  profileOptions: readonly ChoiceOption[];
-  profilesView: CatalogView;
-}
-
-function PaymentSection({
-  disabled,
-  errors,
-  evaluation,
-  form,
-  onAcknowledgeReview,
-  onAnticipationChange,
-  onInstallmentPlanChange,
-  onInstallmentsChange,
-  onMethodChange,
-  offline,
-  onProfileChange,
-  onRetry,
-  profileOptions,
-  profilesView: profilesState,
-}: PaymentSectionProps) {
-  const card = form.payment.method === "credit_card";
-  const options = [noProfileOption, ...profileOptions];
-  return (
-    <fieldset className="sale-section" disabled={disabled}>
-      <legend>Pagamento</legend>
-      <p className="sale-help">
-        A venda tem um único pagamento, igual ao total devido
-        {evaluation.summary
-          ? `: ${formatBrlAmount(evaluation.summary.totalDue)}`
-          : ""}
-        . Não há pagamento parcial, e o método escolhido não comprova
-        liquidação.
-      </p>
-      <div className="sale-grid">
-        <SelectField
-          error={errors[formFieldKeys.method]}
-          id="sale-method"
-          label="Método de pagamento"
-          onChange={onMethodChange}
-          options={methodOptions}
-          placeholder="Escolha o método"
-          value={form.payment.method}
-        />
-        {card ? (
-          <TextField
-            error={errors[formFieldKeys.installments]}
-            id="sale-installments"
-            inputMode="numeric"
-            label="Número de parcelas"
-            maxLength={10}
-            onChange={onInstallmentsChange}
-            value={form.payment.installments}
-          />
-        ) : null}
-        {card ? (
-          <SelectField
-            error={errors[formFieldKeys.installmentPlan]}
-            id="sale-plan"
-            label="Modalidade do parcelamento"
-            onChange={onInstallmentPlanChange}
-            options={planOptions}
-            placeholder="Escolha a modalidade"
-            value={form.payment.installmentPlan}
-          />
-        ) : null}
-      </div>
-      <div className="sale-check">
-        <input
-          aria-describedby="sale-anticipation-hint"
-          checked={form.payment.anticipationRequested}
-          disabled={!card}
-          id="sale-anticipation"
-          onChange={onAnticipationChange}
-          type="checkbox"
-        />
-        <label htmlFor="sale-anticipation">
-          Pretendo antecipar este recebimento
-        </label>
-      </div>
-      <p className="sale-hint" id="sale-anticipation-hint">
-        {card
-          ? "É uma intenção registrada na venda; não indica que a antecipação ocorreu."
-          : "Disponível apenas para cartão de crédito. Sem antecipação, o custo estimado é R$ 0,00."}
-      </p>
-      <SelectField
-        error={errors[formFieldKeys.profile]}
-        hint="O perfil define taxas e prazo estimados. Escolha “Sem perfil” se não quiser usar nenhum; nesse caso taxas e prazo ficam desconhecidos."
-        id="sale-profile"
-        label="Perfil de pagamento"
-        onChange={onProfileChange}
-        options={options}
-        placeholder="Escolha uma opção"
-        value={form.profile.choice}
-      />
-      {offline ? (
-        <p className="sale-hint" role="note">
-          Sem conexão: estes são os perfis da última vez com conexão. Se o
-          perfil mudar até o servidor confirmar a venda, ela é recusada e você
-          pode reenviá-la sem perfil em Pendências.
-        </p>
-      ) : null}
-      <CatalogNotice onRetry={onRetry} view={profilesState} />
-      {form.profile.reviewNotice ? (
-        <div className="sale-message is-warning" role="alert">
-          <p>{form.profile.reviewNotice}</p>
-          {form.profile.choice === "" ? null : (
-            <button
-              className="quiet-button"
-              onClick={onAcknowledgeReview}
-              type="button"
-            >
-              Revisei a prévia atualizada
-            </button>
-          )}
-        </div>
-      ) : null}
-    </fieldset>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Summary and preview                                                        */
-/* -------------------------------------------------------------------------- */
-
-function FeeValue({ line }: { line: FeeLine }) {
-  return <dd className={`sale-fee is-${line.tone}`}>{line.text}</dd>;
-}
-
-function FeePreviewPanel({ preview }: { preview: FeePreview | null }) {
-  return (
-    <section aria-labelledby="sale-preview-title" className="sale-preview">
-      <h3 id="sale-preview-title">Prévia de taxas e prazo</h3>
-      <p className="sale-hint">
-        Informativa: o servidor recalcula e registra o snapshot ao confirmar.
-      </p>
-      {preview ? (
-        <dl className="sale-details">
-          <div>
-            <dt>Perfil de pagamento</dt>
-            <dd>{preview.profileText}</dd>
-          </div>
-          <div>
-            <dt>Regra</dt>
-            <dd
-              className={
-                preview.ruleMatched ? undefined : "sale-fee is-unknown"
-              }
-            >
-              {preview.ruleText}
-            </dd>
-          </div>
-          <div>
-            <dt>Taxa de processamento</dt>
-            <FeeValue line={preview.processing} />
-          </div>
-          <div>
-            <dt>Antecipação</dt>
-            <FeeValue line={preview.anticipation} />
-          </div>
-          <div>
-            <dt>Prazo</dt>
-            <dd
-              className={
-                preview.settlementText.startsWith("prazo desconhecido")
-                  ? "sale-fee is-unknown"
-                  : undefined
-              }
-            >
-              {preview.settlementText}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <p className="sale-empty">
-          Complete itens, pagamento e perfil para ver a prévia.
-        </p>
-      )}
-    </section>
-  );
-}
-
-interface SummaryPanelProps {
-  errors: Record<string, string>;
-  evaluation: SaleEvaluation;
-  offline: boolean;
-  onDiscardCancel: () => void;
-  onDiscardConfirm: () => void;
-  onDiscardRequest: () => void;
-  onKeepOnDevice: (() => void) | undefined;
-  onRefresh: () => void;
-  showRequired: boolean;
-  submission: SubmissionState;
-  summary: SaleSummary | null;
-}
-
-function SummaryPanel({
-  errors,
-  evaluation,
-  onDiscardCancel,
-  onDiscardConfirm,
-  onDiscardRequest,
-  offline,
-  onKeepOnDevice,
-  onRefresh,
-  showRequired,
-  submission,
-  summary,
-}: SummaryPanelProps) {
-  const errorCount = Object.keys(errors).length;
-  return (
-    <aside aria-labelledby="sale-summary-title" className="sale-summary">
-      <h2 id="sale-summary-title">Resumo da venda</h2>
-      {summary ? (
-        <>
-          <ul className="sale-lines">
-            {summary.lines.map((line) => (
-              <li key={line.draftId}>
-                <span className="sale-line-label">
-                  {line.label || "Item sem variante escolhida"}
-                </span>
-                <span>
-                  {line.quantity} × {line.priceText}
-                </span>
-                <strong>{line.lineTotalText}</strong>
-                {line.negotiationText ? (
-                  <small>{line.negotiationText}</small>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          <dl aria-live="polite" className="sale-totals">
-            {summary.rows.map((row) => (
-              <div className={`is-${row.tone}`} key={row.key}>
-                <dt>{row.label}</dt>
-                <dd>{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </>
-      ) : (
-        <p className="sale-empty">
-          Os totais aparecem quando itens e ajustes estiverem válidos.
-        </p>
-      )}
-      {errors[formFieldKeys.totals] ? (
-        <p className="sale-error" role="alert">
-          {errors[formFieldKeys.totals]}
-        </p>
-      ) : null}
-      <dl className="sale-details">
-        <div>
-          <dt>Data e hora da venda</dt>
-          <dd>{evaluation.dateText}</dd>
-        </div>
-        <div>
-          <dt>Pagamento</dt>
-          <dd>{evaluation.methodText}</dd>
-        </div>
-        <div>
-          <dt>Perfil de pagamento</dt>
-          <dd>{evaluation.profileText}</dd>
-        </div>
-      </dl>
-      <FeePreviewPanel preview={evaluation.feePreview} />
-      {showRequired && errorCount > 0 ? (
-        <p className="sale-message is-error" role="alert">
-          Corrija {errorCount} {errorCount === 1 ? "campo" : "campos"} antes de
-          confirmar a venda.
-        </p>
-      ) : null}
-      <FailureNotice
-        onDiscardCancel={onDiscardCancel}
-        onDiscardConfirm={onDiscardConfirm}
-        onDiscardRequest={onDiscardRequest}
-        onKeepOnDevice={onKeepOnDevice}
-        onRefresh={onRefresh}
-        submission={submission}
-      />
-      <button
-        className="primary-button sale-submit"
-        disabled={isSubmitting(submission)}
-        type="submit"
-      >
-        {submitButtonLabel(submission, offline)}
-      </button>
-    </aside>
-  );
-}
-
-interface FailureNoticeProps {
-  onDiscardCancel: () => void;
-  onDiscardConfirm: () => void;
-  onDiscardRequest: () => void;
-  /** Keeps a locked sale on this device as the same sale (only when it can carry it). */
-  onKeepOnDevice: (() => void) | undefined;
-  onRefresh: () => void;
-  submission: SubmissionState;
-}
-
-/** Shows a failed or locked submission and the actions allowed for it. */
-function FailureNotice({
-  onDiscardCancel,
-  onDiscardConfirm,
-  onDiscardRequest,
-  onKeepOnDevice,
-  onRefresh,
-  submission,
-}: FailureNoticeProps) {
-  if (submission.phase === "failed") {
-    return (
-      <div className="sale-message is-error" role="alert">
-        <p>{submission.failure.message}</p>
-        {submission.failure.refreshData ? (
-          <button className="quiet-button" onClick={onRefresh} type="button">
-            Atualizar dados e revisar a venda
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-  if (submission.phase !== "locked") {
-    return null;
-  }
-  return (
-    <div className="sale-message is-error sale-locked" role="alert">
-      <p>{submission.failure.message}</p>
-      {submission.confirmingDiscard ? (
-        <>
-          <p>
-            <strong>Esta venda pode já ter sido registrada.</strong> Se você
-            descartá-la e digitar a venda de novo, ela pode ficar duplicada.
-            Descarte só se tiver verificado que ela não foi registrada.
-          </p>
-          <div className="sale-actions">
-            <button
-              className="danger-button"
-              onClick={onDiscardConfirm}
-              type="button"
-            >
-              Sim, descartar e começar outra
-            </button>
-            <button
-              className="quiet-button"
-              onClick={onDiscardCancel}
-              type="button"
-            >
-              Voltar
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          {onKeepOnDevice ? (
-            <>
-              <p className="sale-hint">
-                Sem resposta do servidor, a venda pode ser guardada neste
-                aparelho como a mesma venda: se o servidor já a registrou, ele a
-                reconhece quando o aparelho enviar e nada é duplicado.
-              </p>
-              <button
-                className="quiet-button"
-                onClick={onKeepOnDevice}
-                type="button"
-              >
-                Guardar esta venda neste aparelho
-              </button>
-            </>
-          ) : null}
-          <button
-            className="quiet-button"
-            onClick={onDiscardRequest}
-            type="button"
-          >
-            Descartar esta venda e começar outra
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-interface ConfirmedPanelProps {
-  organizationId: string;
-  panelRef: RefObject<HTMLElement | null>;
-  sale: ConfirmedSaleView;
-}
-
-function ConfirmedSalePanel({
-  organizationId,
-  panelRef,
-  sale,
-}: ConfirmedPanelProps) {
-  return (
-    <section
-      aria-labelledby="sale-confirmed-title"
-      className="sale-confirmed"
-      ref={panelRef}
-      tabIndex={-1}
-    >
-      <h2 id="sale-confirmed-title" role="status">
-        {sale.headline}
-      </h2>
-      <SaleSnapshot sale={sale} />
-      <p className="sale-hint">
-        <a href={saleDetailHref(sale.saleId)}>
-          Ver detalhes e histórico da venda
-        </a>
-      </p>
-      <p className="sale-hint">
-        O formulário abaixo foi reiniciado para uma nova venda.
-      </p>
-      <SaleCustomerDisclosure
-        key={sale.saleId}
-        organizationId={organizationId}
-        saleId={sale.saleId}
-      />
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Page                                                                       */
-/* -------------------------------------------------------------------------- */
-
+/** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
 function focusFirstInvalidField() {
   window.requestAnimationFrame(() => {
-    document
-      .querySelector<HTMLElement>('.sale-page [aria-invalid="true"]')
-      ?.focus();
+    const invalid = document.querySelector<HTMLElement>(
+      '[data-sale-form] [aria-invalid="true"]'
+    );
+    const target =
+      invalid?.getAttribute("role") === "radiogroup"
+        ? invalid.querySelector<HTMLElement>('[role="radio"]')
+        : invalid;
+    target?.focus();
   });
 }
 
@@ -1293,12 +378,10 @@ export function SalePage() {
     [editForm]
   );
   const handleAnticipationChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const { checked } = event.target;
+    (checked: boolean) =>
       editForm((current) =>
         updatePayment(current, { anticipationRequested: checked })
-      );
-    },
+      ),
     [editForm]
   );
   const handleProfileChange = useCallback(
@@ -1525,18 +608,17 @@ export function SalePage() {
 
   const locked = isFormLocked(submission);
   const profileOptions = optionsOf(profilesState);
+  const { summary } = evaluation;
+  const summaryLines = new Map(
+    (summary?.lines ?? []).map((line) => [line.draftId, line])
+  );
+  const itemCount = form.items.length;
   return (
-    <div className="sale-page">
-      <section className="categories-heading">
-        <div>
-          <p className="categories-eyebrow">Vendas</p>
-          <h1>Nova venda</h1>
-          <p className="categories-intro-copy">
-            Monte a venda inteira e confirme uma única vez. Nada é salvo como
-            rascunho: a venda só existe depois de confirmada pelo servidor.
-          </p>
-        </div>
-      </section>
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
+      <h1 className="text-title">Nova venda</h1>
       {offline ? <OfflineSaleNotice /> : null}
       {workspace ? <PendingSalesPanel workspace={workspace} /> : null}
       {submission.phase === "queued" ? (
@@ -1552,112 +634,88 @@ export function SalePage() {
       ) : null}
       <form
         aria-label="Nova venda"
-        className="sale-workspace"
+        className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_minmax(19rem,22rem)] min-[900px]:items-start"
+        data-sale-form=""
         noValidate
         onSubmit={handleSubmitEvent}
       >
-        <div className="sale-main">
-          <fieldset className="sale-section" disabled={locked}>
-            <legend>Itens da venda</legend>
-            <div className="sale-toolbar">
-              <p className="sale-help">
-                Informe os preços: o catálogo não tem preço. A diferença entre
-                tabela e cobrado é a negociação do item e já entra no subtotal.
-              </p>
-              <button
-                className="quiet-button"
-                onClick={handleRefresh}
-                type="button"
-              >
-                Atualizar estoque e perfis
-              </button>
-            </div>
-            {form.items.map((item, index) => (
-              <ItemEditor
-                canRemove={form.items.length > 1}
-                errors={evaluation.errors}
-                index={index}
-                item={item}
-                key={item.draftId}
-                localSearch={localSearch}
-                onChange={handleItemChange}
-                onClearVariant={handleClearVariant}
-                onPick={handlePickVariant}
-                onRemove={handleRemoveItem}
-                organizationId={organizationId}
-                priceHint={suggestionHint(lastPrices, item)}
-                stock={catalog.stock}
-                stockWarning={evaluation.stockWarnings[item.draftId]}
-              />
-            ))}
-            <button
-              className="quiet-button"
-              disabled={form.items.length >= MAX_SALE_ITEMS}
-              onClick={handleAddItem}
-              type="button"
-            >
-              Adicionar item
-            </button>
-          </fieldset>
-          <fieldset className="sale-section" disabled={locked}>
-            <legend>Ajustes da venda</legend>
-            <p className="sale-help">
-              Desconto, acréscimo, frete e sobretaxa de pagamento. Percentuais
-              usam o mesmo subtotal e o total de descontos não pode
-              ultrapassá-lo.
-            </p>
-            {form.adjustments.length === 0 ? (
-              <p className="sale-empty">Nenhum ajuste nesta venda.</p>
-            ) : null}
-            {form.adjustments.map((adjustment, index) => (
-              <AdjustmentEditor
-                adjustment={adjustment}
-                error={
-                  evaluation.errors[adjustmentFieldKey(adjustment.draftId)]
-                }
-                index={index}
-                key={adjustment.draftId}
-                onChange={handleAdjustmentChange}
-                onRemove={handleRemoveAdjustment}
-              />
-            ))}
-            {evaluation.errors[formFieldKeys.adjustments] ? (
-              <p className="sale-error" role="alert">
-                {evaluation.errors[formFieldKeys.adjustments]}
-              </p>
-            ) : null}
-            <button
-              className="quiet-button"
-              disabled={form.adjustments.length >= MAX_SALE_ADJUSTMENTS}
-              onClick={handleAddAdjustment}
-              type="button"
-            >
-              Adicionar ajuste
-            </button>
-          </fieldset>
-          {offline ? null : (
-            <DateSection
+        <div className="grid min-w-0 gap-4">
+          <Card>
+            <fieldset
+              aria-labelledby="sale-items-title"
+              className="grid min-w-0 gap-4"
               disabled={locked}
-              error={evaluation.errors[formFieldKeys.occurredAt]}
-              onChange={handleDateChange}
-              value={form.occurredAtLocal}
-            />
-          )}
+            >
+              <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
+                <CardTitle aria-level={2} id="sale-items-title" role="heading">
+                  Itens
+                </CardTitle>
+                <Button
+                  className="row-span-2"
+                  onClick={handleRefresh}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+                  Atualizar estoque e perfis
+                </Button>
+                <CardDescription>
+                  {itemCount} {itemCount === 1 ? "item" : "itens"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                {form.items.map((item, index) => (
+                  <ItemEditor
+                    canRemove={form.items.length > 1}
+                    errors={evaluation.errors}
+                    index={index}
+                    item={item}
+                    key={item.draftId}
+                    localSearch={localSearch}
+                    onChange={handleItemChange}
+                    onClearVariant={handleClearVariant}
+                    onPick={handlePickVariant}
+                    onRemove={handleRemoveItem}
+                    organizationId={organizationId}
+                    priceHint={suggestionHint(lastPrices, item)}
+                    stock={catalog.stock}
+                    stockWarning={evaluation.stockWarnings[item.draftId]}
+                    summaryLine={summaryLines.get(item.draftId)}
+                  />
+                ))}
+                <Button
+                  className="w-full sm:w-auto sm:justify-self-start"
+                  disabled={form.items.length >= MAX_SALE_ITEMS}
+                  onClick={handleAddItem}
+                  type="button"
+                  variant="outline"
+                >
+                  <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
+                  Adicionar item
+                </Button>
+              </CardContent>
+            </fieldset>
+          </Card>
           <PaymentSection
             disabled={locked}
             errors={evaluation.errors}
-            evaluation={evaluation}
             form={form}
             offline={offline}
             onAcknowledgeReview={handleAcknowledgeReview}
+            onAddAdjustment={handleAddAdjustment}
+            onAdjustmentChange={handleAdjustmentChange}
             onAnticipationChange={handleAnticipationChange}
+            onDateChange={handleDateChange}
             onInstallmentPlanChange={handlePlanChange}
             onInstallmentsChange={handleInstallmentsChange}
             onMethodChange={handleMethodChange}
             onProfileChange={handleProfileChange}
+            onRemoveAdjustment={handleRemoveAdjustment}
             onRetry={handleRefresh}
             profileOptions={profileOptions}
             profilesView={profilesState}
+            singlePaymentText={singlePaymentText(summary)}
           />
         </div>
         <SummaryPanel
@@ -1671,7 +729,12 @@ export function SalePage() {
           onRefresh={handleRefresh}
           showRequired={showRequired}
           submission={submission}
-          summary={evaluation.summary}
+          summary={summary}
+        />
+        <SubmitBar
+          offline={offline}
+          submission={submission}
+          summary={summary}
         />
       </form>
     </div>
