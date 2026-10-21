@@ -352,20 +352,20 @@ test.describe("controle: cada verificação pega a falha", () => {
       grows.textContent = "cresce";
       portal.append(fades, grows);
       document.body.append(portal);
-      fades.animate([{ opacity: 0 }, { opacity: 1 }], 400);
+      // long enough for a busy machine to sample the growing overlay in more than one pose
+      fades.animate([{ opacity: 0 }, { opacity: 1 }], 3000);
       grows.animate(
         [
           { opacity: 0, transform: "scale(0.8)" },
           { opacity: 1, transform: "scale(1)" },
         ],
-        400
+        3000
       );
     });
+    // the recorder samples once per frame: wait until it has seen the growing overlay in a second pose
     await expect
-      .poll(
-        async () => (await readMotion(page)).filter((r) => r.overlay).length
-      )
-      .toBe(2);
+      .poll(async () => overlayMovement(await readMotion(page)).length)
+      .toBe(1);
     const records = await readMotion(page);
     const moves = overlayMovement(records);
     expect(moves).toHaveLength(1);
