@@ -1,3 +1,4 @@
+import InfoIcon from "lucide-react/dist/esm/icons/info";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -200,8 +201,12 @@ export function UiGallery() {
               </DropdownMenu>
 
               <Tooltip>
-                <TooltipTrigger render={<Button variant="outline" />}>
-                  Passe o mouse
+                {/* An icon trigger is named by the text of its tooltip, so a screen reader hears it too. */}
+                <TooltipTrigger
+                  aria-label="Saldo confirmado pelo servidor"
+                  render={<Button size="icon" variant="outline" />}
+                >
+                  <InfoIcon aria-hidden="true" />
                 </TooltipTrigger>
                 <TooltipContent>Saldo confirmado pelo servidor</TooltipContent>
               </Tooltip>

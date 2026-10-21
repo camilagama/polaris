@@ -299,27 +299,26 @@
   .dark {
     color-scheme: dark;
   }
-  @scope ([data-ui]) {
-    :scope {
-      font-feature-settings: "cv11", "ss01";
-      font-variant-numeric: tabular-nums;
-      @apply bg-background font-sans text-foreground text-sm antialiased;
-    }
-    * {
-      @apply border-border;
-    }
-    ::selection {
-      background: color-mix(in oklch, var(--mark) 24%, transparent);
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *,
-      ::before,
-      ::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: 0.01ms !important;
-      }
+  /* Scoped by `:where`, which adds no specificity (preflight.css). */
+  :where([data-ui]) {
+    font-feature-settings: "cv11", "ss01";
+    font-variant-numeric: tabular-nums;
+    @apply bg-background font-sans text-foreground text-sm antialiased;
+  }
+  :where([data-ui], [data-ui] *) {
+    @apply border-border;
+  }
+  :where([data-ui], [data-ui] *)::selection {
+    background: color-mix(in oklch, var(--mark) 24%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :where([data-ui], [data-ui] *),
+    :where([data-ui], [data-ui] *)::before,
+    :where([data-ui], [data-ui] *)::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
     }
   }
 }

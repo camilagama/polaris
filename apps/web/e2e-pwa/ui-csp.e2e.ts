@@ -62,13 +62,20 @@ async function openEveryPrimitive(page: Page) {
     page.getByRole("combobox", { name: "Método de pagamento" })
   ).toContainText("Pix");
 
-  await page.getByRole("button", { name: "Passe o mouse" }).hover();
+  // the icon trigger is named by the text of its tooltip
+  await page
+    .getByRole("button", { name: "Saldo confirmado pelo servidor" })
+    .hover();
   // Base UI's tooltip popup has no tooltip role; the text is what the person reads.
   await expect(page.getByText("Saldo confirmado pelo servidor")).toBeVisible();
   await page.mouse.move(0, 0);
 
   await page.getByRole("button", { name: "Mostrar aviso" }).click();
   await expect(page.getByText("Venda registrada")).toBeVisible();
+  // the viewport is named in Portuguese (Base UI's default is "Notifications")
+  await expect(
+    page.getByRole("region", { name: "Avisos" }).getByText("Venda registrada")
+  ).toBeVisible();
   // Base UI hides the X from assistive technology until the toasts expand (pointer or focus on them).
   await page.getByText("Venda registrada").hover();
   await page.getByRole("button", { name: "Fechar aviso" }).click();

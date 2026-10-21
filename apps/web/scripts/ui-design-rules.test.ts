@@ -2,13 +2,16 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { BROWSER_TARGET } from "../vite.ui";
 
 /**
  * Rules of the interface base that the review would otherwise have to remember (ADR 0103):
  * - colors only in OKLCH in src/ui/ and in the CSS of the base (decision 3);
  * - lucide icons one file at a time, never the whole package (section 2);
  * - every Base UI portal carries `data-ui`, the root of the scoped preflight and page defaults (section 3):
- *   a popup portalled to <body> without it would lose the reset.
+ *   a popup portalled to <body> without it would lose the reset;
+ * - the primitives only fade (DESIGN.md, motion): no `zoom-*` nor `slide-in-from-*`;
+ * - the browser floor of Tailwind 4 is the same in `build.target` and in `browserslist` (section 2).
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
 const uiDir = join(web, "src/ui");
@@ -25,6 +28,10 @@ const NOT_OKLCH = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/;
 const WHOLE_LUCIDE = /from "lucide-react"/;
 const BASE_UI_STYLE = /^base-/;
 const PORTAL = /<[A-Za-z]+\.Portal\b[^>]*>/g;
+const TOAST_VIEWPORT_NAMED =
+  /<ToastPrimitive\.Viewport\b[^>]*\saria-label="Avisos"/;
+const ESBUILD_TARGET = /^([a-z]+)([\d.]+)$/;
+const MOVING = /\b(?:zoom-(?:in|out)|slide-(?:in|out)-from)-/;
 
 const read = (path: string) =>
   readFileSync(join(web, path), "utf8").replace(COMMENT, "");
@@ -63,6 +70,43 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     expect(portals.filter((tag) => !tag.includes('data-ui=""'))).toEqual([]);
   });
 
+  it.each(uiFiles)("%s only fades: no zoom nor slide", (file) => {
+    expect(read(`src/ui/${file}`)).not.toMatch(MOVING);
+  });
+
+  it.each([
+    ["popover.tsx", ["duration-[140ms]"]],
+    ["dropdown-menu.tsx", ["duration-[140ms]"]],
+    ["select.tsx", ["duration-[140ms]"]],
+    ["tooltip.tsx", ["duration-[140ms]"]],
+    ["dialog.tsx", ["duration-[220ms]"]],
+    ["toast.tsx", ["duration-[220ms]", "data-[ending-style]:duration-[140ms]"]],
+  ])("%s fades for the time of DESIGN.md", (file, durations) => {
+    const source = read(`src/ui/${file}`);
+    for (const duration of durations) {
+      expect(source).toContain(duration);
+    }
+    expect(source).not.toContain("duration-100");
+  });
+
+  it("names the toast viewport in Portuguese", () => {
+    expect(read("src/ui/toast.tsx")).toMatch(TOAST_VIEWPORT_NAMED);
+  });
+
+  it("declares the same browser floor to the build and in browserslist", () => {
+    const manifest = JSON.parse(
+      readFileSync(join(web, "package.json"), "utf8")
+    );
+    const asBrowserslist = BROWSER_TARGET.map((target) => {
+      const [, name, version] = ESBUILD_TARGET.exec(target) ?? [];
+      return `${name === "ios" ? "ios_saf" : name} >= ${version}`;
+    });
+    expect(manifest.browserslist).toEqual(asBrowserslist);
+    expect(BROWSER_TARGET).toEqual(
+      expect.arrayContaining(["chrome111", "firefox128", "safari16.4"])
+    );
+  });
+
   it("components.json: the Base UI variant, our aliases and only the official registry (condition 5)", () => {
     const config = JSON.parse(
       readFileSync(join(web, "components.json"), "utf8")
@@ -92,6 +136,9 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     expect("oklch(0.2 0.005 85 / 0.4)").not.toMatch(NOT_OKLCH);
     expect('import { X } from "lucide-react"').toMatch(WHOLE_LUCIDE);
     expect("<Foo.Portal>".match(PORTAL)).toEqual(["<Foo.Portal>"]);
+    expect("data-open:zoom-in-95").toMatch(MOVING);
+    expect("data-[side=top]:slide-in-from-bottom-2").toMatch(MOVING);
+    expect("data-open:fade-in-0").not.toMatch(MOVING);
     expect('const a = "https://x/#fff"; // note'.replace(COMMENT, "")).toMatch(
       NOT_OKLCH
     );

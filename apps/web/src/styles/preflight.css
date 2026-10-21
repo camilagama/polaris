@@ -4,418 +4,425 @@
  * every Base UI portal of src/ui/) and nowhere else. The old screens lean on the browser's defaults that
  * the reset erases (input borders, heading margins, button padding, line height), and their sheets never
  * declared those values, so `@layer legacy` alone cannot keep them; scoped, they stay as they were.
- * One change from the original besides the `@scope` block: `html, :host` is `:scope`, the root of the new
- * interface. To update: copy the new version, redo both changes and the version above. When the last
- * screen migrates and `@layer legacy` goes, the scope goes too and this becomes `@import "tailwindcss"`.
+ * The scope is `:where([data-ui], [data-ui] *)` on the subject of each selector (before a pseudo-element),
+ * and `html, :host` is `:where([data-ui])`, the root of the new interface: `:where` adds no specificity, so
+ * each rule weighs what it weighs in the original, and it works in every browser of the Tailwind 4 floor
+ * (`@scope` does not: Firefox 128 lacks it). To update: copy the new version, redo the scope on each
+ * selector and the version above. When the last screen migrates and `@layer legacy` goes, the scope goes
+ * too and this becomes `@import "tailwindcss"`.
  */
-@scope ([data-ui]) {
-  /*
-    1. Prevent padding and border from affecting element width. (https://github.com/mozdevs/cssremedy/issues/4)
-    2. Remove default margins and padding
-    3. Reset all borders.
-  */
 
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    box-sizing: border-box; /* 1 */
-    padding: 0; /* 2 */
-    margin: 0; /* 2 */
-    border: 0 solid; /* 3 */
+/*
+  1. Prevent padding and border from affecting element width. (https://github.com/mozdevs/cssremedy/issues/4)
+  2. Remove default margins and padding
+  3. Reset all borders.
+*/
+
+:where([data-ui], [data-ui] *),
+:where([data-ui], [data-ui] *)::after,
+:where([data-ui], [data-ui] *)::before,
+:where([data-ui], [data-ui] *)::backdrop,
+:where([data-ui], [data-ui] *)::file-selector-button {
+  box-sizing: border-box; /* 1 */
+  padding: 0; /* 2 */
+  margin: 0; /* 2 */
+  border: 0 solid; /* 3 */
+}
+
+/*
+  1. Use a consistent sensible line-height in all browsers.
+  2. Prevent adjustments of font size after orientation changes in iOS.
+  3. Use a more readable tab size.
+  4. Use the user's configured `sans` font-family by default.
+  5. Use the user's configured `sans` font-feature-settings by default.
+  6. Use the user's configured `sans` font-variation-settings by default.
+  7. Disable tap highlights on iOS.
+*/
+
+:where([data-ui]) {
+  line-height: 1.5; /* 1 */
+  -webkit-text-size-adjust: 100%; /* 2 */
+  tab-size: 4; /* 3 */
+  font-family: --theme(
+    --default-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    "Noto Sans",
+    Arial,
+    sans-serif,
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Segoe UI Symbol",
+    "Noto Color Emoji"
+  ); /* 4 */
+  font-feature-settings: --theme(
+    --default-font-feature-settings,
+    normal
+  ); /* 5 */
+  font-variation-settings: --theme(
+    --default-font-variation-settings,
+    normal
+  ); /* 6 */
+  -webkit-tap-highlight-color: transparent; /* 7 */
+}
+
+/*
+  1. Add the correct height in Firefox.
+  2. Correct the inheritance of border color in Firefox. (https://bugzilla.mozilla.org/show_bug.cgi?id=190655)
+  3. Reset the default border style to a 1px solid border.
+*/
+
+hr:where([data-ui], [data-ui] *) {
+  height: 0; /* 1 */
+  color: inherit; /* 2 */
+  border-top-width: 1px; /* 3 */
+}
+
+/*
+  Add the correct text decoration in Chrome, Edge, and Safari.
+*/
+
+abbr:where([title]):where([data-ui], [data-ui] *) {
+  -webkit-text-decoration: underline dotted;
+  text-decoration: underline dotted;
+}
+
+/*
+  Remove the default font size and weight for headings.
+*/
+
+h1:where([data-ui], [data-ui] *),
+h2:where([data-ui], [data-ui] *),
+h3:where([data-ui], [data-ui] *),
+h4:where([data-ui], [data-ui] *),
+h5:where([data-ui], [data-ui] *),
+h6:where([data-ui], [data-ui] *) {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/*
+  Reset links to optimize for opt-in styling instead of opt-out.
+*/
+
+a:where([data-ui], [data-ui] *) {
+  color: inherit;
+  -webkit-text-decoration: inherit;
+  text-decoration: inherit;
+}
+
+/*
+  Add the correct font weight in Edge and Safari.
+*/
+
+b:where([data-ui], [data-ui] *),
+strong:where([data-ui], [data-ui] *) {
+  font-weight: bolder;
+}
+
+/*
+  1. Use the user's configured `mono` font-family by default.
+  2. Use the user's configured `mono` font-feature-settings by default.
+  3. Use the user's configured `mono` font-variation-settings by default.
+  4. Correct the odd `em` font sizing in all browsers.
+*/
+
+code:where([data-ui], [data-ui] *),
+kbd:where([data-ui], [data-ui] *),
+samp:where([data-ui], [data-ui] *),
+pre:where([data-ui], [data-ui] *) {
+  font-family: --theme(
+    --default-mono-font-family,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  ); /* 1 */
+  font-size: 1em; /* 4 */
+  font-variation-settings: --theme(
+    --default-mono-font-variation-settings,
+    normal
+  ); /* 3 */
+  font-feature-settings: --theme(
+    --default-mono-font-feature-settings,
+    normal
+  ); /* 4 */
+}
+
+/*
+  Add the correct font size in all browsers.
+*/
+
+small:where([data-ui], [data-ui] *) {
+  font-size: 80%;
+}
+
+/*
+  Prevent `sub` and `sup` elements from affecting the line height in all browsers.
+*/
+
+sub:where([data-ui], [data-ui] *),
+sup:where([data-ui], [data-ui] *) {
+  position: relative;
+  font-size: 75%;
+  line-height: 0;
+  vertical-align: baseline;
+}
+
+sub:where([data-ui], [data-ui] *) {
+  bottom: -0.25em;
+}
+
+sup:where([data-ui], [data-ui] *) {
+  top: -0.5em;
+}
+
+/*
+  1. Remove text indentation from table contents in Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=999088, https://bugs.webkit.org/show_bug.cgi?id=201297)
+  2. Correct table border color inheritance in all Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=935729, https://bugs.webkit.org/show_bug.cgi?id=195016)
+  3. Remove gaps between table borders by default.
+*/
+
+table:where([data-ui], [data-ui] *) {
+  text-indent: 0; /* 1 */
+  border-collapse: collapse; /* 3 */
+  border-color: inherit; /* 3 */
+}
+
+/*
+  Use the modern Firefox focus style for all focusable elements.
+*/
+
+:-moz-focusring:where(:not(iframe)):where([data-ui], [data-ui] *) {
+  outline: auto;
+}
+
+/*
+  Add the correct vertical alignment in Chrome and Firefox.
+*/
+
+progress:where([data-ui], [data-ui] *) {
+  vertical-align: baseline;
+}
+
+/*
+  Add the correct display in Chrome and Safari.
+*/
+
+summary:where([data-ui], [data-ui] *) {
+  display: list-item;
+}
+
+/*
+  Make lists unstyled by default.
+*/
+
+ol:where([data-ui], [data-ui] *),
+ul:where([data-ui], [data-ui] *),
+menu:where([data-ui], [data-ui] *) {
+  list-style: none;
+}
+
+/*
+  1. Make replaced elements `display: block` by default. (https://github.com/mozdevs/cssremedy/issues/14)
+  2. Add `vertical-align: middle` to align replaced elements more sensibly by default. (https://github.com/jensimmons/cssremedy/issues/14#issuecomment-634934210)
+      This can trigger a poorly considered lint error in some tools but is included by design.
+*/
+
+img:where([data-ui], [data-ui] *),
+svg:where([data-ui], [data-ui] *),
+video:where([data-ui], [data-ui] *),
+canvas:where([data-ui], [data-ui] *),
+audio:where([data-ui], [data-ui] *),
+iframe:where([data-ui], [data-ui] *),
+embed:where([data-ui], [data-ui] *),
+object:where([data-ui], [data-ui] *) {
+  display: block; /* 1 */
+  vertical-align: middle; /* 2 */
+}
+
+/*
+  Constrain images and videos to the parent width and preserve their intrinsic aspect ratio. (https://github.com/mozdevs/cssremedy/issues/14)
+*/
+
+img:where([data-ui], [data-ui] *),
+video:where([data-ui], [data-ui] *) {
+  max-width: 100%;
+  height: auto;
+}
+
+/*
+  1. Inherit font styles in all browsers.
+  2. Remove border radius in all browsers.
+  3. Remove background color in all browsers.
+  4. Ensure consistent opacity for disabled states in all browsers.
+*/
+
+button:where([data-ui], [data-ui] *),
+input:where([data-ui], [data-ui] *),
+select:where([data-ui], [data-ui] *),
+optgroup:where([data-ui], [data-ui] *),
+textarea:where([data-ui], [data-ui] *),
+:where([data-ui], [data-ui] *)::file-selector-button {
+  font: inherit; /* 1 */
+  font-variation-settings: inherit; /* 1 */
+  font-feature-settings: inherit; /* 1 */
+  color: inherit; /* 1 */
+  letter-spacing: inherit; /* 1 */
+  background-color: transparent; /* 3 */
+  border-radius: 0; /* 2 */
+  opacity: 1; /* 4 */
+}
+
+/*
+  Restore default font weight.
+*/
+
+:where(select:is([multiple], [size])) optgroup:where([data-ui], [data-ui] *) {
+  font-weight: bolder;
+}
+
+/*
+  Restore indentation.
+*/
+
+:where(select:is([multiple], [size]))
+  optgroup
+  option:where([data-ui], [data-ui] *) {
+  padding-inline-start: 20px;
+}
+
+/*
+  Restore space after button.
+*/
+
+:where([data-ui], [data-ui] *)::file-selector-button {
+  margin-inline-end: 4px;
+}
+
+/*
+  Reset the default placeholder opacity in Firefox. (https://github.com/tailwindlabs/tailwindcss/issues/3300)
+*/
+
+:where([data-ui], [data-ui] *)::placeholder {
+  opacity: 1;
+}
+
+/*
+  Set the default placeholder color to a semi-transparent version of the current text color in browsers that do not
+  crash when using `color-mix(…)` with `currentcolor`. (https://github.com/tailwindlabs/tailwindcss/issues/17194)
+*/
+
+@supports (not (-webkit-appearance: -apple-pay-button)) /* Not Safari */ or
+  (contain-intrinsic-size: 1px) /* Safari 17+ */ {
+  :where([data-ui], [data-ui] *)::placeholder {
+    color: color-mix(in oklab, currentcolor 50%, transparent);
   }
-
-  /*
-    1. Use a consistent sensible line-height in all browsers.
-    2. Prevent adjustments of font size after orientation changes in iOS.
-    3. Use a more readable tab size.
-    4. Use the user's configured `sans` font-family by default.
-    5. Use the user's configured `sans` font-feature-settings by default.
-    6. Use the user's configured `sans` font-variation-settings by default.
-    7. Disable tap highlights on iOS.
-  */
-
-  :scope {
-    line-height: 1.5; /* 1 */
-    -webkit-text-size-adjust: 100%; /* 2 */
-    tab-size: 4; /* 3 */
-    font-family: --theme(
-      --default-font-family,
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      Roboto,
-      "Helvetica Neue",
-      "Noto Sans",
-      Arial,
-      sans-serif,
-      "Apple Color Emoji",
-      "Segoe UI Emoji",
-      "Segoe UI Symbol",
-      "Noto Color Emoji"
-    ); /* 4 */
-    font-feature-settings: --theme(
-      --default-font-feature-settings,
-      normal
-    ); /* 5 */
-    font-variation-settings: --theme(
-      --default-font-variation-settings,
-      normal
-    ); /* 6 */
-    -webkit-tap-highlight-color: transparent; /* 7 */
-  }
-
-  /*
-    1. Add the correct height in Firefox.
-    2. Correct the inheritance of border color in Firefox. (https://bugzilla.mozilla.org/show_bug.cgi?id=190655)
-    3. Reset the default border style to a 1px solid border.
-  */
-
-  hr {
-    height: 0; /* 1 */
-    color: inherit; /* 2 */
-    border-top-width: 1px; /* 3 */
-  }
-
-  /*
-    Add the correct text decoration in Chrome, Edge, and Safari.
-  */
-
-  abbr:where([title]) {
-    -webkit-text-decoration: underline dotted;
-    text-decoration: underline dotted;
-  }
-
-  /*
-    Remove the default font size and weight for headings.
-  */
-
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    font-size: inherit;
-    font-weight: inherit;
-  }
-
-  /*
-    Reset links to optimize for opt-in styling instead of opt-out.
-  */
-
-  a {
-    color: inherit;
-    -webkit-text-decoration: inherit;
-    text-decoration: inherit;
-  }
-
-  /*
-    Add the correct font weight in Edge and Safari.
-  */
-
-  b,
-  strong {
-    font-weight: bolder;
-  }
-
-  /*
-    1. Use the user's configured `mono` font-family by default.
-    2. Use the user's configured `mono` font-feature-settings by default.
-    3. Use the user's configured `mono` font-variation-settings by default.
-    4. Correct the odd `em` font sizing in all browsers.
-  */
-
-  code,
-  kbd,
-  samp,
-  pre {
-    font-family: --theme(
-      --default-mono-font-family,
-      ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      Monaco,
-      Consolas,
-      "Liberation Mono",
-      "Courier New",
-      monospace
-    ); /* 1 */
-    font-size: 1em; /* 4 */
-    font-variation-settings: --theme(
-      --default-mono-font-variation-settings,
-      normal
-    ); /* 3 */
-    font-feature-settings: --theme(
-      --default-mono-font-feature-settings,
-      normal
-    ); /* 4 */
-  }
-
-  /*
-    Add the correct font size in all browsers.
-  */
-
-  small {
-    font-size: 80%;
-  }
-
-  /*
-    Prevent `sub` and `sup` elements from affecting the line height in all browsers.
-  */
-
-  sub,
-  sup {
-    position: relative;
-    font-size: 75%;
-    line-height: 0;
-    vertical-align: baseline;
-  }
-
-  sub {
-    bottom: -0.25em;
-  }
-
-  sup {
-    top: -0.5em;
-  }
-
-  /*
-    1. Remove text indentation from table contents in Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=999088, https://bugs.webkit.org/show_bug.cgi?id=201297)
-    2. Correct table border color inheritance in all Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=935729, https://bugs.webkit.org/show_bug.cgi?id=195016)
-    3. Remove gaps between table borders by default.
-  */
-
-  table {
-    text-indent: 0; /* 1 */
-    border-collapse: collapse; /* 3 */
-    border-color: inherit; /* 3 */
-  }
-
-  /*
-    Use the modern Firefox focus style for all focusable elements.
-  */
-
-  :-moz-focusring:where(:not(iframe)) {
-    outline: auto;
-  }
-
-  /*
-    Add the correct vertical alignment in Chrome and Firefox.
-  */
-
-  progress {
-    vertical-align: baseline;
-  }
-
-  /*
-    Add the correct display in Chrome and Safari.
-  */
-
-  summary {
-    display: list-item;
-  }
-
-  /*
-    Make lists unstyled by default.
-  */
-
-  ol,
-  ul,
-  menu {
-    list-style: none;
-  }
-
-  /*
-    1. Make replaced elements `display: block` by default. (https://github.com/mozdevs/cssremedy/issues/14)
-    2. Add `vertical-align: middle` to align replaced elements more sensibly by default. (https://github.com/jensimmons/cssremedy/issues/14#issuecomment-634934210)
-        This can trigger a poorly considered lint error in some tools but is included by design.
-  */
-
-  img,
-  svg,
-  video,
-  canvas,
-  audio,
-  iframe,
-  embed,
-  object {
-    display: block; /* 1 */
-    vertical-align: middle; /* 2 */
-  }
-
-  /*
-    Constrain images and videos to the parent width and preserve their intrinsic aspect ratio. (https://github.com/mozdevs/cssremedy/issues/14)
-  */
-
-  img,
-  video {
-    max-width: 100%;
-    height: auto;
-  }
-
-  /*
-    1. Inherit font styles in all browsers.
-    2. Remove border radius in all browsers.
-    3. Remove background color in all browsers.
-    4. Ensure consistent opacity for disabled states in all browsers.
-  */
-
-  button,
-  input,
-  select,
-  optgroup,
-  textarea,
-  ::file-selector-button {
-    font: inherit; /* 1 */
-    font-variation-settings: inherit; /* 1 */
-    font-feature-settings: inherit; /* 1 */
-    color: inherit; /* 1 */
-    letter-spacing: inherit; /* 1 */
-    background-color: transparent; /* 3 */
-    border-radius: 0; /* 2 */
-    opacity: 1; /* 4 */
-  }
-
-  /*
-    Restore default font weight.
-  */
-
-  :where(select:is([multiple], [size])) optgroup {
-    font-weight: bolder;
-  }
-
-  /*
-    Restore indentation.
-  */
-
-  :where(select:is([multiple], [size])) optgroup option {
-    padding-inline-start: 20px;
-  }
-
-  /*
-    Restore space after button.
-  */
-
-  ::file-selector-button {
-    margin-inline-end: 4px;
-  }
-
-  /*
-    Reset the default placeholder opacity in Firefox. (https://github.com/tailwindlabs/tailwindcss/issues/3300)
-  */
-
-  ::placeholder {
-    opacity: 1;
-  }
-
-  /*
-    Set the default placeholder color to a semi-transparent version of the current text color in browsers that do not
-    crash when using `color-mix(…)` with `currentcolor`. (https://github.com/tailwindlabs/tailwindcss/issues/17194)
-  */
-
-  @supports (not (-webkit-appearance: -apple-pay-button)) /* Not Safari */ or
-    (contain-intrinsic-size: 1px) /* Safari 17+ */ {
-    ::placeholder {
-      color: color-mix(in oklab, currentcolor 50%, transparent);
-    }
-  }
-
-  /*
-    Prevent resizing textareas horizontally by default.
-  */
-
-  textarea {
-    resize: vertical;
-  }
-
-  /*
-    Remove the inner padding in Chrome and Safari on macOS.
-  */
-
-  ::-webkit-search-decoration {
-    -webkit-appearance: none;
-  }
-
-  /*
-    1. Ensure date/time inputs have the same height when empty in iOS Safari.
-    2. Ensure text alignment can be changed on date/time inputs in iOS Safari.
-  */
-
-  ::-webkit-date-and-time-value {
-    min-height: 1lh; /* 1 */
-    text-align: inherit; /* 2 */
-  }
-
-  /*
-    Prevent height from changing on date/time inputs in macOS Safari when the input is set to `display: block`.
-  */
-
-  ::-webkit-datetime-edit {
-    display: inline-flex;
-  }
-
-  /*
-    Remove excess padding from pseudo-elements in date/time inputs to ensure consistent height across browsers.
-  */
-
-  ::-webkit-datetime-edit-fields-wrapper {
-    padding: 0;
-  }
-
-  ::-webkit-datetime-edit,
-  ::-webkit-datetime-edit-year-field,
-  ::-webkit-datetime-edit-month-field,
-  ::-webkit-datetime-edit-day-field,
-  ::-webkit-datetime-edit-hour-field,
-  ::-webkit-datetime-edit-minute-field,
-  ::-webkit-datetime-edit-second-field,
-  ::-webkit-datetime-edit-millisecond-field,
-  ::-webkit-datetime-edit-meridiem-field {
-    padding-block: 0;
-  }
-
-  /*
-    Center dropdown marker shown on inputs with paired `<datalist>`s in Chrome. (https://github.com/tailwindlabs/tailwindcss/issues/18499)
-  */
-
-  ::-webkit-calendar-picker-indicator {
-    line-height: 1;
-  }
-
-  /*
-    Remove the additional `:invalid` styles in Firefox. (https://github.com/mozilla/gecko-dev/blob/2f9eacd9d3d995c937b4251a5557d95d494c9be1/layout/style/res/forms.css#L728-L737)
-  */
-
-  :-moz-ui-invalid {
-    box-shadow: none;
-  }
-
-  /*
-    Correct the inability to style the border radius in iOS Safari.
-  */
-
-  button,
-  input:where([type="button"], [type="reset"], [type="submit"]),
-  ::file-selector-button {
-    appearance: button;
-  }
-
-  /*
-    Correct the cursor style of increment and decrement buttons in Safari.
-  */
-
-  ::-webkit-inner-spin-button,
-  ::-webkit-outer-spin-button {
-    height: auto;
-  }
-
-  /*
-    Make elements with the HTML hidden attribute stay hidden by default.
-  */
-
-  [hidden]:where(:not([hidden="until-found"])) {
-    display: none !important;
-  }
+}
+
+/*
+  Prevent resizing textareas horizontally by default.
+*/
+
+textarea:where([data-ui], [data-ui] *) {
+  resize: vertical;
+}
+
+/*
+  Remove the inner padding in Chrome and Safari on macOS.
+*/
+
+:where([data-ui], [data-ui] *)::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+/*
+  1. Ensure date/time inputs have the same height when empty in iOS Safari.
+  2. Ensure text alignment can be changed on date/time inputs in iOS Safari.
+*/
+
+:where([data-ui], [data-ui] *)::-webkit-date-and-time-value {
+  min-height: 1lh; /* 1 */
+  text-align: inherit; /* 2 */
+}
+
+/*
+  Prevent height from changing on date/time inputs in macOS Safari when the input is set to `display: block`.
+*/
+
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit {
+  display: inline-flex;
+}
+
+/*
+  Remove excess padding from pseudo-elements in date/time inputs to ensure consistent height across browsers.
+*/
+
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-year-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-month-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-day-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-hour-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-minute-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-second-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-millisecond-field,
+:where([data-ui], [data-ui] *)::-webkit-datetime-edit-meridiem-field {
+  padding-block: 0;
+}
+
+/*
+  Center dropdown marker shown on inputs with paired `<datalist>`s in Chrome. (https://github.com/tailwindlabs/tailwindcss/issues/18499)
+*/
+
+:where([data-ui], [data-ui] *)::-webkit-calendar-picker-indicator {
+  line-height: 1;
+}
+
+/*
+  Remove the additional `:invalid` styles in Firefox. (https://github.com/mozilla/gecko-dev/blob/2f9eacd9d3d995c937b4251a5557d95d494c9be1/layout/style/res/forms.css#L728-L737)
+*/
+
+:-moz-ui-invalid:where([data-ui], [data-ui] *) {
+  box-shadow: none;
+}
+
+/*
+  Correct the inability to style the border radius in iOS Safari.
+*/
+
+button:where([data-ui], [data-ui] *),
+input:where([type="button"], [type="reset"], [type="submit"]):where(
+  [data-ui],
+  [data-ui] *
+),
+:where([data-ui], [data-ui] *)::file-selector-button {
+  appearance: button;
+}
+
+/*
+  Correct the cursor style of increment and decrement buttons in Safari.
+*/
+
+:where([data-ui], [data-ui] *)::-webkit-inner-spin-button,
+:where([data-ui], [data-ui] *)::-webkit-outer-spin-button {
+  height: auto;
+}
+
+/*
+  Make elements with the HTML hidden attribute stay hidden by default.
+*/
+
+[hidden]:where(:not([hidden="until-found"])):where([data-ui], [data-ui] *) {
+  display: none !important;
 }

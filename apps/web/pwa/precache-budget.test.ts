@@ -1,10 +1,17 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   budgetProblems,
   FONT_BUDGET_BYTES,
   measurePrecache,
+  PRIMITIVES_BUDGET_GZIP_BYTES,
+  precacheBudgetPlugin,
+  primitiveShares,
   REST_BASELINE_GZIP_BYTES,
   REST_GROWTH_BUDGET_GZIP_BYTES,
+  restBaseline,
 } from "./precache-budget";
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
@@ -22,27 +29,120 @@ describe("precache budget (ADR 0103, section 4)", () => {
       (path) => files[path] as Uint8Array
     );
     expect(size.fonts).toBe(30_000);
+    expect(size.primitives).toBe(0);
     // zeros compress to almost nothing: the rest is gzip, not raw
     expect(size.rest).toBeGreaterThan(0);
     expect(size.rest).toBeLessThan(2000);
   });
 
-  it("passes at the limits and fails one byte past each of them", () => {
-    const atLimit = {
-      fonts: FONT_BUDGET_BYTES,
-      rest: REST_BASELINE_GZIP_BYTES + REST_GROWTH_BUDGET_GZIP_BYTES,
+  it("takes the primitives' share of a chunk out of the rest", () => {
+    const random = new Uint8Array(10_000).map(
+      (_, index) => (index * 7919) % 251
+    );
+    const files: Record<string, Uint8Array> = {
+      "assets/index-abc.js": random,
+      "assets/sale-def.js": random,
     };
-    expect(budgetProblems(atLimit)).toEqual([]);
-    expect(budgetProblems({ ...atLimit, fonts: atLimit.fonts + 1 })).toEqual([
-      expect.stringContaining("fonts"),
+    const read = (path: string) => files[path] as Uint8Array;
+    const whole = measurePrecache(Object.keys(files), read);
+    const shares = primitiveShares([
+      {
+        fileName: "assets/sale-def.js",
+        modules: {
+          "/repo/apps/web/src/sales/sale-page.tsx": { renderedLength: 300 },
+          "/repo/node_modules/.bun/@base-ui+react@1.9.0+x/node_modules/@base-ui/react/esm/dialog/index.js":
+            { renderedLength: 500 },
+          "/repo/node_modules/.bun/@floating-ui+dom@1.8.0/node_modules/@floating-ui/dom/dist/index.mjs":
+            { renderedLength: 200 },
+        },
+      },
+      {
+        fileName: "assets/index-abc.js",
+        modules: {
+          "/repo/node_modules/react/index.js": { renderedLength: 900 },
+          "/repo/node_modules/use-sync-external-store/shim/index.js": {
+            renderedLength: 100,
+          },
+        },
+      },
     ]);
-    expect(budgetProblems({ ...atLimit, rest: atLimit.rest + 1 })).toEqual([
-      expect.stringContaining("rest"),
-    ]);
+    expect([...shares]).toEqual([["assets/sale-def.js", 0.7]]);
+    const split = measurePrecache(Object.keys(files), read, shares);
+    expect(split.primitives + split.rest).toBe(whole.rest);
+    expect(split.primitives / (whole.rest / 2)).toBeCloseTo(0.7, 2);
   });
 
-  it("keeps the ceilings of the ADR: 55 KB of fonts, +40 KB gzip for the rest", () => {
+  it("passes at the limits and fails one byte past each of them", () => {
+    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+    const atLimit = {
+      fonts: FONT_BUDGET_BYTES,
+      primitives: PRIMITIVES_BUDGET_GZIP_BYTES,
+      rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES,
+    };
+    expect(budgetProblems(atLimit, baseline)).toEqual([]);
+    expect(
+      budgetProblems({ ...atLimit, fonts: atLimit.fonts + 1 }, baseline)
+    ).toEqual([expect.stringContaining("fonts")]);
+    expect(
+      budgetProblems(
+        { ...atLimit, primitives: atLimit.primitives + 1 },
+        baseline
+      )
+    ).toEqual([expect.stringContaining("primitives")]);
+    expect(
+      budgetProblems({ ...atLimit, rest: atLimit.rest + 1 }, baseline)
+    ).toEqual([expect.stringContaining("rest")]);
+  });
+
+  it("measures each kind of build against its own baseline (the offline runtime is in the shell or not)", () => {
+    expect(restBaseline(false)).toBe(
+      REST_BASELINE_GZIP_BYTES.offlineRuntimeOff
+    );
+    expect(restBaseline(true)).toBe(REST_BASELINE_GZIP_BYTES.offlineRuntimeOn);
+    // the build of the e2e on the real stack with the runtime on: +87 KB against the other baseline, +9 KB against its own
+    const runtimeOn = { fonts: 52_528, primitives: 0, rest: 1_105_454 };
+    expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([
+      expect.stringContaining("rest"),
+    ]);
+    expect(budgetProblems(runtimeOn, restBaseline(true))).toEqual([]);
+  });
+
+  it("reads the switch of the offline runtime from the build's env, as the app does", () => {
+    const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+    writeFileSync(join(directory, "index.html"), "<!doctype html>");
+    const logFor = (flag: string | undefined) => {
+      const logged: string[] = [];
+      const plugin = precacheBudgetPlugin();
+      (plugin.configResolved as (config: unknown) => void)({
+        env: { VITE_OFFLINE_RUNTIME_ENABLED: flag },
+      });
+      (
+        plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+      ).call(
+        {
+          error: (message: string) => logged.push(message),
+          info: (message: string) => logged.push(message),
+        },
+        { dir: directory }
+      );
+      return logged.join("\n");
+    };
+    try {
+      expect(logFor("true")).toContain(
+        `offline runtime on, baseline ${REST_BASELINE_GZIP_BYTES.offlineRuntimeOn} B`
+      );
+      expect(logFor("false")).toContain(
+        `offline runtime off, baseline ${REST_BASELINE_GZIP_BYTES.offlineRuntimeOff} B`
+      );
+      expect(logFor(undefined)).toContain("offline runtime off");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +40 KB gzip for the rest", () => {
     expect(FONT_BUDGET_BYTES).toBe(55_000);
+    expect(PRIMITIVES_BUDGET_GZIP_BYTES).toBe(95_000);
     expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(40_000);
   });
 });

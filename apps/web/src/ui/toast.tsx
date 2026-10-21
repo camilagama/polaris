@@ -68,6 +68,7 @@ function ToastList() {
   return (
     <ToastPrimitive.Portal data-ui="">
       <ToastPrimitive.Viewport
+        aria-label="Avisos"
         className="fixed top-14 right-(--gutter) left-(--gutter) z-50 mx-auto flex w-auto max-w-[380px] flex-col items-stretch gap-2 md:top-auto md:right-6 md:bottom-6 md:left-auto md:mx-0 md:w-[380px]"
         data-slot="toast-viewport"
       >
@@ -75,8 +76,8 @@ function ToastList() {
           <ToastPrimitive.Root
             className={cn(
               "group/toast relative grid w-full grid-cols-[auto_1fr_auto] gap-x-2.5 rounded-lg bg-popover px-3 py-2.5 text-popover-foreground shadow-md ring-1 ring-foreground/[0.06] transition-[opacity,translate] duration-[220ms] ease-(--ease-soft)",
-              "data-[ending-style]:data-[swipe-direction=right]:translate-x-6 data-[ending-style]:data-[swipe-direction=up]:-translate-y-6 data-[starting-style]:-translate-y-2 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-[ending-style]:duration-[140ms] md:data-[starting-style]:translate-y-2",
-              "motion-reduce:transition-none motion-reduce:data-[starting-style]:translate-y-0"
+              "data-[ending-style]:data-[swipe-direction=right]:translate-x-6 data-[ending-style]:data-[swipe-direction=up]:-translate-y-6 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-[ending-style]:duration-[140ms]",
+              "motion-reduce:transition-none"
             )}
             data-slot="toast"
             key={toast.id}

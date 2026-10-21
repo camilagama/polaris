@@ -19,6 +19,13 @@
     "test:real-devices": "bun real-devices/run.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
+  "browserslist": [
+    "chrome >= 111",
+    "edge >= 111",
+    "firefox >= 128",
+    "safari >= 16.4",
+    "ios_saf >= 16.4"
+  ],
   "dependencies": {
     "@base-ui/react": "1.9.0",
     "@fontsource-variable/geist": "5.3.0",
