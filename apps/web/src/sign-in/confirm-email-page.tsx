@@ -46,7 +46,6 @@ import {
   RESEND_BUTTON,
   RESEND_BUTTON_PENDING,
   RESENT,
-  RESENT_TYPED,
 } from "./password-texts";
 import { challengeToken, useChallenge } from "./turnstile";
 
@@ -115,8 +114,8 @@ export function ConfirmEmailPanel({
   return (
     <EntryScreen support={intro} title={CONFIRM_TITLE}>
       {resent ? (
-        // the address typed on this page gets the same answer with or without an account (AC-49): no promise
-        <EntrySuccess>{email === null ? RESENT_TYPED : RESENT}</EntrySuccess>
+        // the same line for the address of the sign-up and the one typed here: the server may not have sent it
+        <EntrySuccess>{RESENT}</EntrySuccess>
       ) : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form className="flex flex-col gap-4" noValidate onSubmit={submit}>

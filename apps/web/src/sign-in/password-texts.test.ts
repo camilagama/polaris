@@ -80,10 +80,10 @@ describe("the password screen texts", () => {
     expect(texts.confirmSentText("quem@exemplo.com")).toBe(
       "Enviamos um e-mail para quem@exemplo.com. Siga as instruções nele."
     );
-    expect(texts.RESENT_TYPED).toBe(
+    expect(texts.RESENT).toBe(
       "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam."
     );
-    expect(texts.RESENT).toBe("Reenviamos. Veja o spam.");
+    expect(texts.RESENT).not.toContain("Reenviamos");
   });
 
   it("name the toggle by what it does to the field, short on the button and whole for the reader (P5)", () => {

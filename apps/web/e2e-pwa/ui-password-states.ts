@@ -156,6 +156,11 @@ export const passwordStates = {
     await page
       .getByText("Conta do Google: não há senha para trocar.")
       .waitFor();
+    // no form: only the alert and "Cancelar"
+    await page.getByLabel("Senha atual").waitFor({ state: "detached" });
+    await page
+      .getByRole("link", { name: "Cancelar e voltar para Aparelhos" })
+      .waitFor();
     await showChangeAlone(page);
   },
   changePasswordPaused: async (page: Page) => {
@@ -167,6 +172,9 @@ export const passwordStates = {
     );
     await sendChange(page);
     await page.getByText("Espere 14 minutos.", { exact: false }).waitFor();
+    await page
+      .locator('button[aria-disabled="true"]', { hasText: "Trocar senha" })
+      .waitFor();
     await showChangeAlone(page);
   },
   changePasswordRecent: async (page: Page) => {

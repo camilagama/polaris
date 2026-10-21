@@ -492,7 +492,12 @@ test.describe("entrar com e-mail e senha", () => {
     ).toBeVisible();
     await shot(page, "entrar-email-nao-confirmado");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
-    await expect(page.getByText("Reenviamos. Veja o spam.")).toBeVisible();
+    await expect(
+      page.getByText(
+        "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam."
+      )
+    ).toBeVisible();
+    await expect(page.getByText("Reenviamos")).toHaveCount(0);
     const [resend] = callsTo(server, "/api/auth/send-verification-email");
     expect(resend?.body).toEqual({ email: "quem@exemplo.com" });
     expect(resend?.turnstile).toMatch(VERIFICATION_TOKEN);
@@ -881,7 +886,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await expect(page.getByText("Este link venceu. Peça outro.")).toBeVisible();
     await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
-    // an address typed here gets the same answer with or without an account: no "Reenviamos" (P4)
+    // the same line for the address typed here and for the one of the sign-up: no "Reenviamos"
     await expect(
       page.getByText(
         "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam."
@@ -1097,6 +1102,36 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     await shot(page, "trocar-senha-login-antigo");
   });
 
+  test("conta do Google: o formulário some, ficam o aviso e Cancelar", async ({
+    page,
+  }) => {
+    const server = newServer({
+      answers: {
+        "/api/auth/change-password": {
+          body: { code: "CREDENTIAL_ACCOUNT_NOT_FOUND" },
+          status: 400,
+        },
+      },
+    });
+    await openAccount(page, server);
+    await page.getByLabel("Senha atual").fill("qualquer qualquer qualquer");
+    await newPasswordField(page).fill(PASSWORD);
+    await page
+      .getByRole("button", { exact: true, name: "Trocar senha" })
+      .click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Conta do Google: não há senha para trocar."
+    );
+    await expect(page.getByLabel("Senha atual")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { exact: true, name: "Trocar senha" })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Cancelar e voltar para Aparelhos" })
+    ).toHaveAttribute("href", "/devices");
+    await shot(page, "trocar-senha-conta-google");
+  });
+
   test("pausa por tentativas: diz o que fazer nesta tela, não na da entrada (P3)", async ({
     page,
   }) => {
@@ -1121,6 +1156,23 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
       "Muitas tentativas. Espere 14 minutos. Não lembra a senha atual? Saia e use Esqueci a senha."
     );
     await expect(page.locator("main")).not.toContainText("Pausamos");
+    // the button stays in place but off, and names the notice that says why
+    const change = page.getByRole("button", {
+      exact: true,
+      name: "Trocar senha",
+    });
+    await expect(change).toHaveAttribute("aria-disabled", "true");
+    await expect(change).toHaveAccessibleDescription(
+      "Muitas tentativas. Espere 14 minutos. Não lembra a senha atual? Saia e use Esqueci a senha."
+    );
+    // a press does nothing: no second request while paused
+    const sent = callsTo(server, "/api/auth/change-password").length;
+    await change.click({ force: true });
+    await newPasswordField(page).press("Enter");
+    // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
+    await page.waitForTimeout(500);
+    await expect(change).toHaveText("Trocar senha");
+    expect(callsTo(server, "/api/auth/change-password")).toHaveLength(sent);
     await expectNoTechnicalText(page);
     await shot(page, "trocar-senha-pausada");
   });

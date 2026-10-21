@@ -61,6 +61,12 @@ const SIGN_IN_AGAIN = signInPath({
   returnTo: ACCOUNT_SECURITY_PATH,
 });
 
+/** The pause of the changes of password, with the minutes the alert says and the moment it ends. */
+interface Pause {
+  minutes: number;
+  until: number;
+}
+
 type Notice =
   | { kind: "alert"; text: string }
   | { kind: "done" }
@@ -79,6 +85,22 @@ function UiBlock({ children }: { children: ReactNode }) {
     <div className="grid gap-4 pb-4 last:pb-0" data-ui="">
       {children}
     </div>
+  );
+}
+
+/** "Cancelar": back to Aparelhos without saving, a link in the look of an outline button. */
+function CancelLink() {
+  return (
+    <a
+      aria-label={CHANGE_CANCEL_LABEL}
+      className={cn(
+        buttonVariants({ size: "lg", variant: "outline" }),
+        "w-full sm:w-fit"
+      )}
+      href={DEVICES_PATH}
+    >
+      {CHANGE_CANCEL}
+    </a>
   );
 }
 
@@ -131,15 +153,30 @@ function ChangePasswordForm() {
   const [nextError, setNextError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [pending, setPending] = useState(false);
+  const [pause, setPause] = useState<Pause | null>(null);
   const currentId = useId();
   const nextId = useId();
+  const pauseAlertId = useId();
   const currentRef = useRef<HTMLInputElement>(null);
   const nextRef = useRef<HTMLInputElement>(null);
+  const paused = pause !== null;
+
+  // the pause ends by itself: "Trocar senha" comes back without a reload
+  useEffect(() => {
+    if (!pause) {
+      return;
+    }
+    const timer = setTimeout(
+      () => setPause(null),
+      Math.max(0, pause.until - Date.now())
+    );
+    return () => clearTimeout(timer);
+  }, [pause]);
 
   const submit = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
-      if (pending) {
+      if (pending || paused) {
         return;
       }
       hideCurrent();
@@ -182,9 +219,9 @@ function ChangePasswordForm() {
           return;
         case "locked":
           setCurrent("");
-          setNotice({
-            kind: "alert",
-            text: changePausedText(Math.ceil(outcome.retryAfterSeconds / 60)),
+          setPause({
+            minutes: Math.ceil(outcome.retryAfterSeconds / 60),
+            until: Date.now() + outcome.retryAfterSeconds * 1000,
           });
           return;
         case "no-password":
@@ -210,22 +247,28 @@ function ChangePasswordForm() {
           });
       }
     },
-    [current, hideCurrent, hideNext, next, pending]
+    [current, hideCurrent, hideNext, next, paused, pending]
   );
 
   return (
     <>
       {notice?.kind === "done" ||
       notice?.kind === "alert" ||
-      notice?.kind === "no-password" ? (
+      notice?.kind === "no-password" ||
+      pause ? (
         <UiBlock>
-          {notice.kind === "done" ? (
+          {pause ? (
+            <EntryAlert id={pauseAlertId}>
+              {changePausedText(pause.minutes)}
+            </EntryAlert>
+          ) : null}
+          {notice?.kind === "done" ? (
             <EntrySuccess>{CHANGE_DONE}</EntrySuccess>
           ) : null}
-          {notice.kind === "alert" ? (
+          {notice?.kind === "alert" ? (
             <EntryAlert>{notice.text}</EntryAlert>
           ) : null}
-          {notice.kind === "no-password" ? (
+          {notice?.kind === "no-password" ? (
             <EntryAlert>{CHANGE_NO_PASSWORD}</EntryAlert>
           ) : null}
         </UiBlock>
@@ -234,9 +277,14 @@ function ChangePasswordForm() {
         <SessionEndedNotice returnTo={ACCOUNT_SECURITY_PATH} />
       ) : null}
       {/* the login is too old: the only way on is "Entrar de novo", which signs out and clears the form */}
-      {notice?.kind === "recent" ? (
-        <RecentLoginRequired />
-      ) : (
+      {notice?.kind === "recent" ? <RecentLoginRequired /> : null}
+      {/* an account of Google has no password to change: no form, only the alert above and the way out */}
+      {notice?.kind === "no-password" ? (
+        <UiBlock>
+          <CancelLink />
+        </UiBlock>
+      ) : null}
+      {notice?.kind === "recent" || notice?.kind === "no-password" ? null : (
         <UiBlock>
           <Card>
             <CardHeader>
@@ -283,23 +331,14 @@ function ChangePasswordForm() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <SubmitButton
                     className="sm:w-fit"
-                    // an account of Google has no password to change: the alert says so, the button stays off
-                    disabled={notice?.kind === "no-password"}
+                    // the pause is known: the button stays off, naming the alert, until the time is up
+                    offBy={paused ? pauseAlertId : undefined}
                     pending={pending}
                     pendingText={CHANGE_BUTTON_PENDING}
                   >
                     {CHANGE_BUTTON}
                   </SubmitButton>
-                  <a
-                    aria-label={CHANGE_CANCEL_LABEL}
-                    className={cn(
-                      buttonVariants({ size: "lg", variant: "outline" }),
-                      "w-full sm:w-fit"
-                    )}
-                    href={DEVICES_PATH}
-                  >
-                    {CHANGE_CANCEL}
-                  </a>
+                  <CancelLink />
                 </div>
               </form>
             </CardContent>

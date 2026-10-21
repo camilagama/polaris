@@ -645,7 +645,8 @@ export const challengeAlertId = (formId: string) => `${formId}-challenge`;
  * The one button of the form, the width of the card; pending, it says so and takes no second submit. With the
  * challenge script blocked it stays in place but off (`aria-disabled`, not `disabled`: the focus can still reach
  * it and a screen reader reads why, through `aria-describedby` on the alert) and a press does nothing; it goes
- * back to normal when the script loads. Every form with a challenge passes `challenge` and `alertId`.
+ * back to normal when the script loads. Every form with a challenge passes `challenge` and `alertId`. A pause
+ * (`offBy`) turns it off the same way, naming its alert.
  */
 export function SubmitButton({
   alertId,
@@ -653,6 +654,7 @@ export function SubmitButton({
   children,
   className,
   disabled = false,
+  offBy,
   pending,
   pendingText,
   variant = "default",
@@ -664,23 +666,26 @@ export function SubmitButton({
   /** Beyond the full width of the card (the phone), e.g. `sm:w-fit`. */
   className?: string;
   disabled?: boolean;
+  /** The id of the alert that says why the button is off for now (a pause): same `aria-disabled` as a blocked challenge. */
+  offBy?: string | undefined;
   pending: boolean;
   pendingText: string;
   /** "outline" where the action is not the point of the screen ("Reenviar e-mail"). */
   variant?: "default" | "outline";
 }) {
   const blocked = challenge?.state === "blocked";
+  const off = blocked || offBy !== undefined;
   return (
     <Button
       aria-busy={pending || undefined}
-      aria-describedby={blocked ? alertId : undefined}
-      aria-disabled={blocked || undefined}
+      aria-describedby={blocked ? alertId : offBy}
+      aria-disabled={off || undefined}
       className={cn(
         "w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
         className
       )}
       disabled={disabled || pending}
-      onClick={blocked ? (event) => event.preventDefault() : undefined}
+      onClick={off ? (event) => event.preventDefault() : undefined}
       size="lg"
       type="submit"
       variant={variant}
