@@ -29,7 +29,7 @@ Gates e provas por fase:
 
 Testes (Fase 13): [Harness de teste dos Workers](./workers-test-harness.md), com o projeto `admin-workerd`, os alias do `pg`, o Hyperdrive em porta fechada, o guarda de host, a suíte do Admin completo contra PostgreSQL (gate `admin-worker`, Access simulado, production guard), os Workers Web (gate `web-worker`: bindings, `scheduled`, `queue`) e Catalog (gate `catalog-worker`) contra PostgreSQL, o confinamento dos mocks e o que o harness não prova. [Jornadas e2e na pilha real local](./e2e-real.md) (T-125a): os dois builds e previews, o banco e os logins por run, os 7 Hyperdrive, a sessão de teste, o relógio, as jornadas, o relatório de flaky e o que não prova.
 
-Testes (interface, [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md)): [Verificações automáticas de tela](./testes-de-tela.md), com as seis medidas que o revisor de UX fazia à mão (nada sai do contêiner, alvo de toque, axe, só OKLCH e tokens, movimento, foco), a 320, 360 e 1280 px nos dois temas, os casos de controle e como acrescentar uma tela.
+Testes (interface, [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md)): [Verificações automáticas de tela](./testes-de-tela.md), com as seis medidas que o revisor de UX fazia à mão (nada sai do contêiner, alvo de toque, axe, só OKLCH e tokens, movimento, foco), cada uma só nos eixos (largura, ponteiro, tema) que podem mudar o resultado dela, os casos de controle e como acrescentar uma tela.
 
 Testes (Fase 13): a [matriz de concorrência](../architecture/concurrency-matrix.md) lista cada corrida do sistema, a proteção, o gate que a prova e o que falta; a suíte `gates:concurrency` roda só essas corridas, repetidas (`POLARIS_CONCURRENCY_REPEAT`), num PostgreSQL 18 descartável.
 

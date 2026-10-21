@@ -34,7 +34,18 @@ export const REST_BASELINE_GZIP_BYTES = {
 } as const;
 
 const FONT = /\.woff2?$/;
-const GALLERY_CHUNK = /(^|\/)assets\/ui-gallery-[\w-]+\.js$/;
+/**
+ * The chunks that exist for the browser checks only (main.tsx opens them in the `pwa-e2e` build and in the
+ * offline PoC): the gallery of the primitives and the lab of the screens (route `/offline-screens-lab`, which
+ * the interface guardrails use to measure the sale screen). Never in the production shell.
+ */
+const TEST_ONLY_CHUNKS = [
+  { name: "the UI gallery", pattern: /(^|\/)assets\/ui-gallery-[\w-]+\.js$/ },
+  {
+    name: "the screens lab",
+    pattern: /(^|\/)assets\/screens-lab-[\w-]+\.js$/,
+  },
+] as const;
 /**
  * The Sentry SDK chunk exists only in a build with a DSN (ADR 0098), about 35 KB gzip: it is not interface
  * and it is not in the baseline, which is a build without a DSN, so it stays out of the count.
@@ -154,6 +165,16 @@ export function restBaseline(offlineRuntime: boolean): number {
     : REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
 }
 
+/** One problem for each chunk of the browser checks that reached the production build (paths as in `sw.js`). */
+export function testOnlyChunkProblems(paths: readonly string[]): string[] {
+  return TEST_ONLY_CHUNKS.flatMap(({ name, pattern }) => {
+    const found = paths.filter((path) => pattern.test(path));
+    return found.length > 0
+      ? [`${name} is in the production build (${found.join(", ")})`]
+      : [];
+  });
+}
+
 export function budgetProblems(size: PrecacheSize, baseline: number): string[] {
   const problems: string[] = [];
   if (size.fonts > FONT_BUDGET_BYTES) {
@@ -222,13 +243,8 @@ export function precacheBudgetPlugin(): Plugin {
       );
       const baseline = restBaseline(offlineRuntime);
       const problems = budgetProblems(size, baseline);
-      // The gallery of the primitives is for the browser checks only (main.tsx): never in the shell.
-      const gallery = paths.filter((path) => GALLERY_CHUNK.test(path));
-      if (gallery.length > 0) {
-        problems.push(
-          `the UI gallery is in the production build (${gallery.join(", ")})`
-        );
-      }
+      // The gallery and the screens lab are for the browser checks only (main.tsx): never in the shell.
+      problems.push(...testOnlyChunkProblems(paths));
       // The screen is the rest of the growth over the baseline once the interface infrastructure is taken out.
       const growth = size.rest + size.interface - baseline;
       const screen = size.rest - baseline;
