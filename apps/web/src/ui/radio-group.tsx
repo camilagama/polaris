@@ -2,10 +2,12 @@ import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { cn } from "@/lib/utils";
 
+/* `gap-3`: 12 px between choice cards (DESIGN.md), so the 48 px touch areas of two radios never overlap
+   (t180: the ui-guardrails check measures it). */
 function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props) {
   return (
     <RadioGroupPrimitive
-      className={cn("grid w-full gap-2", className)}
+      className={cn("grid w-full gap-3", className)}
       data-slot="radio-group"
       {...props}
     />

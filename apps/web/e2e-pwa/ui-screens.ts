@@ -1,0 +1,166 @@
+/// <reference lib="dom" />
+// Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
+import type { BrowserContext, Page } from "@playwright/test";
+
+/**
+ * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
+ * the CSP of `_headers`. The list grows with each migrated screen: docs/runbooks/testes-de-tela.md says how.
+ *
+ * - `migrated`: a screen of the new interface (`data-ui`, tokens v5.1): touch area of 48 px, and its source
+ *   folder is read by the source rules (`scripts/ui-source-rules.test.ts`).
+ * - `legacy`: a screen of the old CSS, measured as it is (touch area of 44 px, the rule it still follows); it
+ *   cannot change before its migration, so what it fails today is listed in `known`, check by check, and the
+ *   test fails if the list is not exactly what the browser finds (a new fault, or one fixed and still listed).
+ */
+export interface UiScreen {
+  /** Opens and closes every overlay of the screen, so the motion recorder sees them. */
+  exercise?: (page: Page) => Promise<void>;
+  /** Faults of a legacy screen that wait for its migration, by check. Always empty for a migrated screen. */
+  known?: Partial<Record<UiCheck, string[]>>;
+  name: string;
+  /** Opens the screen in one of the states, and waits until it is drawn. */
+  open: (page: Page, context: BrowserContext) => Promise<void>;
+  /** Source folders under `src/` of a migrated screen, for the source rules. */
+  sourceDirs: string[];
+  status: "legacy" | "migrated";
+}
+
+export type UiCheck = "overflow" | "touch" | "axe" | "focus";
+
+export const VIEWPORTS = [
+  { height: 640, name: "320", width: 320 },
+  { height: 740, name: "360", width: 360 },
+  { height: 800, name: "1280", width: 1280 },
+] as const;
+
+export const THEMES = [
+  { colorScheme: "light", name: "claro" },
+  { colorScheme: "dark", name: "escuro" },
+] as const;
+
+const OFFLINE_TEXT =
+  "Sem conexão. Para entrar é preciso internet. Conecte-se e tente de novo.";
+
+/** Opens an overlay by its trigger, waits for it, and closes it with Escape, waiting for the exit too. */
+async function openAndClose(
+  page: Page,
+  trigger: { name: string; role: "button" | "combobox" },
+  popup: { name?: string; role: "dialog" | "listbox" | "menu" }
+) {
+  await page
+    .getByRole(trigger.role, { exact: true, name: trigger.name })
+    .first()
+    .click();
+  const surface = page.getByRole(
+    popup.role,
+    popup.name ? { name: popup.name } : {}
+  );
+  await surface.first().waitFor();
+  await page.keyboard.press("Escape");
+  await surface.waitFor({ state: "detached" });
+}
+
+async function exerciseGallery(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Abrir diálogo", role: "button" },
+    { role: "dialog" }
+  );
+  await page.getByRole("button", { name: "Abrir popover" }).click();
+  await page.getByText("Informe o custo do item para ver a margem.").waitFor();
+  await page.keyboard.press("Escape");
+  await page
+    .getByText("Informe o custo do item para ver a margem.")
+    .waitFor({ state: "detached" });
+  await openAndClose(
+    page,
+    { name: "Abrir menu", role: "button" },
+    { role: "menu" }
+  );
+  await openAndClose(
+    page,
+    { name: "Método de pagamento", role: "combobox" },
+    { role: "listbox" }
+  );
+  await page
+    .getByRole("button", { name: "Saldo confirmado pelo servidor" })
+    .hover();
+  // Base UI's tooltip popup has no tooltip role; the text is what the person reads
+  await page.getByText("Saldo confirmado pelo servidor").waitFor();
+  await page.mouse.move(0, 0);
+  await page
+    .getByText("Saldo confirmado pelo servidor")
+    .waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Mostrar aviso" }).click();
+  await page.getByText("Venda registrada").waitFor();
+  await page.waitForTimeout(300);
+}
+
+async function openLegalPage(page: Page, path: string, title: string) {
+  await page.goto(path);
+  await page.getByRole("heading", { level: 1, name: title }).waitFor();
+  // the title shows while the text still loads: wait for the text
+  await page.getByText("Versão 1. Em vigor desde:").waitFor();
+  await page.evaluate(() => document.fonts.ready);
+}
+
+async function openSignIn(page: Page, query: string) {
+  await page.goto(`/entrar${query}`);
+  await page
+    .getByRole("heading", { level: 1, name: "Entrar no Polaris" })
+    .waitFor();
+  await page.evaluate(() => document.fonts.ready);
+}
+
+// the brand link of the legal frame is named "Polaris, início" and shows "P Polaris": a voice command that says what
+// is on screen misses it. Fixed with the migration of the legal pages (their frame is legacy markup).
+const LEGAL_KNOWN: UiScreen["known"] = {
+  axe: ["label-content-name-mismatch: .app-brand"],
+};
+
+export const SCREENS: UiScreen[] = [
+  {
+    exercise: exerciseGallery,
+    name: "galeria",
+    open: async (page) => {
+      await page.goto("/ui-galeria");
+      await page
+        .getByRole("heading", { name: "Galeria da interface" })
+        .waitFor();
+      await page.evaluate(() => document.fonts.ready);
+    },
+    sourceDirs: ["src/ui-gallery"],
+    status: "migrated",
+  },
+  {
+    name: "entrar",
+    open: (page) => openSignIn(page, ""),
+    sourceDirs: [],
+    status: "legacy",
+  },
+  {
+    name: "entrar sem conexão, sessão acabou",
+    open: async (page, context) => {
+      await openSignIn(page, "?motivo=sessao&voltar=%2Fsales");
+      await context.setOffline(true);
+      await page.getByText(OFFLINE_TEXT).waitFor();
+    },
+    sourceDirs: [],
+    status: "legacy",
+  },
+  {
+    known: LEGAL_KNOWN,
+    name: "política de privacidade",
+    open: (page) =>
+      openLegalPage(page, "/privacidade", "Política de Privacidade"),
+    sourceDirs: [],
+    status: "legacy",
+  },
+  {
+    known: LEGAL_KNOWN,
+    name: "termos de uso",
+    open: (page) => openLegalPage(page, "/termos", "Termos de Uso"),
+    sourceDirs: [],
+    status: "legacy",
+  },
+];

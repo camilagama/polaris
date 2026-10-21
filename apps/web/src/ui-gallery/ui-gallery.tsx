@@ -410,7 +410,7 @@ export function UiGallery() {
                   </FieldLegend>
                   <RadioGroup
                     aria-labelledby="galeria-forma-rotulo"
-                    className="grid-cols-2 md:grid-cols-3"
+                    className="grid-cols-1 md:grid-cols-3 min-[22rem]:grid-cols-2"
                     defaultValue="pix"
                   >
                     {SALE_METHODS.map((method) => (
