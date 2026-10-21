@@ -20,6 +20,8 @@
    `.table`) would beat it on an old screen. Each migrated screen adds its folder here. */
 @source "../ui";
 @source "../ui-gallery";
+/* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
+@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
 
 /*
  * Geist and Geist Mono served by the app (`font-src 'self'`, offline), only the latin subset: the files

@@ -144,15 +144,23 @@ test("venda: com o carrinho montado, o 401 diz 'A venda não foi registrada.' e 
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
   await page.getByRole("button", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill("2");
-  await page.getByLabel("Método de pagamento").selectOption({ label: "Pix" });
-  await page.getByLabel("Perfil de pagamento").selectOption({
-    label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
-  });
+  await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Pix" })
+    .check();
+  await page
+    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    .click();
+  await page
+    .getByRole("option", { exact: true, name: "Sem perfil de pagamento" })
+    .click();
   await page.getByRole("button", { name: "Confirmar venda" }).click();
 
   const notice = page.locator(".session-ended-notice");
   await expect(notice).toContainText(SENTENCE);
   await expect(notice).toContainText(WARNING);
+  // the failure notice of the sale does not take the focus the session notice took
+  await expect(notice).toBeFocused();
   await expect(page.getByRole("alert")).toContainText(
     "A venda não foi registrada."
   );

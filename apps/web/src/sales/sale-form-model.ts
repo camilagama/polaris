@@ -198,6 +198,23 @@ function parsePositiveInteger(text: string): FieldParse<number> {
   return value > MAX_QUANTITY ? { kind: "too_large" } : { kind: "ok", value };
 }
 
+/**
+ * The quantity after one tap of the − or + of the stepper, or null when that tap
+ * is not possible (below 1, above the maximum, or a text that is not a whole
+ * number, which the person fixes by typing). An empty field starts at 1.
+ */
+export function stepQuantity(text: string, step: 1 | -1): string | null {
+  const parse = parsePositiveInteger(text);
+  if (parse.kind === "empty") {
+    return step === 1 ? "1" : null;
+  }
+  if (parse.kind !== "ok") {
+    return null;
+  }
+  const next = parse.value + step;
+  return next < 1 || next > MAX_QUANTITY ? null : String(next);
+}
+
 /** Returns a normalized non-negative BRL string with exactly two decimals. */
 export function parseMoneyText(text: string): FieldParse<string> {
   const trimmed = text.trim();
@@ -724,7 +741,7 @@ export function stockView(
   const { movingAverageCost, quantity } = load.value;
   const costText =
     movingAverageCost === null
-      ? "Custo desconhecido — margem indeterminada."
+      ? "Custo desconhecido. Margem indeterminada."
       : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
   if (quantity === 0) {
     return {
@@ -889,7 +906,7 @@ export const itemFieldKey = (
 export const adjustmentFieldKey = (draftId: string) =>
   `adjustment:${draftId}:value`;
 export const SALE_DATE_HINT =
-  "Deixe vazio para usar agora. Vendas retroativas são aceitas por até 30 dias (data do calendário da organização); datas futuras não são aceitas.";
+  "Vazio é agora. Aceita até 30 dias atrás; nada no futuro.";
 
 const localDateTimePattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
@@ -1031,7 +1048,7 @@ function parsePriceField(
   issues: Issue[]
 ): string | null {
   const parse = parseMoneyText(text);
-  const issue = moneyIssue(parse, "Informe o preço em BRL.");
+  const issue = moneyIssue(parse, "Informe o preço, por exemplo 49,90.");
   if (issue) {
     pushIssue(issues, itemFieldKey(draftId, field), issue.message, issue.empty);
     return null;
@@ -1967,7 +1984,7 @@ function confirmedItems(sale: ConfirmedSaleReadModel): ConfirmedSaleItemView[] {
   return sale.items.map((item) => ({
     costText:
       item.unitCost === null
-        ? "Custo desconhecido — margem indeterminada."
+        ? "Custo desconhecido. Margem indeterminada."
         : `Custo unitário registrado: ${formatBrlAmount(item.unitCost)}.`,
     detail: `${item.quantity} × ${formatBrlAmount(item.chargedUnitPrice)} (tabela ${formatBrlAmount(item.listedUnitPrice)}) = ${formatBrlAmount(
       Money.from(item.chargedUnitPrice)

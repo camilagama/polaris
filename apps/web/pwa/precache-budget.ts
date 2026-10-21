@@ -10,8 +10,10 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * - fonts: the woff2 bytes (already compressed; gzip does not shrink them), at most 55 KB;
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
  *   them to the production build (until then it is zero: no screen uses them);
- * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest), gzipped, at most 40 KB over the
- *   precache before the base, the baseline of the same kind of build.
+ * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest) plus the interface
+ *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB over the precache
+ *   before the base, the baseline of the same kind of build. The build prints the interface infrastructure
+ *   and the screen (the rest of the growth over the baseline) apart, so a review sees what a screen costs.
  * The production build fails past any line. Going past needs a reason in the pull request and the approval of
  * the Arrascaeta; raising a ceiling without that is not allowed.
  */
@@ -45,16 +47,57 @@ const OUTSIDE_THE_BUDGET = /(^|\/)assets\/sentry-sdk-[\w-]+\.js$/;
 const PRIMITIVE_MODULE =
   /[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@base-ui|@floating-ui|reselect)[\\/]/;
 
+/**
+ * The interface infrastructure: the components of `src/ui/`, `cn` (`src/lib/utils.ts`) and the libraries only
+ * they bring (tailwind-merge, class-variance-authority, clsx) and the icon library (lucide-react), whose icons
+ * count here even when a screen imports them. Paid once, with the base; it counts in the +40 KB line, apart
+ * from the screen's own code. Never a primitive module.
+ */
+const INTERFACE_MODULE =
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/](?:ui[\\/]|lib[\\/]utils\.ts$)|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:tailwind-merge|class-variance-authority|clsx|lucide-react)[\\/])/;
+
 export interface PrecacheSize {
   fonts: number;
+  /** The interface infrastructure (see `INTERFACE_MODULE`); counts in the +40 KB line with `rest`. */
+  interface: number;
   primitives: number;
   rest: number;
+}
+
+/** The share of each chunk that is the code of one kind of module, by file name. */
+export type ChunkShares = ReadonlyMap<string, number>;
+
+/** The two kinds of module that are measured by a share of their chunk. */
+export interface PrecacheShares {
+  interface: ChunkShares;
+  primitives: ChunkShares;
 }
 
 /** What a chunk is made of: the rendered length of each module, by module id. */
 export interface ChunkModules {
   fileName: string;
   modules: Record<string, { renderedLength: number }>;
+}
+
+function sharesOf(
+  chunks: readonly ChunkModules[],
+  kind: RegExp
+): Map<string, number> {
+  const shares = new Map<string, number>();
+  for (const chunk of chunks) {
+    let total = 0;
+    let matching = 0;
+    for (const [id, module] of Object.entries(chunk.modules)) {
+      total += module.renderedLength;
+      if (kind.test(id)) {
+        matching += module.renderedLength;
+      }
+    }
+    if (matching > 0 && total > 0) {
+      shares.set(chunk.fileName, matching / total);
+    }
+  }
+  return shares;
 }
 
 /**
@@ -65,34 +108,29 @@ export interface ChunkModules {
 export function primitiveShares(
   chunks: readonly ChunkModules[]
 ): Map<string, number> {
-  const shares = new Map<string, number>();
-  for (const chunk of chunks) {
-    let total = 0;
-    let primitives = 0;
-    for (const [id, module] of Object.entries(chunk.modules)) {
-      total += module.renderedLength;
-      if (PRIMITIVE_MODULE.test(id)) {
-        primitives += module.renderedLength;
-      }
-    }
-    if (primitives > 0 && total > 0) {
-      shares.set(chunk.fileName, primitives / total);
-    }
-  }
-  return shares;
+  return sharesOf(chunks, PRIMITIVE_MODULE);
+}
+
+/** The same measure for the interface infrastructure (`INTERFACE_MODULE`). */
+export function interfaceShares(
+  chunks: readonly ChunkModules[]
+): Map<string, number> {
+  return sharesOf(chunks, INTERFACE_MODULE);
 }
 
 /**
- * Fonts in bytes, the primitives and the rest in gzip bytes, for the files of one precache (paths as in
- * `sw.js`). A chunk with primitives splits its gzip size by their share of it.
+ * Fonts in bytes, the primitives, the interface infrastructure and the rest in gzip bytes, for the files of
+ * one precache (paths as in `sw.js`). A chunk with primitives or interface modules splits its gzip size by
+ * their shares of it.
  */
 export function measurePrecache(
   paths: readonly string[],
   readFile: (path: string) => Uint8Array,
-  shares: ReadonlyMap<string, number> = new Map()
+  shares: Partial<PrecacheShares> = {}
 ): PrecacheSize {
   let fonts = 0;
   let primitives = 0;
+  let infrastructure = 0;
   let rest = 0;
   for (const path of paths.filter((item) => !OUTSIDE_THE_BUDGET.test(item))) {
     const bytes = readFile(path);
@@ -101,11 +139,13 @@ export function measurePrecache(
       continue;
     }
     const gzip = gzipSync(bytes, { level: 9 }).byteLength;
-    const ofPrimitives = Math.round(gzip * (shares.get(path) ?? 0));
+    const ofPrimitives = Math.round(gzip * (shares.primitives?.get(path) ?? 0));
+    const ofInterface = Math.round(gzip * (shares.interface?.get(path) ?? 0));
     primitives += ofPrimitives;
-    rest += gzip - ofPrimitives;
+    infrastructure += ofInterface;
+    rest += gzip - ofPrimitives - ofInterface;
   }
-  return { fonts, primitives, rest };
+  return { fonts, interface: infrastructure, primitives, rest };
 }
 
 export function restBaseline(offlineRuntime: boolean): number {
@@ -126,10 +166,10 @@ export function budgetProblems(size: PrecacheSize, baseline: number): string[] {
       `Base UI primitives: ${size.primitives} B gzip, over the ${PRIMITIVES_BUDGET_GZIP_BYTES} B budget`
     );
   }
-  const growth = size.rest - baseline;
+  const growth = size.rest + size.interface - baseline;
   if (growth > REST_GROWTH_BUDGET_GZIP_BYTES) {
     problems.push(
-      `rest: ${size.rest} B gzip, +${growth} B over the baseline of ${baseline} B, past the +${REST_GROWTH_BUDGET_GZIP_BYTES} B budget`
+      `rest: ${size.rest + size.interface} B gzip (interface infrastructure ${size.interface} B), +${growth} B over the baseline of ${baseline} B, past the +${REST_GROWTH_BUDGET_GZIP_BYTES} B budget`
     );
   }
   return problems;
@@ -138,7 +178,10 @@ export function budgetProblems(size: PrecacheSize, baseline: number): string[] {
 /** Fails the production build of the shell when the precache goes past the budget. */
 export function precacheBudgetPlugin(): Plugin {
   let offlineRuntime = false;
-  let shares = new Map<string, number>();
+  let shares: PrecacheShares = {
+    interface: new Map(),
+    primitives: new Map(),
+  };
   return {
     apply: "build",
     configResolved(config) {
@@ -149,13 +192,15 @@ export function precacheBudgetPlugin(): Plugin {
       if (this.environment && this.environment.name !== "client") {
         return;
       }
-      shares = primitiveShares(
-        Object.values(bundle).flatMap((item) =>
-          item.type === "chunk"
-            ? [{ fileName: item.fileName, modules: item.modules }]
-            : []
-        )
+      const chunks = Object.values(bundle).flatMap((item) =>
+        item.type === "chunk"
+          ? [{ fileName: item.fileName, modules: item.modules }]
+          : []
       );
+      shares = {
+        interface: interfaceShares(chunks),
+        primitives: primitiveShares(chunks),
+      };
     },
     name: "polaris:precache-budget",
     writeBundle(output) {
@@ -184,9 +229,12 @@ export function precacheBudgetPlugin(): Plugin {
           `the UI gallery is in the production build (${gallery.join(", ")})`
         );
       }
-      const growth = size.rest - baseline;
+      // The screen is the rest of the growth over the baseline once the interface infrastructure is taken out.
+      const growth = size.rest + size.interface - baseline;
+      const screen = size.rest - baseline;
+      const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
       this.info(
-        `precache (offline runtime ${offlineRuntime ? "on" : "off"}, baseline ${baseline} B): fonts ${size.fonts} B, Base UI primitives ${size.primitives} B gzip, rest ${size.rest} B gzip (${growth >= 0 ? "+" : ""}${growth} B)`
+        `precache (offline runtime ${offlineRuntime ? "on" : "off"}, baseline ${baseline} B): fonts ${size.fonts} B, Base UI primitives ${size.primitives} B gzip, interface infrastructure ${size.interface} B gzip, screen and the rest ${size.rest} B gzip (${signed(screen)} B over the baseline); rest line ${size.rest + size.interface} B gzip (${signed(growth)} B)`
       );
       if (problems.length > 0) {
         this.error(

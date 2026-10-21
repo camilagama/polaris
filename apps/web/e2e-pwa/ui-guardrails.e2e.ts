@@ -290,6 +290,42 @@ test.describe("controle: cada verificação pega a falha", () => {
     );
   });
 
+  test("6. um campo de várias partes (data e hora) não encerra a volta de Tab antes dos controles que vêm depois", async ({
+    page,
+  }) => {
+    await openScreen(gallery, page);
+    await page.evaluate(() => {
+      const field = document.createElement("input");
+      field.type = "datetime-local";
+      field.setAttribute("aria-label", "Data e hora do controle");
+      field.style.outline = "none";
+      field.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      const after = document.createElement("button");
+      after.textContent = "Depois do campo";
+      after.style.outline = "none";
+      after.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      document.querySelector("main")?.append(field, after);
+    });
+    // each part of the field is a stop of Tab on the same element: the button after it is still reached
+    expect(await focusFaults(page)).toEqual([]);
+  });
+
+  test("6. a volta de Tab começa no alto da página, mesmo depois de um clique no meio dela", async ({
+    page,
+  }) => {
+    await openScreen(gallery, page);
+    await page.evaluate(() => {
+      const main = document.querySelector("main");
+      const first = document.createElement("button");
+      first.textContent = "Primeiro da página";
+      first.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      main?.prepend(first);
+    });
+    // a click in the middle of the page moves the starting point of Tab there
+    await page.getByRole("button", { name: "Limpar" }).first().click();
+    expect(await focusFaults(page)).toEqual([]);
+  });
+
   test("6. um controle que o teclado não alcança é pego", async ({ page }) => {
     await openScreen(gallery, page);
     await page.evaluate(() => {
@@ -316,20 +352,20 @@ test.describe("controle: cada verificação pega a falha", () => {
       grows.textContent = "cresce";
       portal.append(fades, grows);
       document.body.append(portal);
-      fades.animate([{ opacity: 0 }, { opacity: 1 }], 400);
+      // long enough for a busy machine to sample the growing overlay in more than one pose
+      fades.animate([{ opacity: 0 }, { opacity: 1 }], 3000);
       grows.animate(
         [
           { opacity: 0, transform: "scale(0.8)" },
           { opacity: 1, transform: "scale(1)" },
         ],
-        400
+        3000
       );
     });
+    // the recorder samples once per frame: wait until it has seen the growing overlay in a second pose
     await expect
-      .poll(
-        async () => (await readMotion(page)).filter((r) => r.overlay).length
-      )
-      .toBe(2);
+      .poll(async () => overlayMovement(await readMotion(page)).length)
+      .toBe(1);
     const records = await readMotion(page);
     const moves = overlayMovement(records);
     expect(moves).toHaveLength(1);

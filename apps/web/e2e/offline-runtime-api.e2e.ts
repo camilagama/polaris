@@ -279,10 +279,16 @@ async function keepOneSale(page: Page) {
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
   await page.getByRole("button", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill("1");
-  await page.getByLabel("Método de pagamento").selectOption({ label: "Pix" });
-  await page.getByLabel("Perfil de pagamento").selectOption({
-    label: "Sem perfil de pagamento (taxas e prazo desconhecidos)",
-  });
+  await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Pix" })
+    .check();
+  await page
+    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    .click();
+  await page
+    .getByRole("option", { exact: true, name: "Sem perfil de pagamento" })
+    .click();
   await page
     .getByRole("button", { name: "Guardar venda neste aparelho" })
     .click();

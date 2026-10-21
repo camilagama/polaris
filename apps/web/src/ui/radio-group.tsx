@@ -3,11 +3,17 @@ import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { cn } from "@/lib/utils";
 
 /* `gap-3`: 12 px between choice cards (DESIGN.md), so the 48 px touch areas of two radios never overlap
-   (t180: the ui-guardrails check measures it). */
+   (t180: the ui-guardrails check measures it). A group marked `aria-invalid` (the screen has no field to mark: the
+   choice is the field) draws a destructive ring around the whole group and the destructive border of each radio,
+   so the card is not painted: the message below the group says what is missing. The ring is an outline, which
+   takes no space and leaves the layout alone. */
 function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props) {
   return (
     <RadioGroupPrimitive
-      className={cn("grid w-full gap-3", className)}
+      className={cn(
+        "group/radio-group grid w-full gap-3 rounded-lg aria-invalid:outline-2 aria-invalid:outline-destructive/50 aria-invalid:outline-offset-4",
+        className
+      )}
       data-slot="radio-group"
       {...props}
     />
@@ -22,7 +28,7 @@ function RadioGroupItem({ className, ...props }: RadioPrimitive.Root.Props) {
   return (
     <RadioPrimitive.Root
       className={cn(
-        "group/radio-group-item peer relative flex aspect-square size-4 touch:size-[18px] shrink-0 rounded-full border border-input outline-none transition-colors after:absolute after:-inset-2 touch:after:-inset-4 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 group-has-[:focus-visible]/field-label:ring-0! aria-invalid:border-destructive data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground dark:bg-input/30 dark:data-checked:bg-primary",
+        "group/radio-group-item peer relative flex aspect-square size-4 touch:size-[18px] shrink-0 rounded-full border border-input outline-none transition-colors after:absolute after:-inset-2 touch:after:-inset-4 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 group-has-[:focus-visible]/field-label:ring-0! aria-invalid:border-destructive group-aria-invalid/radio-group:border-destructive data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground dark:bg-input/30 dark:data-checked:bg-primary",
         className
       )}
       data-slot="radio-group-item"

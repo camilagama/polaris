@@ -256,48 +256,51 @@ export function ScreensLab() {
     <RuntimeContext.Provider value={runtime}>
       <StaticOrganizationProvider organization={ORGANIZATION}>
         <main className="app-shell" style={{ padding: "1rem" }}>
-          <h1>Laboratório das telas offline</h1>
-          <p data-testid="message">{message}</p>
-          <SyncStatus />
-          <div style={{ display: "grid", gap: "0.5rem", maxWidth: "28rem" }}>
-            <label>
-              Usuário
-              <input onChange={handleUser} value={userId} />
-            </label>
-            <label>
-              <input
-                checked={online}
-                onChange={handleNetwork}
-                type="checkbox"
-              />
-              Rede disponível
-            </label>
-            <label>
-              <input
-                checked={legalMissing}
-                onChange={handleLegal}
-                type="checkbox"
-              />
-              Falta aceitar os termos
-            </label>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-            <button onClick={handleStart} type="button">
-              Iniciar
-            </button>
-            <button onClick={handleSync} type="button">
-              Sincronizar
-            </button>
-            {screen === "customers" ? (
-              <button onClick={handleOtherDevice} type="button">
-                Outro aparelho altera os clientes
+          {/* the lab's own controls: the guardrails hide them to measure the screen alone */}
+          <div data-lab-chrome="">
+            <h1>Laboratório das telas offline</h1>
+            <p data-testid="message">{message}</p>
+            <SyncStatus />
+            <div style={{ display: "grid", gap: "0.5rem", maxWidth: "28rem" }}>
+              <label>
+                Usuário
+                <input onChange={handleUser} value={userId} />
+              </label>
+              <label>
+                <input
+                  checked={online}
+                  onChange={handleNetwork}
+                  type="checkbox"
+                />
+                Rede disponível
+              </label>
+              <label>
+                <input
+                  checked={legalMissing}
+                  onChange={handleLegal}
+                  type="checkbox"
+                />
+                Falta aceitar os termos
+              </label>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              <button onClick={handleStart} type="button">
+                Iniciar
               </button>
-            ) : null}
+              <button onClick={handleSync} type="button">
+                Sincronizar
+              </button>
+              {screen === "customers" ? (
+                <button onClick={handleOtherDevice} type="button">
+                  Outro aparelho altera os clientes
+                </button>
+              ) : null}
+            </div>
+            <p>
+              Registros no servidor simulado:{" "}
+              <span data-testid="server-records">{serverRecords}</span>
+            </p>
           </div>
-          <p>
-            Registros no servidor simulado:{" "}
-            <span data-testid="server-records">{serverRecords}</span>
-          </p>
           {started && screen === "customers" ? <CustomersPage /> : null}
           {started && screen === "products" ? <ProductsPage /> : null}
           {started && screen === "sale" ? <SalePage /> : null}

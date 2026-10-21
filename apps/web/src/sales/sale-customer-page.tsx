@@ -1,5 +1,5 @@
 import { useCurrentOrganization } from "../lib/current-organization";
-import "./sale-page.css";
+import "./sale-legacy.css";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import { saleDetailHref } from "./sale-history-model";
 import { SaleIdForm } from "./sale-id-form";

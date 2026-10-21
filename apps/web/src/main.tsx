@@ -54,8 +54,10 @@ const isLogoutLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-logout-lab";
 const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
+// The lab of the screens is also in the browser-check build: the interface guardrails measure the sale screen there.
 const isScreensLabRoute =
-  isOfflinePocEnabled && window.location.pathname === "/offline-screens-lab";
+  (isOfflinePocEnabled || import.meta.env.MODE === "pwa-e2e") &&
+  window.location.pathname === "/offline-screens-lab";
 // The gallery of the interface primitives (ADR 0103): never in the production build, where no screen uses
 // them yet; the browser checks open it under the shell's CSP.
 const isUiGalleryRoute =

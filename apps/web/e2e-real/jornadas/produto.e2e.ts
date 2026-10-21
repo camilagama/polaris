@@ -1,5 +1,5 @@
-import { cents, numericCents } from "../oracle";
 import { expect, openJourney, test } from "../fixtures";
+import { cents, numericCents } from "../oracle";
 
 /** Journey 2: category and product with its default variant and a list price, on screen; the price in cents. */
 test("produto: categoria, produto e preço de tabela aparecem na lista e na venda", async ({
@@ -58,5 +58,5 @@ test("produto: categoria, produto e preço de tabela aparecem na lista e na vend
     .getByRole("button", { name: new RegExp(productName) });
   await expect(option).toBeVisible();
   await option.click();
-  await expect(item.getByLabel("Preço de tabela (R$)")).toHaveValue(price);
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue(price);
 });

@@ -1,4 +1,5 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
+import SearchIcon from "lucide-react/dist/esm/icons/search";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -8,6 +9,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { orpcClient } from "../lib/orpc";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import type { Loadable } from "./sale-form-model";
@@ -140,71 +146,83 @@ export function VariantSearch({
   );
 
   return (
-    <div className="sale-field sale-picker">
-      <label htmlFor={searchId}>Produto ou variante</label>
-      <input
-        aria-controls={listId}
-        aria-describedby={error ? errorId : undefined}
-        aria-invalid={error ? true : undefined}
-        autoComplete="off"
-        id={searchId}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        placeholder="Buscar por nome, variante ou SKU"
-        ref={inputRef}
-        type="search"
-        value={text}
-      />
-      <p aria-live="polite" className="visually-hidden" role="status">
+    <Field data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={searchId}>Produto ou variante</FieldLabel>
+      <InputGroup>
+        <InputGroupAddon>
+          <SearchIcon aria-hidden="true" />
+        </InputGroupAddon>
+        <InputGroupInput
+          aria-controls={listId}
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={error ? true : undefined}
+          autoComplete="off"
+          id={searchId}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          placeholder="Buscar por nome, variante ou SKU"
+          ref={inputRef}
+          type="search"
+          value={text}
+        />
+      </InputGroup>
+      <p aria-live="polite" className="sr-only" role="status">
         {view.kind === "ready" ? view.status : ""}
       </p>
-      {error ? (
-        <p className="sale-error" id={errorId} role="alert">
-          {error}
-        </p>
-      ) : null}
+      <FieldError id={errorId}>{error}</FieldError>
       {view.kind === "loading" ? (
-        <p className="sale-status" role="status">
+        <p className="text-muted-foreground text-support" role="status">
           {view.message}
         </p>
       ) : null}
       {view.kind === "error" ? (
-        <p className="sale-message is-error" role="alert">
-          {view.message}{" "}
-          <button className="sale-link-button" onClick={retry} type="button">
-            Tentar novamente
-          </button>
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {view.message}
+            <Button onClick={retry} size="sm" type="button" variant="link">
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <p className="sale-empty">{view.message}</p>
+        <p className="text-muted-foreground text-support">{view.message}</p>
       ) : null}
       {view.kind === "ready" ? (
         <>
           <ul
             aria-label="Variantes encontradas"
-            className="sale-pick-list"
+            className="grid max-h-88 gap-1.5 overflow-y-auto"
             id={listId}
           >
             {view.options.map((option) => (
               <li key={option.id}>
                 <button
-                  className="sale-pick-option"
+                  className="focus-ring grid min-h-11 w-full gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:border-input hover:bg-accent"
                   data-variant-id={option.id}
                   onClick={handlePick}
                   type="button"
                 >
-                  <span className="sale-pick-label">{option.label}</span>
-                  <span className={`sale-pick-detail is-${option.tone}`}>
+                  <span className="font-medium [overflow-wrap:anywhere]">
+                    {option.label}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-support",
+                      option.tone === "warning"
+                        ? "text-warning"
+                        : "text-muted-foreground"
+                    )}
+                  >
                     {option.detail}
                   </span>
                 </button>
               </li>
             ))}
           </ul>
-          {view.hint ? <p className="sale-hint">{view.hint}</p> : null}
+          {view.hint ? <FieldDescription>{view.hint}</FieldDescription> : null}
         </>
       ) : null}
-    </div>
+    </Field>
   );
 }

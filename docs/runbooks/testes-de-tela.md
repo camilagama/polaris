@@ -31,13 +31,13 @@ Uma falha diz a verificação (`1. nada sai do contêiner`, `2. área de toque`,
 
 ## Acrescentar uma tela
 
-1. **A tela precisa abrir no build `pwa-e2e` sem servidor** (servido por `scripts/serve-static.mjs`, sob o CSP do `_headers`): uma rota que não chame `/rpc` nem `/api`, ou um estado que o teste consiga montar. Tela que depende de sessão entra pelo e2e real, e a galeria (`/ui-galeria`) é onde o componente novo aparece primeiro.
+1. **A tela precisa abrir no build `pwa-e2e` sem servidor** (servido por `scripts/serve-static.mjs`, sob o CSP do `_headers`): uma rota que não chame `/rpc` nem `/api`, ou um estado que o teste consiga montar. Tela que depende de sessão entra pelo laboratório das telas (`/offline-screens-lab?screen=…`, que o build `pwa-e2e` também traz, com o runtime offline ligado), com o servidor respondido por `page.route` e dados sintéticos; os controles do próprio laboratório ficam em `[data-lab-chrome]` e o estado os esconde no fim, para medir só a tela (a Venda: `e2e-pwa/ui-sale-states.ts`). A galeria (`/ui-galeria`) é onde o componente novo aparece primeiro.
 2. **Registrar em `apps/web/e2e-pwa/ui-screens.ts`**, um item de `SCREENS`:
    - `name`: o nome que aparece no teste;
    - `open(page, context)`: navega e espera a tela desenhada (título, texto principal, `document.fonts.ready`). Um estado diferente (vazio, erro, sem conexão) é outro item da lista, que abre a mesma rota no seu `open`; sem conexão, abra a tela e chame `context.setOffline(true)` depois;
    - `exercise(page)`, se a tela tem sobreposição: abre e fecha cada uma pela interface (veja `exerciseGallery` em `ui-screens.ts`), para o gravador de movimento enxergá-las;
    - `status`: `"migrated"` (tela da interface nova, área de 48 px) ou `"legacy"` (CSS antigo, 44 px);
-   - `sourceDirs`: pastas de `src/` da tela migrada (as regras de fonte leem estas pastas); `[]` na antiga.
+   - `sourceDirs`: pastas ou arquivos de `src/` da tela migrada (as regras de fonte leem estes caminhos; um arquivo serve quando a pasta mistura telas novas e antigas, como `src/sales`); `[]` na antiga.
 3. **Tela migrada passa limpa.** Se a verificação acha uma falha de verdade, corrija a tela; não há `known` para tela migrada (o teste de fonte reprova).
 4. **Tela antiga que ainda falha** lista a falha em `known`, por verificação, com o texto exato que o teste imprime e um comentário com o motivo e quando sai (a migração da tela). O teste exige que o que o navegador acha seja exatamente a lista: falha nova reprova, falha corrigida e ainda listada também. Não use `known` para esconder falha de tela nova.
 5. **CSS novo de tela migrada**: a pasta entra em `@source` de `src/styles/index.css` e em `sourceDirs`; cor só por token; tela antiga não muda (capturas antes e depois no PR).
@@ -51,7 +51,9 @@ Ficam no fim de `ui-guardrails.e2e.ts` (`controle: cada verificação pega a fal
 
 ## O que não cobre
 
-- Só as telas que abrem sem servidor. As telas do app com sessão (Vender, Estoque, Clientes…) entram aqui quando migrarem e tiverem um estado montável; até lá, a medida vale para a galeria e para as telas de entrada e legais.
+- Só as telas que abrem sem servidor ou no laboratório das telas. A Venda entra em seis estados (vazia, com itens, pagamento a crédito, erro nos campos, confirmada, sem conexão); as outras telas do app com sessão (Estoque, Clientes…) entram quando migrarem e tiverem um estado montável. Os estados de erro de servidor e de carregamento da Venda não estão na lista.
+- A barra com o total da Venda é presa ao fim da tela (`sticky`) e flutua sobre os controles de baixo: o estado termina com a página rolada até o fim, onde a barra descansa no fim do formulário; em outra posição a área de toque dos controles sob a barra encontra a do botão, por desenho.
+- A volta de Tab parte do alto da página (um elemento focado ali e removido), mesmo depois de cliques no meio dela, e um campo de várias partes (`datetime-local`, que tem sete paradas no mesmo elemento) não encerra a volta.
 - Sobreposição aberta não passa pelas verificações 1, 2 e 3 (só pela 5): o diálogo aberto, por exemplo, não é medido em toque nem no axe. Para medir, `exercise` pode deixar a sobreposição aberta; hoje ela fecha antes.
 - Contêiner de rolagem vertical: o navegador calcula `overflow-x: auto` quando só `overflow-y: auto` foi escrito, e a medida trata esse contêiner como dono do que tem dentro. Um filho largo demais dentro de uma lista rolável só na vertical não é visto pela verificação 1. Quem escreve esse contêiner deve declarar `overflow-x: hidden` se não quer rolagem lateral, e a verificação passa a olhar o filho.
 - Contraste de texto sobre imagem e estados que só aparecem com dado real. O mapa de contraste dos tokens está em [docs/design/contraste-v5.1.md](../design/contraste-v5.1.md), conferido por `src/styles/contrast.test.ts`.

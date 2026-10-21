@@ -8,7 +8,7 @@ import {
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import "../catalog/categories-page.css";
-import "./sale-page.css";
+import "./sale-legacy.css";
 import "./sale-customer-panel.css";
 import {
   type ActionState,
@@ -339,44 +339,5 @@ export function SaleCustomerPanel({
         </p>
       ) : null}
     </section>
-  );
-}
-
-interface DisclosureProps {
-  organizationId: string;
-  saleId: string;
-}
-
-/** Optional, collapsed entry point shown after a sale is confirmed. */
-export function SaleCustomerDisclosure({
-  organizationId,
-  saleId,
-}: DisclosureProps) {
-  const [open, setOpen] = useState(false);
-  const handleToggle = useCallback(() => setOpen((value) => !value), []);
-  return (
-    <div className="sale-customer-disclosure">
-      <button
-        aria-controls="sale-customer-region"
-        aria-expanded={open}
-        className="quiet-button"
-        onClick={handleToggle}
-        type="button"
-      >
-        {open
-          ? "Ocultar cliente da venda"
-          : "Associar cliente a esta venda (opcional)"}
-      </button>
-      <div hidden={!open} id="sale-customer-region">
-        {open ? (
-          <SaleCustomerPanel
-            headingLevel={3}
-            key={saleId}
-            organizationId={organizationId}
-            saleId={saleId}
-          />
-        ) : null}
-      </div>
-    </div>
   );
 }

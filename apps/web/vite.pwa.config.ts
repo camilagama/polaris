@@ -32,6 +32,11 @@ export default defineConfig({
     emptyOutDir: true,
     outDir: "dist/pwa-e2e",
   },
+  // The sale screen is measured in the lab of the screens, over the real offline runtime (the runtime is off in
+  // the shell of this build: it needs a session, which the static server does not have).
+  define: {
+    "import.meta.env.VITE_OFFLINE_RUNTIME_ENABLED": JSON.stringify("true"),
+  },
   plugins: [
     uiPlugins(),
     react(),
