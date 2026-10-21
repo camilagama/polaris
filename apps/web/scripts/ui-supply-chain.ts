@@ -13,12 +13,16 @@ import { dirname, resolve, sep } from "node:path";
  * The two `@fontsource-variable` packages came with the UI base (ADR 0103, section 2): the Geist files
  * served by the app itself, so it works offline and under `font-src 'self'`; CSS and woff2 only, no code
  * and no dependencies, imported by their latin subset file.
+ * `axe-core` came with the components of the sale (ADR 0103, section 8, item 3): a development dependency only,
+ * evaluated by the Playwright checks inside the page (axe with no violation in each theme). It has no
+ * dependencies and no install script, and nothing under src/ imports it.
  */
 export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
   "@fontsource-variable/geist",
   "@fontsource-variable/geist-mono",
   "@tailwindcss/vite",
+  "axe-core",
   "class-variance-authority",
   "clsx",
   "lucide-react",

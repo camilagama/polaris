@@ -16,6 +16,9 @@ import { BROWSER_TARGET } from "../vite.ui";
 const web = fileURLToPath(new URL("..", import.meta.url));
 const uiDir = join(web, "src/ui");
 const uiFiles = readdirSync(uiDir).filter((file) => file.endsWith(".tsx"));
+const TSX = /\.tsx$/;
+const componentFiles = uiFiles.filter((file) => !file.endsWith(".test.tsx"));
+const AXE_IMPORT = /["'`]axe-core["'`/]/;
 const BASE_CSS = [
   "src/styles/index.css",
   "src/styles/theme.css",
@@ -52,6 +55,50 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     ]) {
       expect(uiFiles).toContain(`${name}.tsx`);
     }
+  });
+
+  it("has the components of the sale (ADR 0103, section 8, item 3)", () => {
+    for (const name of [
+      "alert",
+      "badge",
+      "button-group",
+      "card",
+      "checkbox",
+      "field",
+      "input-group",
+      "radio-group",
+      "separator",
+    ]) {
+      expect(uiFiles).toContain(`${name}.tsx`);
+    }
+  });
+
+  it.each(componentFiles)(
+    "%s has an entry in the /ui-galeria gallery",
+    (file) => {
+      const gallery = read("src/ui-gallery/ui-gallery.tsx");
+      expect(gallery).toContain(`from "@/ui/${file.replace(TSX, "")}"`);
+    }
+  );
+
+  it.each(["radio-group.tsx", "checkbox.tsx"])(
+    "%s grows to a 48 px touch area with touch (16 + 2 × 16 px)",
+    (file) => {
+      expect(read(`src/ui/${file}`)).toContain("touch:after:-inset-4");
+    }
+  );
+
+  it("the app never imports axe-core (a test tool on the interface list)", () => {
+    const sources = (dir: string): string[] =>
+      readdirSync(join(web, dir), { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+          ? sources(`${dir}/${entry.name}`)
+          : [`${dir}/${entry.name}`]
+      );
+    const importers = sources("src").filter((path) =>
+      AXE_IMPORT.test(readFileSync(join(web, path), "utf8"))
+    );
+    expect(importers).toEqual([]);
   });
 
   it.each([...uiFiles.map((file) => `src/ui/${file}`), ...BASE_CSS])(

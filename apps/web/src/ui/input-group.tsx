@@ -1,6 +1,7 @@
 "use client";
 
 import { Input as InputPrimitive } from "@base-ui/react/input";
+import { cva, type VariantProps } from "class-variance-authority";
 import { type ComponentProps, type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
@@ -26,12 +27,45 @@ function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above
     <div
       className={cn(
-        "group/input-group touch-hit-field relative flex h-ctl-md w-full min-w-0 items-center rounded-md border border-input outline-none transition-[border-color,box-shadow] has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot][aria-invalid=true]]:border-destructive has-disabled:bg-muted has-disabled:opacity-60 has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/30 has-[[data-slot][aria-invalid=true]]:focus-within:ring-[3px] has-[[data-slot][aria-invalid=true]]:focus-within:ring-destructive/25 dark:bg-input/30 dark:has-disabled:bg-muted",
+        "group/input-group touch-hit-field relative flex h-ctl-md w-full min-w-0 items-center rounded-md border border-input outline-none transition-[border-color,box-shadow] has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot][aria-invalid=true]]:border-destructive has-disabled:bg-muted has-disabled:opacity-60 has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/30 has-[[data-slot][aria-invalid=true]]:focus-within:ring-[3px] has-[[data-slot][aria-invalid=true]]:focus-within:ring-destructive/25 dark:bg-input/30 dark:has-disabled:bg-muted has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
         className
       )}
       data-slot="input-group"
       onClick={focusOnBand}
       role="group"
+      {...props}
+    />
+  );
+}
+
+/* Text beside the control (the "R$" of a price). It lets the pointer through, so a click on it lands on the band
+   of the group and focuses the control; the text stays in the accessibility tree. Only inline: the block
+   alignments come back with the first screen that needs them. */
+const inputGroupAddonVariants = cva(
+  "pointer-events-none flex h-auto select-none items-center justify-center gap-2 py-1.5 text-muted-foreground text-sm [&>svg:not([class*='size-'])]:size-4",
+  {
+    defaultVariants: {
+      align: "inline-start",
+    },
+    variants: {
+      align: {
+        "inline-end": "order-last pr-3",
+        "inline-start": "order-first pl-3",
+      },
+    },
+  }
+);
+
+function InputGroupAddon({
+  className,
+  align = "inline-start",
+  ...props
+}: ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
+  return (
+    <div
+      className={cn(inputGroupAddonVariants({ align }), className)}
+      data-align={align}
+      data-slot="input-group-addon"
       {...props}
     />
   );
@@ -52,4 +86,4 @@ function InputGroupInput({ className, ...props }: ComponentProps<"input">) {
   );
 }
 
-export { InputGroup, InputGroupInput };
+export { InputGroup, InputGroupAddon, InputGroupInput };

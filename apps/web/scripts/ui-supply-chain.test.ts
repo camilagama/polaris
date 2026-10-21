@@ -275,14 +275,19 @@ describe("source of apps/web/src/ui/, src/ui-gallery/ and src/lib/ (condition 3)
     });
   }
 
-  // The components and their gallery: every rule, the packages included.
+  // The components and their gallery: every rule, the packages included. A component test beside them may also
+  // import the test runner, and nothing else outside the list (it never reaches the bundle).
+  const TEST_RUNNER_IMPORT = "import of vitest";
   it.each(["src/ui", "src/ui-gallery"])(
     "no file under %s/ breaks a rule",
     (folder) => {
       const dir = join(webDir, folder);
       const findings = existsSync(dir)
         ? sourceFiles(dir).flatMap((file) =>
-            scanUiSource(file, readFileSync(file, "utf8"), dir)
+            scanUiSource(file, readFileSync(file, "utf8"), dir).filter(
+              ({ rule }) =>
+                !(TEST_FILE.test(file) && rule === TEST_RUNNER_IMPORT)
+            )
           )
         : [];
       expect(findings).toEqual([]);
