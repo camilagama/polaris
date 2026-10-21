@@ -651,12 +651,21 @@ test.describe("desafio bloqueado (P2)", () => {
       page.getByRole("button", { name: "Tentar de novo" })
     ).toHaveCount(0);
     await expect(page.locator("main")).not.toContainText("Recarregue");
-    // a try with the script missing says the same thing
+    // a try with the script missing does nothing: the button is off (`aria-disabled`, still reachable), names the
+    // alert that says why, and no request leaves the page
     await newPasswordField(page).fill(PASSWORD);
-    await page.getByRole("button", { name: "Trocar senha" }).click();
-    await expect(page.getByRole("alert").first()).toContainText(
-      "abra o link de novo"
+    const change = page.getByRole("button", { name: "Trocar senha" });
+    await expect(change).toHaveAttribute("aria-disabled", "true");
+    await expect(change).toHaveAttribute(
+      "aria-describedby",
+      (await page.getByRole("alert").getAttribute("id")) ?? ""
     );
+    // forced: Playwright treats aria-disabled as not actionable, and a person can still press it
+    await change.click({ force: true });
+    await newPasswordField(page).press("Enter");
+    expect(callsTo(server, "/api/auth/reset-password")).toEqual([]);
+    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(page.getByRole("alert")).toContainText("abra o link de novo");
     await shot(page, "nova-senha-desafio-bloqueado");
   });
 });

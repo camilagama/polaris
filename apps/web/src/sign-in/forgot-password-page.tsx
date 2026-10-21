@@ -85,7 +85,6 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
       {sent ? <EntrySuccess>{FORGOT_SENT}</EntrySuccess> : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form
-        aria-label={FORGOT_TITLE}
         className="flex flex-col gap-4"
         noValidate
         onSubmit={submit}

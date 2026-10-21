@@ -120,7 +120,6 @@ export function ConfirmEmailPanel({
       ) : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form
-        aria-label={CONFIRM_NOT_ARRIVED}
         className="flex flex-col gap-4"
         noValidate
         onSubmit={submit}

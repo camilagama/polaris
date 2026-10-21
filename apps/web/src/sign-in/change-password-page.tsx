@@ -249,7 +249,6 @@ function ChangePasswordForm() {
             </CardHeader>
             <CardContent>
               <form
-                aria-label={CHANGE_TITLE}
                 className="flex flex-col gap-4"
                 noValidate
                 onSubmit={submit}
