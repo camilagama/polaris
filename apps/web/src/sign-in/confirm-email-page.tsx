@@ -119,11 +119,7 @@ export function ConfirmEmailPanel({
         <EntrySuccess>{email === null ? RESENT_TYPED : RESENT}</EntrySuccess>
       ) : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
-      <form
-        className="flex flex-col gap-4"
-        noValidate
-        onSubmit={submit}
-      >
+      <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
         <h2 className="font-semibold text-sm">{CONFIRM_NOT_ARRIVED}</h2>
         {email === null ? (
           <EmailInput

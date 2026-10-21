@@ -84,11 +84,7 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
     <EntryScreen support={FORGOT_SUPPORT} title={FORGOT_TITLE}>
       {sent ? <EntrySuccess>{FORGOT_SENT}</EntrySuccess> : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
-      <form
-        className="flex flex-col gap-4"
-        noValidate
-        onSubmit={submit}
-      >
+      <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
         <EmailInput
           autoComplete="username"
           error={emailError}
