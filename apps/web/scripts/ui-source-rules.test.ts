@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -125,6 +125,9 @@ const sourcesUnder = (dir: string): string[] => {
   const root = join(web, dir);
   if (!existsSync(root)) {
     return [];
+  }
+  if (statSync(root).isFile()) {
+    return [dir];
   }
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = `${dir}/${entry.name}`;

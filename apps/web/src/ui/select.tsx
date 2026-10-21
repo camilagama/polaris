@@ -48,11 +48,14 @@ function SelectTrigger({
       {...props}
     >
       {children}
+      {/* Base UI fills the icon with a "▼" character unless it has children: with the chevron as a child there is
+          no stray text, and `aria-hidden` keeps the icon out of the name of the trigger */}
       <SelectPrimitive.Icon
-        render={
-          <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
-        }
-      />
+        aria-hidden="true"
+        className="pointer-events-none flex items-center"
+      >
+        <ChevronDownIcon className="size-4 text-muted-foreground" />
+      </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
 }

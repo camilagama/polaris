@@ -161,7 +161,7 @@ export function ConfirmedSalePanel({
         <Separator />
         <CardContent className="grid justify-items-start gap-3">
           <a
-            className="focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+            className="touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
             href={saleDetailHref(sale.saleId)}
           >
             Ver detalhes e histórico da venda

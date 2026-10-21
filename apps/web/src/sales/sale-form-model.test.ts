@@ -713,7 +713,7 @@ describe("loading and empty states", () => {
     );
     const none = stockView(balance(0, null));
     expect(none?.text).toContain("Sem estoque");
-    expect(none?.costText).toBe("Custo desconhecido — margem indeterminada.");
+    expect(none?.costText).toBe("Custo desconhecido. Margem indeterminada.");
     const some = stockView(balance(5, "12.340000"));
     expect(some?.text).toBe("Saldo atual: 5 unidades.");
     expect(some?.costText).toBe("Custo médio: R$ 12,34.");
@@ -1363,7 +1363,7 @@ describe("submission state", () => {
       "R$ 88,82",
     ]);
     expect(state.sale.items[0]?.costText).toBe(
-      "Custo desconhecido — margem indeterminada."
+      "Custo desconhecido. Margem indeterminada."
     );
     const processing = state.sale.paymentDetails.find(
       (detail) => detail.label === "Taxa de processamento"

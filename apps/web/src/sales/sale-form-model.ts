@@ -741,7 +741,7 @@ export function stockView(
   const { movingAverageCost, quantity } = load.value;
   const costText =
     movingAverageCost === null
-      ? "Custo desconhecido — margem indeterminada."
+      ? "Custo desconhecido. Margem indeterminada."
       : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
   if (quantity === 0) {
     return {
@@ -1984,7 +1984,7 @@ function confirmedItems(sale: ConfirmedSaleReadModel): ConfirmedSaleItemView[] {
   return sale.items.map((item) => ({
     costText:
       item.unitCost === null
-        ? "Custo desconhecido — margem indeterminada."
+        ? "Custo desconhecido. Margem indeterminada."
         : `Custo unitário registrado: ${formatBrlAmount(item.unitCost)}.`,
     detail: `${item.quantity} × ${formatBrlAmount(item.chargedUnitPrice)} (tabela ${formatBrlAmount(item.listedUnitPrice)}) = ${formatBrlAmount(
       Money.from(item.chargedUnitPrice)

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
+import { saleStates } from "./ui-sale-states";
 
 /**
  * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
@@ -20,7 +21,7 @@ export interface UiScreen {
   name: string;
   /** Opens the screen in one of the states, and waits until it is drawn. */
   open: (page: Page, context: BrowserContext) => Promise<void>;
-  /** Source folders under `src/` of a migrated screen, for the source rules. */
+  /** Source folders (or files) under `src/` of a migrated screen, for the source rules. */
   sourceDirs: string[];
   status: "legacy" | "migrated";
 }
@@ -96,6 +97,39 @@ async function exerciseGallery(page: Page) {
   await page.waitForTimeout(300);
 }
 
+/** The files of the sale screen on the new interface: the other screens of `src/sales` are still the old CSS. */
+const SALE_SOURCES = [
+  "src/sales/offline-sale-panels.tsx",
+  "src/sales/sale-confirmed-panel.tsx",
+  "src/sales/sale-fields.tsx",
+  "src/sales/sale-item-editor.tsx",
+  "src/sales/sale-page.tsx",
+  "src/sales/sale-payment-section.tsx",
+  "src/sales/sale-summary-panel.tsx",
+  "src/sales/sale-variant-picker.tsx",
+];
+
+/** One state of the sale screen: the same screen, opened in the state the test builds (`ui-sale-states.ts`). */
+const saleScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `venda ${name}`,
+  open,
+  sourceDirs: SALE_SOURCES,
+  status: "migrated",
+});
+
+async function exerciseSalePayment(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Perfil de pagamento", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
 async function openLegalPage(page: Page, path: string, title: string) {
   await page.goto(path);
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
@@ -163,4 +197,10 @@ export const SCREENS: UiScreen[] = [
     sourceDirs: [],
     status: "legacy",
   },
+  saleScreen("vazia", saleStates.empty),
+  saleScreen("com itens", saleStates.withItems),
+  saleScreen("pagamento a crédito", saleStates.payment, exerciseSalePayment),
+  saleScreen("erro nos campos", saleStates.fieldErrors),
+  saleScreen("confirmada", saleStates.confirmed),
+  saleScreen("sem conexão", saleStates.offline),
 ];

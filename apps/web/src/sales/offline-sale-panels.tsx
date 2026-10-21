@@ -15,6 +15,8 @@ import type { QueuedSaleView } from "./sale-form-model";
 
 const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+/** A link on a line of its own (or in a row of controls): it gets the 48 px touch area; a link inside a sentence does not need it. */
+const STANDALONE_LINK = `touch-hit ${LINK}`;
 
 /** Said at the top of the sale form while there is no connection. */
 export function OfflineSaleNotice() {
@@ -25,7 +27,11 @@ export function OfflineSaleNotice() {
       <AlertDescription>
         Pode vender: a venda fica guardada neste aparelho e vai quando a conexão
         voltar. O estoque é o do aparelho; se não bastar, o servidor recusa e a
-        venda fica em <a href="/attention">Pendências</a> para você corrigir.
+        venda fica em{" "}
+        <a className={LINK} href="/attention">
+          Pendências
+        </a>{" "}
+        para você corrigir.
       </AlertDescription>
     </Alert>
   );
@@ -81,7 +87,7 @@ export function QueuedSalePanel({
               </AlertDescription>
             </Alert>
           ) : null}
-          <a className={LINK} href="/attention">
+          <a className={STANDALONE_LINK} href="/attention">
             Acompanhar em Pendências
           </a>
           <p className="text-muted-foreground text-support">
@@ -118,7 +124,7 @@ export function PendingSalesCard({ workspace }: { workspace: LocalWorkspace }) {
               const attention = ATTENTION_STATES.has(sale.state);
               return (
                 <li
-                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-border border-t pt-2 first:border-t-0 first:pt-0"
+                  className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-border border-t pt-2 first:border-t-0 first:pt-0"
                   key={sale.commandId}
                 >
                   <span className="tabular-nums">
@@ -130,7 +136,10 @@ export function PendingSalesCard({ workspace }: { workspace: LocalWorkspace }) {
                       {pendingStateLabels[sale.state]}
                     </Badge>
                     {attention ? (
-                      <a className={`${LINK} text-support`} href="/attention">
+                      <a
+                        className={`${STANDALONE_LINK} text-support`}
+                        href="/attention"
+                      >
                         Resolver em Pendências
                       </a>
                     ) : null}

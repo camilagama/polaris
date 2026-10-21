@@ -351,7 +351,7 @@ export function PaymentSection({
               )}
               aria-invalid={methodError ? true : undefined}
               aria-label="Método de pagamento"
-              className="grid-cols-2 md:grid-cols-3"
+              className="grid-cols-1 md:grid-cols-3 min-[22rem]:grid-cols-2"
               disabled={disabled}
               id="sale-method"
               onValueChange={handleMethod}

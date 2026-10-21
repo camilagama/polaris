@@ -16,6 +16,8 @@ const THEMES = [
   { colorScheme: "dark", name: "sistema escuro", stored: null },
 ] as const;
 
+// the browser resolves `oklch(… / 50%)` to a color with an alpha of 0.5
+const HALF_STRENGTH = /\/ 0\.5\)$/;
 const ANTICIPATION_HELP = /^É uma intenção registrada na venda/;
 
 async function openGallery(page: Page, stored: string | null) {
@@ -217,6 +219,83 @@ test("com toque, radio, caixa de seleção, botões do contador e campo com R$ t
     expect(area.height).toBeGreaterThanOrEqual(48);
     expect(area.width).toBeGreaterThanOrEqual(48);
   }
+});
+
+test('o nome do seletor é só o rótulo: o ícone do gatilho sai da leitura e não deixa o "▼" no texto', async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const trigger = page.getByRole("combobox", {
+    exact: true,
+    name: "Método de pagamento",
+  });
+  await expect(trigger).toHaveAccessibleName("Método de pagamento");
+  // the icon is hidden from the screen reader and is no text of the trigger (Base UI would write a "▼" in it)
+  await expect(trigger.locator("> span[aria-hidden]")).toHaveAttribute(
+    "aria-hidden",
+    "true"
+  );
+  expect(
+    await trigger.evaluate((element) => element.textContent)
+  ).not.toContain("▼");
+});
+
+test("o grupo de rádios marcado como inválido mostra o anel no grupo e a borda nos rádios, sem pintar os cartões", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const group = page.getByRole("radiogroup", { name: "Forma de pagamento" });
+  const read = () =>
+    group.evaluate((element) => {
+      // the destructive token as the browser resolves it
+      const probe = document.createElement("span");
+      probe.style.border = "1px solid var(--destructive)";
+      document.body.append(probe);
+      const destructive = getComputedStyle(probe).borderTopColor;
+      probe.remove();
+      const radio = element.querySelector("[role=radio]");
+      const card = element.querySelector("label");
+      if (!(radio && card)) {
+        throw new Error("the group has no radio or card");
+      }
+      return {
+        cardBorder: getComputedStyle(card).borderTopColor,
+        destructive,
+        groupOutlineColor: getComputedStyle(element).outlineColor,
+        groupOutlineStyle: getComputedStyle(element).outlineStyle,
+        groupOutlineWidth: getComputedStyle(element).outlineWidth,
+        radioBorder: getComputedStyle(radio).borderTopColor,
+      };
+    });
+  const valid = await read();
+  expect(valid.groupOutlineStyle).toBe("none");
+  expect(valid.radioBorder).not.toBe(valid.destructive);
+
+  await group.evaluate((element) =>
+    element.setAttribute("aria-invalid", "true")
+  );
+  // the border of the radio fades to the new color: read it when the transition has ended
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !==
+            Number.POSITIVE_INFINITY
+        )
+        .map((animation) => animation.finished)
+    )
+  );
+  const invalid = await read();
+  expect(invalid.groupOutlineStyle).toBe("solid");
+  expect(invalid.groupOutlineWidth).toBe("2px");
+  // the ring is the destructive token (at half strength): not transparent, not the border color
+  expect(invalid.groupOutlineColor).not.toBe(valid.groupOutlineColor);
+  expect(invalid.groupOutlineColor).toMatch(HALF_STRENGTH);
+  expect(invalid.radioBorder).toBe(invalid.destructive);
+  // the cards keep their own border: the message under the group says what is missing, not six red cards
+  expect(invalid.cardBorder).toBe(valid.cardBorder);
 });
 
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({

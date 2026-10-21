@@ -290,6 +290,42 @@ test.describe("controle: cada verificação pega a falha", () => {
     );
   });
 
+  test("6. um campo de várias partes (data e hora) não encerra a volta de Tab antes dos controles que vêm depois", async ({
+    page,
+  }) => {
+    await openScreen(gallery, page);
+    await page.evaluate(() => {
+      const field = document.createElement("input");
+      field.type = "datetime-local";
+      field.setAttribute("aria-label", "Data e hora do controle");
+      field.style.outline = "none";
+      field.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      const after = document.createElement("button");
+      after.textContent = "Depois do campo";
+      after.style.outline = "none";
+      after.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      document.querySelector("main")?.append(field, after);
+    });
+    // each part of the field is a stop of Tab on the same element: the button after it is still reached
+    expect(await focusFaults(page)).toEqual([]);
+  });
+
+  test("6. a volta de Tab começa no alto da página, mesmo depois de um clique no meio dela", async ({
+    page,
+  }) => {
+    await openScreen(gallery, page);
+    await page.evaluate(() => {
+      const main = document.querySelector("main");
+      const first = document.createElement("button");
+      first.textContent = "Primeiro da página";
+      first.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      main?.prepend(first);
+    });
+    // a click in the middle of the page moves the starting point of Tab there
+    await page.getByRole("button", { name: "Limpar" }).first().click();
+    expect(await focusFaults(page)).toEqual([]);
+  });
+
   test("6. um controle que o teclado não alcança é pego", async ({ page }) => {
     await openScreen(gallery, page);
     await page.evaluate(() => {

@@ -439,7 +439,7 @@ describe("sale detail", () => {
       statusTone: "confirmed",
     });
     expect(view.sale.items[0]).toMatchObject({
-      costText: "Custo desconhecido — margem indeterminada.",
+      costText: "Custo desconhecido. Margem indeterminada.",
       label: "Camiseta — Azul / M",
     });
     expect(view.sale.totals.map((row) => row.value)).toEqual([

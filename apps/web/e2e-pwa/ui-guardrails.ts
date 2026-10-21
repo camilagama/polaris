@@ -502,16 +502,30 @@ function tabbable(selector: string) {
 export async function focusFaults(page: Page) {
   await page.evaluate(() => {
     (document.activeElement as HTMLElement | null)?.blur();
+    // Tab starts where the last click or focus was: a screen the test has filled in would skip what is above
+    // that point. An element focused at the top of the page and then removed leaves the starting point there,
+    // as for a person who just arrived.
+    window.scrollTo(0, 0);
+    const anchor = document.createElement("span");
+    anchor.tabIndex = -1;
+    document.body.prepend(anchor);
+    anchor.focus();
+    anchor.remove();
   });
   const reached = new Set<number>();
   const faults: string[] = [];
   let ended = false;
+  let previous: number | undefined;
   for (let step = 0; step < MAX_TAB_STOPS && !ended; step += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the real keyboard moves one stop at a time
     await page.keyboard.press("Tab");
     const stop = await inPage(page, describeFocus);
-    ended = !stop || reached.has(stop.key);
-    if (stop && !ended) {
+    // the same element twice in a row is a control of several parts (the fields of a `datetime-local`): the
+    // browser has not left it yet; the same element after others is the loop closing
+    const insideSameControl = stop !== null && stop.key === previous;
+    ended = !stop || (reached.has(stop.key) && !insideSameControl);
+    previous = stop?.key;
+    if (stop && !ended && !insideSameControl) {
       reached.add(stop.key);
       if (!stop.drawn) {
         faults.push(`${stop.label} não mostra o contorno de foco de 3 px`);

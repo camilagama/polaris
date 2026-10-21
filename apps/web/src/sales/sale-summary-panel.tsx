@@ -455,7 +455,7 @@ interface SubmitBarProps {
  */
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
-    <div className="sticky bottom-0 z-10 -mx-4 flex items-center justify-between gap-3 border-border border-t bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden">
+    <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-border border-t bg-background/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden">
       <div className="grid min-w-0 shrink-0">
         <span className="text-muted-foreground text-xs">Total devido</span>
         {summary ? (
