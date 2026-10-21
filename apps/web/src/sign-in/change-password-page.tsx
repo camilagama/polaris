@@ -1,10 +1,17 @@
+import KeyRoundIcon from "lucide-react/dist/esm/icons/key-round";
 import {
   type FormEvent,
+  type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
+import { Button, buttonVariants } from "@/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Separator } from "@/ui/separator";
 import { NotFoundPage } from "../app-shell/not-found-page";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
 import { signInPath } from "../lib/sign-in-path";
@@ -13,14 +20,20 @@ import { useLogout } from "../offline/runtime/logout-control";
 import { useEntryMethods } from "./entry-methods";
 import {
   EntryAlert,
+  EntryRetry,
+  EntryStatus,
   EntrySuccess,
-  PasswordField,
+  PasswordInput,
+  SubmitButton,
   useReveal,
-} from "./entry-parts";
+} from "./entry-ui";
 import { changeOutcome, newPasswordProblem, postAuth } from "./password-model";
 import {
   CHANGE_BUTTON,
   CHANGE_BUTTON_PENDING,
+  CHANGE_CANCEL,
+  CHANGE_CANCEL_LABEL,
+  CHANGE_CARD_TITLE,
   CHANGE_DONE,
   CHANGE_NO_PASSWORD,
   CHANGE_RECENT_BUTTON,
@@ -37,10 +50,11 @@ import {
   PAGE_UNAVAILABLE,
   PASSWORD_REQUIRED,
   PASSWORD_RULE,
-  TRY_AGAIN,
 } from "./password-texts";
 
 const ACCOUNT_SECURITY_PATH = "/conta/seguranca";
+/** "Cancelar" goes back to where the page is reached from, without saving. */
+const DEVICES_PATH = "/devices";
 /** A live but old login: "Sair" (the queue protected first), then back here, as in Aparelhos. */
 const SIGN_IN_AGAIN = signInPath({
   reason: "recente",
@@ -50,24 +64,48 @@ const SIGN_IN_AGAIN = signInPath({
 type Notice =
   | { kind: "alert"; text: string }
   | { kind: "done" }
+  | { kind: "no-password" }
   | { kind: "recent" }
   | { kind: "session-ended" }
   | null;
+
+/**
+ * A block of the page in the new interface. The page is inside the app shell, whose notices and dialogs are still
+ * the old markup and keep to themselves: only what is drawn here is under `data-ui`.
+ */
+function UiBlock({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid gap-4" data-ui="">
+      {children}
+    </div>
+  );
+}
 
 function RecentLoginRequired() {
   const logout = useLogout(SIGN_IN_AGAIN);
   return (
     <>
-      <EntryAlert>{CHANGE_RECENT_REQUIRED}</EntryAlert>
-      {logout.message ? <p>{logout.message}</p> : null}
-      <button
-        className="primary-button"
-        disabled={logout.busy}
-        onClick={logout.start}
-        type="button"
-      >
-        {CHANGE_RECENT_BUTTON}
-      </button>
+      <UiBlock>
+        <Card>
+          <CardContent className="grid gap-3">
+            <EntryAlert>{CHANGE_RECENT_REQUIRED}</EntryAlert>
+            {logout.message ? (
+              <p className="text-muted-foreground text-support">
+                {logout.message}
+              </p>
+            ) : null}
+            <Button
+              className="w-full sm:w-fit"
+              disabled={logout.busy}
+              onClick={logout.start}
+              size="lg"
+              type="button"
+            >
+              {CHANGE_RECENT_BUTTON}
+            </Button>
+          </CardContent>
+        </Card>
+      </UiBlock>
       {logout.blocked ? (
         <LogoutDialog
           blocked={logout.blocked}
@@ -92,6 +130,8 @@ function ChangePasswordForm() {
   const [nextError, setNextError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [pending, setPending] = useState(false);
+  const currentId = useId();
+  const nextId = useId();
   const currentRef = useRef<HTMLInputElement>(null);
   const nextRef = useRef<HTMLInputElement>(null);
 
@@ -149,7 +189,7 @@ function ChangePasswordForm() {
         case "no-password":
           setCurrent("");
           setNext("");
-          setNotice({ kind: "alert", text: CHANGE_NO_PASSWORD });
+          setNotice({ kind: "no-password" });
           return;
         case "recent-required":
           // the form is hidden: nothing typed stays in memory
@@ -174,49 +214,97 @@ function ChangePasswordForm() {
 
   return (
     <>
-      {notice?.kind === "done" ? (
-        <EntrySuccess>{CHANGE_DONE}</EntrySuccess>
+      {notice?.kind === "done" ||
+      notice?.kind === "alert" ||
+      notice?.kind === "no-password" ? (
+        <UiBlock>
+          {notice.kind === "done" ? (
+            <EntrySuccess>{CHANGE_DONE}</EntrySuccess>
+          ) : null}
+          {notice.kind === "alert" ? (
+            <EntryAlert>{notice.text}</EntryAlert>
+          ) : null}
+          {notice.kind === "no-password" ? (
+            <EntryAlert>{CHANGE_NO_PASSWORD}</EntryAlert>
+          ) : null}
+        </UiBlock>
       ) : null}
-      {notice?.kind === "alert" ? <EntryAlert>{notice.text}</EntryAlert> : null}
-      {notice?.kind === "recent" ? <RecentLoginRequired /> : null}
       {notice?.kind === "session-ended" ? (
         <SessionEndedNotice returnTo={ACCOUNT_SECURITY_PATH} />
       ) : null}
       {/* the login is too old: the only way on is "Entrar de novo", which signs out and clears the form */}
-      {notice?.kind === "recent" ? null : (
-        <form className="sign-in-form" noValidate onSubmit={submit}>
-          <PasswordField
-            autoComplete="current-password"
-            error={currentError}
-            fieldRef={currentRef}
-            label={CURRENT_PASSWORD_LABEL}
-            name="current-password"
-            onChange={setCurrent}
-            onToggle={toggleCurrent}
-            value={current}
-            visible={currentVisible}
-          />
-          <PasswordField
-            autoComplete="new-password"
-            error={nextError}
-            fieldRef={nextRef}
-            hint={PASSWORD_RULE}
-            label={NEW_PASSWORD_LABEL}
-            name="new-password"
-            onChange={setNext}
-            onToggle={toggleNext}
-            value={next}
-            visible={nextVisible}
-          />
-          <button
-            aria-busy={pending}
-            className="sign-in-primary"
-            disabled={pending}
-            type="submit"
-          >
-            {pending ? CHANGE_BUTTON_PENDING : CHANGE_BUTTON}
-          </button>
-        </form>
+      {notice?.kind === "recent" ? (
+        <RecentLoginRequired />
+      ) : (
+        <UiBlock>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <KeyRoundIcon
+                  aria-hidden="true"
+                  className="size-4 text-muted-foreground"
+                />
+                {CHANGE_CARD_TITLE}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                aria-label={CHANGE_TITLE}
+                className="flex flex-col gap-4"
+                noValidate
+                onSubmit={submit}
+              >
+                <PasswordInput
+                  autoComplete="current-password"
+                  error={currentError}
+                  fieldRef={currentRef}
+                  id={currentId}
+                  label={CURRENT_PASSWORD_LABEL}
+                  name="current-password"
+                  onChange={setCurrent}
+                  onToggle={toggleCurrent}
+                  value={current}
+                  visible={currentVisible}
+                />
+                <PasswordInput
+                  autoComplete="new-password"
+                  error={nextError}
+                  fieldRef={nextRef}
+                  hint={PASSWORD_RULE}
+                  id={nextId}
+                  label={NEW_PASSWORD_LABEL}
+                  name="new-password"
+                  onChange={setNext}
+                  onToggle={toggleNext}
+                  value={next}
+                  visible={nextVisible}
+                />
+                <Separator />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <SubmitButton
+                    className="sm:w-fit"
+                    // an account of Google has no password to change: the alert says so, the button stays off
+                    disabled={notice?.kind === "no-password"}
+                    pending={pending}
+                    pendingText={CHANGE_BUTTON_PENDING}
+                  >
+                    {CHANGE_BUTTON}
+                  </SubmitButton>
+                  <a
+                    aria-label={CHANGE_CANCEL_LABEL}
+                    className={cn(
+                      buttonVariants({ size: "lg", variant: "outline" }),
+                      "w-full sm:w-fit"
+                    )}
+                    href={DEVICES_PATH}
+                  >
+                    {CHANGE_CANCEL}
+                  </a>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </UiBlock>
       )}
     </>
   );
@@ -237,29 +325,24 @@ export function ChangePasswordPage() {
     return <NotFoundPage pathname={window.location.pathname} />;
   }
   return (
-    <div className="account-security-page">
-      <section className="categories-heading">
-        <div>
-          <p className="categories-eyebrow">Segurança</p>
-          <h1 ref={headingRef} tabIndex={-1}>
-            {CHANGE_TITLE}
-          </h1>
-          <p className="categories-intro-copy">{CHANGE_SUPPORT}</p>
-        </div>
-      </section>
-      {methods.state === "loading" ? (
-        <p className="sign-in-status" role="status">
-          {PAGE_LOADING}
+    <div className="grid max-w-[34rem] gap-4">
+      <UiBlock>
+        <h1 className="text-title" ref={headingRef} tabIndex={-1}>
+          {CHANGE_TITLE}
+        </h1>
+        <p className="text-pretty text-muted-foreground text-support">
+          {CHANGE_SUPPORT}
         </p>
-      ) : null}
-      {methods.state === "unavailable" ? (
-        <>
-          <EntryAlert>{PAGE_UNAVAILABLE}</EntryAlert>
-          <button className="sign-in-retry" onClick={retry} type="button">
-            {TRY_AGAIN}
-          </button>
-        </>
-      ) : null}
+        {methods.state === "loading" ? (
+          <EntryStatus>{PAGE_LOADING}</EntryStatus>
+        ) : null}
+        {methods.state === "unavailable" ? (
+          <>
+            <EntryAlert>{PAGE_UNAVAILABLE}</EntryAlert>
+            <EntryRetry onClick={retry} />
+          </>
+        ) : null}
+      </UiBlock>
       {methods.state === "ready" ? <ChangePasswordForm /> : null}
     </div>
   );

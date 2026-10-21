@@ -2,19 +2,24 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import {
-  ChallengeSlot,
-  EmailField,
+  BackToSignIn,
+  ChallengeArea,
+  EmailInput,
   EntryAlert,
-  EntryFrame,
+  EntryGate,
   EntryLinkButton,
+  EntryRetry,
+  EntryScreen,
+  EntryStatus,
   EntrySuccess,
-  PasswordGate,
-} from "./entry-parts";
+  SubmitButton,
+} from "./entry-ui";
 import {
   commonFailure,
   emailProblem,
@@ -24,12 +29,10 @@ import {
   takeFragmentToken,
 } from "./password-model";
 import {
-  BACK_TO_SIGN_IN,
   CONFIRM_CHECKING,
   CONFIRM_DONE,
   CONFIRM_DONE_TITLE,
   CONFIRM_EXPIRED,
-  CONFIRM_GOOGLE_WAY,
   CONFIRM_INVALID,
   CONFIRM_NO_LINK,
   CONFIRM_NOT_ARRIVED,
@@ -39,12 +42,10 @@ import {
   emailText,
   failureText,
   GO_TO_SIGN_IN,
-  RESEND_ASK_EMAIL,
   RESEND_BUTTON,
   RESEND_BUTTON_PENDING,
   RESENT,
   RESENT_TYPED,
-  TRY_AGAIN,
 } from "./password-texts";
 import { challengeToken, useChallenge } from "./turnstile";
 
@@ -63,6 +64,7 @@ export function ConfirmEmailPanel({
   siteKey: string | null;
 }) {
   const challenge = useChallenge(siteKey, "verification_email");
+  const emailId = useId();
   const [typed, setTyped] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
@@ -110,44 +112,43 @@ export function ConfirmEmailPanel({
   );
 
   return (
-    <EntryFrame title={CONFIRM_TITLE}>
-      <p className="sign-in-support">{intro}</p>
+    <EntryScreen support={intro} title={CONFIRM_TITLE}>
       {resent ? (
         // the address typed on this page gets the same answer with or without an account (AC-49): no promise
         <EntrySuccess>{email === null ? RESENT_TYPED : RESENT}</EntrySuccess>
       ) : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
-      <form className="sign-in-form" noValidate onSubmit={submit}>
-        <h2 className="sign-in-subtitle">{CONFIRM_NOT_ARRIVED}</h2>
+      <form
+        aria-label={CONFIRM_NOT_ARRIVED}
+        className="flex flex-col gap-4"
+        noValidate
+        onSubmit={submit}
+      >
+        <h2 className="font-semibold text-sm">{CONFIRM_NOT_ARRIVED}</h2>
         {email === null ? (
-          <>
-            <p className="sign-in-support">{RESEND_ASK_EMAIL}</p>
-            <EmailField
-              autoComplete="username"
-              error={emailError}
-              fieldRef={emailRef}
-              label={EMAIL_LABEL}
-              name="email"
-              onChange={setTyped}
-              value={typed}
-            />
-          </>
+          <EmailInput
+            autoComplete="username"
+            error={emailError}
+            fieldRef={emailRef}
+            id={emailId}
+            label={EMAIL_LABEL}
+            name="email"
+            onChange={setTyped}
+            value={typed}
+          />
         ) : null}
-        <ChallengeSlot challenge={challenge} />
-        <button
-          aria-busy={pending}
-          className="sign-in-secondary"
-          disabled={pending || challenge.state === "loading"}
-          type="submit"
+        <ChallengeArea challenge={challenge} />
+        <SubmitButton
+          disabled={challenge.state === "loading"}
+          pending={pending}
+          pendingText={RESEND_BUTTON_PENDING}
+          variant="outline"
         >
-          {pending ? RESEND_BUTTON_PENDING : RESEND_BUTTON}
-        </button>
+          {RESEND_BUTTON}
+        </SubmitButton>
       </form>
-      <p className="sign-in-support">{CONFIRM_GOOGLE_WAY}</p>
-      <p className="sign-in-links">
-        <a href="/entrar">{BACK_TO_SIGN_IN}</a>
-      </p>
-    </EntryFrame>
+      <BackToSignIn />
+    </EntryScreen>
   );
 }
 
@@ -180,10 +181,10 @@ function VerifyLink({
 
   if (state === "done") {
     return (
-      <EntryFrame title={CONFIRM_DONE_TITLE}>
+      <EntryScreen title={CONFIRM_DONE_TITLE}>
         <EntrySuccess>{CONFIRM_DONE}</EntrySuccess>
         <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
-      </EntryFrame>
+      </EntryScreen>
     );
   }
   if (state === "expired" || state === "invalid") {
@@ -196,22 +197,18 @@ function VerifyLink({
     );
   }
   return (
-    <EntryFrame title={CONFIRM_TITLE}>
+    <EntryScreen title={CONFIRM_TITLE}>
       {state === "checking" ? (
-        <p className="sign-in-status" role="status">
-          {CONFIRM_CHECKING}
-        </p>
+        <EntryStatus>{CONFIRM_CHECKING}</EntryStatus>
       ) : (
         <>
           <EntryAlert>
             {failureText(state === "limit" ? "limit" : "unavailable", "other")}
           </EntryAlert>
-          <button className="sign-in-retry" onClick={verify} type="button">
-            {TRY_AGAIN}
-          </button>
+          <EntryRetry onClick={verify} />
         </>
       )}
-    </EntryFrame>
+    </EntryScreen>
   );
 }
 
@@ -228,18 +225,18 @@ export function ConfirmEmailPage() {
     document.title = documentTitle(CONFIRM_PAGE_TITLE);
   }, []);
   return (
-    <PasswordGate title={CONFIRM_TITLE}>
-      {(siteKey) =>
+    <EntryGate title={CONFIRM_TITLE}>
+      {(methods) =>
         token ? (
-          <VerifyLink siteKey={siteKey} token={token} />
+          <VerifyLink siteKey={methods.siteKey} token={token} />
         ) : (
           <ConfirmEmailPanel
             email={null}
             intro={CONFIRM_NO_LINK}
-            siteKey={siteKey}
+            siteKey={methods.siteKey}
           />
         )
       }
-    </PasswordGate>
+    </EntryGate>
   );
 }

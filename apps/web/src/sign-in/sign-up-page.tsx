@@ -12,7 +12,6 @@ import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { documentTitle } from "../app-shell/navigation-model";
 import { ConfirmEmailPanel } from "./confirm-email-page";
-import { useReveal } from "./entry-parts";
 import { isCompleteEmail } from "./entry-progressive";
 import {
   ChallengeArea,
@@ -27,6 +26,7 @@ import {
   Progressive,
   SubmitButton,
   useProgressive,
+  useReveal,
 } from "./entry-ui";
 import { useGoogleStart } from "./google-start";
 import {
@@ -49,10 +49,10 @@ import {
   HAVE_ACCOUNT,
   newPasswordText,
   PASSWORD_LABEL,
+  PASSWORD_RULE,
   SIGN_UP_BUTTON,
   SIGN_UP_BUTTON_PENDING,
   SIGN_UP_PAGE_TITLE,
-  SIGN_UP_PASSWORD_RULE,
   SIGN_UP_TITLE,
 } from "./password-texts";
 import {
@@ -248,7 +248,7 @@ function SignUpForm({
             autoComplete="new-password"
             error={passwordError}
             fieldRef={passwordRef}
-            hint={SIGN_UP_PASSWORD_RULE}
+            hint={PASSWORD_RULE}
             id={`${formId}-password`}
             label={PASSWORD_LABEL}
             name="new-password"

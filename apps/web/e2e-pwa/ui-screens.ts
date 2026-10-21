@@ -2,6 +2,7 @@
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
 import { entryStates } from "./ui-entry-states";
+import { passwordStates } from "./ui-password-states";
 import { saleStates } from "./ui-sale-states";
 
 /**
@@ -171,15 +172,20 @@ async function openLegalPage(page: Page, path: string, title: string) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-/** The files of `/entrar` and `/criar-conta` on the new interface: the other password pages are still the old CSS. */
+/** The files of the entry pages on the new interface (`/entrar` and the whole password family, "Trocar senha" too). */
 const ENTRY_SOURCES = [
+  "src/sign-in/change-password-page.tsx",
+  "src/sign-in/confirm-email-page.tsx",
   "src/sign-in/email-sign-in-form.tsx",
   "src/sign-in/entry-ui.tsx",
+  "src/sign-in/forgot-password-page.tsx",
+  "src/sign-in/reset-password-page.tsx",
   "src/sign-in/sign-in-page.tsx",
   "src/sign-in/sign-up-page.tsx",
+  "src/sign-in/unlock-page.tsx",
 ];
 
-/** One state of an entry page (`ui-entry-states.ts`). */
+/** One state of an entry page (`ui-entry-states.ts`, `ui-password-states.ts`). */
 const entryScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
   open,
@@ -229,6 +235,64 @@ export const SCREENS: UiScreen[] = [
   entryScreen("criar conta confirmando pessoa", entryStates.signUpChecking),
   entryScreen("criar conta desafio interativo", entryStates.signUpInteractive),
   entryScreen("criar conta desafio bloqueado", entryStates.signUpBlocked),
+  entryScreen("confirme seu e-mail", entryStates.signUpConfirm),
+  entryScreen("confirmar e-mail sem link", passwordStates.confirmNoLink),
+  entryScreen("confirmando o e-mail", passwordStates.confirmChecking),
+  entryScreen("e-mail confirmado", passwordStates.confirmDone),
+  entryScreen("confirmar e-mail link vencido", passwordStates.confirmExpired),
+  entryScreen(
+    "confirmar e-mail link vencido, reenviado",
+    passwordStates.confirmExpiredResent
+  ),
+  entryScreen("confirmar e-mail limite", passwordStates.confirmLimit),
+  entryScreen(
+    "confirmar e-mail indisponível",
+    passwordStates.confirmUnavailable
+  ),
+  entryScreen("esqueci a senha", passwordStates.forgot),
+  entryScreen(
+    "esqueci a senha e-mail incompleto",
+    passwordStates.forgotIncompleteEmail
+  ),
+  entryScreen("esqueci a senha enviando", passwordStates.forgotSending),
+  entryScreen("esqueci a senha enviado", passwordStates.forgotSent),
+  entryScreen("esqueci a senha limite", passwordStates.forgotLimit),
+  entryScreen(
+    "esqueci a senha desafio bloqueado",
+    passwordStates.forgotBlocked
+  ),
+  entryScreen("nova senha", passwordStates.reset),
+  entryScreen("nova senha curta", passwordStates.resetShort),
+  entryScreen("nova senha desafio falhou", passwordStates.resetChallengeFailed),
+  entryScreen("nova senha desafio bloqueado", passwordStates.resetBlocked),
+  entryScreen("nova senha trocando", passwordStates.resetChanging),
+  entryScreen("nova senha trocada", passwordStates.resetDone),
+  entryScreen("nova senha link vencido", passwordStates.resetLinkExpired),
+  entryScreen("nova senha sem link", passwordStates.resetNoLink),
+  entryScreen("liberar a entrada liberando", passwordStates.unlockChecking),
+  entryScreen("liberar a entrada liberada", passwordStates.unlockDone),
+  entryScreen("liberar a entrada link inválido", passwordStates.unlockInvalid),
+  entryScreen("liberar a entrada sem link", passwordStates.unlockNoLink),
+  entryScreen(
+    "liberar a entrada indisponível",
+    passwordStates.unlockUnavailable
+  ),
+  entryScreen("trocar senha", passwordStates.changePassword),
+  entryScreen(
+    "trocar senha atual errada",
+    passwordStates.changePasswordWrongCurrent
+  ),
+  entryScreen("trocar senha trocando", passwordStates.changePasswordChanging),
+  entryScreen("trocar senha trocada", passwordStates.changePasswordDone),
+  entryScreen("trocar senha pausada", passwordStates.changePasswordPaused),
+  entryScreen(
+    "trocar senha entre de novo",
+    passwordStates.changePasswordRecent
+  ),
+  entryScreen(
+    "trocar senha conta do Google",
+    passwordStates.changePasswordNoPassword
+  ),
   {
     known: LEGAL_KNOWN,
     name: "política de privacidade",

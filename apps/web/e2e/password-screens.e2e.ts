@@ -223,7 +223,7 @@ async function expectFitsCard(page: Page) {
     // biome-ignore lint/performance/noAwaitInLoops: one width after the other on the same page
     await page.setViewportSize({ height: 740, width });
     const overflow = await page.evaluate(() => {
-      const card = document.querySelector(".sign-in-card");
+      const card = document.querySelector("[data-slot=card-content]");
       if (!card) {
         return ["no card"];
       }
@@ -485,9 +485,7 @@ test.describe("entrar com e-mail e senha", () => {
     ).toBeVisible();
     await shot(page, "entrar-email-nao-confirmado");
     await page.getByRole("button", { name: "Reenviar e-mail" }).click();
-    await expect(
-      page.getByText("Reenviamos. Olhe também o spam.")
-    ).toBeVisible();
+    await expect(page.getByText("Reenviamos. Veja o spam.")).toBeVisible();
     const [resend] = callsTo(server, "/api/auth/send-verification-email");
     expect(resend?.body).toEqual({ email: "quem@exemplo.com" });
     expect(resend?.turnstile).toMatch(VERIFICATION_TOKEN);
@@ -566,7 +564,7 @@ test.describe("desafio bloqueado (P2)", () => {
     await expect(page.getByLabel("E-mail", { exact: true })).toHaveValue(
       "quem@exemplo.com"
     );
-    await page.getByRole("button", { name: "Enviar o link" }).click();
+    await page.getByRole("button", { name: "Enviar link" }).click();
     await expect(
       page.getByText("Se esse e-mail tiver conta, enviamos um link.", {
         exact: false,
@@ -591,7 +589,7 @@ test.describe("desafio bloqueado (P2)", () => {
     await serve(page, server);
     await page.goto("/redefinir-senha#token=tok-de-teste.123");
     await expect(page.getByRole("alert")).toHaveText(
-      "!Não conseguimos carregar a confirmação de que você é uma pessoa. Libere este site no bloqueador de anúncios e abra de novo o link do e-mail."
+      "Não deu para carregar a confirmação. Libere este site no bloqueador de anúncios e abra o link de novo."
     );
     await expect(
       page.getByRole("button", { name: "Tentar de novo" })
@@ -599,9 +597,9 @@ test.describe("desafio bloqueado (P2)", () => {
     await expect(page.locator("main")).not.toContainText("Recarregue");
     // a try with the script missing says the same thing
     await newPasswordField(page).fill(PASSWORD);
-    await page.getByRole("button", { name: "Trocar a senha" }).click();
+    await page.getByRole("button", { name: "Trocar senha" }).click();
     await expect(page.getByRole("alert").first()).toContainText(
-      "abra de novo o link do e-mail"
+      "abra o link de novo"
     );
     await shot(page, "nova-senha-desafio-bloqueado");
   });
@@ -639,9 +637,7 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   const password = page.getByLabel("Senha", { exact: true });
   await expect(password).toHaveAttribute("aria-invalid", "true");
   await expect(password).toBeFocused();
-  await expect(
-    page.getByText("A senha precisa ter pelo menos 15 caracteres.")
-  ).toBeVisible();
+  await expect(page.getByText("Use pelo menos 15 caracteres.")).toBeVisible();
   await password.fill(PASSWORD);
   await create.click();
   await expect(accept).toBeFocused();
@@ -682,7 +678,7 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   // "e-mail" in the title never breaks into "e-" and "mail" at 360 px
   await page.setViewportSize({ height: 740, width: 360 });
   const wordLines = await page
-    .locator("h1 .sign-in-nobreak")
+    .locator("h1 > span")
     .evaluate((word) => word.getClientRects().length);
   expect(wordLines).toBe(1);
   await shot(page, "criar-conta-confirme");
@@ -697,7 +693,7 @@ test("esqueci a senha: a resposta igual exista ou não a conta (AC-49, AC-51)", 
   await page.goto("/esqueci-a-senha");
   await shot(page, "esqueci-pronta");
   await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
-  await page.getByRole("button", { name: "Enviar o link" }).click();
+  await page.getByRole("button", { name: "Enviar link" }).click();
   await expect(
     page.getByText("Se esse e-mail tiver conta, enviamos um link.", {
       exact: false,
@@ -712,9 +708,9 @@ test("esqueci a senha: a resposta igual exista ou não a conta (AC-49, AC-51)", 
     body: { error: { code: "auth_rate_limited" } },
     status: 429,
   };
-  await page.getByRole("button", { name: "Enviar o link" }).click();
+  await page.getByRole("button", { name: "Enviar link" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Você pediu e-mails demais. Espere alguns minutos."
+    "Muitos pedidos. Espere alguns minutos."
   );
   // the green line of the first send goes away when a new result arrives
   await expect(page.getByText("Se esse e-mail tiver conta")).toHaveCount(0);
@@ -740,7 +736,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     }
     await shot(page, "nova-senha-pronta");
     await newPasswordField(page).fill(PASSWORD);
-    await page.getByRole("button", { name: "Trocar a senha" }).click();
+    await page.getByRole("button", { name: "Trocar senha" }).click();
     await expect(
       page.getByText("Senha trocada. Entre com a nova senha.")
     ).toBeVisible();
@@ -773,7 +769,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await serve(page, server);
     await page.goto("/redefinir-senha#token=velho");
     await newPasswordField(page).fill(PASSWORD);
-    await page.getByRole("button", { name: "Trocar a senha" }).click();
+    await page.getByRole("button", { name: "Trocar senha" }).click();
     await expect(page.getByRole("alert")).toContainText(
       "Este link venceu ou já foi usado. Peça outro."
     );
@@ -783,7 +779,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     // opened without its link: an instruction in a neutral panel, not a red failure
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("status")).toContainText(
-      "toque no link que enviamos por e-mail"
+      "Toque no link que enviamos por e-mail. Venceu? Peça outro."
     );
     await expect(
       page.getByRole("link", { name: "Pedir outro link" })
@@ -798,9 +794,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     const server = newServer();
     await serve(page, server);
     await page.goto("/confirmar-email#token=tok-verifica");
-    await expect(
-      page.getByText("E-mail confirmado. Agora é só entrar.")
-    ).toBeVisible();
+    await expect(page.getByText("Agora é só entrar.")).toBeVisible();
     expect(page.url()).not.toMatch(TOKEN_IN_URL);
     expect(callsTo(server, "/api/email-verification")[0]?.body).toEqual({
       token: "tok-verifica",
@@ -823,7 +817,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     // an address typed here gets the same answer with or without an account: no "Reenviamos" (P4)
     await expect(
       page.getByText(
-        "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam."
+        "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam."
       )
     ).toBeVisible();
     await expect(page.getByText("Reenviamos.")).toHaveCount(0);
@@ -837,9 +831,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await serve(page, server);
     await page.goto("/desbloquear#token=user.tok");
     await expect(
-      page.getByText("Pronto: a entrada com senha está liberada.", {
-        exact: false,
-      })
+      page.getByText("Entrada liberada. Você já pode entrar.")
     ).toBeVisible();
     expect(page.url()).not.toMatch(TOKEN_IN_URL);
     expect(callsTo(server, "/api/login-unlock")[0]?.body).toEqual({
@@ -856,7 +848,7 @@ test.describe("links com o token no fragmento (AC-53, AC-64, consolidação item
     await page.goto("about:blank");
     await page.goto("/desbloquear#token=user.velho");
     await expect(page.getByRole("alert")).toContainText(
-      "Este link venceu ou já foi usado."
+      "Link vencido ou já usado."
     );
     await expect(
       page.getByRole("link", { name: "Esqueci a senha" })
@@ -1059,7 +1051,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
       .getByRole("button", { exact: true, name: "Trocar senha" })
       .click();
     await expect(page.getByRole("alert")).toHaveText(
-      "!Muitas tentativas com a senha atual. Espere 14 minutos e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada."
+      "Muitas tentativas. Espere 14 minutos. Não lembra a senha atual? Saia e use Esqueci a senha."
     );
     await expect(page.locator("main")).not.toContainText("Pausamos");
     await expectNoTechnicalText(page);

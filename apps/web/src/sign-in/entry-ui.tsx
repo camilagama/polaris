@@ -1,4 +1,6 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
+import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import InfoIcon from "lucide-react/dist/esm/icons/info";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
   type ChangeEvent,
@@ -14,7 +16,7 @@ import {
 import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
@@ -26,7 +28,8 @@ import {
   openAfterPassword,
 } from "./entry-progressive";
 import {
-  CHALLENGE_BLOCKED_SHORT,
+  BACK_TO_SIGN_IN,
+  CHALLENGE_BLOCKED,
   CHALLENGE_CHECKING,
   CHALLENGE_INTERACTIVE,
   HIDE_PASSWORD,
@@ -49,9 +52,9 @@ import {
 import type { Challenge } from "./turnstile";
 
 /*
- * The pieces of `/entrar` and `/criar-conta` in the interface v5.2 (ADR 0103; design v5.2 of 20/10: Google first,
- * the password after the e-mail). The other entry pages are still the old markup (`entry-parts.tsx`) until
- * their migration.
+ * The pieces of the entry pages in the interface v5.2 (ADR 0103; design v5.2 of 20/10: Google first, the password
+ * after the e-mail): `/entrar`, `/criar-conta`, "Confirme seu e-mail", `/confirmar-email`, `/esqueci-a-senha`,
+ * `/redefinir-senha` and `/desbloquear`. "Trocar senha" inside the app uses the same fields and notices.
  */
 
 export const TEXT_LINK =
@@ -75,6 +78,21 @@ function BrandMark() {
       />
       <circle className="fill-(--mark)" cx="12" cy="4.4" r="2.7" />
     </svg>
+  );
+}
+
+const EMAIL_WORD = /(e-mail)/i;
+
+/** "e-mail" in a title is one word: at 360 px it never breaks into "e-" and "mail" (the text itself is unchanged). */
+function withoutBreakInEmail(title: string): ReactNode {
+  return title.split(EMAIL_WORD).map((part, index) =>
+    index % 2 === 1 ? (
+      <span className="whitespace-nowrap" key={index}>
+        {part}
+      </span>
+    ) : (
+      part
+    )
   );
 }
 
@@ -111,9 +129,12 @@ function LegalLinks() {
  */
 export function EntryScreen({
   children,
+  support,
   title,
 }: {
   children: ReactNode;
+  /** The one line under the title, when the screen has one. */
+  support?: string;
   title: string;
 }) {
   return (
@@ -132,9 +153,16 @@ export function EntryScreen({
                 <BrandMark />
                 <span>Polaris</span>
               </p>
-              <h1 className="text-balance text-[1.0625rem] text-section">
-                {title}
-              </h1>
+              <div className="grid gap-1">
+                <h1 className="text-balance text-[1.0625rem] text-section">
+                  {withoutBreakInEmail(title)}
+                </h1>
+                {support ? (
+                  <p className="text-pretty text-muted-foreground text-support">
+                    {support}
+                  </p>
+                ) : null}
+              </div>
               {children}
             </CardContent>
           </Card>
@@ -173,6 +201,91 @@ export function EntryAlert({
       <TriangleAlertIcon aria-hidden="true" />
       <AlertDescription>{children}</AlertDescription>
     </Alert>
+  );
+}
+
+/** An instruction, not a failure (the page was opened without its link): announced and focused, in neutral colors. */
+export function EntryNotice({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <Alert
+      className="focus-ring animate-rise bg-muted/60 text-foreground"
+      ref={ref}
+      tabIndex={-1}
+    >
+      <InfoIcon aria-hidden="true" className="text-muted-foreground" />
+      <AlertDescription className="text-foreground">
+        {children}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/** A result that went well, announced and focused (inline, never a toast: the person has to read it and act). */
+export function EntrySuccess({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <Alert
+      className="focus-ring animate-rise border-foreground/15 bg-card text-foreground"
+      ref={ref}
+      tabIndex={-1}
+    >
+      <CircleCheckIcon aria-hidden="true" />
+      <AlertDescription className="text-foreground">
+        {children}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/** A link that looks like the main action: a whole page load, so the policy of the page it opens comes with it. */
+export function EntryLinkButton({
+  children,
+  href,
+}: {
+  children: ReactNode;
+  href: string;
+}) {
+  return (
+    <a
+      className={cn(buttonVariants({ size: "lg" }), "w-full")}
+      data-slot="button"
+      href={href}
+    >
+      {children}
+    </a>
+  );
+}
+
+/** "Voltar para a entrada", the way out of every page of this family that is not `/entrar`. */
+export function BackToSignIn() {
+  return (
+    <p className="mt-2 flex text-sm">
+      <a className={TEXT_LINK} href="/entrar">
+        {BACK_TO_SIGN_IN}
+      </a>
+    </p>
+  );
+}
+
+/** "Tentar de novo" under an alert of the page: an outline button, since the alert is what the person must read. */
+export function EntryRetry({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      className="w-full"
+      onClick={onClick}
+      size="lg"
+      type="button"
+      variant="outline"
+    >
+      {TRY_AGAIN}
+    </Button>
   );
 }
 
@@ -399,6 +512,14 @@ export function PasswordInput({
   );
 }
 
+/** Show/hide of a password, hidden again on every submit (AC-72). */
+export function useReveal(): [boolean, () => void, () => void] {
+  const [visible, setVisible] = useState(false);
+  const toggle = useCallback(() => setVisible((shown) => !shown), []);
+  const hide = useCallback(() => setVisible(false), []);
+  return [visible, toggle, hide];
+}
+
 const OPEN_MS = 220;
 
 /**
@@ -456,7 +577,17 @@ export function Progressive({
  * while it checks, a line above it when it asks the person for an action, and with the script blocked an alert
  * and "Tentar de novo", which asks for the script again without reloading what was typed.
  */
-export function ChallengeArea({ challenge }: { challenge: Challenge }) {
+export function ChallengeArea({
+  blockedText = CHALLENGE_BLOCKED,
+  challenge,
+  retry: canRetry = true,
+}: {
+  /** What a blocked script says; `/redefinir-senha` sends the person back to the link instead of reloading. */
+  blockedText?: string;
+  challenge: Challenge;
+  /** Without it (`/redefinir-senha`) the alert stands alone: a reload would lose the link. */
+  retry?: boolean;
+}) {
   const slotRef = useRef<HTMLDivElement>(null);
   const { retry, retrying } = useChallengeRetry(challenge, slotRef);
   const { state } = challenge;
@@ -483,17 +614,19 @@ export function ChallengeArea({ challenge }: { challenge: Challenge }) {
       </p>
       {state === "blocked" || retrying ? (
         <>
-          <EntryAlert focus={false}>{CHALLENGE_BLOCKED_SHORT}</EntryAlert>
-          <Button
-            aria-disabled={retrying || undefined}
-            className="w-full"
-            onClick={retrying ? undefined : retry}
-            size="lg"
-            type="button"
-            variant="outline"
-          >
-            {retrying ? TRYING_AGAIN : TRY_AGAIN}
-          </Button>
+          <EntryAlert focus={false}>{blockedText}</EntryAlert>
+          {canRetry ? (
+            <Button
+              aria-disabled={retrying || undefined}
+              className="w-full"
+              onClick={retrying ? undefined : retry}
+              size="lg"
+              type="button"
+              variant="outline"
+            >
+              {retrying ? TRYING_AGAIN : TRY_AGAIN}
+            </Button>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -503,22 +636,29 @@ export function ChallengeArea({ challenge }: { challenge: Challenge }) {
 /** The one button of the form, the width of the card; pending, it says so and takes no second submit. */
 export function SubmitButton({
   children,
-  disabled,
+  className,
+  disabled = false,
   pending,
   pendingText,
+  variant = "default",
 }: {
   children: ReactNode;
-  disabled: boolean;
+  /** Beyond the full width of the card (the phone), e.g. `sm:w-fit`. */
+  className?: string;
+  disabled?: boolean;
   pending: boolean;
   pendingText: string;
+  /** "outline" where the action is not the point of the screen ("Reenviar e-mail"). */
+  variant?: "default" | "outline";
 }) {
   return (
     <Button
       aria-busy={pending || undefined}
-      className="w-full"
+      className={cn("w-full", className)}
       disabled={disabled || pending}
       size="lg"
       type="submit"
+      variant={variant}
     >
       {pending ? pendingText : children}
     </Button>
@@ -552,15 +692,7 @@ export function EntryGate({
       ) : (
         <>
           <EntryAlert>{PAGE_UNAVAILABLE}</EntryAlert>
-          <Button
-            className="w-full"
-            onClick={retry}
-            size="lg"
-            type="button"
-            variant="outline"
-          >
-            {TRY_AGAIN}
-          </Button>
+          <EntryRetry onClick={retry} />
         </>
       )}
     </EntryScreen>
