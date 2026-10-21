@@ -24,7 +24,9 @@ export type TurnstileAction =
 
 interface TurnstileRenderOptions {
   action: TurnstileAction;
+  "after-interactive-callback": () => void;
   appearance: "always" | "execute" | "interaction-only";
+  "before-interactive-callback": () => void;
   callback: (token: string) => void;
   "error-callback": () => boolean;
   execution: "execute" | "render";
@@ -83,7 +85,13 @@ function loadTurnstile(): Promise<TurnstileApi> {
   return loading;
 }
 
-type ChallengeState = "blocked" | "checking" | "idle" | "loading";
+/** `interactive`: the widget asks the person for an action (it shows only then: `interaction-only`). */
+type ChallengeState =
+  | "blocked"
+  | "checking"
+  | "idle"
+  | "interactive"
+  | "loading";
 
 class ChallengeError extends Error {
   readonly reason: "blocked" | "failed";
@@ -141,7 +149,14 @@ export function useChallenge(
         apiRef.current = api;
         widgetRef.current = api.render(container, {
           action,
+          // the screen says what the widget is when it shows, and goes back to "checking" when it is done
+          "after-interactive-callback": () => {
+            if (pendingRef.current) {
+              setState("checking");
+            }
+          },
           appearance: "interaction-only",
+          "before-interactive-callback": () => setState("interactive"),
           callback: (token) => {
             pendingRef.current?.resolve(token);
             pendingRef.current = null;

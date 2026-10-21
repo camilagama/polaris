@@ -93,6 +93,7 @@ async function serve(page: Page, seen: Seen) {
 }
 
 const email = (page: Page) => page.getByLabel("E-mail", { exact: true });
+const MIGRATED = new Set(["/entrar", "/criar-conta"]);
 
 const ROUTES = [
   {
@@ -100,6 +101,8 @@ const ROUTES = [
     posts: "/api/auth/sign-in/email",
     submit: async (page: Page) => {
       await email(page).fill("quem@exemplo.com");
+      // the challenge lives in the part that opens with the e-mail: no alert of a blocked script there either
+      await expect(page.getByRole("alert")).toHaveCount(0);
       await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { exact: true, name: "Entrar" }).click();
     },
@@ -109,6 +112,7 @@ const ROUTES = [
     posts: "/api/auth/sign-up/email",
     submit: async (page: Page) => {
       await email(page).fill("nova@exemplo.com");
+      await expect(page.getByRole("alert")).toHaveCount(0);
       await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
       await page.getByRole("checkbox").check();
       await page
@@ -164,11 +168,19 @@ test.describe("com o script real da Cloudflare", () => {
     );
   });
 
-  for (const route of ROUTES) {
+  // the pages on the interface v5.2 (ADR 0103) run in both themes: the dark one swaps tokens, never the policy
+  const cases = ROUTES.flatMap((route) =>
+    MIGRATED.has(route.path)
+      ? (["light", "dark"] as const).map((scheme) => ({ route, scheme }))
+      : [{ route, scheme: "light" as const }]
+  );
+  for (const { route, scheme } of cases) {
     const pathname = route.path.split("#")[0] ?? route.path;
-    test(`${pathname}: o script real do Turnstile roda sob a CSP do _headers, sem violação`, async ({
+    const theme = scheme === "dark" ? " (tema escuro)" : "";
+    test(`${pathname}${theme}: o script real do Turnstile roda sob a CSP do _headers, sem violação`, async ({
       page,
     }) => {
+      await page.emulateMedia({ colorScheme: scheme });
       test.setTimeout(60_000);
       const seen: Seen = { headers: [], paths: [] };
       const events: string[] = [];

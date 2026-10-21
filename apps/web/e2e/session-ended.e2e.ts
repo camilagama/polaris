@@ -113,7 +113,10 @@ test("'Entrar de novo' com a sessão morta não chama o Sair, limpa as cópias e
   await expect(
     page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();
-  await expect(page.getByText(SENTENCE)).toBeVisible();
+  // `/entrar` says it shorter (v5.2): the notice inside the app keeps the long sentence
+  await expect(
+    page.getByText("Sua sessão acabou. Entre de novo.", { exact: true })
+  ).toBeVisible();
   expect(calls.signOut).toBe(0);
   expect(
     await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)

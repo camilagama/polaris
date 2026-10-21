@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Request } from "@playwright/test";
+import type { Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 const GOOGLE_URL =
@@ -13,14 +13,14 @@ const SECRET_IN_CONSOLE = /cookie|token|session[-_ ]?id|set-cookie|code=/i;
 const ORGANIZATION_CALLS = /\/rpc\/organization\//;
 
 interface Server {
-  /** The answer to the start of the Google sign-in. */
-  start: "abort" | "garbage" | "limit" | "ok" | "unavailable";
-  startBodies: Record<string, unknown>[];
+  methods: { emailPassword: boolean; google: boolean } | "down";
+  rpcCalls: string[];
   /** What get-session says: a session, or none. */
   session: boolean;
   sessionDelayMs: number;
-  methods: { emailPassword: boolean; google: boolean } | "down";
-  rpcCalls: string[];
+  /** The answer to the start of the Google sign-in. */
+  start: "abort" | "garbage" | "limit" | "ok" | "unavailable";
+  startBodies: Record<string, unknown>[];
   /** Holds the answer of the start until released. */
   startGate: Promise<void> | null;
 }
@@ -102,6 +102,19 @@ function watchConsole(page: Page) {
 }
 
 const alertBox = (page: Page) => page.getByRole("alert");
+
+/** The height a finger can hit: the box, grown by the `touch-hit` pseudo-element on a touch screen. */
+const touchHeight = (control: Locator) =>
+  control.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const hit = getComputedStyle(element, "::before");
+    const grow =
+      hit.content === '""' && hit.position === "absolute"
+        ? -(Number.parseFloat(hit.top) || 0) -
+          (Number.parseFloat(hit.bottom) || 0)
+        : 0;
+    return box.height + Math.max(0, grow);
+  });
 const googleButton = (page: Page) => page.getByRole("button", { name: BUTTON });
 
 test.describe("a tela de entrada, com o servidor interceptado", () => {
@@ -223,6 +236,10 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     const pending = page.getByRole("button", { name: "Abrindo o Google…" });
     await expect(pending).toHaveAttribute("aria-busy", "true");
     await expect(pending).toBeDisabled();
+    // 70% of the ink, so it does not look like the button off (offline: 50%)
+    expect(await pending.evaluate((el) => getComputedStyle(el).opacity)).toBe(
+      "0.7"
+    );
     expect(server.startBodies).toHaveLength(1);
 
     release();
@@ -298,9 +315,12 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     );
     await page.addInitScript(() => {
       const report = () => {
-        const status =
-          document.querySelector(".sign-in-status")?.textContent ?? "";
-        const button = Boolean(document.querySelector(".sign-in-google"));
+        const status = [...document.querySelectorAll("main p[role=status]")]
+          .map((line) => line.textContent ?? "")
+          .join("");
+        const button = [...document.querySelectorAll("main button")].some(
+          (element) => element.textContent?.includes("Continuar com o Google")
+        );
         (
           window as unknown as {
             recordScreen: (status: string, button: boolean) => void;
@@ -429,7 +449,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     await serve(page, newServer());
     await page.goto("/entrar?motivo=sessao&voltar=%2Fdevices");
     await expect(
-      page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+      page.getByText("Sua sessão acabou. Entre de novo.", { exact: true })
     ).toBeVisible();
     await page.goto("/entrar?motivo=recente&voltar=%2Fdevices");
     await expect(
@@ -456,9 +476,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     });
     await context.setOffline(true);
     await expect(
-      page.getByText(
-        "Sem conexão. Para entrar é preciso internet. Conecte-se e tente de novo."
-      )
+      page.getByText("Sem conexão. Conecte-se para entrar.")
     ).toBeVisible();
     await expect(googleButton(page)).toBeDisabled();
     expect(calls).toEqual([]);
@@ -515,29 +533,23 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     ).toBeVisible();
   });
 
-  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais em alvos de 44 px (V4, V5)", async ({
+  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais com área de toque de 48 px (V4, V5)", async ({
     page,
   }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
     await serve(page, newServer());
     await page.goto("/entrar");
 
     await expect(
-      page.getByText(
-        "Primeira vez? É o mesmo botão: sua conta é criada ao continuar."
-      )
+      page.getByText("Primeira vez? O botão também cria a conta.")
     ).toBeVisible();
-    const legal = page.getByRole("group", {
-      name: "Leia antes de entrar",
-    });
-    await expect(legal).toBeVisible();
     for (const name of ["Termos de Uso", "Política de Privacidade"]) {
+      const link = page.getByRole("link", { name: new RegExp(name) });
       // biome-ignore lint/performance/noAwaitInLoops: one link after the other
-      const box = await legal
-        .getByRole("link", { name: new RegExp(name) })
-        .boundingBox();
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await expect(link).toBeVisible();
+      expect(await touchHeight(link)).toBeGreaterThanOrEqual(48);
     }
-    await expect(legal).not.toContainText("Leia os");
+    await expect(page.getByText("Leia antes de entrar")).toHaveCount(0);
   });
 
   test("sem resposta dos métodos, o botão do Google segue ativo", async ({
@@ -571,14 +583,14 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     expect(printed.filter((line) => SECRET_IN_CONSOLE.test(line))).toEqual([]);
   });
 
-  test("a 360 px o botão e os alvos têm 44 px ou mais e nada rola para o lado (AC-29)", async ({
+  test("a 360 px o botão tem área de toque de 48 px e nada rola para o lado (AC-29)", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 360, height: 640 });
+    await page.setViewportSize({ height: 640, width: 360 });
     await serve(page, newServer());
     await page.goto("/entrar?erro=google&motivo=sessao");
-    const box = await googleButton(page).boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await expect(googleButton(page)).toBeVisible();
+    expect(await touchHeight(googleButton(page))).toBeGreaterThanOrEqual(48);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
     );
@@ -606,8 +618,8 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
   test("o erro tem texto e ícone, não só cor (AC-31)", async ({ page }) => {
     await serve(page, newServer());
     await page.goto("/entrar?erro=limite");
-    await expect(alertBox(page).locator("[aria-hidden='true']")).toHaveText(
-      "!"
+    await expect(alertBox(page).locator("svg[aria-hidden='true']")).toHaveCount(
+      1
     );
     await expect(alertBox(page)).toContainText("Muitas tentativas");
   });

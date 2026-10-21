@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
+import { entryStates } from "./ui-entry-states";
 import { saleStates } from "./ui-sale-states";
 
 /**
@@ -73,9 +74,6 @@ export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
 
 /** The context of the motion checks (5): once per state with `exercise`, and once more with `reduce`. */
 export const MOTION_CONTEXT: UiContext = light("360", true);
-
-const OFFLINE_TEXT =
-  "Sem conexão. Para entrar é preciso internet. Conecte-se e tente de novo.";
 
 /** Opens an overlay by its trigger, waits for it, and closes it with Escape, waiting for the exit too. */
 async function openAndClose(
@@ -173,13 +171,21 @@ async function openLegalPage(page: Page, path: string, title: string) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-async function openSignIn(page: Page, query: string) {
-  await page.goto(`/entrar${query}`);
-  await page
-    .getByRole("heading", { level: 1, name: "Entrar no Polaris" })
-    .waitFor();
-  await page.evaluate(() => document.fonts.ready);
-}
+/** The files of `/entrar` and `/criar-conta` on the new interface: the other password pages are still the old CSS. */
+const ENTRY_SOURCES = [
+  "src/sign-in/email-sign-in-form.tsx",
+  "src/sign-in/entry-ui.tsx",
+  "src/sign-in/sign-in-page.tsx",
+  "src/sign-in/sign-up-page.tsx",
+];
+
+/** One state of an entry page (`ui-entry-states.ts`). */
+const entryScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
+  name,
+  open,
+  sourceDirs: ENTRY_SOURCES,
+  status: "migrated",
+});
 
 // the brand link of the legal frame is named "Polaris, início" and shows "P Polaris": a voice command that says what
 // is on screen misses it. Fixed with the migration of the legal pages (their frame is legacy markup).
@@ -201,22 +207,29 @@ export const SCREENS: UiScreen[] = [
     sourceDirs: ["src/ui-gallery"],
     status: "migrated",
   },
-  {
-    name: "entrar",
-    open: (page) => openSignIn(page, ""),
-    sourceDirs: [],
-    status: "legacy",
-  },
-  {
-    name: "entrar sem conexão, sessão acabou",
-    open: async (page, context) => {
-      await openSignIn(page, "?motivo=sessao&voltar=%2Fsales");
-      await context.setOffline(true);
-      await page.getByText(OFFLINE_TEXT).waitFor();
-    },
-    sourceDirs: [],
-    status: "legacy",
-  },
+  entryScreen("entrar só com o Google", entryStates.googleOnly),
+  entryScreen("entrar", entryStates.signIn),
+  entryScreen("entrar desafio bloqueado", entryStates.signInBlocked),
+  entryScreen("entrar abrindo o Google", entryStates.signInGooglePending),
+  entryScreen("entrar e-mail incompleto", entryStates.signInEmailIncomplete),
+  entryScreen("entrar e-mail completo", entryStates.signInEmailComplete),
+  entryScreen("entrar preenchido pelo gerenciador", entryStates.signInFilled),
+  entryScreen("entrar senha incorreta", entryStates.signInIncorrect),
+  entryScreen("entrar pausado", entryStates.signInPaused),
+  entryScreen("entrar sem conexão, sessão acabou", entryStates.signInOffline),
+  entryScreen("criar conta", entryStates.signUp),
+  entryScreen("criar conta abrindo o Google", entryStates.signUpGooglePending),
+  entryScreen(
+    "criar conta e-mail incompleto",
+    entryStates.signUpEmailIncomplete
+  ),
+  entryScreen("criar conta e-mail completo", entryStates.signUpEmailComplete),
+  entryScreen("criar conta sem o aceite", entryStates.signUpAcceptMissing),
+  entryScreen("criar conta senha vazada", entryStates.signUpCompromised),
+  entryScreen("criar conta criando", entryStates.signUpCreating),
+  entryScreen("criar conta confirmando pessoa", entryStates.signUpChecking),
+  entryScreen("criar conta desafio interativo", entryStates.signUpInteractive),
+  entryScreen("criar conta desafio bloqueado", entryStates.signUpBlocked),
   {
     known: LEGAL_KNOWN,
     name: "política de privacidade",

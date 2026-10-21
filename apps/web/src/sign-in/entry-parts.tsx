@@ -1,4 +1,3 @@
-import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import {
   type ChangeEvent,
   type ReactNode,
@@ -9,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
 import {
   CHALLENGE_BLOCKED,
@@ -22,12 +22,6 @@ import {
   TRY_AGAIN,
   TRYING_AGAIN,
 } from "./password-texts";
-import {
-  LEGAL_LINKS_TITLE,
-  NEW_TAB_HINT,
-  PRIVACY_LINK,
-  TERMS_LINK,
-} from "./sign-in-texts";
 import type { Challenge } from "./turnstile";
 import "./sign-in.css";
 
@@ -302,38 +296,18 @@ export function ChallengeSlot({
   retry?: boolean;
 }) {
   const slotRef = useRef<HTMLDivElement>(null);
-  const [retrying, setRetrying] = useState(false);
+  const { retry: handleRetry, retrying } = useChallengeRetry(
+    challenge,
+    slotRef
+  );
   const { state } = challenge;
-  // "Tentar de novo" stays on the screen, with the focus on it, while the script is asked for again; when
-  // the script comes, the block goes away and the focus goes to the first field of the form
-  const loadingSeen = useRef<boolean>(false);
-  useEffect(() => {
-    if (!retrying) {
-      return;
-    }
-    if (state === "loading") {
-      loadingSeen.current = true;
-      return;
-    }
-    // the click renders once more with the old state, before the script is asked for again
-    if (!loadingSeen.current) {
-      return;
-    }
-    loadingSeen.current = false;
-    setRetrying(false);
-    if (state !== "blocked") {
-      slotRef.current?.closest("form")?.querySelector("input")?.focus();
-    }
-  }, [retrying, state]);
-  const handleRetry = useCallback(() => {
-    setRetrying(true);
-    challenge.retry();
-  }, [challenge]);
   return (
     <div className="sign-in-challenge" ref={slotRef}>
       <div ref={challenge.containerRef} />
       <p className="sign-in-challenge-status" role="status">
-        {state === "checking" ? CHALLENGE_CHECKING : null}
+        {state === "checking" || state === "interactive"
+          ? CHALLENGE_CHECKING
+          : null}
       </p>
       {state === "blocked" || retrying ? (
         <>
@@ -351,33 +325,6 @@ export function ChallengeSlot({
         </>
       ) : null}
     </div>
-  );
-}
-
-/** The two legal pages open in another tab, so a half-done form is not lost (L1 of the legal pages). */
-export function LegalLinks() {
-  return (
-    <fieldset className="sign-in-legal">
-      <legend className="sign-in-legal-title">{LEGAL_LINKS_TITLE}</legend>
-      <ul>
-        <li>
-          <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
-            {TERMS_LINK}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-          </a>
-        </li>
-        <li>
-          <a
-            href={LEGAL_PATHS.privacy}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {PRIVACY_LINK}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-          </a>
-        </li>
-      </ul>
-    </fieldset>
   );
 }
 

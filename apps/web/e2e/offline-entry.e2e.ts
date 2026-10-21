@@ -140,7 +140,7 @@ test("quando a sessão acabou, a cópia das organizações é apagada e não é 
     page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();
   await expect(
-    page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+    page.getByText("Sua sessão acabou. Entre de novo.", { exact: true })
   ).toBeVisible();
   expect(
     await page.evaluate((key) => window.localStorage.getItem(key), CACHE_KEY)

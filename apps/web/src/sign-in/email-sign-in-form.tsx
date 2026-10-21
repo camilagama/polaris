@@ -1,21 +1,29 @@
 import {
   type FormEvent,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useId,
   useRef,
   useState,
 } from "react";
+import { useReveal } from "./entry-parts";
+import { isCompleteEmail } from "./entry-progressive";
 import {
-  ChallengeSlot,
-  EmailField,
+  ChallengeArea,
+  challengeAlertId,
+  EmailInput,
   EntryAlert,
-  PasswordField,
-  useReveal,
-} from "./entry-parts";
+  PasswordInput,
+  Progressive,
+  SubmitButton,
+  TEXT_LINK,
+  useProgressive,
+} from "./entry-ui";
 import { emailProblem, postAuth, signInOutcome } from "./password-model";
 import {
   CREATE_ACCOUNT_LINK,
+  EMAIL_INVALID,
   EMAIL_LABEL,
   emailText,
   FORGOT_PASSWORD_LINK,
@@ -24,7 +32,6 @@ import {
   INCORRECT_CREDENTIALS,
   PASSWORD_LABEL,
   PASSWORD_REQUIRED,
-  PAUSED_BUTTON_HINT,
   pausedText,
   SIGN_IN_BUTTON,
   SIGN_IN_BUTTON_PENDING,
@@ -42,9 +49,11 @@ const sameEmail = (a: string, b: string) =>
   b.trim().normalize("NFC").toLowerCase();
 
 /**
- * The e-mail and password form of `/entrar` (AC-50, AC-62 to AC-65, AC-71, AC-72). A wrong password and an
- * e-mail with no account get the same line; the pause of an e-mail turns "Entrar" off for that e-mail only,
- * until it ends (V4). The password never leaves this component except in the body of the request.
+ * The e-mail and password form of `/entrar` (AC-50, AC-62 to AC-65, AC-71, AC-72), v5.2: only the e-mail at
+ * first; the password, "Esqueci a senha" and "Entrar" open when the address has a complete shape, with no
+ * question to the server. A wrong password and an e-mail with no account get the same line; the pause of an
+ * e-mail turns "Entrar" off for that e-mail only, until it ends (V4). The password never leaves this component
+ * except in the body of the request.
  */
 export function EmailSignInForm({
   disabled,
@@ -58,7 +67,9 @@ export function EmailSignInForm({
   siteKey: string | null;
 }) {
   const challenge = useChallenge(siteKey, "login");
-  const alertId = useId();
+  const formId = useId();
+  const alertId = `${formId}-alert`;
+  const blockedId = challengeAlertId(formId);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, toggleVisible, hide] = useReveal();
@@ -71,6 +82,8 @@ export function EmailSignInForm({
   const [pause, setPause] = useState<Pause | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const progressive = useProgressive(passwordRef, pending);
+  const { followEmail, followPassword } = progressive;
 
   // the pause ends by itself: "Entrar" comes back without a reload
   useEffect(() => {
@@ -86,6 +99,36 @@ export function EmailSignInForm({
 
   const paused = pause !== null && sameEmail(pause.email, email);
   const incorrect = alert?.help === true;
+
+  const handleEmail = useCallback(
+    (value: string) => {
+      setEmail(value);
+      followEmail(value);
+      // the local error of an incomplete address goes as soon as the address is complete
+      if (isCompleteEmail(value)) {
+        setEmailError(null);
+      }
+      // an empty e-mail closes the password: it is hidden again, so it never comes back shown
+      if (value.trim() === "") {
+        hide();
+      }
+    },
+    [followEmail, hide]
+  );
+  const handlePassword = useCallback(
+    (value: string) => {
+      setPassword(value);
+      followPassword(value);
+    },
+    [followPassword]
+  );
+  const handleEmailKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) =>
+      progressive.emailKeyDown(event, (value) =>
+        setEmailError(emailText(emailProblem(value)) ?? EMAIL_INVALID)
+      ),
+    [progressive]
+  );
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -178,14 +221,12 @@ export function EmailSignInForm({
   return (
     <form
       aria-label={SIGN_IN_BUTTON}
-      className="sign-in-form"
+      className="flex flex-col gap-4"
       noValidate
       onSubmit={submit}
     >
       {paused && pause ? (
-        <EntryAlert>
-          {pausedText(pause.minutes)} {PAUSED_BUTTON_HINT}
-        </EntryAlert>
+        <EntryAlert>{pausedText(pause.minutes)}</EntryAlert>
       ) : null}
       {alert ? (
         <EntryAlert focus={false} id={alertId}>
@@ -198,42 +239,54 @@ export function EmailSignInForm({
           ) : null}
         </EntryAlert>
       ) : null}
-      <EmailField
+      <EmailInput
         autoComplete="username"
         describedById={incorrect ? alertId : undefined}
+        disabled={disabled}
         error={emailError}
         fieldRef={emailRef}
+        id={`${formId}-email`}
         label={EMAIL_LABEL}
         name="email"
-        onChange={setEmail}
+        onChange={handleEmail}
+        onKeyDown={handleEmailKeyDown}
         value={email}
       />
-      <PasswordField
-        autoComplete="current-password"
-        describedById={incorrect ? alertId : undefined}
-        error={passwordError}
-        fieldRef={passwordRef}
-        label={PASSWORD_LABEL}
-        name="password"
-        onChange={setPassword}
-        onToggle={toggleVisible}
-        value={password}
-        visible={visible}
-      />
-      <ChallengeSlot challenge={challenge} />
-      <button
-        aria-busy={pending}
-        className="sign-in-primary"
-        disabled={
-          disabled || pending || paused || challenge.state === "loading"
-        }
-        type="submit"
-      >
-        {pending ? SIGN_IN_BUTTON_PENDING : SIGN_IN_BUTTON}
-      </button>
-      <p className="sign-in-links">
-        <a href="/esqueci-a-senha">{FORGOT_PASSWORD_LINK}</a>
-        <a href="/criar-conta">{CREATE_ACCOUNT_LINK}</a>
+      <Progressive open={progressive.open}>
+        <PasswordInput
+          autoComplete="current-password"
+          describedById={incorrect ? alertId : undefined}
+          error={passwordError}
+          fieldRef={passwordRef}
+          id={`${formId}-password`}
+          label={PASSWORD_LABEL}
+          name="password"
+          onChange={handlePassword}
+          onToggle={toggleVisible}
+          value={password}
+          visible={visible}
+        />
+        <ChallengeArea alertId={blockedId} challenge={challenge} />
+        <SubmitButton
+          alertId={blockedId}
+          challenge={challenge}
+          disabled={disabled || paused || challenge.state === "loading"}
+          pending={pending}
+          pendingText={SIGN_IN_BUTTON_PENDING}
+        >
+          {SIGN_IN_BUTTON}
+        </SubmitButton>
+      </Progressive>
+      {/* below the button and apart from it: their touch areas never meet the button's nor the field's */}
+      <p className="mt-2 flex flex-wrap justify-between gap-x-6 gap-y-3 text-sm">
+        {progressive.open ? (
+          <a className={TEXT_LINK} href="/esqueci-a-senha">
+            {FORGOT_PASSWORD_LINK}
+          </a>
+        ) : null}
+        <a className={TEXT_LINK} href="/criar-conta">
+          {CREATE_ACCOUNT_LINK}
+        </a>
       </p>
     </form>
   );

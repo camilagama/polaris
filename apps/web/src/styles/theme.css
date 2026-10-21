@@ -57,6 +57,13 @@
   --btn-shine: oklch(1 0 0 / 0.14);
   --btn-drop: oklch(0.28 0.012 85 / 0.2);
   --card-glow: oklch(1 0 0 / 0);
+  /* the Google "G" in its own colors, on a light chip in both themes so the mark reads over the ink of the
+     button (v5.2); the same values in the dark theme, so only here */
+  --google-chip: oklch(1 0 0);
+  --google-red: oklch(0.654 0.235 34);
+  --google-yellow: oklch(0.844 0.172 85);
+  --google-green: oklch(0.673 0.162 144);
+  --google-blue: oklch(0.565 0.163 253);
   /* visible heights of the controls (mouse); with touch they go one step up in the block below */
   --h-xs: 1.5rem;
   --h-sm: 1.75rem;
