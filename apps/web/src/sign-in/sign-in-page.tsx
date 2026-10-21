@@ -1,33 +1,28 @@
-import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
 import { documentTitle } from "../app-shell/navigation-model";
 import { parseSignInSearch } from "../lib/sign-in-path";
 import { ConfirmEmailPanel } from "./confirm-email-page";
 import { EmailSignInForm } from "./email-sign-in-form";
-import { LegalLinks } from "./entry-parts";
-import { GoogleLogo } from "./google-logo";
 import {
-  CONFIRM_PENDING_SIGN_IN,
-  OR_SEPARATOR,
-  SIGN_IN_SUPPORT_BOTH,
-} from "./password-texts";
+  EntryAlert,
+  EntryScreen,
+  EntryStatus,
+  GoogleButton,
+  OrSeparator,
+} from "./entry-ui";
+import { useGoogleStart } from "./google-start";
+import { CONFIRM_PENDING_SIGN_IN } from "./password-texts";
 import {
   type AuthMethodsView,
-  googleStartOutcome,
   hasSession,
   loadAuthMethods,
   type SignInFailure,
-  startGoogleSignIn,
 } from "./sign-in-model";
 import {
   errorText,
-  GOOGLE_BUTTON,
-  GOOGLE_BUTTON_PENDING,
   GOOGLE_ERROR_HELP,
   GOOGLE_NOT_OFFERED,
   GOOGLE_RETRY,
@@ -39,11 +34,9 @@ import {
   SIGN_IN_LIMIT,
   SIGN_IN_OFFLINE,
   SIGN_IN_PAGE_TITLE,
-  SIGN_IN_SUPPORT,
   SIGN_IN_TITLE,
   SIGN_IN_UNAVAILABLE,
 } from "./sign-in-texts";
-import "./sign-in.css";
 
 /** A lookup that takes longer than this says it is looking, instead of showing nothing. */
 const SLOW_CHECK_MS = 400;
@@ -59,31 +52,6 @@ const failureText: Readonly<Record<SignInFailure, string>> = {
   limite: SIGN_IN_LIMIT,
 };
 
-interface SignInAlertProps {
-  alertRef: RefObject<HTMLParagraphElement | null>;
-  help: string | null;
-  text: string;
-}
-
-function SignInAlert({ alertRef, help, text }: SignInAlertProps) {
-  return (
-    <p className="sign-in-alert" ref={alertRef} role="alert" tabIndex={-1}>
-      <span aria-hidden="true" className="sign-in-alert-icon">
-        !
-      </span>
-      <span>
-        {text}
-        {help ? (
-          <>
-            <br />
-            {help}
-          </>
-        ) : null}
-      </span>
-    </p>
-  );
-}
-
 /** Always mounted, so a screen reader announces the change when the connection goes or returns. */
 function ConnectionNotice({
   online,
@@ -93,17 +61,16 @@ function ConnectionNotice({
   reconnected: boolean;
 }) {
   return (
-    <div className="sign-in-live" role="status">
+    <div className="grid empty:hidden" role="status">
       {online ? null : (
-        <p className="sign-in-offline">
-          <span aria-hidden="true" className="sign-in-alert-icon">
-            ×
-          </span>
-          <span>{SIGN_IN_OFFLINE}</span>
-        </p>
+        // the region around it is the live one: the alert itself is no second status
+        <Alert role="presentation" variant="warning">
+          <CloudOffIcon aria-hidden="true" />
+          <AlertDescription>{SIGN_IN_OFFLINE}</AlertDescription>
+        </Alert>
       )}
       {online && reconnected ? (
-        <p className="sign-in-status">{SIGN_IN_BACK_ONLINE}</p>
+        <p className="text-sm">{SIGN_IN_BACK_ONLINE}</p>
       ) : null}
     </div>
   );
@@ -124,20 +91,7 @@ function passwordMethod(methods: AuthMethodsView | null): {
     : { on: false, siteKey: null };
 }
 
-/** The lines under the title: Google alone, or Google and the password (AC-46). */
-function SupportLines({ passwordOn }: { passwordOn: boolean }) {
-  if (passwordOn) {
-    return <p className="sign-in-support">{SIGN_IN_SUPPORT_BOTH}</p>;
-  }
-  return (
-    <>
-      <p className="sign-in-support">{SIGN_IN_SUPPORT}</p>
-      <p className="sign-in-support">{SIGN_IN_FIRST_TIME}</p>
-    </>
-  );
-}
-
-/** "ou" and the e-mail and password form, under the Google button. */
+/** "ou" and the e-mail form, under the Google button: only with the password on (AC-46). */
 function PasswordSection({
   onSignedIn,
   onUnverified,
@@ -162,9 +116,7 @@ function PasswordSection({
   }
   return (
     <>
-      <p aria-hidden="true" className="sign-in-separator">
-        <span>{OR_SEPARATOR}</span>
-      </p>
+      <OrSeparator />
       <EmailSignInForm
         disabled={!online}
         onSignedIn={onSignedIn}
@@ -176,8 +128,9 @@ function PasswordSection({
 }
 
 /**
- * `/entrar` (ADR 0100): outside the app shell, with no organization. It only talks to the auth server:
- * the Google start, and a session lookup that sends someone who is already in (or just back from
+ * `/entrar` (ADR 0100), v5.2: outside the app shell, with no organization; "Continuar com o Google" first, the
+ * only ink button of the first state, and under "ou" the e-mail that opens the password. It only talks to the
+ * auth server: the Google start, and a session lookup that sends someone who is already in (or just back from
  * Google) to `voltar`. Nothing is written to the browser: no token, no code, no e-mail.
  */
 function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
@@ -195,14 +148,11 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
     on: boolean;
     siteKey: string | null;
   }>({ on: false, siteKey: null });
-
-  const [starting, setStarting] = useState(false);
-  const [failure, setFailure] = useState<SignInFailure | null>(null);
+  const google = useGoogleStart(search.returnTo);
+  const { startedRef } = google;
   const [reconnected, setReconnected] = useState(false);
   // bumped by "Tentar de novo" (Google off): the lookups run again
   const [lookupRound, setLookupRound] = useState(0);
-  const startedRef = useRef<boolean>(false);
-  const alertRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     document.title = documentTitle(SIGN_IN_PAGE_TITLE);
@@ -223,19 +173,6 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
     };
-  }, []);
-
-  // The page can come back from the browser's cache (the Back button from Google, mostly on iOS) with the
-  // button still pending: it is ready again.
-  useEffect(() => {
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        startedRef.current = false;
-        setStarting(false);
-      }
-    };
-    window.addEventListener("pageshow", onPageShow);
-    return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
 
   // Someone who is already in goes straight to the destination; the same lookup is what a return from
@@ -277,33 +214,7 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
       current = false;
       clearTimeout(slowTimer);
     };
-  }, [online, search.reason, search.returnTo, lookupRound]);
-
-  const handleGoogle = useCallback(() => {
-    if (startedRef.current) {
-      return;
-    }
-    startedRef.current = true;
-    setStarting(true);
-    setFailure(null);
-    startGoogleSignIn(search.returnTo)
-      .then(googleStartOutcome)
-      .then((result) => {
-        if (result.status === "redirect") {
-          // the page leaves: the button stays pending until it does
-          window.location.assign(result.url);
-          return;
-        }
-        startedRef.current = false;
-        setStarting(false);
-        setFailure(result.failure);
-      })
-      .catch(() => {
-        startedRef.current = false;
-        setStarting(false);
-        setFailure("indisponivel");
-      });
-  }, [search.returnTo]);
+  }, [online, search.reason, search.returnTo, lookupRound, startedRef]);
 
   const handleSignedIn = useCallback(() => {
     setPhase("entering");
@@ -316,15 +227,10 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
     setLookupRound((round) => round + 1);
   }, []);
 
-  const alertText = failure
-    ? failureText[failure]
+  const alertText = google.failure
+    ? failureText[google.failure]
     : (errorText(search.error) ?? (googleOff ? GOOGLE_NOT_OFFERED : null));
-  const showGoogleHelp = failure === null && search.error === "google";
-  useEffect(() => {
-    if (alertText) {
-      alertRef.current?.focus();
-    }
-  }, [alertText]);
+  const showGoogleHelp = google.failure === null && search.error === "google";
 
   const reason = reasonText(search.reason);
   // The button does not wait for the lookups, which only send away someone who is already in or turn it off: once
@@ -332,79 +238,66 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
   // shows it, so it does not flash before "Entrando…".
   const showButton =
     phase !== "entering" && (phase === "ready" || slowCheck || googleOff);
-  const buttonDisabled = starting || !online || googleOff;
 
   return (
-    <div className="ui-root sign-in-root">
-      <main className="sign-in-main" id="conteudo">
-        <section aria-labelledby="sign-in-title" className="sign-in-card">
-          <p className="sign-in-brand">
-            <span aria-hidden="true" className="sign-in-brand-mark">
-              P
-            </span>
-            <span>Polaris</span>
-          </p>
-          <h1 id="sign-in-title">{SIGN_IN_TITLE}</h1>
-          <SupportLines passwordOn={password.on} />
-          {reason ? <p className="sign-in-reason">{reason}</p> : null}
+    <EntryScreen title={SIGN_IN_TITLE}>
+      {reason ? <p className="text-sm">{reason}</p> : null}
 
-          {alertText ? (
-            <SignInAlert
-              alertRef={alertRef}
-              help={showGoogleHelp ? GOOGLE_ERROR_HELP : null}
-              text={alertText}
-            />
+      {alertText ? (
+        <EntryAlert key={alertText}>
+          {alertText}
+          {showGoogleHelp ? (
+            <>
+              <br />
+              {GOOGLE_ERROR_HELP}
+            </>
           ) : null}
+        </EntryAlert>
+      ) : null}
 
-          <ConnectionNotice online={online} reconnected={reconnected} />
+      <ConnectionNotice online={online} reconnected={reconnected} />
 
-          {phase === "entering" ? (
-            <p className="sign-in-status" role="status">
-              {SIGN_IN_ENTERING}
-            </p>
-          ) : null}
-          {phase === "checking" && slowCheck ? (
-            <p className="sign-in-status" role="status">
-              {SIGN_IN_CHECKING}
-            </p>
-          ) : null}
+      {phase === "entering" ? (
+        <EntryStatus>{SIGN_IN_ENTERING}</EntryStatus>
+      ) : null}
+      {phase === "checking" && slowCheck ? (
+        <EntryStatus>{SIGN_IN_CHECKING}</EntryStatus>
+      ) : null}
 
-          {showButton ? (
-            <button
-              aria-busy={starting}
-              className="sign-in-google"
-              disabled={buttonDisabled}
-              onClick={handleGoogle}
-              type="button"
-            >
-              <GoogleLogo />
-              <span>{starting ? GOOGLE_BUTTON_PENDING : GOOGLE_BUTTON}</span>
-            </button>
-          ) : null}
-
-          {googleOff && online ? (
-            <button
-              className="sign-in-retry"
-              disabled={phase === "checking"}
-              onClick={handleRetry}
-              type="button"
-            >
-              {GOOGLE_RETRY}
-            </button>
-          ) : null}
-
-          <PasswordSection
-            online={online}
-            onSignedIn={handleSignedIn}
-            onUnverified={onUnverified}
-            password={password}
-            phase={phase}
+      {showButton ? (
+        <div className="grid gap-2">
+          <GoogleButton
+            disabled={!online || googleOff}
+            onClick={google.start}
+            pending={google.starting}
           />
+          <p className="text-muted-foreground text-support">
+            {SIGN_IN_FIRST_TIME}
+          </p>
+        </div>
+      ) : null}
 
-          <LegalLinks />
-        </section>
-      </main>
-    </div>
+      {googleOff && online ? (
+        <Button
+          className="w-full"
+          disabled={phase === "checking"}
+          onClick={handleRetry}
+          size="lg"
+          type="button"
+          variant="outline"
+        >
+          {GOOGLE_RETRY}
+        </Button>
+      ) : null}
+
+      <PasswordSection
+        online={online}
+        onSignedIn={handleSignedIn}
+        onUnverified={onUnverified}
+        password={password}
+        phase={phase}
+      />
+    </EntryScreen>
   );
 }
 

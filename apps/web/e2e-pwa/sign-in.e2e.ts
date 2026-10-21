@@ -2,8 +2,7 @@
 import { expect, test } from "@playwright/test";
 import { openControlled } from "./support";
 
-const OFFLINE_TEXT =
-  "Sem conexão. Para entrar é preciso internet. Conecte-se e tente de novo.";
+const OFFLINE_TEXT = "Sem conexão. Conecte-se para entrar.";
 
 test("a tela de entrada abre pelo shell em cache, sem rede, com o botão desabilitado e o aviso (AC-10)", async ({
   context,
@@ -22,7 +21,7 @@ test("a tela de entrada abre pelo shell em cache, sem rede, com o botão desabil
     page.getByRole("button", { name: "Continuar com o Google" })
   ).toBeDisabled();
   await expect(
-    page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+    page.getByText("Sua sessão acabou. Entre de novo.", { exact: true })
   ).toBeVisible();
 
   await context.setOffline(false);

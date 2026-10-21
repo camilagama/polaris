@@ -1,4 +1,3 @@
-import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import {
   type ChangeEvent,
   type ReactNode,
@@ -22,12 +21,6 @@ import {
   TRY_AGAIN,
   TRYING_AGAIN,
 } from "./password-texts";
-import {
-  LEGAL_LINKS_TITLE,
-  NEW_TAB_HINT,
-  PRIVACY_LINK,
-  TERMS_LINK,
-} from "./sign-in-texts";
 import type { Challenge } from "./turnstile";
 import "./sign-in.css";
 
@@ -288,24 +281,16 @@ export function useReveal(): [boolean, () => void, () => void] {
 }
 
 /**
- * Where the widget draws itself, and the line that says what it is doing (V5). With the script blocked the
- * alert says what to do, and "Tentar de novo" asks for the script again without reloading the page, except
- * where `blockedText` is given: there the person must come back by the link (`/redefinir-senha`).
+ * "Tentar de novo" of a blocked challenge script: it stays on the screen, with the focus on it, while the script
+ * is asked for again; when the script comes, the block goes away and the focus goes to the first field of the
+ * form around `slotRef`.
  */
-export function ChallengeSlot({
-  blockedText = CHALLENGE_BLOCKED,
-  challenge,
-  retry = true,
-}: {
-  blockedText?: string;
-  challenge: Challenge;
-  retry?: boolean;
-}) {
-  const slotRef = useRef<HTMLDivElement>(null);
+export function useChallengeRetry(
+  challenge: Challenge,
+  slotRef: RefObject<HTMLElement | null>
+): { retry: () => void; retrying: boolean } {
   const [retrying, setRetrying] = useState(false);
   const { state } = challenge;
-  // "Tentar de novo" stays on the screen, with the focus on it, while the script is asked for again; when
-  // the script comes, the block goes away and the focus goes to the first field of the form
   const loadingSeen = useRef<boolean>(false);
   useEffect(() => {
     if (!retrying) {
@@ -324,11 +309,34 @@ export function ChallengeSlot({
     if (state !== "blocked") {
       slotRef.current?.closest("form")?.querySelector("input")?.focus();
     }
-  }, [retrying, state]);
-  const handleRetry = useCallback(() => {
+  }, [retrying, slotRef, state]);
+  const retry = useCallback(() => {
     setRetrying(true);
     challenge.retry();
   }, [challenge]);
+  return { retry, retrying };
+}
+
+/**
+ * Where the widget draws itself, and the line that says what it is doing (V5). With the script blocked the
+ * alert says what to do, and "Tentar de novo" asks for the script again without reloading the page, except
+ * where `blockedText` is given: there the person must come back by the link (`/redefinir-senha`).
+ */
+export function ChallengeSlot({
+  blockedText = CHALLENGE_BLOCKED,
+  challenge,
+  retry = true,
+}: {
+  blockedText?: string;
+  challenge: Challenge;
+  retry?: boolean;
+}) {
+  const slotRef = useRef<HTMLDivElement>(null);
+  const { retry: handleRetry, retrying } = useChallengeRetry(
+    challenge,
+    slotRef
+  );
+  const { state } = challenge;
   return (
     <div className="sign-in-challenge" ref={slotRef}>
       <div ref={challenge.containerRef} />
@@ -351,33 +359,6 @@ export function ChallengeSlot({
         </>
       ) : null}
     </div>
-  );
-}
-
-/** The two legal pages open in another tab, so a half-done form is not lost (L1 of the legal pages). */
-export function LegalLinks() {
-  return (
-    <fieldset className="sign-in-legal">
-      <legend className="sign-in-legal-title">{LEGAL_LINKS_TITLE}</legend>
-      <ul>
-        <li>
-          <a href={LEGAL_PATHS.terms} rel="noopener noreferrer" target="_blank">
-            {TERMS_LINK}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-          </a>
-        </li>
-        <li>
-          <a
-            href={LEGAL_PATHS.privacy}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {PRIVACY_LINK}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
-          </a>
-        </li>
-      </ul>
-    </fieldset>
   );
 }
 

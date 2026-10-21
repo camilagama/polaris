@@ -6,9 +6,8 @@ import type { SignInError, SignInReason } from "../lib/sign-in-path";
  */
 export const SIGN_IN_TITLE = "Entrar no Polaris";
 export const SIGN_IN_PAGE_TITLE = "Entrar";
-export const SIGN_IN_SUPPORT = "Use sua conta do Google para entrar.";
-export const SIGN_IN_FIRST_TIME =
-  "Primeira vez? É o mesmo botão: sua conta é criada ao continuar.";
+/** The one line of help on `/entrar` (v5.2), under the Google button: what a first-timer needs before choosing. */
+export const SIGN_IN_FIRST_TIME = "Primeira vez? O botão também cria a conta.";
 
 export const GOOGLE_BUTTON = "Continuar com o Google";
 export const GOOGLE_BUTTON_PENDING = "Abrindo o Google…";
@@ -27,19 +26,15 @@ export const SIGN_IN_UNAVAILABLE =
 export const GOOGLE_NOT_OFFERED =
   "A entrada com o Google não está disponível agora. Tente de novo em instantes.";
 
-export const SIGN_IN_OFFLINE =
-  "Sem conexão. Para entrar é preciso internet. Conecte-se e tente de novo.";
+export const SIGN_IN_OFFLINE = "Sem conexão. Conecte-se para entrar.";
 export const SIGN_IN_BACK_ONLINE = "Conexão de volta. Você já pode entrar.";
 
-export const SESSION_ENDED_REASON =
-  "Sua sessão acabou. Entre de novo para continuar.";
+export const SESSION_ENDED_REASON = "Sua sessão acabou. Entre de novo.";
 export const RECENT_LOGIN_REASON =
   "Por segurança, entre de novo para confirmar que é você.";
 
 export const PRIVACY_LINK = "Política de Privacidade";
 export const TERMS_LINK = "Termos de Uso";
-// Only a pointer to the texts: the acceptance itself is recorded by its own screen (P7), not implied here.
-export const LEGAL_LINKS_TITLE = "Leia antes de entrar";
 export const NEW_TAB_HINT = "abre em outra aba";
 
 /** The line above the button for the reason the person was sent here, if any. */

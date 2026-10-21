@@ -18,8 +18,6 @@ export const HIDE_PASSWORD = "Ocultar";
 export const SHOW_PASSWORD_LABEL = "Mostrar senha";
 export const HIDE_PASSWORD_LABEL = "Ocultar senha";
 
-export const SIGN_IN_SUPPORT_BOTH =
-  "Entre com sua conta do Google ou com e-mail e senha.";
 export const OR_SEPARATOR = "ou";
 export const SIGN_IN_BUTTON = "Entrar";
 export const SIGN_IN_BUTTON_PENDING = "Entrando…";
@@ -34,8 +32,12 @@ export const EMAIL_INVALID =
 export const PASSWORD_REQUIRED = "Digite a senha.";
 export const INCORRECT_CREDENTIALS = "E-mail ou senha incorretos.";
 export const GOOGLE_ACCOUNT_HELP =
-  "Se você criou a conta com o Google, use Continuar com o Google.";
+  "Conta do Google? Use Continuar com o Google.";
 
+/** The rule on `/criar-conta` (v5.2): the same three rules, shorter. */
+export const SIGN_UP_PASSWORD_RULE =
+  "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve.";
+/** The rule on the password screens not yet migrated (they take the short one with their migration). */
 export const PASSWORD_RULE =
   "Use pelo menos 15 caracteres. Pode ter espaços e qualquer letra ou símbolo. Não pode ser uma senha que já vazou na internet.";
 export const PASSWORD_TOO_SHORT =
@@ -49,10 +51,15 @@ export const PASSWORD_CHECK_UNAVAILABLE =
   "Não conseguimos conferir a senha agora. Tente de novo em instantes.";
 
 export const CHALLENGE_CHECKING = "Confirmando que você é uma pessoa…";
+/** Above the widget, when it asks the person for an action (text of the cut). */
+export const CHALLENGE_INTERACTIVE = "Confirme que você é uma pessoa.";
 export const CHALLENGE_FAILED =
   "Não foi possível confirmar que você é uma pessoa. Tente de novo.";
 export const CHALLENGE_BLOCKED =
   "Não conseguimos carregar a confirmação de que você é uma pessoa. Recarregue a página. Se usa um bloqueador de anúncios, libere este site.";
+/** `/entrar` and `/criar-conta` (v5.2): one instruction with the two ways out. */
+export const CHALLENGE_BLOCKED_SHORT =
+  "Não deu para carregar a confirmação. Recarregue a página ou libere este site no bloqueador de anúncios.";
 /** `/redefinir-senha`: a reload would lose the link (the token lives in memory only), so it never says "recarregue". */
 export const CHALLENGE_BLOCKED_LINK =
   "Não conseguimos carregar a confirmação de que você é uma pessoa. Libere este site no bloqueador de anúncios e abra de novo o link do e-mail.";
@@ -74,34 +81,33 @@ export const TRYING_AGAIN = "Tentando…";
 const minutesText = (minutes: number) =>
   minutes === 1 ? "1 minuto" : `${minutes} minutos`;
 
-/** The lock of the e-mail (AC-62, V4): the word of the unlock e-mail, the minutes rounded up. */
+/**
+ * The lock of the e-mail (AC-62, V4), v5.2: the minutes rounded up, and neutral, the same whether the e-mail
+ * has an account or not. The button "Entrar" off already shows that it comes back with the end of the pause.
+ */
 export function pausedText(minutes: number): string {
-  return `Pausamos a entrada com senha deste e-mail por muitas tentativas. Espere ${minutesText(minutes)} ou toque em Esqueci a senha. Se a conta tem um e-mail, enviamos a ele um link para liberar agora.`;
+  return `Muitas tentativas. Espere ${minutesText(minutes)} ou use Esqueci a senha. Se este e-mail tem conta, enviamos um link para liberar agora.`;
 }
 
 /** The same lock seen from "Trocar senha": the person is inside, there is no "Esqueci a senha" on this screen. */
 export function changePausedText(minutes: number): string {
   return `Muitas tentativas com a senha atual. Espere ${minutesText(minutes)} e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada.`;
 }
-export const PAUSED_BUTTON_HINT = "O botão Entrar volta quando a pausa acabar.";
 
 export const SIGN_UP_TITLE = "Criar conta";
 export const SIGN_UP_PAGE_TITLE = "Criar conta";
-export const SIGN_UP_SUPPORT =
-  "Crie sua conta com e-mail e senha. Você confirma o e-mail antes de entrar.";
 export const SIGN_UP_BUTTON = "Criar conta";
 export const SIGN_UP_BUTTON_PENDING = "Criando a conta…";
 export const ACCEPT_PREFIX = "Li e aceito os";
 export const ACCEPT_AND = "e a";
-export const ACCEPT_REQUIRED =
-  "Para criar a conta, marque que leu e aceita os Termos de Uso e a Política de Privacidade.";
+export const ACCEPT_REQUIRED = "Marque o aceite para criar a conta.";
 export const HAVE_ACCOUNT = "Já tem conta?";
 
 export const CONFIRM_TITLE = "Confirme seu e-mail";
 export const CONFIRM_PAGE_TITLE = "Confirmar e-mail";
 /** Neutral on purpose: an e-mail of "you already have an account" has no confirmation link. */
 export function confirmSentText(email: string | null): string {
-  return `Enviamos um e-mail para ${email ?? "o seu e-mail"}. Abra e siga as instruções. Vale 24 horas.`;
+  return `Enviamos um e-mail para ${email ?? "o seu e-mail"}. Siga as instruções nele.`;
 }
 export const CONFIRM_NOT_ARRIVED = "Não chegou?";
 export const RESEND_BUTTON = "Reenviar e-mail";
@@ -166,20 +172,34 @@ export const CHANGE_NO_PASSWORD =
   "Sua conta entra com o Google e não tem senha para trocar.";
 export const CHANGE_RECENT_BUTTON = "Entrar de novo";
 
-/** The line of a refusal every form shares; the e-mail forms say "e-mails demais" for the limit. */
+/** The line of a blocked challenge script: the migrated forms (v5.2) say it shorter; `/redefinir-senha` never says reload. */
+function blockedText(
+  form: "email" | "other" | "reset" | "sign-in" | "sign-up"
+): string {
+  if (form === "reset") {
+    return CHALLENGE_BLOCKED_LINK;
+  }
+  return form === "sign-in" || form === "sign-up"
+    ? CHALLENGE_BLOCKED_SHORT
+    : CHALLENGE_BLOCKED;
+}
+
+/** The line of a refusal every form shares; the forms that send an e-mail say "e-mails demais" for the limit. */
 export function failureText(
   failure: "blocked" | CommonFailure,
-  form: "email" | "other" | "reset" | "sign-in"
+  form: "email" | "other" | "reset" | "sign-in" | "sign-up"
 ): string {
   switch (failure) {
     case "blocked":
-      return form === "reset" ? CHALLENGE_BLOCKED_LINK : CHALLENGE_BLOCKED;
+      return blockedText(form);
     case "challenge":
       return CHALLENGE_FAILED;
     case "hibp_unavailable":
       return PASSWORD_CHECK_UNAVAILABLE;
     case "limit":
-      return form === "email" ? TOO_MANY_EMAILS : TOO_MANY_TRIES;
+      return form === "email" || form === "sign-up"
+        ? TOO_MANY_EMAILS
+        : TOO_MANY_TRIES;
     default:
       return form === "sign-in" ? SIGN_IN_UNAVAILABLE : UNAVAILABLE;
   }

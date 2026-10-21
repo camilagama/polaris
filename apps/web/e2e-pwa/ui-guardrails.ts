@@ -382,7 +382,9 @@ function touchTooSmall(
 
 /**
  * In page: two controls whose touch areas overlap (a tap between them is a guess). The controls of one
- * `[data-slot=button-group]` are one fused unit, and a control inside another (a link in a clickable card) is nested.
+ * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
+ * the button at its end, "Mostrar" of a password: both have the area of the group, and the button is drawn over
+ * it); a control inside another (a link in a clickable card) is nested.
  */
 function touchOverlaps(selector: string) {
   const controls = [...document.querySelectorAll(selector)]
@@ -391,9 +393,10 @@ function touchOverlaps(selector: string) {
   const found: string[] = [];
   for (const [index, first] of controls.entries()) {
     for (const second of controls.slice(index + 1)) {
-      const group = first.element.closest("[data-slot=button-group]");
-      const fused =
-        group && group === second.element.closest("[data-slot=button-group]");
+      const fused = ["button-group", "input-group"].some((slot) => {
+        const group = first.element.closest(`[data-slot=${slot}]`);
+        return group && group === second.element.closest(`[data-slot=${slot}]`);
+      });
       const nested =
         first.element.contains(second.element) ||
         second.element.contains(first.element);

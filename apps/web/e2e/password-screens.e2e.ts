@@ -303,27 +303,54 @@ test.describe("entrar com e-mail e senha", () => {
     });
     await serve(page, server);
     await page.goto("/entrar");
+    await expect(page.getByRole("link", { name: "Criar conta" })).toBeVisible();
+    const email = page.getByLabel("E-mail", { exact: true });
+    const password = page.getByLabel("Senha", { exact: true });
+    // v5.2: only the e-mail at first; the password, "Esqueci a senha" and "Entrar" are in the DOM for a password
+    // manager, but hidden until the address has a complete shape
+    await expect(email).toBeVisible();
+    await expect(password).toBeHidden();
+    await expect(
+      page.getByRole("button", { exact: true, name: "Entrar" })
+    ).toBeHidden();
+    await expect(
+      page.getByRole("link", { name: "Esqueci a senha" })
+    ).toHaveCount(0);
+    await expect(email).toHaveAttribute("autocomplete", "username");
+    await expect(password).toHaveAttribute("autocomplete", "current-password");
+    await shot(page, "entrar-pronta");
+
+    // Enter with an incomplete address: the local error, the password still closed
+    await email.fill("quem@exemplo");
+    await email.press("Enter");
+    await expect(email).toHaveAttribute("aria-invalid", "true");
+    await expect(
+      page.getByText("Digite um e-mail completo, como nome@exemplo.com.")
+    ).toBeVisible();
+    await expect(password).toBeHidden();
+    expect(server.calls).toEqual([]);
+    await shot(page, "entrar-email-incompleto");
+
+    // the complete address opens the password without taking the focus from the e-mail, and asks no server
+    await email.fill("quem@exemplo.com");
+    await expect(password).toBeVisible();
+    await expect(email).toBeFocused();
+    await expect(email).not.toHaveAttribute("aria-invalid", "true");
     await expect(
       page.getByRole("link", { name: "Esqueci a senha" })
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: "Criar conta" })).toBeVisible();
-    await shot(page, "entrar-pronta");
+    expect(server.calls).toEqual([]);
 
-    const email = page.getByLabel("E-mail", { exact: true });
-    const password = page.getByLabel("Senha", { exact: true });
-    await expect(email).toHaveAttribute("autocomplete", "username");
-    await expect(password).toHaveAttribute("autocomplete", "current-password");
-
-    // the fields say what is missing, the first one takes the focus
+    // the fields say what is missing
     await page.getByRole("button", { exact: true, name: "Entrar" }).click();
-    await expect(email).toHaveAttribute("aria-invalid", "true");
-    await expect(email).toBeFocused();
-    await expect(page.getByText("Digite seu e-mail.")).toBeVisible();
-    await shot(page, "entrar-campos-vazios");
+    await expect(password).toHaveAttribute("aria-invalid", "true");
+    await expect(password).toBeFocused();
+    await expect(page.getByText("Digite a senha.")).toBeVisible();
+    await shot(page, "entrar-senha-vazia");
 
-    await email.fill("quem@exemplo.com");
     await password.fill(PASSWORD);
-    // show and hide: a 44 px toggle with its state, hidden again on submit (AC-72)
+    // show and hide: the toggle says its state in its name, hidden again on submit (AC-72); its touch area
+    // is measured by the screen checks (ui-guardrails)
     const reveal = page.getByRole("button", { name: "Mostrar senha" });
     await expect(reveal).toHaveText("Mostrar");
     const wide = await password.boundingBox();
@@ -336,9 +363,6 @@ test.describe("entrar com e-mail e senha", () => {
       page.getByRole("button", { name: "Mostrar senha" })
     ).toHaveCount(0);
     await expect(password).toHaveAttribute("type", "text");
-    const box = await hide.boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
     await page.getByRole("button", { exact: true, name: "Entrar" }).click();
     await expect(page.getByRole("alert")).toContainText(
       "E-mail ou senha incorretos."
@@ -408,10 +432,9 @@ test.describe("entrar com e-mail e senha", () => {
     await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
     await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { exact: true, name: "Entrar" }).click();
-    await expect(page.getByRole("alert")).toContainText(
-      "Pausamos a entrada com senha deste e-mail"
+    await expect(page.getByRole("alert")).toHaveText(
+      "Muitas tentativas. Espere 14 minutos ou use Esqueci a senha. Se este e-mail tem conta, enviamos um link para liberar agora."
     );
-    await expect(page.getByRole("alert")).toContainText("14 minutos");
     const enter = page.getByRole("button", { exact: true, name: "Entrar" });
     await expect(enter).toBeDisabled();
     await shot(page, "entrar-pausada");
@@ -485,8 +508,10 @@ test.describe("entrar com e-mail e senha", () => {
     const server = newServer({ turnstile: "blocked" });
     await serve(page, server);
     await page.goto("/criar-conta");
-    await expect(page.getByRole("alert")).toContainText(
-      "Não conseguimos carregar a confirmação de que você é uma pessoa."
+    // the challenge opens with the password, after the e-mail
+    await page.getByLabel("E-mail", { exact: true }).fill("nova@exemplo.com");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Não deu para carregar a confirmação. Recarregue a página ou libere este site no bloqueador de anúncios."
     );
     await shot(page, "criar-conta-desafio-bloqueado");
   });
@@ -531,6 +556,7 @@ test.describe("desafio bloqueado (P2)", () => {
       server.turnstile = "blocked";
       // biome-ignore lint/performance/noAwaitInLoops: one page after the other in the same tab
       await page.goto(path);
+      await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
       await expect(
         page.getByRole("button", { name: "Tentar de novo" })
       ).toBeVisible();
@@ -568,7 +594,16 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   await page.goto("/criar-conta");
   await expect(page).toHaveTitle("Criar conta · Polaris");
   await expect(
-    page.getByText("Use pelo menos 15 caracteres.", { exact: false })
+    page.getByRole("button", { name: "Continuar com o Google" })
+  ).toBeEnabled();
+  await shot(page, "criar-conta-pronta");
+  // the rule, the box and the button open with the password, after the e-mail
+  await expect(page.getByRole("checkbox")).toBeHidden();
+  await page.getByLabel("E-mail", { exact: true }).fill("nova@exemplo.com");
+  await expect(
+    page.getByText(
+      "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve."
+    )
   ).toBeVisible();
   const accept = page.getByRole("checkbox");
   await expect(accept).not.toBeChecked();
@@ -576,9 +611,6 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
     "rel",
     NOOPENER
   );
-  await shot(page, "criar-conta-pronta");
-
-  await page.getByLabel("E-mail", { exact: true }).fill("nova@exemplo.com");
   await page.getByLabel("Senha", { exact: true }).fill("curta");
   const create = page.getByRole("button", { exact: true, name: "Criar conta" });
   await expect(create).toBeEnabled();
@@ -593,7 +625,7 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   await create.click();
   await expect(accept).toBeFocused();
   await expect(
-    page.getByText("Para criar a conta, marque", { exact: false })
+    page.getByText("Marque o aceite para criar a conta.")
   ).toBeVisible();
   await shot(page, "criar-conta-erros");
   expect(callsTo(server, "/api/auth/sign-up/email")).toEqual([]);
@@ -616,7 +648,7 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Enviamos um e-mail para nova@exemplo.com. Abra e siga as instruções. Vale 24 horas."
+      "Enviamos um e-mail para nova@exemplo.com. Siga as instruções nele."
     )
   ).toBeVisible();
   const signUps = callsTo(server, "/api/auth/sign-up/email");

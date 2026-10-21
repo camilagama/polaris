@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 // every export at once, to scan all of the lines (a namespace import would defeat tree shaking in the app)
 const texts = await import("./sign-in-texts");
 const SEVENTY_TWO = /72/;
@@ -46,7 +47,7 @@ describe("the sign-in texts", () => {
 
   it("tell a first-time visitor that the same button creates the account", () => {
     expect(texts.SIGN_IN_FIRST_TIME).toBe(
-      "Primeira vez? É o mesmo botão: sua conta é criada ao continuar."
+      "Primeira vez? O botão também cria a conta."
     );
   });
 });

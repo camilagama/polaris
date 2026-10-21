@@ -28,7 +28,7 @@ const everyText = (): string[] => [
       "unavailable",
     ] as const
   ).flatMap((failure) =>
-    (["email", "other", "reset", "sign-in"] as const).map((form) =>
+    (["email", "other", "reset", "sign-in", "sign-up"] as const).map((form) =>
       texts.failureText(failure, form)
     )
   ),
@@ -44,9 +44,10 @@ describe("the password screen texts", () => {
     }
   });
 
-  it("say the lock as the unlock e-mail does: the entry is paused, the account is not 'blocked' (V4)", () => {
-    expect(texts.pausedText(15)).toContain("Pausamos a entrada");
-    expect(texts.pausedText(15)).toContain("15 minutos");
+  it("say the lock in the same words whether the e-mail has an account or not, never that the account is 'blocked' (V4, v5.2)", () => {
+    expect(texts.pausedText(14)).toBe(
+      "Muitas tentativas. Espere 14 minutos ou use Esqueci a senha. Se este e-mail tem conta, enviamos um link para liberar agora."
+    );
     expect(texts.pausedText(1)).toContain("1 minuto ");
     for (const text of everyText()) {
       expect(text).not.toMatch(ACCOUNT_LOCKED);
@@ -68,11 +69,15 @@ describe("the password screen texts", () => {
     expect(texts.CHALLENGE_BLOCKED_LINK).toContain("abra de novo o link");
     expect(texts.CHALLENGE_BLOCKED_LINK).not.toMatch(RELOAD);
     expect(texts.failureText("blocked", "sign-in")).toContain("Recarregue");
+    expect(texts.failureText("blocked", "sign-up")).toBe(
+      texts.CHALLENGE_BLOCKED_SHORT
+    );
+    expect(texts.failureText("blocked", "email")).toBe(texts.CHALLENGE_BLOCKED);
   });
 
   it("neither the intro nor the resend promise a link or a send the server cannot know (P4)", () => {
     expect(texts.confirmSentText("quem@exemplo.com")).toBe(
-      "Enviamos um e-mail para quem@exemplo.com. Abra e siga as instruções. Vale 24 horas."
+      "Enviamos um e-mail para quem@exemplo.com. Siga as instruções nele."
     );
     expect(texts.RESENT_TYPED).toBe(
       "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam."
@@ -89,6 +94,9 @@ describe("the password screen texts", () => {
 
   it("say the size rule before typing, with the numbers the server applies (AC-47)", () => {
     expect(texts.PASSWORD_RULE).toContain("15 caracteres");
+    expect(texts.SIGN_UP_PASSWORD_RULE).toBe(
+      "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve."
+    );
     expect(texts.PASSWORD_TOO_LONG).toContain("128");
   });
 
@@ -101,6 +109,7 @@ describe("the password screen texts", () => {
 
   it("say 'e-mails demais' only on the forms that send an e-mail", () => {
     expect(texts.failureText("limit", "email")).toBe(texts.TOO_MANY_EMAILS);
+    expect(texts.failureText("limit", "sign-up")).toBe(texts.TOO_MANY_EMAILS);
     expect(texts.failureText("limit", "sign-in")).toBe(texts.TOO_MANY_TRIES);
   });
 });
