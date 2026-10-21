@@ -40,3 +40,18 @@ export function uuidV5(name: string, namespace: string = NAMESPACE): string {
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+/**
+ * The client address of a journey user (`cf-connecting-ip`, which the local preview keeps when the client sends it):
+ * the IPv6 documentation range (RFC 3849) and 96 bits of a SHA-256 of the name. The Worker's rate limits count per
+ * session and per address, and on the loopback every request would be `127.0.0.1`, one bucket for the whole run,
+ * shared by both previews (one `.wrangler/state`) and by the retry. With one address per name, each test and
+ * attempt has its own bucket, as each person has in production, and the limit itself stays the deployed one.
+ */
+export function journeyClientIp(name: string): string {
+  const hex = createHash("sha256").update(name, "utf8").digest("hex");
+  const groups = Array.from({ length: 6 }, (_, index) =>
+    hex.slice(index * 4, index * 4 + 4)
+  );
+  return `2001:db8:${groups.join(":")}`;
+}

@@ -12,7 +12,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { createBetterAuth } from "../src/server/auth";
 import { PREFERRED_ORGANIZATION_KEY } from "../src/lib/current-organization-model";
-import { journeyName, uuidV5 } from "./journey-names";
+import { journeyClientIp, journeyName, uuidV5 } from "./journey-names";
 import { databaseUrl } from "./run-database";
 import {
   ensureRunEnvironment,
@@ -68,6 +68,8 @@ export interface JourneyOptions {
   /** Creates the organization through `organization.createInitial` (the onboarding journey does it on screen). */
   organization?: { timezone: string } | false;
 }
+
+const CLIENT_IP_HEADER = "cf-connecting-ip";
 
 /** The instant of the run, captured once by the global setup. */
 export function runT0(): number {
@@ -138,6 +140,7 @@ export async function createJourneyUser(
     })
   );
   const headers = await helpers.getAuthHeaders({ userId: id });
+  headers.set(CLIENT_IP_HEADER, journeyClientIp(name));
   const cookies = await helpers.getCookies({
     domain: new URL(origin).hostname,
     userId: id,
@@ -164,6 +167,10 @@ export async function openJourney(
   }
   const context = await browser.newContext({
     baseURL: origin,
+    // the same address as the user's rpc calls: one rate limit bucket per test and attempt (journeyClientIp)
+    extraHTTPHeaders: {
+      [CLIENT_IP_HEADER]: user.headers.get(CLIENT_IP_HEADER) as string,
+    },
     storageState: {
       cookies: user.cookies.map((cookie) => ({
         ...cookie,
