@@ -1169,6 +1169,9 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     const sent = callsTo(server, "/api/auth/change-password").length;
     await change.click({ force: true });
     await newPasswordField(page).press("Enter");
+    // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
+    await page.waitForTimeout(500);
+    await expect(change).toHaveText("Trocar senha");
     expect(callsTo(server, "/api/auth/change-password")).toHaveLength(sent);
     await expectNoTechnicalText(page);
     await shot(page, "trocar-senha-pausada");

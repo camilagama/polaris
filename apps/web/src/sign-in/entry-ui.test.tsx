@@ -50,6 +50,18 @@ describe("SubmitButton with the challenge script blocked (N-1)", () => {
     }
   });
 
+  it("is off the same way for a pause, naming the alert of the pause", () => {
+    const markup = renderToStaticMarkup(
+      <SubmitButton offBy="pause-alert" pending={false} pendingText="Trocando…">
+        Trocar senha
+      </SubmitButton>
+    );
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).toContain('aria-describedby="pause-alert"');
+    expect(markup).not.toMatch(DISABLED_ATTR);
+    expect(markup).toContain(">Trocar senha<");
+  });
+
   it("keeps its own pending state apart from the block", () => {
     const markup = button("idle", true);
     expect(markup).toContain('aria-busy="true"');
