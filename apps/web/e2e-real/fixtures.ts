@@ -98,6 +98,8 @@ export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
 
 /** The browser contexts a test opened, closed when it ends (fixture `contexts`). */
 const openContexts: import("@playwright/test").BrowserContext[] = [];
+/** The address each /rpc/ request of those contexts carried, against the journey's own. */
+const rpcAddresses: Promise<{ clientIp: string; sent?: string }>[] = [];
 
 let helpersPromise:
   | Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }>
@@ -165,12 +167,11 @@ export async function openJourney(
     });
     organizationId = created.organization.id;
   }
+  const clientIp = journeyClientIp(name);
   const context = await browser.newContext({
     baseURL: origin,
     // the same address as the user's rpc calls: one rate limit bucket per test and attempt (journeyClientIp)
-    extraHTTPHeaders: {
-      [CLIENT_IP_HEADER]: user.headers.get(CLIENT_IP_HEADER) as string,
-    },
+    extraHTTPHeaders: { [CLIENT_IP_HEADER]: clientIp },
     storageState: {
       cookies: user.cookies.map((cookie) => ({
         ...cookie,
@@ -189,6 +190,16 @@ export async function openJourney(
     },
   });
   openContexts.push(context);
+  // checked when the test ends: every /rpc/ of the browser left with the journey's address, not 127.0.0.1
+  context.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/rpc/")) {
+      rpcAddresses.push(
+        request
+          .allHeaders()
+          .then((headers) => ({ clientIp, sent: headers[CLIENT_IP_HEADER] }))
+      );
+    }
+  });
   const page = await context.newPage();
   // fixed at T0 and RUNNING: timers (outbox, the 4 s get-session, the lease `exp`, debounce) advance as usual
   await page.clock.install({ time: runT0() });
@@ -214,9 +225,16 @@ export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
           type: "E2E_SEED",
         });
       }
+      const addresses = await Promise.all(rpcAddresses.splice(0));
       await Promise.all(
         openContexts.splice(0).map((context) => context.close())
       );
+      if (testInfo.status === testInfo.expectedStatus) {
+        playwrightExpect(
+          addresses.filter(({ clientIp, sent }) => sent !== clientIp),
+          "every /rpc/ of the browser carries the journey's client address"
+        ).toEqual([]);
+      }
     },
     { auto: true },
   ],

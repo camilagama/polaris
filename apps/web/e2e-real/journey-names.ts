@@ -43,7 +43,8 @@ export function uuidV5(name: string, namespace: string = NAMESPACE): string {
 
 /**
  * The client address of a journey user (`cf-connecting-ip`, which the local preview keeps when the client sends it):
- * the IPv6 documentation range (RFC 3849) and 96 bits of a SHA-256 of the name. The Worker's rate limits count per
+ * the IPv6 documentation range (RFC 3849) and 96 bits of a SHA-256 of the name (32 of them inside the /64 that the
+ * auth access log keeps). The Worker's rate limits count per
  * session and per address, and on the loopback every request would be `127.0.0.1`, one bucket for the whole run,
  * shared by both previews (one `.wrangler/state`) and by the retry. With one address per name, each test and
  * attempt has its own bucket, as each person has in production, and the limit itself stays the deployed one.
