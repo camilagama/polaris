@@ -99,7 +99,10 @@ export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
 /** The browser contexts a test opened, closed when it ends (fixture `contexts`). */
 const openContexts: import("@playwright/test").BrowserContext[] = [];
 /** The address each /rpc/ request of those contexts carried, against the journey's own. */
-const rpcAddresses: Promise<{ clientIp: string; sent?: string }>[] = [];
+const rpcAddresses: Promise<{
+  clientIp: string;
+  sent: string | undefined;
+}>[] = [];
 
 let helpersPromise:
   | Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }>
