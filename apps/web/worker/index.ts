@@ -330,8 +330,10 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   return finished(failures);
 }
 
-/** How many users one run of the purge of the unverified deletes at most (the function takes 1 to 1000). */
+/** How many users one call of the purge of the unverified deletes at most (the function takes 1 to 1000). */
 const UNVERIFIED_USER_PURGE_LIMIT = 200;
+/** Calls per run: a full batch means more may be owed, and the run stops at this many so it stays bounded. */
+const UNVERIFIED_USER_PURGE_BATCHES = 5;
 
 /**
  * Removes the rows of the sign-in lock untouched for a day (retention class `auth_login_lock`, ADR 0100),
@@ -364,7 +366,7 @@ async function runLoginLockExpiry(env: WorkerBindings): Promise<JobResult> {
 /**
  * Deletes the users who never verified the e-mail (retention class `auth_unverified_user`, ADR 0100, Q-D2): the
  * ones with no Google account, no session and no membership, created more than 24 hours ago, at most
- * UNVERIFIED_USER_PURGE_LIMIT per run. The conditions, the audit (without the e-mail) and the limit's range
+ * UNVERIFIED_USER_PURGE_LIMIT per batch, up to UNVERIFIED_USER_PURGE_BATCHES batches per run. The conditions, the audit (without the e-mail) and the limit's range
  * live in the function; the Worker only calls it, through the authentication role. It may run while the
  * password sign-in is off: with no user by password there is nothing to delete.
  */
@@ -382,7 +384,15 @@ async function runUnverifiedUserPurge(env: WorkerBindings): Promise<JobResult> {
     return finished([error]);
   }
   try {
-    const removed = await client.purge(UNVERIFIED_USER_PURGE_LIMIT);
+    let removed = 0;
+    for (let batch = 0; batch < UNVERIFIED_USER_PURGE_BATCHES; batch += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each batch depends on the size of the previous one
+      const deleted = await client.purge(UNVERIFIED_USER_PURGE_LIMIT);
+      removed += deleted;
+      if (deleted < UNVERIFIED_USER_PURGE_LIMIT) {
+        break;
+      }
+    }
     logger.info("auth_unverified_users_purged", { removed });
     return finished([]);
   } catch (error: unknown) {

@@ -1639,6 +1639,19 @@ describe("the scheduler tick", () => {
     );
   });
 
+  it("calls the purge of the unverified again while a batch comes back full, and stops at the cap of batches", async () => {
+    mocks.unverifiedUserPurge
+      .mockResolvedValueOnce(200)
+      .mockResolvedValueOnce(200)
+      .mockResolvedValueOnce(7);
+    await tick("17 * * * *", everything);
+    expect(mocks.unverifiedUserPurge).toHaveBeenCalledTimes(3);
+
+    mocks.unverifiedUserPurge.mockReset().mockResolvedValue(200);
+    await tick("17 * * * *", { ...everything });
+    expect(mocks.unverifiedUserPurge).toHaveBeenCalledTimes(5);
+  });
+
   it("leaves the window of the purge of the unverified open without the authentication role, and fails the cron when the purge fails", async () => {
     await tick("17 * * * *", { ...everything, AUTH_HYPERDRIVE: undefined });
 

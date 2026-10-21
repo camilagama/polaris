@@ -24,6 +24,7 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 
 - O usuário que se cadastrou por e-mail e senha e nunca verificou o e-mail é apagado 24 horas depois de criado, para que o cadastro com o e-mail de outra pessoa não trave a entrada dela por Google (ADR 0100).
 - Só se apaga o usuário que cumpre todas as condições juntas: e-mail não verificado, nenhuma conta além da de e-mail e senha (sem Google), nenhuma sessão, nenhum vínculo com organização e mais de 24 horas de criado. Qualquer condição que falte preserva o usuário.
+- Isso limita a janela do pré-cadastro com o e-mail de outra pessoa, não a elimina: o cadastro pode ser refeito depois de cada apagamento, e um link de verificação reenviado antes do apagamento ainda vale até vencer (o token leva o e-mail, não o usuário). O risco continua aceito como no ADR 0100.
 - O apagamento tem limite por execução, pode ser repetido sem efeito e deixa um registro na auditoria de autenticação com o identificador do usuário apagado, nunca o e-mail.
 
 ## Bloqueio de conta por tentativas

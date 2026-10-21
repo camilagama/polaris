@@ -51,6 +51,9 @@ const RUNTIME_ROLES = [
   "polaris_onboarding_runtime",
   "polaris_login_lock_owner",
   "polaris_notice_recipient_owner",
+  "polaris_device_session_owner",
+  "polaris_retention_owner",
+  "polaris_closed_export_reader",
 ];
 const BIG_LIMIT = 1000;
 const AUDIT_SUBJECT_LEAK = /example\.invalid|Nome de teste|@/;
@@ -602,7 +605,7 @@ async function run() {
         false,
       ],
       ["24 hours", "interval '24 hours'", "interval '1 second'", false],
-      // the foreign key refuses the delete of a user with a membership, so the call fails as a whole
+      // the foreign key (restrict, 23001) refuses the delete of a user with a membership, so the call fails as a whole
       [
         "membership",
         "NOT EXISTS (SELECT 1 FROM public.memberships AS member WHERE member.user_id = candidate.id)",
@@ -625,7 +628,9 @@ async function run() {
           await assert.rejects(
             () => probe(mutationClient, `mutant-${label.replaceAll(" ", "")}`),
             (error: unknown) =>
-              anyError || error instanceof assert.AssertionError,
+              anyError
+                ? sqlState(error) === "23001"
+                : error instanceof assert.AssertionError,
             `the probe catches the function without the condition: ${label}`
           );
         } finally {

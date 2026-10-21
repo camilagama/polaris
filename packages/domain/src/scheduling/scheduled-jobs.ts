@@ -133,7 +133,7 @@ export const SCHEDULED_JOBS: readonly ScheduledJob[] = Object.freeze([
   {
     cadenceSeconds: HOUR_SECONDS,
     description:
-      "Authentication: deletes the users who never verified the e-mail, have no Google account, no session and no membership and were created more than 24 hours ago (at most 200 per run), with an audit row that holds no e-mail (Q-D2, ADR 0100).",
+      "Authentication: deletes the users who never verified the e-mail, have no Google account, no session and no membership and were created more than 24 hours ago (batches of 200, at most 5 per run), with an audit row that holds no e-mail (Q-D2, ADR 0100).",
     id: "auth.unverified_user_purge",
     idempotentBy:
       "the function deletes only what meets every condition and the clock already made old; what was deleted is gone and the rest does not qualify, so a second run finds nothing",
