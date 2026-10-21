@@ -213,6 +213,11 @@ async function showScreenAlone(page: Page) {
     window.scrollTo(0, document.documentElement.scrollHeight);
   });
   await page.evaluate(() => document.fonts.ready);
+  // the stock lines and the summary settle after the last click (slower on a busy machine): scroll again once they have
+  await page.waitForTimeout(400);
+  await page.evaluate(() =>
+    window.scrollTo(0, document.documentElement.scrollHeight)
+  );
 }
 
 async function pick(
@@ -247,12 +252,18 @@ async function chooseMethod(page: Page, method: string) {
 
 async function payPix(page: Page) {
   await chooseMethod(page, "Pix");
-  await page
-    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
-    .click();
-  await page
-    .getByRole("option", { exact: true, name: "Sem perfil de pagamento" })
-    .click();
+  await chooseOption(
+    page,
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" }),
+    page.getByRole("option", { exact: true, name: "Sem perfil de pagamento" })
+  );
+}
+
+/** Opens a select, picks the option and waits for the popup to leave: a slow machine still shows it fading out. */
+async function chooseOption(page: Page, trigger: Locator, option: Locator) {
+  await trigger.click();
+  await option.click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
 }
 
 const submit = (page: Page) =>
@@ -307,28 +318,29 @@ export const saleStates = {
     await twoItems(page);
     await chooseMethod(page, "Crédito");
     await page.getByLabel("Número de parcelas").fill("3");
-    await page
-      .getByRole("combobox", {
+    await chooseOption(
+      page,
+      page.getByRole("combobox", {
         exact: true,
         name: "Modalidade do parcelamento",
-      })
-      .click();
-    await page
-      .getByRole("option", { exact: true, name: "Parcelado pelo lojista" })
-      .click();
-    await page
-      .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
-      .click();
-    await page.getByRole("option", { name: PROFILE_OPTION }).click();
+      }),
+      page.getByRole("option", { exact: true, name: "Parcelado pelo lojista" })
+    );
+    await chooseOption(
+      page,
+      page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" }),
+      page.getByRole("option", { name: PROFILE_OPTION })
+    );
     await page.getByRole("button", { name: "Adicionar ajuste" }).click();
     const adjustment = page.getByRole("group", {
       exact: true,
       name: "Ajuste 1",
     });
-    await adjustment
-      .getByRole("combobox", { exact: true, name: "Tipo de ajuste" })
-      .click();
-    await page.getByRole("option", { exact: true, name: "Desconto" }).click();
+    await chooseOption(
+      page,
+      adjustment.getByRole("combobox", { exact: true, name: "Tipo de ajuste" }),
+      page.getByRole("option", { exact: true, name: "Desconto" })
+    );
     await adjustment.getByLabel("Valor (R$)").fill("10,00");
     await showScreenAlone(page);
   },
