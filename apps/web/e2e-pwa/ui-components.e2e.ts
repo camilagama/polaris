@@ -94,8 +94,17 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
     sale.getByRole("status").filter({ hasText: "Sem internet." })
   ).toBeVisible();
   await expect(
-    sale.getByRole("status").filter({ hasText: "Sem perfil, taxas e prazo" })
+    sale
+      .getByRole("status")
+      .filter({ hasText: "Esta venda ainda não foi enviada." })
   ).toBeVisible();
+
+  // The profile hint is a field description tied to the select, not an alert
+  await expect(
+    sale.getByRole("combobox", { name: "Perfil de pagamento" })
+  ).toHaveAccessibleDescription(
+    "Sem perfil, taxas e prazo ficam como estimativa."
+  );
 
   // Card: its title is the heading the screen gives it
   await expect(
@@ -184,7 +193,7 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
   await expect(anticipation).not.toBeChecked();
 
   // Separator
-  await expect(sale.getByRole("separator")).toHaveCount(2);
+  await expect(sale.getByRole("separator")).toHaveCount(3);
 });
 
 for (const theme of THEMES) {

@@ -91,6 +91,11 @@ const METHODS = [
   { label: "Cartão de débito", value: "debito" },
 ];
 
+const PROFILES = [
+  { label: "Sem perfil", value: "sem-perfil" },
+  { label: "Maquininha balcão", value: "maquininha" },
+];
+
 const FONT_SAMPLE = [
   "áàâãä éêë íï óôõö úü ç ñ ÁÀÂÃÄ ÉÊË ÍÏ ÓÔÕÖ ÚÜ Ç Ñ",
   "R$ 1.234,56 · 12% · nº 3 · 1ª · 2º · 25 °C · § 4",
@@ -313,7 +318,7 @@ export function UiGallery() {
             <Alert>
               <InfoIcon aria-hidden="true" />
               <AlertDescription>
-                Sem perfil, taxas e prazo ficam como estimativa.
+                Esta venda ainda não foi enviada.
               </AlertDescription>
             </Alert>
 
@@ -426,6 +431,33 @@ export function UiGallery() {
                     ))}
                   </RadioGroup>
                 </FieldSet>
+                <Separator />
+                <Field>
+                  <FieldLabel id="galeria-perfil-rotulo">
+                    Perfil de pagamento
+                  </FieldLabel>
+                  <Select defaultValue="sem-perfil" items={PROFILES}>
+                    <SelectTrigger
+                      aria-describedby="galeria-perfil-ajuda"
+                      aria-labelledby="galeria-perfil-rotulo"
+                      className="w-full"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {PROFILES.map((profile) => (
+                          <SelectItem key={profile.value} value={profile.value}>
+                            {profile.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription id="galeria-perfil-ajuda">
+                    Sem perfil, taxas e prazo ficam como estimativa.
+                  </FieldDescription>
+                </Field>
                 <Separator />
                 <Field orientation="horizontal">
                   <Checkbox
