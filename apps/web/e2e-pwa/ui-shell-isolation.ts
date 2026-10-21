@@ -11,7 +11,10 @@ import type { Page } from "@playwright/test";
  * Everything below `page.evaluate` is serialized and runs in the browser: it may use nothing of this module.
  */
 
-/** What an old rule would change on a control or on text: box, type, color, focus. Used values (width, margin) stay out. */
+/**
+ * What an old rule would change on a control or on text: box, border, padding, type, color, focus, position. The used
+ * values (`width`, `height`, `margin`) stay out: they follow the container, which the old sheets do change.
+ */
 const PROPERTIES = [
   "accent-color",
   "appearance",
@@ -45,6 +48,9 @@ const PROPERTIES = [
   "font-weight",
   "letter-spacing",
   "line-height",
+  "column-gap",
+  "max-height",
+  "max-width",
   "min-height",
   "min-width",
   "opacity",
@@ -52,14 +58,22 @@ const PROPERTIES = [
   "outline-offset",
   "outline-style",
   "outline-width",
+  "overflow-x",
+  "overflow-y",
   "padding-bottom",
   "padding-left",
   "padding-right",
   "padding-top",
+  "pointer-events",
+  "position",
+  "row-gap",
   "text-align",
   "text-decoration-line",
   "text-transform",
+  "transform",
+  "visibility",
   "white-space",
+  "z-index",
 ] as const;
 
 /** The style of an element, by the name of the element (`button "Mostrar"`, its place in the tree), property by property. */
@@ -81,6 +95,32 @@ export async function addLegacyRule(page: Page, css: string) {
   }, css);
 }
 
+/** A rule outside every layer (it beats the layers), for the control that needs a transition the check must see through. */
+export async function addPageRule(page: Page, css: string) {
+  await page.evaluate((rule) => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(rule);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  }, css);
+}
+
+/**
+ * Puts under the shell a block of the new interface with what the screens opened by the checks do not show: a
+ * field in error, one with a placeholder, a native select and a textarea. The old sheets name each of them.
+ */
+export async function addProbe(page: Page) {
+  await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.dataset.ui = "";
+    probe.innerHTML =
+      '<input aria-label="sonda com erro" aria-invalid="true" />' +
+      '<input aria-label="sonda com texto de apoio" placeholder="apoio" />' +
+      '<select aria-label="sonda de lista"><option>a</option></select>' +
+      '<textarea aria-label="sonda de texto"></textarea>';
+    (document.querySelector(".ui-root") ?? document.body).append(probe);
+  });
+}
+
 /**
  * Takes the snapshot of the screen under `[data-ui]` (the page is in the state to measure), then takes the layer
  * `legacy` out of the page and takes it again. Tab first: the focus is programmatic and only matches
@@ -90,8 +130,14 @@ export async function legacyLayerOnAndOff(
   page: Page
 ): Promise<{ off: UiLayerState; on: UiLayerState }> {
   await page.keyboard.press("Tab");
+  // a computed style read in the middle of a transition is the start of it, not the value the rule gives
+  await addPageRule(
+    page,
+    "*, *::before, *::after { transition: none !important; }"
+  );
   return await page.evaluate((properties) => {
-    function nameOf(element: Element, index: number) {
+    const seen = new Map<string, number>();
+    function nameOf(element: Element) {
       const text = (
         element.getAttribute("aria-label") ??
         (element as HTMLInputElement).labels?.[0]?.textContent ??
@@ -101,7 +147,12 @@ export async function legacyLayerOnAndOff(
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 24);
-      return `${index} ${element.tagName.toLowerCase()}${text ? ` "${text}"` : ""}`;
+      const slot = element.getAttribute("data-slot");
+      const base = `${element.tagName.toLowerCase()}${slot ? `[${slot}]` : ""}${text ? ` "${text}"` : ""}`;
+      // two elements with the same name are told apart by the order they come in, not by their place in the page
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      return count > 1 ? `${base} #${count}` : base;
     }
     function read(element: Element, pseudo?: string) {
       const style = getComputedStyle(element, pseudo);
@@ -115,13 +166,19 @@ export async function legacyLayerOnAndOff(
     function snapshot() {
       const elements = [...document.querySelectorAll("[data-ui], [data-ui] *")];
       const result: Record<string, Record<string, string>> = {};
-      elements.forEach((element, index) => {
-        const name = nameOf(element, index);
+      const names = new Map<Element, string>();
+      seen.clear();
+      for (const element of elements) {
+        const name = nameOf(element);
+        names.set(element, name);
         result[name] = read(element);
-        if (element instanceof HTMLInputElement) {
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
           result[`${name} ::placeholder`] = read(element, "::placeholder");
         }
-      });
+      }
       // the focus ring of each control that can have it
       const focusable = elements.filter(
         (element): element is HTMLElement =>
@@ -134,9 +191,7 @@ export async function legacyLayerOnAndOff(
       for (const element of focusable) {
         element.focus();
         if (element.matches(":focus-visible")) {
-          result[
-            `${nameOf(element, elements.indexOf(element))} :focus-visible`
-          ] = read(element);
+          result[`${names.get(element)} :focus-visible`] = read(element);
         }
       }
       (document.activeElement as HTMLElement | null)?.blur();
@@ -173,10 +228,16 @@ export async function legacyLayerOnAndOff(
 /** What the layer changed under `[data-ui]`: element, property, the value with the layer and the one without. */
 export function leaks({ off, on }: { off: UiLayerState; on: UiLayerState }) {
   const found: string[] = [];
-  for (const [name, withLayer] of Object.entries(on.snapshot)) {
+  for (const name of new Set([
+    ...Object.keys(on.snapshot),
+    ...Object.keys(off.snapshot),
+  ])) {
+    const withLayer = on.snapshot[name];
     const without = off.snapshot[name];
-    if (!without) {
-      found.push(`${name}: sumiu sem a camada legacy`);
+    if (!(withLayer && without)) {
+      found.push(
+        `${name}: só existe ${withLayer ? "com" : "sem"} a camada legacy`
+      );
       continue;
     }
     for (const property of Object.keys(withLayer)) {

@@ -4,6 +4,8 @@ import { expect, test } from "@playwright/test";
 import { serveEntry } from "./ui-entry-states";
 import {
   addLegacyRule,
+  addPageRule,
+  addProbe,
   leaks,
   legacyLayerOnAndOff,
 } from "./ui-shell-isolation";
@@ -24,6 +26,20 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body),
   contentType: "application/json",
 });
+
+/** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
+const settle = async (page: Page) => {
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.effect?.getComputedTiming().iterations ===
+            Number.POSITIVE_INFINITY || animation.playState !== "running"
+      )
+  );
+};
 
 /** The app as someone signed in sees it: a session, one organization, and no server for anything else (offline). */
 async function openInShell(
@@ -49,12 +65,7 @@ async function openInShell(
   await page.goto(path);
   await expect(page.locator(".ui-root.app-shell-root")).toBeVisible();
   await ready();
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every((animation) => animation.playState !== "running")
-  );
+  await settle(page);
 }
 
 /** The pages of the entry and of the password: outside the shell, with the same sheets on the page. */
@@ -92,12 +103,7 @@ const SCREENS = [
       await expect(
         page.getByRole("heading", { level: 1, name: heading })
       ).toBeVisible();
-      await page.evaluate(() => document.fonts.ready);
-      await page.waitForFunction(() =>
-        document
-          .getAnimations()
-          .every((animation) => animation.playState !== "running")
-      );
+      await settle(page);
     },
   })),
 ];
@@ -107,48 +113,103 @@ for (const screen of SCREENS) {
     page,
   }) => {
     await screen.open(page);
+    await addProbe(page);
     const state = await legacyLayerOnAndOff(page);
-    // the check is not vacuous: the layer was on the page, there was something to measure, and it came off
+    const names = Object.keys(state.on.snapshot);
+    // the check is not vacuous: the layer was on the page and came off, there was something to measure, the probe
+    // was measured, and so was the focus (Tab put the page in keyboard mode and some control took the ring)
     expect(state.off.removed).toBeGreaterThan(100);
-    expect(Object.keys(state.on.snapshot).length).toBeGreaterThan(20);
+    expect(names.length).toBeGreaterThan(20);
+    expect(
+      names.some((name) => name.startsWith('input "sonda com erro"'))
+    ).toBe(true);
+    expect(names.some((name) => name.endsWith(":focus-visible"))).toBe(true);
     expect(leaks(state)).toEqual([]);
   });
 }
 
 test.describe("controle: a verificação pega a regra legacy que vaza", () => {
-  // each rule is the fault in the shape it had, injected in the layer; the line the check must print says what it reached
+  // each rule is the fault in the shape it had, injected in the layer; `found` is what the check must print for it
   const LEAKS = [
     // the real fault of "Trocar senha": the field of the group takes the border of the old input
     {
       css: ".ui-root input { border: 1px solid rgb(255 0 0); }",
-      found: 'input "Senha atual": border-top-color rgb(255, 0, 0)',
+      found:
+        'input[input-group-control] "Senha atual": border-top-color rgb(255, 0, 0) (com legacy)',
       name: ".ui-root input (a regra do ui.css antes da correção)",
     },
     // a rule of the old sheets for every button of the page, with no `.ui-root` to say where it is meant for
     {
       css: "button { text-transform: uppercase; }",
-      found: "button",
+      found: ": text-transform uppercase (com legacy)",
+      from: 'button[button] "Mostrar',
       name: "button sem escopo",
     },
     {
       css: ".ui-root :focus-visible { outline: 3px solid rgb(255 0 0); }",
-      found: ":focus-visible: outline-color rgb(255, 0, 0)",
+      found: ":focus-visible: outline-color rgb(255, 0, 0) (com legacy)",
       name: ".ui-root :focus-visible (o contorno do campo e do título)",
+    },
+    // the rules of ui.css that the open screens do not show, on the probe
+    {
+      css: '.ui-root input[aria-invalid="true"] { border-color: rgb(255 0 0); }',
+      found:
+        'input "sonda com erro": border-top-color rgb(255, 0, 0) (com legacy)',
+      name: '.ui-root input[aria-invalid="true"]',
+    },
+    {
+      css: ".ui-root input::placeholder { color: rgb(255 0 0); }",
+      found:
+        'input "sonda com texto de apoio" ::placeholder: color rgb(255, 0, 0) (com legacy)',
+      name: ".ui-root input::placeholder",
+    },
+    {
+      css: ".ui-root select { box-sizing: content-box; }",
+      found: 'select "sonda de lista": box-sizing content-box (com legacy)',
+      name: ".ui-root select",
+    },
+    {
+      css: ".ui-root textarea { box-sizing: content-box; }",
+      found: 'textarea "sonda de texto": box-sizing content-box (com legacy)',
+      name: ".ui-root textarea",
     },
   ];
   for (const leak of LEAKS) {
     test(leak.name, async ({ page }) => {
       await CHANGE_PASSWORD.open(page);
+      await addProbe(page);
       await addLegacyRule(page, leak.css);
       const found = leaks(await legacyLayerOnAndOff(page));
-      expect(found.some((line) => line.includes(leak.found))).toBe(true);
+      expect(
+        found.some(
+          (line) =>
+            line.startsWith(leak.from ?? "") && line.includes(leak.found)
+        )
+      ).toBe(true);
     });
   }
+
+  test("o que transiciona também é visto (a leitura não pega o começo da transição)", async ({
+    page,
+  }) => {
+    await CHANGE_PASSWORD.open(page);
+    await addPageRule(page, "[data-ui] input { transition: border-color 5s; }");
+    await addLegacyRule(page, ".ui-root input { border-color: rgb(255 0 0); }");
+    const found = leaks(await legacyLayerOnAndOff(page));
+    expect(
+      found.some((line) =>
+        line.includes(
+          'input[input-group-control] "Senha atual": border-top-color rgb(255, 0, 0)'
+        )
+      )
+    ).toBe(true);
+  });
 
   test("uma regra legacy só para o que é antigo não reprova", async ({
     page,
   }) => {
     await CHANGE_PASSWORD.open(page);
+    await addProbe(page);
     await addLegacyRule(
       page,
       ".app-shell-root header, .app-shell-root footer, .app-shell-root nav { border: 2px solid rgb(255 0 0); padding: 9px; }"
