@@ -1,6 +1,7 @@
 import { configureLogging, logger } from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
+import { createAuthUnverifiedUserMaintenanceClient } from "@polaris/db/auth-unverified-user-maintenance";
 import { createMediaCleanupClient } from "@polaris/db/media-cleanup";
 import {
   createOutboxClient,
@@ -329,6 +330,11 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
   return finished(failures);
 }
 
+/** How many users one call of the purge of the unverified deletes at most (the function takes 1 to 1000). */
+const UNVERIFIED_USER_PURGE_LIMIT = 200;
+/** Calls per run: a full batch means more may be owed, and the run stops at this many so it stays bounded. */
+const UNVERIFIED_USER_PURGE_BATCHES = 5;
+
 /**
  * Removes the rows of the sign-in lock untouched for a day (retention class `auth_login_lock`, ADR 0100),
  * through the authentication role, the only one that executes the function.
@@ -349,6 +355,45 @@ async function runLoginLockExpiry(env: WorkerBindings): Promise<JobResult> {
   try {
     const removed = await client.expire();
     logger.info("auth_login_lock_expired", { removed });
+    return finished([]);
+  } catch (error: unknown) {
+    return finished([error]);
+  } finally {
+    await quietly(() => client.close());
+  }
+}
+
+/**
+ * Deletes the users who never verified the e-mail (retention class `auth_unverified_user`, ADR 0100, Q-D2): the
+ * ones with no Google account, no session and no membership, created more than 24 hours ago, at most
+ * UNVERIFIED_USER_PURGE_LIMIT per batch, up to UNVERIFIED_USER_PURGE_BATCHES batches per run. The conditions, the audit (without the e-mail) and the limit's range
+ * live in the function; the Worker only calls it, through the authentication role. It may run while the
+ * password sign-in is off: with no user by password there is nothing to delete.
+ */
+async function runUnverifiedUserPurge(env: WorkerBindings): Promise<JobResult> {
+  const connectionString = env.AUTH_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    // the authentication role is not provisioned in this environment yet: nothing to do
+    logger.warn("auth_unverified_user_purge_not_configured");
+    return notConfigured;
+  }
+  let client: ReturnType<typeof createAuthUnverifiedUserMaintenanceClient>;
+  try {
+    client = createAuthUnverifiedUserMaintenanceClient(connectionString);
+  } catch (error: unknown) {
+    return finished([error]);
+  }
+  try {
+    let removed = 0;
+    for (let batch = 0; batch < UNVERIFIED_USER_PURGE_BATCHES; batch += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each batch depends on the size of the previous one
+      const deleted = await client.purge(UNVERIFIED_USER_PURGE_LIMIT);
+      removed += deleted;
+      if (deleted < UNVERIFIED_USER_PURGE_LIMIT) {
+        break;
+      }
+    }
+    logger.info("auth_unverified_users_purged", { removed });
     return finished([]);
   } catch (error: unknown) {
     return finished([error]);
@@ -414,6 +459,7 @@ function jobHandlers(
 ): JobHandlers {
   return {
     "auth.login_lock_expiry": () => runLoginLockExpiry(env),
+    "auth.unverified_user_purge": () => runUnverifiedUserPurge(env),
     "billing.maintenance": () => runBillingJobs(env),
     "media.maintenance": () => runMediaMaintenance(env),
     "outbox.dispatch": () => runOutboxJobs(env, outbox),

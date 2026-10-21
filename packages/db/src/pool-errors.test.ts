@@ -22,6 +22,9 @@ const { createBillingStore } = await import("./billing-store");
 const { createAuthLoginLockMaintenanceClient } = await import(
   "./auth-login-lock-maintenance"
 );
+const { createAuthUnverifiedUserMaintenanceClient } = await import(
+  "./auth-unverified-user-maintenance"
+);
 const { createOutboxClient } = await import("./outbox-dispatch");
 const { createMediaCleanupClient } = await import("./media-cleanup");
 const { createPrivacyMaintenanceClient } = await import(
@@ -31,6 +34,8 @@ const { createPrivacyMaintenanceClient } = await import(
 const factories = {
   authLoginLockMaintenance: () =>
     createAuthLoginLockMaintenanceClient("postgres://u:secret@h/db"),
+  authUnverifiedUserMaintenance: () =>
+    createAuthUnverifiedUserMaintenanceClient("postgres://u:secret@h/db"),
   billingStore: () => createBillingStore("postgres://u:secret@h/db"),
   database: () => createDatabase("postgres://u:secret@h/db"),
   mediaCleanup: () => createMediaCleanupClient("postgres://u:secret@h/db"),

@@ -140,6 +140,7 @@ describe("a scheduler tick", () => {
       "billing.maintenance",
       "privacy.maintenance",
       "auth.login_lock_expiry",
+      "auth.unverified_user_purge",
     ]);
     expect(outbox["outbox.dispatch"]).not.toHaveBeenCalled();
   });
@@ -279,7 +280,7 @@ describe("a scheduler tick", () => {
 
       await expect(tick("maintenance", handlers, store)).rejects.toBe(lost);
 
-      expect(claim).toHaveBeenCalledTimes(4);
+      expect(claim).toHaveBeenCalledTimes(5);
       expect(handlers["media.maintenance"]).not.toHaveBeenCalled();
       expect(handlers["billing.maintenance"]).toHaveBeenCalledOnce();
     });

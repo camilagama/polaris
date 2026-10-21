@@ -44,6 +44,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "devices",
   "auth_verification",
   "auth_login_lock",
+  "auth_unverified_user",
   "auth_security_audit",
   "auth_access_log",
   "legal_acceptance",
@@ -113,6 +114,7 @@ export const RESOLVED_RETENTION_BLOCKERS: readonly RetentionBlocker[] =
 /** The purge jobs that already exist; each one serves exactly one approved class. */
 export type RetentionPurgeJobId =
   | "auth.login_lock_expiry"
+  | "auth.unverified_user_purge"
   | "privacy.closure_purge_schedule"
   | "media.removed_cleanup"
   | "media.staging_reconcile"
@@ -504,6 +506,20 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     status: "aprovada",
   },
   {
+    approvedOn: "2026-10-19",
+    basis: "decisao",
+    class: "auth_unverified_user",
+    data: [
+      "user (cadastro por e-mail e senha cujo e-mail nunca foi verificado), com a conta `credential` que ele leva em cascata",
+    ],
+    job: "auth.unverified_user_purge",
+    period: { kind: "duration", ms: DAY_MS },
+    review: USER_APPROVED_REVIEW,
+    rule: "O cadastro por senha com e-mail não verificado não tem uso depois que o link de verificação vence: é apagado 24 horas depois de criado (`created_at`) pelo job horário `auth.unverified_user_purge` (Q-D2 do desenho da tela de entrada, ADR 0100). Só se apaga o usuário que cumpre TODAS as condições juntas: e-mail não verificado, nenhuma conta além de `credential` (sem Google), nenhuma sessão, nenhum vínculo com organização e mais de 24 horas de criado; qualquer uma que falte o preserva. Isso limita a janela do risco herdado do ADR 0044: quem cria conta por senha com o e-mail de outra pessoa e nunca verifica deixa de travar a entrada por Google dela depois de 24 horas, mas pode cadastrar o e-mail de novo (o recadastro e o link de verificação reenviado, que o apagamento não invalida, ficam como risco aceito do ADR 0100). Cada apagamento grava uma linha `unverified_user_deleted` na auditoria de autenticação (classe `auth_security_audit`) com o ID do usuário apagado e o da execução, nunca o e-mail, o nome nem o IP. O usuário não tem organização e não entra no purge da organização.",
+    sources: ["ADR 0100", "ADR 0079", "docs/business-rules/authentication.md"],
+    status: "aprovada",
+  },
+  {
     approvedOn: "2026-10-18",
     basis: "decisao",
     class: "auth_security_audit",
@@ -659,6 +675,7 @@ export const RETENTION_PURGE_JOBS: readonly {
   id: RetentionPurgeJobId;
 }[] = Object.freeze([
   { class: "auth_login_lock", id: "auth.login_lock_expiry" },
+  { class: "auth_unverified_user", id: "auth.unverified_user_purge" },
   { class: "media_staging_marker", id: "media.staging_reconcile" },
   { class: "media_removed_image", id: "media.removed_cleanup" },
   { class: "data_exports", id: "privacy.data_export_expiry" },

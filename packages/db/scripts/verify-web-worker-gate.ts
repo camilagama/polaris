@@ -56,6 +56,7 @@ const BINDINGS = [
 const WEB_WORKER_TESTS = 25;
 const MAINTENANCE_JOBS = [
   "auth.login_lock_expiry",
+  "auth.unverified_user_purge",
   "billing.maintenance",
   "media.maintenance",
   "privacy.maintenance",
@@ -332,12 +333,12 @@ async function run() {
       // only the job whose database was down failed, once; the others never did
       assert.equal(
         job(id)?.last_failure_at !== null,
-        id === "auth.login_lock_expiry",
+        id === "auth.login_lock_expiry" || id === "auth.unverified_user_purge",
         `${id} failure history`
       );
     }
     tests.push(
-      "every job of the two lanes finished and holds no lease; only the sign-in lock expiry, whose database was down, has a failure in its history"
+      "every job of the two lanes finished and holds no lease; only the two jobs of authentication, whose database was down, have a failure in their history"
     );
 
     const processing = await owner.pool.query<{
