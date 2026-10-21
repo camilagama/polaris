@@ -19,8 +19,9 @@ const legalAcceptanceOwnerRole = "polaris_legal_acceptance_owner";
  * browser: the proof is that this user accepted this text, not where from.
  *
  * Per user, not per organization, and `user_id` is an opaque Better Auth ID without a foreign key, so a
- * row outlives the deletion of the user (kept 10 years after the account is deleted, retention class
- * `legal_acceptance`). Append-only: triggers refuse UPDATE, DELETE and TRUNCATE for every role. No runtime
+ * row outlives the deletion of the user (kept 5 years after the account is deleted, retention class
+ * `legal_acceptance`; 6 months and 30 days for a user who never verified the e-mail, class
+ * `legal_acceptance_unverified_user`). Append-only: triggers refuse UPDATE, DELETE and TRUNCATE for every role. No runtime
  * role reads or writes the table: only `polaris_legal_acceptance_owner` has privileges on it, and its two
  * functions, executed by the authentication runtime, are the whole interface (`record_legal_acceptance`
  * appends, `legal_acceptance_versions` reads the highest version of each document a user accepted).
@@ -89,7 +90,7 @@ export const legalAcceptance = pgTable(
 const unverifiedUserOwnerRole = "polaris_unverified_user_owner";
 
 /**
- * When the contract of a user ended, the date the 10 years of `legal_acceptance` count from (ADR 0100): one row
+ * When the contract of a user ended, the date the 5 years of `legal_acceptance` (6 months and 30 days for the reason `unverified_user_deleted`) count from (ADR 0100): one row
  * per user, by the database clock, with why it ended. The only writer today is `purge_unverified_users`, in the
  * same statement that deletes the user (`reason = 'unverified_user_deleted'`); the routine that deletes an
  * account will write the same row. Opaque `user_id`, no e-mail, no foreign key (the user is gone), append-only

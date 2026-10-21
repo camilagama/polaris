@@ -48,6 +48,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "auth_security_audit",
   "auth_access_log",
   "legal_acceptance",
+  "legal_acceptance_unverified_user",
   "platform_audit_and_support",
   "privacy_cases",
   "deletion_ledger",
@@ -102,7 +103,7 @@ export const RETENTION_BLOCKERS = Object.freeze({
   access_record_table:
     "Tabela própria do registro de acesso a aplicação (data, hora e IP, 6 meses, Marco Civil art. 15); tarefa t039. Resolvido: a tabela `auth_access_log` existe (ADR 0092).",
   account_deletion_event:
-    "Evento de exclusão de conta que grava o `blockedUntil` do aceite legal: a data da exclusão mais 10 anos, para as linhas daquele `user_id` (ADR 0100, decisão do Arrascaeta de 19/10/2026). O fim do contrato é gravado em `legal_acceptance_contract_end` (hoje pelo apagamento do cadastro nunca verificado; a rotina de exclusão de conta gravará a mesma linha), mas `legal_acceptance` só acrescenta (gatilho): quem entregar a rotina entrega também a função de expurgo (dono de retenção, pulando legal hold) que conta os 10 anos dessa data e apaga também a linha de `legal_acceptance_contract_end`. Nenhum job de expurgo do aceite pode existir antes.",
+    "Evento de exclusão de conta que grava o `blockedUntil` do aceite legal: a data da exclusão mais 5 anos (eram 10 até 21/10/2026), para as linhas daquele `user_id` (ADR 0100, decisão do Arrascaeta de 19/10/2026). O fim do contrato é gravado em `legal_acceptance_contract_end` (hoje pelo apagamento do cadastro nunca verificado, que tem prazo próprio, a classe `legal_acceptance_unverified_user`; a rotina de exclusão de conta gravará a mesma linha com outro motivo), mas `legal_acceptance` só acrescenta (gatilho): quem entregar a rotina entrega também a função de expurgo (dono de retenção, pulando legal hold) que conta os 5 anos dessa data e apaga também a linha de `legal_acceptance_contract_end`. Nenhum job de expurgo do aceite pode existir antes.",
 });
 
 export type RetentionBlocker = keyof typeof RETENTION_BLOCKERS;
@@ -515,7 +516,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     job: "auth.unverified_user_purge",
     period: { kind: "duration", ms: DAY_MS },
     review: USER_APPROVED_REVIEW,
-    rule: "O cadastro por senha com e-mail não verificado não tem uso depois que o link de verificação vence: é apagado 24 horas depois de criado (`created_at`) pelo job horário `auth.unverified_user_purge` (Q-D2 do desenho da tela de entrada, ADR 0100). Só se apaga o usuário que cumpre TODAS as condições juntas: e-mail não verificado, nenhuma conta além de `credential` (sem Google), nenhuma sessão, nenhum vínculo com organização, mais de 24 horas de criado e o último link de verificação enviado já vencido (`user.verification_link_expires_at`, gravada pelo servidor antes de cada envio, sem ler o e-mail); qualquer uma que falte o preserva. Isso limita a janela do risco herdado do ADR 0044: quem cria conta por senha com o e-mail de outra pessoa e nunca verifica deixa de travar a entrada por Google dela depois de 24 horas, mas pode cadastrar o e-mail de novo (o recadastro fica como risco aceito do ADR 0100). O reenvio do link tem teto de 72 horas a partir de `created_at`: depois dele o servidor não grava a data nem envia o e-mail, então o último link válido vence até 96 horas depois da criação e o apagamento ocorre até a próxima execução do job horário. As linhas de `verification` do cadastro apagado seguem a classe `auth_verification`. O aceite legal gravado no cadastro (origem `signup`) fica, e o apagamento grava em `legal_acceptance_contract_end` o fim do contrato de onde contam seus 10 anos. Cada apagamento grava uma linha `unverified_user_deleted` na auditoria de autenticação (classe `auth_security_audit`) com o ID do usuário apagado e o da execução, nunca o e-mail, o nome nem o IP. O usuário não tem organização e não entra no purge da organização.",
+    rule: "O cadastro por senha com e-mail não verificado não tem uso depois que o link de verificação vence: é apagado 24 horas depois de criado (`created_at`) pelo job horário `auth.unverified_user_purge` (Q-D2 do desenho da tela de entrada, ADR 0100). Só se apaga o usuário que cumpre TODAS as condições juntas: e-mail não verificado, nenhuma conta além de `credential` (sem Google), nenhuma sessão, nenhum vínculo com organização, mais de 24 horas de criado e o último link de verificação enviado já vencido (`user.verification_link_expires_at`, gravada pelo servidor antes de cada envio, sem ler o e-mail); qualquer uma que falte o preserva. Isso limita a janela do risco herdado do ADR 0044: quem cria conta por senha com o e-mail de outra pessoa e nunca verifica deixa de travar a entrada por Google dela depois de 24 horas, mas pode cadastrar o e-mail de novo (o recadastro fica como risco aceito do ADR 0100). O reenvio do link tem teto de 72 horas a partir de `created_at`: depois dele o servidor não grava a data nem envia o e-mail, então o último link válido vence até 96 horas depois da criação e o apagamento ocorre até a próxima execução do job horário. As linhas de `verification` do cadastro apagado seguem a classe `auth_verification`. O aceite legal gravado no cadastro (origem `signup`) fica, e o apagamento grava em `legal_acceptance_contract_end` o fim do contrato (motivo `unverified_user_deleted`) de onde contam os 6 meses mais 30 dias do aceite (classe `legal_acceptance_unverified_user`). Cada apagamento grava uma linha `unverified_user_deleted` na auditoria de autenticação (classe `auth_security_audit`) com o ID do usuário apagado e o da execução, nunca o e-mail, o nome nem o IP. O usuário não tem organização e não entra no purge da organização.",
     sources: ["ADR 0100", "ADR 0079", "docs/business-rules/authentication.md"],
     status: "aprovada",
   },
@@ -564,11 +565,32 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     legalReview: "pending",
     legalSources: [
       "LGPD (Lei 13.709/2018), art. 7º, VI",
-      "LGPD (Lei 13.709/2018), art. 16",
+      "LGPD (Lei 13.709/2018), art. 16, II",
+      "Código Civil (Lei 10.406/2002), art. 206, §5º, I",
+      "Código Civil (Lei 10.406/2002), art. 206, §3º, V",
+      "Código de Defesa do Consumidor (Lei 8.078/1990), art. 27 (hipótese: aplicação a lojistas a validar)",
     ],
-    period: { kind: "calendar_months", months: 120 },
+    period: { kind: "calendar_months", months: 60 },
     review: USER_APPROVED_REVIEW,
-    rule: 'O aceite legal fica 10 anos depois da exclusão da conta (decisão do usuário de 19/10/2026, ADR 0100; a validação do advogado é recomendada antes do go-live, sem bloquear). "Fim do contrato" é a data em que a conta é excluída, e quem a define é a rotina de exclusão de conta: é ela que grava o `blockedUntil` (essa data mais 10 anos) no evento de exclusão, para as linhas daquele `user_id`. Enquanto a conta existe nada vence. A linha não tem organização nem chave estrangeira para o usuário, então sobrevive ao purge da organização e à exclusão do usuário; é só de acrescentar (gatilho), por isso o expurgo é uma função própria, do dono de retenção e sem job, que entra com a rotina de exclusão de conta (`blockedUntil: account_deletion_event`). A tabela não guarda IP nem navegador.',
+    rule: 'O aceite legal fica 5 anos depois da exclusão da conta (decisão do usuário de 19/10/2026, ADR 0100; emenda de 21/10/2026: eram 10 anos, e o prazo é escolha nossa, não obrigação de lei: guarda para o exercício regular de direitos, LGPD, arts. 7º, VI, e 16, II; 5 anos cobrem o Código Civil, art. 206, §5º, I e §3º, V, o CDC, art. 27, e a ação punitiva da ANPD; o risco aceito é o do Código Civil, art. 205 (10 anos, STJ, EREsp 1.280.825/RJ) nas ações contratuais do 6º ao 10º ano; o legal hold suspende o apagamento; a validação do advogado é recomendada antes do go-live, sem bloquear). "Fim do contrato" é a data em que a conta é excluída, e quem a define é a rotina de exclusão de conta: é ela que grava o `blockedUntil` (essa data mais 5 anos) no evento de exclusão, para as linhas daquele `user_id`. Enquanto a conta existe nada vence. A linha não tem organização nem chave estrangeira para o usuário, então sobrevive ao purge da organização e à exclusão do usuário; é só de acrescentar (gatilho), por isso o expurgo é uma função própria, do dono de retenção e sem job, que entra com a rotina de exclusão de conta (`blockedUntil: account_deletion_event`). O aceite de quem nunca confirmou o e-mail tem a classe `legal_acceptance_unverified_user`. A tabela não guarda IP nem navegador.',
+    sources: [
+      "ADR 0100",
+      "ADR 0079",
+      "docs/business-rules/privacy.md",
+      "docs/business-rules/authentication.md",
+    ],
+    status: "aprovada",
+  },
+  {
+    approvedOn: "2026-10-21",
+    basis: "decisao",
+    class: "legal_acceptance_unverified_user",
+    data: [
+      "legal_acceptance (aceite gravado no cadastro por senha cujo e-mail nunca foi verificado, origem `signup`) e a linha de `legal_acceptance_contract_end` com o motivo `unverified_user_deleted`",
+    ],
+    period: { graceDays: 30, kind: "calendar_months", months: 6 },
+    review: USER_APPROVED_REVIEW,
+    rule: "O aceite de quem nunca confirmou o e-mail não chegou a ser parte do contrato: fica 6 meses corridos mais 30 dias de folga depois do apagamento do cadastro, o mesmo prazo do registro de acesso (decisão do usuário de 21/10/2026, ADR 0100). O instante de partida é o `ended_at` da linha de `legal_acceptance_contract_end` com o motivo `unverified_user_deleted`, gravada na mesma instrução que apaga o usuário (`retentionExpiry` recebe esse instante). A linha só acrescenta (gatilho), então o expurgo é a função própria do aceite, que ainda não existe e fica fora deste registro; o legal hold suspende o apagamento. A tabela não guarda IP nem navegador.",
     sources: [
       "ADR 0100",
       "ADR 0079",

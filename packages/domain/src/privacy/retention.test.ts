@@ -422,11 +422,11 @@ describe("approved periods", () => {
     ).toBe("2027-05-18T10:00:00.000Z");
   });
 
-  it("keep the legal acceptance 10 years after the account is deleted, decided by the user, and blocked until the deletion event writes the date", () => {
+  it("keep the legal acceptance 5 years after the account is deleted, decided by the user, and blocked until the deletion event writes the date", () => {
     const policy = retentionPolicy("legal_acceptance");
     expect(policy.status).toBe("aprovada");
     expect(policy.approvedOn).toBe("2026-10-19");
-    expect(policy.period).toEqual({ kind: "calendar_months", months: 120 });
+    expect(policy.period).toEqual({ kind: "calendar_months", months: 60 });
     expect(policy.review).toEqual({
       at: "2026-10-19",
       by: "usuário (19/10/2026)",
@@ -451,7 +451,42 @@ describe("approved periods", () => {
         "legal_acceptance",
         new Date("2026-10-19T10:00:00.000Z")
       ).toISOString()
-    ).toBe("2036-10-19T10:00:00.000Z");
+    ).toBe("2031-10-19T10:00:00.000Z");
+    // the amendment of 21/10/2026 (10 years became 5) rests on the right to defend a claim, and the rule says the risk it accepts
+    expect(policy.legalSources).toContain(
+      "LGPD (Lei 13.709/2018), art. 16, II"
+    );
+    expect(policy.rule).toContain("5 anos");
+    expect(policy.rule).toContain("EREsp 1.280.825/RJ");
+    expect(policy.rule).not.toContain("mais 10 anos");
+  });
+
+  it("keep the acceptance of a user who never verified the e-mail 6 months and 30 days after the deletion, apart from the contract acceptance", () => {
+    const policy = retentionPolicy("legal_acceptance_unverified_user");
+    expect(policy.status).toBe("aprovada");
+    expect(policy.approvedOn).toBe("2026-10-21");
+    expect(policy.period).toEqual({
+      graceDays: 30,
+      kind: "calendar_months",
+      months: 6,
+    });
+    // the same period as the access log, and a date that already exists (the deletion writes `ended_at`): nothing blocks it, no job reads it yet
+    expect(policy.period).toEqual(retentionPolicy("auth_access_log").period);
+    expect(policy.blockedUntil).toBeUndefined();
+    expect("job" in policy).toBe(false);
+    expect(policy.rule).toContain("unverified_user_deleted");
+    expect(
+      retentionExpiry(
+        "legal_acceptance_unverified_user",
+        new Date("2026-10-21T10:00:00.000Z")
+      ).toISOString()
+    ).toBe("2027-05-21T10:00:00.000Z");
+    expect(
+      retentionExpiry(
+        "legal_acceptance_unverified_user",
+        new Date("2026-08-31T10:00:00.000Z")
+      ).toISOString()
+    ).toBe("2027-04-02T10:00:00.000Z");
   });
 
   it("leave the provider backups to the provider's own rotation, in a window of 35 days", () => {
