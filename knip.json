@@ -50,6 +50,7 @@
         "worker/**/*.ts",
         "poc/**/*.ts",
         "e2e/**/*.ts",
+        "e2e-pwa/**/*.ts",
         "real-devices/**/*.ts"
       ]
     },

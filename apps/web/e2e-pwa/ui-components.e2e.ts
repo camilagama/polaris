@@ -1,8 +1,8 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import axe from "axe-core";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { axeViolations } from "./ui-guardrails";
 
 /**
  * The components the sale uses (ADR 0103, section 8, item 3), in the gallery: each one is found by its role and
@@ -18,9 +18,6 @@ const THEMES = [
 
 const ANTICIPATION_HELP = /^É uma intenção registrada na venda/;
 
-// The WCAG 2.2 A and AA rules, the bar of DESIGN.md; best practices stay out (they are advice, not criteria).
-const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
-
 async function openGallery(page: Page, stored: string | null) {
   if (stored) {
     await page.addInitScript((theme) => {
@@ -33,20 +30,6 @@ async function openGallery(page: Page, stored: string | null) {
   ).toBeVisible();
   // Geist must be in before axe measures contrast and sizes
   await page.evaluate(() => document.fonts.ready);
-}
-
-async function axeViolations(page: Page) {
-  await page.evaluate(axe.source);
-  return page.evaluate(async (tags) => {
-    const result = await window.axe.run(document, {
-      resultTypes: ["violations"],
-      runOnly: { type: "tag", values: tags },
-    });
-    return result.violations.map((violation) => ({
-      id: violation.id,
-      nodes: violation.nodes.map((node) => node.target.join(" ")),
-    }));
-  }, WCAG_TAGS);
 }
 
 /** The box of a control grown by its touch pseudo-element (the larger of ::before and ::after), in pixels. */
@@ -69,12 +52,6 @@ const touchArea = (element: Element) => {
     width: Math.max(box.width, ...sizes.map((size) => size.width)),
   };
 };
-
-declare global {
-  interface Window {
-    axe: typeof axe;
-  }
-}
 
 test("os componentes da venda têm papel e rótulo", async ({ page }) => {
   await openGallery(page, null);
