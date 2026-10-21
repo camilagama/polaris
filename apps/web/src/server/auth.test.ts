@@ -1803,6 +1803,67 @@ describe("Verification link record (ADR 0100, P10)", () => {
     expect(verificationEmails).toHaveLength(1);
   });
 
+  it("records and sends the resend inside the cap of 72 hours, and neither records nor sends after it, with the same answer", async () => {
+    stubPwnedPasswordRange();
+    const logged = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+    const ageHours: { value: number } = { value: 0 };
+    const updates: string[] = [];
+    // The database as the UPDATE sees it: the row matches only while `created_at` is within the cap.
+    const query = vi.fn(
+      (
+        text: string,
+        values: unknown[]
+      ): Promise<{ rowCount: number | null }> => {
+        if (text.startsWith("UPDATE")) {
+          const capSeconds = Number(values[2]);
+          if (ageHours.value * 60 * 60 < capSeconds) {
+            updates.push(String(values[0]));
+            return Promise.resolve({ rowCount: 1 });
+          }
+          return Promise.resolve({ rowCount: 0 });
+        }
+        return Promise.resolve({ rowCount: 1 });
+      }
+    );
+    const record = databaseVerificationLinkRecorder({
+      $client: { query },
+    } as unknown as Parameters<typeof databaseVerificationLinkRecorder>[0]);
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp(
+      undefined,
+      record ? { verificationLinkRecorder: record } : {}
+    );
+    expect((await signUp(testApp)).status).toBe(200);
+    expect(verificationEmails).toHaveLength(1);
+
+    ageHours.value = 71;
+    const inside = await post(testApp, "/api/auth/send-verification-email", {
+      email,
+    });
+    expect(updates).toHaveLength(2);
+    expect(verificationEmails).toHaveLength(2);
+
+    ageHours.value = 73;
+    const outside = await post(testApp, "/api/auth/send-verification-email", {
+      email,
+    });
+    const unknown = await post(testApp, "/api/auth/send-verification-email", {
+      email: "never-registered@example.invalid",
+    });
+
+    expect(updates).toHaveLength(2);
+    expect(verificationEmails).toHaveLength(2);
+    expect(outside.status).toBe(inside.status);
+    expect(await outside.json()).toEqual(await inside.json());
+    expect(unknown.status).toBe(outside.status);
+    // past the cap is expected, not a failure of the record
+    expect(logged).not.toHaveBeenCalledWith(
+      "auth_verification_link_record_failed",
+      expect.anything()
+    );
+  });
+
   it("records through the database with the clock of the database and refuses a user row that is not there", async () => {
     const query = vi.fn(
       async (
@@ -1821,17 +1882,32 @@ describe("Verification link record (ADR 0100, P10)", () => {
     const [text, values] = query.mock.calls[0] ?? [];
     expect(text).toContain("clock_timestamp()");
     expect(text).toContain("verification_link_expires_at");
-    expect(values).toEqual(["user-1", 24 * 60 * 60]);
+    expect(text).toContain("created_at > pg_catalog.clock_timestamp()");
+    expect(values).toEqual(["user-1", 24 * 60 * 60, 72 * 60 * 60]);
 
+    // an impossible count of the UPDATE is a failure, even when the row is there
+    const missing = (updated: number | null) => {
+      query.mockReset();
+      // the row is there for the SELECT: only an UPDATE count of 0 may be read as the cap
+      query.mockImplementation((sql: string) =>
+        Promise.resolve({
+          rowCount: sql.startsWith("UPDATE") ? updated : 1,
+        })
+      );
+      return expect(record?.("user-1")).rejects.toThrow("not found");
+    };
+    await missing(null);
+    await missing(2);
+    // the UPDATE matched nothing and the row is not there either: the user is gone, not past the cap
+    query.mockReset();
+    query.mockResolvedValue({ rowCount: 0 });
+    await expect(record?.("user-1")).rejects.toThrow("not found");
+    // the UPDATE matched nothing but the row is there: past the cap, not a failure of the record
+    query.mockReset();
     query
       .mockResolvedValueOnce({ rowCount: 0 })
-      .mockResolvedValueOnce({ rowCount: null })
-      .mockResolvedValueOnce({ rowCount: 2 });
-    await Promise.all(
-      [0, 1, 2].map(() =>
-        expect(record?.("user-1")).rejects.toThrow("not found")
-      )
-    );
+      .mockResolvedValueOnce({ rowCount: 1 });
+    await expect(record?.("user-1")).rejects.toThrow("cap of the resend");
     expect(databaseVerificationLinkRecorder(undefined)).toBeUndefined();
   });
 

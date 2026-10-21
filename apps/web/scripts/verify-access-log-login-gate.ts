@@ -266,6 +266,65 @@ async function run() {
     tests.push(
       "the sign-up through the real route records `user.verification_link_expires_at` 24 hours ahead by the database clock, with the authentication role alone"
     );
+    // the resend through the real route: inside the cap of 72 hours it records the date and sends; past it, neither, and the answer is the same
+    const resendBody = json({ email });
+    const emailsBeforeResend = verificationEmails.length;
+    // the date of the sign-up is cleared first, so a date back in place proves the resend recorded it
+    await owner.pool.query(
+      'UPDATE public."user" SET verification_link_expires_at = NULL WHERE id = $1',
+      [userId]
+    );
+    const logsBeforeResend = logs.captured.length;
+    const resendInside = await call(
+      requestOf(0),
+      "/api/auth/send-verification-email",
+      resendBody
+    );
+    assert.equal(resendInside.status, 200);
+    assert.equal(verificationEmails.length, emailsBeforeResend + 1);
+    const insideSeconds = (
+      await owner.pool.query<{ seconds: number | null }>(
+        `SELECT extract(epoch FROM verification_link_expires_at - clock_timestamp())::float8 AS seconds
+           FROM public."user" WHERE id = $1`,
+        [userId]
+      )
+    ).rows[0]?.seconds;
+    assert.ok(
+      insideSeconds !== undefined &&
+        insideSeconds !== null &&
+        insideSeconds > 24 * 3600 - 120 &&
+        insideSeconds <= 24 * 3600,
+      "the resend inside the cap recorded the end of the link 24 hours ahead"
+    );
+    await owner.pool.query(
+      `UPDATE public."user" SET created_at = clock_timestamp() - interval '73 hours', verification_link_expires_at = NULL WHERE id = $1`,
+      [userId]
+    );
+    const resendOutside = await call(
+      requestOf(0),
+      "/api/auth/send-verification-email",
+      resendBody
+    );
+    assert.equal(resendOutside.status, resendInside.status);
+    assert.deepEqual(await resendOutside.json(), await resendInside.json());
+    assert.equal(verificationEmails.length, emailsBeforeResend + 1);
+    const afterCap = await owner.pool.query<{ recorded: boolean }>(
+      'SELECT verification_link_expires_at IS NOT NULL AS recorded FROM public."user" WHERE id = $1',
+      [userId]
+    );
+    assert.equal(afterCap.rows[0]?.recorded, false);
+    assert.equal(
+      logs.captured
+        .slice(logsBeforeResend)
+        .some((entry) =>
+          entry.text.includes("auth_verification_link_record_failed")
+        ),
+      false,
+      "past the cap is not a failure of the record"
+    );
+    tests.push(
+      "the resend through the real route records the date and sends the e-mail inside 72 hours of `created_at`; past it neither happens and the answer is the same"
+    );
     const verification = verificationEmails.at(-1);
     assert.ok(verification);
     const verify = await call(

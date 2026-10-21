@@ -60,6 +60,20 @@ const requestIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
 /** How long the link of the verification e-mail works; the purge of the unverified users waits for it (ADR 0100, P10). */
 const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
 
+/**
+ * The resend of the verification e-mail works only this long after the sign-up (`created_at`), so the purge of the
+ * unverified users cannot be postponed forever by resending (ADR 0100, P10; decision of 21/10/2026).
+ */
+const EMAIL_VERIFICATION_RESEND_CAP_SECONDS = 72 * 60 * 60;
+
+/** The user is past the cap of the resend: no date is recorded, no e-mail goes out, and the answer does not change. */
+class VerificationResendCapError extends Error {
+  constructor() {
+    super("The verification link was requested after the cap of the resend.");
+    this.name = "VerificationResendCapError";
+  }
+}
+
 export interface AuthSecurityAuditEvent {
   actorId: string | null;
   errorCode:
@@ -727,8 +741,10 @@ function databaseLoginLockClearer(
 }
 
 /**
- * The UPDATE of the date of the link, by the database clock. A user row that is not there (the purge deleted it while the
- * resend waited for its lock) is a failure: the e-mail must not carry a link for a user that no longer exists.
+ * The UPDATE of the date of the link, by the database clock, only while the user is at most 72 hours old. A user row
+ * that is not there (the purge deleted it while the resend waited for its lock) is a failure: the e-mail must not
+ * carry a link for a user that no longer exists. A user past the cap is not a failure: nothing is recorded and the
+ * e-mail does not go out.
  */
 export function databaseVerificationLinkRecorder(
   database: PolarisDatabase | undefined
@@ -739,12 +755,27 @@ export function databaseVerificationLinkRecorder(
   const client = database.$client as unknown as VerificationLinkQueryable;
   return async (userId) => {
     const result = await client.query(
-      'UPDATE public."user" SET verification_link_expires_at = pg_catalog.clock_timestamp() + pg_catalog.make_interval(secs => $2::integer) WHERE id = $1',
-      [userId, EMAIL_VERIFICATION_TTL_SECONDS]
+      'UPDATE public."user" SET verification_link_expires_at = pg_catalog.clock_timestamp() + pg_catalog.make_interval(secs => $2::integer) WHERE id = $1 AND created_at > pg_catalog.clock_timestamp() - pg_catalog.make_interval(secs => $3::integer)',
+      [
+        userId,
+        EMAIL_VERIFICATION_TTL_SECONDS,
+        EMAIL_VERIFICATION_RESEND_CAP_SECONDS,
+      ]
     );
-    if (result.rowCount !== 1) {
-      throw new Error("The user of the verification link was not found.");
+    if (result.rowCount === 1) {
+      return;
     }
+    // Only an UPDATE that matched nothing can be the cap; any other count is a failure of the record.
+    if (result.rowCount === 0) {
+      const exists = await client.query(
+        'SELECT 1 FROM public."user" WHERE id = $1',
+        [userId]
+      );
+      if (exists.rowCount === 1) {
+        throw new VerificationResendCapError();
+      }
+    }
+    throw new Error("The user of the verification link was not found.");
   };
 }
 
@@ -765,6 +796,9 @@ function withRecordedVerificationLink(
     try {
       await record(data.user.id);
     } catch (error) {
+      if (error instanceof VerificationResendCapError) {
+        return;
+      }
       const described = describeError(error);
       logger.error("auth_verification_link_record_failed", {
         errorClass: described.errorClass,
