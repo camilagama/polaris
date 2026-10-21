@@ -28,16 +28,51 @@ export interface UiScreen {
 
 export type UiCheck = "overflow" | "touch" | "axe" | "focus";
 
-export const VIEWPORTS = [
-  { height: 640, name: "320", width: 320 },
-  { height: 740, name: "360", width: 360 },
-  { height: 800, name: "1280", width: 1280 },
-] as const;
+export const VIEWPORTS = {
+  "320": { height: 640, width: 320 },
+  "360": { height: 740, width: 360 },
+  "1280": { height: 800, width: 1280 },
+} as const;
 
-export const THEMES = [
-  { colorScheme: "light", name: "claro" },
-  { colorScheme: "dark", name: "escuro" },
-] as const;
+type UiTheme = "claro" | "escuro";
+export const COLOR_SCHEME = { claro: "light", escuro: "dark" } as const;
+
+/** One browser context of the matrix: the width, the pointer (a phone and a tablet have touch) and the theme. */
+export interface UiContext {
+  theme: UiTheme;
+  touch: boolean;
+  viewport: keyof typeof VIEWPORTS;
+}
+
+const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
+  theme: "claro",
+  touch,
+  viewport,
+});
+
+/**
+ * Each check runs only on the axes that can change its result, declared once here (docs/runbooks/testes-de-tela.md);
+ * `ui-guardrails.e2e.ts` builds its tests from this map, one page load per distinct context, and runs on it every
+ * check that lists the context. A new check, or a new axis for one, is a line here: the cost of the CI grows with
+ * the contexts listed, not with the product of widths, themes and pointers.
+ *
+ * - overflow (1): the widths decide what fits; theme and pointer do not move a box;
+ * - touch (2): the areas of 48 px exist with a coarse pointer, at the two phone widths and on a tablet;
+ * - axe (3): the contrast is the theme's, and the phone is the width where the layout is tightest;
+ * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse.
+ *
+ * Motion (5) is not here: it needs no axis, it runs once per state in `MOTION_CONTEXT`. Colors only in OKLCH and
+ * tokens (4) is a source test, with no context (`scripts/ui-source-rules.test.ts`).
+ */
+export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
+  axe: [light("360", true), { theme: "escuro", touch: true, viewport: "360" }],
+  focus: [light("1280", false)],
+  overflow: [light("320", true), light("360", true), light("1280", false)],
+  touch: [light("320", true), light("360", true), light("1280", true)],
+};
+
+/** The context of the motion checks (5): once per state with `exercise`, and once more with `reduce`. */
+export const MOTION_CONTEXT: UiContext = light("360", true);
 
 const OFFLINE_TEXT =
   "Sem conexão. Para entrar é preciso internet. Conecte-se e tente de novo.";

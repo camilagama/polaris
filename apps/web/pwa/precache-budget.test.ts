@@ -19,6 +19,7 @@ import {
   REST_BASELINE_GZIP_BYTES,
   REST_GROWTH_BUDGET_GZIP_BYTES,
   restBaseline,
+  testOnlyChunkProblems,
 } from "./precache-budget";
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
@@ -275,6 +276,51 @@ describe("precache budget (ADR 0103, section 4)", () => {
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
+  });
+
+  it("fails the production build when the gallery or the lab of the screens is in it (control: a build without them passes)", () => {
+    const build = (assets: string[]) => {
+      const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+      mkdirSync(join(directory, "assets"));
+      writeFileSync(join(directory, "index.html"), "<!doctype html>");
+      for (const asset of assets) {
+        writeFileSync(join(directory, "assets", asset), bytes(100, 1));
+      }
+      const errors: string[] = [];
+      const plugin = precacheBudgetPlugin();
+      (plugin.configResolved as (config: unknown) => void)({ env: {} });
+      try {
+        (
+          plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+        ).call(
+          {
+            error: (message: string) => errors.push(message),
+            info: () => undefined,
+          },
+          { dir: directory }
+        );
+      } finally {
+        rmSync(directory, { force: true, recursive: true });
+      }
+      return errors.join("\n");
+    };
+    expect(build(["index-abc123.js", "sale-page-def456.js"])).toBe("");
+    expect(build(["index-abc123.js", "screens-lab-Dk3_x9.js"])).toContain(
+      "the screens lab is in the production build (assets/screens-lab-Dk3_x9.js)"
+    );
+    expect(build(["ui-gallery-Dk3_x9.js"])).toContain(
+      "the UI gallery is in the production build"
+    );
+    // a name that only starts like the lab is another chunk
+    expect(testOnlyChunkProblems(["assets/screens-lab-helpers.css"])).toEqual(
+      []
+    );
+    expect(
+      testOnlyChunkProblems([
+        "assets/screens-lab-aaa.js",
+        "assets/ui-gallery-bbb.js",
+      ])
+    ).toHaveLength(2);
   });
 
   it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +40 KB gzip for the rest", () => {

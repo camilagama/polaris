@@ -12,16 +12,20 @@ import {
   touchFaults,
 } from "./ui-guardrails";
 import {
+  CHECK_CONTEXTS,
+  COLOR_SCHEME,
+  MOTION_CONTEXT,
   SCREENS,
-  THEMES,
   type UiCheck,
+  type UiContext,
   type UiScreen,
   VIEWPORTS,
 } from "./ui-screens";
 
 /**
  * The interface guardrails (t180): what the UX review finds by measuring, measured on every screen of
- * `ui-screens.ts`, at 320, 360 and 1280 px, in the light and the dark theme. Each check has a control case below that
+ * `ui-screens.ts`, each check only on the axes that can change its result (`CHECK_CONTEXTS`, with the table in
+ * docs/runbooks/testes-de-tela.md). Each check has a control case below that
  * proves it catches the fault it is for (a check that never fails proves nothing). Adding a screen:
  * docs/runbooks/testes-de-tela.md.
  *
@@ -30,22 +34,31 @@ import {
  *   3. axe, WCAG 2.2 A and AA                              6. keyboard focus draws the 3 px ring
  */
 
-// The contexts of the matrix: a phone has touch; the wide screen runs with the mouse and again with touch (a
-// tablet), where the 48 px areas exist (`pointer: coarse`).
-const CONTEXTS = [
-  ...VIEWPORTS.filter((viewport) => viewport.width < 760).map((viewport) => ({
-    touch: true,
-    viewport,
-  })),
-  ...VIEWPORTS.filter((viewport) => viewport.width >= 760).flatMap(
-    (viewport) => [
-      { touch: false, viewport },
-      { touch: true, viewport },
-    ]
-  ),
-];
-
 const touchName = (touch: boolean) => (touch ? "com toque" : "com mouse");
+const contextName = ({ theme, touch, viewport }: UiContext) =>
+  `${viewport} px · ${touchName(touch)} · tema ${theme}`;
+
+/** The browser options of a context: a phone is mobile, the wide screen with touch is a tablet. */
+const contextOptions = ({ theme, touch, viewport }: UiContext) => ({
+  colorScheme: COLOR_SCHEME[theme],
+  hasTouch: touch,
+  isMobile: touch && VIEWPORTS[viewport].width < 760,
+  viewport: VIEWPORTS[viewport],
+});
+
+/** The distinct contexts of the map, each with the checks that run on it: one page load serves them all. */
+function contextsOfChecks() {
+  const byKey = new Map<string, { checks: UiCheck[]; context: UiContext }>();
+  for (const check of Object.keys(CHECK_CONTEXTS) as UiCheck[]) {
+    for (const context of CHECK_CONTEXTS[check]) {
+      const key = contextName(context);
+      const entry = byKey.get(key) ?? { checks: [], context };
+      entry.checks.push(check);
+      byKey.set(key, entry);
+    }
+  }
+  return [...byKey.values()];
+}
 
 test.beforeEach(({ browserName }, testInfo) => {
   test.skip(
@@ -63,79 +76,89 @@ async function openScreen(screen: UiScreen, page: Page) {
 const expected = (screen: UiScreen, check: UiCheck) =>
   [...(screen.known?.[check] ?? [])].sort();
 
+// a check with no context would vanish without a test or a warning (a green run that ran nothing)
+for (const [check, contexts] of Object.entries(CHECK_CONTEXTS)) {
+  if (contexts.length === 0) {
+    throw new Error(`CHECK_CONTEXTS lists no context for the check "${check}"`);
+  }
+}
+
 for (const screen of SCREENS) {
-  for (const { touch, viewport } of CONTEXTS) {
-    for (const theme of THEMES) {
-      const where = `${screen.name} · ${viewport.name} px · ${touchName(touch)} · tema ${theme.name}`;
-      const context = {
-        colorScheme: theme.colorScheme,
-        hasTouch: touch,
-        isMobile: touch && viewport.width < 760,
-        viewport: { height: viewport.height, width: viewport.width },
-      };
+  for (const { checks, context } of contextsOfChecks()) {
+    const where = `${screen.name} · ${contextName(context)}`;
+    const runs = (check: UiCheck) => checks.includes(check);
 
-      test.describe(where, () => {
-        test.use(context);
+    test.describe(where, () => {
+      test.use(contextOptions(context));
 
-        // One page load for the checks that only read: each reports on its own (soft), so a run shows every fault.
-        test("contêiner, toque, axe e foco", async ({ page }) => {
-          await openScreen(screen, page);
-          // the context is what the name says: the 48 px areas of the touch check exist only with `pointer: coarse`
-          expect(
-            await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
-            "o contexto tem o ponteiro que o nome diz"
-          ).toBe(touch);
+      // One page load for the checks that only read: each reports on its own (soft), so a run shows every fault.
+      test(`verificações: ${checks.join(", ")}`, async ({ page }) => {
+        await openScreen(screen, page);
+        // the context is what the name says: the 48 px areas of the touch check exist only with `pointer: coarse`
+        expect(
+          await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+          "o contexto tem o ponteiro que o nome diz"
+        ).toBe(context.touch);
+        if (runs("overflow")) {
           expect
             .soft(
               (await overflowFaults(page)).sort(),
               "1. nada sai do contêiner"
             )
             .toEqual(expected(screen, "overflow"));
-          if (touch) {
-            expect
-              .soft(
-                (
-                  await touchFaults(page, {
-                    exemptInlineLinks: true,
-                    minimum: screen.status === "migrated" ? 48 : 44,
-                  })
-                ).sort(),
-                "2. área de toque"
-              )
-              .toEqual(expected(screen, "touch"));
-          }
+        }
+        if (runs("touch")) {
+          expect
+            .soft(
+              (
+                await touchFaults(page, {
+                  exemptInlineLinks: true,
+                  minimum: screen.status === "migrated" ? 48 : 44,
+                })
+              ).sort(),
+              "2. área de toque"
+            )
+            .toEqual(expected(screen, "touch"));
+        }
+        if (runs("axe")) {
           expect
             .soft((await axeFaults(page)).sort(), "3. axe WCAG 2.2 A e AA")
             .toEqual(expected(screen, "axe"));
+        }
+        if (runs("focus")) {
           expect
             .soft((await focusFaults(page)).sort(), "6. foco de 3 px")
             .toEqual(expected(screen, "focus"));
-        });
-
-        test("as sobreposições só desvanecem", async ({ page }) => {
-          test.skip(!screen.exercise, "the screen has no overlay");
-          await openScreen(screen, page);
-          await screen.exercise?.(page);
-          const records = await readMotion(page);
-          // the recorder saw overlays animate: an empty list of faults is not a recorder that saw nothing
-          expect(records.some((record) => record.overlay)).toBe(true);
-          expect(overlayMovement(records)).toEqual([]);
-        });
+        }
       });
-
-      test.describe(`${where} · movimento reduzido`, () => {
-        test.use({ ...context, reducedMotion: "reduce" });
-
-        test("com prefers-reduced-motion: reduce nada anima", async ({
-          page,
-        }) => {
-          await openScreen(screen, page);
-          await screen.exercise?.(page);
-          expect(runningMotion(await readMotion(page))).toEqual([]);
-        });
-      });
-    }
+    });
   }
+
+  // Motion (5): once per state, in one context, and once more with reduce.
+  const motionWhere = `${screen.name} · ${contextName(MOTION_CONTEXT)}`;
+  test.describe(`${motionWhere} · movimento`, () => {
+    test.use(contextOptions(MOTION_CONTEXT));
+
+    test("as sobreposições só desvanecem", async ({ page }) => {
+      test.skip(!screen.exercise, "the screen has no overlay");
+      await openScreen(screen, page);
+      await screen.exercise?.(page);
+      const records = await readMotion(page);
+      // the recorder saw overlays animate: an empty list of faults is not a recorder that saw nothing
+      expect(records.some((record) => record.overlay)).toBe(true);
+      expect(overlayMovement(records)).toEqual([]);
+    });
+  });
+
+  test.describe(`${motionWhere} · movimento reduzido`, () => {
+    test.use({ ...contextOptions(MOTION_CONTEXT), reducedMotion: "reduce" });
+
+    test("com prefers-reduced-motion: reduce nada anima", async ({ page }) => {
+      await openScreen(screen, page);
+      await screen.exercise?.(page);
+      expect(runningMotion(await readMotion(page))).toEqual([]);
+    });
+  });
 }
 
 // ---- control cases: each check fails on the fault it is for -----------------------------------------------
