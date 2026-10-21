@@ -7,9 +7,9 @@ import type { Page, Route } from "@playwright/test";
  * build under the CSP of `_headers`, with the auth server answered by the test (`page.route`), a stand-in for
  * the Turnstile script where the state needs the challenge, and synthetic addresses only.
  */
-export const TURNSTILE_SCRIPT =
+const TURNSTILE_SCRIPT =
   "https://challenges.cloudflare.com/turnstile/v0/api.js**";
-export const SITE_KEY = "1x00000000000000000000AA";
+const SITE_KEY = "1x00000000000000000000AA";
 export const EMAIL = "ana@lojadaana.com.br";
 export const PASSWORD = "uma frase longa de teste";
 
