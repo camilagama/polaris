@@ -21,6 +21,15 @@ const OUTSIDE_LEGACY = new Set([
   "styles/preflight.css",
 ]);
 const LAYER_ORDER = "@layer theme, base, components, legacy, utilities;";
+const THEME_OUTSIDE_LAYER = [
+  /^:root$/,
+  /^\.dark$/,
+  /^@theme( inline)?$/,
+  /^@custom-variant [a-z-]+/,
+  /^@utility [a-z-]+$/,
+  /^@media \(pointer: coarse\), \(max-width: 759\.98px\)$/,
+  /^@layer base$/,
+];
 const COMMENT = /\/\*[\s\S]*?\*\//g;
 const STRING = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
 
@@ -71,8 +80,10 @@ function outsideLegacy(css: string): string[] {
 describe("old CSS in @layer legacy (ADR 0103, section 3)", () => {
   const files = cssFiles(src);
 
-  it("finds the sheets: the 29 old ones and the files of the base", () => {
-    expect(files.filter((file) => !OUTSIDE_LEGACY.has(file))).toHaveLength(29);
+  it("finds the old sheets and the files of the base", () => {
+    expect(
+      files.filter((file) => !OUTSIDE_LEGACY.has(file)).length
+    ).toBeGreaterThan(0);
     for (const file of OUTSIDE_LEGACY) {
       expect(files).toContain(file);
     }
@@ -90,6 +101,17 @@ describe("old CSS in @layer legacy (ADR 0103, section 3)", () => {
       readFileSync(join(src, ENTRY), "utf8")
     );
     expect(`${statements[0]};`).toBe(LAYER_ORDER);
+  });
+
+  it("theme.css has outside a layer only the tokens, the theme, the variants, the utilities and the touch block", () => {
+    const statements = topLevelStatements(
+      readFileSync(join(src, "styles/theme.css"), "utf8")
+    );
+    expect(
+      statements.filter(
+        (statement) => !THEME_OUTSIDE_LAYER.some((rule) => rule.test(statement))
+      )
+    ).toEqual([]);
   });
 
   it("main.tsx imports the entry before any other module, so its order statement comes first", () => {

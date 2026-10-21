@@ -26,7 +26,7 @@ function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above
     <div
       className={cn(
-        "group/input-group touch-hit-field relative flex h-ctl-md w-full min-w-0 items-center rounded-md border border-input outline-none transition-[border-color,box-shadow] in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-start]]:h-auto has-[>textarea]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:flex-col has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot][aria-invalid=true]]:border-destructive has-disabled:bg-muted has-disabled:opacity-60 has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/30 has-[[data-slot][aria-invalid=true]]:focus-within:ring-[3px] has-[[data-slot][aria-invalid=true]]:focus-within:ring-destructive/25 dark:bg-input/30 dark:has-disabled:bg-muted has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
+        "group/input-group touch-hit-field relative flex h-ctl-md w-full min-w-0 items-center rounded-md border border-input outline-none transition-[border-color,box-shadow] has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot][aria-invalid=true]]:border-destructive has-disabled:bg-muted has-disabled:opacity-60 has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/30 has-[[data-slot][aria-invalid=true]]:focus-within:ring-[3px] has-[[data-slot][aria-invalid=true]]:focus-within:ring-destructive/25 dark:bg-input/30 dark:has-disabled:bg-muted",
         className
       )}
       data-slot="input-group"
@@ -36,8 +36,6 @@ function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
     />
   );
 }
-
-/** A click on an addon (an icon, a prefix like "R$") focuses the field; a click on a button in it does not. */
 
 /* The control inside the group: no border of its own (border, focus and error belong to the group). 16 px only with
    touch (iOS zooms in below that). */

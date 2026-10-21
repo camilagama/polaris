@@ -19,7 +19,8 @@ const BASE_CSS = [
   "src/styles/shadcn-tailwind.css",
   "src/styles/preflight.css",
 ];
-const COMMENT = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+// a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one
+const COMMENT = /\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
 const NOT_OKLCH = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/;
 const WHOLE_LUCIDE = /from "lucide-react"/;
 const BASE_UI_STYLE = /^base-/;
@@ -76,11 +77,23 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     });
   });
 
+  it("each dependency knip is told to ignore is still imported by the CSS entry (knip does not read CSS)", () => {
+    const knip = JSON.parse(readFileSync(join(web, "../../knip.json"), "utf8"));
+    const ignored: string[] = knip.workspaces["apps/web"].ignoreDependencies;
+    const entry = readFileSync(join(web, "src/styles/index.css"), "utf8");
+    for (const name of ignored.filter((item) => item !== "cloudflare")) {
+      expect(entry).toContain(`"${name}`);
+    }
+  });
+
   it("the patterns catch what they are for", () => {
     expect("color: #fff;").toMatch(NOT_OKLCH);
     expect("bg-[rgb(0_0_0)]").toMatch(NOT_OKLCH);
     expect("oklch(0.2 0.005 85 / 0.4)").not.toMatch(NOT_OKLCH);
     expect('import { X } from "lucide-react"').toMatch(WHOLE_LUCIDE);
     expect("<Foo.Portal>".match(PORTAL)).toEqual(["<Foo.Portal>"]);
+    expect('const a = "https://x/#fff"; // note'.replace(COMMENT, "")).toMatch(
+      NOT_OKLCH
+    );
   });
 });

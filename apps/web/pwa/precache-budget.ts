@@ -22,6 +22,7 @@ export const REST_BASELINE_GZIP_BYTES = 1_018_327;
 export const REST_GROWTH_BUDGET_GZIP_BYTES = 40_000;
 
 const FONT = /\.woff2?$/;
+const GALLERY_CHUNK = /(^|\/)assets\/ui-gallery-[\w-]+\.js$/;
 /**
  * The Sentry SDK chunk exists only in a build with a DSN (ADR 0098), about 35 KB gzip: it is not interface
  * and it is not in the baseline, which is a build without a DSN, so it stays out of the count.
@@ -88,12 +89,19 @@ export function precacheBudgetPlugin(): Plugin {
         readFileSync(join(directory, path))
       );
       const problems = budgetProblems(size);
+      // The gallery of the primitives is for the browser checks only (main.tsx): never in the shell.
+      const gallery = paths.filter((path) => GALLERY_CHUNK.test(path));
+      if (gallery.length > 0) {
+        problems.push(
+          `the UI gallery is in the production build (${gallery.join(", ")})`
+        );
+      }
       this.info(
         `precache: fonts ${size.fonts} B, rest ${size.rest} B gzip (${size.rest - REST_BASELINE_GZIP_BYTES >= 0 ? "+" : ""}${size.rest - REST_BASELINE_GZIP_BYTES} B)`
       );
       if (problems.length > 0) {
         this.error(
-          `Precache over the bundle budget (ADR 0103): ${problems.join("; ")}`
+          `Precache check of the shell failed (ADR 0103): ${problems.join("; ")}`
         );
       }
     },

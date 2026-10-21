@@ -161,6 +161,31 @@ test("as faces da Geist e da Geist Mono vêm de arquivos do próprio app e cobre
   expect(csp.violations()).toEqual([]);
 });
 
+test("no CSS do build, a ordem das camadas é theme, base, components, legacy e utilities", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const order = await page.evaluate(() =>
+    [...document.styleSheets]
+      .flatMap((sheet) => [...sheet.cssRules])
+      .flatMap((rule) => {
+        if (rule instanceof CSSLayerStatementRule) {
+          return [...rule.nameList];
+        }
+        return rule instanceof CSSLayerBlockRule ? [rule.name] : [];
+      })
+  );
+  // `properties` is Tailwind's own fallback layer for @property, ahead of everything (and below it all).
+  const firstSeen = [...new Set(order)];
+  expect(firstSeen.filter((name) => name !== "properties")).toEqual([
+    "theme",
+    "base",
+    "components",
+    "legacy",
+    "utilities",
+  ]);
+});
+
 test("controle: a CSP servida pelo servidor bloqueia um <style> injetado e a fixture o pega", async ({
   page,
 }) => {

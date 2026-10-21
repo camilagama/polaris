@@ -11,10 +11,15 @@
 /* `tailwindcss` in its three parts, so the preflight can be the scoped copy (preflight.css). */
 @import "tailwindcss/theme.css" layer(theme);
 @import "./preflight.css" layer(base);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "tw-animate-css";
 @import "./shadcn-tailwind.css";
 @import "./theme.css";
+
+/* Utilities only for the classes of the new interface: a utility named like an old class (`.hidden`, `.grid`,
+   `.table`) would beat it on an old screen. Each migrated screen adds its folder here. */
+@source "../ui";
+@source "../ui-gallery";
 
 /*
  * Geist and Geist Mono served by the app (`font-src 'self'`, offline), only the latin subset: the files

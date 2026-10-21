@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
+  browserStorage,
   parseTheme,
   readTheme,
   saveTheme,
@@ -98,6 +99,28 @@ describe("theme (ADR 0103, Tema e CSP)", () => {
     expect(readTheme(refusing)).toBe("sistema");
     expect(() => saveTheme(refusing, "claro")).not.toThrow();
     expect(readTheme(undefined)).toBe("sistema");
+  });
+
+  it("a localStorage that throws on access means no storage, not a crash", () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        get localStorage(): Storage {
+          throw new Error("SecurityError");
+        },
+      },
+    });
+    try {
+      expect(browserStorage()).toBeUndefined();
+      expect(readTheme(browserStorage())).toBe("sistema");
+    } finally {
+      if (original) {
+        Object.defineProperty(globalThis, "window", original);
+      } else {
+        Reflect.deleteProperty(globalThis, "window");
+      }
+    }
   });
 
   it.each([

@@ -139,6 +139,6 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 
 Notas:
 
-- `--border` (1,37:1 no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
+- `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
 - O foco do teclado é `--ring` cheio (3,36 a 5,73:1 contra fundo, cartão, menu e hover): é o que conta, o halo dos campos é só reforço.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.

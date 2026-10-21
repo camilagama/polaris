@@ -43,6 +43,15 @@ export function saveTheme(
   }
 }
 
+/** `window.localStorage`, or nothing where even reaching it throws (storage blocked by the browser). */
+export function browserStorage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 export const systemDarkQuery = () => window.matchMedia(DARK_QUERY);
 
 export function applyTheme(theme: Theme) {

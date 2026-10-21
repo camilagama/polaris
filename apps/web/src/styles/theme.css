@@ -4,15 +4,16 @@
  * `@theme` that turns them into utilities, and the Polaris variant and utilities (`touch`, `touch-hit`,
  * `touch-hit-field`, `focus-ring`). Taken from `polaris-theme.css` of the design, with two changes:
  * `--text-support` (13/18) added and `--animate-pop` removed (a scale from 0.6, against the motion
- * rules of DESIGN.md). The contrast of every pair is in docs/design/contrast-v5.1.md.
- * Out of layer on purpose (the shadcn tokens): the out-of-layer test lists this file.
+ * rules of DESIGN.md), and `color-scheme` moved into the base layer (below). The contrast of every pair is
+ * in docs/design/contraste-v5.1.md. Out of layer on purpose (the shadcn tokens): the out-of-layer test lists
+ * this file.
  */
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.65rem; /* blocos internos; controle 0,55 rem e painel 0,875 rem saem da escala abaixo (valores do DESIGN.md) */
-  --gutter: 1.5rem; /* uma só borda horizontal: cabeçalho, listas, tabelas, cartões */
+  --radius: 0.65rem; /* inner blocks; controls 0.55 rem and panels 0.875 rem come from the scale below (DESIGN.md) */
+  --gutter: 1.5rem; /* one horizontal edge: header, lists, tables, cards */
   --background: oklch(0.985 0.004 85);
   --foreground: oklch(0.2 0.005 85);
   --card: oklch(1 0 0);
@@ -44,7 +45,7 @@
   --sidebar-accent-foreground: oklch(0.2 0.005 85);
   --sidebar-border: oklch(0.925 0.005 85);
   --sidebar-ring: oklch(0.585 0.115 165);
-  /* extensões do Polaris, no padrão do shadcn: --x e --x-foreground */
+  /* Polaris extensions, in the shadcn pattern: --x and --x-foreground */
   --warning: oklch(0.45 0.094 75);
   --warning-foreground: oklch(1 0 0);
   --mark: oklch(0.6 0.125 165);
@@ -56,12 +57,11 @@
   --btn-shine: oklch(1 0 0 / 0.14);
   --btn-drop: oklch(0.28 0.012 85 / 0.2);
   --card-glow: oklch(1 0 0 / 0);
-  /* alturas visíveis dos controles (mouse); com toque sobem um degrau no bloco abaixo */
+  /* visible heights of the controls (mouse); with touch they go one step up in the block below */
   --h-xs: 1.5rem;
   --h-sm: 1.75rem;
   --h-md: 2rem;
   --h-lg: 2.25rem;
-  color-scheme: light;
 }
 
 .dark {
@@ -96,7 +96,7 @@
   --sidebar-accent-foreground: oklch(0.945 0.005 85);
   --sidebar-border: oklch(0.275 0.0035 85);
   --sidebar-ring: oklch(0.64 0.134 165);
-  /* extensões do Polaris, no padrão do shadcn: --x e --x-foreground */
+  /* Polaris extensions, in the shadcn pattern: --x and --x-foreground */
   --warning: oklch(0.81 0.11 80);
   --warning-foreground: oklch(0.2 0.0035 85);
   --mark: oklch(0.74 0.14 165);
@@ -108,7 +108,6 @@
   --btn-shine: oklch(1 0 0 / 0);
   --btn-drop: oklch(0 0 0 / 0.5);
   --card-glow: oklch(1 0 0 / 0.04);
-  color-scheme: dark;
 }
 
 @theme inline {
@@ -169,8 +168,8 @@
   --font-mono:
     "Geist Mono Variable", "Geist Mono", ui-monospace, "Cascadia Mono", Menlo,
     monospace;
-  /* escala de texto: 14 e 12 nos dois ponteiros; título e seção com peso e tracking próprios */
-  --breakpoint-md: 47.5rem; /* 760 px: onde as tabelas viram cartões e a lateral aparece (DESIGN.md) */
+  /* text scale: 14 and 12 with both pointers; title and section with their own weight and tracking */
+  --breakpoint-md: 47.5rem; /* 760 px: where tables become cards and the sidebar shows (DESIGN.md) */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.875rem;
@@ -185,7 +184,7 @@
   --text-title--line-height: 2rem;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.03em;
-  /* valores em dinheiro */
+  /* money values */
   --text-value-md: 1.0625rem;
   --text-value-md--line-height: 1.5rem;
   --text-value-lg: 1.625rem;
@@ -223,7 +222,8 @@
   }
 }
 
-/* Toque (celular, tablet) ou tela estreita: o visível sobe um degrau de altura, a margem lateral encolhe, o valor grande desce. O espaçamento NÃO escala. */
+/* Touch (phone, tablet) or a narrow screen: the visible height goes one step up, the side margin shrinks, the big
+   value comes down. The spacing does NOT scale. */
 @media (pointer: coarse), (max-width: 759.98px) {
   :root {
     --gutter: 1rem;
@@ -240,7 +240,7 @@
   }
 }
 
-/* Variante e utilitários do Polaris */
+/* Polaris variant and utilities */
 /* Block form: the shorthand with a comma-separated media query compiles to a broken selector. */
 @custom-variant touch {
   @media (pointer: coarse), (max-width: 759.98px) {
@@ -248,7 +248,7 @@
   }
 }
 
-/* Área de toque de 48 px em torno de um controle menor: pseudo-elemento invisível, só com toque */
+/* A 48 px touch area around a smaller control: an invisible pseudo-element, only with touch */
 @utility touch-hit {
   @media (pointer: coarse), (max-width: 759.98px) {
     position: relative;
@@ -260,7 +260,8 @@
   }
 }
 
-/* O mesmo para campo de texto (InputGroup): o pseudo-elemento fica ATRÁS do campo (z-index -1) para o toque no texto continuar posicionando o cursor */
+/* The same for a text field (InputGroup): the pseudo-element sits BEHIND the field (z-index -1), so a touch on the
+   text still places the caret */
 @utility touch-hit-field {
   @media (pointer: coarse), (max-width: 759.98px) {
     position: relative;
@@ -274,7 +275,8 @@
   }
 }
 
-/* Foco do teclado: contorno de 3 px (DESIGN.md) em --ring, folga de 2 px; --ring tem ≥ 3:1 sobre fundo, cartão, menu e hover (medido, MAPA-TOKENS.md) */
+/* Keyboard focus: a 3 px outline (DESIGN.md) in --ring, 2 px offset; --ring has at least 3:1 over background, card,
+   menu and hover (docs/design/contraste-v5.1.md) */
 @utility focus-ring {
   &:focus-visible {
     outline: 3px solid var(--ring);
@@ -289,6 +291,14 @@
  * <body> with the last screen, together with the preflight.
  */
 @layer base {
+  /* In a layer, unlike the design's theme: unlayered, it would beat the old sheets' own `color-scheme` (light,
+     and dark by the system) on the old screens. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
   @scope ([data-ui]) {
     :scope {
       font-feature-settings: "cv11", "ss01";

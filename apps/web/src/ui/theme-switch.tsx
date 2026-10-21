@@ -4,6 +4,7 @@ import SunIcon from "lucide-react/dist/esm/icons/sun";
 import { useCallback, useEffect, useState } from "react";
 import {
   applyTheme,
+  browserStorage,
   parseTheme,
   readTheme,
   saveTheme,
@@ -31,7 +32,7 @@ const ICON = { claro: SunIcon, escuro: MoonIcon, sistema: MonitorIcon };
 
 /** The chosen theme, kept in localStorage and applied to `<html>`; "sistema" follows the system live. */
 function useTheme(): [Theme, (theme: Theme) => void] {
-  const [theme, setTheme] = useState<Theme>(() => readTheme(localStorage));
+  const [theme, setTheme] = useState<Theme>(() => readTheme(browserStorage()));
   useEffect(() => {
     applyTheme(theme);
     if (theme !== "sistema") {
@@ -43,7 +44,7 @@ function useTheme(): [Theme, (theme: Theme) => void] {
     return () => query.removeEventListener("change", follow);
   }, [theme]);
   const choose = useCallback((next: Theme) => {
-    saveTheme(localStorage, next);
+    saveTheme(browserStorage(), next);
     setTheme(next);
   }, []);
   return [theme, choose];
