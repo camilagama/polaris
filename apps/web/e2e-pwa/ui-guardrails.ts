@@ -388,8 +388,8 @@ function touchTooSmall(
 /**
  * In page: two controls whose touch areas overlap (a tap between them is a guess). The controls of one
  * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
- * the button at its end, "Mostrar" of a password: both have the area of the group, and the button is drawn over
- * it); a control inside another (a link in a clickable card) is nested.
+ * the button at its end, "Mostrar" of a password: the field has the area of the group, the button its own, drawn
+ * over it); a control inside another (a link in a clickable card) is nested.
  */
 function touchOverlaps(selector: string) {
   const controls = [...document.querySelectorAll(selector)]

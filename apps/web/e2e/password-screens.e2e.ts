@@ -624,6 +624,10 @@ test.describe("desafio bloqueado (P2)", () => {
       await page.getByLabel("E-mail", { exact: true }).press("Enter");
       expect(callsTo(server, "/api/auth/sign-in/email")).toEqual([]);
       expect(callsTo(server, "/api/auth/sign-up/email")).toEqual([]);
+      // and the form did not run its submit: no second alert, the button is not pending, its name is the same
+      await expect(alert).toHaveCount(1);
+      expect(await submit.getAttribute("aria-busy")).toBeNull();
+      await expect(submit).toHaveText(button);
       await shot(page, `${name}-desafio-bloqueado-botao`);
       // the script loads: the button is normal again
       server.turnstile = "ok";

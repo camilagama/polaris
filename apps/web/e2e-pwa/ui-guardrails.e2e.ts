@@ -281,6 +281,7 @@ test.describe("controle: cada verificação pega a falha", () => {
     const faults = (await touchFaults(page, check)).join("\n");
     expect(faults).toContain('button "Dentro do campo" tem área de toque');
     expect(faults).not.toContain('input "Campo do controle"');
+    expect(faults).not.toContain('button "Com área própria"');
     expect(faults).toContain('button "Pequeno" tem área de toque');
     expect(faults).not.toContain('a "termos de uso" tem área de toque');
     expect(faults).toContain('a "Entrar" tem área de toque');
