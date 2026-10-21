@@ -454,8 +454,10 @@ describe("approved periods", () => {
     ).toBe("2031-10-19T10:00:00.000Z");
     // the amendment of 21/10/2026 (10 years became 5) rests on the right to defend a claim, and the rule says the risk it accepts
     expect(policy.legalSources).toContain(
-      "LGPD (Lei 13.709/2018), art. 16, II"
+      "LGPD (Lei 13.709/2018), art. 7º, VI"
     );
+    expect((policy.legalSources ?? []).join(" ")).not.toContain("art. 16");
+    expect(policy.rule).not.toContain("16, II");
     expect(policy.rule).toContain("legal_acceptance_unverified_user");
   });
 
