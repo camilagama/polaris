@@ -93,6 +93,7 @@ Estas têm prova de concorrência em `gates:ci`, mas o gate ainda não tem a bar
 | --- | --- | --- | --- |
 | Registro de acesso: a mesma requisição por várias conexões é um registro | Lock advisory `auth_access_log:<usuário>` | `verify-access-log-gate.ts` | Provado, barreira não revisada |
 | Bloqueio de login: rajada de 12 tentativas faz 5 verificações | Lock advisory `auth_login_lock:<chave>` (migration 0082) | `verify-login-lock-gate.ts` | Provado, barreira não revisada |
+| Apagar o usuário nunca verificado: duas execuções ao mesmo tempo apagam cada usuário uma vez; linha que outra transação segura é pulada | `FOR UPDATE SKIP LOCKED` nos candidatos e as condições conferidas de novo no `DELETE` (migration 0093) | `verify-unverified-user-purge-gate.ts` | Provado, barreira não revisada |
 | Aceite legal: 8 pedidos iguais são uma linha | `ON CONFLICT DO NOTHING` na chave única (migration 0083) | `verify-legal-acceptance-gate.ts` | Provado, barreira não revisada |
 | Limite de aparelhos por usuário (8 registros) | Lock advisory `device:<usuário>` | `verify-offline-devices-gate.ts` | Provado, barreira não revisada |
 | Redefinição de senha × emissão de lease | Lock advisory `authorization-epoch:<usuário>` | `verify-offline-lease-gate.ts` | Provado, barreira não revisada |

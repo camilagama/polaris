@@ -109,6 +109,8 @@ const gates: Gate[] = [
   ["access-log", "verify-access-log-gate.ts"],
   // the lock of the sign-in by password (ADR 0100): the 5th failure, the release, the reservation, the expiry
   ["login-lock", "verify-login-lock-gate.ts"],
+  // the purge of the user who never verified the e-mail (ADR 0100, Q-D2): every condition together, the limit, the audit
+  ["unverified-user-purge", "verify-unverified-user-purge-gate.ts"],
   // the record of acceptance of the terms and the privacy policy (ADR 0100): append-only, per user, the minimum version, no IP
   ["legal-acceptance", "verify-legal-acceptance-gate.ts"],
   ["definer-hardening", "verify-definer-hardening-gate.ts"],
@@ -278,6 +280,7 @@ const suites: Record<string, string[]> = {
     "scheduled-jobs",
     "access-log",
     "login-lock",
+    "unverified-user-purge",
     "legal-acceptance",
     "definer-hardening",
     "access-log-login",

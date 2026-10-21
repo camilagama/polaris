@@ -22,6 +22,7 @@ export const authSecurityAuditEventType = pgEnum(
     "password_changed",
     "password_reset_completed",
     "password_set",
+    "unverified_user_deleted",
   ]
 );
 
@@ -50,7 +51,7 @@ export const authSecurityAuditEvents = pgTable(
     outcome: authSecurityAuditOutcome("outcome").notNull(),
     provider: text("provider"),
     requestId: text("request_id").notNull(),
-    /** The revoked device (device_revoked). */
+    /** The revoked device (device_revoked) or the deleted user (unverified_user_deleted). */
     subjectId: text("subject_id"),
   },
   (table) => [
