@@ -6,7 +6,6 @@ import {
   type ReactNode,
   type Ref,
   type RefObject,
-  type TransitionEvent,
   useCallback,
   useEffect,
   useRef,
@@ -19,8 +18,8 @@ import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
-import { useChallengeRetry } from "./entry-parts";
 import {
   emailEnter,
   openAfterEmail,
@@ -107,7 +106,8 @@ function LegalLinks() {
 
 /**
  * The page of `/entrar` and `/criar-conta`: outside the app shell, one card in the middle, the brand and the
- * title; under the card, the two legal links.
+ * title; under the card, the two legal links. Its columns are flex and not grid: an empty part that stays in
+ * the tree (a live region, the closed password) gives back the gap with `-mb-4`, which a grid track ignores.
  */
 export function EntryScreen({
   children,
@@ -125,9 +125,9 @@ export function EntryScreen({
         className="grid min-h-dvh place-items-center px-(--gutter) py-8"
         id="conteudo"
       >
-        <div className="w-full max-w-[380px]">
+        <div className="w-full min-w-0 max-w-[380px]">
           <Card className="animate-rise">
-            <CardContent className="grid gap-4 py-1">
+            <CardContent className="flex flex-col gap-4 py-1">
               <p className="flex w-fit items-center gap-2 font-semibold text-[1.0625rem] tracking-tight">
                 <BrandMark />
                 <span>Polaris</span>
@@ -399,6 +399,8 @@ export function PasswordInput({
   );
 }
 
+const OPEN_MS = 220;
+
 /**
  * The part of the form that opens after the e-mail (v5.2): the password and what comes with it. Closed, it is
  * `visibility: hidden` and zero rows high: out of the Tab order and of the screen reader, but still in the DOM,
@@ -413,49 +415,37 @@ export function Progressive({
   children: ReactNode;
   open: boolean;
 }) {
+  // open and done moving: only then the content is not clipped. A timer and not `transitionend`, which never
+  // comes when nothing moves (motion reduced, a hidden tab, a manager filling before the first style)
   const [settled, setSettled] = useState(open);
   useEffect(() => {
     if (!open) {
       setSettled(false);
+      return;
     }
-  }, [open]);
-  const handleTransitionEnd = useCallback(
-    (event: TransitionEvent<HTMLDivElement>) => {
-      if (
-        event.target === event.currentTarget &&
-        event.propertyName === "grid-template-rows" &&
-        open
-      ) {
-        setSettled(true);
-      }
-    },
-    [open]
-  );
-  // with the motion reduced there is no transition, so no end of one: open is settled at once
-  useEffect(() => {
-    if (open && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setSettled(true);
-    }
+    const timer = setTimeout(() => setSettled(true), OPEN_MS + 40);
+    return () => clearTimeout(timer);
   }, [open]);
   return (
     <div
       className={cn(
-        "grid transition-[grid-template-rows,opacity,visibility,margin] duration-[220ms] ease-(--ease-soft) motion-reduce:transition-none",
+        "grid grid-cols-[minmax(0,1fr)] duration-[220ms] ease-(--ease-soft) motion-reduce:transition-none",
+        // visible at once when it opens (so Enter can put the focus on the password in the same task); hidden
+        // only at the end of the closing
         open
-          ? "visible grid-rows-[1fr] opacity-100"
-          : "invisible -mb-4 grid-rows-[0fr] opacity-0"
+          ? "visible grid-rows-[1fr] opacity-100 transition-[grid-template-rows,opacity,margin]"
+          : "invisible -mb-4 grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility,margin]"
       )}
       data-open={open || undefined}
       data-slot="progressive"
-      onTransitionEnd={handleTransitionEnd}
     >
       <div
         className={cn(
-          "grid min-h-0",
+          "min-h-0 min-w-0",
           open && settled ? "overflow-visible" : "overflow-hidden"
         )}
       >
-        <div className="grid gap-4">{children}</div>
+        <div className="flex flex-col gap-4">{children}</div>
       </div>
     </div>
   );
@@ -471,18 +461,24 @@ export function ChallengeArea({ challenge }: { challenge: Challenge }) {
   const { retry, retrying } = useChallengeRetry(challenge, slotRef);
   const { state } = challenge;
   return (
-    // `contents`: its parts are rows of the form, and the empty ones (idle) take no row and no gap
+    // `contents`: its parts are rows of the form; the idle ones are zero high and give back their gap
     <div className="contents" ref={slotRef}>
       {state === "interactive" ? (
         <p className="text-muted-foreground text-support">
           {CHALLENGE_INTERACTIVE}
         </p>
       ) : null}
+      {/* the widget draws itself here (a hidden input and a zero-height box until it asks for the person):
+          until then the box gives back the gap of the column */}
       <div
-        className="max-w-full overflow-x-auto"
+        className={cn(
+          "max-w-full overflow-x-auto",
+          state === "interactive" ? null : "-mb-4"
+        )}
         ref={challenge.containerRef}
       />
-      <p className="text-muted-foreground text-sm empty:hidden" role="status">
+      {/* always there, so the line is announced when it comes; empty, it gives back the gap of the column */}
+      <p className="text-muted-foreground text-sm empty:-mb-4" role="status">
         {state === "checking" ? CHALLENGE_CHECKING : null}
       </p>
       {state === "blocked" || retrying ? (
@@ -538,12 +534,12 @@ export function EntryGate({
   children,
   title,
 }: {
-  children: (siteKey: string | null) => ReactNode;
+  children: (methods: { google: boolean; siteKey: string | null }) => ReactNode;
   title: string;
 }) {
   const { methods, retry } = useEntryMethods();
   if (methods.state === "ready") {
-    return <>{children(methods.siteKey)}</>;
+    return <>{children(methods)}</>;
   }
   // the password is off: the hook is already sending the person to `/entrar`
   if (methods.state === "off") {
@@ -578,12 +574,15 @@ export function EntryGate({
  * Enter submits the form as usual.
  */
 export function useProgressive(
-  passwordRef: RefObject<HTMLInputElement | null>
+  passwordRef: RefObject<HTMLInputElement | null>,
+  /** While a submit runs the region stays open: the challenge may be asking the person inside it. */
+  pending: boolean
 ) {
   const [open, setOpen] = useState(false);
   const followEmail = useCallback(
-    (value: string) => setOpen((current) => openAfterEmail(current, value)),
-    []
+    (value: string) =>
+      setOpen((current) => pending || openAfterEmail(current, value)),
+    [pending]
   );
   const followPassword = useCallback(
     (value: string) => setOpen((current) => openAfterPassword(current, value)),
@@ -606,7 +605,7 @@ export function useProgressive(
       }
       // the region must be visible before the password can take the focus
       flushSync(() => setOpen(true));
-      passwordRef.current?.focus();
+      passwordRef.current?.focus({ preventScroll: true });
     },
     [open, passwordRef]
   );

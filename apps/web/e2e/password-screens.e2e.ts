@@ -309,6 +309,7 @@ test.describe("entrar com e-mail e senha", () => {
     // v5.2: only the e-mail at first; the password, "Esqueci a senha" and "Entrar" are in the DOM for a password
     // manager, but hidden until the address has a complete shape
     await expect(email).toBeVisible();
+    await expect(password).toHaveCount(1);
     await expect(password).toBeHidden();
     await expect(
       page.getByRole("button", { exact: true, name: "Entrar" })
@@ -319,6 +320,10 @@ test.describe("entrar com e-mail e senha", () => {
     await expect(email).toHaveAttribute("autocomplete", "username");
     await expect(password).toHaveAttribute("autocomplete", "current-password");
     await shot(page, "entrar-pronta");
+    // closed, the password is out of the Tab order: from the e-mail, Tab goes to "Criar conta"
+    await email.focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Criar conta" })).toBeFocused();
 
     // Enter with an incomplete address: the local error, the password still closed
     await email.fill("quem@exemplo");
@@ -335,6 +340,22 @@ test.describe("entrar com e-mail e senha", () => {
     await email.fill("quem@exemplo.com");
     await expect(password).toBeVisible();
     await expect(email).toBeFocused();
+    // Enter in the complete address takes the focus to the password; Tab from the e-mail reaches it too
+    await email.press("Enter");
+    await expect(password).toBeFocused();
+    await email.focus();
+    await page.keyboard.press("Tab");
+    await expect(password).toBeFocused();
+    // an address that stops being complete leaves the password open; only an empty field closes it
+    await email.fill("quem@exemplo");
+    await expect(password).toBeVisible();
+    await email.fill("");
+    await expect(password).toBeHidden();
+    await expect(password).toHaveCount(1);
+    await email.fill("quem@exemplo");
+    await expect(password).toBeHidden();
+    await email.fill("quem@exemplo.com");
+    await expect(password).toBeVisible();
     await expect(email).not.toHaveAttribute("aria-invalid", "true");
     await expect(
       page.getByRole("link", { name: "Esqueci a senha" })

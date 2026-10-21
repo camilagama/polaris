@@ -61,7 +61,8 @@ function ConnectionNotice({
   reconnected: boolean;
 }) {
   return (
-    <div className="grid empty:hidden" role="status">
+    // always in the tree, so the change is announced; empty, it gives back the gap of the column
+    <div className="grid empty:-mb-4" role="status">
       {online ? null : (
         // the region around it is the live one: the alert itself is no second status
         <Alert role="presentation" variant="warning">

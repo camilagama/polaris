@@ -56,6 +56,7 @@ import {
   SIGN_UP_TITLE,
 } from "./password-texts";
 import {
+  GOOGLE_NOT_OFFERED,
   NEW_TAB_HINT,
   PRIVACY_LINK,
   SIGN_IN_LIMIT,
@@ -64,7 +65,13 @@ import {
 } from "./sign-in-texts";
 import { challengeToken, useChallenge } from "./turnstile";
 
-function SignUpForm({ siteKey }: { siteKey: string | null }) {
+function SignUpForm({
+  google: googleOn,
+  siteKey,
+}: {
+  google: boolean;
+  siteKey: string | null;
+}) {
   const challenge = useChallenge(siteKey, "signup");
   const formId = useId();
   const acceptId = `${formId}-accept`;
@@ -83,7 +90,7 @@ function SignUpForm({ siteKey }: { siteKey: string | null }) {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const acceptRef = useRef<HTMLSpanElement>(null);
-  const progressive = useProgressive(passwordRef);
+  const progressive = useProgressive(passwordRef, pending);
   const { followEmail, followPassword } = progressive;
 
   const handleAccept = useCallback((checked: boolean) => {
@@ -100,8 +107,12 @@ function SignUpForm({ siteKey }: { siteKey: string | null }) {
       if (isCompleteEmail(value)) {
         setEmailError(null);
       }
+      // an empty e-mail closes the password: it is hidden again, so it never comes back shown
+      if (value.trim() === "") {
+        hide();
+      }
     },
-    [followEmail]
+    [followEmail, hide]
   );
   const handlePassword = useCallback(
     (value: string) => {
@@ -196,18 +207,20 @@ function SignUpForm({ siteKey }: { siteKey: string | null }) {
     );
   }
 
-  const googleAlert = google.failure
+  const googleFailure = google.failure
     ? { indisponivel: SIGN_IN_UNAVAILABLE, limite: SIGN_IN_LIMIT }[
         google.failure
       ]
     : null;
+  // the Google way off on the server: the button is off and the screen says why, as on `/entrar`
+  const googleAlert = googleFailure ?? (googleOn ? null : GOOGLE_NOT_OFFERED);
   return (
     <EntryScreen title={SIGN_UP_TITLE}>
       {googleAlert ? (
         <EntryAlert key={googleAlert}>{googleAlert}</EntryAlert>
       ) : null}
       <GoogleButton
-        disabled={false}
+        disabled={!googleOn}
         onClick={google.start}
         pending={google.starting}
       />
@@ -215,7 +228,7 @@ function SignUpForm({ siteKey }: { siteKey: string | null }) {
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form
         aria-label={SIGN_UP_TITLE}
-        className="grid gap-4"
+        className="flex flex-col gap-4"
         noValidate
         onSubmit={submit}
       >
@@ -322,7 +335,9 @@ export function SignUpPage() {
   }, []);
   return (
     <EntryGate title={SIGN_UP_TITLE}>
-      {(siteKey) => <SignUpForm siteKey={siteKey} />}
+      {(methods) => (
+        <SignUpForm google={methods.google} siteKey={methods.siteKey} />
+      )}
     </EntryGate>
   );
 }

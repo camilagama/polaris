@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
 import {
   CHALLENGE_BLOCKED,
@@ -281,43 +282,6 @@ export function useReveal(): [boolean, () => void, () => void] {
 }
 
 /**
- * "Tentar de novo" of a blocked challenge script: it stays on the screen, with the focus on it, while the script
- * is asked for again; when the script comes, the block goes away and the focus goes to the first field of the
- * form around `slotRef`.
- */
-export function useChallengeRetry(
-  challenge: Challenge,
-  slotRef: RefObject<HTMLElement | null>
-): { retry: () => void; retrying: boolean } {
-  const [retrying, setRetrying] = useState(false);
-  const { state } = challenge;
-  const loadingSeen = useRef<boolean>(false);
-  useEffect(() => {
-    if (!retrying) {
-      return;
-    }
-    if (state === "loading") {
-      loadingSeen.current = true;
-      return;
-    }
-    // the click renders once more with the old state, before the script is asked for again
-    if (!loadingSeen.current) {
-      return;
-    }
-    loadingSeen.current = false;
-    setRetrying(false);
-    if (state !== "blocked") {
-      slotRef.current?.closest("form")?.querySelector("input")?.focus();
-    }
-  }, [retrying, slotRef, state]);
-  const retry = useCallback(() => {
-    setRetrying(true);
-    challenge.retry();
-  }, [challenge]);
-  return { retry, retrying };
-}
-
-/**
  * Where the widget draws itself, and the line that says what it is doing (V5). With the script blocked the
  * alert says what to do, and "Tentar de novo" asks for the script again without reloading the page, except
  * where `blockedText` is given: there the person must come back by the link (`/redefinir-senha`).
@@ -341,7 +305,9 @@ export function ChallengeSlot({
     <div className="sign-in-challenge" ref={slotRef}>
       <div ref={challenge.containerRef} />
       <p className="sign-in-challenge-status" role="status">
-        {state === "checking" ? CHALLENGE_CHECKING : null}
+        {state === "checking" || state === "interactive"
+          ? CHALLENGE_CHECKING
+          : null}
       </p>
       {state === "blocked" || retrying ? (
         <>

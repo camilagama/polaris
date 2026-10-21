@@ -5,7 +5,7 @@ export type EntryMethods =
   | { state: "loading" }
   | { state: "off" }
   | { state: "unavailable" }
-  | { siteKey: string | null; state: "ready" };
+  | { google: boolean; siteKey: string | null; state: "ready" };
 
 /**
  * The password pages exist only with the password on (AC-46): with it off they send the person to
@@ -42,7 +42,11 @@ export function useEntryMethods(
           }
           return;
         }
-        setMethods({ siteKey: answer.turnstileSiteKey, state: "ready" });
+        setMethods({
+          google: answer.google,
+          siteKey: answer.turnstileSiteKey,
+          state: "ready",
+        });
       })
       .catch(() => {
         if (current) {

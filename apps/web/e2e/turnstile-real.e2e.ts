@@ -101,6 +101,8 @@ const ROUTES = [
     posts: "/api/auth/sign-in/email",
     submit: async (page: Page) => {
       await email(page).fill("quem@exemplo.com");
+      // the challenge lives in the part that opens with the e-mail: no alert of a blocked script there either
+      await expect(page.getByRole("alert")).toHaveCount(0);
       await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { exact: true, name: "Entrar" }).click();
     },
@@ -110,6 +112,7 @@ const ROUTES = [
     posts: "/api/auth/sign-up/email",
     submit: async (page: Page) => {
       await email(page).fill("nova@exemplo.com");
+      await expect(page.getByRole("alert")).toHaveCount(0);
       await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
       await page.getByRole("checkbox").check();
       await page

@@ -237,7 +237,7 @@ export const entryStates = {
     await openSignIn(page);
     await page.route("**/api/auth/sign-in/email", (route) =>
       route.fulfill(
-        json(423, { code: "auth_login_locked", retryAfterSeconds: 14 * 60 })
+        json(429, { code: "auth_login_locked", retryAfterSeconds: 14 * 60 })
       )
     );
     await typeCompleteEmail(page);

@@ -80,7 +80,7 @@ export function EmailSignInForm({
   const [pause, setPause] = useState<Pause | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const progressive = useProgressive(passwordRef);
+  const progressive = useProgressive(passwordRef, pending);
   const { followEmail, followPassword } = progressive;
 
   // the pause ends by itself: "Entrar" comes back without a reload
@@ -106,8 +106,12 @@ export function EmailSignInForm({
       if (isCompleteEmail(value)) {
         setEmailError(null);
       }
+      // an empty e-mail closes the password: it is hidden again, so it never comes back shown
+      if (value.trim() === "") {
+        hide();
+      }
     },
-    [followEmail]
+    [followEmail, hide]
   );
   const handlePassword = useCallback(
     (value: string) => {
@@ -215,7 +219,7 @@ export function EmailSignInForm({
   return (
     <form
       aria-label={SIGN_IN_BUTTON}
-      className="grid gap-4"
+      className="flex flex-col gap-4"
       noValidate
       onSubmit={submit}
     >
