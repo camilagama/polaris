@@ -109,6 +109,8 @@ export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
     "Contador do bloqueio da entrada por senha, uma linha por e-mail digitado e sem organização: a chave é o HMAC do e-mail normalizado (nem e-mail, nem usuário, nem IP), e a linha dura no máximo 1 dia (classe `auth_login_lock`, ADR 0100).",
   legal_acceptance:
     "Aceite dos termos e da política de privacidade, por usuário e sem organização: a linha só acrescenta (gatilho), sobrevive ao purge da organização e à exclusão do usuário, e fica 10 anos depois da exclusão da conta (classe `legal_acceptance`, ADR 0100). Sem IP.",
+  legal_acceptance_contract_end:
+    "Fim do contrato do usuário (ID opaco, instante e motivo), de onde contam os 10 anos do aceite, sem organização: só acrescenta (gatilho), sobrevive ao purge da organização e à exclusão do usuário, e sai junto com o aceite, pela mesma função de expurgo futura (classe `legal_acceptance`, ADR 0100).",
   device_sessions:
     "Vínculo entre sessão e aparelho de um usuário, sem organização: some com a sessão ou com o aparelho (chave estrangeira em cascata), e a retenção é a da classe `auth_sessions`. A classe de retenção dos aparelhos (`devices`) ainda não foi decidida.",
   operational_incidents:

@@ -652,6 +652,13 @@
       "when": 1792549718701,
       "tag": "0093_apagamento_de_usuario_nao_verificado",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792553207803,
+      "tag": "0094_prazo_do_link_e_fim_do_contrato_do_aceite",
+      "breakpoints": true
     }
   ]
 }
