@@ -258,7 +258,8 @@ test.describe("controle: cada verificação pega a falha", () => {
         link.textContent = name;
         row.append(link, " ");
       }
-      // a field and the button at its end are one piece: both have the area of the group
+      // the field has the area of the group; a button at its end has only its own: one of 20 px without
+      // `touch-hit` fails, and one with it passes
       const field = document.createElement("div");
       field.dataset.slot = "input-group";
       field.style.display = "flex";
@@ -268,11 +269,19 @@ test.describe("controle: cada verificação pega a falha", () => {
       input.setAttribute("aria-label", "Campo do controle");
       const end = document.createElement("button");
       end.textContent = "Dentro do campo";
-      field.append(input, end);
+      end.style.height = "20px";
+      const kept = document.createElement("button");
+      kept.textContent = "Com área própria";
+      kept.className = "touch-hit";
+      kept.style.height = "20px";
+      kept.style.position = "relative";
+      field.append(input, end, kept);
       main?.append(small, first, second, line, row, field);
     });
     const faults = (await touchFaults(page, check)).join("\n");
-    expect(faults).not.toContain('button "Dentro do campo"');
+    expect(faults).toContain('button "Dentro do campo" tem área de toque');
+    expect(faults).not.toContain('input "Campo do controle"');
+    expect(faults).not.toContain('button "Com área própria"');
     expect(faults).toContain('button "Pequeno" tem área de toque');
     expect(faults).not.toContain('a "termos de uso" tem área de toque');
     expect(faults).toContain('a "Entrar" tem área de toque');

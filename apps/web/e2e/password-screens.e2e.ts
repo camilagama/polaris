@@ -200,6 +200,11 @@ async function shot(page: Page, name: string, narrow = false) {
     for (const scheme of ["light", "dark"] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: one scheme after the other on the same page
       await page.emulateMedia({ colorScheme: scheme });
+      // the theme is the `dark` class on <html>, set at load: changing the media after it does not flip it
+      await page.evaluate(
+        (dark) => document.documentElement.classList.toggle("dark", dark),
+        scheme === "dark"
+      );
       await transitionsEnded(page);
       await page.screenshot({
         fullPage: true,
@@ -208,6 +213,7 @@ async function shot(page: Page, name: string, narrow = false) {
     }
   }
   await page.emulateMedia({ colorScheme: "light" });
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
   if (size) {
     await page.setViewportSize(size);
   }
@@ -256,6 +262,7 @@ async function expectNoTechnicalText(page: Page) {
 const newPasswordField = (page: Page) =>
   page.locator("input").and(page.getByLabel("Nova senha"));
 
+const BLOCKED_DESCRIPTION = /Recarregue a página/;
 const callsTo = (server: Server, path: string) =>
   server.calls.filter((call) => call.path === path);
 
@@ -454,7 +461,7 @@ test.describe("entrar com e-mail e senha", () => {
     await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { exact: true, name: "Entrar" }).click();
     await expect(page.getByRole("alert")).toHaveText(
-      "Muitas tentativas. Espere 14 minutos ou use Esqueci a senha. Se este e-mail tem conta, enviamos um link para liberar agora."
+      "Muitas tentativas. Espere 14 minutos ou use Esqueci a senha. Se este e-mail tem conta com senha, enviamos um link para liberar agora."
     );
     const enter = page.getByRole("button", { exact: true, name: "Entrar" });
     await expect(enter).toBeDisabled();
@@ -579,6 +586,55 @@ test.describe("desafio bloqueado (P2)", () => {
       await expect(
         page.getByRole("button", { name: "Tentar de novo" })
       ).toBeVisible();
+    }
+  });
+
+  test("com o script bloqueado, o botão do formulário fica aria-disabled e aponta para o alerta; volta ao normal quando o script carrega (N-1)", async ({
+    page,
+  }) => {
+    const server = newServer({ turnstile: "blocked" });
+    await serve(page, server);
+    const cases = [
+      { button: "Criar conta", path: "/criar-conta", shot: "criar-conta" },
+      { button: "Entrar", path: "/entrar", shot: "entrar" },
+    ];
+    for (const { button, path, shot: name } of cases) {
+      server.turnstile = "blocked";
+      // biome-ignore lint/performance/noAwaitInLoops: one page after the other in the same tab
+      await page.goto(path);
+      await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
+      if (path === "/entrar") {
+        await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
+      }
+      const submit = page.getByRole("button", { exact: true, name: button });
+      const alert = page.getByRole("alert");
+      await expect(alert).toContainText("Recarregue a página");
+      await expect(submit).toHaveAttribute("aria-disabled", "true");
+      // still a button the focus reaches (not `disabled`), and it names the alert that says why
+      expect(await submit.getAttribute("disabled")).toBeNull();
+      const alertId = await alert.getAttribute("id");
+      expect(alertId).toBeTruthy();
+      await expect(submit).toHaveAttribute("aria-describedby", alertId ?? "");
+      await expect(submit).toHaveAccessibleDescription(BLOCKED_DESCRIPTION);
+      // a press, and Enter in a field, do nothing: no request leaves the page
+      // forced: Playwright treats aria-disabled as not actionable, and a person can still press it
+      await submit.click({ force: true });
+      await page.getByLabel("E-mail", { exact: true }).press("Enter");
+      expect(callsTo(server, "/api/auth/sign-in/email")).toEqual([]);
+      expect(callsTo(server, "/api/auth/sign-up/email")).toEqual([]);
+      // and the form did not run its submit: no second alert, the button is not pending, its name is the same
+      await expect(alert).toHaveCount(1);
+      expect(await submit.getAttribute("aria-busy")).toBeNull();
+      await expect(submit).toHaveText(button);
+      await shot(page, `${name}-desafio-bloqueado-botao`);
+      // the script loads: the button is normal again
+      server.turnstile = "ok";
+      await page.getByRole("button", { name: "Tentar de novo" }).click();
+      await expect(
+        page.getByRole("button", { name: "Tentar de novo" })
+      ).toHaveCount(0);
+      expect(await submit.getAttribute("aria-disabled")).toBeNull();
+      expect(await submit.getAttribute("aria-describedby")).toBeNull();
     }
   });
 

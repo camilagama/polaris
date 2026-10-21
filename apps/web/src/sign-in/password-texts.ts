@@ -78,7 +78,7 @@ const minutesText = (minutes: number) =>
  * has an account or not. The button "Entrar" off already shows that it comes back with the end of the pause.
  */
 export function pausedText(minutes: number): string {
-  return `Muitas tentativas. Espere ${minutesText(minutes)} ou use Esqueci a senha. Se este e-mail tem conta, enviamos um link para liberar agora.`;
+  return `Muitas tentativas. Espere ${minutesText(minutes)} ou use Esqueci a senha. Se este e-mail tem conta com senha, enviamos um link para liberar agora.`;
 }
 
 /** The same lock seen from "Trocar senha": the person is inside, there is no "Esqueci a senha" on this screen. */

@@ -348,7 +348,7 @@ export function GoogleButton({
   return (
     <Button
       aria-busy={pending || undefined}
-      className="w-full"
+      className={cn("w-full", pending && "disabled:opacity-70")}
       disabled={disabled || pending}
       onClick={onClick}
       size="lg"
@@ -578,10 +578,13 @@ export function Progressive({
  * and "Tentar de novo", which asks for the script again without reloading what was typed.
  */
 export function ChallengeArea({
+  alertId,
   blockedText = CHALLENGE_BLOCKED,
   challenge,
   retry: canRetry = true,
 }: {
+  /** The id of the blocked alert, which `SubmitButton` names in `aria-describedby` (`challengeAlertId`). */
+  alertId: string;
   /** What a blocked script says; `/redefinir-senha` sends the person back to the link instead of reloading. */
   blockedText?: string;
   challenge: Challenge;
@@ -614,7 +617,9 @@ export function ChallengeArea({
       </p>
       {state === "blocked" || retrying ? (
         <>
-          <EntryAlert focus={false}>{blockedText}</EntryAlert>
+          <EntryAlert focus={false} id={alertId}>
+            {blockedText}
+          </EntryAlert>
           {canRetry ? (
             <Button
               aria-disabled={retrying || undefined}
@@ -633,8 +638,18 @@ export function ChallengeArea({
   );
 }
 
-/** The one button of the form, the width of the card; pending, it says so and takes no second submit. */
+/** The id of the alert of a blocked challenge in the form `formId`: `ChallengeArea` draws it, `SubmitButton` names it. */
+export const challengeAlertId = (formId: string) => `${formId}-challenge`;
+
+/**
+ * The one button of the form, the width of the card; pending, it says so and takes no second submit. With the
+ * challenge script blocked it stays in place but off (`aria-disabled`, not `disabled`: the focus can still reach
+ * it and a screen reader reads why, through `aria-describedby` on the alert) and a press does nothing; it goes
+ * back to normal when the script loads. Every form with a challenge passes `challenge` and `alertId`.
+ */
 export function SubmitButton({
+  alertId,
+  challenge,
   children,
   className,
   disabled = false,
@@ -642,6 +657,9 @@ export function SubmitButton({
   pendingText,
   variant = "default",
 }: {
+  /** With a challenge: the id its blocked alert has (`challengeAlertId`). A form with no challenge passes neither. */
+  alertId?: string;
+  challenge?: Challenge;
   children: ReactNode;
   /** Beyond the full width of the card (the phone), e.g. `sm:w-fit`. */
   className?: string;
@@ -651,11 +669,18 @@ export function SubmitButton({
   /** "outline" where the action is not the point of the screen ("Reenviar e-mail"). */
   variant?: "default" | "outline";
 }) {
+  const blocked = challenge?.state === "blocked";
   return (
     <Button
       aria-busy={pending || undefined}
-      className={cn("w-full", className)}
+      aria-describedby={blocked ? alertId : undefined}
+      aria-disabled={blocked || undefined}
+      className={cn(
+        "w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
+        className
+      )}
       disabled={disabled || pending}
+      onClick={blocked ? (event) => event.preventDefault() : undefined}
       size="lg"
       type="submit"
       variant={variant}

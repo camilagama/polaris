@@ -10,6 +10,7 @@ import { documentTitle } from "../app-shell/navigation-model";
 import {
   BackToSignIn,
   ChallengeArea,
+  challengeAlertId,
   EmailInput,
   EntryAlert,
   EntryGate,
@@ -64,7 +65,7 @@ export function ConfirmEmailPanel({
   siteKey: string | null;
 }) {
   const challenge = useChallenge(siteKey, "verification_email");
-  const emailId = useId();
+  const formId = useId();
   const [typed, setTyped] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
@@ -130,15 +131,20 @@ export function ConfirmEmailPanel({
             autoComplete="username"
             error={emailError}
             fieldRef={emailRef}
-            id={emailId}
+            id={`${formId}-email`}
             label={EMAIL_LABEL}
             name="email"
             onChange={setTyped}
             value={typed}
           />
         ) : null}
-        <ChallengeArea challenge={challenge} />
+        <ChallengeArea
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
+        />
         <SubmitButton
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
           disabled={challenge.state === "loading"}
           pending={pending}
           pendingText={RESEND_BUTTON_PENDING}

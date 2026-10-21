@@ -290,8 +290,9 @@ export async function overflowFaults(page: Page, tolerance = 1) {
 
 /**
  * In page: the box of a control grown by the larger of its `::before` and `::after` (the `touch-hit`
- * pseudo-element). A field inside an `InputGroup` has the area of the group (`touch-hit-field`), which a pseudo-element
- * cannot give to an `<input>` itself.
+ * pseudo-element). The field of an `InputGroup` has the area of the group (`touch-hit-field`), which a pseudo-element
+ * cannot give to an `<input>` itself. A button inside the group does not: it is measured by its own box, or by its
+ * own `touch-hit`.
  */
 function touchAreaOf(element: Element) {
   const box = element.getBoundingClientRect();
@@ -302,7 +303,11 @@ function touchAreaOf(element: Element) {
     top: box.top,
   };
   const px = (value: string) => Number.parseFloat(value) || 0;
-  const group = element.closest("[data-slot=input-group]");
+  const group = element.matches(
+    "input, textarea, [data-slot=input-group-control]"
+  )
+    ? element.closest("[data-slot=input-group]")
+    : null;
   for (const owner of group ? [element, group] : [element]) {
     const ownerBox = owner.getBoundingClientRect();
     area.top = Math.min(area.top, ownerBox.top);
@@ -383,8 +388,8 @@ function touchTooSmall(
 /**
  * In page: two controls whose touch areas overlap (a tap between them is a guess). The controls of one
  * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
- * the button at its end, "Mostrar" of a password: both have the area of the group, and the button is drawn over
- * it); a control inside another (a link in a clickable card) is nested.
+ * the button at its end, "Mostrar" of a password: the field has the area of the group, the button its own, drawn
+ * over it); a control inside another (a link in a clickable card) is nested.
  */
 function touchOverlaps(selector: string) {
   const controls = [...document.querySelectorAll(selector)]

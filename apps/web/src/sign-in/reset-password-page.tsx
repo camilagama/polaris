@@ -10,6 +10,7 @@ import { documentTitle } from "../app-shell/navigation-model";
 import {
   BackToSignIn,
   ChallengeArea,
+  challengeAlertId,
   EntryAlert,
   EntryGate,
   EntryLinkButton,
@@ -54,7 +55,7 @@ function ResetPasswordForm({
   token: string;
 }) {
   const challenge = useChallenge(siteKey, "password_reset");
-  const passwordId = useId();
+  const formId = useId();
   const [password, setPassword] = useState("");
   const [visible, toggleVisible, hide] = useReveal();
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -126,17 +127,13 @@ function ResetPasswordForm({
   return (
     <EntryScreen title={RESET_TITLE}>
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
-      <form
-        className="flex flex-col gap-4"
-        noValidate
-        onSubmit={submit}
-      >
+      <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
         <PasswordInput
           autoComplete="new-password"
           error={passwordError}
           fieldRef={passwordRef}
           hint={PASSWORD_RULE}
-          id={passwordId}
+          id={`${formId}-password`}
           label={NEW_PASSWORD_LABEL}
           name="new-password"
           onChange={setPassword}
@@ -146,11 +143,14 @@ function ResetPasswordForm({
         />
         {/* a reload would lose the link: the text sends the person back to the e-mail, with no retry here */}
         <ChallengeArea
+          alertId={challengeAlertId(formId)}
           blockedText={CHALLENGE_BLOCKED_LINK}
           challenge={challenge}
           retry={false}
         />
         <SubmitButton
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
           disabled={challenge.state === "loading"}
           pending={pending}
           pendingText={RESET_BUTTON_PENDING}

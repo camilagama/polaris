@@ -10,6 +10,7 @@ import { documentTitle } from "../app-shell/navigation-model";
 import {
   BackToSignIn,
   ChallengeArea,
+  challengeAlertId,
   EmailInput,
   EntryAlert,
   EntryGate,
@@ -32,7 +33,7 @@ import { challengeToken, useChallenge } from "./turnstile";
 
 function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
   const challenge = useChallenge(siteKey, "password_reset_request");
-  const emailId = useId();
+  const formId = useId();
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
@@ -93,14 +94,19 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
           autoComplete="username"
           error={emailError}
           fieldRef={emailRef}
-          id={emailId}
+          id={`${formId}-email`}
           label={EMAIL_LABEL}
           name="email"
           onChange={setEmail}
           value={email}
         />
-        <ChallengeArea challenge={challenge} />
+        <ChallengeArea
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
+        />
         <SubmitButton
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
           disabled={challenge.state === "loading"}
           pending={pending}
           pendingText={FORGOT_BUTTON_PENDING}
