@@ -11,6 +11,7 @@ import { useReveal } from "./entry-parts";
 import { isCompleteEmail } from "./entry-progressive";
 import {
   ChallengeArea,
+  challengeAlertId,
   EmailInput,
   EntryAlert,
   PasswordInput,
@@ -68,6 +69,7 @@ export function EmailSignInForm({
   const challenge = useChallenge(siteKey, "login");
   const formId = useId();
   const alertId = `${formId}-alert`;
+  const blockedId = challengeAlertId(formId);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, toggleVisible, hide] = useReveal();
@@ -264,8 +266,10 @@ export function EmailSignInForm({
           value={password}
           visible={visible}
         />
-        <ChallengeArea challenge={challenge} />
+        <ChallengeArea alertId={blockedId} challenge={challenge} />
         <SubmitButton
+          alertId={blockedId}
+          challenge={challenge}
           disabled={disabled || paused || challenge.state === "loading"}
           pending={pending}
           pendingText={SIGN_IN_BUTTON_PENDING}

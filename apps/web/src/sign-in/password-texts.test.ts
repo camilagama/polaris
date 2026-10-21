@@ -46,7 +46,7 @@ describe("the password screen texts", () => {
 
   it("say the lock in the same words whether the e-mail has an account or not, never that the account is 'blocked' (V4, v5.2)", () => {
     expect(texts.pausedText(14)).toBe(
-      "Muitas tentativas. Espere 14 minutos ou use Esqueci a senha. Se este e-mail tem conta, enviamos um link para liberar agora."
+      "Muitas tentativas. Espere 14 minutos ou use Esqueci a senha. Se este e-mail tem conta com senha, enviamos um link para liberar agora."
     );
     expect(texts.pausedText(1)).toContain("1 minuto ");
     for (const text of everyText()) {

@@ -235,7 +235,7 @@ export function GoogleButton({
   return (
     <Button
       aria-busy={pending || undefined}
-      className="w-full"
+      className={cn("w-full", pending && "disabled:opacity-70")}
       disabled={disabled || pending}
       onClick={onClick}
       size="lg"
@@ -456,7 +456,14 @@ export function Progressive({
  * while it checks, a line above it when it asks the person for an action, and with the script blocked an alert
  * and "Tentar de novo", which asks for the script again without reloading what was typed.
  */
-export function ChallengeArea({ challenge }: { challenge: Challenge }) {
+export function ChallengeArea({
+  alertId,
+  challenge,
+}: {
+  /** The id of the blocked alert, which `SubmitButton` names in `aria-describedby` (`challengeAlertId`). */
+  alertId: string;
+  challenge: Challenge;
+}) {
   const slotRef = useRef<HTMLDivElement>(null);
   const { retry, retrying } = useChallengeRetry(challenge, slotRef);
   const { state } = challenge;
@@ -483,7 +490,9 @@ export function ChallengeArea({ challenge }: { challenge: Challenge }) {
       </p>
       {state === "blocked" || retrying ? (
         <>
-          <EntryAlert focus={false}>{CHALLENGE_BLOCKED_SHORT}</EntryAlert>
+          <EntryAlert focus={false} id={alertId}>
+            {CHALLENGE_BLOCKED_SHORT}
+          </EntryAlert>
           <Button
             aria-disabled={retrying || undefined}
             className="w-full"
@@ -500,23 +509,39 @@ export function ChallengeArea({ challenge }: { challenge: Challenge }) {
   );
 }
 
-/** The one button of the form, the width of the card; pending, it says so and takes no second submit. */
+/** The id of the alert of a blocked challenge in the form `formId`: `ChallengeArea` draws it, `SubmitButton` names it. */
+export const challengeAlertId = (formId: string) => `${formId}-challenge`;
+
+/**
+ * The one button of the form, the width of the card; pending, it says so and takes no second submit. With the
+ * challenge script blocked it stays in place but off (`aria-disabled`, not `disabled`: the focus can still reach
+ * it and a screen reader reads why, through `aria-describedby` on the alert) and a press does nothing; it goes
+ * back to normal when the script loads. Every form with a challenge passes `challenge` and `alertId`.
+ */
 export function SubmitButton({
+  alertId,
+  challenge,
   children,
   disabled,
   pending,
   pendingText,
 }: {
+  alertId: string;
+  challenge: Challenge;
   children: ReactNode;
   disabled: boolean;
   pending: boolean;
   pendingText: string;
 }) {
+  const blocked = challenge.state === "blocked";
   return (
     <Button
       aria-busy={pending || undefined}
-      className="w-full"
+      aria-describedby={blocked ? alertId : undefined}
+      aria-disabled={blocked || undefined}
+      className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
       disabled={disabled || pending}
+      onClick={blocked ? (event) => event.preventDefault() : undefined}
       size="lg"
       type="submit"
     >

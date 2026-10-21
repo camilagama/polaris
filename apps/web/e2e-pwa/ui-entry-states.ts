@@ -160,6 +160,13 @@ export const entryStates = {
     await openSignIn(page);
     await settle(page);
   },
+  signInBlocked: async (page: Page) => {
+    await openSignIn(page, { challenge: "blocked" });
+    await typeCompleteEmail(page);
+    await passwordField(page).fill(PASSWORD);
+    await page.getByRole("button", { name: "Tentar de novo" }).waitFor();
+    await settle(page);
+  },
   signInEmailComplete: async (page: Page) => {
     await openSignIn(page);
     await typeCompleteEmail(page);

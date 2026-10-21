@@ -236,6 +236,10 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     const pending = page.getByRole("button", { name: "Abrindo o Google…" });
     await expect(pending).toHaveAttribute("aria-busy", "true");
     await expect(pending).toBeDisabled();
+    // 70% of the ink, so it does not look like the button off (offline: 50%)
+    expect(await pending.evaluate((el) => getComputedStyle(el).opacity)).toBe(
+      "0.7"
+    );
     expect(server.startBodies).toHaveLength(1);
 
     release();

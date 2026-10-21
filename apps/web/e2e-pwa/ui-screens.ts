@@ -209,6 +209,7 @@ export const SCREENS: UiScreen[] = [
   },
   entryScreen("entrar só com o Google", entryStates.googleOnly),
   entryScreen("entrar", entryStates.signIn),
+  entryScreen("entrar desafio bloqueado", entryStates.signInBlocked),
   entryScreen("entrar abrindo o Google", entryStates.signInGooglePending),
   entryScreen("entrar e-mail incompleto", entryStates.signInEmailIncomplete),
   entryScreen("entrar e-mail completo", entryStates.signInEmailComplete),

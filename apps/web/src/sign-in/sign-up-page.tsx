@@ -16,6 +16,7 @@ import { useReveal } from "./entry-parts";
 import { isCompleteEmail } from "./entry-progressive";
 import {
   ChallengeArea,
+  challengeAlertId,
   EmailInput,
   EntryAlert,
   EntryGate,
@@ -303,8 +304,13 @@ function SignUpForm({
               ) : null}
             </div>
           </Field>
-          <ChallengeArea challenge={challenge} />
+          <ChallengeArea
+            alertId={challengeAlertId(formId)}
+            challenge={challenge}
+          />
           <SubmitButton
+            alertId={challengeAlertId(formId)}
+            challenge={challenge}
             disabled={challenge.state === "loading"}
             pending={pending}
             pendingText={SIGN_UP_BUTTON_PENDING}
