@@ -125,7 +125,7 @@ const ROUTES = [
     posts: "/api/auth/request-password-reset",
     submit: async (page: Page) => {
       await email(page).fill("quem@exemplo.com");
-      await page.getByRole("button", { name: "Enviar o link" }).click();
+      await page.getByRole("button", { name: "Enviar link" }).click();
     },
   },
   {
@@ -136,7 +136,7 @@ const ROUTES = [
         .locator("input")
         .and(page.getByLabel("Nova senha"))
         .fill(PASSWORD);
-      await page.getByRole("button", { name: "Trocar a senha" }).click();
+      await page.getByRole("button", { name: "Trocar senha" }).click();
     },
   },
   {
@@ -257,9 +257,7 @@ test("a página sem desafio (/desbloquear) recusa o script da Cloudflare: a pol�
   await serve(page, seen);
   await page.goto("/desbloquear#token=user.tok");
   await expect(
-    page.getByText("Pronto: a entrada com senha está liberada.", {
-      exact: false,
-    })
+    page.getByText("Entrada liberada. Você já pode entrar.")
   ).toBeVisible();
   const refused = await page.evaluate(
     (url) =>

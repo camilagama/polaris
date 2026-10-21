@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useReveal } from "./entry-parts";
 import { isCompleteEmail } from "./entry-progressive";
 import {
   ChallengeArea,
@@ -19,6 +18,7 @@ import {
   SubmitButton,
   TEXT_LINK,
   useProgressive,
+  useReveal,
 } from "./entry-ui";
 import { emailProblem, postAuth, signInOutcome } from "./password-model";
 import {

@@ -10,22 +10,28 @@ import type { Page, Route } from "@playwright/test";
 const TURNSTILE_SCRIPT =
   "https://challenges.cloudflare.com/turnstile/v0/api.js**";
 const SITE_KEY = "1x00000000000000000000AA";
-const EMAIL = "ana@lojadaana.com.br";
-const PASSWORD = "uma frase longa de teste";
+export const EMAIL = "ana@lojadaana.com.br";
+export const PASSWORD = "uma frase longa de teste";
 
-const json = (status: number, body: unknown) => ({
+export const json = (status: number, body: unknown) => ({
   body: JSON.stringify(body),
   contentType: "application/json",
   status,
 });
 
-type Challenge = "blocked" | "checking" | "interactive" | "none";
+export type Challenge =
+  | "blocked"
+  | "checking"
+  | "failed"
+  | "interactive"
+  | "none";
 
 /**
  * A stand-in with the `render`/`execute` contract of the real script. `interactive` asks for the person (and
- * draws a box of the widget's size where the real iframe would be); `checking` never answers.
+ * draws a box of the widget's size where the real iframe would be); `checking` never answers; `failed` answers
+ * with the error callback.
  */
-const turnstileStandIn = (mode: "checking" | "interactive") => `
+const turnstileStandIn = (mode: "checking" | "failed" | "interactive") => `
 (() => {
   const options = {};
   let widgets = 0;
@@ -38,6 +44,10 @@ const turnstileStandIn = (mode: "checking" | "interactive") => `
     },
     execute(id) {
       const { container, given } = options[id];
+      if (${JSON.stringify(mode)} === "failed") {
+        setTimeout(() => given["error-callback"](), 20);
+        return;
+      }
       if (${JSON.stringify(mode)} !== "interactive") return;
       setTimeout(() => {
         const box = document.createElement("div");
@@ -58,7 +68,7 @@ const turnstileStandIn = (mode: "checking" | "interactive") => `
 `;
 
 /** The auth server of the entry pages: no session, the methods asked for, and nothing else unless the state says. */
-async function serveEntry(
+export async function serveEntry(
   page: Page,
   {
     challenge = "none",
@@ -91,9 +101,9 @@ async function serveEntry(
 }
 
 /** A request that never answers: the screen stays in its pending state while it is measured. */
-const hold = (_route: Route) => new Promise<void>(() => undefined);
+export const hold = (_route: Route) => new Promise<void>(() => undefined);
 
-async function settle(page: Page) {
+export async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready);
   // the region of the password opens in 220 ms; the alert and the card fade in as long
   await page.waitForFunction(() =>
@@ -110,7 +120,8 @@ async function openPage(page: Page, path: string, title: string) {
   await page.getByRole("button", { name: "Continuar com o Google" }).waitFor();
 }
 
-const emailField = (page: Page) => page.getByLabel("E-mail", { exact: true });
+export const emailField = (page: Page) =>
+  page.getByLabel("E-mail", { exact: true });
 const passwordField = (page: Page) => page.getByLabel("Senha", { exact: true });
 
 async function openSignIn(
@@ -287,6 +298,19 @@ export const entryStates = {
     await submitSignUp(page);
     await page
       .getByText("Essa senha já apareceu em vazamentos. Escolha outra.")
+      .waitFor();
+    await settle(page);
+  },
+  /** The account was made: "Confirme seu e-mail" with the address of the form. */
+  signUpConfirm: async (page: Page) => {
+    await openSignUp(page);
+    await page.route("**/api/auth/sign-up/email", (route) =>
+      route.fulfill(json(200, { status: true }))
+    );
+    await fillSignUp(page, true);
+    await submitSignUp(page);
+    await page
+      .getByRole("heading", { level: 1, name: "Confirme seu e-mail" })
       .waitFor();
     await settle(page);
   },

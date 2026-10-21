@@ -34,14 +34,10 @@ export const INCORRECT_CREDENTIALS = "E-mail ou senha incorretos.";
 export const GOOGLE_ACCOUNT_HELP =
   "Conta do Google? Use Continuar com o Google.";
 
-/** The rule on `/criar-conta` (v5.2): the same three rules, shorter. */
-export const SIGN_UP_PASSWORD_RULE =
-  "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve.";
-/** The rule on the password screens not yet migrated (they take the short one with their migration). */
+/** The rule, said before typing, on every screen that makes a password (v5.2): the same three rules, shorter. */
 export const PASSWORD_RULE =
-  "Use pelo menos 15 caracteres. Pode ter espaços e qualquer letra ou símbolo. Não pode ser uma senha que já vazou na internet.";
-export const PASSWORD_TOO_SHORT =
-  "A senha precisa ter pelo menos 15 caracteres.";
+  "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve.";
+export const PASSWORD_TOO_SHORT = "Use pelo menos 15 caracteres.";
 export const PASSWORD_TOO_LONG = "A senha pode ter no máximo 128 caracteres.";
 export const PASSWORD_INVALID_CHARACTERS =
   "A senha tem um caractere que não conseguimos usar. Troque esse caractere.";
@@ -55,23 +51,19 @@ export const CHALLENGE_CHECKING = "Confirmando que você é uma pessoa…";
 export const CHALLENGE_INTERACTIVE = "Confirme que você é uma pessoa.";
 export const CHALLENGE_FAILED =
   "Não foi possível confirmar que você é uma pessoa. Tente de novo.";
+/** One instruction with the two ways out (v5.2). */
 export const CHALLENGE_BLOCKED =
-  "Não conseguimos carregar a confirmação de que você é uma pessoa. Recarregue a página. Se usa um bloqueador de anúncios, libere este site.";
-/** `/entrar` and `/criar-conta` (v5.2): one instruction with the two ways out. */
-export const CHALLENGE_BLOCKED_SHORT =
   "Não deu para carregar a confirmação. Recarregue a página ou libere este site no bloqueador de anúncios.";
 /** `/redefinir-senha`: a reload would lose the link (the token lives in memory only), so it never says "recarregue". */
 export const CHALLENGE_BLOCKED_LINK =
-  "Não conseguimos carregar a confirmação de que você é uma pessoa. Libere este site no bloqueador de anúncios e abra de novo o link do e-mail.";
+  "Não deu para carregar a confirmação. Libere este site no bloqueador de anúncios e abra o link de novo.";
 
-export const UNAVAILABLE =
-  "Não conseguimos fazer isso agora. Tente de novo em instantes.";
+export const UNAVAILABLE = "Não conseguimos agora. Tente de novo em instantes.";
 export const SIGN_IN_UNAVAILABLE =
   "Não conseguimos entrar agora. Tente de novo em instantes.";
 export const TOO_MANY_TRIES =
   "Muitas tentativas em pouco tempo. Espere alguns minutos e tente de novo.";
-export const TOO_MANY_EMAILS =
-  "Você pediu e-mails demais. Espere alguns minutos.";
+export const TOO_MANY_EMAILS = "Muitos pedidos. Espere alguns minutos.";
 export const PAGE_LOADING = "Carregando…";
 export const PAGE_UNAVAILABLE =
   "Não conseguimos abrir esta página agora. Tente de novo em instantes.";
@@ -91,7 +83,7 @@ export function pausedText(minutes: number): string {
 
 /** The same lock seen from "Trocar senha": the person is inside, there is no "Esqueci a senha" on this screen. */
 export function changePausedText(minutes: number): string {
-  return `Muitas tentativas com a senha atual. Espere ${minutesText(minutes)} e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada.`;
+  return `Muitas tentativas. Espere ${minutesText(minutes)}. Não lembra a senha atual? Saia e use Esqueci a senha.`;
 }
 
 export const SIGN_UP_TITLE = "Criar conta";
@@ -113,54 +105,49 @@ export const CONFIRM_NOT_ARRIVED = "Não chegou?";
 export const RESEND_BUTTON = "Reenviar e-mail";
 export const RESEND_BUTTON_PENDING = "Reenviando…";
 /** The address came from the sign-up form kept in memory: the server really sent it. */
-export const RESENT = "Reenviamos. Olhe também o spam.";
+export const RESENT = "Reenviamos. Veja o spam.";
 /** The address was typed here: the server answers the same whether or not it has an account (AC-49). */
 export const RESENT_TYPED =
-  "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam.";
-export const RESEND_ASK_EMAIL = "Digite seu e-mail para receber outro link.";
-export const CONFIRM_GOOGLE_WAY =
-  "Também pode entrar com o Google, se o e-mail for de uma conta do Google.";
+  "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam.";
 export const CONFIRM_CHECKING = "Confirmando o e-mail…";
 export const CONFIRM_DONE_TITLE = "E-mail confirmado";
-export const CONFIRM_DONE = "E-mail confirmado. Agora é só entrar.";
+export const CONFIRM_DONE = "Agora é só entrar.";
 export const CONFIRM_EXPIRED = "Este link venceu. Peça outro.";
 export const CONFIRM_INVALID = "Este link não funciona mais. Peça outro.";
 export const CONFIRM_NO_LINK =
-  "Para confirmar o e-mail, toque no link que enviamos. Se ele venceu, peça outro aqui.";
+  "Toque no link que enviamos por e-mail. Venceu? Peça outro aqui.";
 
 export const FORGOT_TITLE = "Esqueci a senha";
 export const FORGOT_SUPPORT =
-  "Digite seu e-mail. Se ele tiver conta, enviamos um link para criar uma nova senha. O link vale 1 hora.";
-export const FORGOT_BUTTON = "Enviar o link";
+  "Se o e-mail tiver conta, enviamos um link de 1 hora para criar outra senha.";
+export const FORGOT_BUTTON = "Enviar link";
 export const FORGOT_BUTTON_PENDING = "Enviando…";
 export const FORGOT_SENT =
-  "Se esse e-mail tiver conta, enviamos um link. Olhe também o spam.";
+  "Se esse e-mail tiver conta, enviamos um link. Veja o spam.";
 
 export const RESET_TITLE = "Nova senha";
 export const RESET_PAGE_TITLE = "Nova senha";
-export const RESET_SUPPORT = "Escolha uma nova senha.";
-export const RESET_BUTTON = "Trocar a senha";
+export const RESET_BUTTON = "Trocar senha";
 export const RESET_BUTTON_PENDING = "Trocando…";
 export const RESET_DONE = "Senha trocada. Entre com a nova senha.";
 export const RESET_LINK_INVALID =
   "Este link venceu ou já foi usado. Peça outro.";
 export const RESET_NO_LINK =
-  "Para criar uma nova senha, toque no link que enviamos por e-mail. Se ele venceu, peça outro.";
+  "Toque no link que enviamos por e-mail. Venceu? Peça outro.";
 export const ASK_NEW_LINK = "Pedir outro link";
 
 export const UNLOCK_TITLE = "Liberar a entrada";
 export const UNLOCK_PAGE_TITLE = "Liberar a entrada";
 export const UNLOCK_CHECKING = "Liberando a entrada…";
-export const UNLOCK_DONE =
-  "Pronto: a entrada com senha está liberada. Você já pode entrar.";
+export const UNLOCK_DONE = "Entrada liberada. Você já pode entrar.";
 export const UNLOCK_INVALID =
-  "Este link venceu ou já foi usado. Espere a pausa acabar ou toque em Esqueci a senha.";
+  "Link vencido ou já usado. Espere a pausa acabar ou use Esqueci a senha.";
 export const UNLOCK_NO_LINK =
-  "Para liberar a entrada, toque no link do e-mail que enviamos. Ou espere a pausa acabar.";
+  "Toque no link que enviamos por e-mail ou espere a pausa acabar.";
 
 export const CHANGE_TITLE = "Trocar senha";
 export const CHANGE_SUPPORT =
-  "Ao trocar a senha, os outros aparelhos saem da sua conta e vão pedir a senha de novo. Este aparelho continua.";
+  "Ao trocar, os outros aparelhos saem da sua conta. Este aparelho continua.";
 export const CHANGE_BUTTON = "Trocar senha";
 export const CHANGE_BUTTON_PENDING = "Trocando…";
 export const CHANGE_DONE =
@@ -168,21 +155,11 @@ export const CHANGE_DONE =
 export const CURRENT_PASSWORD_WRONG = "A senha atual não confere.";
 export const CHANGE_RECENT_REQUIRED =
   "Por segurança, entre de novo para trocar a senha.";
-export const CHANGE_NO_PASSWORD =
-  "Sua conta entra com o Google e não tem senha para trocar.";
+export const CHANGE_NO_PASSWORD = "Conta do Google: não há senha para trocar.";
+export const CHANGE_CANCEL = "Cancelar";
+export const CHANGE_CANCEL_LABEL = "Cancelar e voltar para Aparelhos";
+export const CHANGE_CARD_TITLE = "Nova senha";
 export const CHANGE_RECENT_BUTTON = "Entrar de novo";
-
-/** The line of a blocked challenge script: the migrated forms (v5.2) say it shorter; `/redefinir-senha` never says reload. */
-function blockedText(
-  form: "email" | "other" | "reset" | "sign-in" | "sign-up"
-): string {
-  if (form === "reset") {
-    return CHALLENGE_BLOCKED_LINK;
-  }
-  return form === "sign-in" || form === "sign-up"
-    ? CHALLENGE_BLOCKED_SHORT
-    : CHALLENGE_BLOCKED;
-}
 
 /** The line of a refusal every form shares; the forms that send an e-mail say "e-mails demais" for the limit. */
 export function failureText(
@@ -191,7 +168,8 @@ export function failureText(
 ): string {
   switch (failure) {
     case "blocked":
-      return blockedText(form);
+      // `/redefinir-senha` never says reload: the link would be lost
+      return form === "reset" ? CHALLENGE_BLOCKED_LINK : CHALLENGE_BLOCKED;
     case "challenge":
       return CHALLENGE_FAILED;
     case "hibp_unavailable":

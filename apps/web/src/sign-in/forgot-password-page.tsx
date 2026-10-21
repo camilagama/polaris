@@ -2,21 +2,24 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import {
-  ChallengeSlot,
-  EmailField,
+  BackToSignIn,
+  ChallengeArea,
+  challengeAlertId,
+  EmailInput,
   EntryAlert,
-  EntryFrame,
+  EntryGate,
+  EntryScreen,
   EntrySuccess,
-  PasswordGate,
-} from "./entry-parts";
+  SubmitButton,
+} from "./entry-ui";
 import { commonFailure, emailProblem, postAuth } from "./password-model";
 import {
-  BACK_TO_SIGN_IN,
   EMAIL_LABEL,
   emailText,
   FORGOT_BUTTON,
@@ -30,6 +33,7 @@ import { challengeToken, useChallenge } from "./turnstile";
 
 function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
   const challenge = useChallenge(siteKey, "password_reset_request");
+  const formId = useId();
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
@@ -77,34 +81,36 @@ function ForgotPasswordForm({ siteKey }: { siteKey: string | null }) {
   );
 
   return (
-    <EntryFrame title={FORGOT_TITLE}>
-      <p className="sign-in-support">{FORGOT_SUPPORT}</p>
+    <EntryScreen support={FORGOT_SUPPORT} title={FORGOT_TITLE}>
       {sent ? <EntrySuccess>{FORGOT_SENT}</EntrySuccess> : null}
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
-      <form className="sign-in-form" noValidate onSubmit={submit}>
-        <EmailField
+      <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
+        <EmailInput
           autoComplete="username"
           error={emailError}
           fieldRef={emailRef}
+          id={`${formId}-email`}
           label={EMAIL_LABEL}
           name="email"
           onChange={setEmail}
           value={email}
         />
-        <ChallengeSlot challenge={challenge} />
-        <button
-          aria-busy={pending}
-          className="sign-in-primary"
-          disabled={pending || challenge.state === "loading"}
-          type="submit"
+        <ChallengeArea
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
+        />
+        <SubmitButton
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
+          disabled={challenge.state === "loading"}
+          pending={pending}
+          pendingText={FORGOT_BUTTON_PENDING}
         >
-          {pending ? FORGOT_BUTTON_PENDING : FORGOT_BUTTON}
-        </button>
+          {FORGOT_BUTTON}
+        </SubmitButton>
       </form>
-      <p className="sign-in-links">
-        <a href="/entrar">{BACK_TO_SIGN_IN}</a>
-      </p>
-    </EntryFrame>
+      <BackToSignIn />
+    </EntryScreen>
   );
 }
 
@@ -114,8 +120,8 @@ export function ForgotPasswordPage() {
     document.title = documentTitle(FORGOT_TITLE);
   }, []);
   return (
-    <PasswordGate title={FORGOT_TITLE}>
-      {(siteKey) => <ForgotPasswordForm siteKey={siteKey} />}
-    </PasswordGate>
+    <EntryGate title={FORGOT_TITLE}>
+      {(methods) => <ForgotPasswordForm siteKey={methods.siteKey} />}
+    </EntryGate>
   );
 }

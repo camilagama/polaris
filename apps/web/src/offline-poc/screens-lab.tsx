@@ -24,6 +24,7 @@ import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
+import { ChangePasswordPage } from "../sign-in/change-password-page";
 import { SaleLabServer } from "./sale-lab-server";
 
 /**
@@ -51,6 +52,7 @@ const deviceOwnerKey = (deviceId: string) =>
   `screens-lab-device-owner.${deviceId}`;
 
 type LabScreen =
+  | "change-password"
   | "customers"
   | "dashboard"
   | "expenses"
@@ -61,7 +63,8 @@ type LabScreen =
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
-  return screen === "products" ||
+  return screen === "change-password" ||
+    screen === "products" ||
     screen === "dashboard" ||
     screen === "expenses" ||
     screen === "sale" ||
@@ -301,6 +304,9 @@ export function ScreensLab() {
               <span data-testid="server-records">{serverRecords}</span>
             </p>
           </div>
+          {started && screen === "change-password" ? (
+            <ChangePasswordPage />
+          ) : null}
           {started && screen === "customers" ? <CustomersPage /> : null}
           {started && screen === "products" ? <ProductsPage /> : null}
           {started && screen === "sale" ? <SalePage /> : null}

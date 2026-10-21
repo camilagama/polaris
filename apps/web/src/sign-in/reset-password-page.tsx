@@ -2,21 +2,25 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import {
-  ChallengeSlot,
+  BackToSignIn,
+  ChallengeArea,
+  challengeAlertId,
   EntryAlert,
-  EntryFrame,
+  EntryGate,
   EntryLinkButton,
   EntryNotice,
+  EntryScreen,
   EntrySuccess,
-  PasswordField,
-  PasswordGate,
+  PasswordInput,
+  SubmitButton,
   useReveal,
-} from "./entry-parts";
+} from "./entry-ui";
 import {
   newPasswordProblem,
   postAuth,
@@ -25,7 +29,6 @@ import {
 } from "./password-model";
 import {
   ASK_NEW_LINK,
-  BACK_TO_SIGN_IN,
   CHALLENGE_BLOCKED_LINK,
   failureText,
   GO_TO_SIGN_IN,
@@ -38,7 +41,6 @@ import {
   RESET_LINK_INVALID,
   RESET_NO_LINK,
   RESET_PAGE_TITLE,
-  RESET_SUPPORT,
   RESET_TITLE,
 } from "./password-texts";
 import { challengeToken, useChallenge } from "./turnstile";
@@ -53,6 +55,7 @@ function ResetPasswordForm({
   token: string;
 }) {
   const challenge = useChallenge(siteKey, "password_reset");
+  const formId = useId();
   const [password, setPassword] = useState("");
   const [visible, toggleVisible, hide] = useReveal();
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -112,25 +115,25 @@ function ResetPasswordForm({
 
   if (phase === "done") {
     return (
-      <EntryFrame title={RESET_TITLE}>
+      <EntryScreen title={RESET_TITLE}>
         <EntrySuccess>{RESET_DONE}</EntrySuccess>
         <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
-      </EntryFrame>
+      </EntryScreen>
     );
   }
   if (phase === "link-invalid") {
     return <ResetLinkMissing text={RESET_LINK_INVALID} />;
   }
   return (
-    <EntryFrame title={RESET_TITLE}>
-      <p className="sign-in-support">{RESET_SUPPORT}</p>
+    <EntryScreen title={RESET_TITLE}>
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
-      <form className="sign-in-form" noValidate onSubmit={submit}>
-        <PasswordField
+      <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
+        <PasswordInput
           autoComplete="new-password"
           error={passwordError}
           fieldRef={passwordRef}
           hint={PASSWORD_RULE}
+          id={`${formId}-password`}
           label={NEW_PASSWORD_LABEL}
           name="new-password"
           onChange={setPassword}
@@ -139,21 +142,23 @@ function ResetPasswordForm({
           visible={visible}
         />
         {/* a reload would lose the link: the text sends the person back to the e-mail, with no retry here */}
-        <ChallengeSlot
+        <ChallengeArea
+          alertId={challengeAlertId(formId)}
           blockedText={CHALLENGE_BLOCKED_LINK}
           challenge={challenge}
           retry={false}
         />
-        <button
-          aria-busy={pending}
-          className="sign-in-primary"
-          disabled={pending || challenge.state === "loading"}
-          type="submit"
+        <SubmitButton
+          alertId={challengeAlertId(formId)}
+          challenge={challenge}
+          disabled={challenge.state === "loading"}
+          pending={pending}
+          pendingText={RESET_BUTTON_PENDING}
         >
-          {pending ? RESET_BUTTON_PENDING : RESET_BUTTON}
-        </button>
+          {RESET_BUTTON}
+        </SubmitButton>
       </form>
-    </EntryFrame>
+    </EntryScreen>
   );
 }
 
@@ -166,17 +171,15 @@ function ResetLinkMissing({
   text: string;
 }) {
   return (
-    <EntryFrame title={RESET_TITLE}>
+    <EntryScreen title={RESET_TITLE}>
       {neutral ? (
         <EntryNotice>{text}</EntryNotice>
       ) : (
         <EntryAlert>{text}</EntryAlert>
       )}
       <EntryLinkButton href="/esqueci-a-senha">{ASK_NEW_LINK}</EntryLinkButton>
-      <p className="sign-in-links">
-        <a href="/entrar">{BACK_TO_SIGN_IN}</a>
-      </p>
-    </EntryFrame>
+      <BackToSignIn />
+    </EntryScreen>
   );
 }
 
@@ -193,14 +196,14 @@ export function ResetPasswordPage() {
     document.title = documentTitle(RESET_PAGE_TITLE);
   }, []);
   return (
-    <PasswordGate title={RESET_TITLE}>
-      {(siteKey) =>
+    <EntryGate title={RESET_TITLE}>
+      {(methods) =>
         token ? (
-          <ResetPasswordForm siteKey={siteKey} token={token} />
+          <ResetPasswordForm siteKey={methods.siteKey} token={token} />
         ) : (
           <ResetLinkMissing neutral text={RESET_NO_LINK} />
         )
       }
-    </PasswordGate>
+    </EntryGate>
   );
 }

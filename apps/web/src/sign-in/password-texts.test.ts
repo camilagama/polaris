@@ -54,11 +54,11 @@ describe("the password screen texts", () => {
     }
   });
 
-  it("tell 'Trocar senha' what to do with the screen it has: no 'Esqueci a senha' to touch, no 'entrada' (P3)", () => {
+  it("tell 'Trocar senha' what to do with the screen it has: no 'Esqueci a senha' to touch, no 'entrada' (P3, v5.2)", () => {
     expect(texts.changePausedText(15)).toBe(
-      "Muitas tentativas com a senha atual. Espere 15 minutos e tente de novo. Se não lembra a senha atual, saia e use Esqueci a senha na tela de entrada."
+      "Muitas tentativas. Espere 15 minutos. Não lembra a senha atual? Saia e use Esqueci a senha."
     );
-    expect(texts.changePausedText(1)).toContain("Espere 1 minuto e");
+    expect(texts.changePausedText(1)).toContain("Espere 1 minuto.");
     expect(texts.changePausedText(15)).not.toMatch(TOUCH_OR_PAUSED);
   });
 
@@ -66,13 +66,14 @@ describe("the password screen texts", () => {
     expect(texts.failureText("blocked", "reset")).toBe(
       texts.CHALLENGE_BLOCKED_LINK
     );
-    expect(texts.CHALLENGE_BLOCKED_LINK).toContain("abra de novo o link");
+    expect(texts.CHALLENGE_BLOCKED_LINK).toBe(
+      "Não deu para carregar a confirmação. Libere este site no bloqueador de anúncios e abra o link de novo."
+    );
     expect(texts.CHALLENGE_BLOCKED_LINK).not.toMatch(RELOAD);
     expect(texts.failureText("blocked", "sign-in")).toContain("Recarregue");
-    expect(texts.failureText("blocked", "sign-up")).toBe(
-      texts.CHALLENGE_BLOCKED_SHORT
-    );
-    expect(texts.failureText("blocked", "email")).toBe(texts.CHALLENGE_BLOCKED);
+    for (const form of ["email", "sign-in", "sign-up"] as const) {
+      expect(texts.failureText("blocked", form)).toBe(texts.CHALLENGE_BLOCKED);
+    }
   });
 
   it("neither the intro nor the resend promise a link or a send the server cannot know (P4)", () => {
@@ -80,9 +81,9 @@ describe("the password screen texts", () => {
       "Enviamos um e-mail para quem@exemplo.com. Siga as instruções nele."
     );
     expect(texts.RESENT_TYPED).toBe(
-      "Se esse e-mail precisar de confirmação, enviamos outro. Olhe também o spam."
+      "Se esse e-mail precisar de confirmação, enviamos outro. Veja o spam."
     );
-    expect(texts.RESENT).toBe("Reenviamos. Olhe também o spam.");
+    expect(texts.RESENT).toBe("Reenviamos. Veja o spam.");
   });
 
   it("name the toggle by what it does to the field, short on the button and whole for the reader (P5)", () => {
@@ -93,8 +94,7 @@ describe("the password screen texts", () => {
   });
 
   it("say the size rule before typing, with the numbers the server applies (AC-47)", () => {
-    expect(texts.PASSWORD_RULE).toContain("15 caracteres");
-    expect(texts.SIGN_UP_PASSWORD_RULE).toBe(
+    expect(texts.PASSWORD_RULE).toBe(
       "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve."
     );
     expect(texts.PASSWORD_TOO_LONG).toContain("128");
@@ -107,7 +107,10 @@ describe("the password screen texts", () => {
     );
   });
 
-  it("say 'e-mails demais' only on the forms that send an e-mail", () => {
+  it("say 'Muitos pedidos' only on the forms that send an e-mail", () => {
+    expect(texts.TOO_MANY_EMAILS).toBe(
+      "Muitos pedidos. Espere alguns minutos."
+    );
     expect(texts.failureText("limit", "email")).toBe(texts.TOO_MANY_EMAILS);
     expect(texts.failureText("limit", "sign-up")).toBe(texts.TOO_MANY_EMAILS);
     expect(texts.failureText("limit", "sign-in")).toBe(texts.TOO_MANY_TRIES);

@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { documentTitle } from "../app-shell/navigation-model";
 import {
   EntryAlert,
-  EntryFrame,
+  EntryGate,
   EntryLinkButton,
   EntryNotice,
+  EntryRetry,
+  EntryScreen,
+  EntryStatus,
   EntrySuccess,
-  PasswordGate,
-} from "./entry-parts";
+  TEXT_LINK,
+} from "./entry-ui";
 import {
   type LinkOutcome,
   linkOutcome,
@@ -18,7 +21,6 @@ import {
   FORGOT_PASSWORD_LINK,
   failureText,
   GO_TO_SIGN_IN,
-  TRY_AGAIN,
   UNLOCK_CHECKING,
   UNLOCK_DONE,
   UNLOCK_INVALID,
@@ -36,17 +38,19 @@ function UnlockLinkFailed({
   text: string;
 }) {
   return (
-    <EntryFrame title={UNLOCK_TITLE}>
+    <EntryScreen title={UNLOCK_TITLE}>
       {neutral ? (
         <EntryNotice>{text}</EntryNotice>
       ) : (
         <EntryAlert>{text}</EntryAlert>
       )}
       <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
-      <p className="sign-in-links">
-        <a href="/esqueci-a-senha">{FORGOT_PASSWORD_LINK}</a>
+      <p className="mt-2 flex text-sm">
+        <a className={TEXT_LINK} href="/esqueci-a-senha">
+          {FORGOT_PASSWORD_LINK}
+        </a>
       </p>
-    </EntryFrame>
+    </EntryScreen>
   );
 }
 
@@ -70,32 +74,28 @@ function Unlock({ token }: { token: string }) {
 
   if (state === "done") {
     return (
-      <EntryFrame title={UNLOCK_TITLE}>
+      <EntryScreen title={UNLOCK_TITLE}>
         <EntrySuccess>{UNLOCK_DONE}</EntrySuccess>
         <EntryLinkButton href="/entrar">{GO_TO_SIGN_IN}</EntryLinkButton>
-      </EntryFrame>
+      </EntryScreen>
     );
   }
   if (state === "expired" || state === "invalid") {
     return <UnlockLinkFailed text={UNLOCK_INVALID} />;
   }
   return (
-    <EntryFrame title={UNLOCK_TITLE}>
+    <EntryScreen title={UNLOCK_TITLE}>
       {state === "checking" ? (
-        <p className="sign-in-status" role="status">
-          {UNLOCK_CHECKING}
-        </p>
+        <EntryStatus>{UNLOCK_CHECKING}</EntryStatus>
       ) : (
         <>
           <EntryAlert>
             {failureText(state === "limit" ? "limit" : "unavailable", "other")}
           </EntryAlert>
-          <button className="sign-in-retry" onClick={unlock} type="button">
-            {TRY_AGAIN}
-          </button>
+          <EntryRetry onClick={unlock} />
         </>
       )}
-    </EntryFrame>
+    </EntryScreen>
   );
 }
 
@@ -112,7 +112,7 @@ export function UnlockPage() {
     document.title = documentTitle(UNLOCK_PAGE_TITLE);
   }, []);
   return (
-    <PasswordGate title={UNLOCK_TITLE}>
+    <EntryGate title={UNLOCK_TITLE}>
       {() =>
         token ? (
           <Unlock token={token} />
@@ -120,6 +120,6 @@ export function UnlockPage() {
           <UnlockLinkFailed neutral text={UNLOCK_NO_LINK} />
         )
       }
-    </PasswordGate>
+    </EntryGate>
   );
 }
