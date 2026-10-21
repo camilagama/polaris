@@ -6,7 +6,7 @@ import type { GoogleOptions } from "better-auth/social-providers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { app, createServerApp } from "./app";
 import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "./auth";
-import { createBetterAuth } from "./auth";
+import { createBetterAuth, databaseVerificationLinkRecorder } from "./auth";
 import type { AccessLogWriter } from "./auth/access-log";
 import { createResendAuthEmailDelivery } from "./auth/email";
 import { handleBetterAuthRequest } from "./auth/handler";
@@ -100,6 +100,7 @@ function createEmailPasswordTestApp(
   options: {
     failEpochBump?: boolean;
     legalAcceptanceRecorder?: LegalAcceptanceRecorder;
+    verificationLinkRecorder?: (userId: string) => Promise<void>;
   } = {}
 ) {
   const auditEvents: AuthSecurityAuditEvent[] = [];
@@ -146,6 +147,9 @@ function createEmailPasswordTestApp(
     emailDelivery: emailDeliveryOverride ?? emailDelivery,
     ...(options.legalAcceptanceRecorder
       ? { legalAcceptanceRecorder: options.legalAcceptanceRecorder }
+      : {}),
+    ...(options.verificationLinkRecorder
+      ? { verificationLinkRecorder: options.verificationLinkRecorder }
       : {}),
     requestId: "pr15-email-auth-test-request",
     secret: testSecret,
@@ -1677,5 +1681,157 @@ describe("Sign-up legal acceptance (AC-68)", () => {
       ((await session.json()) as { user?: { id?: string } }).user?.id
     ).toBeTruthy();
     expect(recorder).not.toHaveBeenCalled();
+  });
+});
+
+describe("Verification link record (ADR 0100, P10)", () => {
+  const password = "frase longa e segura para o cadastro 2026";
+  const email = "link-record@example.invalid";
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const post = (
+    testApp: ReturnType<typeof createEmailPasswordTestApp>["app"],
+    path: string,
+    body: Record<string, unknown>
+  ) =>
+    testApp.request(
+      path,
+      {
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json", origin: testBaseURL },
+        method: "POST",
+      },
+      testBindings
+    );
+  const signUp = (
+    testApp: ReturnType<typeof createEmailPasswordTestApp>["app"]
+  ) =>
+    post(testApp, "/api/auth/sign-up/email", {
+      email,
+      legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+      name: "Link User",
+      password,
+    });
+
+  it("records the end of the link of the user before each verification e-mail goes out, at the sign-up and at a resend", async () => {
+    stubPwnedPasswordRange();
+    const order: string[] = [];
+    const recorded: string[] = [];
+    const recorder = vi.fn((userId: string) => {
+      recorded.push(userId);
+      order.push("recorded");
+      return Promise.resolve();
+    });
+    const { app: testApp } = createEmailPasswordTestApp(
+      {
+        sendPasswordReset: () => Promise.resolve(),
+        sendVerificationEmail: () => {
+          order.push("sent");
+          return Promise.resolve();
+        },
+      },
+      { verificationLinkRecorder: recorder }
+    );
+
+    expect((await signUp(testApp)).status).toBe(200);
+    expect(order).toEqual(["recorded", "sent"]);
+
+    expect(
+      (await post(testApp, "/api/auth/send-verification-email", { email }))
+        .status
+    ).toBe(200);
+    expect(order).toEqual(["recorded", "sent", "recorded", "sent"]);
+    expect(recorded).toHaveLength(2);
+    expect(recorded[0]).toBeTruthy();
+    expect(recorded[1]).toBe(recorded[0]);
+  });
+
+  it("sends no e-mail when the end of its link could not be recorded: a link the purge does not know of must not exist", async () => {
+    stubPwnedPasswordRange();
+    const recorder = vi.fn(() => Promise.reject(new Error("database down")));
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp(
+      undefined,
+      { verificationLinkRecorder: recorder }
+    );
+
+    await signUp(testApp);
+
+    expect(recorder).toHaveBeenCalledTimes(1);
+    expect(verificationEmails).toHaveLength(0);
+  });
+
+  it("answers the resend without a session the same for an address that exists and one that does not, also when the record fails", async () => {
+    stubPwnedPasswordRange();
+    const state: { failing: boolean } = { failing: false };
+    const recorder = vi.fn(() =>
+      state.failing
+        ? Promise.reject(new Error("lock timeout"))
+        : Promise.resolve()
+    );
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp(
+      undefined,
+      { verificationLinkRecorder: recorder }
+    );
+    expect((await signUp(testApp)).status).toBe(200);
+    expect(verificationEmails).toHaveLength(1);
+    state.failing = true;
+
+    const known = await post(testApp, "/api/auth/send-verification-email", {
+      email,
+    });
+    const unknown = await post(testApp, "/api/auth/send-verification-email", {
+      email: "never-registered@example.invalid",
+    });
+
+    expect(recorder).toHaveBeenCalledTimes(2);
+    expect(known.status).toBe(200);
+    expect(unknown.status).toBe(known.status);
+    expect(await known.json()).toEqual(await unknown.json());
+    expect(verificationEmails).toHaveLength(1);
+  });
+
+  it("records through the database with the clock of the database and refuses a user row that is not there", async () => {
+    const query = vi.fn(
+      async (
+        _text: string,
+        _values: unknown[]
+      ): Promise<{ rowCount: number | null }> => ({ rowCount: 1 })
+    );
+    const record = databaseVerificationLinkRecorder({
+      $client: { query },
+    } as unknown as Parameters<typeof databaseVerificationLinkRecorder>[0]);
+    expect(record).toBeDefined();
+
+    await record?.("user-1");
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const [text, values] = query.mock.calls[0] ?? [];
+    expect(text).toContain("clock_timestamp()");
+    expect(text).toContain("verification_link_expires_at");
+    expect(values).toEqual(["user-1", 24 * 60 * 60]);
+
+    query
+      .mockResolvedValueOnce({ rowCount: 0 })
+      .mockResolvedValueOnce({ rowCount: null })
+      .mockResolvedValueOnce({ rowCount: 2 });
+    await Promise.all(
+      [0, 1, 2].map(() =>
+        expect(record?.("user-1")).rejects.toThrow("not found")
+      )
+    );
+    expect(databaseVerificationLinkRecorder(undefined)).toBeUndefined();
+  });
+
+  it("sends the e-mail as before when there is no recorder (the test adapter has no database)", async () => {
+    stubPwnedPasswordRange();
+    const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
+
+    expect((await signUp(testApp)).status).toBe(200);
+
+    expect(verificationEmails).toHaveLength(1);
   });
 });

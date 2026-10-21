@@ -85,3 +85,40 @@ export const legalAcceptance = pgTable(
     }),
   ]
 ).enableRLS();
+
+const unverifiedUserOwnerRole = "polaris_unverified_user_owner";
+
+/**
+ * When the contract of a user ended, the date the 10 years of `legal_acceptance` count from (ADR 0100): one row
+ * per user, by the database clock, with why it ended. The only writer today is `purge_unverified_users`, in the
+ * same statement that deletes the user (`reason = 'unverified_user_deleted'`); the routine that deletes an
+ * account will write the same row. Opaque `user_id`, no e-mail, no foreign key (the user is gone), append-only
+ * (triggers refuse UPDATE, DELETE and TRUNCATE for every role), and no runtime role reads or writes it: the
+ * expiry of the acceptance, when it exists, reads it as the owner of the acceptance.
+ */
+export const legalAcceptanceContractEnd = pgTable(
+  "legal_acceptance_contract_end",
+  {
+    /** The database clock, never a value from the client. */
+    endedAt: timestamp("ended_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    reason: text("reason").notNull(),
+    userId: text("user_id").primaryKey(),
+  },
+  (table) => [
+    check(
+      "legal_acceptance_contract_end_user_format",
+      sql`${table.userId} ~ '^[A-Za-z0-9_-]{1,64}$'`
+    ),
+    check(
+      "legal_acceptance_contract_end_reason_allowed",
+      sql`${table.reason} IN ('unverified_user_deleted')`
+    ),
+    pgPolicy("legal_acceptance_contract_end_unverified_user_insert", {
+      for: "insert",
+      to: unverifiedUserOwnerRole,
+      withCheck: sql`true`,
+    }),
+  ]
+).enableRLS();

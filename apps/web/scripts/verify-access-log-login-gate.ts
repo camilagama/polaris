@@ -250,6 +250,22 @@ async function run() {
         version: LEGAL_DOCUMENTS[document].version,
       }))
     );
+    // the sign-up e-mail went out with the end of its link recorded by the database clock (24 hours from now, ADR 0100, P10)
+    const link = await owner.pool.query<{ seconds: number }>(
+      `SELECT extract(epoch FROM verification_link_expires_at - clock_timestamp())::float8 AS seconds
+         FROM public."user" WHERE id = $1`,
+      [userId]
+    );
+    const linkSeconds = link.rows[0]?.seconds;
+    assert.ok(
+      linkSeconds !== undefined &&
+        linkSeconds > 24 * 3600 - 120 &&
+        linkSeconds <= 24 * 3600,
+      "the end of the verification link is about 24 hours ahead"
+    );
+    tests.push(
+      "the sign-up through the real route records `user.verification_link_expires_at` 24 hours ahead by the database clock, with the authentication role alone"
+    );
     const verification = verificationEmails.at(-1);
     assert.ok(verification);
     const verify = await call(

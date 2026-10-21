@@ -19,5 +19,6 @@ Com a flag ligada, o Worker envia estes e-mails. Os de verificação e de redefi
 - Chave de idempotência por tipo e token (SHA-256), e no caso de "você já tem conta" por usuário e dia.
 - O e-mail de desbloqueio sai em segundo plano, só para conta com senha, uma vez por trava.
 - Falha do Resend: o Worker registra `auth_email_delivery_failed` com o tipo do e-mail, a classe do erro, sem endereço, token nem corpo, e a resposta da tela não muda.
+- Antes de cada e-mail de verificação o Worker grava em `user.verification_link_expires_at` o fim do link (24 horas, relógio do banco); se a gravação falha (banco lento, linha já apagada), o e-mail não sai, a resposta da tela não muda e o Worker registra `auth_verification_link_record_failed` (classe do erro e SQLSTATE, sem endereço nem ID). Sem alerta próprio: a causa costuma aparecer também em [erros-de-banco](./alertas.md#erros-de-banco). Quem não recebeu o e-mail pede o reenvio.
 
 Os testes usam callbacks fake e fetch mockado. Não enviam mensagens reais. O PR15 não adiciona outbox/Cloudflare Queue nem webhooks duráveis; a proposta inicial de entrega durável fica adiada para hardening pré-go-live. A entrega direta idempotente pode ser tentada novamente, mas não é uma outbox persistente.

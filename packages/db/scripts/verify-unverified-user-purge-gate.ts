@@ -65,6 +65,8 @@ interface Spec {
   emailVerified?: boolean;
   /** How old the user is, in hours (25 by default). */
   hours?: number;
+  /** In how many minutes the last e-mail link stops working (negative: it already did); none by default. */
+  linkExpiresInMinutes?: number;
   membership?: boolean;
   session?: boolean;
 }
@@ -94,9 +96,16 @@ async function run() {
     const id = `gate-unv-${label}-${suffix}`;
     const email = `${id}@example.invalid`;
     await owner.pool.query(
-      `INSERT INTO public."user" (id, name, email, email_verified, created_at, updated_at)
-       VALUES ($1, 'Nome de teste', $2, $3, clock_timestamp() - make_interval(hours => $4::int), clock_timestamp() - make_interval(hours => $4::int))`,
-      [id, email, spec.emailVerified ?? false, spec.hours ?? 25]
+      `INSERT INTO public."user" (id, name, email, email_verified, created_at, updated_at, verification_link_expires_at)
+       VALUES ($1, 'Nome de teste', $2, $3, clock_timestamp() - make_interval(hours => $4::int), clock_timestamp() - make_interval(hours => $4::int),
+               CASE WHEN $5::int IS NULL THEN NULL ELSE clock_timestamp() + make_interval(mins => $5::int) END)`,
+      [
+        id,
+        email,
+        spec.emailVerified ?? false,
+        spec.hours ?? 25,
+        spec.linkExpiresInMinutes ?? null,
+      ]
     );
     userIds.push(id);
     emails.set(id, email);
@@ -153,6 +162,7 @@ async function run() {
       await owner.pool.query<{ id: string }>(
         `SELECT u.id FROM public."user" AS u
           WHERE NOT u.email_verified AND u.created_at < clock_timestamp() - interval '24 hours'
+            AND (u.verification_link_expires_at IS NULL OR u.verification_link_expires_at < clock_timestamp())
             AND NOT EXISTS (SELECT 1 FROM public.account AS a WHERE a.user_id = u.id AND a.provider_id <> 'credential')
             AND NOT EXISTS (SELECT 1 FROM public.session AS s WHERE s.user_id = u.id)
             AND NOT EXISTS (SELECT 1 FROM public.memberships AS m WHERE m.user_id = u.id)
@@ -282,14 +292,17 @@ async function run() {
         "auth_security_audit_event.outcome:INSERT",
         "auth_security_audit_event.request_id:INSERT",
         "auth_security_audit_event.subject_id:INSERT",
+        "legal_acceptance_contract_end.reason:INSERT",
+        "legal_acceptance_contract_end.user_id:INSERT",
         "memberships.user_id:SELECT",
         "session.user_id:SELECT",
         "user.created_at:SELECT",
         "user.email_verified:SELECT",
         "user.id:SELECT",
+        "user.verification_link_expires_at:SELECT",
         "user.updated_at:UPDATE",
       ],
-      "the owner reads no e-mail, name, password or token, and writes only the lock column and the audit"
+      "the owner reads no e-mail, name, password or token, and writes only the lock column, the audit and the end of the contract"
     );
     const tableGrants = await owner.pool.query<{
       privilege_type: string;
@@ -311,6 +324,9 @@ async function run() {
     const everything = await makeUser("everything", { hours: 25 });
     const olderStill = await makeUser("older", { hours: 24 * 400 });
     const noAccount = await makeUser("no-account", { accounts: [] });
+    // the last e-mail link stopped working a minute ago: nothing holds the user any more
+    const linkPast = await makeUser("link-past", { linkExpiresInMinutes: -1 });
+    const owedFixtures = [everything, olderStill, noAccount, linkPast];
     const before = await owner.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM public.auth_security_audit_event WHERE event_type = 'unverified_user_deleted'"
     );
@@ -325,6 +341,13 @@ async function run() {
     const withMembership = await makeUser("membership", { membership: true });
     const young = await makeUser("young", { hours: 23 });
     const brandNew = await makeUser("new", { hours: 0 });
+    // a link sent 10 minutes ago is valid for 23 h 50 min more, and one that ends in a minute still is: both keep the user
+    const linkLate = await makeUser("link-late", {
+      linkExpiresInMinutes: 23 * 60 + 50,
+    });
+    const linkLastMinute = await makeUser("link-last-minute", {
+      linkExpiresInMinutes: 1,
+    });
     const kept = [
       verified,
       google,
@@ -333,17 +356,27 @@ async function run() {
       withMembership,
       young,
       brandNew,
+      linkLate,
+      linkLastMinute,
     ];
+    // the acceptance given at the sign-up of one user the purge deletes and of one it keeps
+    for (const id of [everything, google]) {
+      const recorded = await authClient.query<{ result: string }>(
+        "SELECT public.record_legal_acceptance($1, 'terms', 1, $2, 'signup', 'gate-unv-request') AS result",
+        [id, "a".repeat(64)]
+      );
+      assert.equal(recorded.rows[0]?.result, "recorded");
+    }
     const eligibleBefore = await eligibleNow();
     for (const id of kept) {
       assert.ok(!eligibleBefore.includes(id), "the fixture is not eligible");
     }
-    for (const id of [everything, olderStill, noAccount]) {
+    for (const id of owedFixtures) {
       assert.ok(eligibleBefore.includes(id), "the fixture is eligible");
     }
     const removed = await purge(authClient);
     assert.equal(removed, eligibleBefore.length, "it deleted what was owed");
-    for (const id of [everything, olderStill, noAccount]) {
+    for (const id of owedFixtures) {
       assert.equal(await exists(id), false, `${id} is deleted`);
     }
     for (const id of kept) {
@@ -353,7 +386,7 @@ async function run() {
       (
         await owner.pool.query(
           "SELECT 1 FROM public.account WHERE user_id = ANY ($1)",
-          [[everything, olderStill, noAccount]]
+          [owedFixtures]
         )
       ).rows.length,
       0,
@@ -385,9 +418,12 @@ async function run() {
     tests.push(
       "each condition alone keeps the user: a verified e-mail, a Google account next to the credential one, a Google account alone, a session (even an expired one), a membership, 23 hours, a user created now"
     );
+    tests.push(
+      "the last e-mail link holds the user while it is valid: one that ends in 23 h 50 min (sent 10 minutes ago) and one that ends in a minute keep a 25-hour-old user, and one that ended a minute ago does not (the user goes)"
+    );
 
     // ---- the audit: one row per user deleted, no e-mail, no name, none for the kept
-    const deletedIds = [everything, olderStill, noAccount];
+    const deletedIds = owedFixtures;
     const audit = await auditOf([...deletedIds, ...kept]);
     assert.deepEqual(
       audit.map((row) => row.subject_id).sort(),
@@ -413,6 +449,81 @@ async function run() {
       "each deletion leaves one `unverified_user_deleted` row in the auth audit (succeeded, no actor, the user ID and the ID of the run), never the e-mail or the name, and nothing is audited for a user kept"
     );
 
+    // ---- the end of the contract: one row for each user deleted, from which the 10 years of the acceptance count
+    const ended = await owner.pool.query<{
+      ended_in_window: boolean;
+      reason: string;
+      user_id: string;
+    }>(
+      `SELECT user_id, reason, ended_at BETWEEN now() - interval '5 minutes' AND clock_timestamp() AS ended_in_window
+         FROM public.legal_acceptance_contract_end WHERE user_id = ANY ($1) ORDER BY user_id`,
+      [[...deletedIds, ...kept]]
+    );
+    assert.deepEqual(
+      ended.rows.map((row) => row.user_id),
+      [...deletedIds].sort(),
+      "one row for each user deleted and none for the kept"
+    );
+    for (const row of ended.rows) {
+      assert.equal(row.reason, "unverified_user_deleted");
+      assert.equal(row.ended_in_window, true, "the date is the deletion's");
+    }
+    const acceptance = await owner.pool.query<{
+      deadline_after_acceptance: boolean;
+      user_id: string;
+    }>(
+      `SELECT a.user_id, (e.ended_at + interval '10 years') > a.accepted_at AS deadline_after_acceptance
+         FROM public.legal_acceptance AS a
+         LEFT JOIN public.legal_acceptance_contract_end AS e ON e.user_id = a.user_id
+        WHERE a.user_id = ANY ($1) ORDER BY a.user_id`,
+      [[everything, google]]
+    );
+    assert.equal(acceptance.rows.length, 2, "the acceptance survives the user");
+    const byUser = new Map(
+      acceptance.rows.map((row) => [row.user_id, row.deadline_after_acceptance])
+    );
+    assert.equal(
+      byUser.get(everything),
+      true,
+      "the deleted user has the date its 10 years count from"
+    );
+    assert.equal(
+      byUser.get(google),
+      null,
+      "the kept user has no end of contract, so nothing of its acceptance can expire"
+    );
+    const endTable = "public.legal_acceptance_contract_end";
+    for (const statement of [
+      `UPDATE ${endTable} SET reason = reason`,
+      `DELETE FROM ${endTable}`,
+      `TRUNCATE ${endTable}`,
+    ]) {
+      await expectSqlState(
+        () => owner.pool.query(statement),
+        "23514",
+        `append-only: ${statement}`
+      );
+    }
+    await expectSqlState(
+      () =>
+        owner.pool.query(
+          `INSERT INTO ${endTable} (user_id, reason) VALUES ('gate-unv-bad-reason', 'other')`
+        ),
+      "23514",
+      "a reason outside the list"
+    );
+    await expectSqlState(
+      () =>
+        owner.pool.query(
+          `INSERT INTO ${endTable} (user_id, reason) VALUES ('not valid', 'unverified_user_deleted')`
+        ),
+      "23514",
+      "a user ID outside the shape"
+    );
+    tests.push(
+      "each deletion records, in the same statement, one row in `legal_acceptance_contract_end` (the user ID and the instant of the deletion, reason `unverified_user_deleted`), none for a user kept; the acceptance of the deleted user stays and its 10 years count from that date; the table refuses UPDATE, DELETE and TRUNCATE (23514, triggers) and an invalid reason or user ID"
+    );
+
     // ---- idempotent
     const usersBefore = await owner.pool.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM public."user"'
@@ -427,6 +538,16 @@ async function run() {
       (await auditOf(deletedIds)).length,
       deletedIds.length,
       "the repeated runs added no audit"
+    );
+    assert.equal(
+      (
+        await owner.pool.query(
+          "SELECT 1 FROM public.legal_acceptance_contract_end WHERE user_id = ANY ($1)",
+          [deletedIds]
+        )
+      ).rows.length,
+      deletedIds.length,
+      "nor a row of the end of the contract"
     );
     tests.push(
       "running the job again changes nothing: no user is deleted and no audit row is added"
@@ -558,6 +679,39 @@ async function run() {
       assert.equal(can.rows[0]?.ok, false, `${role} cannot delete a user`);
     }
     assert.equal(await exists(protectedUser), true);
+    for (const role of [
+      ...RUNTIME_ROLES,
+      "polaris_auth_runtime",
+      "polaris_legal_acceptance_owner",
+    ]) {
+      for (const privilege of [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "TRUNCATE",
+        "REFERENCES",
+        "TRIGGER",
+      ]) {
+        // a grant on one column alone counts too
+        const can = await owner.pool.query<{ ok: boolean }>(
+          `SELECT has_table_privilege($1, 'public.legal_acceptance_contract_end', $2)
+               OR (CASE WHEN $2 IN ('SELECT', 'INSERT', 'UPDATE', 'REFERENCES') THEN has_any_column_privilege($1, 'public.legal_acceptance_contract_end', $2) ELSE false END) AS ok`,
+          [role, privilege]
+        );
+        assert.equal(
+          can.rows[0]?.ok,
+          false,
+          `${role} has no ${privilege} on the end of the contract`
+        );
+      }
+    }
+    await expectSqlState(
+      () =>
+        authClient.query("SELECT 1 FROM public.legal_acceptance_contract_end"),
+      "42501",
+      "the authentication runtime reads the end of the contract"
+    );
     tests.push(
       "the tenant, Admin and privacy runtimes are refused (42501) on a direct DELETE of a user, on TRUNCATE and on the function, and no other runtime or owner role holds DELETE on the table of users (the authentication runtime already writes it for Better Auth, and is the only one that executes the function)"
     );
@@ -569,6 +723,9 @@ async function run() {
         google: await makeUser(`${label}-google`, {
           accounts: ["credential", "google"],
         }),
+        link: await makeUser(`${label}-link`, {
+          linkExpiresInMinutes: 23 * 60 + 50,
+        }),
         membership: await makeUser(`${label}-membership`, { membership: true }),
         session: await makeUser(`${label}-session`, { session: true }),
         verified: await makeUser(`${label}-verified`, { emailVerified: true }),
@@ -576,10 +733,25 @@ async function run() {
       };
       return ids;
     };
-    const probe = async (client: Client, label: string) => {
+    // `reader` sees the rows the probe wrote: the same connection in a mutant's transaction, the owner for the real function
+    const probe = async (
+      client: Client,
+      label: string,
+      reader: { query: Client["query"] } = client
+    ) => {
       const ids = await everythingEligible(label);
       await client.query("SELECT public.purge_unverified_users(1000)");
       assert.equal(await existsIn(client, ids.control), false, "control goes");
+      assert.equal(
+        (
+          await reader.query(
+            "SELECT 1 FROM public.legal_acceptance_contract_end WHERE user_id = $1",
+            [ids.control]
+          )
+        ).rows.length,
+        1,
+        "the end of the contract of the control is recorded"
+      );
       for (const [name, id] of Object.entries(ids)) {
         if (name !== "control") {
           assert.equal(await existsIn(client, id), true, `${name} is kept`);
@@ -605,6 +777,18 @@ async function run() {
         false,
       ],
       ["24 hours", "interval '24 hours'", "interval '1 second'", false],
+      [
+        "last link",
+        "(candidate.verification_link_expires_at IS NULL OR candidate.verification_link_expires_at < pg_catalog.clock_timestamp())",
+        "true",
+        false,
+      ],
+      [
+        "end of the contract",
+        "SELECT deleted.id, 'unverified_user_deleted' FROM deleted\n    ON CONFLICT DO NOTHING",
+        "SELECT deleted.id, 'unverified_user_deleted' FROM deleted WHERE false\n    ON CONFLICT DO NOTHING",
+        false,
+      ],
       // the foreign key (restrict, 23001) refuses the delete of a user with a membership, so the call fails as a whole
       [
         "membership",
@@ -646,9 +830,9 @@ async function run() {
       mutationClient.release();
     }
     // and the real function passes the same probe
-    await probe(authClient, "real");
+    await probe(authClient, "real", owner.pool);
     tests.push(
-      "the gate fails on a function without a condition: with the e-mail check, the Google check, the session check or the 24 hours taken out (and with the membership check taken out, where the foreign key refuses), the probe fails inside a transaction that is rolled back; the real function passes the same probe afterwards, unchanged"
+      "the gate fails on a function without a condition: with the e-mail check, the Google check, the session check, the 24 hours, the check of the last link or the record of the end of the contract taken out (and with the membership check taken out, where the foreign key refuses), the probe fails inside a transaction that is rolled back; the real function passes the same probe afterwards, unchanged"
     );
 
     console.log(
