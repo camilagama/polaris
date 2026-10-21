@@ -72,6 +72,11 @@ async function pickShirt(page: Page): Promise<Locator> {
 }
 
 async function useEveryControl(page: Page) {
+  const summary = page.getByRole("complementary", { name: "Resumo" });
+  // before the profile is chosen (and there is no preview), the summary says so
+  await expect(summary).toContainText(
+    "Perfil de pagamento ainda não escolhido"
+  );
   const item = await pickShirt(page);
   await item.getByRole("button", { name: "Mais uma unidade" }).click();
   await expect(item.getByLabel("Quantidade")).toHaveValue("2");
@@ -118,9 +123,12 @@ async function useEveryControl(page: Page) {
   await date.fill("2026-10-14T10:30");
   await page.getByRole("button", { name: "Usar agora" }).click();
   await expect(date).toHaveValue("");
-  await expect(
-    page.getByRole("complementary", { name: "Resumo" })
-  ).toContainText("Desconto (5");
+  await expect(summary).toContainText("Desconto (5");
+  // only the total due is a live region, read whole when it changes
+  const live = summary.locator("[aria-live]");
+  await expect(live).toHaveCount(1);
+  await expect(live).toHaveAttribute("aria-atomic", "true");
+  await expect(live).toContainText("Total devido");
 }
 
 for (const theme of THEMES) {
@@ -222,14 +230,18 @@ async function expectNoSidewaysScroll(page: Page) {
       .querySelector("[data-sale-form]")
       ?.closest("[data-ui]");
     const limit = window.innerWidth + 0.5;
-    return [...(root?.querySelectorAll("*") ?? [])]
-      .map((element) => ({
-        right: element.getBoundingClientRect().right,
-        text: (element.textContent ?? "").trim().slice(0, 40),
-      }))
-      .filter((box) => box.right > limit);
+    const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
+      right: element.getBoundingClientRect().right,
+      text: (element.textContent ?? "").trim().slice(0, 40),
+    }));
+    return {
+      measured: boxes.length,
+      past: boxes.filter((box) => box.right > limit),
+    };
   });
-  expect(found).toEqual([]);
+  // nothing passes vacuously: the screen is there and was measured
+  expect(found.measured).toBeGreaterThan(100);
+  expect(found.past).toEqual([]);
 }
 
 test("a 320 px nada transborda: venda guardada no aparelho, venda travada e falha em foco", async ({

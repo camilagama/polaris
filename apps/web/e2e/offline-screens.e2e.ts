@@ -575,8 +575,8 @@ test.describe("venda sem resposta do servidor", () => {
     await expect(
       page.getByText("Sem resposta do servidor, a venda pode ser guardada")
     ).toBeVisible();
-    // locked: nothing of the sale can change (Base UI's radio, checkbox and select are not native controls, so
-    // the <fieldset disabled> alone would not turn them off)
+    // locked: nothing of the sale can change (Base UI's radio and checkbox are <span>s, which the
+    // <fieldset disabled> alone would not turn off)
     for (const control of [
       page.getByRole("radio", { name: "Pix" }),
       page.getByRole("checkbox", {

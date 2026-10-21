@@ -159,6 +159,8 @@ test("venda: com o carrinho montado, o 401 diz 'A venda não foi registrada.' e 
   const notice = page.locator(".session-ended-notice");
   await expect(notice).toContainText(SENTENCE);
   await expect(notice).toContainText(WARNING);
+  // the failure notice of the sale does not take the focus the session notice took
+  await expect(notice).toBeFocused();
   await expect(page.getByRole("alert")).toContainText(
     "A venda não foi registrada."
   );

@@ -71,7 +71,7 @@ const METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
 
 interface AdjustmentEditorProps {
   adjustment: AdjustmentDraft;
-  /** The Base UI Select is not turned off by the <fieldset disabled> around it on its own. */
+  /** Off while the sale is locked: the <fieldset disabled> turns off the trigger, this tells the Select. */
   disabled: boolean;
   error: string | undefined;
   index: number;
