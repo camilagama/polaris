@@ -101,10 +101,14 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
 
   // The profile hint is a field description tied to the select, not an alert
   await expect(
-    sale.getByRole("combobox", { name: "Perfil de pagamento" })
+    sale.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
   ).toHaveAccessibleDescription(
     "Sem perfil, taxas e prazo ficam como estimativa."
   );
+
+  await expect(
+    sale.getByRole("status").filter({ hasText: "Sem perfil, taxas e prazo" })
+  ).toHaveCount(0);
 
   // Card: its title is the heading the screen gives it
   await expect(
