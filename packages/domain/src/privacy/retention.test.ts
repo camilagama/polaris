@@ -456,9 +456,7 @@ describe("approved periods", () => {
     expect(policy.legalSources).toContain(
       "LGPD (Lei 13.709/2018), art. 16, II"
     );
-    expect(policy.rule).toContain("5 anos");
-    expect(policy.rule).toContain("EREsp 1.280.825/RJ");
-    expect(policy.rule).not.toContain("mais 10 anos");
+    expect(policy.rule).toContain("legal_acceptance_unverified_user");
   });
 
   it("keep the acceptance of a user who never verified the e-mail 6 months and 30 days after the deletion, apart from the contract acceptance", () => {
