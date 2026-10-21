@@ -22,6 +22,11 @@ Este arquivo define direção visual e de interação, não bibliotecas; a base 
 
 **Diretriz v5.1 (decidida em 20/10/2026, [ADR 0103](docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md); tokens no código desde o PR de base; a Nova venda é a primeira tela que os usa).** Os tokens são as variáveis do shadcn (`--background`, `--primary`, `--ring`, `--radius` e as demais) em `:root` e `.dark`, em `apps/web/src/styles/theme.css`, importado pelo CSS de entrada do Tailwind 4 (`apps/web/src/styles/index.css`), com as extensões do Polaris no mesmo padrão. Os valores abaixo são os do desenho v5.1 do Petković (aprovado em 20/10/2026), e este documento é a fonte. Até a última tela migrar, o reset do Tailwind e os padrões da página (Geist, 14 px, fundo e tinta) valem só dentro de `[data-ui]`, a raiz de cada tela migrada e de cada portal dos componentes (emenda do ADR 0103). **Todas as cores são OKLCH**, `oklch(L C h)`: nenhum `#hex`, `rgb()` ou `hsl()` em tokens, componentes, sombras, véus ou opacidades. Os componentes ficam em `apps/web/src/ui/` e são código nosso: partem da CLI do shadcn (variante Base UI) e são editados livremente.
 
+**Estado da migração.**
+
+- Na v5.1: Nova venda (`/sales`).
+- Ainda em `legacy`: Histórico e detalhe da venda, o painel "Cliente da venda", o shell (menu, cabeçalho e rodapé) e as demais telas.
+
 **Estado atual (a substituir).** Até cada tela migrar, o código ainda usa as variáveis `--ui-*` de `apps/web/src/styles/tokens.css` (e os aliases `--payment-*` em perfis de pagamento), com a paleta anterior (verde como ação, `--ui-canvas`, `--ui-surface`, `--ui-accent`, `--ui-danger` e afins, em hex). Esses valores estão **substituídos** pela tabela abaixo e não são regra para tela nova; ficam no CSS antigo, dentro de `@layer legacy`, e somem com a migração (a última tela apaga a camada e os aliases).
 
 | Token | Tema claro | Tema escuro | Uso |

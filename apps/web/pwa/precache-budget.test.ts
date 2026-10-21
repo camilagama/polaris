@@ -1,10 +1,17 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   budgetProblems,
   FONT_BUDGET_BYTES,
+  interfaceShares,
   measurePrecache,
   PRIMITIVES_BUDGET_GZIP_BYTES,
   precacheBudgetPlugin,
@@ -30,6 +37,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     );
     expect(size.fonts).toBe(30_000);
     expect(size.primitives).toBe(0);
+    expect(size.interface).toBe(0);
     // zeros compress to almost nothing: the rest is gzip, not raw
     expect(size.rest).toBeGreaterThan(0);
     expect(size.rest).toBeLessThan(2000);
@@ -67,7 +75,9 @@ describe("precache budget (ADR 0103, section 4)", () => {
       },
     ]);
     expect([...shares]).toEqual([["assets/sale-def.js", 0.7]]);
-    const split = measurePrecache(Object.keys(files), read, shares);
+    const split = measurePrecache(Object.keys(files), read, {
+      primitives: shares,
+    });
     expect(split.primitives + split.rest).toBe(whole.rest);
     expect(split.primitives / (whole.rest / 2)).toBeCloseTo(0.7, 2);
   });
@@ -76,6 +86,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const atLimit = {
       fonts: FONT_BUDGET_BYTES,
+      interface: 0,
       primitives: PRIMITIVES_BUDGET_GZIP_BYTES,
       rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES,
     };
@@ -100,7 +111,12 @@ describe("precache budget (ADR 0103, section 4)", () => {
     );
     expect(restBaseline(true)).toBe(REST_BASELINE_GZIP_BYTES.offlineRuntimeOn);
     // the build of the e2e on the real stack with the runtime on: +87 KB against the other baseline, +9 KB against its own
-    const runtimeOn = { fonts: 52_528, primitives: 0, rest: 1_105_454 };
+    const runtimeOn = {
+      fonts: 52_528,
+      interface: 0,
+      primitives: 0,
+      rest: 1_105_454,
+    };
     expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([
       expect.stringContaining("rest"),
     ]);
@@ -135,6 +151,127 @@ describe("precache budget (ADR 0103, section 4)", () => {
         `offline runtime off, baseline ${REST_BASELINE_GZIP_BYTES.offlineRuntimeOff} B`
       );
       expect(logFor(undefined)).toContain("offline runtime off");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("counts the interface infrastructure by its share of a chunk, apart from the primitives and the screen", () => {
+    const random = new Uint8Array(10_000).map(
+      (_, index) => (index * 7919) % 251
+    );
+    const files: Record<string, Uint8Array> = {
+      "assets/sale-def.js": random,
+    };
+    const read = (path: string) => files[path] as Uint8Array;
+    const chunks = [
+      {
+        fileName: "assets/sale-def.js",
+        modules: {
+          "/repo/apps/web/src/lib/utils.test.ts": { renderedLength: 50 },
+          "/repo/apps/web/src/lib/utils.ts": { renderedLength: 50 },
+          "/repo/apps/web/src/sales/sale-page.tsx": { renderedLength: 400 },
+          "/repo/apps/web/src/ui/field.tsx": { renderedLength: 200 },
+          "/repo/node_modules/.bun/@base-ui+react@1.9.0+x/node_modules/@base-ui/react/esm/dialog/index.js":
+            { renderedLength: 200 },
+          "/repo/node_modules/.bun/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs":
+            { renderedLength: 50 },
+          "/repo/node_modules/lucide-react/dist/esm/icons/check.js": {
+            renderedLength: 50,
+          },
+        },
+      },
+    ];
+    // src/ui, cn and its libraries: 350 of 1000; a lookalike path (utils.test.ts) is the screen's
+    expect([...interfaceShares(chunks)]).toEqual([
+      ["assets/sale-def.js", 0.35],
+    ]);
+    expect([...primitiveShares(chunks)]).toEqual([["assets/sale-def.js", 0.2]]);
+    const whole = measurePrecache(Object.keys(files), read);
+    const split = measurePrecache(Object.keys(files), read, {
+      interface: interfaceShares(chunks),
+      primitives: primitiveShares(chunks),
+    });
+    expect(split.interface / whole.rest).toBeCloseTo(0.35, 2);
+    expect(split.primitives / whole.rest).toBeCloseTo(0.2, 2);
+    expect(split.primitives + split.interface + split.rest).toBe(whole.rest);
+  });
+
+  it("counts the interface infrastructure in the +40 KB line (control: it does not escape it by moving out of the rest)", () => {
+    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+    const atLimit = {
+      fonts: 0,
+      interface: 15_000,
+      primitives: 0,
+      rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES - 15_000,
+    };
+    expect(budgetProblems(atLimit, baseline)).toEqual([]);
+    const past = budgetProblems(
+      { ...atLimit, interface: atLimit.interface + 1 },
+      baseline
+    );
+    expect(past).toEqual([expect.stringContaining("rest")]);
+    expect(past[0]).toContain("interface infrastructure 15001 B");
+  });
+
+  it("prints the primitives, the interface infrastructure and the screen apart, over a real output directory", () => {
+    const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+    mkdirSync(join(directory, "assets"));
+    writeFileSync(join(directory, "index.html"), "<!doctype html>");
+    const chunk = new Uint8Array(20_000).map(
+      (_, index) => (index * 7919) % 251
+    );
+    writeFileSync(join(directory, "assets/sale-def.js"), chunk);
+    const logged: string[] = [];
+    const plugin = precacheBudgetPlugin();
+    (plugin.configResolved as (config: unknown) => void)({ env: {} });
+    (
+      plugin.generateBundle as (
+        this: unknown,
+        options: unknown,
+        bundle: unknown
+      ) => void
+    ).call(
+      {},
+      {},
+      {
+        "assets/sale-def.js": {
+          fileName: "assets/sale-def.js",
+          modules: {
+            "/repo/apps/web/src/sales/sale-page.tsx": { renderedLength: 500 },
+            "/repo/apps/web/src/ui/field.tsx": { renderedLength: 300 },
+            "/repo/node_modules/@base-ui/react/esm/dialog/index.js": {
+              renderedLength: 200,
+            },
+          },
+          type: "chunk",
+        },
+      }
+    );
+    try {
+      (
+        plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+      ).call(
+        {
+          error: (message: string) => logged.push(message),
+          info: (message: string) => logged.push(message),
+        },
+        { dir: directory }
+      );
+      const size = measurePrecache(
+        ["index.html", "assets/sale-def.js"],
+        (path) => readFileSync(join(directory, path)),
+        {
+          interface: new Map([["assets/sale-def.js", 0.3]]),
+          primitives: new Map([["assets/sale-def.js", 0.2]]),
+        }
+      );
+      expect(size.interface).toBeGreaterThan(0);
+      expect(size.primitives).toBeGreaterThan(0);
+      const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+      expect(logged.join("\n")).toContain(
+        `Base UI primitives ${size.primitives} B gzip, interface infrastructure ${size.interface} B gzip, screen and the rest ${size.rest} B gzip (${size.rest - baseline} B over the baseline); rest line ${size.rest + size.interface} B gzip`
+      );
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

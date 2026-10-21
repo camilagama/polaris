@@ -23,7 +23,6 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
-import { formatBrlAmount } from "../lib/format";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { useNow } from "../lib/use-now";
 import {
@@ -90,7 +89,6 @@ import {
   type SaleAttempt,
   type SaleFormState,
   type SaleMethod,
-  type SaleSummary,
   type SubmissionState,
   saleModeIsOffline,
   selectPaymentMethod,
@@ -131,10 +129,8 @@ function optionsOf(view: CatalogView | null): readonly ChoiceOption[] {
 }
 
 /** The single payment of the sale, said under the methods. */
-function singlePaymentText(summary: SaleSummary | null): string {
-  const total = summary ? `: ${formatBrlAmount(summary.totalDue)}` : "";
-  return `A venda tem um único pagamento, igual ao total devido${total}. Não há pagamento parcial, e o método escolhido não comprova liquidação.`;
-}
+const SINGLE_PAYMENT_TEXT =
+  "Um pagamento só, no valor total. O método não comprova o recebimento.";
 
 /** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
 function focusFirstInvalidField() {
@@ -715,7 +711,7 @@ export function SalePage() {
             onRetry={handleRefresh}
             profileOptions={profileOptions}
             profilesView={profilesState}
-            singlePaymentText={singlePaymentText(summary)}
+            singlePaymentText={SINGLE_PAYMENT_TEXT}
           />
         </div>
         <SummaryPanel

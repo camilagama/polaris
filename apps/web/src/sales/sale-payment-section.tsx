@@ -194,17 +194,10 @@ function Adjustments({
   onRemove,
 }: AdjustmentsProps) {
   return (
-    <FieldSet aria-describedby="sale-adjustments-hint" className="gap-3">
+    <FieldSet className="gap-3">
       <legend className="font-medium text-sm">
         Desconto, acréscimo ou frete
       </legend>
-      <p
-        className="text-muted-foreground text-support"
-        id="sale-adjustments-hint"
-      >
-        Percentuais usam o mesmo subtotal e o total de descontos não pode
-        ultrapassá-lo.
-      </p>
       {adjustments.length === 0 ? (
         <p className="text-muted-foreground text-support">
           Nenhum ajuste nesta venda.
@@ -301,7 +294,7 @@ interface PaymentSectionProps {
   onRetry: () => void;
   profileOptions: readonly ChoiceOption[];
   profilesView: CatalogView;
-  /** "A venda tem um único pagamento, igual ao total devido…", with the total when it is known. */
+  /** "Um pagamento só, no valor total…", said under the methods. */
   singlePaymentText: string;
 }
 
@@ -349,7 +342,7 @@ export function PaymentSection({
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <Field data-invalid={Boolean(methodError)}>
+          <Field>
             <RadioGroup
               aria-describedby={describedBy(
                 "sale-method",
@@ -430,7 +423,7 @@ export function PaymentSection({
               >
                 {card
                   ? "Só registra a intenção. Não confirma a antecipação."
-                  : "Disponível apenas para cartão de crédito. Sem antecipação, o custo estimado é R$ 0,00."}
+                  : "Só para cartão de crédito."}
               </p>
             </FieldContent>
           </Field>
@@ -438,7 +431,7 @@ export function PaymentSection({
           <SelectField
             disabled={disabled}
             error={errors[formFieldKeys.profile]}
-            hint="O perfil define taxas e prazo estimados. Sem perfil, taxas e prazo ficam desconhecidos."
+            hint="Define taxas e prazo estimados. Sem perfil, ficam desconhecidos."
             id="sale-profile"
             label="Perfil de pagamento"
             onChange={onProfileChange}

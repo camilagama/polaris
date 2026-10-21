@@ -906,7 +906,7 @@ export const itemFieldKey = (
 export const adjustmentFieldKey = (draftId: string) =>
   `adjustment:${draftId}:value`;
 export const SALE_DATE_HINT =
-  "Deixe vazio para usar agora. Vendas retroativas são aceitas por até 30 dias (data do calendário da organização); datas futuras não são aceitas.";
+  "Vazio é agora. Aceita até 30 dias atrás; nada no futuro.";
 
 const localDateTimePattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
@@ -1048,7 +1048,7 @@ function parsePriceField(
   issues: Issue[]
 ): string | null {
   const parse = parseMoneyText(text);
-  const issue = moneyIssue(parse, "Informe o preço em BRL.");
+  const issue = moneyIssue(parse, "Informe o preço, por exemplo 49,90.");
   if (issue) {
     pushIssue(issues, itemFieldKey(draftId, field), issue.message, issue.empty);
     return null;

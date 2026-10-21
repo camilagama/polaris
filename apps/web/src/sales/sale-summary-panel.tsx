@@ -120,7 +120,7 @@ function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
         Prévia de taxas e prazo
       </h3>
       <p className="text-muted-foreground text-support">
-        Informativa: o servidor recalcula e registra o snapshot ao confirmar.
+        O servidor recalcula ao confirmar.
       </p>
       {preview ? (
         <dl className="grid gap-2 text-support">
