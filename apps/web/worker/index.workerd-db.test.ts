@@ -347,9 +347,9 @@ describe("the scheduled handler of the web worker", () => {
     expect(critical.sent).toHaveLength(1);
   });
 
-  it("the maintenance lane runs its four jobs, and one that cannot reach its database fails alone", async () => {
+  it("the maintenance lane runs its five jobs, and the ones that cannot reach their database fail alone", async () => {
     const events = loggedEvents();
-    // the sign-in lock's database is down: its job fails, the other three finish, and the cron shows the failure
+    // the authentication database is down: its two jobs (the sign-in lock and the unverified users) fail, the other three finish, and the cron shows the failure
     await expect(
       runScheduled("17 * * * *", bindingsWith({ AUTH_HYPERDRIVE: CLOSED }))
     ).rejects.toThrow();
@@ -360,7 +360,7 @@ describe("the scheduled handler of the web worker", () => {
       events().map((entry) => entry.event),
       JSON.stringify(events().filter((entry) => entry.outcome === "failure"))
     ).toContain("billing_maintenance_complete");
-    // the next tick finds only that job owed (the others covered their window) and it finishes
+    // the next tick finds only those two jobs owed (the others covered their window) and they finish
     await expect(
       runScheduled("17 * * * *", bindingsWith())
     ).resolves.toBeUndefined();
@@ -375,6 +375,9 @@ describe("the scheduled handler of the web worker", () => {
     ]);
     expect(
       events().filter((entry) => entry.event === "auth_login_lock_expired")
+    ).toHaveLength(1);
+    expect(
+      events().filter((entry) => entry.event === "auth_unverified_users_purged")
     ).toHaveLength(1);
   });
 });

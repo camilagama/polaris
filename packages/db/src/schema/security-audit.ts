@@ -22,6 +22,7 @@ export const authSecurityAuditEventType = pgEnum(
     "password_changed",
     "password_reset_completed",
     "password_set",
+    "unverified_user_deleted",
   ]
 );
 

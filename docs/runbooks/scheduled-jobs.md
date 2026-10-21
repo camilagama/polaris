@@ -10,7 +10,7 @@ Em `apps/web/wrangler.jsonc` (Worker `polaris-web`) há **dois** Cron Triggers, 
 
 | Cron | Pista | Jobs (nesta ordem) | Cadência |
 | --- | --- | --- | --- |
-| `17 * * * *` | `maintenance` | `media.maintenance`, `billing.maintenance`, `privacy.maintenance`, `auth.login_lock_expiry` (expurgo do contador do bloqueio da entrada, pela conexão `AUTH_HYPERDRIVE`) | 1 hora |
+| `17 * * * *` | `maintenance` | `media.maintenance`, `billing.maintenance`, `privacy.maintenance`, `auth.login_lock_expiry` (expurgo do contador do bloqueio da entrada, pela conexão `AUTH_HYPERDRIVE`), `auth.unverified_user_purge` (apaga o usuário por senha nunca verificado, até 200 por execução, pela mesma conexão) | 1 hora |
 | `19 * * * *` | `outbox` | `outbox.dispatch` (despachante, varredor e expiração do registro do consumidor) | 1 hora |
 
 Registrados e **desligados** (sem pista, sem handler, nunca rodam): `billing.provider_reconcile` (espera o Gate 7, Asaas e Woovi) e `expenses.recurring_generation` (a geração ao ler já cobre; um job exige um papel que escreve em todas as organizações, decisão de segurança do responsável). A fonte de tudo isso é `@polaris/domain/scheduling/scheduled-jobs`; um teste confere que o `wrangler.jsonc` declara exatamente os crons das pistas.

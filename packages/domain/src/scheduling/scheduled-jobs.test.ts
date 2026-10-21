@@ -83,6 +83,7 @@ describe("the registry of scheduled jobs", () => {
   it("holds the jobs the plan lists, and the ones that already existed", () => {
     expect(SCHEDULED_JOBS.map((job) => job.id).sort()).toEqual([
       "auth.login_lock_expiry",
+      "auth.unverified_user_purge",
       "billing.maintenance",
       "billing.provider_reconcile",
       "expenses.recurring_generation",
@@ -132,12 +133,13 @@ describe("the registry of scheduled jobs", () => {
     }
   });
 
-  it("keeps the order the maintenance always had (media, billing, privacy) and ends with the sign-in lock expiry", () => {
+  it("keeps the order the maintenance always had (media, billing, privacy) and then the two jobs of authentication", () => {
     expect(jobsOfLane("maintenance")).toEqual([
       "media.maintenance",
       "billing.maintenance",
       "privacy.maintenance",
       "auth.login_lock_expiry",
+      "auth.unverified_user_purge",
     ]);
     expect(jobsOfLane("outbox")).toEqual(["outbox.dispatch"]);
   });

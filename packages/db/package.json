@@ -64,6 +64,7 @@
     "./privacy-maintenance": "./src/privacy-maintenance.ts",
     "./closure-notice-recipient": "./src/closure-notice-recipient.ts",
     "./auth-login-lock-maintenance": "./src/auth-login-lock-maintenance.ts",
+    "./auth-unverified-user-maintenance": "./src/auth-unverified-user-maintenance.ts",
     "./inventory-repository": "./src/inventory-repository.ts",
     "./device-schema": "./src/schema/device.ts",
     "./device-repository": "./src/device-repository.ts",

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   billingClose: vi.fn(),
   createAuthLoginLockMaintenanceClient: vi.fn(),
+  createAuthUnverifiedUserMaintenanceClient: vi.fn(),
   createBillingStore: vi.fn(),
   createClosureNoticeRecipientClient: vi.fn(),
   createMediaCleanupClient: vi.fn(),
@@ -29,11 +30,17 @@ const mocks = vi.hoisted(() => ({
   runPrivacyMaintenance: vi.fn(),
   runUnclaimedTrialSettlement: vi.fn(),
   runWooviReconciliation: vi.fn(),
+  unverifiedUserClose: vi.fn(),
+  unverifiedUserPurge: vi.fn(),
 }));
 
 vi.mock("@polaris/db/auth-login-lock-maintenance", () => ({
   createAuthLoginLockMaintenanceClient:
     mocks.createAuthLoginLockMaintenanceClient,
+}));
+vi.mock("@polaris/db/auth-unverified-user-maintenance", () => ({
+  createAuthUnverifiedUserMaintenanceClient:
+    mocks.createAuthUnverifiedUserMaintenanceClient,
 }));
 vi.mock("@polaris/db/billing-store", () => ({
   createBillingStore: mocks.createBillingStore,
@@ -390,6 +397,10 @@ describe("the scheduled maintenance", () => {
         close: mocks.loginLockClose.mockResolvedValue(undefined),
         expire: mocks.loginLockExpire.mockResolvedValue(0),
       });
+      mocks.createAuthUnverifiedUserMaintenanceClient.mockReturnValue({
+        close: mocks.unverifiedUserClose.mockResolvedValue(undefined),
+        purge: mocks.unverifiedUserPurge.mockResolvedValue(0),
+      });
       await runScheduled({ ...configured, ...privacy });
       await runScheduled({
         ...configured,
@@ -421,6 +432,10 @@ describe("the scheduled maintenance", () => {
       mocks.createAuthLoginLockMaintenanceClient.mockReturnValue({
         close: mocks.loginLockClose.mockResolvedValue(undefined),
         expire: mocks.loginLockExpire.mockResolvedValue(0),
+      });
+      mocks.createAuthUnverifiedUserMaintenanceClient.mockReturnValue({
+        close: mocks.unverifiedUserClose.mockResolvedValue(undefined),
+        purge: mocks.unverifiedUserPurge.mockResolvedValue(0),
       });
       mocks.handOverOwedClosureNotices.mockRejectedValueOnce(
         new Error("handover_failed")
@@ -1510,6 +1525,10 @@ describe("the scheduler tick", () => {
       close: mocks.loginLockClose.mockResolvedValue(undefined),
       expire: mocks.loginLockExpire.mockResolvedValue(0),
     });
+    mocks.createAuthUnverifiedUserMaintenanceClient.mockReturnValue({
+      close: mocks.unverifiedUserClose.mockResolvedValue(undefined),
+      purge: mocks.unverifiedUserPurge.mockResolvedValue(0),
+    });
     mocks.reconcileStagedMedia.mockResolvedValue({});
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
@@ -1530,12 +1549,14 @@ describe("the scheduler tick", () => {
       ["billing.maintenance", 3600, 960],
       ["privacy.maintenance", 3600, 960],
       ["auth.login_lock_expiry", 3600, 960],
+      ["auth.unverified_user_purge", 3600, 960],
     ]);
     expect(state.completeScheduledJob.mock.calls).toEqual([
       ["media.maintenance", "lease-token"],
       ["billing.maintenance", "lease-token"],
       ["privacy.maintenance", "lease-token"],
       ["auth.login_lock_expiry", "lease-token"],
+      ["auth.unverified_user_purge", "lease-token"],
     ]);
     expect(state.releaseScheduledJob).not.toHaveBeenCalled();
     // one connection for the whole tick, closed once
@@ -1600,6 +1621,46 @@ describe("the scheduler tick", () => {
       "failed"
     );
     expect(mocks.loginLockClose).toHaveBeenCalled();
+  });
+
+  it("purges the unverified users through the authentication role, with a limit per run, and closes the connection", async () => {
+    mocks.unverifiedUserPurge.mockResolvedValue(4);
+
+    await tick("17 * * * *", everything);
+
+    expect(
+      mocks.createAuthUnverifiedUserMaintenanceClient
+    ).toHaveBeenCalledWith("postgresql://auth.invalid/db");
+    expect(mocks.unverifiedUserPurge).toHaveBeenCalledExactlyOnceWith(200);
+    expect(mocks.unverifiedUserClose).toHaveBeenCalledOnce();
+    expect(state.completeScheduledJob).toHaveBeenCalledWith(
+      "auth.unverified_user_purge",
+      "lease-token"
+    );
+  });
+
+  it("leaves the window of the purge of the unverified open without the authentication role, and fails the cron when the purge fails", async () => {
+    await tick("17 * * * *", { ...everything, AUTH_HYPERDRIVE: undefined });
+
+    expect(
+      mocks.createAuthUnverifiedUserMaintenanceClient
+    ).not.toHaveBeenCalled();
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "auth.unverified_user_purge",
+      "lease-token",
+      "skipped"
+    );
+
+    mocks.unverifiedUserPurge.mockRejectedValue(new Error("purge_failed"));
+    await expect(tick("17 * * * *", everything)).rejects.toThrow(
+      "purge_failed"
+    );
+    expect(state.releaseScheduledJob).toHaveBeenCalledWith(
+      "auth.unverified_user_purge",
+      "lease-token",
+      "failed"
+    );
+    expect(mocks.unverifiedUserClose).toHaveBeenCalled();
   });
 
   it("does not run a job that is not due or whose lease is held, and does not fail the cron", async () => {

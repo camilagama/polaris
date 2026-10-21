@@ -638,6 +638,20 @@
       "when": 1792530000000,
       "tag": "0091_email_dos_avisos_de_encerramento",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792549708701,
+      "tag": "0092_valor_auditoria_usuario_nao_verificado",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792549718701,
+      "tag": "0093_apagamento_de_usuario_nao_verificado",
+      "breakpoints": true
     }
   ]
 }
