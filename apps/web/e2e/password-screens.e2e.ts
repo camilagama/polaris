@@ -635,7 +635,9 @@ test.describe("desafio bloqueado (P2)", () => {
       await expect(
         page.getByRole("button", { name: "Tentar de novo" })
       ).toHaveCount(0);
-      expect(await submit.getAttribute("aria-disabled")).toBeNull();
+      // "Tentando…" has another name than "Tentar de novo": wait for the alert to go, not only for the button
+      await expect(alert).toHaveCount(0);
+      await expect.poll(() => submit.getAttribute("aria-disabled")).toBeNull();
       expect(await submit.getAttribute("aria-describedby")).toBeNull();
     }
   });
