@@ -80,6 +80,11 @@ for (const screen of SCREENS) {
         // One page load for the checks that only read: each reports on its own (soft), so a run shows every fault.
         test("contêiner, toque, axe e foco", async ({ page }) => {
           await openScreen(screen, page);
+          // the context is what the name says: the 48 px areas of the touch check exist only with `pointer: coarse`
+          expect(
+            await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+            "o contexto tem o ponteiro que o nome diz"
+          ).toBe(touch);
           expect
             .soft(
               (await overflowFaults(page)).sort(),
@@ -216,10 +221,27 @@ test.describe("controle: cada verificação pega a falha", () => {
         button.style.width = "120px";
       }
       second.style.marginTop = "-20px";
-      main?.append(small, first, second);
+      // a link in a line of text is exempt from the size; links in a row, with only blanks between them, are not
+      const line = document.createElement("p");
+      line.append("Leia os ");
+      const inLine = document.createElement("a");
+      inLine.href = "#";
+      inLine.textContent = "termos de uso";
+      line.append(inLine, " antes de seguir.");
+      const row = document.createElement("nav");
+      for (const name of ["Entrar", "Ajuda"]) {
+        const link = document.createElement("a");
+        link.href = "#";
+        link.textContent = name;
+        row.append(link, " ");
+      }
+      main?.append(small, first, second, line, row);
     });
     const faults = (await touchFaults(page, check)).join("\n");
     expect(faults).toContain('button "Pequeno" tem área de toque');
+    expect(faults).not.toContain('a "termos de uso" tem área de toque');
+    expect(faults).toContain('a "Entrar" tem área de toque');
+    expect(faults).toContain('a "Ajuda" tem área de toque');
     expect(faults).toContain(
       'a área de toque de button "Vizinho um" se sobrepõe à de button "Vizinho dois"'
     );
@@ -240,19 +262,44 @@ test.describe("controle: cada verificação pega a falha", () => {
     ).toContain("color-contrast");
   });
 
-  test("6. um botão sem contorno de foco é pego, e a ordem de Tab sem ele passa", async ({
+  test("6. botão sem contorno de foco, ou só com sombra suave, é pego; o halo de 3 px passa", async ({
     page,
   }) => {
     await openScreen(gallery, page);
     expect(await focusFaults(page)).toEqual([]);
     await page.evaluate(() => {
-      const button = document.createElement("button");
-      button.textContent = "Sem foco visível";
-      button.style.outline = "none";
-      document.querySelector("main")?.append(button);
+      const main = document.querySelector("main");
+      const bare = document.createElement("button");
+      bare.textContent = "Sem foco visível";
+      bare.style.outline = "none";
+      const soft = document.createElement("button");
+      soft.textContent = "Só sombra suave";
+      soft.style.outline = "none";
+      soft.style.boxShadow = "0 1px 3px 0 rgb(0 0 0 / 0.1)";
+      const ring = document.createElement("button");
+      ring.textContent = "Com halo de 3 px";
+      ring.style.outline = "none";
+      ring.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
+      main?.append(bare, soft, ring);
+    });
+    expect((await focusFaults(page)).sort()).toEqual(
+      [
+        'button "Só sombra suave" não mostra o contorno de foco de 3 px',
+        'button "Sem foco visível" não mostra o contorno de foco de 3 px',
+      ].sort()
+    );
+  });
+
+  test("6. um controle que o teclado não alcança é pego", async ({ page }) => {
+    await openScreen(gallery, page);
+    await page.evaluate(() => {
+      const thief = document.createElement("button");
+      thief.textContent = "Rouba o foco";
+      thief.addEventListener("focus", () => thief.blur());
+      document.querySelector("main")?.append(thief);
     });
     expect(await focusFaults(page)).toEqual([
-      'button "Sem foco visível" não mostra o contorno de foco de 3 px',
+      'button "Rouba o foco" está na ordem de Tab e o teclado não chega nele',
     ]);
   });
 
@@ -278,9 +325,15 @@ test.describe("controle: cada verificação pega a falha", () => {
         400
       );
     });
-    await page.waitForTimeout(600);
+    await expect
+      .poll(
+        async () => (await readMotion(page)).filter((r) => r.overlay).length
+      )
+      .toBe(2);
     const records = await readMotion(page);
-    expect(overlayMovement(records)).toHaveLength(1);
+    const moves = overlayMovement(records);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toContain('div "cresce"');
     expect(runningMotion(records).length).toBeGreaterThan(0);
   });
 
@@ -310,10 +363,11 @@ test.describe("controle: cada verificação pega a falha", () => {
       inside.textContent = "dentro de [data-ui]";
       document.querySelector("main")?.append(inside);
     });
-    await page.waitForTimeout(300);
-    expect(
-      runningMotion(await readMotion(page)).map((record) => record.duration)
-    ).toEqual([2000]);
+    await expect
+      .poll(async () =>
+        runningMotion(await readMotion(page)).map((record) => record.duration)
+      )
+      .toEqual([2000]);
     await context.close();
   });
 });

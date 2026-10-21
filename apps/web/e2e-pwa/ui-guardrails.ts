@@ -14,6 +14,8 @@ import axe from "axe-core";
 
 declare global {
   interface Window {
+    __keyCount?: number;
+    __keys?: WeakMap<Element, number>;
     __motion?: MotionRecord[];
     axe: typeof axe;
   }
@@ -21,12 +23,15 @@ declare global {
 
 export interface MotionRecord {
   duration: number;
+  /** Names the animated element within the page, so two targets with the same animation are two records. */
+  id: number;
   iterations: number;
   moved: boolean;
   name: string;
   overlay: boolean;
   /** The distinct transform, translate, scale and rotate the target went through (the evidence of `moved`). */
   poses: string[];
+  target: string;
 }
 
 // The WCAG 2.2 A and AA rules, the bar of DESIGN.md; best practices stay out (they are advice, not criteria).
@@ -52,6 +57,9 @@ const POINTER_CONTROLS = [
   "[role=option]",
   "[role=combobox]",
 ].join(",");
+
+/** The most stops of Tab one screen may have before the check gives up and says so. */
+const MAX_TAB_STOPS = 150;
 
 // ---- helpers in page -------------------------------------------------------------------------------------
 
@@ -79,6 +87,19 @@ function isShown(element: Element) {
   );
 }
 
+/** In page: a number that names an element for the life of the page (a tooltip or a toast coming in does not shift it). */
+function keyOf(element: Element) {
+  const keys = window.__keys ?? new WeakMap<Element, number>();
+  window.__keys = keys;
+  const known = keys.get(element);
+  if (known !== undefined) {
+    return known;
+  }
+  window.__keyCount = (window.__keyCount ?? 0) + 1;
+  keys.set(element, window.__keyCount);
+  return window.__keyCount;
+}
+
 const HELPERS = [
   labelOf,
   isShown,
@@ -86,6 +107,7 @@ const HELPERS = [
   isInlineLink,
   ownsOverflow,
   insideOwner,
+  keyOf,
 ]
   .map((helper) => helper.toString())
   .join("\n");
@@ -289,7 +311,7 @@ function touchAreaOf(element: Element) {
     area.right = Math.max(area.right, ownerBox.right);
     for (const pseudo of ["::before", "::after"] as const) {
       const style = getComputedStyle(owner, pseudo);
-      if (style.content === "none" || style.position !== "absolute") {
+      if (style.content !== '""' || style.position !== "absolute") {
         continue;
       }
       // `top` and the others are measured from the padding box, inside the border
@@ -317,14 +339,22 @@ function touchAreaOf(element: Element) {
 
 /** In page: a link inside a line of running text, which WCAG 2.5.8 exempts from the size. */
 function isInlineLink(element: Element) {
+  const parent = element.parentElement;
   if (
     element.tagName !== "A" ||
-    getComputedStyle(element).display !== "inline"
+    getComputedStyle(element).display !== "inline" ||
+    !parent ||
+    ["flex", "inline-flex", "grid", "inline-grid"].includes(
+      getComputedStyle(parent).display
+    )
   ) {
     return false;
   }
-  const around = element.parentElement?.textContent ?? "";
-  return around.trim().length > (element.textContent ?? "").trim().length;
+  // words of its own parent beside it: the link sits in a line of text, not in a row of controls
+  return [...parent.childNodes].some(
+    (node) =>
+      node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== ""
+  );
 }
 
 /** In page: a control whose touch area is under `minimum` px on a side. */
@@ -412,6 +442,11 @@ async function describeFocus() {
   await Promise.all(
     document
       .getAnimations()
+      .filter(
+        (animation) =>
+          animation.effect?.getComputedTiming().iterations !==
+          Number.POSITIVE_INFINITY
+      )
       .map((animation) => animation.finished.catch(() => undefined))
   );
   const active = document.activeElement;
@@ -427,10 +462,8 @@ async function describeFocus() {
       style.outlineStyle !== "none" &&
       Number.parseFloat(style.outlineWidth) >= 3 &&
       !transparent(style.outlineColor);
-    const halo = style.boxShadow
-      .replaceAll(",", " ")
-      .split(" ")
-      .includes("3px");
+    // the ring is a shadow with no offset, no blur and a 3 px spread (a soft drop shadow is not a focus)
+    const halo = style.boxShadow.includes("0px 0px 0px 3px");
     return outline || halo;
   };
   // a radio inside a choice card, a field inside an input group: the group draws it
@@ -442,7 +475,7 @@ async function describeFocus() {
   ].filter((element): element is Element => element !== null);
   return {
     drawn: holders.some(draws),
-    key: [...document.querySelectorAll("*")].indexOf(active),
+    key: keyOf(active),
     label: labelOf(active),
   };
 }
@@ -453,11 +486,11 @@ function tabbable(selector: string) {
     .filter(
       (element) =>
         element.tabIndex >= 0 &&
-        !(element as HTMLButtonElement).disabled &&
+        !element.matches(":disabled") &&
         isShown(element)
     )
     .map((element) => ({
-      key: [...document.querySelectorAll("*")].indexOf(element),
+      key: keyOf(element),
       label: labelOf(element),
     }));
 }
@@ -472,17 +505,23 @@ export async function focusFaults(page: Page) {
   });
   const reached = new Set<number>();
   const faults: string[] = [];
-  for (let step = 0; step < 150; step += 1) {
+  let ended = false;
+  for (let step = 0; step < MAX_TAB_STOPS && !ended; step += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the real keyboard moves one stop at a time
     await page.keyboard.press("Tab");
     const stop = await inPage(page, describeFocus);
-    if (!stop || reached.has(stop.key)) {
-      break;
+    ended = !stop || reached.has(stop.key);
+    if (stop && !ended) {
+      reached.add(stop.key);
+      if (!stop.drawn) {
+        faults.push(`${stop.label} não mostra o contorno de foco de 3 px`);
+      }
     }
-    reached.add(stop.key);
-    if (!stop.drawn) {
-      faults.push(`${stop.label} não mostra o contorno de foco de 3 px`);
-    }
+  }
+  if (!ended) {
+    faults.push(
+      `a tela tem mais de ${MAX_TAB_STOPS} paradas de Tab: suba MAX_TAB_STOPS ou divida a tela`
+    );
   }
   for (const { key, label } of await inPage(page, tabbable, POINTER_CONTROLS)) {
     if (!reached.has(key)) {
@@ -504,6 +543,7 @@ export async function focusFaults(page: Page) {
 export function startMotionRecorder() {
   const records: MotionRecord[] = [];
   const seen = new Map<Element, Set<string>>();
+  const ids = new Map<Element, number>();
   window.__motion = records;
   // the identity matrix is "none" under another name: the `enter` keyframes end on it
   const plain = (value: string) => {
@@ -545,11 +585,13 @@ export function startMotionRecorder() {
           ? animation.animationName
           : ((animation as CSSTransition).transitionProperty ?? "animation");
       const duration = Number(timing.duration);
+      const id = ids.get(target) ?? ids.size + 1;
+      ids.set(target, id);
       const known = records.find(
         (record) =>
+          record.id === id &&
           record.name === name &&
-          record.duration === duration &&
-          record.overlay === overlay
+          record.duration === duration
       );
       if (known) {
         known.moved ||= moved;
@@ -557,11 +599,13 @@ export function startMotionRecorder() {
       } else {
         records.push({
           duration,
+          id,
           iterations: timing.iterations ?? 1,
           moved,
           name,
           overlay,
           poses: [...poses],
+          target: `${target.tagName.toLowerCase()} "${(target.textContent ?? "").trim().slice(0, 20)}"`,
         });
       }
     }
@@ -586,6 +630,6 @@ export function overlayMovement(records: MotionRecord[]) {
     .filter((record) => record.overlay && record.moved)
     .map(
       (record) =>
-        `${record.name} (${record.duration} ms) move ou cresce a sobreposição: ${record.poses.join(" → ")}`
+        `${record.target}: ${record.name} (${record.duration} ms) move ou cresce a sobreposição: ${record.poses.join(" → ")}`
     );
 }

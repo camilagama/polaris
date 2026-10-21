@@ -24,19 +24,30 @@ const TOKEN_SHEET = "src/styles/theme.css";
 
 // a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one
 const COMMENT = /\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
-const NOT_OKLCH = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/;
+// `&#8212;` (an entity) and `href="#add-item"` (an anchor) are not colors: a hex needs to stand alone
+const NOT_OKLCH =
+  /(?<![&\w])#[0-9a-fA-F]{3,8}(?![-\w])|\b(?:rgba?|hsla?|hwb|lab|lch|color)\(/;
 // `oklch(from currentColor …)` derives from a token: it is not a literal
 const OKLCH_LITERAL = /\boklch\((?!from\b)/;
-// the alpha mask of the scroll fade is black by definition (`#000` of the original): not a color on screen
+// the alpha mask of the scroll fade (a vendored sheet) is black by definition, the `#000` of the original: not a color on screen
+const MASK_SHEET = "src/styles/shadcn-tailwind.css";
 const MASK = /\boklch\(0 0 0\)/g;
+// every CSS color name, whole word (`--white` and `white-space` are not colors)
 const KEYWORD_COLORS =
-  "white|black|red|green|blue|yellow|orange|purple|pink|gray|grey|silver|maroon|navy|teal|aqua|lime|olive|fuchsia";
+  "aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen";
 const COLOR_KEYWORD = new RegExp(
-  `(?:^|[;{\\s])(?:color|background(?:-color)?|border(?:-[a-z]+)?-color|outline-color|fill|stroke|caret-color|accent-color|text-decoration-color)\\s*:\\s*(?:${KEYWORD_COLORS})\\b`,
+  `(?:^|[;{\\s"'])(?:color|background(?:-color)?|border(?:-[a-z]+)?(?:-color)?|outline(?:-color)?|box-shadow|text-shadow|fill|stroke|caret-color|accent-color|text-decoration(?:-color)?)\\s*[:=]\\s*["']?[^;{}"']*(?<![-\\w])(?:${KEYWORD_COLORS})(?![-\\w])`,
   "m"
 );
-const PALETTE =
-  /(?:^|[\s"'`:])(?:bg|text|border|ring|outline|fill|stroke|from|to|via|divide|shadow|accent|caret|decoration|placeholder)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?(?=[\s"'`]|$)/m;
+const PALETTE_PREFIX =
+  "bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|outline|fill|stroke|from|to|via|divide|shadow|accent|caret|decoration|placeholder|inset-ring|inset-shadow";
+const PALETTE_HUE =
+  "white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\\d{2,3}";
+// `bg-white`, `!bg-white`, `bg-white!`, `hover:bg-white/50`, `bg-white/[0.5]`
+const PALETTE = new RegExp(
+  `(?:^|[\\s"'\`:!])(?:${PALETTE_PREFIX})-(?:${PALETTE_HUE})(?:/(?:\\d+|\\[[^\\]]*\\]))?!?(?=[\\s"'\`]|$)`,
+  "m"
+);
 const SOURCE_FILE = /\.(?:css|tsx?)$/;
 const TEST_FILE = /\.test\.tsx?$/;
 const TOKEN_SPLIT = /[\s"'`]+/;
@@ -44,11 +55,16 @@ const MOVING = /^(?:.*:)?(?:zoom-(?:in|out)|slide-(?:in|out)-from)-/;
 const ENTRY_OR_EXIT_VARIANT =
   /(?:^|:)(?:data-(?:\[(?:open|closed|starting-style|ending-style)\]|open|closed|starting-style|ending-style)|starting|in|out)(?=:)/;
 const MOVES_A_BOX = /(?:^|:)-?(?:translate|scale|rotate)(?:-|$)/;
-const SWIPE = "data-[swipe-direction=";
+// the one slide that stays: the toast leaving in the direction of the gesture that dismissed it
+const TOAST_SWIPE =
+  /^data-\[ending-style\]:data-\[swipe-direction=(?:up|down|left|right)\]:-?translate-[xy]-\d+$/;
 const ANIMATE_UTILITY = /^(?:.*:)?animate-([a-z-]+)$/;
 // the fades the base allows: tw-animate-css's `in` and `out` (with `fade-in-0`, never with zoom or slide), none, and `rise`
 const FADES = new Set(["in", "out", "none", "rise"]);
 const SHIMMER = /(?:^|[\s"'`:])shimmer(?:-[a-z]+)?(?=[\s"'`]|$)/;
+// the sheets that may define animations: the tokens and the vendored shadcn sheet; the others only use the fades
+const ANIMATION_SHEETS = [TOKEN_SHEET, MASK_SHEET];
+const OWN_ANIMATION = /@keyframes\b|\banimation(?:-name)?\s*:/;
 const KEYFRAMES = /@keyframes\s+([\w-]+)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g;
 const DECLARED_PROPERTY = /([a-z-]+)\s*:/g;
 
@@ -61,7 +77,8 @@ export function sourceFaults(path: string, text: string) {
   if (NOT_OKLCH.test(code)) {
     faults.push("cor fora do OKLCH (#hex, rgb(, hsl(…)");
   }
-  if (path !== TOKEN_SHEET && OKLCH_LITERAL.test(code.replace(MASK, ""))) {
+  const withoutMask = path === MASK_SHEET ? code.replace(MASK, "") : code;
+  if (path !== TOKEN_SHEET && OKLCH_LITERAL.test(withoutMask)) {
     faults.push("literal oklch(…) fora do arquivo de tokens");
   }
   if (COLOR_KEYWORD.test(code)) {
@@ -78,7 +95,7 @@ export function sourceFaults(path: string, text: string) {
     } else if (
       ENTRY_OR_EXIT_VARIANT.test(token) &&
       MOVES_A_BOX.test(token) &&
-      !token.includes(SWIPE)
+      !TOAST_SWIPE.test(token)
     ) {
       faults.push(
         `${token}: translate, scale ou rotate numa entrada ou saída (só opacidade; o deslize do gesto do aviso é a exceção)`
@@ -91,6 +108,15 @@ export function sourceFaults(path: string, text: string) {
   }
   if (path.endsWith(".tsx") && SHIMMER.test(code)) {
     faults.push("shimmer anima o fundo, não só a opacidade");
+  }
+  if (
+    path.endsWith(".css") &&
+    !ANIMATION_SHEETS.includes(path) &&
+    OWN_ANIMATION.test(code)
+  ) {
+    faults.push(
+      "animação própria em CSS novo (@keyframes ou animation): use as utilidades de desvanecer"
+    );
   }
   return faults;
 }
@@ -206,15 +232,41 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ],
     ['className="animate-bounce"', "não é um desvanecer"],
     ['className="shimmer"', "shimmer"],
+    ["border: 1px solid red;", "cor por nome"],
+    ["box-shadow: 0 0 0 3px lightgray;", "cor por nome"],
+    ['style={{ color: "white" }}', "cor por nome"],
+    ['<path fill="rebeccapurple" />', "cor por nome"],
+    ['className="bg-white!"', "classe da paleta"],
+    ['className="!bg-white"', "classe da paleta"],
+    ['className="border-t-red-500 p-2"', "classe da paleta"],
+    ['className="hover:bg-white/[0.5]"', "classe da paleta"],
+    ['className="ring-offset-white"', "classe da paleta"],
+    ["color: color(srgb 1 0 0);", "cor fora do OKLCH"],
+    ["background: oklch(0 0 0);", "literal oklch"],
+    [
+      'className="data-[swipe-direction=left]:data-open:scale-95"',
+      "translate, scale ou rotate",
+    ],
   ])("%s", (text, fault) => {
     expect(faultsOf(text).join("\n")).toContain(fault);
+  });
+
+  it.each([
+    "@keyframes pulso { to { opacity: 0.5 } }",
+    ".x { animation: pulso 1s infinite }",
+    ".x { animation-name: pulso }",
+  ])("%s num CSS novo é reprovado", (text) => {
+    expect(faultsOf(text, "src/ui/x.css").join("\n")).toContain(
+      "animação própria"
+    );
+    expect(faultsOf(text, "src/styles/theme.css")).toEqual([]);
   });
 
   it.each([
     ["color: oklch(0.2 0.01 85);", "src/styles/theme.css"],
     [
       "mask-image: linear-gradient(oklch(0 0 0), transparent);",
-      "src/styles/x.css",
+      "src/styles/shadcn-tailwind.css",
     ],
     [
       "background: color-mix(in oklch, var(--mark) 24%, transparent);",
@@ -235,6 +287,11 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
       "src/ui/x.css",
     ],
     ["background: oklch(from currentColor l c h / 20%);", "src/styles/x.css"],
+    ["<p>Pre&#8212;ço</p>", "src/ui/x.tsx"],
+    ['<a href="#add-item">Adicionar</a>', "src/ui/x.tsx"],
+    ["white-space: nowrap; --white: 1; color: var(--white);", "src/ui/x.css"],
+    ['className="bg-white-glove text-red-hot"', "src/ui/x.tsx"],
+    ["@keyframes rise { to { opacity: 1 } }", "src/styles/theme.css"],
   ])("%s passa", (text, path) => {
     expect(faultsOf(text, path)).toEqual([]);
   });
