@@ -1,0 +1,64 @@
+/*
+ * The CSS entry of the app (ADR 0103): the order of the cascade layers comes first, before anything
+ * else, so the old sheets (`@layer legacy`, every other CSS file under src/) win over Tailwind's base
+ * and components but never over its utilities. Then Tailwind (its reset scoped to `[data-ui]`, see
+ * preflight.css), the shadcn variants and animations,
+ * the v5.1 tokens and two things the Base UI components would otherwise inject: the Geist faces and
+ * the rule that hides the native scrollbar (CSPProvider disableStyleElements, ADR 0103 section 5).
+ */
+@layer theme, base, components, legacy, utilities;
+
+/* `tailwindcss` in its three parts, so the preflight can be the scoped copy (preflight.css). */
+@import "tailwindcss/theme.css" layer(theme);
+@import "./preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "tw-animate-css";
+@import "./shadcn-tailwind.css";
+@import "./theme.css";
+
+/* Utilities only for the classes of the new interface: a utility named like an old class (`.hidden`, `.grid`,
+   `.table`) would beat it on an old screen. Each migrated screen adds its folder here. */
+@source "../ui";
+@source "../ui-gallery";
+
+/*
+ * Geist and Geist Mono served by the app (`font-src 'self'`, offline), only the latin subset: the files
+ * of the subset and not the package's CSS, which declares every subset (latin-ext, Cyrillic,
+ * Vietnamese) and would put all of them in the build and in the precache. The unicode-range is the
+ * one of the package's own latin face (5.3.0). Never inlined as `data:` (`assetsInlineLimit`).
+ */
+@font-face {
+  font-display: swap;
+  font-family: "Geist Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/geist/files/geist-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "Geist Mono Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* What Base UI's inline <style> would say (ScrollArea viewport, Select list): it is off, so it lives here. */
+@layer base {
+  .base-ui-disable-scrollbar {
+    scrollbar-width: none;
+  }
+  .base-ui-disable-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

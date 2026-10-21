@@ -1,185 +1,187 @@
-.offline-lab-entry-link {
-  align-self: flex-start;
-  font-weight: 600;
-  color: #1e5c9a;
-}
+@layer legacy {
+  .offline-lab-entry-link {
+    align-self: flex-start;
+    font-weight: 600;
+    color: #1e5c9a;
+  }
 
-.offline-lab-shell {
-  display: grid;
-  gap: 1rem;
-  max-width: 68rem;
-  padding: 1rem;
-  margin: 0 auto;
-}
-
-.offline-lab-header,
-.offline-lab-panel {
-  padding: 1.25rem;
-  background: #fff;
-  border: 1px solid #d7dce2;
-  border-radius: 0.75rem;
-}
-
-.offline-lab-header h1,
-.offline-lab-panel h2,
-.offline-lab-subpanel h3 {
-  margin-top: 0;
-}
-
-.offline-lab-eyebrow {
-  margin: 0 0 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #536273;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.offline-lab-header-actions,
-.offline-lab-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  align-items: center;
-}
-
-.offline-lab-version {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.85rem;
-  font-weight: 700;
-  background: #eef3f8;
-  border-radius: 999px;
-}
-
-.offline-lab-link-button,
-.offline-lab-panel button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.5rem;
-  padding: 0.55rem 0.8rem;
-  font: inherit;
-  font-weight: 650;
-  color: #fff;
-  text-decoration: none;
-  cursor: pointer;
-  background: #1e5c9a;
-  border: 1px solid #174e7d;
-  border-radius: 0.45rem;
-}
-
-.offline-lab-panel button:disabled {
-  cursor: not-allowed;
-  background: #9aa4ae;
-  border-color: #9aa4ae;
-}
-
-.offline-lab-panel .offline-lab-danger {
-  background: #a53232;
-  border-color: #8b2b2b;
-}
-
-.offline-lab-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.6rem;
-  margin: 0 0 1rem;
-}
-
-.offline-lab-status-value {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 3.2rem;
-  padding: 0.65rem;
-  border: 1px solid #e0e5ea;
-  border-radius: 0.5rem;
-}
-
-.offline-lab-status-value dt {
-  font-size: 0.9rem;
-}
-
-.offline-lab-status-value dd {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.offline-lab-status-value .is-available {
-  color: #14633b;
-}
-
-.offline-lab-status-value .is-unavailable {
-  color: #8b2b2b;
-}
-
-.offline-lab-form {
-  display: grid;
-  gap: 0.5rem;
-  max-width: 36rem;
-  margin: 1rem 0;
-}
-
-.offline-lab-form label {
-  font-weight: 650;
-}
-
-.offline-lab-form input {
-  min-height: 2.5rem;
-  padding: 0.5rem 0.65rem;
-  font: inherit;
-  border: 1px solid #98a3ae;
-  border-radius: 0.4rem;
-}
-
-.offline-lab-counts {
-  font-size: 0.95rem;
-}
-
-.offline-lab-list {
-  display: grid;
-  gap: 0.4rem;
-  padding-left: 1.25rem;
-}
-
-.offline-lab-list li {
-  overflow-wrap: anywhere;
-}
-
-.offline-lab-muted {
-  font-size: 0.9rem;
-  color: #56616b;
-}
-
-.offline-lab-subpanel {
-  padding: 1rem 0 0;
-  margin-top: 1rem;
-  border-top: 1px solid #e0e5ea;
-}
-
-.offline-lab-status,
-.offline-lab-error {
-  padding: 0.75rem 1rem;
-  background: #edf6ef;
-  border-radius: 0.5rem;
-}
-
-.offline-lab-error,
-.offline-lab-panel-error {
-  color: #7b2020;
-  background: #fff0ef;
-}
-
-@media (min-width: 48rem) {
   .offline-lab-shell {
-    gap: 1.25rem;
-    padding: 2rem;
+    display: grid;
+    gap: 1rem;
+    max-width: 68rem;
+    padding: 1rem;
+    margin: 0 auto;
   }
 
   .offline-lab-header,
   .offline-lab-panel {
-    padding: 1.5rem;
+    padding: 1.25rem;
+    background: #fff;
+    border: 1px solid #d7dce2;
+    border-radius: 0.75rem;
+  }
+
+  .offline-lab-header h1,
+  .offline-lab-panel h2,
+  .offline-lab-subpanel h3 {
+    margin-top: 0;
+  }
+
+  .offline-lab-eyebrow {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #536273;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .offline-lab-header-actions,
+  .offline-lab-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .offline-lab-version {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    background: #eef3f8;
+    border-radius: 999px;
+  }
+
+  .offline-lab-link-button,
+  .offline-lab-panel button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0.55rem 0.8rem;
+    font: inherit;
+    font-weight: 650;
+    color: #fff;
+    text-decoration: none;
+    cursor: pointer;
+    background: #1e5c9a;
+    border: 1px solid #174e7d;
+    border-radius: 0.45rem;
+  }
+
+  .offline-lab-panel button:disabled {
+    cursor: not-allowed;
+    background: #9aa4ae;
+    border-color: #9aa4ae;
+  }
+
+  .offline-lab-panel .offline-lab-danger {
+    background: #a53232;
+    border-color: #8b2b2b;
+  }
+
+  .offline-lab-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+  }
+
+  .offline-lab-status-value {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 3.2rem;
+    padding: 0.65rem;
+    border: 1px solid #e0e5ea;
+    border-radius: 0.5rem;
+  }
+
+  .offline-lab-status-value dt {
+    font-size: 0.9rem;
+  }
+
+  .offline-lab-status-value dd {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .offline-lab-status-value .is-available {
+    color: #14633b;
+  }
+
+  .offline-lab-status-value .is-unavailable {
+    color: #8b2b2b;
+  }
+
+  .offline-lab-form {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 36rem;
+    margin: 1rem 0;
+  }
+
+  .offline-lab-form label {
+    font-weight: 650;
+  }
+
+  .offline-lab-form input {
+    min-height: 2.5rem;
+    padding: 0.5rem 0.65rem;
+    font: inherit;
+    border: 1px solid #98a3ae;
+    border-radius: 0.4rem;
+  }
+
+  .offline-lab-counts {
+    font-size: 0.95rem;
+  }
+
+  .offline-lab-list {
+    display: grid;
+    gap: 0.4rem;
+    padding-left: 1.25rem;
+  }
+
+  .offline-lab-list li {
+    overflow-wrap: anywhere;
+  }
+
+  .offline-lab-muted {
+    font-size: 0.9rem;
+    color: #56616b;
+  }
+
+  .offline-lab-subpanel {
+    padding: 1rem 0 0;
+    margin-top: 1rem;
+    border-top: 1px solid #e0e5ea;
+  }
+
+  .offline-lab-status,
+  .offline-lab-error {
+    padding: 0.75rem 1rem;
+    background: #edf6ef;
+    border-radius: 0.5rem;
+  }
+
+  .offline-lab-error,
+  .offline-lab-panel-error {
+    color: #7b2020;
+    background: #fff0ef;
+  }
+
+  @media (min-width: 48rem) {
+    .offline-lab-shell {
+      gap: 1.25rem;
+      padding: 2rem;
+    }
+
+    .offline-lab-header,
+    .offline-lab-panel {
+      padding: 1.5rem;
+    }
   }
 }

@@ -1,429 +1,431 @@
-/*
- * The frame of every screen. Mobile first: a disclosure menu whose targets are
- * at least 44 px tall and never scroll sideways; from 1100 px the menu is a
- * single row.
- */
-.app-skip-link {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 10;
-  padding: 0.6rem 0.9rem;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--ui-surface);
-  text-decoration: none;
-  background: var(--ui-accent-strong);
-  border-radius: 0.55rem;
-  transform: translateY(-300%);
-}
-
-.app-skip-link:focus {
-  transform: translateY(0);
-}
-
-.app-header {
-  background: var(--ui-surface);
-  border-bottom: 1px solid var(--ui-line);
-}
-
-.app-header-bar {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 4rem;
-  padding: 0 clamp(1rem, 4vw, 3.5rem);
-}
-
-.app-brand {
-  display: inline-flex;
-  flex: none;
-  gap: 0.7rem;
-  align-items: center;
-  min-height: 2.75rem;
-  font-size: 1.05rem;
-  font-weight: 750;
-  color: var(--ui-ink);
-  letter-spacing: -0.025em;
-  text-decoration: none;
-}
-
-.app-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--ui-surface);
-  background: var(--ui-accent);
-  border-radius: 0.55rem;
-}
-
-.app-menu-toggle {
-  display: inline-flex;
-  flex: none;
-  gap: 0.55rem;
-  align-items: center;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  padding: 0 0.95rem;
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--ui-ink);
-  white-space: nowrap;
-  cursor: pointer;
-  background: var(--ui-surface-muted);
-  border: 1px solid var(--ui-line);
-  border-radius: 0.6rem;
-}
-
-.app-menu-icon,
-.app-menu-icon::before,
-.app-menu-icon::after {
-  display: block;
-  width: 1.1rem;
-  height: 2px;
-  background: currentcolor;
-  border-radius: 2px;
-}
-
-.app-menu-icon {
-  position: relative;
-}
-
-.app-menu-icon::before,
-.app-menu-icon::after {
-  position: absolute;
-  left: 0;
-  content: "";
-}
-
-.app-menu-icon::before {
-  top: -0.36rem;
-}
-
-.app-menu-icon::after {
-  top: 0.36rem;
-}
-
-.app-nav-wrap {
-  display: none;
-  gap: 0.9rem;
-  padding: 0.35rem clamp(1rem, 4vw, 3.5rem) 1rem;
-  border-top: 1px solid var(--ui-line);
-}
-
-.app-nav-wrap.is-open {
-  display: grid;
-}
-
-.app-nav-list {
-  display: grid;
-  gap: 0.2rem;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.app-nav-link {
-  display: flex;
-  align-items: center;
-  min-height: 2.75rem;
-  padding: 0.35rem 0.9rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--ui-muted);
-  text-decoration: none;
-  border-radius: 0.6rem;
-}
-
-.app-nav-link:hover {
-  color: var(--ui-ink);
-  background: var(--ui-surface-muted);
-}
-
-.app-nav-link[aria-current="page"] {
-  color: var(--ui-accent-strong);
-  background: var(--ui-accent-soft);
-  box-shadow: inset 3px 0 0 var(--ui-accent);
-}
-
-.app-org,
-.app-org-single {
-  margin: 0;
-}
-
-.app-org {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.app-org-label {
-  font-size: 0.74rem;
-  font-weight: 800;
-  color: var(--ui-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.app-org select {
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0.5rem 0.7rem;
-  font: inherit;
-  font-size: 0.9rem;
-  color: var(--ui-ink);
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-line);
-  border-radius: 0.55rem;
-}
-
-.app-org-single {
-  display: inline-flex;
-  gap: 0.55rem;
-  align-items: center;
-  min-height: 2.75rem;
-  padding: 0 0.9rem;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--ui-muted);
-}
-
-.app-org-dot {
-  flex: none;
-  width: 0.5rem;
-  height: 0.5rem;
-  background: var(--ui-accent);
-  border-radius: 50%;
-}
-
-.app-org-name {
-  overflow-wrap: anywhere;
-}
-
-.app-status {
-  padding: 2.5rem 1rem;
-  margin: 0;
-  color: var(--ui-muted);
-  text-align: center;
-}
-
-.app-gate,
-.app-not-found {
-  display: grid;
-  gap: 1rem;
-  max-width: 40rem;
-  padding: clamp(1.5rem, 4vw, 2.5rem);
-  margin: 2rem auto;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-line);
-  border-radius: 0.9rem;
-  box-shadow: var(--ui-shadow);
-}
-
-.app-gate h1,
-.app-not-found h1 {
-  margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(1.6rem, 5vw, 2.3rem);
-  font-weight: 500;
-  line-height: 1.1;
-}
-
-.app-gate p,
-.app-not-found p {
-  margin: 0;
-  line-height: 1.6;
-  color: var(--ui-muted);
-}
-
-/* the status line of the expired offline access is empty until the network returns: no gap for it */
-.offline-access-expired [role="status"]:empty {
-  margin-top: -1rem;
-}
-
-.offline-access-expired .secondary-button {
-  justify-self: start;
-}
-
-/* shown for a few seconds when the access comes back, above the page that returns */
-.offline-access-renewed {
-  margin: 0;
-}
-
-.offline-access-renewed:not(:empty) {
-  margin: 0 0 1rem;
-  font-size: 0.9rem;
-  color: var(--ui-muted);
-}
-
-.offline-access-expired:focus-visible {
-  outline: 3px solid var(--ui-ink);
-  outline-offset: 2px;
-}
-
-.app-gate .categories-message {
-  color: var(--ui-danger-strong);
-}
-
-.app-not-found code {
-  overflow-wrap: anywhere;
-  color: var(--ui-ink);
-}
-
-.app-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-.app-actions .primary-button,
-.app-actions .quiet-button {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  text-decoration: none;
-}
-
-/* 360 px: brand, the sync chip and "Menu" have to share one line (about 110 px for the chip) */
-@media (max-width: 400px) {
-  .app-header-bar {
-    gap: 0.5rem;
-    padding-inline: 0.875rem;
+@layer legacy {
+  /*
+   * The frame of every screen. Mobile first: a disclosure menu whose targets are
+   * at least 44 px tall and never scroll sideways; from 1100 px the menu is a
+   * single row.
+   */
+  .app-skip-link {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--ui-surface);
+    text-decoration: none;
+    background: var(--ui-accent-strong);
+    border-radius: 0.55rem;
+    transform: translateY(-300%);
   }
 
-  .app-brand {
-    gap: 0.5rem;
+  .app-skip-link:focus {
+    transform: translateY(0);
   }
 
-  .app-menu-toggle {
-    gap: 0.4rem;
-    padding: 0 0.7rem;
-  }
-}
-
-@media (min-width: 1100px) {
   .app-header {
+    background: var(--ui-surface);
+    border-bottom: 1px solid var(--ui-line);
+  }
+
+  .app-header-bar {
     display: flex;
-    gap: 1.5rem;
+    gap: 0.75rem;
     align-items: center;
     justify-content: space-between;
+    min-height: 4rem;
     padding: 0 clamp(1rem, 4vw, 3.5rem);
   }
 
-  .app-header-bar {
-    min-height: 4.5rem;
-    padding: 0;
+  .app-brand {
+    display: inline-flex;
+    flex: none;
+    gap: 0.7rem;
+    align-items: center;
+    min-height: 2.75rem;
+    font-size: 1.05rem;
+    font-weight: 750;
+    color: var(--ui-ink);
+    letter-spacing: -0.025em;
+    text-decoration: none;
+  }
+
+  .app-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--ui-surface);
+    background: var(--ui-accent);
+    border-radius: 0.55rem;
   }
 
   .app-menu-toggle {
-    display: none;
+    display: inline-flex;
+    flex: none;
+    gap: 0.55rem;
+    align-items: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0 0.95rem;
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--ui-ink);
+    white-space: nowrap;
+    cursor: pointer;
+    background: var(--ui-surface-muted);
+    border: 1px solid var(--ui-line);
+    border-radius: 0.6rem;
   }
 
-  .app-nav-wrap,
+  .app-menu-icon,
+  .app-menu-icon::before,
+  .app-menu-icon::after {
+    display: block;
+    width: 1.1rem;
+    height: 2px;
+    background: currentcolor;
+    border-radius: 2px;
+  }
+
+  .app-menu-icon {
+    position: relative;
+  }
+
+  .app-menu-icon::before,
+  .app-menu-icon::after {
+    position: absolute;
+    left: 0;
+    content: "";
+  }
+
+  .app-menu-icon::before {
+    top: -0.36rem;
+  }
+
+  .app-menu-icon::after {
+    top: 0.36rem;
+  }
+
+  .app-nav-wrap {
+    display: none;
+    gap: 0.9rem;
+    padding: 0.35rem clamp(1rem, 4vw, 3.5rem) 1rem;
+    border-top: 1px solid var(--ui-line);
+  }
+
   .app-nav-wrap.is-open {
-    display: flex;
-    flex: 1;
-    gap: 1rem;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0;
-    border: 0;
+    display: grid;
   }
 
   .app-nav-list {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     gap: 0.2rem;
-    padding: 0.22rem;
-    background: var(--ui-surface-muted);
-    border: 1px solid var(--ui-line);
-    border-radius: 0.7rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
   }
 
   .app-nav-link {
-    min-height: 2.5rem;
-    padding: 0.35rem 0.8rem;
-    font-size: 0.84rem;
-    white-space: nowrap;
-    border-radius: 0.45rem;
+    display: flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--ui-muted);
+    text-decoration: none;
+    border-radius: 0.6rem;
+  }
+
+  .app-nav-link:hover {
+    color: var(--ui-ink);
+    background: var(--ui-surface-muted);
+  }
+
+  .app-nav-link[aria-current="page"] {
+    color: var(--ui-accent-strong);
+    background: var(--ui-accent-soft);
+    box-shadow: inset 3px 0 0 var(--ui-accent);
+  }
+
+  .app-org,
+  .app-org-single {
+    margin: 0;
   }
 
   .app-org {
-    min-width: 12rem;
+    display: grid;
+    gap: 0.3rem;
   }
 
   .app-org-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: var(--ui-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
-}
 
-/* "Sua sessão acabou": the shell's notice with "Entrar de novo" (same weight as the other warnings) */
-.session-ended-notice {
-  display: grid;
-  gap: 0.6rem;
-  justify-items: start;
-  padding: clamp(0.9rem, 2.5vw, 1.25rem);
-  margin: 0 0 1.25rem;
-  color: var(--ui-ink);
-  background: var(--ui-warning-soft);
-  border: 1px solid var(--ui-line);
-  border-left: 0.3rem solid var(--ui-warning);
-  border-radius: 0.85rem;
-}
+  .app-org select {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.7rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--ui-ink);
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: 0.55rem;
+  }
 
-.session-ended-notice:focus-visible {
-  outline: 3px solid var(--ui-ink);
-  outline-offset: 2px;
-}
+  .app-org-single {
+    display: inline-flex;
+    gap: 0.55rem;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 0.9rem;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--ui-muted);
+  }
 
-.session-ended-notice p {
-  margin: 0;
-  line-height: 1.5;
-}
+  .app-org-dot {
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    background: var(--ui-accent);
+    border-radius: 50%;
+  }
 
-.legal-acceptance-notice a.primary-button {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.75rem;
-  text-decoration: none;
-}
+  .app-org-name {
+    overflow-wrap: anywhere;
+  }
 
-.session-ended-notice p.legal-acceptance-notice-hint {
-  margin-top: -0.2rem;
-  font-size: 0.875rem;
-  color: var(--ui-muted);
-}
+  .app-status {
+    padding: 2.5rem 1rem;
+    margin: 0;
+    color: var(--ui-muted);
+    text-align: center;
+  }
 
-.app-footer {
-  padding: 1rem clamp(1rem, 4vw, 2rem) 1.5rem;
-  color: var(--ui-muted);
-  font-size: 0.875rem;
-}
+  .app-gate,
+  .app-not-found {
+    display: grid;
+    gap: 1rem;
+    max-width: 40rem;
+    padding: clamp(1.5rem, 4vw, 2.5rem);
+    margin: 2rem auto;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: 0.9rem;
+    box-shadow: var(--ui-shadow);
+  }
 
-.app-footer ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+  .app-gate h1,
+  .app-not-found h1 {
+    margin: 0;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(1.6rem, 5vw, 2.3rem);
+    font-weight: 500;
+    line-height: 1.1;
+  }
 
-.app-footer a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: inherit;
+  .app-gate p,
+  .app-not-found p {
+    margin: 0;
+    line-height: 1.6;
+    color: var(--ui-muted);
+  }
+
+  /* the status line of the expired offline access is empty until the network returns: no gap for it */
+  .offline-access-expired [role="status"]:empty {
+    margin-top: -1rem;
+  }
+
+  .offline-access-expired .secondary-button {
+    justify-self: start;
+  }
+
+  /* shown for a few seconds when the access comes back, above the page that returns */
+  .offline-access-renewed {
+    margin: 0;
+  }
+
+  .offline-access-renewed:not(:empty) {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    color: var(--ui-muted);
+  }
+
+  .offline-access-expired:focus-visible {
+    outline: 3px solid var(--ui-ink);
+    outline-offset: 2px;
+  }
+
+  .app-gate .categories-message {
+    color: var(--ui-danger-strong);
+  }
+
+  .app-not-found code {
+    overflow-wrap: anywhere;
+    color: var(--ui-ink);
+  }
+
+  .app-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .app-actions .primary-button,
+  .app-actions .quiet-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    text-decoration: none;
+  }
+
+  /* 360 px: brand, the sync chip and "Menu" have to share one line (about 110 px for the chip) */
+  @media (max-width: 400px) {
+    .app-header-bar {
+      gap: 0.5rem;
+      padding-inline: 0.875rem;
+    }
+
+    .app-brand {
+      gap: 0.5rem;
+    }
+
+    .app-menu-toggle {
+      gap: 0.4rem;
+      padding: 0 0.7rem;
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .app-header {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(1rem, 4vw, 3.5rem);
+    }
+
+    .app-header-bar {
+      min-height: 4.5rem;
+      padding: 0;
+    }
+
+    .app-menu-toggle {
+      display: none;
+    }
+
+    .app-nav-wrap,
+    .app-nav-wrap.is-open {
+      display: flex;
+      flex: 1;
+      gap: 1rem;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0;
+      border: 0;
+    }
+
+    .app-nav-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.2rem;
+      padding: 0.22rem;
+      background: var(--ui-surface-muted);
+      border: 1px solid var(--ui-line);
+      border-radius: 0.7rem;
+    }
+
+    .app-nav-link {
+      min-height: 2.5rem;
+      padding: 0.35rem 0.8rem;
+      font-size: 0.84rem;
+      white-space: nowrap;
+      border-radius: 0.45rem;
+    }
+
+    .app-org {
+      min-width: 12rem;
+    }
+
+    .app-org-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+  }
+
+  /* "Sua sessão acabou": the shell's notice with "Entrar de novo" (same weight as the other warnings) */
+  .session-ended-notice {
+    display: grid;
+    gap: 0.6rem;
+    justify-items: start;
+    padding: clamp(0.9rem, 2.5vw, 1.25rem);
+    margin: 0 0 1.25rem;
+    color: var(--ui-ink);
+    background: var(--ui-warning-soft);
+    border: 1px solid var(--ui-line);
+    border-left: 0.3rem solid var(--ui-warning);
+    border-radius: 0.85rem;
+  }
+
+  .session-ended-notice:focus-visible {
+    outline: 3px solid var(--ui-ink);
+    outline-offset: 2px;
+  }
+
+  .session-ended-notice p {
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .legal-acceptance-notice a.primary-button {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    text-decoration: none;
+  }
+
+  .session-ended-notice p.legal-acceptance-notice-hint {
+    margin-top: -0.2rem;
+    font-size: 0.875rem;
+    color: var(--ui-muted);
+  }
+
+  .app-footer {
+    padding: 1rem clamp(1rem, 4vw, 2rem) 1.5rem;
+    color: var(--ui-muted);
+    font-size: 0.875rem;
+  }
+
+  .app-footer ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .app-footer a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: inherit;
+  }
 }

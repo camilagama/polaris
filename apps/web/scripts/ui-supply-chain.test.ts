@@ -31,6 +31,9 @@ const readJson = (path: string) =>
 const webManifest = readJson("apps/web/package.json");
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
+const TEST_FILE = /\.test\.[jt]sx?$/;
+// only comments that open a line (a doc block, a `//` line): a `//` or `/*` inside a string never hides code
+const COMMENT = /^\s*\/\*[\s\S]*?\*\/|^\s*\/\/[^\n]*/gm;
 const WORKFLOW_FILE = /\.ya?ml$/;
 const BUNFIG_RELEASE_AGE = /^minimumReleaseAge\s*=\s*604800\s*$/m;
 const BUNFIG_AGE_KEYS = /^\s*(minimumReleaseAge\w*)\s*=/gm;
@@ -261,9 +264,7 @@ describe("trustedDependencies stays empty (condition 1)", () => {
   });
 });
 
-describe("source of apps/web/src/ui/ (condition 3)", () => {
-  const uiDir = join(webDir, "src/ui");
-
+describe("source of apps/web/src/ui/, src/ui-gallery/ and src/lib/ (condition 3)", () => {
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
@@ -274,20 +275,58 @@ describe("source of apps/web/src/ui/ (condition 3)", () => {
     });
   }
 
-  const present = existsSync(uiDir);
-  it(
-    present
-      ? "no file under src/ui/ breaks a rule"
-      : "passes empty: src/ui/ does not exist yet",
-    () => {
-      const findings = present
-        ? sourceFiles(uiDir).flatMap((file) =>
-            scanUiSource(file, readFileSync(file, "utf8"), uiDir)
+  // The components and their gallery: every rule, the packages included.
+  it.each(["src/ui", "src/ui-gallery"])(
+    "no file under %s/ breaks a rule",
+    (folder) => {
+      const dir = join(webDir, folder);
+      const findings = existsSync(dir)
+        ? sourceFiles(dir).flatMap((file) =>
+            scanUiSource(file, readFileSync(file, "utf8"), dir)
           )
         : [];
       expect(findings).toEqual([]);
     }
   );
+
+  // src/lib/ is shared with the old screens and imports the app's own packages: the rules on markup and style
+  // for all of it (comments and tests aside: a test holds the attacks as data), every rule for what the
+  // interface base put there (`cn` and the theme).
+  const libDir = join(webDir, "src/lib");
+  const LIB_OF_THE_BASE = ["utils.ts", "theme.ts"];
+
+  it("no file under src/lib/ injects markup or style", () => {
+    const findings = sourceFiles(libDir)
+      .filter((file) => !TEST_FILE.test(file))
+      .flatMap((file) =>
+        scanUiSource(
+          file,
+          readFileSync(file, "utf8").replace(COMMENT, ""),
+          libDir
+        ).filter(({ rule }) => !rule.startsWith("import of "))
+      );
+    expect(findings).toEqual([]);
+  });
+
+  it("strips only comments that open a line, never code after a string", () => {
+    expect('const a = "x // " + el.innerHTML;'.replace(COMMENT, "")).toContain(
+      ".innerHTML"
+    );
+    expect(
+      "/**\n * never an injected <style>\n */\nexport {};".replace(COMMENT, "")
+    ).not.toContain("<style");
+  });
+
+  it.each(LIB_OF_THE_BASE)("src/lib/%s breaks no rule", (name) => {
+    const file = join(libDir, name);
+    expect(
+      scanUiSource(
+        file,
+        readFileSync(file, "utf8").replace(COMMENT, ""),
+        libDir
+      )
+    ).toEqual([]);
+  });
 
   const clean = `import * as React from "react";
 import { Dialog } from "@base-ui/react/dialog";

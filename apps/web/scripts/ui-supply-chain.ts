@@ -10,9 +10,14 @@ import { dirname, resolve, sep } from "node:path";
  * The interface runtime and build packages that may enter apps/web (condition 1). A pull request that
  * needs another one changes this list, in plain sight of the review. Exact versions only (no ^ or ~).
  * `lucide-react` stands for "lucide or the icons we already have": there are none today.
+ * The two `@fontsource-variable` packages came with the UI base (ADR 0103, section 2): the Geist files
+ * served by the app itself, so it works offline and under `font-src 'self'`; CSS and woff2 only, no code
+ * and no dependencies, imported by their latin subset file.
  */
 export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
+  "@fontsource-variable/geist",
+  "@fontsource-variable/geist-mono",
   "@tailwindcss/vite",
   "class-variance-authority",
   "clsx",

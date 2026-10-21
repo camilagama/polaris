@@ -1,3 +1,8 @@
+// The CSS entry before any other import: it declares the order of the cascade layers before any other
+// sheet (ADR 0103), and the CSS of a module imported earlier (the app's screens) would come first.
+import "./styles/index.css";
+import { CSPProvider } from "@base-ui/react/csp-provider";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app-shell/app";
 import "./styles.css";
@@ -26,7 +31,13 @@ if (!rootElement) {
   throw new Error("O elemento raiz da aplicação não foi encontrado.");
 }
 
-const root = createRoot(rootElement);
+const reactRoot = createRoot(rootElement);
+// Base UI never renders its <style> elements under the shell's CSP (`style-src 'self'`, ADR 0103):
+// the one rule they carried, hiding the native scrollbar, is in styles/index.css.
+const root = {
+  render: (node: ReactNode) =>
+    reactRoot.render(<CSPProvider disableStyleElements>{node}</CSPProvider>),
+};
 const isOfflinePocEnabled =
   import.meta.env.DEV ||
   import.meta.env.MODE === "offline-poc" ||
@@ -45,8 +56,28 @@ const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
 const isScreensLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-screens-lab";
+// The gallery of the interface primitives (ADR 0103): never in the production build, where no screen uses
+// them yet; the browser checks open it under the shell's CSP.
+const isUiGalleryRoute =
+  (isOfflinePocEnabled || import.meta.env.MODE === "pwa-e2e") &&
+  window.location.pathname === "/ui-galeria";
 
-if (isRuntimeLabRoute) {
+if (isUiGalleryRoute) {
+  const loadUiGallery = async () => {
+    try {
+      const { UiGallery } = await import("./ui-gallery/ui-gallery");
+      root.render(<UiGallery />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir a galeria da interface</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadUiGallery().catch(() => undefined);
+} else if (isRuntimeLabRoute) {
   const loadRuntimeLab = async () => {
     try {
       const { RuntimeLab } = await import("./offline-poc/runtime-lab");

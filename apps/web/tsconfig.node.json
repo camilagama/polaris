@@ -8,6 +8,7 @@
   },
   "include": [
     "vite.config.ts",
+    "vite.ui.ts",
     "vite.offline.config.ts",
     "playwright.offline-poc.config.ts",
     "playwright.e2e-real.config.ts",
