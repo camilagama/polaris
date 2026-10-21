@@ -81,6 +81,20 @@ async function openEveryPrimitive(page: Page) {
   await page.getByRole("button", { name: "Fechar aviso" }).click();
   await expect(page.getByText("Venda registrada")).toBeHidden();
 
+  // the components of the sale: choice card, checkbox and the "R$" field change state under the CSP too
+  const sale = page.getByRole("region", { name: "Componentes da venda" });
+  await sale.getByText("Transferência", { exact: true }).click();
+  await expect(
+    sale.getByRole("radio", { name: "Transferência" })
+  ).toBeChecked();
+  const anticipation = sale.getByRole("checkbox", {
+    name: "Pretendo antecipar este recebimento",
+  });
+  const wasChecked = await anticipation.isChecked();
+  await anticipation.click();
+  await expect(anticipation).toBeChecked({ checked: !wasChecked });
+  await sale.getByRole("textbox", { name: "Preço cobrado" }).fill("49,90");
+
   const viewport = page
     .getByRole("region", { name: "Área de rolagem" })
     .locator("[data-slot=scroll-area-viewport]");

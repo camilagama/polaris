@@ -16,10 +16,13 @@ import {
   type PackageManifest,
   parseBunLock,
   readWorkflow,
+  scanUiFolderFile,
   scanUiSource,
   secretsInInstallOrBuild,
+  testPackagesOutsideDev,
   trustedDependencyEntries,
   UI_ALLOWED_PACKAGES,
+  UI_TEST_PACKAGES,
   unlistedDependencies,
 } from "./ui-supply-chain";
 
@@ -87,15 +90,27 @@ describe("allowlist of interface packages (condition 1)", () => {
   });
 
   it("keeps the lists sorted, free of duplicates and apart from each other", () => {
-    for (const list of [UI_ALLOWED_PACKAGES, BASELINE_PACKAGES]) {
+    const lists: readonly (readonly string[])[] = [
+      UI_ALLOWED_PACKAGES,
+      UI_TEST_PACKAGES,
+      BASELINE_PACKAGES,
+    ];
+    for (const list of lists) {
       expect([...list]).toEqual([...list].sort());
       expect(new Set(list).size).toBe(list.length);
     }
+    const all = lists.flat();
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("keeps the test tools in devDependencies", () => {
+    expect(testPackagesOutsideDev(webManifest)).toEqual([]);
     expect(
-      UI_ALLOWED_PACKAGES.filter((name) =>
-        (BASELINE_PACKAGES as readonly string[]).includes(name)
-      )
-    ).toEqual([]);
+      testPackagesOutsideDev({
+        dependencies: { "axe-core": "4.14.0" },
+        devDependencies: { vite: "^8.3.3" },
+      })
+    ).toEqual(["axe-core in dependencies"]);
   });
 
   it("has no dependency that bypasses the registry", () => {
@@ -275,14 +290,14 @@ describe("source of apps/web/src/ui/, src/ui-gallery/ and src/lib/ (condition 3)
     });
   }
 
-  // The components and their gallery: every rule, the packages included.
+  // The components and their gallery: every rule, the packages included (a component test may import vitest).
   it.each(["src/ui", "src/ui-gallery"])(
     "no file under %s/ breaks a rule",
     (folder) => {
       const dir = join(webDir, folder);
       const findings = existsSync(dir)
         ? sourceFiles(dir).flatMap((file) =>
-            scanUiSource(file, readFileSync(file, "utf8"), dir)
+            scanUiFolderFile(file, readFileSync(file, "utf8"), dir)
           )
         : [];
       expect(findings).toEqual([]);
@@ -306,6 +321,25 @@ describe("source of apps/web/src/ui/, src/ui-gallery/ and src/lib/ (condition 3)
         ).filter(({ rule }) => !rule.startsWith("import of "))
       );
     expect(findings).toEqual([]);
+  });
+
+  it("lets only a test file of src/ui/ import the test runner, and keeps every other rule on it", () => {
+    const vitest = 'import { it } from "vitest";';
+    expect(scanUiFolderFile("/w/src/ui/a.test.tsx", vitest)).toEqual([]);
+    expect(scanUiFolderFile("/w/src/ui/a.tsx", vitest)).toEqual([
+      { file: "/w/src/ui/a.tsx", rule: "import of vitest" },
+    ]);
+    expect(
+      scanUiFolderFile(
+        "/w/src/ui/a.test.tsx",
+        'import "vitest/config"; import "@vitest/expect"; import "axe-core"; el.innerHTML = x;'
+      ).map(({ rule }) => rule)
+    ).toEqual([
+      ".innerHTML",
+      "import of vitest/config",
+      "import of @vitest/expect",
+      "import of axe-core",
+    ]);
   });
 
   it("strips only comments that open a line, never code after a string", () => {

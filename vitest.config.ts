@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { pgWorkerdAliases } from "./scripts/workerd-harness.mjs";
 
@@ -9,7 +10,16 @@ import { pgWorkerdAliases } from "./scripts/workerd-harness.mjs";
 export default defineConfig({
   // Workers harness (T-121a): `pg` must load and connect inside workerd (the alias is in scripts/workerd-harness.mjs).
   // Needed by every Worker that uses `pg`.
-  resolve: { alias: pgWorkerdAliases },
+  // `@/` is the alias of apps/web/src (apps/web/vite.ui.ts and tsconfig.json), used by src/ui; no other package has it.
+  resolve: {
+    alias: [
+      ...pgWorkerdAliases,
+      {
+        find: /^@\//,
+        replacement: fileURLToPath(new URL("./apps/web/src/", import.meta.url)),
+      },
+    ],
+  },
   test: {
     projects: [
       {
