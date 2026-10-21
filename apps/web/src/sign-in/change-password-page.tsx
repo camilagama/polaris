@@ -75,7 +75,8 @@ type Notice =
  */
 function UiBlock({ children }: { children: ReactNode }) {
   return (
-    <div className="grid gap-4" data-ui="">
+    // the gap is the block's own padding, so the background of the new interface runs unbroken from one block to the next
+    <div className="grid gap-4 pb-4 last:pb-0" data-ui="">
       {children}
     </div>
   );
@@ -324,7 +325,7 @@ export function ChangePasswordPage() {
     return <NotFoundPage pathname={window.location.pathname} />;
   }
   return (
-    <div className="grid max-w-[34rem] gap-4">
+    <div className="grid max-w-[34rem]">
       <UiBlock>
         <h1 className="text-title" ref={headingRef} tabIndex={-1}>
           {CHANGE_TITLE}
