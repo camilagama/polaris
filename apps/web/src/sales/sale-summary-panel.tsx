@@ -1,10 +1,11 @@
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
+import { focusLater } from "../lib/focus";
 import {
   type FeeLine,
   type FeePreview,
@@ -41,11 +42,9 @@ export function LeaderRow({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <dt className="min-w-0">{label}</dt>
-      <span
-        aria-hidden="true"
-        className="min-w-4 flex-1 -translate-y-[3px] border-input border-b border-dotted"
-      />
+      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-[3px] after:border-input after:border-b after:border-dotted after:content-['']">
+        {label}
+      </dt>
       <dd
         className={cn(
           "text-right font-medium tabular-nums",
@@ -191,10 +190,11 @@ function FailureNotice({
     return (
       <Alert variant="destructive">
         <TriangleAlertIcon aria-hidden="true" />
-        <AlertDescription className="grid justify-items-start gap-2">
+        <AlertDescription className="grid min-w-0 justify-items-start gap-2">
           <p className="mb-0!">{submission.failure.message}</p>
           {submission.failure.refreshData ? (
             <Button
+              className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
               onClick={onRefresh}
               size="sm"
               type="button"
@@ -213,7 +213,7 @@ function FailureNotice({
   return (
     <Alert variant="destructive">
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertDescription className="grid justify-items-start gap-2 [&_p]:mb-0!">
+      <AlertDescription className="grid min-w-0 justify-items-start gap-2 [&_p]:mb-0!">
         <p>{submission.failure.message}</p>
         {submission.confirmingDiscard ? (
           <>
@@ -222,8 +222,9 @@ function FailureNotice({
               descartá-la e digitar a venda de novo, ela pode ficar duplicada.
               Descarte só se tiver verificado que ela não foi registrada.
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex min-w-0 flex-wrap gap-2">
               <Button
+                className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
                 onClick={onDiscardConfirm}
                 size="sm"
                 type="button"
@@ -232,6 +233,7 @@ function FailureNotice({
                 Sim, descartar e começar outra
               </Button>
               <Button
+                className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
                 onClick={onDiscardCancel}
                 size="sm"
                 type="button"
@@ -251,6 +253,7 @@ function FailureNotice({
                   a reconhece quando o aparelho enviar e nada é duplicado.
                 </p>
                 <Button
+                  className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
                   onClick={onKeepOnDevice}
                   size="sm"
                   type="button"
@@ -261,6 +264,7 @@ function FailureNotice({
               </>
             ) : null}
             <Button
+              className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
               onClick={onDiscardRequest}
               size="sm"
               type="button"
@@ -310,6 +314,24 @@ export function SummaryPanel({
   summary,
 }: SummaryPanelProps) {
   const errorCount = Object.keys(errors).length;
+  const failureRef = useRef<HTMLDivElement>(null);
+  const failed = submission.phase === "failed" || submission.phase === "locked";
+  useEffect(() => {
+    // Below 900 px the notice sits far above the bar that was tapped: bring it to the person, unless something
+    // else took the focus meanwhile (the session notice of a 401, a field).
+    if (!failed) {
+      return;
+    }
+    focusLater(() => {
+      const active = document.activeElement;
+      if (
+        active === document.body ||
+        active?.getAttribute("type") === "submit"
+      ) {
+        failureRef.current?.focus();
+      }
+    });
+  }, [failed]);
   const rows = summary?.rows.filter((row) => row.tone !== "total") ?? [];
   const total = summary?.rows.find((row) => row.tone === "total");
   return (
@@ -323,7 +345,7 @@ export function SummaryPanel({
             Resumo
           </h2>
           {summary ? (
-            <dl aria-live="polite" className="grid gap-2">
+            <dl className="grid gap-2">
               {rows.map((row) => (
                 <LeaderRow
                   key={row.key}
@@ -348,10 +370,13 @@ export function SummaryPanel({
               value={evaluation.dateText}
             />
             <DetailRow label="Pagamento" value={evaluation.methodText} />
-            <DetailRow
-              label="Perfil de pagamento"
-              value={evaluation.profileText}
-            />
+            {/* with the preview, the profile is its first line */}
+            {evaluation.feePreview ? null : (
+              <DetailRow
+                label="Perfil de pagamento"
+                value={evaluation.profileText}
+              />
+            )}
           </dl>
           <FeePreviewDetails preview={evaluation.feePreview} />
         </CardContent>
@@ -359,7 +384,7 @@ export function SummaryPanel({
           <>
             <Perforation />
             <CardContent className="py-(--card-spacing)">
-              <dl aria-live="polite">
+              <dl aria-atomic="true" aria-live="polite">
                 <div className="flex items-baseline justify-between gap-3">
                   <dt className="font-medium text-muted-foreground">
                     {total.label}
@@ -385,14 +410,20 @@ export function SummaryPanel({
               </AlertDescription>
             </Alert>
           ) : null}
-          <FailureNotice
-            onDiscardCancel={onDiscardCancel}
-            onDiscardConfirm={onDiscardConfirm}
-            onDiscardRequest={onDiscardRequest}
-            onKeepOnDevice={onKeepOnDevice}
-            onRefresh={onRefresh}
-            submission={submission}
-          />
+          <div
+            className="grid rounded-lg outline-none empty:hidden focus-visible:ring-[3px] focus-visible:ring-ring/30"
+            ref={failureRef}
+            tabIndex={-1}
+          >
+            <FailureNotice
+              onDiscardCancel={onDiscardCancel}
+              onDiscardConfirm={onDiscardConfirm}
+              onDiscardRequest={onDiscardRequest}
+              onKeepOnDevice={onKeepOnDevice}
+              onRefresh={onRefresh}
+              submission={submission}
+            />
+          </div>
           {/* below 900 px the button lives in the bar fixed at the bottom (SubmitBar) */}
           <Button
             aria-busy={isSubmitting(submission) || undefined}
@@ -425,7 +456,7 @@ interface SubmitBarProps {
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
     <div className="sticky bottom-0 z-10 -mx-4 flex items-center justify-between gap-3 border-border border-t bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden">
-      <div className="grid min-w-0">
+      <div className="grid min-w-0 shrink-0">
         <span className="text-muted-foreground text-xs">Total devido</span>
         {summary ? (
           <Money
@@ -438,6 +469,7 @@ export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
       </div>
       <Button
         aria-busy={isSubmitting(submission) || undefined}
+        className="h-auto min-h-ctl-lg min-w-0 shrink whitespace-normal py-1.5"
         disabled={isSubmitting(submission)}
         size="lg"
         type="submit"

@@ -202,3 +202,81 @@ test("C-1: o campo da quantidade tem 64 px e deixa 48 px ou mais livres entre as
     item.getByRole("button", { name: "Menos uma unidade" })
   ).toBeDisabled();
 });
+
+async function chooseNoProfile(page: Page) {
+  await page
+    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    .click();
+  await page
+    .getByRole("option", { exact: true, name: "Sem perfil de pagamento" })
+    .click();
+}
+
+/**
+ * The sale screen never goes past the window sideways: no card, alert, button or the bar at the bottom ends
+ * beyond its right edge (the page itself may hide the overflow, so the boxes are measured, not scrollWidth).
+ */
+async function expectNoSidewaysScroll(page: Page) {
+  const found = await page.evaluate(() => {
+    const root = document
+      .querySelector("[data-sale-form]")
+      ?.closest("[data-ui]");
+    const limit = window.innerWidth + 0.5;
+    return [...(root?.querySelectorAll("*") ?? [])]
+      .map((element) => ({
+        right: element.getBoundingClientRect().right,
+        text: (element.textContent ?? "").trim().slice(0, 40),
+      }))
+      .filter((box) => box.right > limit);
+  });
+  expect(found).toEqual([]);
+}
+
+test("a 320 px nada transborda: venda guardada no aparelho, venda travada e falha em foco", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 320 });
+  // the server reads answer; the sale itself never gets an answer
+  await page.route("**/rpc/sale/confirm", (route) =>
+    route.abort("connectionreset")
+  );
+  await openSaleLab(page, "claro");
+
+  // without a network: the bar carries "Guardar venda neste aparelho"
+  await page.getByLabel("Rede disponível").uncheck();
+  const item = page.getByRole("group", { exact: true, name: "Item 1" });
+  await item.getByLabel("Produto ou variante").fill("camiseta azul");
+  await item.getByRole("button", { name: SHIRT_OPTION }).click();
+  const methods = page.getByRole("radiogroup", { name: "Método de pagamento" });
+  await item.getByLabel("Quantidade").fill("1");
+  await methods.getByRole("radio", { name: "Pix" }).check();
+  await chooseNoProfile(page);
+  await expectNoSidewaysScroll(page);
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  await expectNoSidewaysScroll(page);
+
+  // with the network back the sale goes to the server, which never answers: locked
+  await pickShirt(page);
+  await page
+    .getByRole("group", { exact: true, name: "Item 1" })
+    .getByLabel("Quantidade")
+    .fill("1");
+  await methods.getByRole("radio", { name: "Pix" }).check();
+  await chooseNoProfile(page);
+  await page.getByRole("button", { name: "Confirmar venda" }).click();
+  const keep = page.getByRole("button", {
+    name: "Guardar esta venda neste aparelho",
+  });
+  await expect(keep).toBeVisible();
+  // below 900 px the notice is far above the bar that was tapped: the focus goes to it
+  await expect(page.getByRole("alert").filter({ has: keep })).toBeVisible();
+  await expect(page.locator(":focus").filter({ has: keep })).toHaveCount(1);
+  await expectNoSidewaysScroll(page);
+});

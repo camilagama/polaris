@@ -104,6 +104,7 @@ function CustomerDisclosure({
       <Button
         aria-controls="sale-customer-region"
         aria-expanded={open}
+        className="h-auto min-h-ctl-md max-w-full whitespace-normal py-1.5 text-left"
         onClick={handleToggle}
         type="button"
         variant="outline"
@@ -146,14 +147,15 @@ export function ConfirmedSalePanel({
     >
       <Card>
         <CardHeader>
-          <h2
-            className="flex items-center gap-2 text-section"
-            id="sale-confirmed-title"
-            role="status"
-          >
-            <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
-            {sale.headline}
-          </h2>
+          <div role="status">
+            <h2
+              className="flex items-center gap-2 text-section"
+              id="sale-confirmed-title"
+            >
+              <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+              {sale.headline}
+            </h2>
+          </div>
         </CardHeader>
         <ConfirmedReceipt sale={sale} />
         <Separator />

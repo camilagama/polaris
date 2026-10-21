@@ -48,9 +48,11 @@ export function QueuedSalePanel({
     >
       <Card>
         <CardHeader>
-          <h2 className="text-section" id="sale-queued-title" role="status">
-            Venda guardada neste aparelho
-          </h2>
+          <div role="status">
+            <h2 className="text-section" id="sale-queued-title">
+              Venda guardada neste aparelho
+            </h2>
+          </div>
         </CardHeader>
         <CardContent className="grid justify-items-start gap-3">
           <p>
