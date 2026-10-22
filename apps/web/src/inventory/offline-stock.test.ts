@@ -345,6 +345,8 @@ describe("the outcome shown to the person", () => {
         "Estoque insuficiente neste aparelho"
       );
       expect(failed.submission.failure.unknownOutcome).toBe(false);
+      // the message sits on the quantity field, not in the alert at the foot
+      expect(failed.submission.failure.field).toBe("quantity");
     }
     const other = stockQueueFailed(state, new Error("lease expired"));
     if (other.submission.phase === "failed") {
