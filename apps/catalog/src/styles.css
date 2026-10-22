@@ -1,147 +1,178 @@
 /*
- * The public catalog shares the ERP's colors and type (DESIGN.md) but is its own
- * app, so the tokens are repeated here instead of imported across deployments.
+ * Public catalog (apps/catalog), v5.1 direction, in plain CSS.
+ * No Tailwind, no Base UI, no external font or stylesheet (ADR 0103, security condition 7).
+ * OKLCH only. Light by default, dark by the system setting (prefers-color-scheme) and nothing else.
+ *
+ * The font is the latin subset of Geist, vendored in ./fonts (the Vite build serves it from /assets):
+ * @fontsource-variable/geist@5.3.0, files/geist-latin-wght-normal.woff2,
+ * SHA-256 19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1; license (OFL-1.1) in ./fonts/LICENSE.
  */
+
+@font-face { font-family: "Geist"; src: url("./fonts/geist-latin-wght.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+
 :root {
-  --canvas: #f4f2eb;
-  --surface: #fffefa;
-  --ink: #18221d;
-  --muted: #607067;
-  --line: #d9dfd8;
-  --accent: #17654d;
-  --accent-soft: #e5f0e9;
+  --background: oklch(0.985 0.004 85);
+  --foreground: oklch(0.200 0.005 85);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.962 0.005 85);
+  --muted-foreground: oklch(0.430 0.005 85);
+  --accent: oklch(0.945 0.006 85);
+  --border: oklch(0.915 0.005 85);
+  --input: oklch(0.640 0.005 85);
+  --ring: oklch(0.585 0.115 165);
+  --mark: oklch(0.600 0.125 165);
+  --card-ring: oklch(0.200 0.005 85 / 0.06);
+  --card-glow: oklch(1 0 0 / 0);
+  --shadow-xs: 0 1px 2px 0 oklch(0.28 0.012 85 / 0.05);
+  --radius-md: 0.55rem;  /* controle */
+  --radius-lg: 0.65rem;  /* bloco */
+  --radius-xl: 0.875rem; /* painel */
+  --gutter: 1rem;
+  --h-ctl: 2.25rem; /* 36 px com toque; 32 no mouse (abaixo) */
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --canvas: #111915;
-    --surface: #1b2520;
-    --ink: #e8f0eb;
-    --muted: #a0b0a6;
-    --line: #35453c;
-    --accent: #7fc7a5;
-    --accent-soft: #243d31;
+    --background: oklch(0.200 0.0035 85);
+    --foreground: oklch(0.945 0.005 85);
+    --card: oklch(0.235 0.0035 85);
+    --muted: oklch(0.300 0.0035 85);
+    --muted-foreground: oklch(0.790 0.004 85);
+    --accent: oklch(0.330 0.0035 85);
+    --border: oklch(0.320 0.0035 85);
+    --input: oklch(0.550 0.0035 85);
+    --ring: oklch(0.640 0.134 165);
+    --mark: oklch(0.740 0.14 165);
+    --card-ring: oklch(0.945 0.005 85 / 0.06);
+    --card-glow: oklch(1 0 0 / 0.04);
+    --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.12);
     color-scheme: dark;
   }
 }
-
-* {
-  box-sizing: border-box;
+@media (min-width: 760px) {
+  :root { --gutter: 1.5rem; }
+}
+@media (pointer: fine) and (min-width: 760px) {
+  :root { --h-ctl: 2rem; }
 }
 
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: var(--canvas);
-  color: var(--ink);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
 }
+img { display: block; max-width: 100%; height: auto; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; border-radius: 0.375rem; }
 
-a {
-  color: var(--accent);
+/* Página */
+.page { margin: 0 auto; max-width: 64rem; padding: 1rem var(--gutter) 3rem; }
+@media (min-width: 760px) { .page { padding-top: 2rem; } }
+
+/* Topo da loja */
+.store-header { display: grid; gap: 0.5rem; margin-bottom: 1.25rem; }
+.store-header h1, .page > h1, .product > h1 {
+  margin: 0;
+  font-size: 1.375rem; line-height: 1.75rem; font-weight: 600; letter-spacing: -0.03em; text-wrap: balance;
 }
+@media (min-width: 760px) { .store-header h1, .page > h1, .product > h1 { font-size: 1.5rem; line-height: 2rem; } }
+.store-header p { margin: 0; max-width: 60ch; color: var(--muted-foreground); font-size: 0.8125rem; line-height: 1.125rem; }
+.contacts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.25rem; }
 
-.page {
-  margin: 0 auto;
-  max-width: 64rem;
-  padding: 1.5rem 1rem 3rem;
+/* Botão de contorno (links de contato, "Ver mais", "Voltar") — o mesmo botão outline da v5.1 */
+.btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem;
+  min-height: var(--h-ctl); padding: 0 0.75rem;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--card); color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+  font: inherit; font-weight: 500; text-decoration: none; white-space: nowrap;
+  transition: background-color 140ms, box-shadow 140ms, transform 140ms;
 }
+.btn:hover { background: var(--accent); }
+.btn:active { transform: scale(0.98); }
+.btn::before { content: ""; position: absolute; inset: 50% auto auto 50%; translate: -50% -50%; width: max(100%, 48px); height: max(100%, 48px); }
+.btn svg { width: 1rem; height: 1rem; flex: none; }
+.btn-sm { min-height: calc(var(--h-ctl) - 0.25rem); padding: 0 0.625rem; font-size: 0.8125rem; }
 
-.store-header h1,
-.page > h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.75rem;
-}
-
-.contacts {
-  display: flex;
-  gap: 1rem;
-}
-
+/* Grade de produtos */
 .grid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  list-style: none;
-  margin: 1.5rem 0 0;
-  padding: 0;
+  display: grid; gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none; margin: 0; padding: 0;
 }
+@media (min-width: 560px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 760px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; } }
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  color: inherit;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-height: 7rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
   padding: 0.75rem;
-  text-decoration: none;
+  background: var(--card); color: inherit; text-decoration: none;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 0 0 1px var(--card-ring), inset 0 1px 0 var(--card-glow), var(--shadow-xs);
+  transition: background-color 140ms, transform 140ms;
 }
+.card:hover { background: color-mix(in oklab, var(--card), var(--accent) 50%); }
+.card:active { transform: scale(0.98); }
+.card-image, .card-image-empty {
+  aspect-ratio: 1; width: 100%; margin-bottom: 0.5rem;
+  border-radius: var(--radius-lg); background: var(--muted); object-fit: cover;
+}
+.card-image-empty { display: grid; place-items: center; color: var(--muted-foreground); }
+.card-image-empty svg { width: 1.5rem; height: 1.5rem; }
+.card-name { font-weight: 500; text-wrap: pretty; }
+.card-price { color: var(--muted-foreground); font-size: 0.8125rem; line-height: 1.125rem; font-variant-numeric: tabular-nums; }
+.card-price strong { color: var(--foreground); font-weight: 600; }
 
-.card:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+.more { display: flex; justify-content: center; margin-top: 1.25rem; }
+.empty { padding: 2rem 1rem; text-align: center; color: var(--muted-foreground); background: var(--card); border-radius: var(--radius-xl); box-shadow: 0 0 0 1px var(--card-ring), var(--shadow-xs); }
 
-.card-image {
-  aspect-ratio: 1;
-  background: var(--accent-soft);
-  border-radius: 0.375rem;
-  display: block;
-  height: auto;
-  object-fit: cover;
-  width: 100%;
-}
-
-.gallery {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  margin-bottom: 1rem;
-}
-
-.gallery img {
-  background: var(--accent-soft);
-  border-radius: 0.5rem;
-  height: auto;
-  max-width: 100%;
-}
-
-.card-name {
-  font-weight: 600;
-}
-
-.card-price {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.more {
-  margin-top: 1.5rem;
-}
-
-.crumbs {
-  margin-bottom: 1rem;
-}
+/* Produto */
+.crumbs { margin-bottom: 1rem; }
+.product { display: grid; gap: 0.75rem; }
+/* Fotos: no celular, uma faixa que rola de lado (a primeira foto já mostra o nome e o preço logo abaixo); de 560 px em diante, grade. */
+.gallery { display: flex; gap: 0.75rem; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); scrollbar-width: none; }
+.gallery > * { flex: 0 0 76%; scroll-snap-align: start; }
+.gallery img, .gallery .ph { aspect-ratio: 1; width: 100%; border-radius: var(--radius-lg); background: var(--muted); object-fit: cover; }
+@media (min-width: 560px) { .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; padding: 0; overflow: visible; } .gallery > * { flex: none; } }
+@media (min-width: 760px) { .gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.product > p { margin: 0; max-width: 60ch; color: var(--muted-foreground); }
 
 .variants {
-  list-style: none;
-  margin: 1rem 0 0;
-  padding: 0;
+  list-style: none; margin: 0.5rem 0 0; padding: 0;
+  background: var(--card); border-radius: var(--radius-xl);
+  box-shadow: 0 0 0 1px var(--card-ring), inset 0 1px 0 var(--card-glow), var(--shadow-xs);
 }
-
 .variants li {
-  align-items: center;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  padding: 0.5rem 0;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem;
+  min-height: 2.75rem; padding: 0.625rem 0.75rem;
+  border-top: 1px solid var(--border);
 }
+.variants li:first-child { border-top: 0; }
+.variants .price { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.variants .price small { margin-right: 0.25rem; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 500; }
+.variants .unknown { color: var(--muted-foreground); font-size: 0.8125rem; font-style: italic; }
 
-.empty {
-  color: var(--muted);
-}
+/* Rodapé discreto: quem faz o catálogo. O link para o site do Polaris existe só com POLARIS_SITE_URL válida. */
+.foot { margin-top: 2.5rem; display: flex; align-items: center; gap: 0.375rem; color: var(--muted-foreground); font-size: 0.75rem; }
+.foot .dot { width: 0.375rem; height: 0.375rem; flex: none; border-radius: 999px; background: var(--mark); }
+.foot a { position: relative; color: var(--foreground); text-underline-offset: 0.2em; }
+.foot a::before { content: ""; position: absolute; inset: 50% auto auto 50%; translate: -50% -50%; width: max(100%, 44px); height: 44px; }
+.notice + .foot { justify-content: center; }
+
+/* Raiz e "não encontrada": um cartão central, como a tela de entrar */
+.notice { max-width: 24rem; margin: 10vh auto 0; padding: 1rem; display: grid; gap: 0.5rem; background: var(--card); border-radius: var(--radius-xl); box-shadow: 0 0 0 1px var(--card-ring), var(--shadow-xs); }
+.notice h1 { margin: 0; font-size: 1.0625rem; line-height: 1.5rem; font-weight: 600; letter-spacing: -0.011em; }
+.notice p { margin: 0; color: var(--muted-foreground); font-size: 0.8125rem; line-height: 1.125rem; }
+
+@media (prefers-reduced-motion: reduce) { .btn, .card { transition: none; } .btn:active, .card:active { transform: none; } }

@@ -55,6 +55,7 @@ const SKIPPED_DIRECTORIES = new Set([
   ".wrangler",
   "dist",
   "dist-bare",
+  "dist-fixture",
   "node_modules",
 ]);
 const TEXT_FILE = /\.(c|m)?(j|t)sx?$|\.jsonc?$|\.ya?ml$|\.toml$|\.sh$|\.md$/;
@@ -266,8 +267,8 @@ describe("the Workers test fixtures stay in the test configuration", () => {
 
   describe("the deployable artifacts and the app directories", () => {
     for (const app of ["web", "catalog"]) {
-      // `dist-bare` is the catalog's Worker of the browser tests, built only by its e2e run
-      const built = ["dist", "dist-bare"]
+      // `dist-bare` and `dist-fixture` are the catalog's Workers of the browser tests, built only by its e2e run
+      const built = ["dist", "dist-bare", "dist-fixture"]
         .map((name) => join(root, "apps", app, name))
         .filter((directory) => existsSync(directory))
         .flatMap((directory) =>

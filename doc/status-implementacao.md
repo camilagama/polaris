@@ -2011,3 +2011,15 @@ Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisado
 | Posse pelo `device.check` | Em revisão | O `check` de uma sessão recente grava `register` só enquanto ela não tem aparelho próprio; um vínculo `use` nunca é promovido. Gate `device-sessions` (só no CI). |
 | Nome padrão | Em revisão | O `device.register` sem nome recebe "{navegador} no {sistema}" de uma tabela fechada (Client Hints de baixa entropia, depois o User-Agent; só os primeiros 512 caracteres; nunca o cabeçalho inteiro). Política de privacidade v1 ajustada no rascunho, sem versão nova. |
 | Duplicados que já existem | Fora do código | Sem script: o QA remove pela tela de Aparelhos no staging. Na produção não há dado. |
+
+### Catálogo público na v5.1: CSS puro, WhatsApp no produto, preço sem valor e rodapé Polaris (lote 5; sem migration)
+
+| Subetapa | Status | Evidência / dependência |
+| --- | --- | --- |
+| CSS e fonte | Em revisão | `apps/catalog/src/styles.css` na direção v5.1 (só OKLCH, sem `@import`, sem `:root.dark`, escuro só por `prefers-color-scheme`); Geist latin em `apps/catalog/src/fonts/` com a licença OFL-1.1, servida pelo Vite em `/assets` (nunca `data:`). Sem Tailwind, Base UI nem `lucide-react` (ADR 0103, condição 7); a CSP pública não mudou. |
+| Páginas | Em revisão | `src/views.tsx` (loja, produto, raiz, não encontrada e erro) com ícones SVG escritos à mão; loja vazia, produto com e sem foto, uma e várias fotos. |
+| A1 WhatsApp no produto | Em revisão | `whatsappLink` valida `^[0-9]{10,15}$`; o texto leva só nome e endereço da página, codificado; `target="_blank"` e `rel="noopener noreferrer"` (também nos contatos da loja). |
+| A2 preço sem valor | Em revisão | "Preço sob consulta" ou "Preço não informado", sem cor de aviso; nunca "R$ 0,00" nem vazio. |
+| A3 rodapé | Em revisão | `POLARIS_SITE_URL` (vazia nos três ambientes do `wrangler.jsonc`); só `https` sem credencial nem fragmento vira link (`rel="noopener noreferrer"`, `referrerpolicy="no-referrer"`). |
+| Testes | Em revisão | Vitest: `views.test.tsx`, `format.test.ts`, `polaris-site.test.ts`, `source-guard.test.ts` (com casos de controle). Navegador: `e2e/csp.e2e.ts` e `e2e/catalog-pages.e2e.ts` sobre o build `fixture-data` (Worker real sobre lojas de fixture, sem PostgreSQL). **Limite:** `scroll-snap` no Safari do iPhone e foto real com `object-fit: cover` (AC-7) ficam para o BrowserStack. |
+

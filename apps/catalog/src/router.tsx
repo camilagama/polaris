@@ -3,6 +3,7 @@ import { createIsomorphicFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { routeTree } from "./routeTree.gen";
 import { NONCE_HEADER } from "./server/security";
+import { NotFoundView, UnavailableView, useFooterHref } from "./views";
 
 // The nonce the server entry made for this request (ADR 0090); the router puts it on the inline scripts it
 // renders. The browser reads it back from the page's meta tag, so the client has nothing to pass. A build
@@ -30,25 +31,12 @@ export function getRouter() {
   });
 }
 
-// The visitor never sees the error itself: it may name our infrastructure.
 function Unavailable() {
-  return (
-    <main className="page">
-      <h1>Catálogo indisponível</h1>
-      <p>
-        Não foi possível carregar esta página agora. Tente de novo em instantes.
-      </p>
-    </main>
-  );
+  return <UnavailableView footerHref={useFooterHref()} />;
 }
 
 function NotFound() {
-  return (
-    <main className="page">
-      <h1>Página não encontrada</h1>
-      <p>Este catálogo ou produto não está disponível.</p>
-    </main>
-  );
+  return <NotFoundView footerHref={useFooterHref()} />;
 }
 
 declare module "@tanstack/react-router" {

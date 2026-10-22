@@ -1,0 +1,198 @@
+/// <reference lib="dom" />
+import { expect, type Page, test } from "@playwright/test";
+import {
+  PRODUCT_WITH_ONE_PHOTO,
+  PRODUCT_WITH_PHOTOS,
+  PRODUCT_WITHOUT_PHOTO,
+} from "./fixtures/public-catalog-reader";
+import { servePhotos } from "./photos";
+
+/**
+ * The pages of the public catalog as a visitor uses them (v5.1), on the Worker built over fixture stores:
+ * no sideways scroll at 360 and 1280 px, a visible focus, the keyboard, the WhatsApp button, the text of a
+ * variant without a price and the footer. The CSP side of the same pages is in csp.e2e.ts.
+ */
+const FIXTURE = "http://127.0.0.1:5176";
+const WA_ME = /wa\.me/;
+const CARD = /card/;
+const PRICE_IN_TEXT = /49,90|49\.90|R\$/;
+const STORE = `${FIXTURE}/loja-horizonte`;
+const PRODUCT = `${STORE}/p/${PRODUCT_WITH_PHOTOS}`;
+const SIZES = [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+] as const;
+const PAGES = [
+  ["a loja", STORE],
+  ["a loja sem contato", `${FIXTURE}/sem-contato`],
+  ["a loja vazia", `${FIXTURE}/vazia`],
+  ["o produto com fotos", PRODUCT],
+  [
+    "o produto com uma foto e nome longo",
+    `${STORE}/p/${PRODUCT_WITH_ONE_PHOTO}`,
+  ],
+  ["o produto sem foto", `${STORE}/p/${PRODUCT_WITHOUT_PHOTO}`],
+  ["a raiz", `${FIXTURE}/`],
+  ["a página não encontrada", `${FIXTURE}/nao-existe`],
+] as const;
+
+async function open(page: Page, url: string) {
+  await servePhotos(page);
+  await page.goto(url);
+  await page.waitForFunction(() => !("$_TSR" in self));
+  await expect(page.locator("main.page h1")).toBeVisible();
+}
+
+/** The link the pointer would hit at a point `offset` px above the top edge of `locator`. */
+async function hitsLinkAbove(page: Page, selector: string, offset: number) {
+  return await page.evaluate(
+    ({ offset: distance, selector: query }) => {
+      const element = document.querySelector(query);
+      if (!element) {
+        return false;
+      }
+      const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        box.left + box.width / 2,
+        box.top - distance
+      );
+      return hit === element;
+    },
+    { offset, selector }
+  );
+}
+
+for (const size of SIZES) {
+  test.describe(`a ${size.width} px`, () => {
+    test.use({ viewport: size });
+
+    for (const [name, url] of PAGES) {
+      test(`${name} não rola de lado e mostra o rodapé do Polaris`, async ({
+        page,
+      }) => {
+        await open(page, url);
+        const overflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+        await expect(page.locator("footer.foot")).toContainText(
+          "Catálogo feito com Polaris"
+        );
+        const link = page.locator("footer.foot a");
+        await expect(link).toHaveAttribute("href", "https://polaris.example/");
+        await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+        await expect(link).toHaveAttribute("referrerpolicy", "no-referrer");
+      });
+    }
+
+    test("o foco aparece e o teclado percorre a loja até o produto", async ({
+      page,
+    }) => {
+      await open(page, STORE);
+      await page.keyboard.press("Tab");
+      const focused = page.locator(":focus");
+      await expect(focused).toHaveAttribute("href", WA_ME);
+      const outline = await focused.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          style: style.outlineStyle,
+          width: Number.parseFloat(style.outlineWidth),
+        };
+      });
+      expect(outline.style).not.toBe("none");
+      expect(outline.width).toBeGreaterThanOrEqual(3);
+      await page.keyboard.press("Tab"); // Instagram
+      await page.keyboard.press("Tab"); // the first card
+      await expect(page.locator(":focus")).toHaveClass(CARD);
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(new RegExp(`/p/${PRODUCT_WITH_PHOTOS}$`));
+      await expect(page.locator("h1")).toHaveText("Camiseta básica");
+    });
+
+    test("o botão do WhatsApp do produto leva o nome e o endereço, e tem 44 px de toque", async ({
+      page,
+    }) => {
+      await open(page, PRODUCT);
+      const button = page.getByRole("link", { name: "Perguntar no WhatsApp" });
+      await expect(button).toHaveAttribute("target", "_blank");
+      await expect(button).toHaveAttribute("rel", "noopener noreferrer");
+      const href = (await button.getAttribute("href")) ?? "";
+      const url = new URL(href);
+      expect(url.origin + url.pathname).toBe("https://wa.me/5593912345678");
+      const text = url.searchParams.get("text") ?? "";
+      expect(text).toContain("Camiseta básica");
+      expect(text).toContain(
+        `http://127.0.0.1:5176/loja-horizonte/p/${PRODUCT_WITH_PHOTOS}`
+      );
+      expect(text).not.toMatch(PRICE_IN_TEXT);
+      const box = await button.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
+      // the touch area (the ::before of the button) reaches 44 px even where the button is 36
+      expect(await hitsLinkAbove(page, "a.btn[target=_blank]", 5)).toBe(true);
+    });
+
+    test("o rodapé tem área de toque de 44 px", async ({ page }) => {
+      await open(page, `${FIXTURE}/`);
+      expect(await hitsLinkAbove(page, "footer.foot a", 10)).toBe(true);
+    });
+
+    test("a variante sem preço diz 'Preço sob consulta' e a loja sem contato, 'Preço não informado'", async ({
+      page,
+    }) => {
+      await open(page, PRODUCT);
+      await expect(page.locator(".variants .unknown")).toHaveText(
+        "Preço sob consulta"
+      );
+      await expect(page.locator(".variants .price").first()).toHaveText(
+        "R$49,90"
+      );
+      await expect(page.locator(".variants")).not.toContainText("0,00");
+
+      await open(page, `${FIXTURE}/sem-contato`);
+      await expect(
+        page.locator(".card-price", { hasText: "Preço não informado" })
+      ).toHaveCount(1);
+    });
+
+    test("o produto de loja sem contato não mostra botão nem espaço do WhatsApp", async ({
+      page,
+    }) => {
+      await open(page, `${FIXTURE}/sem-contato/p/${PRODUCT_WITH_PHOTOS}`);
+      await expect(
+        page.getByRole("link", { name: "Perguntar no WhatsApp" })
+      ).toHaveCount(0);
+      await expect(page.locator(".contacts")).toHaveCount(0);
+      await expect(page.locator(".variants .unknown")).toHaveText(
+        "Preço não informado"
+      );
+    });
+  });
+}
+
+test("o endereço do site do Polaris não aparece em outra resposta", async ({
+  request,
+}) => {
+  const paths = [
+    "/robots.txt",
+    "/loja-horizonte/m/a/b",
+    "/loja-horizonte/m/x/y?s=320",
+  ];
+  const answers = await Promise.all(
+    paths.map(async (path) => {
+      const response = await request.get(`${FIXTURE}${path}`);
+      return {
+        body: await response.text(),
+        headers: Object.values(response.headers()),
+        path,
+      };
+    })
+  );
+  for (const { body, headers, path } of answers) {
+    expect(body, path).not.toContain("polaris.example");
+    for (const value of headers) {
+      expect(value, path).not.toContain("polaris.example");
+    }
+  }
+});
