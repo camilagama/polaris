@@ -248,10 +248,14 @@ describe("the environment marker of the target", () => {
     });
   }
 
-  it("refuses the comment with other case or spaces, which would not be a marker to accept", async () => {
+  it("refuses a comment that names a protected environment in any formatting, which would not be a marker to accept", async () => {
     const comments = [
       " polaris.environment=Production",
       "polaris.environment=staging ",
+      "polaris.environment = production",
+      "polaris.environment: 'production'",
+      "polaris.environment=production extra",
+      "banco de prod. polaris.environment=production",
     ];
     await Promise.all(
       comments.map((comment) =>

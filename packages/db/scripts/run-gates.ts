@@ -187,8 +187,6 @@ gates.push(
     needsPocFixture: true,
     script: "verify-tenant-context-gate.ts",
   },
-  // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
-  // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
   // the environment marker as a database comment (ADR 0097): a throwaway database and a non-superuser owner, which the runner
   // (a superuser) creates; on Neon the owner is not one, so the gate has nothing to prove there
   {
@@ -197,6 +195,8 @@ gates.push(
     name: "environment-marker",
     script: "verify-environment-marker-gate.ts",
   },
+  // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
+  // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
   {
     env: salesEnv,
     localOnly: true,

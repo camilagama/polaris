@@ -84,44 +84,67 @@ describe("the environment marker", () => {
     expect(declaredEnvironment(readings({ stored: " Staging " }))).toBeNull();
   });
 
-  it("refuses the readings that disagree", () => {
-    expect(
-      declaredEnvironment(
-        readings({
-          comment: "polaris.environment=staging",
-          stored: "production",
-        })
-      )
-    ).toBeNull();
-    expect(
-      declaredEnvironment(
-        readings({
-          comment: "polaris.environment=staging",
-          current: "production",
-        })
-      )
-    ).toBeNull();
+  it("refuses the readings that disagree, and a reading that is present but not exact", () => {
+    for (const value of [
+      readings({
+        comment: "polaris.environment=staging",
+        stored: "production",
+      }),
+      readings({
+        comment: "polaris.environment=staging",
+        current: "production",
+      }),
+      readings({
+        comment: "polaris.environment=staging",
+        stored: "Production",
+      }),
+      readings({ comment: "polaris.environment=staging", stored: " staging" }),
+      readings({
+        comment: "polaris.environment=production\n",
+        stored: "staging",
+      }),
+      readings({
+        comment: "polaris.environment = production",
+        stored: "staging",
+      }),
+      readings({
+        comment: "notes polaris.environment=staging",
+        stored: "staging",
+      }),
+    ]) {
+      expect(declaredEnvironment(value)).toBeNull();
+    }
   });
 
-  it("reads a refusal through case and spaces, from any reading", () => {
-    const refused = ["production", "staging", "restore-drill"];
+  const refused = ["production", "staging", "restore-drill"];
+
+  it.each([
+    "polaris.environment=production",
+    "polaris.environment=restore-drill",
+    "POLARIS.ENVIRONMENT=Production",
+    " polaris.environment=staging ",
+    "polaris.environment = production",
+    "polaris.environment: production",
+    "polaris.environment='production'",
+    'polaris.environment="production"',
+    "polaris.environment=production extra",
+    "polaris.environment=production\nbanco de produção",
+    "banco de prod. polaris.environment=production",
+    "polaris.environment production",
+  ])("reads the comment %j as a refusal", (comment) => {
+    expect(readsAsEnvironment(readings({ comment }), refused)).toBe(true);
+  });
+
+  it("reads the other readings as a refusal through case and spaces", () => {
     expect(
       readsAsEnvironment(readings({ current: " Production " }), refused)
     ).toBe(true);
     expect(readsAsEnvironment(readings({ stored: "STAGING" }), refused)).toBe(
       true
     );
-    for (const comment of [
-      "polaris.environment=restore-drill",
-      "POLARIS.ENVIRONMENT=Production",
-      " polaris.environment=staging ",
-    ]) {
-      expect(readsAsEnvironment(readings({ comment }), refused)).toBe(true);
-    }
   });
 
   it("does not refuse what names no listed environment (control)", () => {
-    const refused = ["production", "staging", "restore-drill"];
     for (const value of [
       readings({}),
       readings({ comment: "default administrative connection database" }),

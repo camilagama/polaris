@@ -86,7 +86,7 @@ async function run() {
       "the gate runner must be able to create the throwaway database and logins"
     );
     await admin.query(
-      `CREATE ROLE "${owner}" WITH LOGIN PASSWORD '${ownerPassword}' NOSUPERUSER CREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
+      `CREATE ROLE "${owner}" WITH LOGIN PASSWORD '${ownerPassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
     );
     ownerCreated = true;
     await admin.query(
@@ -186,26 +186,55 @@ async function run() {
       "a login that is not the owner cannot rewrite or clear the comment (42501)"
     );
 
-    // 4. other texts are not the marker
+    // 4. other texts are not the marker (control: the exact one above is)
     for (const text of [
-      "polaris.environment=staging-x",
       "polaris.environment=staging ",
       " polaris.environment=staging",
       "polaris.environment=Staging",
       "polaris.environment = staging",
+      "polaris.environment=staging\nnotes",
       "staging",
     ]) {
       await ownerSession.query(
         `COMMENT ON DATABASE "${database}" IS '${text}'`
       );
-      assert.notEqual(
+      assert.equal(
         declaredEnvironment(await readings(ownerSession)),
-        "staging",
-        `'${text}' must not be the staging marker`
+        null,
+        `'${text}' must not be a marker`
       );
     }
+    await ownerSession.query(
+      `COMMENT ON DATABASE "${database}" IS 'polaris.environment=staging-x'`
+    );
+    assert.equal(
+      declaredEnvironment(await readings(ownerSession)),
+      "staging-x"
+    );
     tests.push(
-      "staging-x, spaces, a capital and a bare name are not the staging marker"
+      "spaces, a capital, a second line and a bare name are no marker; staging-x declares another environment"
+    );
+
+    // the old form (a superuser's ALTER DATABASE) is still read, and may not contradict the comment
+    await ownerSession.query(
+      `COMMENT ON DATABASE "${database}" IS '${markerComment("staging")}'`
+    );
+    await admin.query(
+      `ALTER DATABASE "${database}" SET polaris.environment = 'staging'`
+    );
+    assert.equal(declaredEnvironment(await readings(ownerSession)), "staging");
+    await ownerSession.query(`COMMENT ON DATABASE "${database}" IS NULL`);
+    assert.equal(declaredEnvironment(await readings(otherSession)), "staging");
+    await admin.query(
+      `ALTER DATABASE "${database}" SET polaris.environment = 'production'`
+    );
+    await ownerSession.query(
+      `COMMENT ON DATABASE "${database}" IS '${markerComment("staging")}'`
+    );
+    assert.equal(declaredEnvironment(await readings(ownerSession)), null);
+    await admin.query(`ALTER DATABASE "${database}" RESET polaris.environment`);
+    tests.push(
+      "the old stored form is read as the marker, alone or with the same comment, and a stored value that contradicts the comment is no marker"
     );
 
     // 5. the gate runner refuses a protected database and accepts one with no marker
@@ -218,12 +247,27 @@ async function run() {
         protectedRefusal
       );
     }
+    // a protected environment written loosely still refuses
+    for (const text of [
+      "polaris.environment = production",
+      "polaris.environment: staging",
+      "polaris.environment=restore-drill extra",
+      "notes polaris.environment=production",
+    ]) {
+      await ownerSession.query(
+        `COMMENT ON DATABASE "${database}" IS '${text}'`
+      );
+      await assert.rejects(
+        assertDisposableEnvironment(ownerSession),
+        protectedRefusal
+      );
+    }
     for (const text of ["NULL", "'polaris.environment=staging-x'"]) {
       await ownerSession.query(`COMMENT ON DATABASE "${database}" IS ${text}`);
       await assertDisposableEnvironment(ownerSession);
     }
     tests.push(
-      "assertDisposableEnvironment refuses a comment of staging, production or restore-drill, and accepts none or another name"
+      "assertDisposableEnvironment refuses a comment of staging, production or restore-drill (also written loosely), and accepts none or another exact name"
     );
   } catch (error) {
     primaryFailure = true;
