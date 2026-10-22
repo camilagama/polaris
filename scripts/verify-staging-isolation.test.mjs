@@ -237,16 +237,61 @@ describe("the staging isolation check", () => {
     ]);
   });
 
-  it("refuses previews, a missing environment marker and password sign-in in staging", () => {
+  it("refuses previews and a missing environment marker in staging", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     staging.preview_urls = true;
     staging.vars.POLARIS_ENVIRONMENT = "production";
-    staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "true";
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.staging: preview_urls must be false (no Cloudflare Previews)",
       'web: env.staging: vars.POLARIS_ENVIRONMENT must be "staging"',
-      'web: env.staging: password sign-in must stay off in staging (EMAIL_PASSWORD_AUTH_ENABLED "false")',
+    ]);
+  });
+
+  it("accepts password sign-in in staging with the sender on araute.app", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    expect(staging.vars.EMAIL_PASSWORD_AUTH_ENABLED).toBe("true");
+    for (const sender of [
+      "Polaris (staging) <nao-responda@araute.app>",
+      "nao-responda@araute.app",
+      "Polaris <Nao-Responda@ARAUTE.APP>",
+    ]) {
+      staging.vars.AUTH_EMAIL_FROM = sender;
+      expect(findIsolationProblems(entries)).toEqual([]);
+    }
+  });
+
+  it("refuses password sign-in in staging with a sender outside araute.app", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    const problem =
+      "web: env.staging: password sign-in in staging needs vars.AUTH_EMAIL_FROM on @araute.app";
+    for (const sender of [
+      "Polaris <nao-responda@example.com>",
+      "nao-responda@evil-araute.app",
+      "nao-responda@araute.app.evil.com",
+      "nao-responda@dash.araute.app",
+      "Polaris <nao-responda@araute.app.evil.com>",
+      "evil@example.com <nao-responda@araute.app>",
+      "Polaris <nao-responda@araute.app> <a@example.com>",
+      "",
+    ]) {
+      staging.vars.AUTH_EMAIL_FROM = sender;
+      expect(findIsolationProblems(entries), sender).toEqual([problem]);
+    }
+    staging.vars.AUTH_EMAIL_FROM = undefined;
+    expect(findIsolationProblems(entries)).toEqual([problem]);
+  });
+
+  it("accepts staging with the password off and refuses a value that is neither true nor false", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "false";
+    expect(findIsolationProblems(entries)).toEqual([]);
+    staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "yes";
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.staging: vars.EMAIL_PASSWORD_AUTH_ENABLED must be "true" or "false"',
     ]);
   });
 
