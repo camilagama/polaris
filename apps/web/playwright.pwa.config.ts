@@ -37,6 +37,6 @@ export default defineConfig({
     url: PWA_ORIGIN,
   },
   // the checks are independent: the update ones build and serve a directory of their own (support.ts); the others
-  // only read `dist/pwa-e2e`. `E2E_WORKERS` sets the number of workers.
-  workers: workersFrom(inCI ? 3 : 2),
+  // only read `dist/pwa-e2e`. In the CI, one worker per core (up to 4); `E2E_WORKERS` sets the number.
+  workers: workersFrom(2, 4),
 });

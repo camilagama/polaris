@@ -60,6 +60,10 @@ function contextsOfChecks() {
   return [...byKey.values()];
 }
 
+// One file with hundreds of tests that share nothing (each opens its own page): without this the whole file is one
+// group and runs in a single worker, however many there are.
+test.describe.configure({ mode: "parallel" });
+
 test.beforeEach(({ browserName }, testInfo) => {
   test.skip(
     browserName !== "chromium" || testInfo.project.name !== "chromium-desktop",

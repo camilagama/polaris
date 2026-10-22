@@ -49,7 +49,7 @@ export default defineConfig({
     timeout: 120_000,
     url: `${OFFLINE_POC_ORIGIN}/offline-poc?release=1`,
   },
-  // SQLite WASM is memory-intensive: a few workers, not one per core. Each test has its own browser context, so its
-  // OPFS and storage are its own. `E2E_WORKERS` sets the number of workers.
-  workers: workersFrom(inCI ? 2 : 1),
+  // SQLite WASM is memory-intensive: in the CI one worker per core but one (2 to 3), not one per core. Each test has
+  // its own browser context, so its OPFS and storage are its own. `E2E_WORKERS` sets the number of workers.
+  workers: workersFrom(1, 3, 1),
 });

@@ -1,3 +1,5 @@
+import { availableParallelism, totalmem } from "node:os";
+
 /**
  * What a Playwright run takes from the environment, shared by the configs and the tests that name the app's origin.
  * The defaults are the ones the CI uses; a second session on the same machine sets its own ports
@@ -36,6 +38,22 @@ export const PWA_ORIGIN = `http://127.0.0.1:${PWA_PORT}`;
 export const reuseExistingServer =
   !process.env.CI && process.env.E2E_REUSE_SERVER === "1";
 
-/** `E2E_WORKERS` sets the number of workers; without it, `fallback`. */
-export const workersFrom = (fallback: number) =>
-  integerFrom("E2E_WORKERS", fallback, 1, 32);
+/**
+ * The number of workers: `E2E_WORKERS`, or else `fallback` outside the CI and, in the CI, one per core of the runner
+ * minus `spare`, from 2 to `cap`. The CI line names the choice (the main Playwright process only).
+ */
+export function workersFrom(fallback: number, cap: number, spare = 0) {
+  const fromCores = Math.min(cap, Math.max(2, availableParallelism() - spare));
+  const workers = integerFrom(
+    "E2E_WORKERS",
+    process.env.CI ? fromCores : fallback,
+    1,
+    32
+  );
+  if (process.env.CI && process.env.TEST_WORKER_INDEX === undefined) {
+    console.log(
+      `playwright workers: ${workers} (${availableParallelism()} cores, ${Math.round(totalmem() / 2 ** 30)} GiB)`
+    );
+  }
+  return workers;
+}
