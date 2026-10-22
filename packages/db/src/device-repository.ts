@@ -48,6 +48,19 @@ export class DeviceSessionEndedError extends Error {
 }
 
 /**
+ * `device.revokeCurrent` names a device this session does not own (it did not
+ * register it, nor confirm it first while it was recent): nothing is revoked.
+ */
+export class DeviceNotOwnedError extends Error {
+  readonly code = "not_current_device";
+
+  constructor() {
+    super("not_current_device");
+    this.name = "DeviceNotOwnedError";
+  }
+}
+
+/**
  * Revoking another device (or ending the other sessions) needs a session that
  * signed in recently; the user must sign in again.
  */
@@ -146,17 +159,23 @@ function isEndedSessionError(error: unknown): boolean {
  * so it either waits for this transaction and then sees the link, or commits
  * first and this finds no live device and links nothing. Returns whether the
  * device is live. Without a session (scripts and gates) it only locks.
- * `register` marks the device as the session's own (only `registerDevice`
- * passes it): a session that merely used a device never owns it, so it cannot
- * skip the fresh-session rule by checking another device first.
+ * `register` marks the device as the session's own (`registerDevice` passes
+ * it): a session that merely used a device never owns it, so it cannot skip
+ * the fresh-session rule by checking another device first. `first_check` is the
+ * `device.check` of a session signed in within the fresh window: the device
+ * becomes its own only while the session owns no device yet, so one recent
+ * session owns at most the first device it checks (ADR 0048, emenda de 22/10);
+ * every later check, like an older session's, is a plain `use`. A link that
+ * already exists is never promoted.
  */
 export async function lockLiveDeviceForSession(
   transaction: TenantRequestTransaction,
   authenticatedUserId: string,
   deviceId: string,
   sessionId: string | undefined,
-  origin: "register" | "use" = "use"
+  origin: "first_check" | "register" | "use" = "use"
 ): Promise<boolean> {
+  const promote = origin === "first_check";
   try {
     const result = await transaction.execute<{ live: number }>(sql`
       WITH live AS (
@@ -168,7 +187,16 @@ export async function lockLiveDeviceForSession(
            FOR SHARE
       ), linked AS (
         INSERT INTO public.device_sessions (user_id, device_id, session_id, origin)
-        SELECT live.user_id, live.id, ${sessionId ?? null}::text, ${origin}
+        SELECT live.user_id, live.id, ${sessionId ?? null}::text,
+               CASE
+                 WHEN ${promote}::boolean AND NOT EXISTS (
+                   SELECT 1 FROM public.device_sessions AS own
+                    WHERE own.session_id = ${sessionId ?? null}::text
+                      AND own.user_id = live.user_id
+                      AND own.origin = 'register'
+                 ) THEN 'register'
+                 ELSE ${promote ? "use" : origin}::text
+               END
           FROM live
          WHERE ${sessionId ?? null}::text IS NOT NULL
         ON CONFLICT DO NOTHING
@@ -286,9 +314,15 @@ export function touchDevice(
   database: Database,
   authenticatedUserId: string,
   deviceId: string,
-  options: { now?: Date; sessionId?: string } = {}
+  options: {
+    /** The session signed in within the fresh window: its first device becomes its own. */
+    freshSession?: boolean;
+    now?: Date;
+    sessionId?: string;
+  } = {}
 ): Promise<DeviceRecord> {
   const now = options.now ?? new Date();
+  const promote = options.freshSession === true && Boolean(options.sessionId);
   return withUserTransaction(database, authenticatedUserId, async (tx) => {
     // the UPDATE first: it locks the row for the rest of the transaction, so two
     // concurrent checks of one device queue up instead of deadlocking (each
@@ -304,6 +338,13 @@ export function touchDevice(
         )
       )
       .returning(deviceColumns);
+    if (touched && promote) {
+      // two checks of one recent session on two devices queue here, so only one of them sees no own device yet
+      const lockKey = `device-session:${options.sessionId}`;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`
+      );
+    }
     if (
       !(
         touched &&
@@ -311,7 +352,8 @@ export function touchDevice(
           tx,
           authenticatedUserId,
           deviceId,
-          options.sessionId
+          options.sessionId,
+          promote ? "first_check" : "use"
         ))
       )
     ) {
@@ -428,98 +470,193 @@ export function revokeDevice(
   deviceId: string,
   options: RevokeDeviceOptions
 ): Promise<RevokeDeviceResult> {
-  const now = options.now ?? new Date();
   return withUserTransaction(database, authenticatedUserId, async (tx) => {
     const { actingSession } = options;
-    if (actingSession && !actingSession.fresh) {
-      const [ownDevice] = await tx
-        .select({ deviceId: deviceSessions.deviceId })
-        .from(deviceSessions)
-        .where(
-          and(
-            eq(deviceSessions.deviceId, deviceId),
-            eq(deviceSessions.sessionId, actingSession.id),
-            eq(deviceSessions.userId, authenticatedUserId),
-            eq(deviceSessions.origin, "register")
-          )
-        )
-        .limit(1);
-      if (!ownDevice || options.endOtherSessions === true) {
-        throw new FreshSessionRequiredError();
-      }
-    }
-    const [revoked] = await tx
-      .update(devices)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(devices.id, deviceId),
-          eq(devices.userId, authenticatedUserId),
-          isNull(devices.revokedAt)
-        )
-      )
-      .returning(deviceColumns);
-    if (!revoked) {
-      const [existing] = await tx
-        .select(deviceColumns)
-        .from(devices)
-        .where(
-          and(eq(devices.id, deviceId), eq(devices.userId, authenticatedUserId))
-        )
-        .limit(1);
-      if (!existing) {
-        throw new DeviceNotFoundError();
-      }
-      return {
-        device: existing,
-        revokedGrantIds: [] as string[],
-        ...(await endDeviceSessions(tx, deviceId, options, false)),
-      };
-    }
-
-    // Grants are only visible under their organization's scope, so each of the
-    // user's organizations is scoped and revoked in turn on this connection.
-    const userOrganizations = await tx
-      .select({ organizationId: memberships.organizationId })
-      .from(memberships)
-      .where(eq(memberships.userId, authenticatedUserId))
-      .orderBy(asc(memberships.organizationId));
-    const revokedGrantIds: string[] = [];
-    for (const { organizationId } of userOrganizations) {
-      // biome-ignore lint/performance/noAwaitInLoops: one scope per organization on a single connection.
-      await scopeToOrganization(tx, organizationId);
-      const rows = await tx
-        .update(offlineGrants)
-        .set({ revokedAt: now, revokedReason: "device_revoked" })
-        .where(
-          and(
-            eq(offlineGrants.userId, authenticatedUserId),
-            eq(offlineGrants.deviceId, deviceId),
-            isNull(offlineGrants.revokedAt)
-          )
-        )
-        .returning({ id: offlineGrants.id });
-      for (const row of rows) {
-        // biome-ignore lint/performance/noAwaitInLoops: audit rows are appended in order.
-        await recordTenantAuditEvent(
+    if (
+      actingSession &&
+      !actingSession.fresh &&
+      (options.endOtherSessions === true ||
+        !(await ownsDevice(
           tx,
-          { organizationId, userId: authenticatedUserId },
-          {
-            entityId: row.id,
-            entityType: "offline_grant",
-            eventType: "offline_grant.revoked",
-            requestId: options.requestId ?? null,
-          }
-        );
-        revokedGrantIds.push(row.id);
-      }
+          authenticatedUserId,
+          deviceId,
+          actingSession.id
+        )))
+    ) {
+      throw new FreshSessionRequiredError();
     }
+    return await revokeInTransaction(
+      tx,
+      authenticatedUserId,
+      deviceId,
+      options
+    );
+  });
+}
+
+export interface RevokeOwnDeviceResult {
+  /** The device was revoked already (from another device): nothing new was revoked. */
+  alreadyRevoked: boolean;
+  endedCurrentSession: boolean;
+  revokedGrantCount: number;
+}
+
+/**
+ * "Sair" revokes this installation (`device.revokeCurrent`, ADR 0048, emenda de
+ * 22/10): the same revocation as `revokeDevice`, but only of the device the
+ * acting session owns (it registered it, or confirmed it first while recent)
+ * and never ending the other sessions, so it needs no fresh session. A device
+ * of another user, or none, is DeviceNotFoundError; a device of the user this
+ * session does not own is DeviceNotOwnedError, even for a recent session, and
+ * nothing changes.
+ */
+export function revokeOwnDevice(
+  database: Database,
+  authenticatedUserId: string,
+  deviceId: string,
+  options: { actingSessionId: string; now?: Date; requestId?: string | null }
+): Promise<RevokeOwnDeviceResult> {
+  return withUserTransaction(database, authenticatedUserId, async (tx) => {
+    const [existing] = await tx
+      .select({ id: devices.id, revokedAt: devices.revokedAt })
+      .from(devices)
+      .where(
+        and(eq(devices.id, deviceId), eq(devices.userId, authenticatedUserId))
+      )
+      .limit(1);
+    if (!existing) {
+      throw new DeviceNotFoundError();
+    }
+    if (
+      !(await ownsDevice(
+        tx,
+        authenticatedUserId,
+        deviceId,
+        options.actingSessionId
+      ))
+    ) {
+      throw new DeviceNotOwnedError();
+    }
+    const result = await revokeInTransaction(
+      tx,
+      authenticatedUserId,
+      deviceId,
+      {
+        actingSession: { fresh: false, id: options.actingSessionId },
+        endOtherSessions: false,
+        ...(options.now ? { now: options.now } : {}),
+        requestId: options.requestId ?? null,
+      }
+    );
     return {
-      device: revoked,
-      revokedGrantIds,
-      ...(await endDeviceSessions(tx, deviceId, options, true)),
+      alreadyRevoked: existing.revokedAt !== null,
+      endedCurrentSession: result.endedCurrentSession,
+      revokedGrantCount: result.revokedGrantIds.length,
     };
   });
+}
+
+/** Whether the session owns the device: it registered it, or confirmed it first while recent. */
+async function ownsDevice(
+  tx: TenantRequestTransaction,
+  authenticatedUserId: string,
+  deviceId: string,
+  sessionId: string
+): Promise<boolean> {
+  const [own] = await tx
+    .select({ deviceId: deviceSessions.deviceId })
+    .from(deviceSessions)
+    .where(
+      and(
+        eq(deviceSessions.deviceId, deviceId),
+        eq(deviceSessions.sessionId, sessionId),
+        eq(deviceSessions.userId, authenticatedUserId),
+        eq(deviceSessions.origin, "register")
+      )
+    )
+    .limit(1);
+  return own !== undefined;
+}
+
+/** The revocation itself, once the caller decided the acting session may do it. */
+async function revokeInTransaction(
+  tx: TenantRequestTransaction,
+  authenticatedUserId: string,
+  deviceId: string,
+  options: RevokeDeviceOptions
+): Promise<RevokeDeviceResult> {
+  const now = options.now ?? new Date();
+  const [revoked] = await tx
+    .update(devices)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(devices.id, deviceId),
+        eq(devices.userId, authenticatedUserId),
+        isNull(devices.revokedAt)
+      )
+    )
+    .returning(deviceColumns);
+  if (!revoked) {
+    const [existing] = await tx
+      .select(deviceColumns)
+      .from(devices)
+      .where(
+        and(eq(devices.id, deviceId), eq(devices.userId, authenticatedUserId))
+      )
+      .limit(1);
+    if (!existing) {
+      throw new DeviceNotFoundError();
+    }
+    return {
+      device: existing,
+      revokedGrantIds: [] as string[],
+      ...(await endDeviceSessions(tx, deviceId, options, false)),
+    };
+  }
+
+  // Grants are only visible under their organization's scope, so each of the
+  // user's organizations is scoped and revoked in turn on this connection.
+  const userOrganizations = await tx
+    .select({ organizationId: memberships.organizationId })
+    .from(memberships)
+    .where(eq(memberships.userId, authenticatedUserId))
+    .orderBy(asc(memberships.organizationId));
+  const revokedGrantIds: string[] = [];
+  for (const { organizationId } of userOrganizations) {
+    // biome-ignore lint/performance/noAwaitInLoops: one scope per organization on a single connection.
+    await scopeToOrganization(tx, organizationId);
+    const rows = await tx
+      .update(offlineGrants)
+      .set({ revokedAt: now, revokedReason: "device_revoked" })
+      .where(
+        and(
+          eq(offlineGrants.userId, authenticatedUserId),
+          eq(offlineGrants.deviceId, deviceId),
+          isNull(offlineGrants.revokedAt)
+        )
+      )
+      .returning({ id: offlineGrants.id });
+    for (const row of rows) {
+      // biome-ignore lint/performance/noAwaitInLoops: audit rows are appended in order.
+      await recordTenantAuditEvent(
+        tx,
+        { organizationId, userId: authenticatedUserId },
+        {
+          entityId: row.id,
+          entityType: "offline_grant",
+          eventType: "offline_grant.revoked",
+          requestId: options.requestId ?? null,
+        }
+      );
+      revokedGrantIds.push(row.id);
+    }
+  }
+  return {
+    device: revoked,
+    revokedGrantIds,
+    ...(await endDeviceSessions(tx, deviceId, options, true)),
+  };
 }
 
 /* -------------------------------------------------------------------------- */

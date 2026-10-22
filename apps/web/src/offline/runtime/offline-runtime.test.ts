@@ -666,10 +666,17 @@ describe("starting", () => {
     expect(workspaces.map((workspace) => workspace.label)).toEqual([
       organizationId,
     ]);
+    const deviceId = runtime.currentDeviceId();
+    expect(deviceId).not.toBeNull();
     expect(await attemptLogout(workspaces)).toEqual({ status: "ready" });
 
     expect(w.purged).toEqual([{ discardPending: false }]);
+    // the purge keeps only the device id, for "Sair" to revoke it; the last step forgets it
+    expect([...w.keyValues.data.keys()]).toEqual(["polaris.offline.device"]);
+    expect(runtime.currentDeviceId()).toBe(deviceId);
+    runtime.forgetDevice();
     expect(w.keyValues.data.size).toBe(0);
+    expect(runtime.currentDeviceId()).toBeNull();
   });
 
   it("logging out with no store open and work queued is blocked, deletes the collections and the lease, and keeps the queue", async () => {
@@ -933,11 +940,18 @@ describe("what the rest of the app plugs into", () => {
     if (!workspace) {
       return;
     }
+    const deviceId = runtime.currentDeviceId();
+    expect(deviceId).not.toBeNull();
     expect(await attemptLogout([workspace])).toEqual({ status: "ready" });
     expect(w.purged).toEqual([{ discardPending: false }]);
-    expect(w.keyValues.data.size).toBe(0);
+    // the lease and the remembered user go with the purge; the device id waits for the revocation
+    expect([...w.keyValues.data.keys()]).toEqual(["polaris.offline.device"]);
+    expect(runtime.currentDeviceId()).toBe(deviceId);
     expect(runtime.getSnapshot().phase).toBe("off");
     expect(runtime.context()).toBeNull();
+    runtime.forgetDevice();
+    expect(w.keyValues.data.size).toBe(0);
+    expect(runtime.currentDeviceId()).toBeNull();
   });
 
   it("logging out is blocked, and nothing is purged, while work is queued and the network is down", async () => {
@@ -970,7 +984,10 @@ describe("what the rest of the app plugs into", () => {
     ]);
     expect(await attemptLogout(workspaces)).toEqual({ status: "ready" });
     expect(w.purged).toHaveLength(2);
-    expect(w.keyValues.data.size).toBe(0); // device, lease and registry are all gone
+    // leases and registry are gone; the device goes at the last step of "Sair"
+    expect([...w.keyValues.data.keys()]).toEqual(["polaris.offline.device"]);
+    runtime.forgetDevice();
+    expect(w.keyValues.data.size).toBe(0);
   });
 
   it("work queued in another organization blocks the logout, purges nothing and releases what was opened", async () => {

@@ -37,6 +37,7 @@ import {
 import {
   DeviceLimitError,
   DeviceNotFoundError,
+  DeviceNotOwnedError,
   DeviceRevokedError,
   DeviceSessionEndedError,
   FreshSessionRequiredError,
@@ -44,6 +45,7 @@ import {
   OfflineGrantNotFoundError,
   registerDevice,
   revokeDevice,
+  revokeOwnDevice,
   touchDevice,
 } from "@polaris/db/device-repository";
 import {
@@ -278,6 +280,12 @@ import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
 import type { PublicCatalogRepository } from "./public-catalog-handlers";
 import { OfflineLeaseUnavailableError } from "../offline-lease-service";
+import {
+  type AccessLogQueryable,
+  type AccessLogWriter,
+  createDatabaseAccessLogWriter,
+  guardAccessLogWriter,
+} from "../auth/access-log";
 import { SyncPayloadHashUnavailableError } from "../sync/payload-hash";
 import {
   exemptRpcRequest,
@@ -342,6 +350,8 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RpcRouterDependencies {
+  /** The writer of the record of access over the authentication connection; tests give a fake one. */
+  accessLogWriter: (connection: AccessLogQueryable) => AccessLogWriter;
   archiveCategory: typeof archiveCategory;
   anonymizeCustomerForPrivacy: typeof anonymizeCustomerForPrivacy;
   archiveCustomer: typeof archiveCustomer;
@@ -398,6 +408,7 @@ interface RpcRouterDependencies {
   restorePaymentProfile: typeof restorePaymentProfile;
   restoreProduct: typeof restoreProduct;
   revokeDevice: typeof revokeDevice;
+  revokeOwnDevice: typeof revokeOwnDevice;
   runSyncCommand: typeof runSyncCommand;
   touchDevice: typeof touchDevice;
   syncCommandHandlers: readonly SyncCommandHandler[];
@@ -669,6 +680,14 @@ function toRpcError(error: unknown): never {
   // the session was ended (a device revocation) while it was in use
   if (error instanceof DeviceSessionEndedError) {
     throw new ORPCError("UNAUTHORIZED", { cause: error });
+  }
+
+  if (error instanceof DeviceNotOwnedError) {
+    // its own reason, before any generic refusal: the "Sair" goes on without revoking
+    throw new ORPCError("FORBIDDEN", {
+      cause: error,
+      data: { reason: error.code },
+    });
   }
 
   if (error instanceof FreshSessionRequiredError) {
@@ -1358,16 +1377,22 @@ export function createRpcRouter(
     withTenantRequestContext: tenantRequest,
   });
   const offlineHandlers = createOfflineRpcHandlers({
+    accessLogWriter: (connection) =>
+      guardAccessLogWriter(
+        (overrides.accessLogWriter ?? createDatabaseAccessLogWriter)(connection)
+      ),
     defaultIssueOfflineLeaseGrant: issueOfflineLeaseGrant,
     defaultListDevices: listDevices,
     defaultRegisterDevice: registerDevice,
     defaultRevokeDevice: revokeDevice,
+    defaultRevokeOwnDevice: revokeOwnDevice,
     defaultTouchDevice: touchDevice,
     issueOfflineLeaseGrant: overrides.issueOfflineLeaseGrant,
     listDevices: overrides.listDevices,
     registerDevice: overrides.registerDevice,
     requestAuditId,
     revokeDevice: overrides.revokeDevice,
+    revokeOwnDevice: overrides.revokeOwnDevice,
     toRpcError,
     touchDevice: overrides.touchDevice,
     withAuthenticatedRequestContext: authenticatedRequest,

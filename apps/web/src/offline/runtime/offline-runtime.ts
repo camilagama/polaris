@@ -401,7 +401,8 @@ export class OfflineRuntime {
         await this.closeStores();
         await this.dependencies.purge(namespace, options);
         this.forgetNamespace(namespace);
-        this.forgetDevice();
+        // the device id stays until the logout revoked it (or gave up): `forgetDevice`, the last step
+        this.forgetSessionCopy();
         this.set({ ...this.snapshot, counts: EMPTY_COUNTS, phase: "off" });
       },
       trySync: async () => {
@@ -533,8 +534,7 @@ export class OfflineRuntime {
         this.forgetNamespace(namespace);
         forgetLease();
         if (options.stoppedRuntime) {
-          // no open organization is left to forget the device and the remembered user
-          keyValues.remove(DEVICE_KEY);
+          // no open organization is left to forget the remembered user; the device goes at the end of the logout
           keyValues.remove(SESSION_USER_KEY);
         }
       },
@@ -662,11 +662,28 @@ export class OfflineRuntime {
     }
   }
 
-  private forgetDevice() {
+  /**
+   * The device of this installation, as the runtime holds it or this browser remembers it; null when it has none.
+   * "Sair" reads it before anything else, to revoke it on the server once the queue is safe.
+   */
+  currentDeviceId(): string | null {
+    return this.deviceId ?? this.dependencies.keyValues.read(DEVICE_KEY);
+  }
+
+  /**
+   * The last step of a logout: forgets the device id, the lease left and the remembered user. After it the next
+   * sign-in registers a device (the old one was revoked, or stays on the list when the revocation could not happen).
+   */
+  forgetDevice() {
     this.dependencies.keyValues.remove(DEVICE_KEY);
+    this.forgetSessionCopy();
+    this.deviceId = null;
+  }
+
+  /** What the session gave this browser: the lease and the remembered user, never the device id. */
+  private forgetSessionCopy() {
     this.dependencies.keyValues.remove(SESSION_USER_KEY);
     this.forgetLease();
-    this.deviceId = null;
     this.lease = null;
   }
 

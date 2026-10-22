@@ -31,12 +31,12 @@ import { forgetSessionCaches } from "./leave-browser";
 import { useLogout } from "./logout-control";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
-import { leaveSessionOver } from "./session-over";
 import {
   markSessionEndedHere,
   markSessionOver,
   useSessionEndedHere,
 } from "./session-ended";
+import { leaveSessionOver } from "./session-over";
 
 const DEVICES_PATH = "/devices";
 /** A live but old login: "Sair" with the reason `recente`, then back to this screen. */
@@ -303,7 +303,9 @@ function ListSection({
               confirming={confirming === row.id}
               key={row.id}
               offline={offline || sessionGone}
+              online={online}
               row={row}
+              sessionGone={sessionGone}
               {...shared}
             />
           ))}

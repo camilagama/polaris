@@ -124,6 +124,8 @@ const gates: Gate[] = [
   ["media-commands", "verify-media-commands-gate.ts"],
   ["offline-devices", "verify-offline-devices-gate.ts"],
   ["device-sessions", "verify-device-sessions-gate.ts"],
+  // row security with FORCE on Better Auth's tables and the auth audit (0098): catalog, real logins, planted defects
+  ["auth-tables-row-security", "verify-auth-tables-row-security-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
@@ -307,6 +309,7 @@ const suites: Record<string, string[]> = {
     "media-commands",
     "offline-devices",
     "device-sessions",
+    "auth-tables-row-security",
     "offline-lease",
     "sync-log",
     "bootstrap",

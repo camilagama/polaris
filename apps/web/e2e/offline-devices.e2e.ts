@@ -684,6 +684,10 @@ test("sem conexão: um único aviso, tudo desabilitado, a confirmação aberta e
 
   await page.context().setOffline(true);
   await expect(page.getByText(OFFLINE_NOTICE)).toHaveCount(1);
+  // this device's card stops promising that Sair takes it off the list
+  await expect(
+    page.getByRole("list", { name: "Aparelhos" }).getByRole("listitem").first()
+  ).toContainText("Sem conexão, Sair não tira este aparelho da lista");
   await expect(
     page.getByText("Não foi possível carregar os aparelhos")
   ).toHaveCount(0);
@@ -696,6 +700,9 @@ test("sem conexão: um único aviso, tudo desabilitado, a confirmação aberta e
 
   await page.context().setOffline(false);
   await expect(page.getByText(OFFLINE_NOTICE)).toHaveCount(0);
+  await expect(
+    page.getByRole("list", { name: "Aparelhos" }).getByRole("listitem").first()
+  ).toContainText("use o botão Sair");
   await expect(page.getByLabel(OTHER_SESSIONS)).toBeChecked();
   await expect(confirmButton(page, CONFIRM_ALL)).toBeEnabled();
 });

@@ -762,8 +762,9 @@ async function run() {
       (await client.query('SELECT 1 FROM public."user" WHERE id = $1', [id]))
         .rows.length === 1;
     // the first text is the one of the candidate query; the same with `doomed` is the check of the delete, taken out too
+    // the e-mail check is not among them: without it in the body the owner's policies on "user", account and session (0098)
+    // still show it no verified user, so the probe passes, and the gate proves that below
     const mutants: [string, string, string, boolean][] = [
-      ["e-mail verified", "NOT candidate.email_verified", "true", false],
       [
         "Google account",
         "NOT EXISTS (SELECT 1 FROM public.account AS other WHERE other.user_id = candidate.id AND other.provider_id <> 'credential')",
@@ -829,10 +830,37 @@ async function run() {
     } finally {
       mutationClient.release();
     }
+    // without the e-mail check in the body (both queries), row security still keeps the verified user (0098): the owner
+    // sees no verified user, so the probe passes inside the mutant's transaction, rolled back
+    {
+      const client = await owner.pool.connect();
+      try {
+        const original = await definitionOf(client);
+        const from = "NOT candidate.email_verified";
+        assert.ok(original.includes(from), "e-mail verified: the text exists");
+        const mutated = original
+          .replaceAll(from, "true")
+          .replaceAll("NOT doomed.email_verified", "true");
+        assert.ok(
+          !mutated.includes("email_verified"),
+          "e-mail verified: taken out of both queries"
+        );
+        await client.query("BEGIN");
+        try {
+          await client.query(mutated);
+          await probe(client, "mutant-e-mailverified-policy");
+        } finally {
+          await client.query("ROLLBACK");
+        }
+        assert.equal(await definitionOf(client), original);
+      } finally {
+        client.release();
+      }
+    }
     // and the real function passes the same probe
     await probe(authClient, "real", owner.pool);
     tests.push(
-      "the gate fails on a function without a condition: with the e-mail check, the Google check, the session check, the 24 hours, the check of the last link or the record of the end of the contract taken out (and with the membership check taken out, where the foreign key refuses), the probe fails inside a transaction that is rolled back; the real function passes the same probe afterwards, unchanged"
+      'the gate fails on a function without a condition: with the Google check, the session check, the 24 hours, the check of the last link or the record of the end of the contract taken out (and with the membership check taken out, where the foreign key refuses), the probe fails inside a transaction that is rolled back; with the e-mail check taken out of both queries the verified user is still kept, by the owner\'s row security on "user" (0098); the real function passes the same probe afterwards, unchanged'
     );
 
     console.log(
