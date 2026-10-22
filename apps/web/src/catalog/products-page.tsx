@@ -54,6 +54,8 @@ export function ProductsPage() {
   const [mediaProductId, setMediaProductId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   const [notice, setNotice] = useState<string | null>(null);
+  // the product the last action archived: the notice offers to restore it
+  const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -103,6 +105,7 @@ export function ProductsPage() {
       setVariantsProductId(panel.variants ?? null);
       setError(null);
       setNotice(null);
+      setUndoProduct(null);
     },
     []
   );
@@ -130,6 +133,7 @@ export function ProductsPage() {
       setPendingAction(action);
       setError(null);
       setNotice(null);
+      setUndoProduct(null);
       try {
         const description = draft.description.trim() || null;
         const categoryId = draft.categoryId || null;
@@ -258,10 +262,18 @@ export function ProductsPage() {
   );
 
   const handleProductAction = useCallback(
-    async (product: ProductReadModel, action: ProductAction) => {
+    async (
+      product: ProductReadModel,
+      action: ProductAction,
+      isUndo = false
+    ) => {
       setPendingAction(`${action}:${product.id}`);
       setError(null);
-      setNotice(null);
+      // the undo keeps the archived notice (and its button) until the restore works: a failure can be tried again
+      if (!isUndo) {
+        setNotice(null);
+        setUndoProduct(null);
+      }
       try {
         const result = await orpcClient.product[action]({
           expectedVersion: product.version,
@@ -274,6 +286,9 @@ export function ProductsPage() {
           result.changed
             ? `Produto “${result.product.name}” ${actionLabel}.`
             : `O produto “${result.product.name}” já estava nesse estado.`
+        );
+        setUndoProduct(
+          action === "archive" && result.changed ? result.product : null
         );
         refresh();
       } catch (cause: unknown) {
@@ -295,6 +310,12 @@ export function ProductsPage() {
     (product: ProductReadModel) => handleProductAction(product, "restore"),
     [handleProductAction]
   );
+
+  const handleUndoArchive = useCallback(() => {
+    if (undoProduct) {
+      handleProductAction(undoProduct, "restore", true);
+    }
+  }, [handleProductAction, undoProduct]);
 
   const handleStatusClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -348,7 +369,13 @@ export function ProductsPage() {
           showNew={status === "active"}
         />
         {isOffline ? <OfflineNotice /> : null}
-        <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
+        <ActionFeedback
+          error={error}
+          notice={notice}
+          onUndo={undoProduct ? handleUndoArchive : undefined}
+          regionRef={feedbackRef}
+          undoDisabled={isOffline || pendingAction !== null}
+        />
 
         {formOpen ? (
           <ProductForm

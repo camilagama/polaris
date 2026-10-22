@@ -10,6 +10,7 @@ import { ProductTextField } from "./product-fields";
 import {
   VariantFieldRow,
   VariantSaveNotice,
+  type VariantSaveOutcome,
   VariantSection,
 } from "./product-variant-parts";
 import {
@@ -141,14 +142,12 @@ export function ProductVariantPriceSection({
   productId,
 }: PriceSectionProps) {
   const [isPending, setIsPending] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [needsReload, setNeedsReload] = useState(false);
+  const [outcome, setOutcome] = useState<VariantSaveOutcome | null>(null);
 
   const handleSave = useCallback(
     async (variantId: string, listPrice: string | null) => {
       setIsPending(true);
-      setMessage(null);
-      setNeedsReload(false);
+      setOutcome(null);
       try {
         const result = await orpcClient.product.setVariantListPrice({
           expectedVersion: configuration.productVersion,
@@ -158,13 +157,16 @@ export function ProductVariantPriceSection({
           variantId,
         });
         onUpdated(result.configuration, result.product);
-        setMessage(
-          result.changed ? "Preço salvo." : "O preço já está atualizado."
-        );
+        setOutcome({
+          kind: "saved",
+          text: result.changed ? "Preço salvo." : "O preço já está atualizado.",
+        });
         return true;
       } catch (error: unknown) {
-        setMessage(priceErrorMessage(error));
-        setNeedsReload(rpcErrorCode(error) === "CONFLICT");
+        setOutcome({
+          kind: rpcErrorCode(error) === "CONFLICT" ? "conflict" : "error",
+          text: priceErrorMessage(error),
+        });
         return false;
       } finally {
         setIsPending(false);
@@ -173,8 +175,7 @@ export function ProductVariantPriceSection({
     [configuration.productVersion, onUpdated, organizationId, productId]
   );
   const handleDraftChange = useCallback(() => {
-    setMessage(null);
-    setNeedsReload(false);
+    setOutcome(null);
   }, []);
 
   return (
@@ -196,11 +197,7 @@ export function ProductVariantPriceSection({
           </li>
         ))}
       </ul>
-      <VariantSaveNotice
-        message={message}
-        needsReload={needsReload}
-        onReload={onConflict}
-      />
+      <VariantSaveNotice onReload={onConflict} outcome={outcome} />
     </VariantSection>
   );
 }

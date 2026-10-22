@@ -324,7 +324,8 @@ test("o campo de busca da tela não herda a borda nem a altura do CSS antigo do 
       minHeight: computed.minHeight,
     };
   });
-  expect(style).toEqual({ border: "0px", minHeight: "0px" });
+  // the field says nothing about its border or min-height: no border, and the browser's `auto` (the old shell gave it 2.8rem)
+  expect(style).toEqual({ border: "0px", minHeight: "auto" });
 });
 
 test("a busca ignora maiúsculas e acentos, diz quando nada casa e o número acompanha", async ({
@@ -429,6 +430,91 @@ test("arquivar pelo menu: 'Arquivando…' na linha, o resultado dito e focado e 
   await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
 });
 
+test("desfazer o arquivamento restaura o produto pela mesma chamada do Restaurar e o aviso do restaurado não tem botão", async ({
+  page,
+}) => {
+  const shirt = product(1, "Camiseta do teste");
+  const archived = { ...shirt, status: "archived", version: 2 };
+  let restored: unknown;
+  await openServerScreen(page, {
+    lists: [answer([shirt]), answer([]), answer([shirt])],
+    others: {
+      "product/archive": (route) =>
+        route.fulfill(rpc({ changed: true, product: archived })),
+      "product/restore": (route) => {
+        restored = (route.request().postDataJSON() as { json: unknown }).json;
+        return route.fulfill(
+          rpc({
+            changed: true,
+            product: { ...shirt, status: "active", version: 3 },
+          })
+        );
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Arquivar" }).click();
+  await expect(
+    page.getByText("Produto “Camiseta do teste” arquivado.")
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Desfazer" }).click();
+  await expect(
+    page.getByText("Produto “Camiseta do teste” restaurado.")
+  ).toBeVisible();
+  expect(restored).toMatchObject({
+    expectedVersion: 2,
+    id: shirt.id,
+    organizationId: ORGANIZATION.id,
+  });
+  await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
+  await expect(page.locator("[data-product-id]")).toContainText(
+    "Camiseta do teste"
+  );
+});
+
+test("o desfazer que o servidor recusa diz o erro e o botão continua para tentar de novo", async ({
+  page,
+}) => {
+  const shirt = product(1, "Camiseta do teste");
+  let restores = 0;
+  await openServerScreen(page, {
+    lists: [answer([shirt]), answer([]), answer([]), answer([shirt])],
+    others: {
+      "product/archive": (route) =>
+        route.fulfill(
+          rpc({
+            changed: true,
+            product: { ...shirt, status: "archived", version: 2 },
+          })
+        ),
+      "product/restore": (route) => {
+        restores += 1;
+        return restores === 1
+          ? route.fulfill(unavailable)
+          : route.fulfill(
+              rpc({
+                changed: true,
+                product: { ...shirt, status: "active", version: 3 },
+              })
+            );
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Arquivar" }).click();
+  await page.getByRole("button", { name: "Desfazer" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "O catálogo está temporariamente indisponível."
+  );
+  const undo = page.getByRole("button", { name: "Desfazer" });
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect(
+    page.getByText("Produto “Camiseta do teste” restaurado.")
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
+});
+
 test("arquivar que o servidor recusa: o erro é dito e focado e a linha continua na lista", async ({
   page,
 }) => {
@@ -506,6 +592,7 @@ test("restaurar pelo menu de um produto arquivado diz o resultado", async ({
   await expect(
     page.getByText("Produto “Jaqueta de inverno” restaurado.")
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
 });
 
 test("o menu de um produto arquivado tem Restaurar e não tem Imagens nem Arquivar", async ({
@@ -520,4 +607,77 @@ test("o menu de um produto arquivado tem Restaurar e não tem Imagens nem Arquiv
   await expect(page.getByRole("menuitem", { name: "Variantes" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Imagens" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "Arquivar" })).toHaveCount(0);
+});
+
+test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícone; o sucesso é status e o conflito oferece 'Atualizar variantes'", async ({
+  page,
+}) => {
+  let skuAnswer: "conflict" | "ok" | "unavailable" = "unavailable";
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+      "product/setVariantListPrice": (route) => route.fulfill(unavailable),
+      "product/setVariantSku": (route) => {
+        if (skuAnswer === "ok") {
+          return route.fulfill(
+            rpc({
+              changed: true,
+              configuration: {
+                ...CONFIGURATION,
+                variants: [{ ...CONFIGURATION.variants[0], sku: "CAM-1" }],
+              },
+              product: product(1, "Camiseta do teste"),
+            })
+          );
+        }
+        return route.fulfill(
+          skuAnswer === "conflict"
+            ? rpc(
+                {
+                  code: "CONFLICT",
+                  data: undefined,
+                  defined: false,
+                  message: "Conflict",
+                  status: 409,
+                },
+                409
+              )
+            : unavailable
+        );
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  await skuSection.getByRole("textbox").fill("CAM-1");
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+  const skuAlert = skuSection.getByRole("alert");
+  await expect(skuAlert).toContainText(
+    "O catálogo está temporariamente indisponível."
+  );
+  await expect(skuAlert.locator("svg")).toHaveCount(1);
+  await expect(skuSection.getByRole("status")).toHaveCount(0);
+
+  const priceSection = page.getByRole("region", {
+    name: "Preço de tabela das variantes",
+  });
+  await priceSection.getByRole("textbox").fill("59,90");
+  await priceSection.getByRole("button", { name: "Salvar preço" }).click();
+  await expect(priceSection.getByRole("alert")).toContainText(
+    "Não foi possível salvar o preço."
+  );
+  await expect(priceSection.getByRole("alert").locator("svg")).toHaveCount(1);
+
+  skuAnswer = "conflict";
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+  await expect(
+    skuSection.getByRole("button", { name: "Atualizar variantes" })
+  ).toBeVisible();
+
+  skuAnswer = "ok";
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+  await expect(skuSection.getByRole("status")).toHaveText("SKU salvo.");
+  await expect(skuSection.getByRole("alert")).toHaveCount(0);
 });

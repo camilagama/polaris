@@ -73,26 +73,31 @@ export function VariantFieldRow({
   );
 }
 
-interface VariantSaveNoticeProps {
-  message: string | null;
-  needsReload: boolean;
-  onReload: () => void;
+/** How a save went: `saved` is a status, `error` an alert, `conflict` an alert with the way out. */
+export interface VariantSaveOutcome {
+  kind: "conflict" | "error" | "saved";
+  text: string;
 }
 
-/** How the save went: a conflict is an error with the way out (read the variants again); the rest is a status. */
+interface VariantSaveNoticeProps {
+  onReload: () => void;
+  outcome: VariantSaveOutcome | null;
+}
+
+/** How the save went: a conflict is an error with the way out (read the variants again); any other error is an
+    alert with text and icon; success is a status. */
 export function VariantSaveNotice({
-  message,
-  needsReload,
   onReload,
+  outcome,
 }: VariantSaveNoticeProps) {
-  if (!message) {
+  if (!outcome) {
     return null;
   }
-  if (needsReload) {
+  if (outcome.kind === "conflict") {
     return (
       <Alert variant="destructive">
         <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          {message}
+          {outcome.text}
           <Button onClick={onReload} size="sm" type="button" variant="link">
             Atualizar variantes
           </Button>
@@ -100,9 +105,12 @@ export function VariantSaveNotice({
       </Alert>
     );
   }
+  if (outcome.kind === "error") {
+    return <FieldError>{outcome.text}</FieldError>;
+  }
   return (
     <p className="text-muted-foreground text-support" role="status">
-      {message}
+      {outcome.text}
     </p>
   );
 }

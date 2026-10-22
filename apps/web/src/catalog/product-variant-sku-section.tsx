@@ -10,6 +10,7 @@ import { ProductTextField } from "./product-fields";
 import {
   VariantFieldRow,
   VariantSaveNotice,
+  type VariantSaveOutcome,
   VariantSection,
 } from "./product-variant-parts";
 import {
@@ -93,14 +94,12 @@ export function ProductVariantSkuSection({
   productId,
 }: SkuSectionProps) {
   const [isPending, setIsPending] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [needsReload, setNeedsReload] = useState(false);
+  const [outcome, setOutcome] = useState<VariantSaveOutcome | null>(null);
 
   const handleSave = useCallback(
     async (variantId: string, sku: string) => {
       setIsPending(true);
-      setMessage(null);
-      setNeedsReload(false);
+      setOutcome(null);
       try {
         const result = await orpcClient.product.setVariantSku({
           expectedVersion: configuration.productVersion,
@@ -110,15 +109,20 @@ export function ProductVariantSkuSection({
           variantId,
         });
         onUpdated(result.configuration, result.product);
-        setMessage(result.changed ? "SKU salvo." : "O SKU já está atualizado.");
+        setOutcome({
+          kind: "saved",
+          text: result.changed ? "SKU salvo." : "O SKU já está atualizado.",
+        });
         return (
           result.configuration.variants.find(
             (variant) => variant.id === variantId
           )?.sku ?? null
         );
       } catch (error: unknown) {
-        setMessage(variantSkuErrorMessage(error));
-        setNeedsReload(rpcErrorCode(error) === "CONFLICT");
+        setOutcome({
+          kind: rpcErrorCode(error) === "CONFLICT" ? "conflict" : "error",
+          text: variantSkuErrorMessage(error),
+        });
       } finally {
         setIsPending(false);
       }
@@ -127,8 +131,7 @@ export function ProductVariantSkuSection({
   );
 
   const handleDraftChange = useCallback(() => {
-    setMessage(null);
-    setNeedsReload(false);
+    setOutcome(null);
   }, []);
 
   return (
@@ -150,11 +153,7 @@ export function ProductVariantSkuSection({
           </li>
         ))}
       </ul>
-      <VariantSaveNotice
-        message={message}
-        needsReload={needsReload}
-        onReload={onConflict}
-      />
+      <VariantSaveNotice onReload={onConflict} outcome={outcome} />
     </VariantSection>
   );
 }

@@ -72,14 +72,12 @@ function InputGroupAddon({
 }
 
 /* The control inside the group: no border of its own (border, focus and error belong to the group). 16 px only with
-   touch (iOS zooms in below that). `border-0`, `min-h-0`, `py-0`, `rounded-none`, the text color and the placeholder opacity
-   are said here on purpose: inside the old shell (`.ui-root input`, `@layer legacy`) every input has a border, a
-   2.8 rem height and its own colors, and only a utility wins over that layer. */
+   touch (iOS zooms in below that). */
 function InputGroupInput({ className, ...props }: ComponentProps<"input">) {
   return (
     <InputPrimitive
       className={cn(
-        "h-full min-h-0 w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3 py-0 text-foreground text-sm touch:text-base outline-none placeholder:text-muted-foreground placeholder:opacity-100 disabled:cursor-not-allowed",
+        "h-full w-full min-w-0 flex-1 bg-transparent px-3 text-sm touch:text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
         className
       )}
       data-slot="input-group-control"

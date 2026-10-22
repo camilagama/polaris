@@ -58,12 +58,22 @@ export function OfflineNotice() {
 interface FeedbackProps {
   error: string | null;
   notice: string | null;
+  /** Only the archived notice has it: restores the product just archived. */
+  onUndo?: (() => void) | undefined;
   /** The focus goes here when an action ends, so a person far down the list reads the result. */
   regionRef: Ref<HTMLDivElement>;
+  /** No connection or an action running: the restore cannot start. */
+  undoDisabled?: boolean | undefined;
 }
 
 /** What the last action did: nothing is drawn (not even a gap) without a message. */
-export function ActionFeedback({ error, notice, regionRef }: FeedbackProps) {
+export function ActionFeedback({
+  error,
+  notice,
+  onUndo,
+  regionRef,
+  undoDisabled,
+}: FeedbackProps) {
   if (!(error || notice)) {
     return null;
   }
@@ -78,7 +88,24 @@ export function ActionFeedback({ error, notice, regionRef }: FeedbackProps) {
       {notice ? (
         <Alert>
           <CircleCheckIcon aria-hidden="true" />
-          <AlertDescription>{notice}</AlertDescription>
+          <AlertDescription
+            className={
+              onUndo ? "flex flex-wrap items-center gap-x-3 gap-y-1" : undefined
+            }
+          >
+            {notice}
+            {onUndo ? (
+              <Button
+                disabled={undoDisabled}
+                onClick={onUndo}
+                size="sm"
+                type="button"
+                variant="link"
+              >
+                Desfazer
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
     </div>
