@@ -142,10 +142,16 @@ function constantsOf(value: string, text: string): string[] {
   if (!name) {
     return [];
   }
-  const declaration = new RegExp(
-    `\\b(?:const|let)\\s+${name.replace(/\$/g, "\\$")}\\b[^=]*=\\s*(["'\`])([\\s\\S]*?)\\1`
-  ).exec(text);
-  return declaration ? [`"${declaration[2]}"`] : [];
+  for (const keyword of ["const", "let"]) {
+    const declared = text.indexOf(`${keyword} ${name} `);
+    const equals = declared < 0 ? -1 : text.indexOf("=", declared);
+    const opener = equals < 0 ? "" : text.slice(equals + 1).trimStart()[0];
+    if (opener === '"' || opener === "'" || opener === "`") {
+      const start = text.indexOf(opener, equals) + 1;
+      return [`"${text.slice(start, text.indexOf(opener, start))}"`];
+    }
+  }
+  return [];
 }
 
 /** The classes of a file's `className`s that are Tailwind utilities (`isUtility`): the ones it relies on. */
