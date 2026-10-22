@@ -21,59 +21,6 @@ export const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
  */
 export const OWNER_SCOPE_PREFIX = "app.owner_scope.";
 /**
- * The tables of `public` that a `polaris_*` role may use with no row security, with the exact grants each has today to a
- * `polaris_*` role or to PUBLIC (`grantee PRIVILEGE`, or `grantee PRIVILEGE (column)` for a column grant): Better Auth's
- * tables that still have none (`"user"`, `account`, `verification`) and the append-only auth audit
- * (`auth_security_audit_event`). Turning it on in them is a task of its own (ADR 0093, amended in 0097). The grants are
- * exact because the exception is: a new grant on one of them (a `SELECT` of `account` for another role) would see every
- * row, so it is a finding until it is reviewed and listed here; any other table a `polaris_*` role holds a privilege on has
- * row security enabled and forced.
- */
-export const TABLES_WITHOUT_ROW_SECURITY: Readonly<
-  Record<string, readonly string[]>
-> = {
-  account: [
-    "polaris_auth_runtime DELETE",
-    "polaris_auth_runtime INSERT",
-    "polaris_auth_runtime SELECT",
-    "polaris_auth_runtime UPDATE",
-    "polaris_unverified_user_owner SELECT (provider_id)",
-    "polaris_unverified_user_owner SELECT (user_id)",
-  ],
-  auth_security_audit_event: [
-    "polaris_auth_runtime INSERT",
-    "polaris_device_session_owner INSERT",
-    "polaris_unverified_user_owner INSERT (event_type)",
-    "polaris_unverified_user_owner INSERT (outcome)",
-    "polaris_unverified_user_owner INSERT (request_id)",
-    "polaris_unverified_user_owner INSERT (subject_id)",
-  ],
-  user: [
-    "polaris_auth_runtime DELETE",
-    "polaris_auth_runtime INSERT",
-    "polaris_auth_runtime SELECT",
-    "polaris_auth_runtime UPDATE",
-    "polaris_notice_recipient_owner SELECT (email)",
-    "polaris_notice_recipient_owner SELECT (email_verified)",
-    "polaris_notice_recipient_owner SELECT (id)",
-    "polaris_onboarding_owner SELECT (email_verified)",
-    "polaris_onboarding_owner SELECT (id)",
-    "polaris_onboarding_owner UPDATE (updated_at)",
-    "polaris_unverified_user_owner DELETE",
-    "polaris_unverified_user_owner SELECT (created_at)",
-    "polaris_unverified_user_owner SELECT (email_verified)",
-    "polaris_unverified_user_owner SELECT (id)",
-    "polaris_unverified_user_owner SELECT (verification_link_expires_at)",
-    "polaris_unverified_user_owner UPDATE (updated_at)",
-  ],
-  verification: [
-    "polaris_auth_runtime DELETE",
-    "polaris_auth_runtime INSERT",
-    "polaris_auth_runtime SELECT",
-    "polaris_auth_runtime UPDATE",
-  ],
-};
-/**
  * Roles Neon creates and manages itself (the same names `verify-staging-database.ts` treats as the platform's): never a
  * role of the app, and not checked by `rowSecurityWithoutPolicy` (a superuser or a role with BYPASSRLS is left out anyway).
  */
@@ -94,6 +41,8 @@ interface DefinerRow {
 
 export interface Findings {
   createInPublic: string[];
+  /** `schema.table (owner)`: a table with forced row security whose owner is neither a superuser nor BYPASSRLS */
+  forcedTableOwnerWithoutBypass: string[];
   /** SECURITY DEFINER functions (`signature (owner)`) whose owner is not a `polaris_*_owner` role */
   foreignOwner: string[];
   ownerMembership: string[];
@@ -105,7 +54,7 @@ export interface Findings {
   rowSecurityWithoutPolicy: string[];
   /** `schema.table.policy (owner): setting` for a policy on `app.owner_scope.*` that no function of its owner writes */
   scopeWithoutWriter: string[];
-  /** `public.table` a `polaris_*` role holds a privilege on, without row security enabled and forced (the list aside) */
+  /** `public.table` a `polaris_*` role holds a privilege on, without row security enabled and forced (no exception) */
   tableWithoutRowSecurity: string[];
   temporary: string[];
   unpinned: string[];
@@ -312,6 +261,8 @@ export async function findViolations(client: Client): Promise<Findings> {
       ...(pub.can_create ? ["PUBLIC"] : []),
       ...roles.filter((row) => row.can_create).map((row) => row.rolname),
     ],
+    forcedTableOwnerWithoutBypass:
+      await findForcedTableOwnerWithoutBypass(client),
     foreignOwner,
     ownerMembership: membership.rows.map(
       (row) => `${row.login}->${row.target}`
@@ -459,77 +410,52 @@ export async function findOwnerScopeViolations(
 /**
  * Every table of `public` that a `polaris_*` role (a runtime group, an owner, a login of the app; through PUBLIC or a group
  * too) holds any privilege on, of the table or of a column, has row security enabled and forced: a table without it gives
- * the role every row, whatever the policies say. TABLES_WITHOUT_ROW_SECURITY aside, by exact name and with its exact grants
- * to `polaris_*` roles and PUBLIC (one more is reported, and so is one listed that is gone); an entry of that list that
- * has row security forced, or no longer exists, is reported too, so the list does not outlive its reason.
+ * the role every row, whatever the policies say. There is no exception since 0098 (the last ones were Better Auth's tables
+ * and the auth audit), and on purpose no list or parameter to make one: an exception would be a change of this code, seen
+ * in review, not one more line in a list. `public.table`.
  */
 export async function findTablesWithoutRowSecurity(
   client: Client
 ): Promise<string[]> {
-  const listed = Object.keys(TABLES_WITHOUT_ROW_SECURITY);
   const { rows } = await client.query<{ finding: string }>(
     `SELECT 'public.' || c.relname AS finding
        FROM pg_class c
       WHERE c.relnamespace = 'public'::regnamespace
         AND c.relkind IN ('r', 'p')
         AND NOT (c.relrowsecurity AND c.relforcerowsecurity)
-        AND c.relname <> ALL ($1::text[])
         AND EXISTS (
           SELECT 1 FROM pg_roles r
            WHERE r.rolname LIKE 'polaris\\_%' AND NOT r.rolsuper
              AND (has_table_privilege(r.oid, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
                OR has_any_column_privilege(r.oid, c.oid, 'SELECT,INSERT,UPDATE,REFERENCES'))
         )
-     UNION ALL
-     SELECT 'public.' || listed.name || ': listed without row security, but '
-            || CASE WHEN c.oid IS NULL THEN 'no such table' ELSE 'it has row security enabled and forced' END
-       FROM unnest($1::text[]) AS listed(name)
-       LEFT JOIN pg_class c ON c.relnamespace = 'public'::regnamespace AND c.relname = listed.name AND c.relkind IN ('r', 'p')
-      WHERE c.oid IS NULL OR (c.relrowsecurity AND c.relforcerowsecurity)
-      ORDER BY 1`,
-    [listed]
+      ORDER BY 1`
   );
-  // the grants of the listed tables to polaris_* roles and to PUBLIC, of the table and of each column
-  const grants = await client.query<{ grant: string; table: string }>(
-    `WITH listed AS (
-       SELECT c.oid, c.relname FROM pg_class c
-        WHERE c.relnamespace = 'public'::regnamespace AND c.relname = ANY ($1::text[])
-     ), entries AS (
-       SELECT l.relname, a.grantee, a.privilege_type, NULL::text AS column_name
-         FROM listed l JOIN pg_class c ON c.oid = l.oid, aclexplode(c.relacl) a
-       UNION
-       SELECT l.relname, a.grantee, a.privilege_type, att.attname::text
-         FROM listed l
-         JOIN pg_attribute att ON att.attrelid = l.oid AND att.attnum > 0 AND NOT att.attisdropped,
-              aclexplode(att.attacl) a
-     )
-     SELECT e.relname AS table,
-            CASE WHEN e.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(e.grantee) END || ' ' || e.privilege_type
-              || CASE WHEN e.column_name IS NULL THEN '' ELSE ' (' || e.column_name || ')' END AS grant
-       FROM entries e
-      WHERE e.grantee = 0 OR pg_get_userbyid(e.grantee) LIKE 'polaris\\_%'
-      ORDER BY 1, 2`,
-    [listed]
+  return rows.map((row) => row.finding);
+}
+
+/**
+ * With FORCE, the owner of a table is bound by its policies too, unless it is a superuser or has BYPASSRLS. The owner of
+ * the tables is the migrator: without the bypass, a data migration (a backfill, an UPDATE of every row) would see zero rows
+ * and change nothing, with no error. So every table with row security enabled and forced (any schema but the system ones)
+ * belongs to a superuser or to a role with BYPASSRLS (the attribute of the role itself: attributes are not inherited).
+ * A migration that does DML after SET ROLE to an owner is bound by that owner's policies, as wanted; a backfill is the
+ * migrator's. `schema.table (owner)`.
+ */
+export async function findForcedTableOwnerWithoutBypass(
+  client: Client
+): Promise<string[]> {
+  const { rows } = await client.query<{ finding: string }>(
+    `SELECT n.nspname || '.' || c.relname || ' (' || o.rolname || ')' AS finding
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_roles o ON o.oid = c.relowner
+      WHERE c.relkind IN ('r', 'p') AND c.relrowsecurity AND c.relforcerowsecurity
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'
+        AND NOT o.rolsuper AND NOT o.rolbypassrls
+      ORDER BY 1`
   );
-  const findings = rows.map((row) => row.finding);
-  for (const table of listed) {
-    const expected = TABLES_WITHOUT_ROW_SECURITY[table] ?? [];
-    const actual = grants.rows
-      .filter((row) => row.table === table)
-      .map((row) => row.grant);
-    findings.push(
-      ...actual
-        .filter((grant) => !expected.includes(grant))
-        .map(
-          (grant) =>
-            `public.${table}: grant not in TABLES_WITHOUT_ROW_SECURITY: ${grant}`
-        ),
-      ...expected
-        .filter((grant) => !actual.includes(grant))
-        .map((grant) => `public.${table}: listed grant missing: ${grant}`)
-    );
-  }
-  return findings;
+  return rows.map((row) => row.finding);
 }
 
 /**
@@ -645,7 +571,12 @@ export function assertClean(findings: Findings) {
   assert.deepEqual(
     findings.tableWithoutRowSecurity,
     [],
-    "tables of public a polaris_* role holds a privilege on, without row security enabled and forced (or a stale entry of TABLES_WITHOUT_ROW_SECURITY)"
+    "tables of public a polaris_* role holds a privilege on, without row security enabled and forced (no exception)"
+  );
+  assert.deepEqual(
+    findings.forcedTableOwnerWithoutBypass,
+    [],
+    "tables with forced row security whose owner is neither a superuser nor BYPASSRLS: a data migration would see zero rows (schema.table (owner))"
   );
   assert.deepEqual(
     findings.rowSecurityWithoutPolicy,

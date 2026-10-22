@@ -49,8 +49,9 @@ import {
  *      runs with BYPASSRLS on Neon;
  *   7. a policy that reads `app.owner_scope.*` is TO one `polaris_*_owner` role and reads no runtime setting, and a policy of
  *      an owner role reads no runtime setting (`ownerScope`, with no exception since 0097);
- *   8. every table of public a `polaris_*` role holds a privilege on has row security enabled and forced, but the exact list
- *      `TABLES_WITHOUT_ROW_SECURITY` (`tableWithoutRowSecurity`);
+ *   8. every table of public a `polaris_*` role holds a privilege on has row security enabled and forced, with no exception
+ *      since 0098 (`tableWithoutRowSecurity`), and the owner of every table with forced row security is a superuser or has
+ *      BYPASSRLS (`forcedTableOwnerWithoutBypass`);
  *   9. on a table with forced row security, every role with a privilege (of the ACL, inherited too) has a permissive policy
  *      for the command (`rowSecurityWithoutPolicy`);
  *  10. every policy on `app.owner_scope.<name>` has a function of its role that writes that setting (`scopeWithoutWriter`).
@@ -613,31 +614,56 @@ async function run() {
         "public.session polaris_unverified_user_owner SELECT",
       ]);
       await client.query("ROLLBACK TO SAVEPOINT rls_probe");
-      // the list is exact and does not outlive its reason: a listed table with row security forced is reported
+      // no exception since 0098: Better Auth's tables and the auth audit without FORCE are reported like any other
       await client.query(
-        "ALTER TABLE public.verification ENABLE ROW LEVEL SECURITY"
+        "ALTER TABLE public.verification NO FORCE ROW LEVEL SECURITY"
       );
       await client.query(
-        "ALTER TABLE public.verification FORCE ROW LEVEL SECURITY"
+        "ALTER TABLE public.auth_security_audit_event DISABLE ROW LEVEL SECURITY"
       );
       assert.deepEqual((await rls()).noRls, [
-        "public.verification: listed without row security, but it has row security enabled and forced",
+        "public.auth_security_audit_event",
+        "public.verification",
       ]);
       await client.query("ROLLBACK TO SAVEPOINT rls_probe");
-      // and its grants are exact: one more grant on a listed table (to a role of the app or to PUBLIC) is reported, and so is
-      // a listed grant that is gone
+      // a new grant on one of them (a column of account to a group, PUBLIC on verification) has no policy, and Better Auth's
+      // runtime without its policy on "user" is reported for each command (the logins of the runtimes, which vary with the
+      // run, are left out of the comparison)
       await client.query(
-        "GRANT SELECT (password) ON public.account TO polaris_pr11_runtime"
+        `GRANT SELECT (password) ON public.account TO ${group}`
       );
       await client.query("GRANT SELECT ON public.verification TO PUBLIC");
-      await client.query(
-        "REVOKE INSERT ON public.auth_security_audit_event FROM polaris_device_session_owner"
+      await client.query('DROP POLICY user_auth_runtime_all ON public."user"');
+      const known = new Set([group, member, "polaris_auth_runtime", "PUBLIC"]);
+      assert.deepEqual(
+        (await rls()).noPolicy.filter((finding) =>
+          known.has(finding.split(" ")[1] ?? "")
+        ),
+        [
+          `public.account ${group} SELECT`,
+          `public.account ${member} SELECT`,
+          "public.user polaris_auth_runtime DELETE",
+          "public.user polaris_auth_runtime INSERT",
+          "public.user polaris_auth_runtime SELECT",
+          "public.user polaris_auth_runtime UPDATE",
+          "public.verification PUBLIC SELECT",
+        ]
       );
-      assert.deepEqual((await rls()).noRls, [
-        "public.account: grant not in TABLES_WITHOUT_ROW_SECURITY: polaris_pr11_runtime SELECT (password)",
-        "public.auth_security_audit_event: listed grant missing: polaris_device_session_owner INSERT",
-        "public.verification: grant not in TABLES_WITHOUT_ROW_SECURITY: PUBLIC SELECT",
-      ]);
+      await client.query("ROLLBACK TO SAVEPOINT rls_probe");
+      // forcedTableOwnerWithoutBypass: a table with forced row security owned by a role without BYPASSRLS is reported (a data
+      // migration of that owner would see zero rows); the same owner with BYPASSRLS is the control
+      const bypass = async () =>
+        (await findViolations(client)).forcedTableOwnerWithoutBypass;
+      assert.deepEqual(await bypass(), []);
+      await client.query(`ALTER TABLE public.${table} OWNER TO ${detached}`);
+      assert.deepEqual(await bypass(), [`public.${table} (${detached})`]);
+      await client.query(`ALTER ROLE ${detached} BYPASSRLS`);
+      assert.deepEqual(await bypass(), []);
+      await client.query(`ALTER ROLE ${detached} NOBYPASSRLS`);
+      await client.query(
+        `ALTER TABLE public.${table} NO FORCE ROW LEVEL SECURITY`
+      );
+      assert.deepEqual(await bypass(), []);
       await client.query("ROLLBACK TO SAVEPOINT rls_probe");
       assert.deepEqual(await rls(), { noPolicy: [], noRls: [] });
 
@@ -682,7 +708,7 @@ async function run() {
       await client.query(writer("own_owner"));
       await client.query("RESET ROLE");
       assert.deepEqual((await findViolations(client)).scopeWithoutWriter, []);
-      // the real owner: end_device_sessions without its set_config leaves the four policies of its owner without a writer
+      // the real owner: end_device_sessions without its set_config leaves the five policies of its owner without a writer
       await client.query(
         "GRANT polaris_device_session_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
       );
@@ -701,6 +727,7 @@ async function run() {
       await client.query(withoutScope);
       await client.query("RESET ROLE");
       assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
+        "public.auth_security_audit_event.auth_security_audit_event_device_session_owner_insert (polaris_device_session_owner): app.owner_scope.device_session_user_id",
         "public.device_sessions.device_sessions_session_owner_select (polaris_device_session_owner): app.owner_scope.device_session_user_id",
         "public.devices.devices_session_owner_select (polaris_device_session_owner): app.owner_scope.device_session_user_id",
         "public.session.session_device_session_owner_delete (polaris_device_session_owner): app.owner_scope.device_session_user_id",
@@ -709,7 +736,7 @@ async function run() {
     });
     assertClean(await findViolations(client));
     tests.push(
-      "a table of public a polaris_* role uses without row security enabled and forced (session with NO FORCE too), a listed table that has it (verification), a grant on a listed table that is not in its exact list (a column of account, PUBLIC on verification) or a listed grant that is gone, a grant under FORCE with no permissive policy for the command (to the group and to the role that inherits it, not to one that only SETs to it; a restrictive policy or one of another command does not cover; PUBLIC needs TO PUBLIC; session without the policy of polaris_unverified_user_owner or of the DELETE of polaris_device_session_owner) and a policy on app.owner_scope.* whose role has no function that writes it (only in a comment, only for the session with false, only in a function of another owner, or end_device_sessions without its set_config) are reported; the policy TO the group or FOR ALL, the function of the same owner that writes the scope, and the database as migrated are clean"
+      "a table of public a polaris_* role uses without row security enabled and forced (session, verification with NO FORCE and the auth audit with row security off too: no exception since 0098), a grant under FORCE with no permissive policy for the command (to the group and to the role that inherits it, not to one that only SETs to it; a restrictive policy or one of another command does not cover; PUBLIC needs TO PUBLIC; session without the policy of polaris_unverified_user_owner or of the DELETE of polaris_device_session_owner, a column of account granted to a group, SELECT of verification to PUBLIC, the user table without the policy of the auth runtime), a table with forced row security whose owner has no BYPASSRLS (not with it, nor without FORCE) and a policy on app.owner_scope.* whose role has no function that writes it (only in a comment, only for the session with false, only in a function of another owner, or end_device_sessions without its set_config, which leaves the five policies of its owner, the one of the audit too, without a writer) are reported; the policy TO the group or FOR ALL, the function of the same owner that writes the scope, and the database as migrated are clean"
     );
 
     // the gate can fail: PUBLIC with TEMPORARY or CREATE (every runtime role inherits it)
