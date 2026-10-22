@@ -284,6 +284,57 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([problem]);
   });
 
+  // Every variable of staging must exist in production too (another guard), so the test sets both.
+  const setReplyTo = (entries, replyTo) => {
+    const { staging, production } = entryOf(entries, "web").config.env;
+    if (replyTo === undefined) {
+      Reflect.deleteProperty(staging.vars, "AUTH_EMAIL_REPLY_TO");
+      return;
+    }
+    staging.vars.AUTH_EMAIL_REPLY_TO = replyTo;
+    production.vars.AUTH_EMAIL_REPLY_TO = "";
+  };
+
+  it("accepts the reply-to of staging absent, empty or on araute.app", () => {
+    const entries = repositoryEntries();
+    for (const replyTo of [
+      undefined,
+      "",
+      "  ",
+      "ajuda@araute.app",
+      "Polaris <Ajuda@ARAUTE.APP>",
+    ]) {
+      setReplyTo(entries, replyTo);
+      expect(findIsolationProblems(entries), String(replyTo)).toEqual([]);
+    }
+  });
+
+  it("refuses a reply-to of staging outside araute.app", () => {
+    const entries = repositoryEntries();
+    const problem =
+      "web: env.staging: password sign-in in staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app";
+    for (const replyTo of [
+      "ajuda@example.com",
+      "ajuda@evil-araute.app",
+      "ajuda@araute.app.evil.com",
+      "ajuda@dash.araute.app",
+      "Polaris <ajuda@araute.app.evil.com>",
+      "evil@example.com <ajuda@araute.app>",
+      "Polaris <ajuda@araute.app> <a@example.com>",
+    ]) {
+      setReplyTo(entries, replyTo);
+      expect(findIsolationProblems(entries), replyTo).toEqual([problem]);
+    }
+  });
+
+  it("does not check the reply-to while the password is off in staging", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "false";
+    setReplyTo(entries, "ajuda@example.com");
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
   it("accepts staging with the password off and refuses a value that is neither true nor false", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;

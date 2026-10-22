@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - a staging value is still a PLACEHOLDER, or a staging id, queue, bucket or rate limit namespace is
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
- * - the deployed name does not end in `-staging`, previews are on, or password sign-in is on with a sender outside araute.app;
+ * - the deployed name does not end in `-staging`, previews are on, or password sign-in is on with a sender or reply-to outside araute.app;
  * - the web of staging is not at exactly https://dash.araute.app with workers_dev off, or production uses a host of staging;
  * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
@@ -314,6 +314,14 @@ function checkStagingPasswordSender(where, staging, problems) {
   if (!STAGING_SENDER.test((staging.vars?.AUTH_EMAIL_FROM ?? "").trim())) {
     problems.push(
       `${where}: password sign-in in staging needs vars.AUTH_EMAIL_FROM on @araute.app`
+    );
+  }
+  // The reply-to is optional, but when it is there the answer of a person goes to a mailbox of the staging
+  // domain, with the same rules as the sender.
+  const replyTo = (staging.vars?.AUTH_EMAIL_REPLY_TO ?? "").trim();
+  if (replyTo !== "" && !STAGING_SENDER.test(replyTo)) {
+    problems.push(
+      `${where}: password sign-in in staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app`
     );
   }
 }
