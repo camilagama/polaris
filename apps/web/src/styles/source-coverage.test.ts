@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -65,12 +65,38 @@ function covered(file: string, sources: string[]): boolean {
   );
 }
 
+const SIBLING_IMPORT = /from\s+["']\.\/([^"']+)["']/g;
+
+/**
+ * The migrated files: those that import a component of `src/ui` or use `data-ui`, and the files of the same
+ * folder that import one of those (the pages of the password family import `entry-ui` and carry their own classes).
+ */
+function migrated(files: Map<string, string>): Set<string> {
+  const found = new Set(
+    [...files].filter(([, text]) => MIGRATED.test(text)).map(([file]) => file)
+  );
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [file, text] of files) {
+      const folder = posix.dirname(file);
+      const importsOne = [...text.matchAll(SIBLING_IMPORT)].some((match) =>
+        found.has(posix.join(folder, `${match[1]}.tsx`))
+      );
+      if (importsOne && !found.has(file)) {
+        found.add(file);
+        grew = true;
+      }
+    }
+  }
+  return found;
+}
+
 /** The migrated files (by their text) that no source covers. */
 function uncovered(files: Map<string, string>, sources: string[]): string[] {
-  return [...files]
-    .filter(([file]) => !OWN_FOLDERS.some((folder) => file.startsWith(folder)))
-    .filter(([, text]) => MIGRATED.test(text))
-    .map(([file]) => file)
+  const found = migrated(files);
+  return [...found]
+    .filter((file) => !OWN_FOLDERS.some((folder) => file.startsWith(folder)))
     .filter((file) => !covered(file, sources))
     .sort();
 }
@@ -89,15 +115,19 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
       ["inventory/page.tsx", 'import { Button } from "@/ui/button";'],
       ["inventory/row-actions.tsx", 'import { Button } from "@/ui/button";'],
       ["inventory/screen.tsx", '<main data-ui className="p-4" />'],
+      ["inventory/form.tsx", 'import { Page } from "./page";'],
       ["sales/old-screen.tsx", 'import { x } from "./sale-form-model";'],
+      ["lab/lab.tsx", 'import { Page } from "../inventory/page";'],
     ]);
     expect(uncovered(files, ["inventory/page.tsx"])).toEqual([
+      "inventory/form.tsx",
       "inventory/row-actions.tsx",
       "inventory/screen.tsx",
     ]);
     expect(
       uncovered(files, [
         "inventory/page.tsx",
+        "inventory/form.tsx",
         "inventory/row-actions.tsx",
         "inventory/screen.tsx",
       ])
@@ -114,10 +144,19 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
       ])
     );
     // the guard sees the migrated screens at all: the stock row buttons are one of them
-    expect(
-      [...files].filter(([, text]) => MIGRATED.test(text)).length
-    ).toBeGreaterThan(10);
-    expect(files.has("inventory/stock-row-actions.tsx")).toBe(true);
+    expect(migrated(files).size).toBeGreaterThan(10);
+    expect(migrated(files).has("inventory/stock-row-actions.tsx")).toBe(true);
+    // the pages of the password family are found through `entry-ui`, not by their own imports
+    expect(migrated(files).has("sign-in/unlock-page.tsx")).toBe(true);
+    // a line for a file that is gone does nothing (Tailwind ignores it); a folder (other than the two of the
+    // interface) would generate the utilities of old screens
+    for (const source of sources) {
+      expect(existsSync(join(src, source)), source).toBe(true);
+      expect(
+        OWN_FOLDERS.includes(`${source}/`) || source.endsWith(".tsx"),
+        source
+      ).toBe(true);
+    }
     expect(uncovered(files, sources)).toEqual([]);
   });
 });

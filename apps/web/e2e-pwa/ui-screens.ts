@@ -170,6 +170,7 @@ const STOCK_SOURCES = [
   "src/inventory/inventory-page.tsx",
   "src/inventory/stock-command-panel.tsx",
   "src/inventory/stock-panel-fields.tsx",
+  "src/inventory/stock-row-actions.tsx",
 ];
 
 /** One state of the stock screen: the same screen, opened in the state the test builds (`ui-stock-states.ts`). */
