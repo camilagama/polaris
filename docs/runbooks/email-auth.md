@@ -12,6 +12,12 @@ A validação e o hash/verify normalizam NFC. O hasher mantém os parâmetros Sc
 4. `EMAIL_PASSWORD_AUTH_ENABLED` está definido como `false` no Wrangler local. Mantenha-o desligado até o PR16 habilitar rate limiting e Turnstile e até o sender estar configurado. Exceção: o staging o liga desde 22/10/2026, sem Turnstile (ADR 0097, emenda); lá as rotas de senha respondem 503 até o Turnstile existir.
 5. Antes de enviar a usuários reais, revise a política de privacidade e os termos/DPA do Resend: o provider processará destinatários, links de verificação/reset e metadados de entrega.
 
+## Desligar a senha no staging
+
+- **Imediato, sem deploy:** `wrangler secret delete RESEND_API_KEY --env staging` (em `apps/web`). Sem a chave, `isEmailPasswordAuthEnabled` dá falso e `GET /api/auth-methods` volta `emailPassword: false`; a tela de entrada deixa de mostrar o formulário. Confira com `curl -fsS https://dash.araute.app/api/auth-methods`; enquanto o Turnstile não existe ele já vem `false` antes e depois, então a prova de que a chave saiu é o 503 `auth_email_unavailable` do cadastro. Apagar a chave também tira o envio de qualquer e-mail do Resend. Para ligar de novo, recrie a chave ([staging](./staging.md#5-segredos-do-worker-polaris-web-staging-responsável)).
+- **Permanente:** `EMAIL_PASSWORD_AUTH_ENABLED: "false"` em `env.staging.vars` de `apps/web/wrangler.jsonc`, por pull request (vale depois do deploy do staging). `verify:staging-isolation` aceita `"false"` sem exigir remetente.
+- `emailPassword` também fica `false` enquanto a proteção contra abuso não está pronta (flag `AUTH_ABUSE_PROTECTION_ENABLED`, as duas chaves do Turnstile e os limitadores); as rotas de senha continuam respondendo 503 como barreira do servidor ([auth-abuse-protection](./auth-abuse-protection.md)).
+
 ## E-mails e links do P8
 
 Com a flag ligada, o Worker envia estes e-mails. Os de verificação e de redefinição levam o link para a página do app com o token no fragmento (`/confirmar-email#token=` e `/redefinir-senha#token=`); o de desbloqueio leva a `/desbloquear#token=`. O link do Better Auth, com o token no caminho ou na consulta, nunca é usado. Os de "você já tem conta" (`/entrar`), de aviso de troca ou definição de senha (`/esqueci-a-senha`) não têm token.

@@ -2,7 +2,7 @@
 
 Status: configuração preenchida no repositório (IDs reais, seção 3); os recursos de staging existem desde 22/10, falta o que a seção 5 em diante lista. Os recursos, os segredos e o primeiro deploy são do responsável (Arrascaeta ou o usuário). Decisões e motivos: [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md).
 
-O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A exceção são o nome e o e-mail das pessoas de teste que entram pelo Google: são dados pessoais de quem testa, e saem do banco quando a pessoa deixa de testar (seção 4). A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15).
+O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A exceção são o nome e o e-mail das pessoas de teste que entram pelo Google: são dados pessoais de quem testa, e saem do banco quando a pessoa deixa de testar (seção 4). Com a senha ligada, o e-mail digitado no cadastro também é dado pessoal, às vezes de quem não é a pessoa que o digitou; o pedido de remoção desse terceiro segue o mesmo passo de apagamento do item 9 da seção 4 (conta e sessões no banco de staging). A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15).
 
 ## Gatilho
 
@@ -122,7 +122,7 @@ Quem cria é o usuário ou o Arrascaeta, num projeto do Google Cloud só do stag
 
 **O limite do controle.** A allowlist vive no Google, fora do repositório: nenhum teste prova que o modo Testing continua ligado. Se o app for publicado no Google, qualquer conta Google entra e cria organização no staging. Por isso o status de publicação não muda nunca, e uma allowlist também no código é um acompanhamento proposto (ADR 0097).
 
-O login por senha fica **ligado** no staging, aberto, por decisão do usuário de 22/10 (ADR 0097, emenda): `EMAIL_PASSWORD_AUTH_ENABLED: "true"` e `AUTH_EMAIL_FROM` em `@araute.app`, e a verificação de isolamento falha se ele ligar com um remetente de outro domínio. Sem Cloudflare Access. O Admin não é exposto.
+O login por senha fica **ligado** no staging, aberto, por decisão do usuário de 22/10 (ADR 0097, emenda): `EMAIL_PASSWORD_AUTH_ENABLED: "true"` e `AUTH_EMAIL_FROM` em `@araute.app`, e a verificação de isolamento falha se ele ligar com um remetente (`AUTH_EMAIL_FROM`) ou um responder-para (`AUTH_EMAIL_REPLY_TO`, opcional: ausente, vazio ou em `@araute.app`) de outro domínio. Sem Cloudflare Access. O Admin não é exposto.
 
 ## 5. Segredos do Worker `polaris-web-staging` (responsável)
 
@@ -133,7 +133,7 @@ O login por senha fica **ligado** no staging, aberto, por decisão do usuário d
 1. No painel do Resend, **API Keys → Create API Key**, permissão **Sending access**, domínio `araute.app`. Copiar a chave uma vez, sem colar em arquivo do repositório, chat, PR nem log.
 2. Em `apps/web`, gravar o segredo com `wrangler secret put RESEND_API_KEY --env staging` e colar a chave no prompt (a chave não vai na linha de comando).
 3. Revogar a chave antiga no painel do Resend. O segredo vale na hora, sem novo deploy.
-4. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true` (prova só que a tela mostra o formulário; o cadastro de ponta a ponta depende do Turnstile, abaixo). Sem o segredo, `emailPassword` volta `false` e a senha some da tela de entrada.
+4. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true` só quando a proteção contra abuso também está pronta (`AUTH_ABUSE_PROTECTION_ENABLED: "true"`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY` e os limitadores); enquanto o Turnstile não existe, vem `false` e a tela não mostra o formulário. Sem o segredo do Resend, `emailPassword` também volta `false`. Para desligar a senha, ver [email-auth](./email-auth.md#desligar-a-senha-no-staging).
 
 `AUTH_EMAIL_FROM` não é segredo: fica no `wrangler.jsonc` (`Polaris (staging) <nao-responda@araute.app>`). Os links dos e-mails de confirmação e de troca de senha saem de `BETTER_AUTH_BASE_URL` (`https://dash.araute.app`).
 
