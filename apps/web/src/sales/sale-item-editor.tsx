@@ -1,15 +1,11 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
-import MinusIcon from "lucide-react/dist/esm/icons/minus";
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type ChangeEvent, useCallback } from "react";
+import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { ButtonGroup } from "@/ui/button-group";
-import { Field, FieldDescription, FieldLabel } from "@/ui/field";
-import { InputGroup, InputGroupInput } from "@/ui/input-group";
-import { describedBy, FieldTexts, TextField } from "./sale-fields";
+import { FieldDescription } from "@/ui/field";
+import { QuantityStepper, TextField } from "./sale-fields";
 import {
   type EvaluationContext,
   type ItemDraft,
@@ -24,79 +20,6 @@ type LocalSearch = (query: string) => Promise<{
   entries: readonly InventoryBalanceEntryReadModel[];
   more: boolean;
 }>;
-
-interface QuantityStepperProps {
-  error: string | undefined;
-  id: string;
-  onChange: (value: string) => void;
-  value: string;
-}
-
-/**
- * − field +. The field is 64 px wide (Petković C-1): with touch each button has a 48 px area, 6 px past each
- * side, and 52 px of the field stay free between the two areas, so a thumb on the number never hits − or +.
- * The buttons are named without the word "quantidade", so the label of the field names the field only.
- */
-function QuantityStepper({ error, id, onChange, value }: QuantityStepperProps) {
-  const less = stepQuantity(value, -1);
-  const more = stepQuantity(value, 1);
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
-    [onChange]
-  );
-  const handleLess = useCallback(() => {
-    if (less !== null) {
-      onChange(less);
-    }
-  }, [less, onChange]);
-  const handleMore = useCallback(() => {
-    if (more !== null) {
-      onChange(more);
-    }
-  }, [more, onChange]);
-  return (
-    <Field className="w-auto" data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={id}>Quantidade</FieldLabel>
-      {/* the field has its own label: the group is only layout (role="none"), no nameless "group" to announce */}
-      <ButtonGroup role="none">
-        <Button
-          aria-label="Menos uma unidade"
-          disabled={less === null}
-          onClick={handleLess}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <MinusIcon aria-hidden="true" />
-        </Button>
-        <InputGroup className="w-16">
-          <InputGroupInput
-            aria-describedby={describedBy(id, error, undefined)}
-            aria-invalid={error ? true : undefined}
-            autoComplete="off"
-            className="px-1 text-center tabular-nums"
-            id={id}
-            inputMode="numeric"
-            maxLength={10}
-            onChange={handleChange}
-            value={value}
-          />
-        </InputGroup>
-        <Button
-          aria-label="Mais uma unidade"
-          disabled={more === null}
-          onClick={handleMore}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <PlusIcon aria-hidden="true" />
-        </Button>
-      </ButtonGroup>
-      <FieldTexts error={error} hint={undefined} id={id} />
-    </Field>
-  );
-}
 
 interface ItemEditorProps {
   canRemove: boolean;
@@ -236,6 +159,9 @@ export function ItemEditor({
         <QuantityStepper
           error={errors[itemFieldKey(item.draftId, "quantity")]}
           id={`${prefix}-quantity`}
+          label="Quantidade"
+          less={stepQuantity(item.quantity, -1)}
+          more={stepQuantity(item.quantity, 1)}
           onChange={handleQuantity}
           value={item.quantity}
         />

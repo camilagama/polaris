@@ -73,7 +73,10 @@ test("estoque: entrada com custo, saída maior que o saldo recusada e saldo inta
     })
     .click();
   await page.getByLabel("Quantidade a baixar").fill("11");
-  await page.getByLabel("Motivo da baixa").selectOption({ label: "Avariado" });
+  await page
+    .getByRole("combobox", { exact: true, name: "Motivo da baixa" })
+    .click();
+  await page.getByRole("option", { exact: true, name: "Avariado" }).click();
   await page.getByRole("button", { name: "Revisar" }).click();
   await expect(page.getByText(WRITE_OFF_ABOVE_BALANCE)).toBeVisible();
 

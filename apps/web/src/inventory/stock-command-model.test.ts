@@ -18,9 +18,11 @@ import {
   type StockCommandState,
   type StockResult,
   startStockCommand,
+  stepStockQuantity,
   stockActionBlock,
   stockConsequence,
   stockFailed,
+  stockFieldRefusal,
   stockSubmitLabel,
   stockSucceeded,
   stockSummary,
@@ -82,6 +84,30 @@ function confirming(state: StockCommandState): StockCommandState {
 function issuesOf(state: StockCommandState) {
   return validateStockDraft(state.draft, state.target, state.today).issues;
 }
+
+describe("stepStockQuantity (the − and + of the quantity)", () => {
+  it.each([
+    ["5", 1, 1, "6"],
+    ["5", -1, 1, "4"],
+    ["", 1, 1, "1"],
+    ["", -1, 0, null],
+    ["1", -1, 1, null],
+    ["1", -1, 0, "0"],
+    ["0", -1, 0, null],
+    ["0", 1, 0, "1"],
+    ["1,5", 1, 1, null],
+    ["abc", -1, 0, null],
+    ["-3", 1, 0, null],
+    ["2147483646", 1, 1, "2147483647"],
+    ["2147483647", 1, 1, null],
+    ["99999999999", -1, 1, null],
+  ] as const)(
+    "%j with step %i and minimum %i gives %j",
+    (text, step, minimum, expected) => {
+      expect(stepStockQuantity(text, step, minimum)).toBe(expected);
+    }
+  );
+});
 
 describe("parseUnitCost", () => {
   it.each([
@@ -184,8 +210,8 @@ describe("receive validation", () => {
   });
 
   it("blocks receiving into a positive balance of unknown cost", () => {
-    expect(stockActionBlock("receive", unknownCostTarget)).toContain(
-      "bloqueado"
+    expect(stockActionBlock("receive", unknownCostTarget)).toBe(
+      "Sem custo conhecido, não dá para receber. Faça antes uma contagem com o custo unitário."
     );
     expect(
       stockActionBlock("receive", { ...unknownCostTarget, quantity: 0 })
@@ -521,6 +547,66 @@ describe("submission and idempotency", () => {
     expect(canCloseStock(failed)).toBe(true);
   });
 
+  it("says a write-off refused for balance once, on the quantity field, with the balance read now", () => {
+    const first = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("write_off", writeOffFields)),
+    });
+    const failed = stockFailed(first.state, {
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    });
+    // the alert at the foot is for failures that are not about a field
+    expect(failed.submission).toMatchObject({
+      failure: { balanceRead: false, field: "quantity" },
+      phase: "failed",
+    });
+    // no number until the balance comes back (the old one would be wrong), and if it never does
+    expect(stockFieldRefusal(failed)).toEqual({
+      field: "quantity",
+      message: "O servidor recusou: o saldo mudou. Reduza a quantidade.",
+    });
+    const read = retargetStock(failed, {
+      movingAverageCost: "10.000000",
+      quantity: 1,
+      variantId,
+      version: 9,
+    });
+    expect(stockFieldRefusal(read)).toEqual({
+      field: "quantity",
+      message: "O servidor recusou: o saldo agora é 1. Reduza a quantidade.",
+    });
+    // a balance read as 0 leaves only the block notice: the field says nothing
+    const empty = retargetStock(failed, {
+      movingAverageCost: "10.000000",
+      quantity: 0,
+      variantId,
+      version: 9,
+    });
+    expect(stockActionBlock("write_off", empty.target)).not.toBeNull();
+    expect(stockFieldRefusal(empty)).toBeNull();
+    // editing the quantity retires the refusal
+    expect(stockFieldRefusal(editStockField(read, "quantity", "1"))).toBeNull();
+    expect(
+      stockFieldRefusal(editStockField(read, "reasonNote", "x"))
+    ).not.toBeNull();
+  });
+
+  it("keeps the alert for a refusal that is not about a field", () => {
+    const first = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("write_off", writeOffFields)),
+    });
+    const failed = stockFailed(first.state, { code: "FORBIDDEN" });
+    expect(failed.submission).toMatchObject({
+      failure: { field: null },
+      phase: "failed",
+    });
+    expect(stockFieldRefusal(failed)).toBeNull();
+  });
+
   it("drops the attempt when the server says the command ID was reused", () => {
     const createId = ids();
     const first = prepareStockSubmission({
@@ -688,8 +774,8 @@ describe("mapStockError", () => {
     [
       "CONFLICT",
       "insufficient_stock",
-      "Estoque insuficiente",
-      { refreshBalance: true },
+      "O servidor recusou: o saldo mudou. Reduza a quantidade.",
+      { field: "quantity", refreshBalance: true },
     ],
     ["CONFLICT", "inventory_quantity_limit", "2.147.483.647", {}],
     [
@@ -818,8 +904,31 @@ describe("summaries", () => {
     expect(byLabel["Custo unitário"]).toBe("R$ 12,50");
     expect(byLabel["Data do recebimento"]).toBe("13/10/2026");
     expect(byLabel["Saldo depois"]).toBe("15 unidades (hoje 5)");
-    // (5 x 10,00 + 10 x 12,50) / 15 = 11,666667
-    expect(byLabel["Custo médio previsto"]).toContain("R$ 11,666667");
+    // (5 x 10,00 + 10 x 12,50) / 15 = 11,666667 in the model; the screen shows centavos
+    expect(byLabel["Custo médio previsto"]).toBe(
+      "R$ 11,67, aproximado; o servidor recalcula"
+    );
+  });
+
+  it("rounds the predicted average half-up to centavos, only on display", () => {
+    const tie: StockTarget = {
+      ...target,
+      movingAverageCost: "24.010000",
+      quantity: 1,
+    };
+    const state = confirming(
+      filled("receive", { quantity: "1", unitCost: "24,02" }, tie)
+    );
+    const { body } = validateStockDraft(state.draft, tie, today);
+    if (body === null) {
+      throw new Error("expected a valid body");
+    }
+    // (24,01 + 24,02) / 2 = 24,015 exactly: half-up gives 24,02
+    expect(
+      stockSummary(body, tie).find(
+        (line) => line.label === "Custo médio previsto"
+      )?.value
+    ).toBe("R$ 24,02, aproximado; o servidor recalcula");
   });
 
   it("previews a count with the difference and a still-unknown cost", () => {
@@ -859,7 +968,9 @@ describe("summaries", () => {
   });
 
   it("states the consequence of each action", () => {
-    expect(stockConsequence("receive")).toContain("custo médio");
+    expect(stockConsequence("receive")).toBe(
+      "Entra no histórico e muda o custo médio. Não dá para editar; um erro se corrige com contagem ou baixa."
+    );
     expect(stockConsequence("count")).toContain("histórico");
     expect(stockConsequence("write_off")).toContain("nem cria despesa");
   });

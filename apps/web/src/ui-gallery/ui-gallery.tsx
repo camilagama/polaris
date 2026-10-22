@@ -47,7 +47,12 @@ import {
   FieldTitle,
 } from "@/ui/field";
 import { Input } from "@/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupTextarea,
+} from "@/ui/input-group";
 import { Label } from "@/ui/label";
 import {
   Popover,
@@ -401,6 +406,14 @@ export function UiGallery() {
                   <FieldError id="galeria-preco-vazio-erro">
                     Informe um preço maior que zero.
                   </FieldError>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="galeria-observacao">
+                    Observação (opcional)
+                  </FieldLabel>
+                  <InputGroup className="h-auto items-stretch">
+                    <InputGroupTextarea id="galeria-observacao" rows={3} />
+                  </InputGroup>
                 </Field>
               </CardContent>
             </Card>

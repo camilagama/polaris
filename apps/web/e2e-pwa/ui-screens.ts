@@ -5,6 +5,7 @@ import { entryStates } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
 import { productStates } from "./ui-product-states";
 import { saleStates } from "./ui-sale-states";
+import { stockStates } from "./ui-stock-states";
 
 /**
  * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
@@ -201,6 +202,35 @@ async function exerciseSalePayment(page: Page) {
   );
 }
 
+/** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */
+const STOCK_SOURCES = [
+  "src/inventory/inventory-page.tsx",
+  "src/inventory/stock-command-panel.tsx",
+  "src/inventory/stock-panel-fields.tsx",
+  "src/inventory/stock-row-actions.tsx",
+];
+
+/** One state of the stock screen: the same screen, opened in the state the test builds (`ui-stock-states.ts`). */
+const stockScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `estoque ${name}`,
+  open,
+  sourceDirs: STOCK_SOURCES,
+  status: "migrated",
+});
+
+async function exerciseStockReason(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Motivo da baixa", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
 async function openLegalPage(page: Page, path: string, title: string) {
   await page.goto(path);
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
@@ -352,6 +382,25 @@ export const SCREENS: UiScreen[] = [
   saleScreen("erro nos campos", saleStates.fieldErrors),
   saleScreen("confirmada", saleStates.confirmed),
   saleScreen("sem conexão", saleStates.offline),
+  stockScreen("lista", stockStates.list),
+  stockScreen("carregando", stockStates.loading),
+  stockScreen("vazio", stockStates.empty),
+  stockScreen("busca sem resultado", stockStates.noResult),
+  stockScreen("erro ao ler", stockStates.error),
+  stockScreen("recebimento bloqueado", stockStates.receiveBlocked),
+  stockScreen("recebimento com erros", stockStates.receiveErrors),
+  stockScreen("recebimento a confirmar", stockStates.receiveConfirming),
+  stockScreen("recebimento registrado", stockStates.receiveDone),
+  stockScreen("recebimento sem resposta", stockStates.receiveLocked),
+  stockScreen("contagem", stockStates.count),
+  stockScreen(
+    "baixa sem observação",
+    stockStates.writeOffNote,
+    exerciseStockReason
+  ),
+  stockScreen("baixa recusada", stockStates.writeOffRefused),
+  stockScreen("sem conexão", stockStates.offline),
+  stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
