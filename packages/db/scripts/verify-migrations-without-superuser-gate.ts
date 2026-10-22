@@ -11,7 +11,10 @@ import {
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
 import { assertAllowedGateUrl } from "./gate-hosts";
-import { findOwnerAttributeViolations } from "./owner-role-attributes";
+import {
+  assertOwnerRolesClean,
+  findOwnerAttributeViolations,
+} from "./owner-role-attributes";
 import {
   gateBranchPattern,
   journalMigrationCount,
@@ -319,10 +322,8 @@ async function run() {
         "the owner is an ADMIN-only member (no INHERIT, no SET) of every runtime group it created"
       );
       assertClean(await findViolations(verify));
-      // the attributes of the polaris_*_owner roles, the other read-only check of `staging:verify-database after-migrate`
-      const ownerRoles = await findOwnerAttributeViolations(verify);
-      assert.ok(ownerRoles.checked > 0, "no polaris_*_owner role was created");
-      assert.deepEqual(ownerRoles.findings, []);
+      // the attributes and memberships of the owner roles and of the roles a runtime role reaches, the other read-only check of `staging:verify-database after-migrate`
+      await assertOwnerRolesClean(verify);
       // the control: INHERIT or SET on a runtime group makes the owner a runtime login, which is the database owner
       const [group] = await rolesWhere(
         verify,
@@ -349,6 +350,40 @@ async function run() {
           await verify.query("ROLLBACK").catch(() => undefined);
         }
       }
+      // the same checks must be able to fail for this owner (CREATEROLE, no SUPERUSER): in a transaction that is rolled back, a throwaway
+      // `polaris_*_owner` role with CREATEROLE, a throwaway role a runtime group can SET to with CREATEDB and CREATEROLE, and the owner
+      // role made a member of a role with CREATEROLE (the owner administers it, having created it). BYPASSRLS, REPLICATION and SUPERUSER
+      // cannot be given by this owner, so those attributes are proved by the definer-hardening gate, which runs as a superuser.
+      await verify.query("BEGIN");
+      try {
+        await verify.query(
+          "CREATE ROLE polaris_gate_probe_owner NOLOGIN CREATEROLE"
+        );
+        await verify.query(
+          "CREATE ROLE gate_probe_privileged NOLOGIN CREATEROLE"
+        );
+        await verify.query(
+          "CREATE ROLE gate_probe_reachable NOLOGIN CREATEDB CREATEROLE"
+        );
+        await verify.query(
+          "GRANT gate_probe_privileged TO polaris_gate_probe_owner WITH INHERIT TRUE, SET FALSE"
+        );
+        await verify.query(
+          `GRANT gate_probe_reachable TO ${quote(group)} WITH INHERIT FALSE, SET TRUE`
+        );
+        assert.deepEqual(
+          (await findOwnerAttributeViolations(verify)).findings,
+          [
+            "polaris_gate_probe_owner: CREATEROLE",
+            "gate_probe_reachable: CREATEROLE",
+            "gate_probe_reachable: CREATEDB",
+            "polaris_gate_probe_owner->gate_probe_privileged",
+          ]
+        );
+      } finally {
+        await verify.query("ROLLBACK").catch(() => undefined);
+      }
+      await assertOwnerRolesClean(verify);
       assertClean(await findViolations(verify));
       const risky = await verify.query<{ rolname: string }>(
         `SELECT rolname FROM pg_catalog.pg_roles
@@ -402,6 +437,7 @@ async function run() {
       tests: [
         "every migration replays from scratch as a login owner with CREATEROLE and no SUPERUSER, member of a neon_superuser with CREATEDB, CREATEROLE, BYPASSRLS and REPLICATION, owner of the database and of public",
         "no polaris role the migrations made carries SUPERUSER, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS",
+        "the owner roles and the roles a runtime role reaches carry none of the six attributes and no owner is a member of a privileged role (with a floor on how many were read); the check reports each of CREATEROLE and CREATEDB and a membership when a throwaway role has them, for an owner without SUPERUSER",
         "the read-only definer-hardening checks of the staging after-migrate pass with the owner an ADMIN-only member of every runtime group, and report the same owner with INHERIT or SET on one",
         "every ALTER ROLE of the migrations is guarded: with the role made a superuser the statement fails",
       ],

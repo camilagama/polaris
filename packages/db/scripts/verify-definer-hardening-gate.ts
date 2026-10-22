@@ -8,7 +8,12 @@ import {
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
-import { findOwnerAttributeViolations } from "./owner-role-attributes";
+import {
+  assertOwnerRolesClean,
+  findOwnerAttributeViolations,
+  MIN_OWNER_ROLES,
+  MIN_REACHABLE_ROLES,
+} from "./owner-role-attributes";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -42,6 +47,17 @@ const expectedDatabase =
   "neondb";
 
 const PROBE_ROLE = "polaris_catalog_runtime";
+const OWNER_FLOOR = /fewer polaris_\*_owner roles/;
+const REACHABLE_FLOOR = /fewer roles reachable from a runtime role/;
+// the order in which the attributes check reports a role's attributes
+const ATTRIBUTE_ORDER = [
+  "LOGIN",
+  "SUPERUSER",
+  "CREATEROLE",
+  "CREATEDB",
+  "REPLICATION",
+  "BYPASSRLS",
+] as const;
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear gate script, scenario by scenario
 async function run() {
@@ -81,6 +97,16 @@ async function run() {
   let adminBothCreated = false;
   const ownerAttributes = `polaris_gate_attr_${randomUUID().slice(0, 8).replaceAll("-", "")}_owner`;
   let ownerAttributesCreated = false;
+  const suffix = () => randomUUID().slice(0, 8).replaceAll("-", "");
+  const reachAttr = `gate_definer_reachattr_${suffix()}`;
+  let reachAttrCreated = false;
+  const ownerMember = `polaris_gate_member_${suffix()}_owner`;
+  let ownerMemberCreated = false;
+  const privRole = `gate_definer_priv_${suffix()}`;
+  let privRoleCreated = false;
+  const viaRole = `gate_definer_via_${suffix()}`;
+  let viaRoleCreated = false;
+  const renamedProbe = `gate_definer_renamed_${suffix()}`;
 
   try {
     const server = await client.query<{
@@ -386,35 +412,232 @@ async function run() {
     );
 
     // the attributes of the polaris_*_owner roles: the migrated ones are clean, a throwaway one with forbidden attributes is reported
-    const migratedOwners = await findOwnerAttributeViolations(client);
-    assert.ok(migratedOwners.checked > 0);
-    assert.deepEqual(migratedOwners.findings, []);
+    const isSuperuser = self.rows[0]?.rolsuper === true;
+    const findings = async () =>
+      (await findOwnerAttributeViolations(client)).findings;
+    // the attributes, in the order the check reports them
+    const reported = (role: string, attributes: readonly string[]) =>
+      ATTRIBUTE_ORDER.filter((attribute) => attributes.includes(attribute)).map(
+        (attribute) => `${role}: ${attribute}`
+      );
+    const migrated = await assertOwnerRolesClean(client);
+    tests.push(
+      `${migrated.owners} polaris_*_owner roles and ${migrated.reachable} roles a runtime role reaches are NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and NOBYPASSRLS, and no owner is a member of a privileged role (at least ${MIN_OWNER_ROLES} and ${MIN_REACHABLE_ROLES} were read)`
+    );
     await client.query(
       `CREATE ROLE ${ownerAttributes} LOGIN NOSUPERUSER CREATEDB CREATEROLE`
     );
     ownerAttributesCreated = true;
-    const expectedAttributes = [
-      `${ownerAttributes}: LOGIN`,
-      `${ownerAttributes}: CREATEROLE`,
-      `${ownerAttributes}: CREATEDB`,
-    ];
     assert.deepEqual(
-      (await findOwnerAttributeViolations(client)).findings,
-      expectedAttributes
+      await findings(),
+      reported(ownerAttributes, ["LOGIN", "CREATEROLE", "CREATEDB"])
     );
-    if (self.rows[0]?.rolsuper) {
-      await client.query(`ALTER ROLE ${ownerAttributes} REPLICATION BYPASSRLS`);
-      assert.deepEqual((await findOwnerAttributeViolations(client)).findings, [
-        ...expectedAttributes,
-        `${ownerAttributes}: REPLICATION`,
-        `${ownerAttributes}: BYPASSRLS`,
-      ]);
+    if (isSuperuser) {
+      await client.query(
+        `ALTER ROLE ${ownerAttributes} SUPERUSER REPLICATION BYPASSRLS`
+      );
+      assert.deepEqual(
+        await findings(),
+        reported(ownerAttributes, ATTRIBUTE_ORDER)
+      );
     }
     await client.query(`DROP ROLE ${ownerAttributes}`);
     ownerAttributesCreated = false;
-    assert.deepEqual((await findOwnerAttributeViolations(client)).findings, []);
+    assert.deepEqual(await findings(), []);
     tests.push(
-      "a polaris_*_owner role with LOGIN, CREATEROLE or CREATEDB (and REPLICATION or BYPASSRLS, as a superuser) is reported, naming the role and the attribute; the migrated owner roles are clean"
+      "a polaris_*_owner role with LOGIN, CREATEROLE or CREATEDB (and SUPERUSER, REPLICATION or BYPASSRLS, as a superuser) is reported, naming the role and the attribute; the migrated owner roles are clean"
+    );
+
+    // a role a runtime role reaches (by SET or by INHERIT, from a group or from a login) is held to the same six attributes
+    await client.query(`CREATE ROLE ${reachAttr} NOLOGIN NOSUPERUSER`);
+    reachAttrCreated = true;
+    const grantReach = (to: string, options: string) =>
+      client.query(`GRANT ${reachAttr} TO ${to} WITH ${options}`);
+    // control: the role is clean, and with the attributes but unreachable (ADMIN OPTION alone, or no edge) it is not looked at
+    await grantReach(PROBE_ROLE, "INHERIT FALSE, SET TRUE");
+    assert.deepEqual(await findings(), []);
+    await client.query(`REVOKE ${reachAttr} FROM ${PROBE_ROLE}`);
+    await client.query(`ALTER ROLE ${reachAttr} LOGIN CREATEDB CREATEROLE`);
+    assert.deepEqual(await findings(), []);
+    await grantReach(PROBE_ROLE, "ADMIN TRUE, INHERIT FALSE, SET FALSE");
+    assert.deepEqual(await findings(), []);
+    await client.query(`REVOKE ${reachAttr} FROM ${PROBE_ROLE}`);
+    // the probes: reached from a group by SET alone, by INHERIT alone, or from a login of the app
+    for (const [to, options] of [
+      [PROBE_ROLE, "INHERIT FALSE, SET TRUE"],
+      [PROBE_ROLE, "INHERIT TRUE, SET FALSE"],
+      [runner, "INHERIT FALSE, SET TRUE"],
+    ] as const) {
+      await grantReach(to, options);
+      assert.deepEqual(
+        await findings(),
+        reported(reachAttr, ["LOGIN", "CREATEROLE", "CREATEDB"]),
+        `${reachAttr} reached by ${to} with ${options}`
+      );
+      await client.query(`REVOKE ${reachAttr} FROM ${to}`);
+    }
+    // each attribute alone; REPLICATION, BYPASSRLS and SUPERUSER only a superuser can give (the CI container's user is one)
+    await grantReach(PROBE_ROLE, "INHERIT FALSE, SET TRUE");
+    const alone = [
+      ["LOGIN", "NOLOGIN"],
+      ["CREATEDB", "NOCREATEDB"],
+      ["CREATEROLE", "NOCREATEROLE"],
+      ...(isSuperuser
+        ? ([
+            ["REPLICATION", "NOREPLICATION"],
+            ["BYPASSRLS", "NOBYPASSRLS"],
+            ["SUPERUSER", "NOSUPERUSER"],
+          ] as const)
+        : []),
+    ] as const;
+    await client.query(
+      `ALTER ROLE ${reachAttr} NOLOGIN NOCREATEDB NOCREATEROLE`
+    );
+    for (const [attribute, off] of alone) {
+      await client.query(`ALTER ROLE ${reachAttr} ${attribute}`);
+      assert.deepEqual(
+        await findings(),
+        [`${reachAttr}: ${attribute}`],
+        `${reachAttr} with only ${attribute}`
+      );
+      await client.query(`ALTER ROLE ${reachAttr} ${off}`);
+    }
+    assert.deepEqual(await findings(), []);
+    // a login of the app must log in, so its LOGIN is not asked of it; its other attributes are
+    await client.query(`ALTER ROLE ${runner} LOGIN`);
+    assert.deepEqual(await findings(), []);
+    await client.query(`ALTER ROLE ${runner} CREATEDB`);
+    assert.deepEqual(await findings(), [`${runner}: CREATEDB`]);
+    await client.query(`ALTER ROLE ${runner} NOLOGIN NOCREATEDB`);
+    await client.query(`DROP ROLE ${reachAttr}`);
+    reachAttrCreated = false;
+    assert.deepEqual(await findings(), []);
+    tests.push(
+      `a role a runtime group or login reaches by SET or by INHERIT is reported for LOGIN, CREATEROLE, CREATEDB${isSuperuser ? ", REPLICATION, BYPASSRLS and SUPERUSER" : ""}, a login of the app is not reported for its own LOGIN but is for its other attributes, and a role with them that is not reachable is not looked at${isSuperuser ? "" : " (REPLICATION, BYPASSRLS and SUPERUSER are proved only where the gate user is a superuser: the CI container; a role that is not a superuser cannot give them)"}`
+    );
+
+    // a polaris_*_owner role must not be a member of a privileged role: the database owner, neon_superuser, a predefined role
+    // that reads or writes data or files or runs programs, or a role with SUPERUSER, BYPASSRLS or CREATEROLE
+    await client.query(`CREATE ROLE ${ownerMember} NOLOGIN NOSUPERUSER`);
+    ownerMemberCreated = true;
+    await client.query(
+      `CREATE ROLE ${privRole} NOLOGIN NOSUPERUSER CREATEROLE`
+    );
+    privRoleCreated = true;
+    const memberOf = async (target: string, options: string) => {
+      await client.query(`GRANT "${target}" TO ${ownerMember} WITH ${options}`);
+      const reached = await findings();
+      await client.query(`REVOKE "${target}" FROM ${ownerMember}`);
+      return reached;
+    };
+    // controls: an owner role with no edge, with an edge to a plain role, or to a privileged one without ADMIN, INHERIT or SET
+    assert.deepEqual(await findings(), []);
+    await client.query(`CREATE ROLE ${viaRole} NOLOGIN NOSUPERUSER`);
+    viaRoleCreated = true;
+    assert.deepEqual(await memberOf(viaRole, "INHERIT TRUE, SET TRUE"), []);
+    assert.deepEqual(
+      await memberOf(privRole, "ADMIN FALSE, INHERIT FALSE, SET FALSE"),
+      []
+    );
+    for (const options of [
+      "INHERIT TRUE, SET FALSE",
+      "INHERIT FALSE, SET TRUE",
+      "ADMIN TRUE, INHERIT FALSE, SET FALSE",
+    ]) {
+      assert.deepEqual(
+        await memberOf(privRole, options),
+        [`${ownerMember}->${privRole}`],
+        `${ownerMember} -> ${privRole} with ${options}`
+      );
+    }
+    // through a chain: the owner inherits a plain role that inherits the privileged one
+    await client.query(
+      `GRANT ${privRole} TO ${viaRole} WITH INHERIT TRUE, SET FALSE`
+    );
+    assert.deepEqual(await memberOf(viaRole, "INHERIT TRUE, SET FALSE"), [
+      `${ownerMember}->${privRole}`,
+    ]);
+    await client.query(`REVOKE ${privRole} FROM ${viaRole}`);
+    // the database owner, and neon_superuser (created here when absent, as on Neon it exists)
+    const ownerTargets = [originalOwner];
+    const hadNeonSuperuser =
+      (
+        await client.query(
+          "SELECT 1 FROM pg_roles WHERE rolname = 'neon_superuser'"
+        )
+      ).rowCount === 1;
+    if (!hadNeonSuperuser) {
+      await client.query("CREATE ROLE neon_superuser NOLOGIN NOSUPERUSER");
+      neonSuperuserCreated = true;
+    }
+    ownerTargets.push("neon_superuser");
+    // the predefined roles, and a role with SUPERUSER or BYPASSRLS, need a superuser to be granted or created
+    if (isSuperuser) {
+      ownerTargets.push(
+        "pg_read_all_data",
+        "pg_write_all_data",
+        "pg_execute_server_program"
+      );
+      await client.query(`ALTER ROLE ${privRole} NOCREATEROLE BYPASSRLS`);
+      ownerTargets.push(privRole);
+    }
+    for (const target of ownerTargets) {
+      const reached = await memberOf(target, "INHERIT TRUE, SET FALSE");
+      // an owner that is a member of a superuser (the database owner is one in the CI container) reaches every other role through it
+      assert.ok(
+        reached.includes(`${ownerMember}->${target}`),
+        `${ownerMember} is a member of ${target} and is not reported`
+      );
+    }
+    if (isSuperuser) {
+      await client.query(`ALTER ROLE ${privRole} NOBYPASSRLS SUPERUSER`);
+      assert.ok(
+        (await memberOf(privRole, "INHERIT TRUE, SET FALSE")).includes(
+          `${ownerMember}->${privRole}`
+        )
+      );
+    }
+    if (neonSuperuserCreated) {
+      await client.query("DROP ROLE neon_superuser");
+      neonSuperuserCreated = false;
+    }
+    await client.query(`DROP ROLE ${viaRole}`);
+    viaRoleCreated = false;
+    await client.query(`DROP ROLE ${privRole}`);
+    privRoleCreated = false;
+    await client.query(`DROP ROLE ${ownerMember}`);
+    ownerMemberCreated = false;
+    assert.deepEqual(await findings(), []);
+    tests.push(
+      `a polaris_*_owner role that is a member (INHERIT, SET or ADMIN OPTION, directly or through a chain) of the database owner, neon_superuser${isSuperuser ? ", pg_read_all_data, pg_write_all_data, pg_execute_server_program or a role with CREATEROLE, BYPASSRLS or SUPERUSER" : " or a role with CREATEROLE"} is reported, and one with no edge, an edge to a plain role or an edge with none of the three is not${isSuperuser ? "" : " (the predefined roles and the SUPERUSER and BYPASSRLS roles are proved only where the gate user is a superuser: the CI container; migrations-without-superuser proves the CREATEROLE case as the owner)"}`
+    );
+
+    // the floors: an owner role renamed away, or a role no longer reachable from a runtime role (a renamed one is still reached and
+    // checked under its new name), makes the check fail instead of pass on fewer roles
+    const polarisOwner = (
+      await client.query<{ rolname: string }>(
+        "SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\\_%\\_owner' ORDER BY 1 LIMIT 1"
+      )
+    ).rows[0]?.rolname;
+    assert.ok(polarisOwner);
+    for (const [statement, floor] of [
+      [`ALTER ROLE ${polarisOwner} RENAME TO ${renamedProbe}`, OWNER_FLOOR],
+      [
+        "REVOKE polaris_closed_export_reader FROM polaris_privacy_runtime",
+        REACHABLE_FLOOR,
+      ],
+    ] as const) {
+      await client.query("BEGIN");
+      try {
+        await client.query(statement);
+        await assert.rejects(assertOwnerRolesClean(client), floor);
+      } finally {
+        await client.query("ROLLBACK");
+      }
+    }
+    await assertOwnerRolesClean(client);
+    tests.push(
+      "a polaris_*_owner role renamed away, or polaris_closed_export_reader no longer reachable from polaris_privacy_runtime, makes the count fall under its floor and the check fail"
     );
 
     // the gate can fail: a role the login can reach with SET ROLE, even without inheriting it, holds TEMPORARY or CREATE
@@ -503,6 +726,18 @@ async function run() {
         "owner attributes role",
         `DROP ROLE IF EXISTS ${ownerAttributes}`
       );
+    }
+    if (ownerMemberCreated) {
+      await cleanup("owner member", `DROP ROLE IF EXISTS ${ownerMember}`);
+    }
+    if (viaRoleCreated) {
+      await cleanup("via role", `DROP ROLE IF EXISTS ${viaRole}`);
+    }
+    if (privRoleCreated) {
+      await cleanup("privileged role", `DROP ROLE IF EXISTS ${privRole}`);
+    }
+    if (reachAttrCreated) {
+      await cleanup("reachable role", `DROP ROLE IF EXISTS ${reachAttr}`);
     }
     if (adminOnlyCreated) {
       await cleanup("admin-only login", `DROP ROLE IF EXISTS ${adminOnly}`);

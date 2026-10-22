@@ -14,7 +14,7 @@ const clean = (rolname: string): OwnerRoleRow => ({
   rolsuper: false,
 });
 
-describe("the attributes of the polaris_*_owner roles", () => {
+describe("the attributes of the owner and runtime-reachable roles", () => {
   it("reports nothing for roles that are NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and NOBYPASSRLS", () => {
     expect(
       ownerAttributeFindings([
@@ -55,5 +55,19 @@ describe("the attributes of the polaris_*_owner roles", () => {
       "polaris_a_owner: BYPASSRLS",
       "polaris_b_owner: CREATEDB",
     ]);
+  });
+
+  it("does not ask LOGIN of the roles it is told may log in, and asks the rest", () => {
+    const login = { ...clean("polaris_app"), rolcanlogin: true };
+    expect(ownerAttributeFindings([login], new Set(["polaris_app"]))).toEqual(
+      []
+    );
+    expect(
+      ownerAttributeFindings(
+        [{ ...login, rolcreatedb: true }],
+        new Set(["polaris_app"])
+      )
+    ).toEqual(["polaris_app: CREATEDB"]);
+    expect(ownerAttributeFindings([login])).toEqual(["polaris_app: LOGIN"]);
   });
 });
