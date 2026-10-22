@@ -659,6 +659,13 @@
       "when": 1792553207803,
       "tag": "0094_prazo_do_link_e_fim_do_contrato_do_aceite",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1792664599887,
+      "tag": "0095_donos_das_funcoes_definer",
+      "breakpoints": true
     }
   ]
 }

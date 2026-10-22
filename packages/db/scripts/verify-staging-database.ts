@@ -24,8 +24,10 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  *
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
  *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect).
- * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093); PUBLIC has no
- *   TEMPORARY; every `polaris_*_owner` role and every role a runtime role reaches (the `*_runtime` groups and what they
+ * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093), which includes that
+ *   every SECURITY DEFINER function belongs to a `polaris_*_owner` role (`foreignOwner`: one left with the owner of the
+ *   database runs with BYPASSRLS) and that the policies on `app.owner_scope.*` are each TO one owner role and read no
+ *   setting of the runtime (`ownerScope`); PUBLIC has no TEMPORARY; every `polaris_*_owner` role and every role a runtime role reaches (the `*_runtime` groups and what they
  *   can SET to, inherit or administer with ADMIN OPTION, such as `polaris_closed_export_reader`) is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
  *   NOREPLICATION and NOBYPASSRLS, with a floor on how many were looked at, and no `*_owner` role is a member (INHERIT, SET or
  *   ADMIN OPTION) of any role (`owner-role-attributes.ts`); and every login other than the owner is a member of a
@@ -122,7 +124,7 @@ async function checkHardening(client: Client) {
     "logins that are not members of a polaris_*_runtime group"
   );
   return [
-    "definer-hardening (read-only): no finding",
+    "definer-hardening (read-only): no finding (search_path, TEMPORARY, CREATE, runtime reach, PUBLIC EXECUTE, foreignOwner, ownerScope)",
     "PUBLIC has no TEMPORARY on the database",
     `${roles.owners} polaris_*_owner roles and ${roles.reachable} roles a runtime role reaches: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
     `the ${roles.owners} polaris_*_owner roles are members of no role`,

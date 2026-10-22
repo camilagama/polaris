@@ -114,6 +114,8 @@ const gates: Gate[] = [
   // the record of acceptance of the terms and the privacy policy (ADR 0100): append-only, per user, the minimum version, no IP
   ["legal-acceptance", "verify-legal-acceptance-gate.ts"],
   ["definer-hardening", "verify-definer-hardening-gate.ts"],
+  // the owners of the sync triggers, the epoch bump and the onboarding (0095): matrix, scope, fail-closed, planted defects
+  ["definer-owners", "verify-definer-owners-gate.ts"],
   // lives in apps/web: it runs the real Better Auth against the database with the log function's EXECUTE revoked
   [
     "access-log-login",
@@ -299,6 +301,7 @@ const suites: Record<string, string[]> = {
     "unverified-user-purge",
     "legal-acceptance",
     "definer-hardening",
+    "definer-owners",
     "environment-marker",
     "access-log-login",
     "media-commands",

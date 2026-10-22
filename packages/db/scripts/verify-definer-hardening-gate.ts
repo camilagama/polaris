@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import {
+  drawGraph,
+  modelBecomes,
+  type RoleEdge,
+  seededRandom,
+} from "./becomes-model";
+import {
   assertClean,
+  findBecomes,
   findViolations,
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
@@ -37,11 +44,19 @@ import {
  *   4. no SECURITY DEFINER function is executable by PUBLIC (an absent ACL means PUBLIC may execute);
  *   5. every `polaris_*_owner` role is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and NOBYPASSRLS and is a
  *      member (INHERIT, SET or ADMIN OPTION) of no role, and so is every role a runtime role reaches, with ADMIN OPTION counting as
- *      reach (the same read-only check as `staging:verify-database after-migrate`).
+ *      reach (the same read-only check as `staging:verify-database after-migrate`);
+ *   6. every SECURITY DEFINER function belongs to a `polaris_*_owner` role (`foreignOwner`): one left with the database owner
+ *      runs with BYPASSRLS on Neon;
+ *   7. a policy that reads `app.owner_scope.*` is TO one `polaris_*_owner` role and reads no runtime setting, and a policy of
+ *      an owner role reads no runtime setting (`ownerScope`; the one owner named in definer-hardening-checks.ts aside).
  * The gate then proves it can fail: it creates a throwaway function without `pg_temp` and without a REVOKE, grants
  * TEMPORARY and CREATE to a runtime role, makes a throwaway runtime login the database owner or a member of an owner role
  * (also with ADMIN OPTION alone on a runtime group, on an owner role, on a predefined role or on a role with attributes), creates a throwaway `polaris_*_owner` role with LOGIN, CREATEDB and CREATEROLE (and REPLICATION and BYPASSRLS, as a superuser),
- * and each check must report exactly that; everything is undone.
+ * and each check must report exactly that; everything is undone. A definer function kept by the gate user or by a throwaway
+ * role is reported by `foreignOwner`, and the same function moved to an owner role is clean (the control); policies on a
+ * throwaway table that break the scope of the owners are reported by `ownerScope`. Last, a fuzz with a fixed seed: random
+ * graphs of 4 to 7 throwaway roles (ADMIN, INHERIT and SET drawn per edge, sometimes a superuser and the database owner's
+ * ADMIN-only edge), each in a transaction that is rolled back, where `becomes` must equal the closure of `becomes-model.ts`.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -49,6 +64,12 @@ const expectedDatabase =
   "neondb";
 
 const PROBE_ROLE = "polaris_catalog_runtime";
+// the owner role a probe function is moved to, as the control of foreignOwner and of the owner scope
+const CONTROL_OWNER = "polaris_sync_owner";
+const RUNTIME_LOGIN_PATTERN = /^polaris_gate_runner_[0-9a-f]+$/;
+// the fuzz of `becomes`: the same graphs on every run, at least 200 of them
+const FUZZ_SEED = 20_261_022;
+const FUZZ_CASES = 240;
 const OWNER_FLOOR = /fewer polaris_\*_owner roles/;
 const READER_NAME = /polaris_closed_export_reader is not reachable/;
 const REACHABLE_FLOOR = /fewer roles reachable from a runtime role/;
@@ -114,6 +135,17 @@ async function run() {
   const adminTarget = `gate_definer_admintarget_${suffix()}`;
   let adminTargetCreated = false;
   const renamedProbe = `gate_definer_renamed_${suffix()}`;
+  const creator = `gate_definer_creator_${suffix()}`;
+  const fuzzTag = suffix();
+  // runs the body in a transaction that is always rolled back: what it creates (roles, grants, functions, policies) is undone
+  const inRolledBackTransaction = async (body: () => Promise<void>) => {
+    await client.query("BEGIN");
+    try {
+      await body();
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  };
 
   try {
     const server = await client.query<{
@@ -175,9 +207,65 @@ async function run() {
     await client.query(
       `REVOKE EXECUTE ON FUNCTION public.${probe}() FROM PUBLIC`
     );
+    // pinned and without EXECUTE for PUBLIC, it still belongs to the gate user (the database owner here): that alone is a finding
+    const gateUser = (
+      await client.query<{ name: string }>("SELECT current_user AS name")
+    ).rows[0]?.name;
+    assert.ok(gateUser);
+    const kept = await findViolations(client);
+    assert.deepEqual(kept.foreignOwner, [`public.${probe}() (${gateUser})`]);
+    assertClean({ ...kept, foreignOwner: [] });
+    // the control: the same function moved to an owner role, the way the migrations move one, is clean
+    await inRolledBackTransaction(async () => {
+      await client.query(`GRANT CREATE ON SCHEMA public TO ${CONTROL_OWNER}`);
+      await client.query(
+        `GRANT ${CONTROL_OWNER} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+      );
+      await client.query(
+        `ALTER FUNCTION public.${probe}() OWNER TO ${CONTROL_OWNER}`
+      );
+      assertClean(await findViolations(client));
+    });
+    await client.query(`DROP FUNCTION public.${probe}()`);
+    probeCreated = false;
     assertClean(await findViolations(client));
     tests.push(
       "a SECURITY DEFINER function with no search_path (or one that does not end in pg_temp) and with EXECUTE for PUBLIC is reported by the gate, and passes once fixed"
+    );
+    // a throwaway role that creates a definer function and keeps it is named in foreignOwner; moved to an owner role, it is clean
+    await inRolledBackTransaction(async () => {
+      await client.query(
+        `CREATE ROLE ${creator} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
+      );
+      await client.query(`GRANT CREATE ON SCHEMA public TO ${creator}`);
+      await client.query(
+        `GRANT ${creator} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+      );
+      await client.query(`SET ROLE ${creator}`);
+      await client.query(
+        `CREATE FUNCTION public.${probe}_kept() RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS 'SELECT 1'`
+      );
+      await client.query(
+        `REVOKE EXECUTE ON FUNCTION public.${probe}_kept() FROM PUBLIC`
+      );
+      await client.query("RESET ROLE");
+      const created = await findViolations(client);
+      assert.deepEqual(created.foreignOwner, [
+        `public.${probe}_kept() (${creator})`,
+      ]);
+      assertClean({ ...created, foreignOwner: [] });
+      await client.query(`GRANT CREATE ON SCHEMA public TO ${CONTROL_OWNER}`);
+      await client.query(
+        `GRANT ${CONTROL_OWNER} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+      );
+      await client.query(
+        `ALTER FUNCTION public.${probe}_kept() OWNER TO ${CONTROL_OWNER}`
+      );
+      assertClean(await findViolations(client));
+    });
+    assertClean(await findViolations(client));
+    tests.push(
+      `a SECURITY DEFINER function that stays with the gate user (the database owner) or with a throwaway role that created it is reported in foreignOwner as signature (owner), and nothing else is; moved to ${CONTROL_OWNER} it is clean`
     );
 
     // and in any other schema, not only public
@@ -189,9 +277,79 @@ async function run() {
     const otherSchema = await findViolations(client);
     assert.deepEqual(otherSchema.unpinned, [`${probe}.f()`]);
     assert.deepEqual(otherSchema.publicExecute, [`${probe}.f()`]);
+    assert.deepEqual(otherSchema.foreignOwner, [`${probe}.f() (${gateUser})`]);
     await client.query(`DROP SCHEMA ${probe} CASCADE`);
     schemaCreated = false;
     assertClean(await findViolations(client));
+
+    // the scope of the owners: a policy that reads app.owner_scope.* is TO one owner role and reads no runtime setting, and an owner's
+    // policy reads no runtime setting (polaris_device_session_owner aside, by name); policies on a throwaway table, rolled back
+    await inRolledBackTransaction(async () => {
+      const table = `${probe}_scope`;
+      await client.query(`CREATE TABLE public.${table} (id integer)`);
+      const scopeFindings = async (roles: string, expression: string) => {
+        await client.query("SAVEPOINT scope_probe");
+        await client.query(
+          `CREATE POLICY probe ON public.${table} AS PERMISSIVE FOR SELECT ${roles} USING (${expression})`
+        );
+        const found = (await findViolations(client)).ownerScope;
+        await client.query("ROLLBACK TO SAVEPOINT scope_probe");
+        return found;
+      };
+      const label = (roles: string) => `public.${table}.probe ({${roles}})`;
+      const scoped = "current_setting('app.owner_scope.probe_id', true) = 'x'";
+      const userSetting = "current_setting('app.user_id', true) = 'x'";
+      // controls: an owner's policy on its own scope, a runtime's on the runtime setting, and the owner named in the check
+      assert.deepEqual(await scopeFindings(`TO ${CONTROL_OWNER}`, scoped), []);
+      assert.deepEqual(
+        await scopeFindings("TO polaris_pr11_runtime", userSetting),
+        []
+      );
+      assert.deepEqual(
+        await scopeFindings("TO polaris_device_session_owner", userSetting),
+        []
+      );
+      // the probes
+      const notOneOwner =
+        "reads app.owner_scope.probe_id and is not TO one polaris_*_owner role";
+      assert.deepEqual(await scopeFindings("TO polaris_pr11_runtime", scoped), [
+        `${label("polaris_pr11_runtime")}: ${notOneOwner}`,
+      ]);
+      assert.deepEqual(await scopeFindings("", scoped), [
+        `${label("public")}: ${notOneOwner}`,
+      ]);
+      assert.deepEqual(
+        await scopeFindings(
+          `TO ${CONTROL_OWNER}, polaris_onboarding_owner`,
+          scoped
+        ),
+        [
+          `${label(`polaris_onboarding_owner,${CONTROL_OWNER}`)}: ${notOneOwner}`,
+        ]
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          `TO ${CONTROL_OWNER}`,
+          `${scoped} AND ${userSetting}`
+        ),
+        [
+          `${label(CONTROL_OWNER)}: reads app.owner_scope.probe_id and the runtime setting app.user_id`,
+        ]
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          `TO ${CONTROL_OWNER}`,
+          "current_setting('app.organization_id', true) = 'x'"
+        ),
+        [
+          `${label(CONTROL_OWNER)}: a policy of an owner role reads the runtime setting app.organization_id`,
+        ]
+      );
+    });
+    assertClean(await findViolations(client));
+    tests.push(
+      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, and an owner's policy that reads app.organization_id, are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id and polaris_device_session_owner's on app.user_id are not"
+    );
 
     // the gate can fail: PUBLIC with TEMPORARY or CREATE (every runtime role inherits it)
     await client.query(
@@ -791,6 +949,102 @@ async function run() {
     await client.query(`REVOKE ${reach} FROM ${runner}`);
     tests.push(
       "a role that a runtime login can reach with SET ROLE and that has TEMPORARY on the database or CREATE on schema public is reported by the gate"
+    );
+
+    // the fuzz of becomes: random graphs of throwaway roles, read back from the catalog (with any edge PostgreSQL adds itself),
+    // where the CTE must answer what the closure of becomes-model.ts answers; each graph in a transaction that is rolled back
+    const random = seededRandom(FUZZ_SEED);
+    let rowsCompared = 0;
+    let adminCases = 0;
+    let superuserCases = 0;
+    let ownerEdgeCases = 0;
+    let memberOfOwnerCases = 0;
+    for (let index = 0; index < FUZZ_CASES; index += 1) {
+      const drawn = drawGraph(random, `${fuzzTag}${index}`, {
+        allowSuperuser: isSuperuser,
+        ...(isSuperuser ? { databaseOwner: originalOwner } : {}),
+      });
+      await inRolledBackTransaction(async () => {
+        await client.query(
+          [
+            ...drawn.names.map(
+              (name) =>
+                `CREATE ROLE ${name} NOLOGIN ${name === drawn.superuser ? "SUPERUSER" : "NOSUPERUSER"}`
+            ),
+            ...drawn.edges.map(
+              (edge) =>
+                `GRANT "${edge.role}" TO "${edge.member}" WITH ADMIN ${edge.admin}, INHERIT ${edge.inherit}, SET ${edge.set}`
+            ),
+          ].join(";\n")
+        );
+        // the whole graph of the cluster, not only the drawn roles: a drawn role that reaches the database owner reaches what the
+        // owner is a member of. The database owner is also an implicit member of pg_database_owner (no row in pg_auth_members).
+        const catalog = await client.query<RoleEdge>(
+          `SELECT m.rolname AS member, r.rolname AS role, a.admin_option AS admin, a.inherit_option AS inherit, a.set_option AS set
+             FROM pg_auth_members a
+             JOIN pg_roles m ON m.oid = a.member
+             JOIN pg_roles r ON r.oid = a.roleid`
+        );
+        const allRoles = await client.query<{
+          rolname: string;
+          rolsuper: boolean;
+        }>("SELECT rolname, rolsuper FROM pg_roles");
+        const expected = modelBecomes(
+          {
+            databaseOwner: originalOwner as string,
+            edges: [
+              ...catalog.rows,
+              {
+                admin: false,
+                inherit: true,
+                member: originalOwner as string,
+                role: "pg_database_owner",
+                set: true,
+              },
+            ],
+            roles: allRoles.rows.map((row) => row.rolname),
+            superusers: new Set(
+              allRoles.rows
+                .filter((row) => row.rolsuper)
+                .map((row) => row.rolname)
+            ),
+          },
+          new RegExp(RUNTIME_GROUP_PATTERN),
+          RUNTIME_LOGIN_PATTERN
+        ).filter((row) =>
+          drawn.names.includes(row.slice(0, row.indexOf("->")))
+        );
+        const actual = (await findBecomes(client))
+          .filter((row) => drawn.names.includes(row.runtime))
+          .map((row) => `${row.runtime}->${row.role}`)
+          .sort();
+        assert.deepEqual(
+          actual,
+          expected,
+          `becomes and the closure differ on case ${index} of seed ${FUZZ_SEED}: ${JSON.stringify(drawn)}`
+        );
+        rowsCompared += actual.length;
+      });
+      adminCases += drawn.edges.some((edge) => edge.admin) ? 1 : 0;
+      superuserCases += drawn.superuser ? 1 : 0;
+      ownerEdgeCases += drawn.edges.some(
+        (edge) => edge.member === originalOwner
+      )
+        ? 1
+        : 0;
+      memberOfOwnerCases += drawn.edges.some(
+        (edge) => edge.role === originalOwner
+      )
+        ? 1
+        : 0;
+    }
+    assert.ok(FUZZ_CASES >= 200 && adminCases > 0 && rowsCompared > 0);
+    console.log(
+      `gate-note: becomes fuzz seed ${FUZZ_SEED}: ${FUZZ_CASES} graphs, ${rowsCompared} rows compared, ${adminCases} with ADMIN OPTION, ${superuserCases} with a superuser, ${ownerEdgeCases} with the database owner's ADMIN-only edge, ${memberOfOwnerCases} with a role that is a member of the database owner`
+    );
+    assertClean(await findViolations(client));
+    tests.push(
+      `becomes equals the closure of becomes-model.ts on ${FUZZ_CASES} random graphs of 4 to 7 roles (seed ${FUZZ_SEED}, ${rowsCompared} rows${isSuperuser ? "" : "; without a superuser gate user, no superuser and no database owner's edge are drawn"})`
     );
   } catch (error) {
     primaryFailure = true;
