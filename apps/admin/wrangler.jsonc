@@ -47,7 +47,7 @@
     // have no public hostname, no ACCESS_* variables (every API request is refused) and no database.
     "staging": {
       "name": "polaris-admin-staging",
-      "account_id": "PLACEHOLDER-staging-account-id",
+      "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": false,
       "preview_urls": false,
       "vars": {

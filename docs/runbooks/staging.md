@@ -1,6 +1,6 @@
 # Staging fixo
 
-Status: configuração no repositório, nada criado. Os recursos, os segredos e o primeiro deploy são do responsável (Arrascaeta ou o usuário). Decisões e motivos: [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md).
+Status: configuração preenchida no repositório (IDs reais, seção 3); os recursos de staging existem desde 22/10, falta o que a seção 5 em diante lista. Os recursos, os segredos e o primeiro deploy são do responsável (Arrascaeta ou o usuário). Decisões e motivos: [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md).
 
 O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A exceção são o nome e o e-mail das pessoas de teste que entram pelo Google: são dados pessoais de quem testa, e saem do banco quando a pessoa deixa de testar (seção 4). A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15).
 
@@ -42,31 +42,39 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
    O verify só aceita o banco cujo comentário é exatamente `polaris.environment=staging` (ou, no banco local ou de CI, onde o login é superusuário, a forma antiga do `ALTER DATABASE … SET`). Uma opção de conexão (`?options=`) é recusada.
 
    O dono do Neon não é superusuário: é membro de `neon_superuser` ([papéis do Neon](https://neon.com/docs/manage/roles/)), que traz `CREATEDB`, `CREATEROLE`, `BYPASSRLS` e `REPLICATION`. Por isso uma migration não pode usar `ALTER ROLE … NOSUPERUSER` (42501, `permission denied to alter role`); a guarda é um `DO` que falha se `rolsuper` for verdadeiro. O gate `migrations-without-superuser` (suíte `ci`, `packages/db/scripts/verify-migrations-without-superuser-gate.ts`) replaya todas as migrations num banco novo com um dono assim (login, `CREATEROLE`, `CREATEDB`, `REPLICATION`, `BYPASSRLS`, sem `SUPERUSER`, membro de um `neon_superuser` com esses atributos, dono do banco e de `public`) e reprova qualquer comando que só superusuário consegue. O papel direto com os atributos reflete o que o staging mostrou: `NOBYPASSRLS`, `NOCREATEDB` e `NOREPLICATION` passam num `ALTER ROLE`, e o PostgreSQL só deixa tirar um atributo de quem o tem. O gate roda também a checagem somente-leitura do `definer-hardening` (a do `staging:verify-database after-migrate`): o dono, que o PostgreSQL 16+ faz membro `ADMIN OPTION`, sem `INHERIT` nem `SET`, de todo papel que cria, não é login de runtime (a isenção é só do dono: outro papel com `ADMIN OPTION` num grupo `*_runtime` continua sendo checado); com `INHERIT` ou `SET` num grupo `*_runtime` seria, e o gate prova que a checagem o reporta.
-4. Criar um login por binding, cada um membro de **um** grupo, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, fora de `neon_superuser`, com `statement_timeout` e `CONNECTION LIMIT`. A senha não passa pela linha de comando nem pelo SQL:
+4. Criar um login por binding, cada um membro de **um** grupo, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, fora de `neon_superuser`, com `statement_timeout` e `CONNECTION LIMIT`. A senha não passa pela linha de comando (ver o bloco "A senha vai em texto" abaixo).
 
    | Binding | Grupo | Limite de conexões |
    | --- | --- | --- |
    | `HYPERDRIVE` | `polaris_pr11_runtime` | 5 |
    | `AUTH_HYPERDRIVE` | `polaris_auth_runtime` | 5 |
-   | `ONBOARDING_HYPERDRIVE` | `polaris_onboarding_runtime` | 2 |
-   | `MEDIA_CLEANUP_HYPERDRIVE` | `polaris_media_cleanup_runtime` | 2 |
-   | `PRIVACY_HYPERDRIVE` | `polaris_privacy_runtime` | 2 |
-   | `BILLING_HYPERDRIVE` | `polaris_billing_runtime` | 2 |
-   | `OUTBOX_HYPERDRIVE` | `polaris_outbox_runtime` | 2 |
-   | `CATALOG_HYPERDRIVE` (catálogo) | `polaris_catalog_runtime` | 2 |
+   | `ONBOARDING_HYPERDRIVE` | `polaris_onboarding_runtime` | 5 |
+   | `MEDIA_CLEANUP_HYPERDRIVE` | `polaris_media_cleanup_runtime` | 5 |
+   | `PRIVACY_HYPERDRIVE` | `polaris_privacy_runtime` | 5 |
+   | `BILLING_HYPERDRIVE` | `polaris_billing_runtime` | 5 |
+   | `OUTBOX_HYPERDRIVE` | `polaris_outbox_runtime` | 5 |
+   | `CATALOG_HYPERDRIVE` (catálogo) | `polaris_catalog_runtime` | 5 |
 
-   Os nomes dos logins têm `staging` (por exemplo, `polaris_staging_tenant`). Modelo, no psql: `CREATE ROLE polaris_staging_tenant LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 5 IN ROLE polaris_pr11_runtime;`, depois `\password polaris_staging_tenant` (o psql pede a senha e manda só o hash; ela não vai para o histórico nem para o log do servidor), `ALTER ROLE polaris_staging_tenant SET statement_timeout = '10s';` e `REVOKE TEMPORARY ON DATABASE neondb FROM …` se o login tiver recebido `TEMPORARY`. A senha entra depois só na criação da configuração Hyperdrive. Ao fim, `staging:verify-database after-migrate` lista cada login com o grupo e falha se algum ficar sem grupo.
+   O Hyperdrive só aceita `origin_connection_limit` de 5 a 20, então todos os logins e todas as configurações ficam com 5, e o limite do login é sempre igual ao da configuração Hyperdrive. Os 8 logins somam 8 × 5 = 40 conexões, abaixo do limite do Neon com 0,25 CU.
+
+   Os nomes dos logins têm `staging` (por exemplo, `polaris_staging_tenant`). Modelo, numa conexão direta (sem pooler) por script, na ordem:
+
+   1. `CREATE ROLE polaris_staging_tenant LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 5 PASSWORD '<senha em texto>' IN ROLE polaris_pr11_runtime;`
+   2. `ALTER ROLE polaris_staging_tenant SET statement_timeout = '10s';`
+   3. `REVOKE TEMPORARY ON DATABASE neondb FROM polaris_staging_tenant;` se o login tiver recebido `TEMPORARY`.
+
+   **A senha vai em texto, e o Neon recusa hash.** `ALTER ROLE` ou `CREATE ROLE … PASSWORD 'SCRAM-SHA-256$…'` falha com `Neon only supports being given plaintext passwords`, e o `\password` do psql manda o hash, então também falha (descoberto em 22/10). A senha entra em texto no `CREATE ROLE … PASSWORD`, num script que se conecta direto ao banco, lê a senha de um arquivo local com modo 600 e não a imprime (nem no log nem na saída de erro). Gerar uma senha forte por login, sem reaproveitar. Não criar esses logins pela API ou pelo console do Neon: o Neon põe os papéis criados por lá em `neon_superuser`, o que o `staging:verify-database` e esta seção proíbem. A senha entra depois só na criação da configuração Hyperdrive. Ao fim, `staging:verify-database after-migrate` lista cada login com o grupo e falha se algum ficar sem grupo.
 
 ## 2. Recursos Cloudflare (responsável, conta atual)
 
 - Filas: `polaris-critical-staging`, `polaris-default-staging`, `polaris-media-staging` e `polaris-dlq-staging` (`wrangler queues create <nome>`). O sufixo de ambiente vai no fim: o consumidor e o tratamento da DLQ reconhecem a fila por `polaris-<fila>-<ambiente>` ([ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), e um teste confere os nomes do `wrangler.jsonc`.
 - R2: bucket privado `polaris-media-staging`. O `polaris-media` antigo da conta não é usado.
-- Hyperdrive: as 8 configurações da tabela acima, cada uma com `--caching-disabled` e `--origin-connection-limit` igual ao limite do login, apontando para o host direto do projeto `polaris-staging` (sem pooler). Com a do PR11, a conta fica com 9 das 10 do plano Free. Apagar a do PR11 é item do go-live, decidido pelo responsável.
+- Hyperdrive: as 8 configurações da tabela acima, cada uma com `--caching-disabled` e `--origin-connection-limit 5` (o Hyperdrive aceita de 5 a 20; é o mesmo limite do login, regra que se mantém), apontando para o host direto do projeto `polaris-staging` (sem pooler). Com a do PR11, a conta fica com 9 das 10 do plano Free. Apagar a do PR11 é item do go-live, decidido pelo responsável.
 - Os namespaces de rate limit `902016` a `902020` já estão no `wrangler.jsonc`. São reservados no primeiro deploy.
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
 
-Trocar cada `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs `workers.dev` (`BETTER_AUTH_BASE_URL` e `CATALOG_ORIGIN`). Depois, `bun run verify:staging-isolation` tem de passar. Enquanto houver placeholder, ele falha e o workflow não implanta.
+Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs `workers.dev` (`BETTER_AUTH_BASE_URL` e `CATALOG_ORIGIN`). O `env.staging.account_id` do Admin também é preenchido, porque a verificação o exige mesmo com o Admin fora do staging. `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
 
 ## 4. Cliente OAuth do Google (responsável)
 

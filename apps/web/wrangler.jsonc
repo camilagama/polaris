@@ -191,12 +191,11 @@
   },
   "env": {
     // The fixed staging of this account (ADR 0097): synthetic data only, Google sign-in in Testing
-    // mode (test users only), password sign-in off. Every value marked PLACEHOLDER is filled in by the
-    // responsible after the resources exist; the isolation check refuses a placeholder, so nothing is
-    // deployed before that.
+    // mode (test users only), password sign-in off. The ids below are those of the staging resources;
+    // the isolation check refuses a PLACEHOLDER, so a resource not created yet blocks the deploy.
     "staging": {
       "name": "polaris-web-staging",
-      "account_id": "PLACEHOLDER-staging-account-id",
+      "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": true,
       "preview_urls": false,
       "vars": {
@@ -207,8 +206,8 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
-        "BETTER_AUTH_BASE_URL": "https://polaris-web-staging.PLACEHOLDER-workers-subdomain.workers.dev",
-        "CATALOG_ORIGIN": "https://polaris-catalog-staging.PLACEHOLDER-workers-subdomain.workers.dev",
+        "BETTER_AUTH_BASE_URL": "https://polaris-web-staging.polaris-pr11-gate.workers.dev",
+        "CATALOG_ORIGIN": "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev",
         "OFFLINE_LEASE_KEY_ID": "staging-1"
       },
       // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
@@ -225,31 +224,31 @@
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-tenant"
+          "id": "744af3f235954bd1a07c4e1dd4a4a023"
         },
         {
           "binding": "AUTH_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-auth"
+          "id": "3f3a71d75cef4bfcaed1dffd6d4c0b51"
         },
         {
           "binding": "ONBOARDING_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-onboarding"
+          "id": "b11407674f6141478e76f6d614828324"
         },
         {
           "binding": "MEDIA_CLEANUP_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-media-cleanup"
+          "id": "9d2daa8242d847419da5768c8c2c5e0b"
         },
         {
           "binding": "PRIVACY_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-privacy"
+          "id": "f147d30c85c6477abc39bf46f2e40013"
         },
         {
           "binding": "BILLING_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-billing"
+          "id": "04fc6cc95ba8442cb3d516baf5b94614"
         },
         {
           "binding": "OUTBOX_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-outbox"
+          "id": "25d710da19294161a6706ae2ed19678f"
         }
       ],
       "images": { "binding": "IMAGES" },
