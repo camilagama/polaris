@@ -191,8 +191,8 @@
   },
   "env": {
     // The fixed staging of this account (ADR 0097): synthetic data only, Google sign-in in Testing
-    // mode (test users only), password sign-in off. The ids below are those of the staging resources;
-    // the isolation check refuses a PLACEHOLDER, so a resource not created yet blocks the deploy.
+    // mode (test users only), password sign-in on for tests (user decision of 22/10, ADR 0100). The ids below
+    // are those of the staging resources; the isolation check refuses a PLACEHOLDER, so a resource not created yet blocks the deploy.
     "staging": {
       "name": "polaris-web-staging",
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
@@ -203,7 +203,12 @@
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
-        "EMAIL_PASSWORD_AUTH_ENABLED": "false",
+        // Open to anyone on purpose: the staging data is synthetic. The sender must be on araute.app
+        // (the isolation check refuses another domain). RESEND_API_KEY is a Worker secret (runbook staging.md).
+        "EMAIL_PASSWORD_AUTH_ENABLED": "true",
+        "AUTH_EMAIL_FROM": "Polaris (staging) <nao-responda@araute.app>",
+        // Stays off until a Turnstile widget exists (TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY): while it is off,
+        // every password POST answers 503 auth_abuse_protection_unavailable (runbook auth-abuse-protection.md).
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
@@ -341,6 +346,8 @@
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
+        // empty on purpose (the parity check wants the name): the sender is set at the go-live, on a verified domain of production
+        "AUTH_EMAIL_FROM": "",
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",

@@ -9,7 +9,7 @@ A validação e o hash/verify normalizam NFC. O hasher mantém os parâmetros Sc
 1. Verifique no Resend o domínio que será usado no `from`.
 2. No diretório `apps/web`, execute `bunx wrangler secret put RESEND_API_KEY` e informe a chave no prompt oculto. Não a coloque no `wrangler.jsonc`, `.dev.vars` versionado ou código.
 3. Configure `AUTH_EMAIL_FROM` com um endereço pertencente ao domínio verificado. `AUTH_EMAIL_REPLY_TO` é opcional e deve ser uma caixa monitorada.
-4. `EMAIL_PASSWORD_AUTH_ENABLED` está definido como `false` no Wrangler local. Mantenha-o desligado até o PR16 habilitar rate limiting e Turnstile e até o sender estar configurado.
+4. `EMAIL_PASSWORD_AUTH_ENABLED` está definido como `false` no Wrangler local. Mantenha-o desligado até o PR16 habilitar rate limiting e Turnstile e até o sender estar configurado. Exceção: o staging o liga desde 22/10/2026, sem Turnstile (ADR 0097, emenda); lá as rotas de senha respondem 503 até o Turnstile existir.
 5. Antes de enviar a usuários reais, revise a política de privacidade e os termos/DPA do Resend: o provider processará destinatários, links de verificação/reset e metadados de entrega.
 
 ## E-mails e links do P8
