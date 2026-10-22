@@ -27,6 +27,8 @@ const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
 export const MIN_OWNER_ROLES = 14;
 /** What the migrations and the runbook leave reachable besides the logins: the 9 `*_runtime` groups (`polaris_pr11_runtime` is created by hand) and `polaris_closed_export_reader`. */
 export const MIN_REACHABLE_ROLES = 10;
+/** The one reachable role besides the groups that the migrations name: a rename would leave the count unchanged, so it is asked for by name. */
+const CLOSED_EXPORT_READER = "polaris_closed_export_reader";
 
 export interface OwnerRoleRow {
   rolbypassrls: boolean;
@@ -102,6 +104,7 @@ export interface RoleCheck {
   owners: number;
   /** the reachable roles that are not owners or logins of the app, those that must exist */
   reachable: number;
+  reachableNames: string[];
 }
 
 export async function findOwnerAttributeViolations(
@@ -127,6 +130,7 @@ export async function findOwnerAttributeViolations(
     ],
     owners: owners.length,
     reachable: reachable.length - logins.size,
+    reachableNames: reachable.map((row) => row.rolname),
   };
 }
 
@@ -142,6 +146,10 @@ export async function assertOwnerRolesClean(
   assert.ok(
     check.reachable >= MIN_REACHABLE_ROLES,
     `fewer roles reachable from a runtime role than the migrations create (${check.reachable}, at least ${MIN_REACHABLE_ROLES}): a role was renamed or is missing`
+  );
+  assert.ok(
+    check.reachableNames.includes(CLOSED_EXPORT_READER),
+    `${CLOSED_EXPORT_READER} is not reachable from a runtime role: it was renamed or lost its edge`
   );
   assert.deepEqual(
     check.findings,

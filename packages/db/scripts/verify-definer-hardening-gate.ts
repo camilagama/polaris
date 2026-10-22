@@ -48,6 +48,7 @@ const expectedDatabase =
 
 const PROBE_ROLE = "polaris_catalog_runtime";
 const OWNER_FLOOR = /fewer polaris_\*_owner roles/;
+const READER_NAME = /polaris_closed_export_reader is not reachable/;
 const REACHABLE_FLOOR = /fewer roles reachable from a runtime role/;
 // the order in which the attributes check reports a role's attributes
 const ATTRIBUTE_ORDER = [
@@ -102,6 +103,8 @@ async function run() {
   let reachAttrCreated = false;
   const ownerMember = `polaris_gate_member_${suffix()}_owner`;
   let ownerMemberCreated = false;
+  const dbOwnerMember = `polaris_gate_dbowner_${suffix()}_owner`;
+  let dbOwnerMemberCreated = false;
   const privRole = `gate_definer_priv_${suffix()}`;
   let privRoleCreated = false;
   const viaRole = `gate_definer_via_${suffix()}`;
@@ -333,6 +336,23 @@ async function run() {
     assert.deepEqual((await findViolations(client)).privilegedRuntime, [
       `${runner} (database owner)`,
     ]);
+    // an owner role that is a member of the database owner, with no attribute on that role: only the database-owner clause finds it
+    await client.query(`CREATE ROLE ${dbOwnerMember} NOLOGIN NOSUPERUSER`);
+    dbOwnerMemberCreated = true;
+    assert.deepEqual(
+      await findOwnerAttributeViolations(client).then(
+        (check) => check.findings
+      ),
+      []
+    );
+    await client.query(
+      `GRANT ${runner} TO ${dbOwnerMember} WITH INHERIT TRUE, SET FALSE`
+    );
+    assert.deepEqual((await findOwnerAttributeViolations(client)).findings, [
+      `${dbOwnerMember}->${runner}`,
+    ]);
+    await client.query(`DROP ROLE ${dbOwnerMember}`);
+    dbOwnerMemberCreated = false;
     await client.query(
       `ALTER DATABASE "${expectedDatabase}" OWNER TO "${originalOwner}"`
     );
@@ -612,8 +632,7 @@ async function run() {
       `a polaris_*_owner role that is a member (INHERIT, SET or ADMIN OPTION, directly or through a chain) of the database owner, neon_superuser${isSuperuser ? ", pg_read_all_data, pg_write_all_data, pg_execute_server_program or a role with CREATEROLE, BYPASSRLS or SUPERUSER" : " or a role with CREATEROLE"} is reported, and one with no edge, an edge to a plain role or an edge with none of the three is not${isSuperuser ? "" : " (the predefined roles and the SUPERUSER and BYPASSRLS roles are proved only where the gate user is a superuser: the CI container; migrations-without-superuser proves the CREATEROLE case as the owner)"}`
     );
 
-    // the floors: an owner role renamed away, or a role no longer reachable from a runtime role (a renamed one is still reached and
-    // checked under its new name), makes the check fail instead of pass on fewer roles
+    // the floors: an owner role renamed away, or a role no longer reachable from a runtime role, makes the check fail instead of pass on fewer roles
     const polarisOwner = (
       await client.query<{ rolname: string }>(
         "SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\\_%\\_owner' ORDER BY 1 LIMIT 1"
@@ -626,6 +645,10 @@ async function run() {
         "REVOKE polaris_closed_export_reader FROM polaris_privacy_runtime",
         REACHABLE_FLOOR,
       ],
+      [
+        `ALTER ROLE polaris_closed_export_reader RENAME TO ${renamedProbe}`,
+        READER_NAME,
+      ],
     ] as const) {
       await client.query("BEGIN");
       try {
@@ -637,7 +660,7 @@ async function run() {
     }
     await assertOwnerRolesClean(client);
     tests.push(
-      "a polaris_*_owner role renamed away, or polaris_closed_export_reader no longer reachable from polaris_privacy_runtime, makes the count fall under its floor and the check fail"
+      "a polaris_*_owner role renamed away, or polaris_closed_export_reader renamed or no longer reachable from polaris_privacy_runtime, makes the count fall under its floor and the check fail"
     );
 
     // the gate can fail: a role the login can reach with SET ROLE, even without inheriting it, holds TEMPORARY or CREATE
@@ -725,6 +748,12 @@ async function run() {
       await cleanup(
         "owner attributes role",
         `DROP ROLE IF EXISTS ${ownerAttributes}`
+      );
+    }
+    if (dbOwnerMemberCreated) {
+      await cleanup(
+        "database owner member",
+        `DROP ROLE IF EXISTS ${dbOwnerMember}`
       );
     }
     if (ownerMemberCreated) {
