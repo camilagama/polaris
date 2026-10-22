@@ -74,6 +74,7 @@ import {
   SelectValue,
 } from "@/ui/select";
 import { Separator } from "@/ui/separator";
+import { Textarea } from "@/ui/textarea";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { ToastProvider, toastManager } from "@/ui/toast";
 import {
@@ -185,6 +186,13 @@ export function UiGallery() {
                 aria-invalid="true"
                 id="galeria-preco"
                 inputMode="decimal"
+              />
+            </div>
+            <div className="grid max-w-sm gap-1.5">
+              <Label htmlFor="galeria-descricao">Descrição</Label>
+              <Textarea
+                id="galeria-descricao"
+                placeholder="Material, corte, cuidados"
               />
             </div>
           </Section>

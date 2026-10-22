@@ -224,11 +224,17 @@ test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, 
   ).toBeDisabled();
 });
 
-const productCard = (page: Page, name: string) =>
-  page.locator(".product-card", { hasText: name });
+const productRow = (page: Page, name: string) =>
+  page.locator("[data-product-id]", { hasText: name });
+
+/** The actions of a product are in its menu: opens it (the items of a locked product show disabled). */
+async function openMenu(page: Page, name: string) {
+  await page.getByRole("button", { name: `Mais ações para ${name}` }).click();
+}
 
 async function registerProduct(page: Page, name: string) {
-  await page.locator("#product-name").fill(name);
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill(name);
   await page.getByRole("button", { name: "Cadastrar produto" }).click();
 }
 
@@ -240,12 +246,17 @@ test.describe("produtos", () => {
     await start(page, "Produtos");
 
     await registerProduct(page, "Camiseta Azul");
-    await expect(productCard(page, "Camiseta Azul")).toBeVisible();
+    await expect(productRow(page, "Camiseta Azul")).toBeVisible();
+    // the form closes and the focus goes to what was done
+    await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
+    await expect(
+      page.getByText("Produto “Camiseta Azul” guardado. Enviando…")
+    ).toBeVisible();
     await expect(page.getByTestId("server-records")).toHaveText("1", {
       timeout: 20_000,
     });
     await expect(
-      productCard(page, "Camiseta Azul").locator(".product-sync-state")
+      productRow(page, "Camiseta Azul").locator("[data-sync-state]")
     ).toHaveCount(0, { timeout: 20_000 });
   });
 
@@ -256,20 +267,26 @@ test.describe("produtos", () => {
     await openLab(page, user, "products");
     await start(page, "Produtos");
     await page.getByLabel("Rede disponível").uncheck();
+    await expect(page.getByText("Sem conexão.", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Sem conexão. Você pode cadastrar produtos")
+      page.getByText("Cadastrar funciona e é enviado depois")
     ).toBeVisible();
 
     await registerProduct(page, "Bolsa Couro");
     await expect(page.getByText("salvo neste aparelho")).toBeVisible();
-    const bag = productCard(page, "Bolsa Couro");
+    const bag = productRow(page, "Bolsa Couro");
     await expect(bag).toContainText("Aguardando envio");
+    await expect(bag).toContainText(
+      "Disponível depois que o servidor confirmar"
+    );
+    await openMenu(page, "Bolsa Couro");
     await expect(
-      bag.getByRole("button", { exact: true, name: "Editar" })
+      page.getByRole("menuitem", { exact: true, name: "Editar" })
     ).toBeDisabled();
     await expect(
-      bag.getByRole("button", { exact: true, name: "Variantes" })
+      page.getByRole("menuitem", { exact: true, name: "Variantes" })
     ).toBeDisabled();
+    await page.keyboard.press("Escape");
     await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
     await expect(page.getByTestId("server-records")).toHaveText("0");
 
@@ -277,7 +294,7 @@ test.describe("produtos", () => {
     await openLab(page, user, "products");
     await page.getByLabel("Rede disponível").uncheck();
     await start(page, "Produtos");
-    await expect(productCard(page, "Bolsa Couro")).toContainText(
+    await expect(productRow(page, "Bolsa Couro")).toContainText(
       "Aguardando envio"
     );
   });
@@ -289,7 +306,7 @@ test.describe("produtos", () => {
     await start(page, "Produtos");
     await page.getByLabel("Rede disponível").uncheck();
     await registerProduct(page, "Calça Jeans");
-    await expect(productCard(page, "Calça Jeans")).toContainText(
+    await expect(productRow(page, "Calça Jeans")).toContainText(
       "Aguardando envio"
     );
 
@@ -298,13 +315,11 @@ test.describe("produtos", () => {
       timeout: 20_000,
     });
     await expect(
-      productCard(page, "Calça Jeans").locator(".product-sync-state")
+      productRow(page, "Calça Jeans").locator("[data-sync-state]")
     ).toHaveCount(0, { timeout: 20_000 });
+    await openMenu(page, "Calça Jeans");
     await expect(
-      productCard(page, "Calça Jeans").getByRole("button", {
-        exact: true,
-        name: "Editar",
-      })
+      page.getByRole("menuitem", { exact: true, name: "Editar" })
     ).toBeEnabled();
   });
 });

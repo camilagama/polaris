@@ -258,6 +258,14 @@ async function openProducts(
   return screen;
 }
 
+/** The actions of a product are in the menu of its row. */
+async function openProductAction(page: Page, action: string) {
+  await page
+    .getByRole("button", { name: "Mais ações para Camiseta do teste" })
+    .click();
+  await page.getByRole("menuitem", { name: action }).click();
+}
+
 test("preço de variante digitado e 401: o aviso diz que o digitado pode se perder (V-4)", async ({
   page,
 }) => {
@@ -267,7 +275,7 @@ test("preço de variante digitado e 401: o aviso diz que o digitado pode se perd
       return route.fulfill(unauthorized);
     },
   });
-  await page.getByRole("button", { name: "Variantes" }).click();
+  await openProductAction(page, "Variantes");
   const price = page.getByLabel(PRICE_FIELD);
   await expect(price).toBeVisible();
   await price.fill("59,90");
@@ -307,7 +315,7 @@ test("foto do produto: o 401 do upload mostra o aviso com 'Entrar de novo' e 'A 
       status: 401,
     });
   });
-  await page.getByRole("button", { name: "Imagens" }).click();
+  await openProductAction(page, "Imagens");
   await page.getByLabel("Escolher imagem").setInputFiles({
     buffer: PNG_1X1,
     mimeType: "image/png",
