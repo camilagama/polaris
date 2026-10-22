@@ -20,15 +20,16 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 ## Alvo seguro
 
 - Workers `polaris-web-staging` e `polaris-catalog-staging`. O Admin **não** é implantado no staging.
-- Projeto Neon `polaris-staging`, com o marcador `polaris.environment = 'staging'`. Nunca o projeto dos gates (`<id do projeto Neon dos gates>`), que nunca recebe dado real.
+- Projeto Neon `polaris-staging`, com o marcador `polaris.environment=staging` (comentário do banco). Nunca o projeto dos gates (`<id do projeto Neon dos gates>`), que nunca recebe dado real.
 - O topo de cada `wrangler.jsonc` é só local: um deploy sem `--env staging` (ou sem `CLOUDFLARE_ENV=staging` na build) falha.
 
 ## 1. Banco (responsável)
 
 1. Criar o projeto Neon Free `polaris-staging` em `aws-sa-east-1`, com PostgreSQL 18, só a branch `main` e compute de 0,25 CU com autosuspend de 5 min.
 2. Com o dono (`neondb_owner`) e a URL **direta**, sem pooler:
-   - `ALTER DATABASE neondb SET polaris.environment = 'staging';`
+   - `COMMENT ON DATABASE neondb IS 'polaris.environment=staging';`
      (o marcador também faz o executor dos gates recusar este banco: `connectToGateTarget` recusa `production`, `staging` e `restore-drill`, mesmo que alguém aponte um gate para a URL direta daqui.)
+     Nota: o Neon não dá superusuário, e o PostgreSQL só aceita `ALTER DATABASE … SET polaris.environment` (variável sem extensão que a registre) de superusuário, então esse comando falha com `permission denied to set parameter` (42501), assim como `GRANT SET ON PARAMETER` e `ALTER ROLE … IN DATABASE … SET`. O comentário do banco só muda para o dono (ou superusuário), e os logins de runtime não são donos. O texto tem de ser exatamente esse, em minúsculas e sem espaço sobrando: `polaris.environment=staging-x`, `Polaris.environment=staging` ou `polaris.environment = staging` não são marcador. Conferir com `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();`.
    - `CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;` (o papel de tenant vive fora das migrations, como no CI).
 3. Aplicar as migrations do zero, sempre com **a mesma variável** no verify e no migrate, para que uma URL errada não passe no verify e migre outro banco. A URL não é escrita na linha de comando (iria para o histórico do shell): `read -rs STAGING_MIGRATOR_DATABASE_URL && export STAGING_MIGRATOR_DATABASE_URL`, e então:
 
@@ -38,7 +39,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
      && bun run --filter @polaris/db staging:verify-database after-migrate
    ```
 
-   O verify só aceita o banco cujo `ALTER DATABASE` gravou o marcador. Uma opção de conexão (`?options=`) é recusada.
+   O verify só aceita o banco cujo comentário é exatamente `polaris.environment=staging` (ou, no banco local ou de CI, onde o login é superusuário, a forma antiga do `ALTER DATABASE … SET`). Uma opção de conexão (`?options=`) é recusada.
 4. Criar um login por binding, cada um membro de **um** grupo, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, fora de `neon_superuser`, com `statement_timeout` e `CONNECTION LIMIT`. A senha não passa pela linha de comando nem pelo SQL:
 
    | Binding | Grupo | Limite de conexões |
