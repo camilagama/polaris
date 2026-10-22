@@ -9,6 +9,7 @@ import type { Client } from "pg";
  */
 // a runtime role is a `polaris_*_runtime` group, a temporary gate login, or any role that is a member of such a group
 // (production logins have free names); PUBLIC is checked on its own, because every role inherits from it. Membership is explicit (pg_auth_members, followed through groups): pg_has_role says a superuser is a member of everything. A runtime role that is a superuser or the database owner is reported as such and left out of the membership checks.
+// ADMIN OPTION counts as reach everywhere below: whoever has it on a role can grant itself SET and INHERIT on it, so a runtime role that has it (or inherits it, or can SET to a role that has it) reaches that role, and what that role reaches in turn. The one edge that does not count is the database owner's own ADMIN-only edge, below.
 // An edge of the database owner with ADMIN OPTION alone (inherit and set false) does not count toward membership: it lets the owner administer the group, not use its privileges. PostgreSQL 16+ creates exactly that edge when a role with CREATEROLE but no SUPERUSER creates a role: the creator is made a member WITH ADMIN OPTION, INHERIT FALSE, SET FALSE (on Neon the grantor is cloud_admin), so `neondb_owner` is an ADMIN-only member of every polaris_* role, and that does not make it a runtime login. The edge would let the owner put itself in the group (GRANT … TO self), but the owner and migrator already can: it owns the database and the objects and creates and drops these roles, so there is nothing to find. The exemption is only the owner's: any other role with an ADMIN-only edge on a runtime group is still a runtime role, because nothing explains that edge and the role could grant itself the group.
 
 export const RUNTIME_GROUP_PATTERN = "^polaris_.+_runtime$";
@@ -54,6 +55,33 @@ export const RUNTIME_ROLES_CTE = `
           ))
     )`;
 
+// `t` is reached from `via` (a role the runtime role can SET to, itself included) by ADMIN OPTION when `via` has it on `t`, directly or through a
+// role it can become or inherits; the database owner's ADMIN-only edge does not count (see above)
+const ADMIN_OPTION_REACHES = `EXISTS (
+            SELECT 1 FROM pg_auth_members a
+             WHERE a.roleid = t.oid AND a.admin_option
+               AND NOT (a.member = (SELECT datdba FROM pg_database WHERE datname = current_database())
+                    AND NOT a.inherit_option AND NOT a.set_option)
+               AND (pg_has_role(via.oid, a.member, 'SET') OR pg_has_role(via.oid, a.member, 'USAGE'))
+          )`;
+
+// the roles a runtime role can SET to, itself included, followed through ADMIN OPTION: a role it has ADMIN OPTION on is one it can grant itself
+// SET and INHERIT on, so it is one it can SET to, and what that role has (SET, INHERIT or ADMIN OPTION on others) is reached too, to any depth.
+// A superuser is not followed (pg_has_role says it is a member of everything); it is reached, and reported, with its attributes.
+// `$1` and `$2` as in RUNTIME_ROLES_CTE; the columns are the runtime role and a role it can SET to.
+const BECOMES_CTE = `${RUNTIME_ROLES_CTE},
+    becomes(runtime_oid, role_oid) AS (
+      SELECT runtime.oid, via.oid
+        FROM runtime
+        JOIN pg_roles via ON pg_has_role(runtime.oid, via.oid, 'SET')
+       WHERE NOT runtime.rolsuper AND NOT runtime.is_owner
+      UNION
+      SELECT becomes.runtime_oid, t.oid
+        FROM becomes
+        JOIN pg_roles via ON via.oid = becomes.role_oid AND NOT via.rolsuper
+        JOIN pg_roles t ON ${ADMIN_OPTION_REACHES}
+    )`;
+
 function endsInPgTemp(config: string[] | null): boolean {
   const entry = (config ?? []).find((item) =>
     item.startsWith(SEARCH_PATH_PREFIX)
@@ -83,23 +111,29 @@ export interface ReachableRole {
 }
 
 /**
- * Every role a runtime role is, or can become with SET ROLE, or inherits (itself included), with its attributes and
- * its TEMPORARY and CREATE rights. A superuser or database owner among the runtime roles is left out: it is reported
- * as such by `privilegedRuntime`, and for a superuser pg_has_role says it is a member of everything.
+ * Every role a runtime role is, or can become with SET ROLE, or inherits (itself included), or has ADMIN OPTION on
+ * (directly, through a group it inherits or through a role it can become: ADMIN OPTION grants SET and INHERIT to
+ * itself, so what that role reaches is reached too), with its attributes and its TEMPORARY and CREATE rights. The
+ * chain is followed the way the membership check follows it (`BECOMES_CTE`): SET to a role, then SET, INHERIT or ADMIN
+ * OPTION from there. A superuser or database owner among the runtime roles is left out: it is reported as such by
+ * `privilegedRuntime`, and for a superuser pg_has_role says it is a member of everything (so nothing is followed from
+ * a superuser that is only reached: the superuser itself is reported, with its attributes).
  */
 export async function findReachableRoles(
   client: Client
 ): Promise<ReachableRole[]> {
   const { rows } = await client.query<ReachableRole>(
-    `${RUNTIME_ROLES_CTE}
+    `${BECOMES_CTE}
      SELECT DISTINCT t.rolname,
             has_database_privilege(t.oid, current_database(), 'TEMPORARY') AS can_temp,
             has_schema_privilege(t.oid, 'public', 'CREATE') AS can_create,
             t.oid IN (SELECT oid FROM runtime WHERE rolname !~ $1) AS is_login,
             t.rolcanlogin, t.rolsuper, t.rolcreaterole, t.rolcreatedb, t.rolreplication, t.rolbypassrls
        FROM runtime
-       JOIN pg_roles t ON pg_has_role(runtime.oid, t.oid, 'SET') OR pg_has_role(runtime.oid, t.oid, 'USAGE')
-      WHERE NOT runtime.rolsuper AND NOT runtime.is_owner
+       JOIN becomes ON becomes.runtime_oid = runtime.oid
+       JOIN pg_roles via ON via.oid = becomes.role_oid
+       JOIN pg_roles t ON t.oid = via.oid
+         OR (NOT via.rolsuper AND (pg_has_role(via.oid, t.oid, 'SET') OR pg_has_role(via.oid, t.oid, 'USAGE')))
       ORDER BY 1`,
     [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
   );
@@ -129,7 +163,7 @@ export async function findViolations(client: Client): Promise<Findings> {
   const publicExecute = definers.rows
     .filter((row) => row.publicExecute)
     .map((row) => row.signature);
-  // the checks below follow SET ROLE chains through pg_has_role
+  // the checks below follow SET ROLE chains through pg_has_role (and ADMIN OPTION, see BECOMES_CTE)
   const privileged = await client.query<{ reason: string; rolname: string }>(
     `${RUNTIME_ROLES_CTE}
      SELECT rolname,
@@ -141,30 +175,25 @@ export async function findViolations(client: Client): Promise<Findings> {
       ORDER BY 1`,
     [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
   );
-  // owner roles: the database owner, neon_superuser (when it exists), every *_owner role (pg_database_owner is the database owner
-  // by another name), any superuser and the predefined roles that read or write files, run programs or bypass table privileges;
-  // the login reaches one when a role it can become with SET ROLE (itself included) inherits it, can SET to it or has ADMIN OPTION on it
-  // (whoever has ADMIN OPTION can grant itself SET and INHERIT)
+  // privileged roles: the database owner, neon_superuser (when it exists), every *_owner role (pg_database_owner is the database owner
+  // by another name), any role with SUPERUSER, BYPASSRLS or CREATEROLE and every predefined pg_* role (pg_database_owner aside);
+  // the login reaches one when a role it can become with SET ROLE (itself included) inherits it or can SET to it, or when it has ADMIN OPTION on
+  // it, or on a role that has (whoever has ADMIN OPTION can grant itself SET and INHERIT, and so reaches what the role reaches)
   const membership = await client.query<{ login: string; target: string }>(
-    `${RUNTIME_ROLES_CTE}
+    `${BECOMES_CTE}
      SELECT DISTINCT runtime.rolname AS login, t.rolname AS target
        FROM runtime
-       JOIN pg_roles via ON pg_has_role(runtime.oid, via.oid, 'SET')
-       JOIN pg_roles t ON t.oid <> via.oid
+       JOIN becomes ON becomes.runtime_oid = runtime.oid
+       JOIN pg_roles via ON via.oid = becomes.role_oid
+       JOIN pg_roles t ON t.oid <> runtime.oid
         AND (t.oid = (SELECT datdba FROM pg_database WHERE datname = current_database())
           OR t.rolname = 'neon_superuser'
           OR t.rolname LIKE '%\\_owner'
-          OR t.rolsuper
-          OR t.rolname IN ('pg_execute_server_program', 'pg_read_server_files', 'pg_write_server_files', 'pg_read_all_data', 'pg_write_all_data'))
-      WHERE NOT runtime.rolsuper AND NOT runtime.is_owner
-        AND t.rolname <> 'pg_database_owner'
-        AND (pg_has_role(via.oid, t.oid, 'SET')
-          OR pg_has_role(via.oid, t.oid, 'USAGE')
-          OR EXISTS (
-            SELECT 1 FROM pg_auth_members a
-             WHERE a.roleid = t.oid AND a.admin_option
-               AND (pg_has_role(via.oid, a.member, 'SET') OR pg_has_role(via.oid, a.member, 'USAGE'))
-          ))
+          OR t.rolsuper OR t.rolbypassrls OR t.rolcreaterole
+          OR t.rolname LIKE 'pg\\_%')
+      WHERE t.rolname <> 'pg_database_owner'
+        AND (t.oid = via.oid
+          OR (NOT via.rolsuper AND (pg_has_role(via.oid, t.oid, 'SET') OR pg_has_role(via.oid, t.oid, 'USAGE'))))
       ORDER BY 1, 2`,
     [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
   );
@@ -222,7 +251,7 @@ export function assertClean(findings: Findings) {
   assert.deepEqual(
     findings.ownerMembership,
     [],
-    "runtime roles that are members (SET or INHERIT) of the database owner, neon_superuser or a *_owner role"
+    "runtime roles that reach (SET, INHERIT or ADMIN OPTION) the database owner, neon_superuser, a *_owner role, a predefined pg_* role or a role with SUPERUSER, BYPASSRLS or CREATEROLE"
   );
   assert.deepEqual(
     findings.publicExecute,

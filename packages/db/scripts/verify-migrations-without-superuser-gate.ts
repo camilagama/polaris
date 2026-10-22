@@ -383,6 +383,41 @@ async function run() {
       } finally {
         await verify.query("ROLLBACK").catch(() => undefined);
       }
+      // ADMIN OPTION alone counts as reach, and an owner role has no edge out: in another transaction that is rolled back, a runtime group with
+      // ADMIN OPTION alone on a role with CREATEDB and CREATEROLE reaches it (the owner administers it, having created it), and a throwaway
+      // owner role that is a member of another owner role is reported
+      await verify.query("BEGIN");
+      try {
+        await verify.query(
+          "CREATE ROLE gate_probe_administered NOLOGIN CREATEDB CREATEROLE"
+        );
+        await verify.query("CREATE ROLE polaris_gate_probe_owner NOLOGIN");
+        await verify.query(
+          "CREATE ROLE polaris_gate_probe_target_owner NOLOGIN"
+        );
+        await verify.query(
+          `GRANT gate_probe_administered TO ${quote(group)} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+        );
+        await verify.query(
+          "GRANT polaris_gate_probe_target_owner TO polaris_gate_probe_owner WITH INHERIT TRUE, SET FALSE"
+        );
+        assert.deepEqual(
+          (await findOwnerAttributeViolations(verify)).findings,
+          [
+            "gate_probe_administered: CREATEROLE",
+            "gate_probe_administered: CREATEDB",
+            "polaris_gate_probe_owner->polaris_gate_probe_target_owner",
+          ]
+        );
+        assert.ok(
+          (await findViolations(verify)).ownerMembership.includes(
+            `${group}->gate_probe_administered`
+          ),
+          "a runtime group with ADMIN OPTION alone on a role with CREATEROLE is not reported"
+        );
+      } finally {
+        await verify.query("ROLLBACK").catch(() => undefined);
+      }
       await assertOwnerRolesClean(verify);
       assertClean(await findViolations(verify));
       const risky = await verify.query<{ rolname: string }>(
@@ -437,7 +472,7 @@ async function run() {
       tests: [
         "every migration replays from scratch as a login owner with CREATEROLE and no SUPERUSER, member of a neon_superuser with CREATEDB, CREATEROLE, BYPASSRLS and REPLICATION, owner of the database and of public",
         "no polaris role the migrations made carries SUPERUSER, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS",
-        "the owner roles and the roles a runtime role reaches carry none of the six attributes and no owner is a member of a privileged role (with a floor on how many were read); the check reports each of CREATEROLE and CREATEDB and a membership when a throwaway role has them, for an owner without SUPERUSER",
+        "the owner roles and the roles a runtime role reaches (by SET, INHERIT or ADMIN OPTION) carry none of the six attributes and no owner is a member of any role (with a floor on how many were read); the check reports each of CREATEROLE and CREATEDB, an edge out of an owner role and a role reached by ADMIN OPTION alone when a throwaway role has them, for an owner without SUPERUSER",
         "the read-only definer-hardening checks of the staging after-migrate pass with the owner an ADMIN-only member of every runtime group, and report the same owner with INHERIT or SET on one",
         "every ALTER ROLE of the migrations is guarded: with the role made a superuser the statement fails",
       ],
