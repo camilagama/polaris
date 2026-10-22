@@ -316,6 +316,15 @@ async function queueCustomers(page: Page, count: number) {
 const storedDevice = (page: Page) =>
   page.evaluate(() => window.localStorage.getItem("polaris.offline.device"));
 
+/** The id is gone once the page that follows the Sair has loaded; a read during the navigation is retried. */
+async function deviceForgotten(page: Page) {
+  await expect
+    .poll(() => storedDevice(page).catch(() => "navegando"), {
+      timeout: 15_000,
+    })
+    .toBeNull();
+}
+
 async function signedOut(page: Page) {
   await expect
     .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
@@ -337,7 +346,7 @@ test("sair com conexão revoga este aparelho com o id dele, e o login seguinte r
     `revokeCurrent ${deviceId}`,
     "sign-out",
   ]);
-  expect(await storedDevice(page)).toBeNull();
+  await deviceForgotten(page);
 
   // the same person signs in again on the same browser
   server.signIn(page.context());
@@ -428,7 +437,7 @@ for (const [name, answer] of [
     await clickSair(page);
     await signedOut(page);
     expect(server.log).toContain("sign-out");
-    expect(await storedDevice(page)).toBeNull();
+    await deviceForgotten(page);
     await expect(page.locator("body")).not.toContainText(
       "não foi possível encerrar a sessão"
     );
