@@ -707,6 +707,14 @@ async function run() {
         "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, 'x', $2)",
         [newOrganization, TIMEZONE]
       );
+      assert.equal(
+        await scalar<string>(
+          "SELECT count(*)::text AS value FROM public.organizations WHERE id = $1",
+          [newOrganization]
+        ),
+        "1",
+        "the onboarding owner reads back the organization it created in this transaction, by the scope on its id (no membership yet: only the branch by id admits the row; control of the next probe)"
+      );
       await client.query(
         "INSERT INTO public.memberships (organization_id, user_id) VALUES ($1, $2)",
         [newOrganization, userB]
@@ -757,6 +765,32 @@ async function run() {
       "INSERT INTO public.memberships (organization_id, user_id) VALUES ($1, $2)",
       [organizationA, userC],
       "the onboarding owner cannot join a user to an organization created before the transaction, even with the scope on it"
+    );
+    // the branch by id of the SELECT of organizations is only for an organization created in this transaction (0096): with the
+    // scope on organization A and on a user who is no member of it, the policy returns nothing, by id or by a scan
+    await rolledBack(
+      {
+        [ONBOARDING_ORGANIZATION_SCOPE]: organizationA,
+        [ONBOARDING_USER_SCOPE]: userC,
+      },
+      ONBOARDING_OWNER,
+      async () => {
+        assert.equal(
+          await scalar<string>(
+            "SELECT count(*)::text AS value FROM public.organizations WHERE id = $1",
+            [organizationA]
+          ),
+          "0",
+          "the onboarding owner does not read an older organization by the id in the scope"
+        );
+        assert.equal(
+          await scalar<string>(
+            "SELECT count(*)::text AS value FROM public.organizations"
+          ),
+          "0",
+          "the onboarding owner scoped to an older organization and to a user without membership sees no organization"
+        );
+      }
     );
     const syncOfA = { [SYNC_SCOPE]: organizationA };
     await rolledBack(syncOfA, SYNC_OWNER, async () => {
@@ -812,7 +846,7 @@ async function run() {
       );
     }
     tests.push(
-      "scoped to user B the epoch owner sees and updates only B's two memberships and two grants and audits only B's grants in their organization; scoped to B and a new organization the onboarding owner sees only B's organizations and writes only that organization, B's membership in it and its audit row (not an older organization, even with the scope on it); scoped to organization A the sync owner sees only A's changes, renumbers none, moves only A's cursor and can neither read an entity, delete a change, nor write B's cursor or change (42501)"
+      "scoped to user B the epoch owner sees and updates only B's two memberships and two grants and audits only B's grants in their organization; scoped to B and a new organization the onboarding owner sees only B's organizations and writes only that organization, B's membership in it and its audit row (not an older organization, even with the scope on it, and does not read one back by the id in the scope); scoped to organization A the sync owner sees only A's changes, renumbers none, moves only A's cursor and can neither read an entity, delete a change, nor write B's cursor or change (42501)"
     );
 
     // ------------------------------------------------------ 6. planted defects
