@@ -609,6 +609,69 @@ test("o menu de um produto arquivado tem Restaurar e não tem Imagens nem Arquiv
   await expect(page.getByRole("menuitem", { name: "Arquivar" })).toHaveCount(0);
 });
 
+test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com o produto que mudou (U-14)", async ({
+  page,
+}) => {
+  let skuAnswer: "duplicate" | "version" = "duplicate";
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+      "product/setVariantSku": (route) =>
+        route.fulfill(
+          rpc(
+            {
+              code: "CONFLICT",
+              data: {
+                reason:
+                  skuAnswer === "duplicate"
+                    ? "duplicate_sku"
+                    : "product_version_conflict",
+              },
+              defined: true,
+              message: "Conflict",
+              status: 409,
+            },
+            409
+          )
+        ),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  const field = skuSection.getByRole("textbox");
+  await field.fill("CAM-001");
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+
+  // at the field, naming the SKU, tied to it; no alert at the end of the section and no "Atualizar variantes"
+  const message =
+    "O SKU CAM-001 já está em uso por outra variante. Use outro código.";
+  await expect(skuSection.getByText(message)).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  const describedBy = await field.getAttribute("aria-describedby");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
+  await expect(field).toHaveValue("CAM-001");
+  await expect(
+    skuSection.getByRole("button", { name: "Atualizar variantes" })
+  ).toHaveCount(0);
+
+  // typing another code takes the message away
+  await field.fill("CAM-002");
+  await expect(skuSection.getByText(message)).toHaveCount(0);
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+
+  // a product that changed is another message, with its way out
+  skuAnswer = "version";
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+  await expect(skuSection.getByRole("alert")).toContainText(
+    "O produto mudou. Atualize as variantes"
+  );
+  await expect(
+    skuSection.getByRole("button", { name: "Atualizar variantes" })
+  ).toBeVisible();
+});
+
 test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícone; o sucesso é status e o conflito oferece 'Atualizar variantes'", async ({
   page,
 }) => {

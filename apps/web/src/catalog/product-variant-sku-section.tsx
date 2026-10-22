@@ -14,13 +14,23 @@ import {
   VariantSection,
 } from "./product-variant-parts";
 import {
+  duplicateSkuMessage,
+  isDuplicateSkuError,
   type ProductVariantReadModel,
   variantLabel,
   variantSkuErrorMessage,
 } from "./product-variants-model";
 
+/** The SKU another variant already has, said at the field of the variant that was typed (U-14). */
+interface SkuFieldError {
+  text: string;
+  variantId: string;
+}
+
 interface SkuRowProps {
   disabled: boolean;
+  /** Set when this row is the one whose SKU was refused as a duplicate. */
+  error: string | undefined;
   label: string;
   onDraftChange: () => void;
   onSave: (
@@ -32,6 +42,7 @@ interface SkuRowProps {
 
 function SkuRow({
   disabled,
+  error,
   label,
   onDraftChange,
   onSave,
@@ -62,10 +73,17 @@ function SkuRow({
     <VariantFieldRow
       buttonLabel="Salvar SKU"
       disabled={disabled}
+      error={
+        error
+          ? { id: `product-variant-sku-${variant.id}-error`, text: error }
+          : undefined
+      }
       onSubmit={handleSubmit}
     >
       <ProductTextField
         disabled={disabled}
+        error={error}
+        errorOutside
         id={`product-variant-sku-${variant.id}`}
         label={`SKU — ${label}`}
         onChange={handleChange}
@@ -95,11 +113,13 @@ export function ProductVariantSkuSection({
 }: SkuSectionProps) {
   const [isPending, setIsPending] = useState(false);
   const [outcome, setOutcome] = useState<VariantSaveOutcome | null>(null);
+  const [fieldError, setFieldError] = useState<SkuFieldError | null>(null);
 
   const handleSave = useCallback(
     async (variantId: string, sku: string) => {
       setIsPending(true);
       setOutcome(null);
+      setFieldError(null);
       try {
         const result = await orpcClient.product.setVariantSku({
           expectedVersion: configuration.productVersion,
@@ -119,6 +139,10 @@ export function ProductVariantSkuSection({
           )?.sku ?? null
         );
       } catch (error: unknown) {
+        if (isDuplicateSkuError(error)) {
+          setFieldError({ text: duplicateSkuMessage(sku), variantId });
+          return;
+        }
         setOutcome({
           kind: rpcErrorCode(error) === "CONFLICT" ? "conflict" : "error",
           text: variantSkuErrorMessage(error),
@@ -132,6 +156,7 @@ export function ProductVariantSkuSection({
 
   const handleDraftChange = useCallback(() => {
     setOutcome(null);
+    setFieldError(null);
   }, []);
 
   return (
@@ -145,6 +170,11 @@ export function ProductVariantSkuSection({
           <li key={variant.id}>
             <SkuRow
               disabled={isPending}
+              error={
+                fieldError?.variantId === variant.id
+                  ? fieldError.text
+                  : undefined
+              }
               label={variantLabel(variant, index)}
               onDraftChange={handleDraftChange}
               onSave={handleSave}

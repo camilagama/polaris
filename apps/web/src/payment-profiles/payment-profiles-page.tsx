@@ -11,9 +11,15 @@ import {
   useState,
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
 import { legalAcceptanceMessage } from "../lib/rpc-error";
+import { useReportUnsentWork } from "../lib/unsent-work";
+import {
+  formatFeePercentage,
+  percentageFieldText,
+  percentageProblem,
+} from "./payment-fee-model";
 import "./payment-profiles-page.css";
 
 const methods = [
@@ -38,8 +44,8 @@ interface FeeDraft {
   percentage: string;
 }
 interface RuleDraft {
-  draftId: string;
   anticipationFee: FeeDraft;
+  draftId: string;
   expectedSettlementDays: string;
   installmentPlan: "merchant" | "issuer";
   installments: string;
@@ -51,13 +57,17 @@ interface ProfileDraft {
   rules: RuleDraft[];
 }
 interface FeeFieldsProps {
+  /** The text under the percentage field when it cannot be saved (U-29). */
+  error: string | undefined;
   id: string;
   label: string;
-  value: FeeDraft;
   onChange: (value: FeeDraft) => void;
+  value: FeeDraft;
 }
 interface RuleEditorProps {
   canRemove: boolean;
+  /** The problems of the fields of the form, by the id of the field. */
+  errors: Readonly<Record<string, string>>;
   index: number;
   onRemove: (draftId: string) => void;
   onUpdate: (draftId: string, changes: Partial<RuleDraft>) => void;
@@ -89,7 +99,7 @@ function feeDraft(fee: PaymentFeeConfigurationReadModel): FeeDraft {
   return {
     fixedAmount: fee.fixedAmount ?? "",
     mode: fee.mode,
-    percentage: fee.percentage ?? "",
+    percentage: percentageFieldText(fee.percentage),
   };
 }
 function profileDraft(profile: PaymentProfileReadModel): ProfileDraft {
@@ -139,6 +149,24 @@ function ruleInput(rule: RuleDraft): PaymentProfileRuleInput {
     processingFee: feeInput(rule.processingFee),
   };
 }
+/** The id of each percentage field of the form that cannot be saved, with what to say there (U-29). */
+function percentageProblems(rules: RuleDraft[]): Record<string, string> {
+  const problems: Record<string, string> = {};
+  for (const rule of rules) {
+    for (const [part, fee] of [
+      ["processing", rule.processingFee],
+      ["anticipation", rule.anticipationFee],
+    ] as const) {
+      const percentage =
+        fee.mode === "percentage" || fee.mode === "fixed_and_percentage";
+      const problem = percentage ? percentageProblem(fee.percentage) : null;
+      if (problem) {
+        problems[`payment-rule-${rule.draftId}-${part}-percentage`] = problem;
+      }
+    }
+  }
+  return problems;
+}
 function errorText(error: unknown, subject?: string): string {
   if (
     error instanceof Error &&
@@ -180,7 +208,7 @@ function feeSummary(fee: PaymentFeeConfigurationReadModel): string {
   }
   return [
     fee.fixedAmount === null ? null : `R$ ${fee.fixedAmount}`,
-    fee.percentage === null ? null : `${fee.percentage}%`,
+    fee.percentage === null ? null : formatFeePercentage(fee.percentage),
   ]
     .filter(Boolean)
     .join(" + ");
@@ -195,7 +223,7 @@ function saveButtonLabel(pending: boolean, editing: boolean): string {
   return "Criar perfil";
 }
 
-function FeeFields({ id, label, value, onChange }: FeeFieldsProps) {
+function FeeFields({ error, id, label, value, onChange }: FeeFieldsProps) {
   const fixed = value.mode === "fixed" || value.mode === "fixed_and_percentage";
   const percentage =
     value.mode === "percentage" || value.mode === "fixed_and_percentage";
@@ -256,13 +284,19 @@ function FeeFields({ id, label, value, onChange }: FeeFieldsProps) {
             Percentual efetivo sobre o total devido
           </label>
           <input
+            aria-describedby={error ? `${id}-percentage-error` : undefined}
+            aria-invalid={error ? true : undefined}
             id={`${id}-percentage`}
             inputMode="decimal"
             onChange={handlePercentageChange}
             placeholder="Ex.: 2,99"
-            required
             value={value.percentage}
           />
+          {error ? (
+            <p className="field-error" id={`${id}-percentage-error`}>
+              {error}
+            </p>
+          ) : null}
         </div>
       )}
     </fieldset>
@@ -271,6 +305,7 @@ function FeeFields({ id, label, value, onChange }: FeeFieldsProps) {
 
 function RuleEditor({
   canRemove,
+  errors,
   index,
   onRemove,
   onUpdate,
@@ -390,12 +425,14 @@ function RuleEditor({
       </div>
       <div className="payment-fee-grid">
         <FeeFields
+          error={errors[`${prefix}-processing-percentage`]}
           id={`${prefix}-processing`}
           label="Taxa de processamento"
           onChange={handleProcessingFeeChange}
           value={rule.processingFee}
         />
         <FeeFields
+          error={errors[`${prefix}-anticipation-percentage`]}
           id={`${prefix}-anticipation`}
           label="Taxa de antecipação"
           onChange={handleAnticipationFeeChange}
@@ -543,6 +580,9 @@ export function PaymentProfilesPage() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // only a failed read can be tried again; a refused save is fixed in the form
+  const [canRetry, setCanRetry] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   useReportUnsentWork(
     !pending &&
@@ -552,6 +592,7 @@ export function PaymentProfilesPage() {
   const loadProfiles = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setCanRetry(false);
     try {
       const result = await orpcClient.paymentProfile.list({
         organizationId,
@@ -560,6 +601,7 @@ export function PaymentProfilesPage() {
       setProfiles(result.profiles);
     } catch (loadError) {
       setError(errorText(loadError, "os perfis de pagamento"));
+      setCanRetry(true);
     } finally {
       setLoading(false);
     }
@@ -572,6 +614,7 @@ export function PaymentProfilesPage() {
   }, [loadProfiles]);
   const updateRule = useCallback(
     (draftId: string, changes: Partial<RuleDraft>) => {
+      setFieldErrors({});
       setDraft((current) => ({
         ...current,
         rules: current.rules.map((rule) =>
@@ -583,6 +626,7 @@ export function PaymentProfilesPage() {
   );
   const handleNameChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
+      setFieldErrors({});
       setDraft((current) => ({ ...current, name: event.target.value }));
     },
     []
@@ -615,8 +659,19 @@ export function PaymentProfilesPage() {
       if (!draft.rules.length) {
         return;
       }
+      const problems = percentageProblems(draft.rules);
+      setFieldErrors(problems);
+      const [firstProblem] = Object.keys(problems);
+      if (firstProblem) {
+        // said at the field, with the limit; nothing goes to the server and nothing typed is touched (U-29)
+        setError(null);
+        setNotice(null);
+        focusLater(() => document.getElementById(firstProblem)?.focus());
+        return;
+      }
       setPending(true);
       setError(null);
+      setCanRetry(false);
       setNotice(null);
       try {
         const ruleKeys = draft.rules.map((rule) =>
@@ -671,6 +726,7 @@ export function PaymentProfilesPage() {
     async (profile: PaymentProfileReadModel) => {
       setPending(true);
       setError(null);
+      setCanRetry(false);
       setNotice(null);
       try {
         const input = {
@@ -711,10 +767,15 @@ export function PaymentProfilesPage() {
       </section>
       {error && (
         <p className="payment-message is-error" role="alert">
-          {error}{" "}
-          <button onClick={handleRetry} type="button">
-            Tentar novamente
-          </button>
+          {error}
+          {canRetry ? (
+            <>
+              {" "}
+              <button onClick={handleRetry} type="button">
+                Tentar novamente
+              </button>
+            </>
+          ) : null}
         </p>
       )}
       {notice && (
@@ -758,6 +819,7 @@ export function PaymentProfilesPage() {
           {draft.rules.map((rule, index) => (
             <RuleEditor
               canRemove={draft.rules.length > 1}
+              errors={fieldErrors}
               index={index}
               key={rule.draftId}
               onRemove={handleRemoveRule}

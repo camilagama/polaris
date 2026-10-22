@@ -2,7 +2,11 @@ import type {
   ProductVariantConfigurationReadModel,
   ProductVariantOptionName,
 } from "@polaris/contracts";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 
 /* What the variants panel decides without drawing: the option names, the values typed one per line, the
    validation of the combinations and the sentences of its errors. */
@@ -164,9 +168,22 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
   return "Não foi possível carregar ou salvar as variantes. Tente novamente.";
 }
 
+/** The server's reason for a SKU that another variant of the organization already has (`duplicate_sku`). */
+export function isDuplicateSkuError(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "CONFLICT" &&
+    rpcErrorReason(error) === "duplicate_sku"
+  );
+}
+
+/** Said at the field that was typed, naming the SKU (U-14): never mixed with "the product changed". */
+export function duplicateSkuMessage(sku: string): string {
+  return `O SKU ${sku.trim()} já está em uso por outra variante. Use outro código.`;
+}
+
 export function variantSkuErrorMessage(error: unknown): string {
   if (rpcErrorCode(error) === "CONFLICT") {
-    return "O SKU já está em uso nesta organização ou o produto mudou. Atualize as variantes antes de tentar novamente.";
+    return "O produto mudou. Atualize as variantes antes de tentar novamente.";
   }
   return variantErrorMessage(error);
 }
