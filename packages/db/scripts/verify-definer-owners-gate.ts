@@ -139,6 +139,9 @@ const POLICIES: Record<(typeof OWNERS)[number], string[]> = {
     `organizations.organizations_onboarding_owner_insert:${ONBOARDING_ORGANIZATION_SCOPE}`,
     `organizations.organizations_onboarding_owner_select:${ONBOARDING_ORGANIZATION_SCOPE},${ONBOARDING_USER_SCOPE}`,
     `tenant_audit_event.tenant_audit_event_onboarding_owner_insert:${ONBOARDING_ORGANIZATION_SCOPE},${ONBOARDING_USER_SCOPE}`,
+    // the user of the call only, to read and lock it (0098; the lock's check is false)
+    `user.user_onboarding_owner_lock:${ONBOARDING_USER_SCOPE}`,
+    `user.user_onboarding_owner_select:${ONBOARDING_USER_SCOPE}`,
   ],
   [SYNC_OWNER]: [
     `sync_changes.sync_changes_sync_owner_insert:${SYNC_SCOPE}`,

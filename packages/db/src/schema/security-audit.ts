@@ -1,7 +1,9 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
   pgEnum,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
@@ -54,11 +56,28 @@ export const authSecurityAuditEvents = pgTable(
     /** The revoked device (device_revoked) or the deleted user (unverified_user_deleted). */
     subjectId: text("subject_id"),
   },
+  // Row security with FORCE (0098); INSERT only, no role of the app reads it. Each event type is written by one side: the
+  // owners write their own type (with its actor), and Better Auth's runtime every other one, never an owner's.
   (table) => [
     index("auth_security_audit_event_actor_created_idx").on(
       table.actorId,
       table.createdAt
     ),
     index("auth_security_audit_event_request_idx").on(table.requestId),
+    pgPolicy("auth_security_audit_event_auth_runtime_insert", {
+      for: "insert",
+      to: "polaris_auth_runtime",
+      withCheck: sql`${table.eventType} NOT IN ('device_revoked', 'unverified_user_deleted')`,
+    }),
+    pgPolicy("auth_security_audit_event_device_session_owner_insert", {
+      for: "insert",
+      to: "polaris_device_session_owner",
+      withCheck: sql`${table.eventType} = 'device_revoked' AND ${table.actorId} = NULLIF(pg_catalog.current_setting('app.owner_scope.device_session_user_id', true), '')`,
+    }),
+    pgPolicy("auth_security_audit_event_unverified_user_owner_insert", {
+      for: "insert",
+      to: "polaris_unverified_user_owner",
+      withCheck: sql`${table.eventType} = 'unverified_user_deleted' AND ${table.outcome} = 'succeeded' AND ${table.actorId} IS NULL`,
+    }),
   ]
-);
+).enableRLS();

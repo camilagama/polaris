@@ -1004,6 +1004,17 @@ async function run() {
       with_check: null,
     });
     assert.deepEqual(sessionPolicies.rows, [
+      // its one row of the auth audit (0098): device_revoked, with the user of its scope as the actor
+      {
+        cmd: "INSERT",
+        permissive: "PERMISSIVE",
+        policy:
+          "auth_security_audit_event.auth_security_audit_event_device_session_owner_insert",
+        qual: null,
+        roles: [ownerRole],
+        with_check:
+          "((event_type = 'device_revoked'::auth_security_audit_event_type) AND (actor_id = NULLIF(current_setting('app.owner_scope.device_session_user_id'::text, true), ''::text)))",
+      },
       ownerPolicy(
         "device_sessions.device_sessions_session_owner_select",
         "SELECT"
@@ -1023,7 +1034,8 @@ async function run() {
         cmd: "SELECT",
         permissive: "PERMISSIVE",
         policy: "session.session_unverified_user_owner_select",
-        qual: "true",
+        // only the sessions of users never verified, the predicate of the purge's candidates (0098)
+        qual: '(EXISTS ( SELECT 1\n   FROM "user" u\n  WHERE ((u.id = session.user_id) AND (NOT u.email_verified))))',
         roles: ["polaris_unverified_user_owner"],
         with_check: null,
       },
@@ -1075,7 +1087,7 @@ async function run() {
       "PUBLIC has nothing on session"
     );
     tests.push(
-      "session has row security enabled and forced, with exactly four permissive policies, each TO one role (auth runtime ALL true; unverified-user owner SELECT true; device-session owner SELECT and DELETE on app.owner_scope.device_session_user_id), and the two policies of the owner on devices and device_sessions read the same scope; the grants on session are those of before (auth runtime SELECT, INSERT, UPDATE, DELETE; owner SELECT of id, user_id, created_at and DELETE; unverified-user owner SELECT of user_id) and PUBLIC has none"
+      "session has row security enabled and forced, with exactly four permissive policies, each TO one role (auth runtime ALL true; unverified-user owner SELECT of the sessions of users never verified, since 0098; device-session owner SELECT and DELETE on app.owner_scope.device_session_user_id), and the two policies of the owner on devices and device_sessions and its INSERT of device_revoked in the auth audit (0098) read the same scope; the grants on session are those of before (auth runtime SELECT, INSERT, UPDATE, DELETE; owner SELECT of id, user_id, created_at and DELETE; unverified-user owner SELECT of user_id) and PUBLIC has none"
     );
 
     // the auth runtime through a real login (a member of the group, INHERIT), not the admin: every Better Auth operation

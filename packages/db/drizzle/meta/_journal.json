@@ -680,6 +680,13 @@
       "when": 1792686694437,
       "tag": "0097_rls_da_sessao",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1792692452621,
+      "tag": "0098_rls_das_tabelas_de_auth",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,13 @@
-import { env, exports } from "cloudflare:workers";
 import {
   createExecutionContext,
   createMessageBatch,
   createScheduledController,
   getQueueResult,
+  waitOnExecutionContext,
 } from "cloudflare:test";
+import { env, exports } from "cloudflare:workers";
 import { createDatabase } from "@polaris/db/client";
+import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../src/server/environment";
 import worker from "./index";
@@ -48,9 +50,14 @@ interface Organization {
 }
 
 interface Fixture {
-  /** The login of each Hyperdrive and every role it is meant to belong to (its own group, and what that group itself includes). */
-  logins: Record<Binding, { groups: string[]; login: string }>;
-  organizations: { a: Organization; b: Organization };
+  /**
+   * What the sign-in flows use: the tag every e-mail of a journey carries (the gate reads the rows of those users as the
+   * owner afterwards), and a user the gate made, verified and already linked to Google.
+   */
+  auth: {
+    googleLinked: { accountId: string; email: string; userId: string };
+    tag: string;
+  };
   /** Events the outbox holds, made by the gate. */
   events: Record<
     | "closureNoticeDone"
@@ -63,6 +70,9 @@ interface Fixture {
   >;
   /** An envelope the outbox does not hold. */
   forged: Envelope;
+  /** The login of each Hyperdrive and every role it is meant to belong to (its own group, and what that group itself includes). */
+  logins: Record<Binding, { groups: string[]; login: string }>;
+  organizations: { a: Organization; b: Organization };
 }
 
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
@@ -523,5 +533,446 @@ describe("the queue handler of the web worker", () => {
     );
     expect(result.explicitAcks).toEqual([]);
     expect(result.retryMessages).toHaveLength(1);
+  });
+});
+
+describe("the e-mail and password flows of the web worker", () => {
+  const ORIGIN = "https://web.test";
+  const PASSWORD = "Long passphrase for the web worker gate 2026!";
+  const NEW_PASSWORD = "Another long passphrase for the web worker 2026!";
+  const GOOGLE_CLIENT_ID = "harness-client.apps.googleusercontent.com";
+  /** What the Worker needs to run the password flows and Google: every value is fake, none leaves the harness. */
+  const AUTH_BINDINGS = {
+    AUTH_ABUSE_PROTECTION_ENABLED: "true",
+    AUTH_EMAIL_FROM: "Polaris <no-reply@web.test>",
+    EMAIL_PASSWORD_AUTH_ENABLED: "true",
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: "harness-google-secret",
+    RESEND_API_KEY: "re_harness_not_a_key",
+    TURNSTILE_SECRET_KEY: "harness-turnstile-secret",
+  };
+  /** The action of Turnstile each protected route asks for: written here, not read from the Worker. */
+  const TURNSTILE_ACTIONS: Record<string, string> = {
+    "/api/auth/request-password-reset": "password_reset_request",
+    "/api/auth/reset-password": "password_reset",
+    "/api/auth/sign-in/email": "login",
+    "/api/auth/sign-up/email": "signup",
+  };
+
+  interface SentEmail {
+    subject: string;
+    text: string;
+    to: string[];
+  }
+
+  interface SessionAnswer {
+    session: { userId: string };
+    user: { email: string; emailVerified: boolean; id: string };
+  }
+
+  const email = (journey: string) =>
+    `${fixture.auth.tag}-${journey}@example.invalid`;
+
+  /** A JWT with no signature: the Google provider only decodes the identity token it gets from the token endpoint. */
+  function forgedIdToken(claims: Record<string, unknown>) {
+    const part = (value: object) =>
+      btoa(JSON.stringify(value))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+    return `${part({ alg: "none", typ: "JWT" })}.${part(claims)}.`;
+  }
+
+  async function bodyOf(input: Request | string | URL, init?: RequestInit) {
+    if (init?.body !== undefined && init.body !== null) {
+      return String(init.body);
+    }
+    return input instanceof Request ? await input.clone().text() : "";
+  }
+
+  /**
+   * The network of the Worker, answered here: Resend (the e-mails are kept, the links are read from them), the Turnstile
+   * check, the HIBP range of the password policy and the token endpoint of Google. Any other call is kept in `strangers`
+   * and answered 502, and a test ends by asserting there is none.
+   */
+  function fakeNetwork(googleClaims?: Record<string, unknown>) {
+    const emails: SentEmail[] = [];
+    const strangers: string[] = [];
+    const googleTokenRequests: URLSearchParams[] = [];
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input, init) => {
+        const url = new URL(
+          input instanceof Request ? input.url : String(input)
+        );
+        const body = await bodyOf(input, init);
+        if (url.href.startsWith("https://api.pwnedpasswords.com/range/")) {
+          return new Response(`${"0".repeat(35)}:0\r\n`);
+        }
+        if (url.href === "https://api.resend.com/emails") {
+          emails.push(JSON.parse(body) as SentEmail);
+          return Response.json({ id: crypto.randomUUID() });
+        }
+        if (
+          url.href ===
+          "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+        ) {
+          // the token the test sends is the action it expects: the Worker must ask for the action of the route
+          return Response.json({
+            action: new URLSearchParams(body).get("response"),
+            hostname: "web.test",
+            success: true,
+          });
+        }
+        if (
+          url.href === "https://oauth2.googleapis.com/token" &&
+          googleClaims
+        ) {
+          googleTokenRequests.push(new URLSearchParams(body));
+          return Response.json({
+            access_token: "harness-access-token",
+            expires_in: 3600,
+            id_token: forgedIdToken(googleClaims),
+            scope: "openid email profile",
+            token_type: "Bearer",
+          });
+        }
+        strangers.push(`${init?.method ?? "GET"} ${url.origin}${url.pathname}`);
+        return new Response("no network in the harness", { status: 502 });
+      });
+    return { emails, googleTokenRequests, spy, strangers };
+  }
+
+  /** The Worker's own `fetch`, with the bindings of the flows, and the background tasks (the e-mails) waited for. */
+  async function call(
+    path: string,
+    options: { body?: unknown; cookie?: string; ip: string; method?: string }
+  ) {
+    const method =
+      options.method ?? (options.body === undefined ? "GET" : "POST");
+    const headers = new Headers({
+      "cf-connecting-ip": options.ip,
+      origin: ORIGIN,
+    });
+    if (options.body !== undefined) {
+      headers.set("content-type", "application/json");
+    }
+    if (options.cookie) {
+      headers.set("cookie", options.cookie);
+    }
+    const action = TURNSTILE_ACTIONS[path];
+    if (action) {
+      headers.set("x-turnstile-token", action);
+    }
+    const context = createExecutionContext();
+    const response = await worker.fetch(
+      new Request(`${ORIGIN}${path}`, {
+        ...(options.body === undefined
+          ? {}
+          : { body: JSON.stringify(options.body) }),
+        headers,
+        method,
+      }),
+      bindingsWith(AUTH_BINDINGS),
+      context
+    );
+    await waitOnExecutionContext(context);
+    return response;
+  }
+
+  /** The cookies a response sets, as the browser sends them back (a cookie the response empties is dropped). */
+  function cookiesOf(response: Response) {
+    return response.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";")[0] ?? "")
+      .filter((cookie) => !cookie.endsWith("="))
+      .join("; ");
+  }
+
+  /** The token of the link of an e-mail: the app puts it in the fragment, never in the query. */
+  function linkTokenOf(message: SentEmail, page: string) {
+    const link = message.text.match(
+      new RegExp(`https://web\\.test${page}#token=[^\\s)>"\\]]+`)
+    )?.[0];
+    expect(link, `the e-mail has the link of ${page}`).toBeDefined();
+    const token = new URLSearchParams(
+      new URL(link as string).hash.slice(1)
+    ).get("token");
+    expect(token).toBeTruthy();
+    return token as string;
+  }
+
+  async function sessionOf(cookie: string, ip: string) {
+    const response = await call("/api/auth/get-session", { cookie, ip });
+    expect(response.status).toBe(200);
+    return (await response.json()) as SessionAnswer | null;
+  }
+
+  async function signUp(address: string, ip: string) {
+    return await call("/api/auth/sign-up/email", {
+      body: {
+        email: address,
+        legalAcceptance: {
+          privacy: LEGAL_DOCUMENTS.privacy.version,
+          terms: LEGAL_DOCUMENTS.terms.version,
+        },
+        name: "Web Worker Gate",
+        password: PASSWORD,
+      },
+      ip,
+    });
+  }
+
+  async function verifyByLink(token: string, ip: string) {
+    return await call("/api/email-verification", { body: { token }, ip });
+  }
+
+  async function signIn(address: string, password: string, ip: string) {
+    return await call("/api/auth/sign-in/email", {
+      body: { email: address, password },
+      ip,
+    });
+  }
+
+  /** A verified user, made through the routes of the Worker as a person does. */
+  async function verifiedUser(
+    network: ReturnType<typeof fakeNetwork>,
+    address: string,
+    ip: string
+  ) {
+    expect((await signUp(address, ip)).status).toBe(200);
+    const [message] = network.emails;
+    expect(message).toBeDefined();
+    const token = linkTokenOf(message as SentEmail, "/confirmar-email");
+    expect((await verifyByLink(token, ip)).status).toBe(200);
+    network.emails.length = 0;
+  }
+
+  async function signedInCookie(address: string, password: string, ip: string) {
+    const response = await signIn(address, password, ip);
+    expect(response.status).toBe(200);
+    const cookie = cookiesOf(response);
+    expect(cookie).toContain("session_token=");
+    return cookie;
+  }
+
+  it("signs up, verifies the e-mail by the link, signs in with the password and signs out", async () => {
+    const network = fakeNetwork();
+    const address = email("signup");
+    const ip = "198.51.100.11";
+
+    const created = await signUp(address, ip);
+    expect(created.status).toBe(200);
+    // the verification e-mail went out through Resend, with the link of the app and the token in the fragment
+    expect(network.emails).toHaveLength(1);
+    const [message] = network.emails as [SentEmail];
+    expect(message.to).toEqual([address]);
+    expect(message.subject).toBe("Confirme seu e-mail do Polaris");
+    const token = linkTokenOf(message, "/confirmar-email");
+
+    // no session before the address is verified
+    const early = await signIn(address, PASSWORD, ip);
+    expect(early.status).toBe(403);
+    expect(cookiesOf(early)).not.toContain("session_token=");
+
+    // the token in a URL of the Worker is closed on purpose (it would reach the log); the page posts it in a body
+    const closed = await call(
+      `/api/auth/verify-email?token=${encodeURIComponent(token)}`,
+      { ip }
+    );
+    expect(closed.status).toBe(404);
+    const verified = await verifyByLink(token, ip);
+    expect(verified.status).toBe(200);
+    expect(await verified.json()).toEqual({ status: "verified" });
+    // the same link again answers verified too (a reload of the page never says expired)
+    expect((await verifyByLink(token, ip)).status).toBe(200);
+
+    const wrong = await signIn(address, `${PASSWORD} wrong`, ip);
+    expect(wrong.status).toBe(401);
+    const cookie = await signedInCookie(address, PASSWORD, ip);
+    const session = await sessionOf(cookie, ip);
+    expect(session?.user).toMatchObject({
+      email: address,
+      emailVerified: true,
+    });
+
+    const out = await call("/api/auth/sign-out", {
+      body: {},
+      cookie,
+      ip,
+    });
+    expect(out.status).toBe(200);
+    expect(await sessionOf(cookie, ip)).toBeNull();
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("changes the password and ends every other session (the new one stays)", async () => {
+    const network = fakeNetwork();
+    const address = email("change");
+    const ip = "198.51.100.12";
+    await verifiedUser(network, address, ip);
+
+    const phone = await signedInCookie(address, PASSWORD, ip);
+    const laptop = await signedInCookie(address, PASSWORD, ip);
+    expect((await sessionOf(phone, ip))?.user.email).toBe(address);
+    expect((await sessionOf(laptop, ip))?.user.email).toBe(address);
+
+    const changed = await call("/api/auth/change-password", {
+      body: { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      cookie: phone,
+      ip,
+    });
+    expect(changed.status).toBe(200);
+    // the session that changed it gets a new cookie, and the other devices lose theirs
+    const renewed = cookiesOf(changed);
+    expect(renewed).toContain("session_token=");
+    expect((await sessionOf(renewed, ip))?.user.email).toBe(address);
+    expect(await sessionOf(laptop, ip)).toBeNull();
+    expect(await sessionOf(phone, ip)).toBeNull();
+
+    expect((await signIn(address, PASSWORD, ip)).status).toBe(401);
+    expect(await signedInCookie(address, NEW_PASSWORD, ip)).toContain(
+      "session_token="
+    );
+    // the notice that the password changed went out, to the address of the account
+    expect(network.emails.map((sent) => sent.subject)).toContain(
+      "A senha da sua conta do Polaris foi trocada"
+    );
+    expect(network.emails.every((sent) => sent.to[0] === address)).toBe(true);
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("resets a forgotten password by the token the e-mail carries, once, and ends every session", async () => {
+    const network = fakeNetwork();
+    const address = email("reset");
+    const ip = "198.51.100.13";
+    await verifiedUser(network, address, ip);
+    const device = await signedInCookie(address, PASSWORD, ip);
+
+    const asked = await call("/api/auth/request-password-reset", {
+      body: { email: address },
+      ip,
+    });
+    expect(asked.status).toBe(200);
+    expect(network.emails).toHaveLength(1);
+    const [message] = network.emails as [SentEmail];
+    expect(message.to).toEqual([address]);
+    expect(message.subject).toBe("Redefina sua senha do Polaris");
+    const token = linkTokenOf(message, "/redefinir-senha");
+
+    // the token is the one Better Auth stored in `verification`, read here through the authentication role
+    const { pool } = createDatabase(env.AUTH_HYPERDRIVE.connectionString, {
+      maxConnections: 1,
+    });
+    const stored = async () =>
+      (
+        await pool.query<{ value: string }>(
+          "SELECT value FROM public.verification WHERE identifier = $1",
+          [`reset-password:${token}`]
+        )
+      ).rows;
+    try {
+      expect(await stored()).toHaveLength(1);
+      // the link in a URL of the Worker is closed (the token would reach the log)
+      expect(
+        (await call(`/api/auth/reset-password/${token}`, { ip })).status
+      ).toBe(404);
+
+      const reset = await call("/api/auth/reset-password", {
+        body: { newPassword: NEW_PASSWORD, token },
+        ip,
+      });
+      expect(reset.status).toBe(200);
+      expect(await stored()).toEqual([]);
+    } finally {
+      await pool.end();
+    }
+
+    // the token worked once, and the session that was open ended with the reset
+    const again = await call("/api/auth/reset-password", {
+      body: { newPassword: PASSWORD, token },
+      ip,
+    });
+    expect(again.status).toBe(400);
+    expect(await sessionOf(device, ip)).toBeNull();
+    expect((await signIn(address, PASSWORD, ip)).status).toBe(401);
+    const cookie = await signedInCookie(address, NEW_PASSWORD, ip);
+    expect((await sessionOf(cookie, ip))?.user.email).toBe(address);
+    expect(network.strangers).toEqual([]);
+  });
+
+  /** Google, from the start to the callback: the token endpoint is answered by `fakeNetwork`. */
+  async function googleSignIn(ip: string, code: string) {
+    const start = await call("/api/auth/sign-in/social", {
+      body: { callbackURL: "/painel", provider: "google" },
+      ip,
+    });
+    expect(start.status).toBe(200);
+    const { url } = (await start.json()) as { url: string };
+    const authorization = new URL(url);
+    expect(`${authorization.origin}${authorization.pathname}`).toBe(
+      "https://accounts.google.com/o/oauth2/v2/auth"
+    );
+    expect(authorization.searchParams.get("client_id")).toBe(GOOGLE_CLIENT_ID);
+    expect(authorization.searchParams.get("redirect_uri")).toBe(
+      `${ORIGIN}/api/auth/callback/google`
+    );
+    const state = authorization.searchParams.get("state") ?? "";
+    expect(state).not.toBe("");
+    return await call(
+      `/api/auth/callback/google?code=${code}&state=${encodeURIComponent(state)}`,
+      { cookie: cookiesOf(start), ip }
+    );
+  }
+
+  function claimsOf(subject: string, address: string) {
+    return {
+      aud: GOOGLE_CLIENT_ID,
+      email: address,
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iss: "https://accounts.google.com",
+      name: "Google Person",
+      sub: subject,
+    };
+  }
+
+  it("signs a new person in with Google: the callback creates the user and the linked account, and opens a session", async () => {
+    const address = email("google-new");
+    const network = fakeNetwork(claimsOf(`${fixture.auth.tag}-new`, address));
+    const callback = await googleSignIn("198.51.100.14", "harness-code-new");
+    expect(callback.status).toBe(302);
+    const location = new URL(callback.headers.get("location") ?? "", ORIGIN);
+    expect(location.pathname).toBe("/painel");
+    expect(location.searchParams.has("error")).toBe(false);
+    // the code went to the token endpoint of Google with the client of the Worker, and nothing else left the harness
+    expect(network.googleTokenRequests).toHaveLength(1);
+    expect(network.googleTokenRequests[0]?.get("code")).toBe(
+      "harness-code-new"
+    );
+    expect(network.googleTokenRequests[0]?.get("client_id")).toBe(
+      GOOGLE_CLIENT_ID
+    );
+    const cookie = cookiesOf(callback);
+    expect(cookie).toContain("session_token=");
+    const session = await sessionOf(cookie, "198.51.100.14");
+    expect(session?.user).toMatchObject({
+      email: address,
+      emailVerified: true,
+    });
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("signs in with Google a person whose account is already linked: the same user, no second one", async () => {
+    const { accountId, email: address, userId } = fixture.auth.googleLinked;
+    const network = fakeNetwork(claimsOf(accountId, address));
+    const callback = await googleSignIn("198.51.100.15", "harness-code-linked");
+    expect(callback.status).toBe(302);
+    const location = new URL(callback.headers.get("location") ?? "", ORIGIN);
+    expect(location.pathname).toBe("/painel");
+    expect(location.searchParams.has("error")).toBe(false);
+    const session = await sessionOf(cookiesOf(callback), "198.51.100.15");
+    expect(session?.user.id).toBe(userId);
+    expect(network.strangers).toEqual([]);
   });
 });
