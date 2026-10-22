@@ -34,16 +34,15 @@ const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // The web of staging is served at this host by a Custom Domain created outside the config (ADR 0097):
 // an exact string, so another subdomain, http, a path or userinfo never matches. The catalog stays on workers.dev.
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
+const STAGING_CATALOG_ORIGIN =
+  /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/;
 const STAGING_URLS = {
   BETTER_AUTH_BASE_URL: {
     accepts: (value) => value === STAGING_WEB_ORIGIN,
     says: `exactly ${STAGING_WEB_ORIGIN}`,
   },
   CATALOG_ORIGIN: {
-    accepts: (value) =>
-      /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/.test(
-        value
-      ),
+    accepts: (value) => STAGING_CATALOG_ORIGIN.test(value),
     says: "the workers.dev URL of the staging catalog Worker",
   },
 };
@@ -329,7 +328,11 @@ function checkStagingResources(where, staging, problems) {
   }
   for (const [name, rule] of Object.entries(STAGING_URLS)) {
     const value = staging.vars?.[name];
-    if (value !== undefined && !PLACEHOLDER.test(value) && !rule.accepts(value)) {
+    if (
+      value !== undefined &&
+      !PLACEHOLDER.test(value) &&
+      !rule.accepts(value)
+    ) {
       problems.push(`${where}: vars.${name} must be ${rule.says}`);
     }
   }
@@ -475,7 +478,7 @@ function hostOf(value) {
   try {
     return new URL(value).hostname.toLowerCase();
   } catch {
-    return undefined;
+    // not a URL: no host
   }
 }
 
@@ -498,16 +501,16 @@ function checkProductionBlock(app, production, staging, problems) {
       );
     }
   }
-  for (const name of Object.keys(STAGING_URLS)) {
-    const host = hostOf(production.vars?.[name]);
+  for (const variable of Object.keys(STAGING_URLS)) {
+    const host = hostOf(production.vars?.[variable]);
     if (
       host !== undefined &&
-      (host === hostOf(staging.vars?.[name]) ||
-        (name === "BETTER_AUTH_BASE_URL" &&
+      (host === hostOf(staging.vars?.[variable]) ||
+        (variable === "BETTER_AUTH_BASE_URL" &&
           host === hostOf(STAGING_WEB_ORIGIN)))
     ) {
       problems.push(
-        `${app}: env.production vars.${name} must not use the host of staging`
+        `${app}: env.production vars.${variable} must not use the host of staging`
       );
     }
   }

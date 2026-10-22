@@ -50,6 +50,16 @@ Os itens 3, 14, 15 e 16 do [release-checklist](../runbooks/release-checklist.md)
 - **Item 14:** a cota do binding `IMAGES` é provocada pelo caminho real de miniatura (envio de imagem sintética pelo app, com miniaturas geradas pelo Worker), e não por uma rota de diagnóstico, que não existe.
 - **Item 16 (decisão):** uma versão temporária, enviada com `wrangler versions upload --env staging`, lança uma exceção não capturada. Depois, a conferência nos Workers Logs e o rollback. **Nunca** uma rota de falha no código.
 
+## Emenda (22/10/2026): o web do staging em `dash.araute.app`
+
+Registro datado; a decisão original acima permanece como está. Decidido pelo usuário em 22/10/2026.
+
+- O web do staging passa a ser servido em `https://dash.araute.app`, por um **Custom Domain** da Cloudflare criado fora do `wrangler.jsonc` (zona `araute.app`, na mesma conta). O `env.staging` do web não tem `routes`: o token de deploy do CI não precisa de permissão de zona, e `wrangler deploy` sem `routes` deixa o Custom Domain como está. A [documentação do Wrangler](https://developers.cloudflare.com/workers/wrangler/configuration/) manda tirar `route` e `routes` e pôr `workers_dev = false` para gerir as rotas só pelo painel. Foi esse o modelo usado.
+- `BETTER_AUTH_BASE_URL` do staging é exatamente `https://dash.araute.app`, e `workers_dev` do web fica `false`: a verificação de origem (`origin-check`) e os `trustedOrigins` do login aceitam uma origem só, e o `workers.dev` deixaria de funcionar para escrita. O cookie `__Secure-`, o URI do Google e os links dos e-mails seguem dessa variável.
+- O **catálogo continua no `workers.dev`** (`CATALOG_ORIGIN` não muda).
+- `verify:staging-isolation` troca "só `workers.dev`" por uma lista exata: o web aceita só `https://dash.araute.app` (outro subdomínio, `http`, porta, caminho ou userinfo reprovam), o catálogo segue como estava, `routes` continua proibido no config, e o host da produção nunca pode ser o do staging. O smoke aceita esse host só para o web.
+- Atenção: a zona tem um registro curinga `*.araute.app` com proxy, que responde 525. O registro específico do Custom Domain prevalece sobre ele. Um subdomínio sem Custom Domain continua dando 525.
+
 ## Alternativas descartadas
 
 - **Cloudflare Previews:** por decisão do usuário. Além disso, compartilhariam os bindings da produção.

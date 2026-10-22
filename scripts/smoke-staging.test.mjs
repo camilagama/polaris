@@ -157,7 +157,10 @@ describe("the staging smoke", () => {
     ).toEqual(refused("catalog"));
     // the fixed host belongs to the web only
     expect(
-      await runSmoke({ ...origins, catalog: "https://dash.araute.app" }, fetchImpl)
+      await runSmoke(
+        { ...origins, catalog: "https://dash.araute.app" },
+        fetchImpl
+      )
     ).toEqual(refused("catalog"));
     expect(fetchImpl).not.toHaveBeenCalled();
   });

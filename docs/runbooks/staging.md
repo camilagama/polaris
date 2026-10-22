@@ -88,7 +88,20 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
 
-Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs `workers.dev` (`BETTER_AUTH_BASE_URL` e `CATALOG_ORIGIN`). O `env.staging.account_id` do Admin também é preenchido, porque a verificação o exige mesmo com o Admin fora do staging. `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
+Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs (`BETTER_AUTH_BASE_URL`, `https://dash.araute.app` desde 22/10, e `CATALOG_ORIGIN`, em `workers.dev`). O `env.staging.account_id` do Admin também é preenchido, porque a verificação o exige mesmo com o Admin fora do staging. `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
+
+## 3a. Domínio do web: `dash.araute.app` (responsável)
+
+O web do staging é servido em `https://dash.araute.app` por um **Custom Domain** da Cloudflare, criado **fora** do `wrangler.jsonc` (ADR 0097, emenda de 22/10). O config não tem `routes` (a verificação de isolamento o proíbe): o token de deploy do CI não precisa de permissão de zona, e `wrangler deploy` sem `routes` e com `workers_dev: false` deixa o Custom Domain como está (é o modelo "rotas só pelo painel" da documentação do Wrangler). `workers_dev` fica `false` porque o `origin-check` aceita uma origem só; o catálogo segue no `workers.dev`.
+
+Criar ou recriar (a zona `araute.app` está na mesma conta; usar credencial com permissão de zona, nunca o token do CI):
+
+1. Painel: **Workers & Pages → `polaris-web-staging` → Settings → Domains & Routes → Add → Custom Domain → `dash.araute.app`**. Ou pela API, `PUT /accounts/<conta>/workers/domains` com `{"hostname":"dash.araute.app","service":"polaris-web-staging","environment":"production","zone_id":"<zona>"}`. A Cloudflare cria o registro DNS e o certificado.
+2. Conferir: `curl -fsS https://dash.araute.app/health` responde 200.
+3. **Curinga:** a zona tem um registro `*.araute.app` com proxy, que sozinho responde 525. O registro específico do Custom Domain prevalece sobre ele; não apague o curinga por causa disto, e não espere que outro subdomínio sem Custom Domain responda.
+4. **Google:** em **Clients** do projeto `polaris-staging`, o URI de redirecionamento autorizado é `https://dash.araute.app/api/auth/callback/google` (seção 4). Sem ele o login falha com `redirect_uri_mismatch`.
+5. **GitHub:** a variável `STAGING_WEB_URL` do Environment `staging` passa a `https://dash.araute.app` (o smoke a lê e só aceita esse host, ou um `polaris-<app>-staging.…`). Muda depois do merge: entre o deploy que muda `BETTER_AUTH_BASE_URL` e a variável, o smoke aponta para um endereço que já não serve o web.
+6. Quem estava logado pelo `workers.dev` entra de novo: o cookie é de outro host.
 
 ## 4. Cliente OAuth do Google (responsável)
 
@@ -99,7 +112,7 @@ Quem cria é o usuário ou o Arrascaeta, num projeto do Google Cloud só do stag
 3. Em **Audience**, escolher o tipo **External** e deixar o status de publicação em **Testing**. Não publicar o app.
 4. Ainda em **Audience**, em **Test users**, adicionar os e-mails de teste (a allowlist; o limite é de 100). Só esses e-mails conseguem entrar. Qualquer outro recebe o erro de acesso do Google.
 5. Em **Data Access**, deixar só os escopos `openid`, `email` e `profile`.
-6. Em **Clients → Create client**, escolher **Web application**, só com o URI de redirecionamento autorizado `https://polaris-web-staging.<subdomínio>.workers.dev/api/auth/callback/google`. O fluxo é do servidor e não precisa de origem JavaScript.
+6. Em **Clients → Create client**, escolher **Web application**, só com o URI de redirecionamento autorizado `https://dash.araute.app/api/auth/callback/google` (o do `workers.dev` antigo sai da lista). O fluxo é do servidor e não precisa de origem JavaScript.
 7. Gravar o ID e o segredo como segredos do Worker, sem passar pelo repositório: `wrangler secret put GOOGLE_CLIENT_ID --env staging` e `wrangler secret put GOOGLE_CLIENT_SECRET --env staging`, em `apps/web`.
 8. Registrar só a data e quem criou.
 9. Para tirar alguém, removê-lo de **Test users** não basta: a conta e as sessões continuam válidas no staging. É preciso também, com o dono no banco de staging, apagar as sessões dela (`DELETE FROM "session" WHERE user_id = '<id>';`) e tirá-la das organizações de teste pelos fluxos do app (membership ou encerramento da organização). Um lease offline já emitido vale até expirar (no máximo 72 horas).
@@ -144,7 +157,7 @@ O workflow `.github/workflows/deploy-staging.yml` só roda com a variável de re
   5. descartar a cópia local.
 
   Nunca uma rota de falha no código. O Admin não é exposto no staging, então o item 16 dele fica para o go-live, atrás do Access da produção.
-- **Gate 5 manual:** a build de staging tem `VITE_OFFLINE_RUNTIME_ENABLED=true`. O checklist do [runbook do Gate 5](./gate-5-offline.md) roda contra a URL `workers.dev` com o login de teste, por BrowserStack (uma sessão por vez) ou aparelho físico.
+- **Gate 5 manual:** a build de staging tem `VITE_OFFLINE_RUNTIME_ENABLED=true`. O checklist do [runbook do Gate 5](./gate-5-offline.md) roda contra `https://dash.araute.app` com o login de teste, por BrowserStack (uma sessão por vez) ou aparelho físico.
 
 ## Rollback ou forward-fix
 
