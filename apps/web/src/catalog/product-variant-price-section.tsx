@@ -1,40 +1,28 @@
 import type {
   ProductReadModel,
   ProductVariantConfigurationReadModel,
-  ProductVariantOptionName,
 } from "@polaris/contracts";
-import { type ChangeEvent, type FormEvent, useCallback, useState } from "react";
+import { type FormEvent, useCallback, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { ProductTextField } from "./product-fields";
+import {
+  VariantFieldRow,
+  VariantSaveNotice,
+  type VariantSaveOutcome,
+  VariantSection,
+} from "./product-variant-parts";
 import {
   listPriceFieldText,
   listPriceFromField,
 } from "./product-variant-price-model";
-import "./product-variants-panel.css";
+import {
+  type ProductVariantReadModel,
+  variantLabel,
+} from "./product-variants-model";
 
-const optionLabels: Record<ProductVariantOptionName, string> = {
-  color: "Cor",
-  model: "Modelo",
-  size: "Tamanho",
-};
-
-type VariantReadModel =
-  ProductVariantConfigurationReadModel["variants"][number];
-
-function variantLabel(variant: VariantReadModel, index: number): string {
-  if (variant.isDefault && variant.values.length === 0) {
-    return "Variante padrão";
-  }
-  return (
-    variant.values
-      .map(
-        (value) =>
-          `${optionLabels[value.optionName] ?? value.optionName}: ${value.optionValueName}`
-      )
-      .join(" · ") || `Variante ${index + 1}`
-  );
-}
+const INVALID_PRICE = "Informe um valor em reais, como 59,90.";
 
 function priceErrorMessage(error: unknown): string {
   const unaccepted = legalAcceptanceMessage(error);
@@ -46,7 +34,7 @@ function priceErrorMessage(error: unknown): string {
     return "O produto mudou. Atualize as variantes antes de tentar novamente.";
   }
   if (code === "BAD_REQUEST") {
-    return "Informe um valor em reais, como 59,90.";
+    return INVALID_PRICE;
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta ação.";
@@ -57,19 +45,21 @@ function priceErrorMessage(error: unknown): string {
   return "Não foi possível salvar o preço. Tente novamente.";
 }
 
-function VariantPriceRow({
+interface PriceRowProps {
+  disabled: boolean;
+  label: string;
+  onDraftChange: () => void;
+  onSave: (variantId: string, listPrice: string | null) => Promise<boolean>;
+  variant: ProductVariantReadModel;
+}
+
+function PriceRow({
   disabled,
   label,
   onDraftChange,
   onSave,
   variant,
-}: {
-  disabled: boolean;
-  label: string;
-  onDraftChange: () => void;
-  onSave: (variantId: string, listPrice: string | null) => Promise<boolean>;
-  variant: VariantReadModel;
-}) {
+}: PriceRowProps) {
   const [text, setText] = useState(listPriceFieldText(variant.listPrice));
   const [invalid, setInvalid] = useState(false);
   // a typed text that differs from the saved price is unsent (a save puts the saved text back)
@@ -91,8 +81,8 @@ function VariantPriceRow({
     [onSave, text, variant.id]
   );
   const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setText(event.currentTarget.value);
+    (value: string) => {
+      setText(value);
       setInvalid(false);
       onDraftChange();
     },
@@ -100,30 +90,44 @@ function VariantPriceRow({
   );
 
   return (
-    <form className="product-variant-sku-row" onSubmit={handleSubmit}>
-      <label className="product-form-field">
-        <span>Preço de tabela — {label}</span>
-        <input
-          aria-invalid={invalid}
-          autoComplete="off"
-          disabled={disabled}
-          inputMode="decimal"
-          onChange={handleChange}
-          placeholder="Sem preço de tabela"
-          type="text"
-          value={text}
-        />
-        {invalid ? (
-          <span className="product-variants-field-error" role="alert">
-            Informe um valor em reais, como 59,90.
-          </span>
-        ) : null}
-      </label>
-      <button className="quiet-button" disabled={disabled} type="submit">
-        Salvar preço
-      </button>
-    </form>
+    <VariantFieldRow
+      buttonLabel="Salvar preço"
+      disabled={disabled}
+      error={
+        invalid
+          ? {
+              id: `product-variant-price-${variant.id}-error`,
+              text: INVALID_PRICE,
+            }
+          : undefined
+      }
+      onSubmit={handleSubmit}
+    >
+      <ProductTextField
+        addon="R$"
+        disabled={disabled}
+        error={invalid ? INVALID_PRICE : undefined}
+        errorOutside
+        id={`product-variant-price-${variant.id}`}
+        inputMode="decimal"
+        label={`Preço de tabela — ${label}`}
+        onChange={handleChange}
+        placeholder="Sem preço de tabela"
+        value={text}
+      />
+    </VariantFieldRow>
   );
+}
+
+interface PriceSectionProps {
+  configuration: ProductVariantConfigurationReadModel;
+  onConflict: () => void;
+  onUpdated: (
+    configuration: ProductVariantConfigurationReadModel,
+    product: ProductReadModel
+  ) => void;
+  organizationId: string;
+  productId: string;
 }
 
 /**
@@ -136,25 +140,14 @@ export function ProductVariantPriceSection({
   onUpdated,
   organizationId,
   productId,
-}: {
-  configuration: ProductVariantConfigurationReadModel;
-  onConflict: () => void;
-  onUpdated: (
-    configuration: ProductVariantConfigurationReadModel,
-    product: ProductReadModel
-  ) => void;
-  organizationId: string;
-  productId: string;
-}) {
+}: PriceSectionProps) {
   const [isPending, setIsPending] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [needsReload, setNeedsReload] = useState(false);
+  const [outcome, setOutcome] = useState<VariantSaveOutcome | null>(null);
 
   const handleSave = useCallback(
     async (variantId: string, listPrice: string | null) => {
       setIsPending(true);
-      setMessage(null);
-      setNeedsReload(false);
+      setOutcome(null);
       try {
         const result = await orpcClient.product.setVariantListPrice({
           expectedVersion: configuration.productVersion,
@@ -164,13 +157,16 @@ export function ProductVariantPriceSection({
           variantId,
         });
         onUpdated(result.configuration, result.product);
-        setMessage(
-          result.changed ? "Preço salvo." : "O preço já está atualizado."
-        );
+        setOutcome({
+          kind: "saved",
+          text: result.changed ? "Preço salvo." : "O preço já está atualizado.",
+        });
         return true;
       } catch (error: unknown) {
-        setMessage(priceErrorMessage(error));
-        setNeedsReload(rpcErrorCode(error) === "CONFLICT");
+        setOutcome({
+          kind: rpcErrorCode(error) === "CONFLICT" ? "conflict" : "error",
+          text: priceErrorMessage(error),
+        });
         return false;
       } finally {
         setIsPending(false);
@@ -179,25 +175,19 @@ export function ProductVariantPriceSection({
     [configuration.productVersion, onUpdated, organizationId, productId]
   );
   const handleDraftChange = useCallback(() => {
-    setMessage(null);
-    setNeedsReload(false);
+    setOutcome(null);
   }, []);
 
   return (
-    <div className="product-variant-sku-section">
-      <h3>Preço de tabela das variantes</h3>
-      <p className="product-variants-help">
-        O preço de tabela é opcional e só sugere o valor na venda; o preço
-        cobrado continua sendo o informado em cada venda. Deixe vazio para
-        remover.
-      </p>
-      <ul
-        aria-label="Preço de tabela das variantes"
-        className="product-variant-sku-list"
-      >
+    <VariantSection
+      help="Opcional: só sugere o valor na venda, que cobra o que for informado nela. Vazio remove."
+      id="product-variant-price"
+      title="Preço de tabela das variantes"
+    >
+      <ul aria-label="Preço de tabela das variantes" className="grid gap-3">
         {configuration.variants.map((variant, index) => (
           <li key={`${variant.id}:${variant.listPrice ?? ""}`}>
-            <VariantPriceRow
+            <PriceRow
               disabled={isPending}
               label={variantLabel(variant, index)}
               onDraftChange={handleDraftChange}
@@ -207,23 +197,7 @@ export function ProductVariantPriceSection({
           </li>
         ))}
       </ul>
-      {message ? (
-        <p
-          className={
-            needsReload
-              ? "product-variants-field-error"
-              : "product-variants-help"
-          }
-          role={needsReload ? "alert" : "status"}
-        >
-          {message}
-        </p>
-      ) : null}
-      {needsReload ? (
-        <button className="quiet-button" onClick={onConflict} type="button">
-          Atualizar variantes
-        </button>
-      ) : null}
-    </div>
+      <VariantSaveNotice onReload={onConflict} outcome={outcome} />
+    </VariantSection>
   );
 }
