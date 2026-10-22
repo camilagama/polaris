@@ -33,7 +33,7 @@ bun run test:offline-poc
 Pop-Location
 ```
 
-A suíte exercita reload, fechamento/reabertura de aba, replay idempotente, outbox preservado após remoção do arquivo OPFS, migração v1→v2 e coordenação entre duas abas. O CI executa Chromium desktop e Chromium com emulação Pixel 5, serialmente para evitar pressão de memória do WASM. O WebKit do Playwright 26.6 instalado no Windows expõe `navigator.storage.getDirectory()`, mas `createSyncAccessHandle()` no worker falha com `UnknownError` transitório; por isso ele fica fora do gate automatizado obrigatório. Esse resultado não representa Safari no iPhone. Emulação mobile também não é evidência de Android Chrome real.
+A suíte exercita reload, fechamento/reabertura de aba, replay idempotente, outbox preservado após remoção do arquivo OPFS, migração v1→v2 e coordenação entre duas abas. O CI executa Chromium desktop e Chromium com emulação Pixel 5, com 2 workers no CI (um só fora dele), não um por núcleo, por causa da pressão de memória do WASM (`E2E_WORKERS` muda; ver [testes de tela](testes-de-tela.md#duas-sessões-ao-mesmo-tempo)). O WebKit do Playwright 26.6 instalado no Windows expõe `navigator.storage.getDirectory()`, mas `createSyncAccessHandle()` no worker falha com `UnknownError` transitório; por isso ele fica fora do gate automatizado obrigatório. Esse resultado não representa Safari no iPhone. Emulação mobile também não é evidência de Android Chrome real.
 
 ## Teste manual no iPhone
 

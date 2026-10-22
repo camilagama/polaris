@@ -49,7 +49,7 @@ Uma falha diz a verificação (`1. nada sai do contêiner`, `2. área de toque`,
 
 Os três configs de navegador de `apps/web` abrem o próprio servidor (build e serve). Duas sessões na mesma máquina, cada uma na sua árvore (`git worktree`), disputavam as portas fixas, e o servidor de uma era reaproveitado pela outra: o teste rodava contra o código errado e passava. Agora:
 
-- **Fora do CI, servidor que já escuta não é reaproveitado.** O Playwright recusa a porta ocupada (`... is already used`) em vez de testar contra ele. `E2E_REUSE_SERVER=1` liga o reaproveitamento de propósito (iterar na mesma árvore, sem rebuild); nunca use com duas árvores. No CI nunca se reaproveita.
+- **Fora do CI, servidor que já escuta não é reaproveitado.** O Playwright recusa a porta ocupada (`... is already used`) em vez de testar contra ele. `E2E_REUSE_SERVER=1` (configs `offline-poc` e `pwa`; o `e2e-real` nunca reaproveita) liga o reaproveitamento de propósito (iterar na mesma árvore, sem rebuild); nunca use com duas árvores. No CI nunca se reaproveita.
 - **As portas vêm do ambiente, com o padrão de sempre** (o CI não muda):
 
   | Variável | Config | Padrão |
