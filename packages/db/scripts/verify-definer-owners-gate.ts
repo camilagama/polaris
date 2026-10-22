@@ -271,7 +271,9 @@ async function run() {
     const byName = (left: { name: string }, right: { name: string }) =>
       left.name < right.name ? -1 : 1;
     assert.deepEqual(
-      [...functions.rows].sort(byName),
+      functions.rows
+        .map((row) => ({ ...row, executors: [...row.executors].sort() }))
+        .sort(byName),
       [
         {
           executors: [SYNC_OWNER, migrator].sort(),
@@ -416,8 +418,17 @@ async function run() {
         `${row.policy} reads app.owner_scope.* and is TO ${row.roles.join(",")}`
       );
     }
+    // a policy TO PUBLIC would hold for the owners too: there is none on the six tables
+    assert.equal(
+      await scalar<string>(
+        "SELECT count(*)::text AS value FROM pg_policies WHERE schemaname = 'public' AND tablename = ANY($1::text[]) AND 'public' = ANY(roles)",
+        [TABLES]
+      ),
+      "0",
+      "no policy TO PUBLIC on the six tables"
+    );
     tests.push(
-      "every policy that reads app.owner_scope.* is TO exactly one of the three owners and reads only that owner's settings; the owners have no other policy"
+      "every policy that reads app.owner_scope.* is TO exactly one of the three owners and reads only that owner's settings; the owners have no other policy, and no policy on the six tables is TO PUBLIC"
     );
 
     // ----------------------------------------------------------- fixtures
@@ -925,11 +936,19 @@ async function run() {
     );
 
     // ------------------------------------------------------ 7. the real calls
+    // each call runs as the runtime that makes it, which first sets every app.owner_scope.* to user A and organization A: the
+    // function overwrites the setting before it reads, so nothing of A may change
+    const forgeScope = async () => {
+      for (const [name, value] of Object.entries(forged)) {
+        await client.query("SELECT set_config($1, $2, true)", [name, value]);
+      }
+    };
     const bump = (user: string) =>
       (async () => {
         await client.query("BEGIN");
         try {
           await client.query("SET LOCAL ROLE polaris_auth_runtime");
+          await forgeScope();
           const revoked = await scalar<number>(
             "SELECT public.bump_user_authorization_epoch($1) AS value",
             [user]
@@ -983,7 +1002,7 @@ async function run() {
       "the bump of a user with no membership changes no epoch, grant or audit row"
     );
     tests.push(
-      "the bump of B (owner in two organizations), as polaris_auth_runtime, moves both of B's epochs, revokes B's two grants with one audit row each in their organization and leaves A alone; again, it revokes nothing; the bump of a user with no membership answers 0 and changes nothing"
+      "the bump of B (owner in two organizations), as polaris_auth_runtime with app.owner_scope.* set to A beforehand, moves both of B's epochs, revokes B's two grants with one audit row each in their organization and leaves A alone; again, it revokes nothing; the bump of a user with no membership answers 0 and changes nothing"
     );
 
     const onboard = async (
@@ -993,6 +1012,7 @@ async function run() {
       await client.query("BEGIN");
       try {
         await client.query("SET LOCAL ROLE polaris_onboarding_runtime");
+        await forgeScope();
         const result = await client.query<{ created: boolean; id: string }>(
           "SELECT created, id FROM public.create_initial_organization($1, $2, 'Loja do gate', $3, $4)",
           [user, organization, TIMEZONE, randomUUID()]
@@ -1005,6 +1025,12 @@ async function run() {
         throw error;
       }
     };
+    const membersOfA = async () =>
+      await scalar<string>(
+        "SELECT string_agg(user_id, ',' ORDER BY user_id) AS value FROM public.memberships WHERE organization_id = $1",
+        [organizationA]
+      );
+    const membersOfABefore = await membersOfA();
     const first = randomUUID();
     assert.deepEqual(await onboard(userV, first), { created: true, id: first });
     assert.deepEqual(await onboard(userV, first), {
@@ -1023,13 +1049,18 @@ async function run() {
       "1:1:owner/active/0",
       "one organization, one owner membership and one audit row, whatever the reruns"
     );
+    assert.equal(
+      await membersOfA(),
+      membersOfABefore,
+      "the onboarding with the scope forged to A leaves the memberships of A alone"
+    );
     await expectSqlState(
       () => onboard(userW, organizationA),
       "23505",
       "the onboarding with the organization of another tenant stops on its primary key"
     );
     tests.push(
-      "the onboarding, as polaris_onboarding_runtime, creates the organization, the owner membership (active, epoch 0) and the audit row; run again with the same or another organization ID it answers the existing one and writes nothing; with the ID of another tenant's organization it stops on the primary key (23505)"
+      "the onboarding, as polaris_onboarding_runtime with app.owner_scope.* set to A beforehand, creates the organization, the owner membership (active, epoch 0) and the audit row; run again with the same or another organization ID it answers the existing one and writes nothing; with the ID of another tenant's organization it stops on the primary key (23505)"
     );
 
     const cursors = async () => [
@@ -1047,6 +1078,11 @@ async function run() {
       );
     const [beforeA, beforeB] = await cursors();
     await client.query("BEGIN");
+    // the writer sets the scope to B first; each trigger writes its own organization before it reads
+    await client.query("SELECT set_config($1, $2, true)", [
+      SYNC_SCOPE,
+      organizationB,
+    ]);
     await addCategory(organizationA);
     await addCategory(organizationB);
     await addCategory(organizationA);

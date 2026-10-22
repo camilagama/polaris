@@ -20,6 +20,7 @@ import {
   journalMigrationCount,
   redactedFailure,
   requiredEnvironment,
+  sqlState,
 } from "./sales-gate-support";
 
 /**
@@ -364,6 +365,34 @@ async function run() {
       } finally {
         await verify.query("ROLLBACK").catch(() => undefined);
       }
+      // the control: without the EXECUTE 0095 gives back, the same CREATE TRIGGER fails for this migrator (42501), as it would on Neon.
+      // A superuser takes it away in the scratch database (dropped at the end) and gives it back.
+      const superScratch = await connect(scratchAdminUrl);
+      try {
+        await superScratch.query(
+          `REVOKE EXECUTE ON FUNCTION public.record_sync_change() FROM ${OWNER}`
+        );
+        await verify.query("BEGIN");
+        try {
+          await verify.query(
+            "CREATE TABLE public.gate_nosuper_sync_probe (id uuid PRIMARY KEY, organization_id text NOT NULL)"
+          );
+          await assert.rejects(
+            verify.query(
+              "CREATE TRIGGER gate_nosuper_sync_probe AFTER INSERT ON public.gate_nosuper_sync_probe FOR EACH ROW EXECUTE FUNCTION public.record_sync_change('category', 'id')"
+            ),
+            (error: unknown) => sqlState(error) === "42501",
+            "without EXECUTE on record_sync_change the migrator cannot attach the trigger"
+          );
+        } finally {
+          await verify.query("ROLLBACK").catch(() => undefined);
+        }
+        await superScratch.query(
+          `GRANT EXECUTE ON FUNCTION public.record_sync_change() TO ${OWNER}`
+        );
+      } finally {
+        await superScratch.end();
+      }
       // the attributes and memberships of the owner roles and of the roles a runtime role reaches, the other read-only check of `staging:verify-database after-migrate`
       await assertOwnerRolesClean(verify);
       // the control: INHERIT or SET on a runtime group makes the owner a runtime login, which is the database owner
@@ -516,7 +545,7 @@ async function run() {
         "no polaris role the migrations made carries SUPERUSER, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS",
         "the owner roles and the roles a runtime role reaches (by SET, INHERIT or ADMIN OPTION) carry none of the six attributes and no owner is a member of any role (with a floor on how many were read); the check reports each of CREATEROLE and CREATEDB, an edge out of an owner role and a role reached by ADMIN OPTION alone when a throwaway role has them, for an owner without SUPERUSER",
         "the read-only definer-hardening checks of the staging after-migrate pass with the owner an ADMIN-only member of every runtime group, and report the same owner with INHERIT or SET on one",
-        "the four SECURITY DEFINER functions 0095 moved belong to polaris_sync_owner, polaris_authorization_epoch_owner and polaris_onboarding_owner (foreignOwner is empty), and the migrator without superuser still attaches record_sync_change and assign_sync_change_sequence to a new table",
+        "the four SECURITY DEFINER functions 0095 moved belong to polaris_sync_owner, polaris_authorization_epoch_owner and polaris_onboarding_owner (foreignOwner is empty), and the migrator without superuser still attaches record_sync_change and assign_sync_change_sequence to a new table; without the EXECUTE 0095 gives back, it cannot (42501)",
         "every ALTER ROLE of the migrations is guarded: with the role made a superuser the statement fails",
       ],
     };

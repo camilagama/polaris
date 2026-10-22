@@ -12,7 +12,8 @@
 -- (or from the row of the trigger) right after the checks and before any read; the policies of each owner compare with it,
 -- name the owner and no other role (`TO <owner>`), and read no setting of the runtime. A runtime that sets the same name
 -- gains nothing: no policy of a runtime reads `app.owner_scope.*`, and the function overwrites it before it reads. Without
--- the setting every policy here is false: a body that forgets it fails closed (no row, or 42501), never open.
+-- the setting every policy here is false: a body that forgets it, in a transaction where no call set it before, fails closed
+-- (no row, or 42501). After an earlier call in the same transaction it would act in the scope of that call, never wider.
 -- Expand only (ADR 0096): three new roles, grants, policies for the new roles only, the same four functions with the same
 -- signatures and results (one more line each), and the change of owner. The previous Worker calls the same functions and
 -- gets the same answers; no policy of a runtime changes. Everything commits together: a call sees the old catalog (owner
@@ -443,7 +444,8 @@ REVOKE CREATE ON SCHEMA public FROM polaris_sync_owner, polaris_authorization_ep
 -- The end state, as 0077 checks its own (a REVOKE or an ALTER without the right is only a WARNING on Neon): every
 -- SECURITY DEFINER function of the application belongs to a `polaris_*_owner` role (the scope of `foreignOwner` in
 -- definer-hardening-checks.ts: every schema but pg_catalog, information_schema and pg_toast*, and no function of an
--- extension), the four have the owner above, and none of the three new owners keeps CREATE on public.
+-- extension), the four have the owner above, none of the three new owners keeps CREATE on public, and the migrator keeps no
+-- SET or INHERIT on them.
 DO $end_state$
 DECLARE
   v_foreign text;
@@ -474,6 +476,15 @@ BEGIN
      OR pg_catalog.has_schema_privilege('polaris_authorization_epoch_owner', 'public', 'CREATE')
      OR pg_catalog.has_schema_privilege('polaris_onboarding_owner', 'public', 'CREATE') THEN
     RAISE EXCEPTION 'a new owner role kept CREATE on schema public';
+  END IF;
+  -- the SET the migrator took for the ALTER is given back (a REVOKE that does not match is only a WARNING on Neon)
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_auth_members AS m
+     WHERE m.member = (SELECT r.oid FROM pg_catalog.pg_roles AS r WHERE r.rolname = CURRENT_USER)
+       AND m.roleid IN ('polaris_sync_owner'::regrole, 'polaris_authorization_epoch_owner'::regrole, 'polaris_onboarding_owner'::regrole)
+       AND (m.set_option OR m.inherit_option)
+  ) THEN
+    RAISE EXCEPTION 'the migrator kept SET or INHERIT on a new owner role';
   END IF;
 END
 $end_state$;

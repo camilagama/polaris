@@ -287,8 +287,15 @@ async function run() {
     await inRolledBackTransaction(async () => {
       const table = `${probe}_scope`;
       await client.query(`CREATE TABLE public.${table} (id integer)`);
-      const scopeFindings = async (roles: string, expression: string) => {
+      const scopeFindings = async (
+        roles: string,
+        expression: string,
+        before: string[] = []
+      ) => {
         await client.query("SAVEPOINT scope_probe");
+        for (const statement of before) {
+          await client.query(statement);
+        }
         await client.query(
           `CREATE POLICY probe ON public.${table} AS PERMISSIVE FOR SELECT ${roles} USING (${expression})`
         );
@@ -325,6 +332,38 @@ async function run() {
         ),
         [
           `${label(`polaris_onboarding_owner,${CONTROL_OWNER}`)}: ${notOneOwner}`,
+          `${label(`polaris_onboarding_owner,${CONTROL_OWNER}`)}: reads app.owner_scope.probe_id, which a policy of another role reads too`,
+        ]
+      );
+      // a scope belongs to one owner: two policies, each TO one owner, that read the same setting are both reported
+      assert.deepEqual(
+        await scopeFindings(`TO ${CONTROL_OWNER}`, scoped, [
+          `CREATE POLICY probe_other ON public.${table} AS PERMISSIVE FOR SELECT TO polaris_onboarding_owner USING (${scoped})`,
+        ]),
+        [
+          `${label(CONTROL_OWNER)}: reads app.owner_scope.probe_id, which a policy of another role reads too`,
+          `public.${table}.probe_other ({polaris_onboarding_owner}): reads app.owner_scope.probe_id, which a policy of another role reads too`,
+        ]
+      );
+      // the owner named in the check may read app.user_id and nothing else of the runtime
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_device_session_owner",
+          "current_setting('app.organization_id', true) = 'x'"
+        ),
+        [
+          `${label("polaris_device_session_owner")}: a policy of an owner role reads the runtime setting app.organization_id`,
+        ]
+      );
+      // a policy TO PUBLIC holds for the owners too: on a table an owner role uses, it may not read a runtime setting (on one no
+      // owner uses, such as the table of the RLS proof of concept, it may)
+      assert.deepEqual(await scopeFindings("", userSetting), []);
+      assert.deepEqual(
+        await scopeFindings("", userSetting, [
+          `GRANT SELECT ON public.${table} TO ${CONTROL_OWNER}`,
+        ]),
+        [
+          `${label("public")}: a policy TO PUBLIC, on a table an owner role uses, reads the runtime setting app.user_id`,
         ]
       );
       assert.deepEqual(
@@ -348,7 +387,7 @@ async function run() {
     });
     assertClean(await findViolations(client));
     tests.push(
-      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, and an owner's policy that reads app.organization_id, are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id and polaris_device_session_owner's on app.user_id are not"
+      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too) and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, polaris_device_session_owner's on app.user_id and a policy TO PUBLIC on a table no owner uses are not"
     );
 
     // the gate can fail: PUBLIC with TEMPORARY or CREATE (every runtime role inherits it)
