@@ -38,7 +38,12 @@ BEGIN
     EXECUTE 'CREATE ROLE polaris_closed_export_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
   END IF;
   -- a role that already existed gets the same attributes: this one is never a login and never bypasses a policy
-  EXECUTE 'ALTER ROLE polaris_closed_export_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
+  -- no NOSUPERUSER here: PostgreSQL refuses it to a role that is not a superuser itself (Neon), and a role made by one never is;
+  -- the check below keeps the guarantee
+  EXECUTE 'ALTER ROLE polaris_closed_export_reader NOLOGIN NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'polaris_closed_export_reader' AND rolsuper) THEN
+    RAISE EXCEPTION 'polaris_closed_export_reader must not be a superuser';
+  END IF;
 END
 $roles$;--> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO polaris_closed_export_reader;--> statement-breakpoint

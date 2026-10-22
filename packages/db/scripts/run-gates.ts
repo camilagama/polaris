@@ -217,6 +217,14 @@ gates.push(
     needsPocFixture: true,
     script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
   },
+  // every migration replayed by an owner who is not a superuser, as on Neon. It parks the polaris_* roles of the gate
+  // database for the replay and gives them back, leaving nothing else behind (see the header of the script)
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "migrations-without-superuser",
+    script: "verify-migrations-without-superuser-gate.ts",
+  },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
   // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
   // suite): the scheduled jobs of the Web Worker run for real against what the gates before left.
@@ -310,6 +318,7 @@ const suites: Record<string, string[]> = {
     "media-upload",
     "tenant-context",
     "rls",
+    "migrations-without-superuser",
     "web-worker",
     "catalog-worker",
   ],
