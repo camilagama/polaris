@@ -1,11 +1,11 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
-  buildVersion,
   checkForUpdate,
   openControlled,
   runningVersion,
+  test,
 } from "./support";
 
 /**
@@ -36,7 +36,11 @@ declare global {
   }
 }
 
-async function updateWaitingWith(page: Page, queue: Partial<QueueControl>) {
+async function updateWaitingWith(
+  page: Page,
+  buildVersion: (variant: string) => void,
+  queue: Partial<QueueControl>
+) {
   buildVersion("1");
   await openControlled(page);
   await page.evaluate((initial) => {
@@ -73,14 +77,11 @@ async function updateWaitingWith(page: Page, queue: Partial<QueueControl>) {
 
 const stillHere = (page: Page) => page.evaluate(() => window.stillHere);
 
-test.afterAll(() => {
-  buildVersion("1");
-});
-
 test("com operações na fila e sem rede, a atualização espera e nada se perde; com rede, envia e só então atualiza", async ({
+  buildVersion,
   page,
 }) => {
-  await updateWaitingWith(page, { failSync: true, pending: 2 });
+  await updateWaitingWith(page, buildVersion, { failSync: true, pending: 2 });
   const banner = page.getByRole("status", {
     name: "Atualização do aplicativo",
   });
@@ -110,9 +111,10 @@ test("com operações na fila e sem rede, a atualização espera e nada se perde
 });
 
 test("com uma operação recusada não há botão de atualizar: a atualização espera a pessoa resolver", async ({
+  buildVersion,
   page,
 }) => {
-  await updateWaitingWith(page, { pending: 1, rejected: 1 });
+  await updateWaitingWith(page, buildVersion, { pending: 1, rejected: 1 });
   const banner = page.getByRole("status", {
     name: "Atualização do aplicativo",
   });

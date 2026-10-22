@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import {
+  PWA_ORIGIN,
+  PWA_PORT,
+  reuseExistingServer,
+  workersFrom,
+} from "./e2e/run-settings";
 
 const inCI = Boolean(process.env.CI);
 
@@ -21,16 +27,16 @@ export default defineConfig({
   testMatch: "**/*.e2e.ts",
   timeout: 45_000,
   use: {
-    baseURL: "http://127.0.0.1:4174",
+    baseURL: PWA_ORIGIN,
     trace: "retain-on-failure",
   },
   webServer: {
-    command:
-      "bunx vite build --config vite.pwa.config.ts --mode pwa-e2e && node scripts/serve-static.mjs dist/pwa-e2e 4174",
-    reuseExistingServer: !inCI,
+    command: `bunx vite build --config vite.pwa.config.ts --mode pwa-e2e && node scripts/serve-static.mjs dist/pwa-e2e ${PWA_PORT}`,
+    reuseExistingServer,
     timeout: 120_000,
-    url: "http://127.0.0.1:4174",
+    url: PWA_ORIGIN,
   },
-  // the update checks rebuild the shared build directory: one test at a time
-  workers: 1,
+  // the checks are independent: the update ones build and serve a directory of their own (support.ts); the others
+  // only read `dist/pwa-e2e`. In the CI, one worker per core (up to 4); `E2E_WORKERS` sets the number.
+  workers: workersFrom(2, 4),
 });
