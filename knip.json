@@ -42,7 +42,6 @@
         "cloudflare",
         "@fontsource-variable/geist",
         "@fontsource-variable/geist-mono",
-        "tailwindcss",
         "tw-animate-css"
       ],
       "project": [
