@@ -41,6 +41,9 @@ describe("the sign-in texts", () => {
     expect(texts.errorText("indisponivel")).toBe(texts.SIGN_IN_UNAVAILABLE);
     expect(texts.errorText(undefined)).toBeNull();
     expect(texts.reasonText("sessao")).toBe(texts.SESSION_ENDED_REASON);
+    expect(texts.reasonText("saiu")).toBe(
+      "Você saiu. Entre de novo quando quiser."
+    );
     expect(texts.reasonText("recente")).toBe(texts.RECENT_LOGIN_REASON);
     expect(texts.reasonText(undefined)).toBeNull();
   });

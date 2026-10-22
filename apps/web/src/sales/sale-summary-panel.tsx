@@ -451,11 +451,16 @@ interface SubmitBarProps {
 
 /**
  * The total and the button at the bottom of the screen below 900 px. It is sticky inside the form, not fixed to the
- * window: it never covers a field of the form with the keyboard open, and it rests at the end of the form.
+ * window: it never covers a field of the form with the keyboard open, and it rests at the end of the form. Its
+ * background is opaque (U-19): a translucent one let an error behind it show through and read as noise; the page
+ * keeps `scroll-padding-bottom` for it (styles/index.css), so a focused field or error scrolls above it.
  */
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
-    <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-border border-t bg-background/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden">
+    <div
+      className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden"
+      data-submit-bar=""
+    >
       <div className="grid min-w-0 shrink-0">
         <span className="text-muted-foreground text-xs">Total devido</span>
         {summary ? (

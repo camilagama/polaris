@@ -3,6 +3,7 @@ import type {
   PublicCatalogProfileReadModel,
 } from "@polaris/contracts";
 import { type ChangeEvent, type FormEvent, useCallback } from "react";
+import type { ProfileField, ProfileFieldError } from "./public-catalog-errors";
 import {
   type CatalogVisibility,
   MAX_PUBLIC_DESCRIPTION,
@@ -19,10 +20,64 @@ const VISIBILITY_TEXT: Readonly<Record<CatalogVisibility, string>> = {
     "Ligado, mas fora do ar: o plano atual não inclui o catálogo público. Tudo fica guardado e volta ao ar quando o plano incluir.",
 };
 
+/** What a command said, shown next to the button that ran it (U-49). */
+interface ActionFeedback {
+  error: string | null;
+  notice: string | null;
+}
+
+/**
+ * The two live regions of a command, always in the tree so a message that appears is announced: the notice is
+ * polite, the error is an alert. Empty, they take no room.
+ */
+function ActionMessages({ error, notice }: ActionFeedback) {
+  return (
+    <>
+      <div role="status">
+        {notice ? (
+          <p className="public-catalog-message is-success">{notice}</p>
+        ) : null}
+      </div>
+      <div role="alert">
+        {error ? (
+          <p className="public-catalog-message is-error">{error}</p>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/** The error of one field of the form, under it and tied to it. */
+function FieldProblem({
+  field,
+  problem,
+}: {
+  field: ProfileField;
+  problem: ProfileFieldError | null;
+}) {
+  return problem?.field === field ? (
+    <p className="field-error" id={`public-${field}-error`}>
+      {problem.message}
+    </p>
+  ) : null;
+}
+
+/** `aria-invalid` and `aria-describedby` of the input of a field that has an error. */
+function problemAttributes(
+  field: ProfileField,
+  problem: ProfileFieldError | null
+) {
+  return problem?.field === field
+    ? { "aria-describedby": `public-${field}-error`, "aria-invalid": true }
+    : {};
+}
+
 interface ProfileFormProps {
   changed: boolean;
   disabled: boolean;
   draft: PublicProfileDraft;
+  feedback: ActionFeedback;
+  problem: ProfileFieldError | null;
   onChange: (draft: PublicProfileDraft) => void;
   onSlugEdited: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -32,7 +87,7 @@ interface ProfileFormProps {
 }
 
 export function ProfileForm(props: ProfileFormProps) {
-  const { draft, onChange, onSlugEdited, slugEdited } = props;
+  const { draft, onChange, onSlugEdited, problem, slugEdited } = props;
   const handleName = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const publicName = event.target.value;
@@ -79,6 +134,7 @@ export function ProfileForm(props: ProfileFormProps) {
       </p>
       <label htmlFor="public-name">Nome público</label>
       <input
+        {...problemAttributes("publicName", problem)}
         disabled={props.pending}
         id="public-name"
         maxLength={MAX_PUBLIC_NAME}
@@ -86,8 +142,10 @@ export function ProfileForm(props: ProfileFormProps) {
         required
         value={draft.publicName}
       />
+      <FieldProblem field="publicName" problem={problem} />
       <label htmlFor="public-slug">Endereço</label>
       <input
+        {...problemAttributes("slug", problem)}
         autoCapitalize="none"
         disabled={props.pending}
         id="public-slug"
@@ -97,12 +155,14 @@ export function ProfileForm(props: ProfileFormProps) {
         spellCheck={false}
         value={draft.slug}
       />
+      <FieldProblem field="slug" problem={problem} />
       <p className="field-help">
         {preview} · de 3 a 40 letras minúsculas, números e hífens, único entre
         todas as lojas.
       </p>
       <label htmlFor="public-description">Descrição (opcional)</label>
       <textarea
+        {...problemAttributes("description", problem)}
         disabled={props.pending}
         id="public-description"
         maxLength={MAX_PUBLIC_DESCRIPTION}
@@ -110,12 +170,14 @@ export function ProfileForm(props: ProfileFormProps) {
         rows={3}
         value={draft.description}
       />
+      <FieldProblem field="description" problem={problem} />
       <p className="field-help">
         {MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres
         restantes.
       </p>
       <label htmlFor="public-whatsapp">WhatsApp (opcional)</label>
       <input
+        {...problemAttributes("whatsapp", problem)}
         autoComplete="off"
         disabled={props.pending}
         id="public-whatsapp"
@@ -124,8 +186,10 @@ export function ProfileForm(props: ProfileFormProps) {
         placeholder="11 91234-5678"
         value={draft.whatsapp}
       />
+      <FieldProblem field="whatsapp" problem={problem} />
       <label htmlFor="public-instagram">Instagram (opcional)</label>
       <input
+        {...problemAttributes("instagram", problem)}
         autoCapitalize="none"
         disabled={props.pending}
         id="public-instagram"
@@ -134,6 +198,7 @@ export function ProfileForm(props: ProfileFormProps) {
         spellCheck={false}
         value={draft.instagram}
       />
+      <FieldProblem field="instagram" problem={problem} />
       <button
         className="primary-button"
         disabled={props.pending || props.disabled || !props.changed}
@@ -141,12 +206,14 @@ export function ProfileForm(props: ProfileFormProps) {
       >
         {props.pending ? "Salvando…" : "Salvar perfil"}
       </button>
+      <ActionMessages {...props.feedback} />
     </form>
   );
 }
 
 interface SwitchCardProps {
   changed: boolean;
+  feedback: ActionFeedback;
   onToggle: () => void;
   pending: boolean;
   planBlocks: boolean;
@@ -185,6 +252,7 @@ export function SwitchCard(props: SwitchCardProps) {
           Salve o perfil para poder ligar o catálogo.
         </p>
       )}
+      <ActionMessages {...props.feedback} />
       {props.changed && profile ? (
         <p className="field-help">
           Salve o perfil antes de ligar ou desligar o catálogo.
@@ -231,6 +299,7 @@ function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
 }
 
 interface ProductsCardProps {
+  feedback: ActionFeedback;
   onChange: (productIds: string[], show: boolean) => void;
   pending: boolean;
   planBlocks: boolean;
@@ -296,6 +365,7 @@ export function ProductsCard(props: ProductsCardProps) {
           </button>
         </div>
       </div>
+      <ActionMessages {...props.feedback} />
       <p className="field-help">
         {shownCount} de {products.length} produtos ativos escolhidos. Produto
         arquivado ou removido sai do catálogo sozinho.

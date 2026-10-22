@@ -1,4 +1,12 @@
 import type { PublicCatalogProfileReadModel } from "@polaris/contracts";
+import {
+  InvalidPublicCatalogProfileError,
+  normalizePublicProfile,
+} from "@polaris/domain/catalog/public-catalog";
+import {
+  type ProfileFieldError,
+  profileRefusalText,
+} from "./public-catalog-errors";
 
 /** What the organization is typing into its public profile. */
 export interface PublicProfileDraft {
@@ -121,4 +129,36 @@ export function visibilityOf(input: {
     return "off";
   }
   return input.enabled ? "live" : "waiting-plan";
+}
+
+const FIELD_OF_REFUSAL = {
+  invalid_description: "description",
+  invalid_instagram: "instagram",
+  invalid_name: "publicName",
+  invalid_slug: "slug",
+  invalid_whatsapp: "whatsapp",
+  reserved_slug: "slug",
+} as const;
+
+/**
+ * The same check the server runs (the domain's own), before anything is sent: a refused address or name is
+ * said under its field without a round trip, and what was typed is never touched (U-48). The server stays
+ * the authority; a refusal only it can give (the address is taken) comes back and is shown the same way.
+ */
+export function profileDraftProblem(
+  draft: PublicProfileDraft
+): ProfileFieldError | null {
+  try {
+    normalizePublicProfile(profileRequest(draft, undefined));
+    return null;
+  } catch (error) {
+    if (error instanceof InvalidPublicCatalogProfileError) {
+      return {
+        field: FIELD_OF_REFUSAL[error.code],
+        message:
+          profileRefusalText(error.code) ?? "Confira os dados informados.",
+      };
+    }
+    throw error;
+  }
 }

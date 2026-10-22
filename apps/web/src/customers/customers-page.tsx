@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
@@ -136,6 +137,9 @@ function formatDate(value: string): string {
   return dateFormatter.format(new Date(value));
 }
 
+const CONTACT_REQUIRED_TEXT =
+  "Informe ao menos um telefone ou email para o cliente.";
+
 function hasCustomerContact(draft: CustomerDraft): boolean {
   return Boolean(draft.phone.trim() || draft.email.trim());
 }
@@ -155,6 +159,8 @@ function customerStatusFromEvent(
 }
 
 interface CustomerFormProps {
+  /** Why the form cannot be saved yet: no phone and no email. Shown beside the button, with the fields marked. */
+  contactError: string | null;
   draft: CustomerDraft;
   duplicateMatches: CustomerDuplicateMatchReadModel[];
   editingCustomer: CustomerReadModel | null;
@@ -211,8 +217,8 @@ function CustomerDuplicateCandidate({
         ) : null}
       </div>
       <button
-        aria-label={`Usar cadastro existente de ${customer.name}`}
-        className="quiet-button"
+        aria-label={`Usar existente: ${customer.name}`}
+        className="primary-button"
         disabled={disabled}
         onClick={handleUseExisting}
         type="button"
@@ -237,6 +243,7 @@ function customerSubmitLabel(
 }
 
 function CustomerForm({
+  contactError,
   draft,
   duplicateMatches,
   editingCustomer,
@@ -323,6 +330,10 @@ function CustomerForm({
                 Telefone <span className="field-optional">Opcional</span>
               </label>
               <input
+                aria-describedby={
+                  contactError ? "customer-contact-error" : undefined
+                }
+                aria-invalid={contactError ? true : undefined}
                 autoComplete="tel"
                 disabled={isPending}
                 id="customer-phone"
@@ -336,6 +347,10 @@ function CustomerForm({
                 Email <span className="field-optional">Opcional</span>
               </label>
               <input
+                aria-describedby={
+                  contactError ? "customer-contact-error" : undefined
+                }
+                aria-invalid={contactError ? true : undefined}
                 autoComplete="email"
                 disabled={isPending}
                 id="customer-email"
@@ -350,6 +365,12 @@ function CustomerForm({
           </p>
         </fieldset>
 
+        {/* always in the tree, so the panel that appears after the check is announced (U-25) */}
+        <p className="visually-hidden" role="status">
+          {duplicateMatches.length > 0
+            ? "Encontramos possíveis clientes existentes. Revise antes de criar um novo."
+            : ""}
+        </p>
         {duplicateMatches.length > 0 ? (
           <section
             aria-labelledby="customer-duplicate-heading"
@@ -377,7 +398,7 @@ function CustomerForm({
             </ul>
             <div className="customer-duplicate-actions">
               <button
-                className="primary-button"
+                className="quiet-button"
                 disabled={isPending}
                 onClick={onCreateAnyway}
                 type="button"
@@ -401,6 +422,15 @@ function CustomerForm({
           />
         </div>
 
+        {contactError ? (
+          <p
+            className="field-error customer-contact-error"
+            id="customer-contact-error"
+            role="alert"
+          >
+            {contactError}
+          </p>
+        ) : null}
         <div className="customer-form-actions">
           <button className="primary-button" disabled={isPending} type="submit">
             {customerSubmitLabel(isPending, editingCustomer)}
@@ -665,6 +695,7 @@ function lockedReasonFor(
 }
 
 interface CustomerWorkspaceProps {
+  contactError: string | null;
   customers: CustomerReadModel[];
   draft: CustomerDraft;
   duplicateMatches: CustomerDuplicateMatchReadModel[];
@@ -693,6 +724,7 @@ interface CustomerWorkspaceProps {
 }
 
 function CustomerWorkspace({
+  contactError,
   customers,
   draft,
   duplicateMatches,
@@ -749,6 +781,7 @@ function CustomerWorkspace({
 
       {status === "active" || editingCustomer ? (
         <CustomerForm
+          contactError={contactError}
           draft={draft}
           duplicateMatches={duplicateMatches}
           editingCustomer={editingCustomer}
@@ -875,8 +908,11 @@ export function CustomersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [contactError, setContactError] = useState<string | null>(null);
   const customerLoadSequence = useRef(0);
   useReportUnsentWork(isCustomerDraftChanged(draft, editingCustomer));
+  // any change of the form (typing, picking another customer, clearing) takes the contact error away
+  useEffect(() => setContactError(null), [draft]);
 
   const loadCustomers = useCallback(
     async (targetOrganizationId: string, targetStatus: CustomerListStatus) => {
@@ -1126,10 +1162,14 @@ export function CustomersPage() {
   const saveCustomer = useCallback(
     async (allowPossibleDuplicates = false) => {
       if (!hasCustomerContact(draft)) {
-        setError("Informe ao menos um telefone ou email para o cliente.");
+        // beside the button and on the fields, not at the top of the page (U-24)
+        setContactError(CONTACT_REQUIRED_TEXT);
+        setError(null);
         setNotice(null);
+        focusLater(() => document.getElementById("customer-phone")?.focus());
         return;
       }
+      setContactError(null);
 
       const needsDuplicateCheck = !(editingCustomer || allowPossibleDuplicates);
       if (editingCustomer) {
@@ -1238,6 +1278,7 @@ export function CustomersPage() {
   return (
     <div className="customers-page">
       <CustomerWorkspace
+        contactError={contactError}
         customers={customers}
         draft={draft}
         duplicateMatches={duplicateMatches}

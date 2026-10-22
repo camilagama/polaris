@@ -68,6 +68,11 @@
     grid-column: 1 / -1;
   }
 
+  /* clear of the 3 px focus ring (+ 3 px offset) of the phone field above, as .field-error (U-28) */
+  .customer-form #customer-contact-help {
+    margin: 0.5rem 0 0.45rem;
+  }
+
   .customer-contact-label {
     margin: 0 0 0.55rem;
     padding: 0;
@@ -156,6 +161,12 @@
     justify-content: flex-end;
     padding-top: 0.8rem;
     border-top: 1px solid var(--ui-line);
+  }
+
+  /* beside the save button, over both columns of the form (U-24) */
+  .customer-form .customer-contact-error {
+    grid-column: 1 / -1;
+    margin: 0;
   }
 
   .customer-form-actions {

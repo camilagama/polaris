@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
-import { type LeavePath, leaveTo } from "./leave-browser";
+import { type LeavePath, leaveAfterSignOut } from "./leave-browser";
 import {
   discardAndLeave,
   type LogoutFlowDependencies,
@@ -44,7 +44,7 @@ export function useLogout(destination: LeavePath) {
       const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
       return workspaces.length > 0
         ? {
-            leave: () => leaveTo(destination),
+            leave: () => leaveAfterSignOut(destination),
             signOut: signOutOnServer,
             workspaces,
           }

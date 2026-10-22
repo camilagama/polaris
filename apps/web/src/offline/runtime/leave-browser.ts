@@ -4,6 +4,7 @@ import {
 } from "../../lib/current-organization-model";
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
+import { writeSessionMarker } from "../../lib/session-marker";
 import { markSigningOut } from "../../lib/sign-out";
 import type { SignInPath } from "../../lib/sign-in-path";
 
@@ -34,4 +35,13 @@ export type LeavePath = "/" | SignInPath;
 export function leaveTo(path: LeavePath): void {
   forgetSessionCaches();
   window.location.assign(path);
+}
+
+/**
+ * Leaves after the person chose "Sair" and the session was ended on purpose: the next opening without a session
+ * says "Você saiu", not "Sua sessão acabou" (U-01).
+ */
+export function leaveAfterSignOut(path: LeavePath): void {
+  writeSessionMarker("saiu");
+  leaveTo(path);
 }

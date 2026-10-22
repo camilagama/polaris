@@ -148,8 +148,8 @@ describe("qualityMessages", () => {
       })
     ).toEqual([
       "3 linhas de itens vendidos sem custo conhecido: o custo delas não entrou no CMV.",
-      "2 vendas sem taxa de processamento conhecida: elas não entraram no resultado.",
-      "1 venda com antecipação sem taxa conhecida: ela não entrou no resultado.",
+      "2 vendas sem taxa de processamento conhecida: as vendas entram nos totais, mas as taxas delas ficaram fora do cálculo.",
+      "1 venda com antecipação sem taxa conhecida: a venda entra nos totais, mas a taxa dela ficou fora do cálculo.",
       "Nenhuma despesa registrada neste período: o resultado pode estar acima do real.",
     ]);
   });

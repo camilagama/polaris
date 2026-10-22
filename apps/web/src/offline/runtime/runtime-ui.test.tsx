@@ -66,6 +66,37 @@ describe("the sync status in the header", () => {
     );
   });
 
+  it("on a screen that works only online, says it needs internet instead of promising what the device keeps (U-54)", () => {
+    const onlineOnly = { onlineOnly: true };
+    expect(
+      syncStatusLabel(snapshot({ online: false }), onlineOnly)
+    ).toMatchObject({
+      short: "Offline",
+      text: "Sem conexão · esta tela precisa de internet",
+      tone: "offline",
+    });
+    expect(
+      syncStatusLabel(
+        snapshot({ counts: counts({ pending: 2 }), online: false }),
+        onlineOnly
+      ).text
+    ).toBe(
+      "Sem conexão · 2 operações guardadas · esta tela precisa de internet"
+    );
+    // online, nothing changes
+    expect(syncStatusLabel(snapshot(), onlineOnly).text).toBe(
+      "Tudo sincronizado"
+    );
+    const html = renderToStaticMarkup(
+      <SyncStatusView
+        screen={onlineOnly}
+        snapshot={snapshot({ online: false })}
+      />
+    );
+    expect(html).toContain("esta tela precisa de internet");
+    expect(html).not.toContain("tudo guardado neste aparelho");
+  });
+
   it("shows progress while sending, and a failure that kept everything", () => {
     expect(
       syncStatusLabel(snapshot({ counts: counts({ pending: 1 }) }))

@@ -344,8 +344,9 @@
     color: var(--ui-muted);
   }
 
+  /* clear of the 3 px focus ring (+ 3 px offset) of the field above, so the ring never strikes the text (U-28) */
   .field-error {
-    margin: -0.2rem 0 0.45rem;
+    margin: 0.5rem 0 0.45rem;
     font-size: 0.8rem;
     font-weight: 650;
     color: var(--ui-danger-strong);

@@ -5,6 +5,7 @@ import {
   draftFromProfile,
   hasProfileChanges,
   inBatches,
+  profileDraftProblem,
   profileRequest,
   publicUrl,
   slugFromName,
@@ -118,5 +119,58 @@ describe("visibilityOf", () => {
       visibilityOf({ enabled: true, profile: { ...profile, published: false } })
     ).toBe("off");
     expect(visibilityOf({ enabled: true, profile: null })).toBe("off");
+  });
+});
+
+describe("profileDraftProblem (U-48)", () => {
+  const draft = {
+    ...blankProfileDraft,
+    publicName: "Loja da Ana",
+    slug: "loja-da-ana",
+  };
+
+  it("accepts what the server accepts", () => {
+    expect(profileDraftProblem(draft)).toBeNull();
+    expect(
+      profileDraftProblem({
+        ...draft,
+        whatsapp: "(11) 91234-5678",
+        instagram: "@loja.ana",
+      })
+    ).toBeNull();
+  });
+
+  it("refuses an address the server would refuse, and names the field", () => {
+    for (const slug of [
+      "ab",
+      "Loja Da Ana!",
+      "-loja",
+      "loja--ana",
+      "a".repeat(41),
+      "endereço-inválido",
+    ]) {
+      expect(profileDraftProblem({ ...draft, slug })).toMatchObject({
+        field: "slug",
+      });
+    }
+    expect(profileDraftProblem({ ...draft, slug: "admin" })).toMatchObject({
+      field: "slug",
+      message: "Este endereço é reservado. Escolha outro.",
+    });
+  });
+
+  it("refuses the other fields under their own names", () => {
+    expect(profileDraftProblem({ ...draft, publicName: "   " })).toMatchObject({
+      field: "publicName",
+    });
+    expect(profileDraftProblem({ ...draft, whatsapp: "123" })).toMatchObject({
+      field: "whatsapp",
+    });
+    expect(profileDraftProblem({ ...draft, instagram: "a b" })).toMatchObject({
+      field: "instagram",
+    });
+    expect(
+      profileDraftProblem({ ...draft, description: "x".repeat(281) })
+    ).toMatchObject({ field: "description" });
   });
 });
