@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { orpcClient } from "../../lib/orpc";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
@@ -28,6 +29,16 @@ async function signOutOnServer(): Promise<void> {
   }
 }
 
+/** Revokes this installation on the server (ADR 0048, emenda de 22/10); the flow decides what a failure means. */
+async function revokeCurrentDevice(
+  deviceId: string
+): Promise<{ endedCurrentSession: boolean }> {
+  const { endedCurrentSession } = await orpcClient.device.revokeCurrent({
+    deviceId,
+  });
+  return { endedCurrentSession };
+}
+
 /**
  * The protected logout as a hook: "Sair" uses it to go home, the devices screen
  * to go to the sign-in screen (its "Entrar de novo" while the session is still
@@ -41,9 +52,17 @@ export function useLogout(destination: LeavePath) {
 
   const dependencies =
     useCallback(async (): Promise<LogoutFlowDependencies | null> => {
+      // before anything else: protecting the queue purges the workspaces, and the device is revoked after that
+      const deviceId = runtime?.currentDeviceId() ?? null;
       const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
-      return workspaces.length > 0
+      return runtime && workspaces.length > 0
         ? {
+            device: {
+              forget: () => runtime.forgetDevice(),
+              id: deviceId,
+              isOnline: () => navigator.onLine,
+              revoke: revokeCurrentDevice,
+            },
             leave: () => leaveAfterSignOut(destination),
             signOut: signOutOnServer,
             workspaces,

@@ -107,7 +107,7 @@ const CONTROLLED = [
 const UNAUTHENTICATED = ["system.ping"] as const;
 
 const READ_SEGMENT = /^(list|get)/;
-const OPEN_CATEGORIES = new Set(["acceptance", "privacy_request"]);
+const OPEN_CATEGORIES = new Set(["acceptance", "logout", "privacy_request"]);
 
 /** The leaves of the contract (the oRPC procedures), as dotted names. */
 function contractProcedures(
@@ -156,7 +156,7 @@ describe("the exempt procedures of the legal acceptance control", () => {
     }
   );
 
-  it("outside the acceptance itself, only the requests of the data subject are exempt without being a read", () => {
+  it("outside the acceptance itself, only the requests of the data subject and the revocation by Sair are exempt without being a read", () => {
     const writes = exempt
       .filter(([name]) => !READ_SEGMENT.test(lastSegment(name)))
       .map(([name]) => name)
@@ -166,10 +166,11 @@ describe("the exempt procedures of the legal acceptance control", () => {
       "account.legalStatus",
       "dataExport.request",
       "dataExport.requestClosed",
+      "device.revokeCurrent",
     ]);
   });
 
-  it("is exactly the decided list", () => {
+  it("is exactly the decided list, written name by name", () => {
     expect(Object.keys(LEGAL_ACCEPTANCE_EXEMPT_PROCEDURES).sort()).toEqual([
       "account.acceptLegal",
       "account.legalStatus",
@@ -178,7 +179,23 @@ describe("the exempt procedures of the legal acceptance control", () => {
       "dataExport.request",
       "dataExport.requestClosed",
       "device.list",
+      "device.revokeCurrent",
     ]);
+  });
+
+  it("exempts the revocation by Sair and no other procedure of devices: no prefix", () => {
+    const devices = procedures.filter((name) => name.startsWith("device."));
+    expect(
+      devices.filter((name) =>
+        Object.hasOwn(LEGAL_ACCEPTANCE_EXEMPT_PROCEDURES, name)
+      )
+    ).toEqual(["device.list", "device.revokeCurrent"]);
+    for (const name of Object.keys(LEGAL_ACCEPTANCE_EXEMPT_PROCEDURES)) {
+      // every entry is a whole procedure of the contract, never a group or a prefix
+      expect(procedures, name).toContain(name);
+      expect(name.endsWith(".")).toBe(false);
+      expect(name.includes("*")).toBe(false);
+    }
   });
 });
 

@@ -115,6 +115,23 @@ function setup(
 
   const listSales = vi.fn(async () => ({ hasMore: false, sales: [] }));
   const listDevices = vi.fn(async () => []);
+  const device = {
+    createdAt: new Date("2026-10-14T12:00:00.000Z"),
+    id: deviceId,
+    label: null,
+    lastSeenAt: new Date("2026-10-14T12:00:00.000Z"),
+    revokedAt: null,
+    userId,
+  };
+  const revokeOwnDevice = vi.fn(async () => ({
+    alreadyRevoked: false,
+    endedCurrentSession: true,
+    revokedGrantCount: 1,
+  }));
+  const revokeDevice = vi.fn();
+  const registerDevice = vi.fn(async () => device);
+  const touchDevice = vi.fn(async () => device);
+  const accessLog = vi.fn(async () => true);
   const getSyncCursor = vi.fn(async () => 7);
   const runSyncCommand = vi.fn();
   const customerHandler: SyncCommandHandler = {
@@ -125,13 +142,18 @@ function setup(
     type: "customer.create",
   };
   const router = createRpcRouter({
+    accessLogWriter: () => accessLog,
     getSyncCursor,
     listDevices,
     listSales,
     readAcceptedLegalVersions: readAccepted,
     recordLegalAcceptance: recordAcceptance,
+    registerDevice,
+    revokeDevice,
+    revokeOwnDevice,
     runSyncCommand,
     syncCommandHandlers: [customerHandler],
+    touchDevice,
     withAuthenticatedRequestContext,
     withTenantRequestContext,
   } as unknown as Overrides);
@@ -151,7 +173,13 @@ function setup(
       acceptLegal: (input: unknown) => Promise<{ pending: unknown[] }>;
       legalStatus: () => Promise<{ pending: unknown[] }>;
     };
-    device: { list: () => Promise<{ devices: unknown[] }> };
+    device: {
+      check: (input: unknown) => Promise<unknown>;
+      list: () => Promise<{ devices: unknown[] }>;
+      register: (input: unknown) => Promise<unknown>;
+      revoke: (input: unknown) => Promise<unknown>;
+      revokeCurrent: (input: unknown) => Promise<unknown>;
+    };
     sale: { list: (input: unknown) => Promise<unknown> };
     sync: {
       getCursor: (input: unknown) => Promise<{ cursor: string }>;
@@ -174,6 +202,7 @@ function setup(
 
   return {
     accepted,
+    accessLog,
     client,
     raw,
     getSyncCursor,
@@ -181,8 +210,12 @@ function setup(
     listSales,
     readAccepted,
     recordAcceptance,
+    registerDevice,
+    revokeDevice,
+    revokeOwnDevice,
     runSyncCommand,
     tenantTransaction,
+    touchDevice,
   };
 }
 
@@ -317,6 +350,50 @@ describe("the legal acceptance control through the router", () => {
       expect(t.listDevices).toHaveBeenCalledTimes(1);
       expect(t.readAccepted).not.toHaveBeenCalled();
     });
+
+    it("lets device.revokeCurrent through the barrier (exempt): a person held by the acceptance still leaves without a copy of the device", async () => {
+      const t = setup();
+
+      await expect(
+        t.client.device.revokeCurrent({ deviceId })
+      ).resolves.toEqual({
+        alreadyRevoked: false,
+        endedCurrentSession: true,
+        revokedGrantCount: 1,
+      });
+
+      expect(t.revokeOwnDevice).toHaveBeenCalledTimes(1);
+      expect(t.readAccepted).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        "device.revoke",
+        (t: ReturnType<typeof setup>) => t.client.device.revoke({ deviceId }),
+      ],
+      [
+        "device.register",
+        (t: ReturnType<typeof setup>) => t.client.device.register({}),
+      ],
+      [
+        "device.check",
+        (t: ReturnType<typeof setup>) => t.client.device.check({ deviceId }),
+      ],
+    ])(
+      "still bars %s, and never reaches the repository",
+      async (_name, call) => {
+        const t = setup();
+
+        const error = await failureOf(call(t));
+
+        expect(error.code).toBe("FORBIDDEN");
+        expect(error.data?.reason).toBe("legal_acceptance_required");
+        expect(t.revokeDevice).not.toHaveBeenCalled();
+        expect(t.registerDevice).not.toHaveBeenCalled();
+        expect(t.touchDevice).not.toHaveBeenCalled();
+        expect(t.revokeOwnDevice).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe("with the control off", () => {

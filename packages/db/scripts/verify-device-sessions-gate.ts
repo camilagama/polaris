@@ -4,12 +4,15 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import {
+  DeviceNotFoundError,
+  DeviceNotOwnedError,
   DeviceRevokedError,
   DeviceSessionEndedError,
   FreshSessionRequiredError,
   recordOfflineGrant,
   registerDevice,
   revokeDevice,
+  revokeOwnDevice,
   touchDevice,
 } from "../src/device-repository";
 import {
@@ -22,7 +25,13 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
-import { lockRow, raceBehindLock, raceRounds } from "./concurrency-support";
+import {
+  advisoryLock,
+  eachRound,
+  lockRow,
+  raceBehindLock,
+  raceRounds,
+} from "./concurrency-support";
 import {
   createTenantFixture,
   type Database,
@@ -598,6 +607,176 @@ async function run() {
     assert.equal(blankState.rows[0]?.revoked_at, null, "nothing was revoked");
     tests.push(
       "revoking a device with no linked session audits device_revoked once with the acting session and device (ended_session_count 0) and a repetition audits nothing; an acting session with a blank id is refused as a lost session and revokes nothing"
+    );
+
+    // ------- 5c. "Sair" revokes this device (ADR 0048, emenda de 22/10): the session's own device only
+    const tenantC = await createTenantFixture(admin.pool, "device sessions C");
+    const originOf = async (deviceId: string, sessionId: string) =>
+      (
+        await admin.pool.query<{ origin: string }>(
+          "SELECT origin FROM public.device_sessions WHERE device_id = $1 AND session_id = $2",
+          [deviceId, sessionId]
+        )
+      ).rows.map((row) => row.origin);
+    const revokedAt = async (deviceId: string) =>
+      (
+        await admin.pool.query<{ revoked_at: Date | null }>(
+          "SELECT revoked_at FROM public.devices WHERE id = $1",
+          [deviceId]
+        )
+      ).rows[0]?.revoked_at ?? null;
+    const registrar = await createSession(tenantC.userId);
+    const c1 = await registerDevice(db, tenantC.userId, {
+      sessionId: registrar,
+    });
+    const c2 = await registerDevice(db, tenantC.userId, {
+      sessionId: registrar,
+    });
+    const c3 = await registerDevice(db, tenantC.userId, {
+      sessionId: registrar,
+    });
+    // a new login on the same browser, recent: it confirms three devices and owns only the first one
+    const recent = await createSession(tenantC.userId);
+    for (const checkedDevice of [c1, c2, c3]) {
+      await touchDevice(db, tenantC.userId, checkedDevice.id, {
+        freshSession: true,
+        sessionId: recent,
+      });
+    }
+    assert.deepEqual(await originOf(c1.id, recent), ["register"]);
+    assert.deepEqual(await originOf(c2.id, recent), ["use"]);
+    assert.deepEqual(await originOf(c3.id, recent), ["use"]);
+    // a link that already exists is never promoted: a recent session with no own device that used c2 first (a lease)
+    const leased = await createSession(tenantC.userId);
+    await withSession(
+      db,
+      tenantC,
+      leased,
+      "offline:manage",
+      (transaction, identity) =>
+        issueOfflineLeaseGrant(transaction, identity, { deviceId: c2.id })
+    );
+    assert.deepEqual(await originOf(c2.id, leased), ["use"]);
+    await touchDevice(db, tenantC.userId, c2.id, {
+      freshSession: true,
+      sessionId: leased,
+    });
+    assert.deepEqual(await originOf(c2.id, leased), ["use"]);
+    // two recent checks of one session on two devices at the same time: exactly one becomes its own. The holder
+    // takes the lock of the session first, so both checks are seen waiting on it before they go on
+    await eachRound(async () => {
+      const twoCheckSession = await createSession(tenantC.userId);
+      const { results: twoChecks } = await raceBehindLock({
+        adminUrl,
+        hold: [advisoryLock(`device-session:${twoCheckSession}`)],
+        label: "two recent checks of one session on two devices",
+        racers: [c2, c3].map(
+          (checkedConcurrently) => () =>
+            touchDevice(db, tenantC.userId, checkedConcurrently.id, {
+              freshSession: true,
+              sessionId: twoCheckSession,
+            })
+        ),
+      });
+      assert.deepEqual(
+        twoChecks.map((check) => check.status),
+        ["fulfilled", "fulfilled"]
+      );
+      const racedOrigins = [
+        ...(await originOf(c2.id, twoCheckSession)),
+        ...(await originOf(c3.id, twoCheckSession)),
+      ].sort();
+      assert.deepEqual(racedOrigins, ["register", "use"]);
+    });
+    // after the window, the other two need a fresh session to be revoked (the rule of device.revoke holds)
+    for (const notOwned of [c2, c3]) {
+      await assert.rejects(
+        () =>
+          revokeDevice(db, tenantC.userId, notOwned.id, {
+            actingSession: stale(recent),
+          }),
+        FreshSessionRequiredError
+      );
+      // and "Sair" refuses them, even for a recent session: it only revokes the session's own device
+      await assert.rejects(
+        () =>
+          revokeOwnDevice(db, tenantC.userId, notOwned.id, {
+            actingSessionId: recent,
+          }),
+        DeviceNotOwnedError
+      );
+      assert.equal(await revokedAt(notOwned.id), null, "nothing revoked");
+    }
+    // the runtime that confirmed the device only after the window: a plain use, and "Sair" refuses it
+    const late = await createSession(tenantC.userId, 16);
+    await touchDevice(db, tenantC.userId, c3.id, {
+      freshSession: false,
+      sessionId: late,
+    });
+    assert.deepEqual(await originOf(c3.id, late), ["use"]);
+    await assert.rejects(
+      () =>
+        revokeOwnDevice(db, tenantC.userId, c3.id, { actingSessionId: late }),
+      DeviceNotOwnedError
+    );
+    assert.equal(await sessionExists(late), true, "the refusal ends nothing");
+    // another user's device is not found, for "Sair" as for anything else
+    await assert.rejects(
+      () =>
+        revokeOwnDevice(db, tenantA.userId, c1.id, {
+          actingSessionId: recent,
+        }),
+      DeviceNotFoundError
+    );
+    // the own device goes without a fresh session: its grants, its sessions (this one included), not the others
+    await withSession(
+      db,
+      tenantC,
+      recent,
+      "offline:manage",
+      (transaction, identity) =>
+        issueOfflineLeaseGrant(transaction, identity, { deviceId: c1.id })
+    );
+    const bystander = await createSession(tenantC.userId);
+    const sairRequest = randomUUID();
+    const own5c = await revokeOwnDevice(db, tenantC.userId, c1.id, {
+      actingSessionId: recent,
+      requestId: sairRequest,
+    });
+    assert.deepEqual(own5c, {
+      alreadyRevoked: false,
+      endedCurrentSession: true,
+      revokedGrantCount: 1,
+    });
+    assert.notEqual(await revokedAt(c1.id), null);
+    assert.equal(await sessionExists(recent), false);
+    assert.equal(
+      await sessionExists(registrar),
+      false,
+      "the session that registered it used it too"
+    );
+    assert.equal(await sessionExists(bystander), true, "never the others");
+    const sairAudit = await auditRows(c1.id);
+    assert.equal(sairAudit.length, 1);
+    assert.equal(sairAudit[0]?.request_id, sairRequest);
+    assert.equal(sairAudit[0]?.acting_session_id, recent);
+    assert.equal(
+      sairAudit[0]?.acting_device_id,
+      c1.id,
+      "the device revoked itself"
+    );
+    // once the session is gone its link went with it: a repetition revokes nothing and audits nothing
+    await assert.rejects(
+      () =>
+        revokeOwnDevice(db, tenantC.userId, c1.id, {
+          actingSessionId: recent,
+        }),
+      DeviceNotOwnedError
+    );
+    assert.equal((await auditRows(c1.id)).length, 1);
+    assert.equal(await revokedAt(c2.id), null);
+    tests.push(
+      "a recent session that confirms three devices owns only the first, two concurrent checks of one session give exactly one own device, and a link first made by a lease is never promoted; after the window the other two need a fresh session for device.revoke, and revokeOwnDevice (Sair) refuses them, a device confirmed after the window and another user's device (not found), changing nothing; the own device is revoked without a fresh session with its grants and linked sessions, never the others, audited once with the request id and as acting on itself"
     );
 
     // ------------------------------------- 6. what the function refuses

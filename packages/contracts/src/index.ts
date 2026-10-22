@@ -1764,6 +1764,19 @@ export const polarisContract = {
           revokedGrantIds: z.array(z.string().uuid()),
         })
       ),
+    // "Sair" revokes this installation (ADR 0048, emenda de 22/10): only the
+    // device this session owns (it registered it, or confirmed it first while
+    // signed in within 15 minutes), only the sessions linked to it, and without
+    // a fresh session. Another device of the user is FORBIDDEN with reason
+    // `not_current_device`, even for a recent session; an unknown one (or
+    // another user's) NOT_FOUND. Repeating it is harmless (`alreadyRevoked`).
+    revokeCurrent: oc.input(z.object({ deviceId: z.string().uuid() })).output(
+      z.object({
+        alreadyRevoked: z.boolean(),
+        endedCurrentSession: z.boolean(),
+        revokedGrantCount: z.number().int().nonnegative(),
+      })
+    ),
   },
   inventory: {
     getBalance: oc

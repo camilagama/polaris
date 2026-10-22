@@ -295,6 +295,14 @@ async function workspace(commands: number, trySync = () => Promise.resolve()) {
   return { purge, value };
 }
 
+/** A browser with no device (the runtime never registered one): nothing to revoke. */
+const noDevice = () => ({
+  forget: () => undefined,
+  id: null,
+  isOnline: () => true,
+  revoke: () => Promise.reject(new Error("not called")),
+});
+
 describe("logging out end to end", () => {
   it("purges, ends the session and leaves, in that order, when nothing is queued", async () => {
     const { purge, value } = await workspace(0);
@@ -304,6 +312,7 @@ describe("logging out end to end", () => {
       return Promise.resolve();
     });
     const result = await startLogout({
+      device: noDevice(),
       leave: () => order.push("leave"),
       signOut: () => {
         order.push("signOut");
@@ -321,7 +330,12 @@ describe("logging out end to end", () => {
     );
     const signOut = vi.fn(() => Promise.resolve());
     const leave = vi.fn();
-    const result = await startLogout({ leave, signOut, workspaces: [value] });
+    const result = await startLogout({
+      device: noDevice(),
+      leave,
+      signOut,
+      workspaces: [value],
+    });
     expect(result).toMatchObject({
       blocked: [{ reason: "offline", total: 2 }],
       status: "blocked",
@@ -336,7 +350,12 @@ describe("logging out end to end", () => {
     const signOut = vi.fn(() => Promise.resolve());
     const leave = vi.fn();
     expect(
-      await discardAndLeave({ leave, signOut, workspaces: [value] })
+      await discardAndLeave({
+        device: noDevice(),
+        leave,
+        signOut,
+        workspaces: [value],
+      })
     ).toEqual({ status: "signed_out" });
     expect(purge).toHaveBeenCalledWith({ discardPending: true });
     expect(signOut).toHaveBeenCalledTimes(1);
@@ -348,6 +367,7 @@ describe("logging out end to end", () => {
     const leave = vi.fn();
     expect(
       await startLogout({
+        device: noDevice(),
         leave,
         signOut: () => Promise.reject(new Error("network")),
         workspaces: [value],
@@ -365,6 +385,7 @@ describe("logging out end to end", () => {
         returnTo: "/devices",
       });
       await startLogout({
+        device: noDevice(),
         leave: () => order.push(`leave ${destination}`),
         signOut: () => {
           order.push("signOut");
@@ -396,6 +417,7 @@ describe("logging out end to end", () => {
       );
       const leave = vi.fn();
       const result = await startLogout({
+        device: noDevice(),
         leave,
         signOut: () => Promise.resolve(),
         workspaces: [value],
