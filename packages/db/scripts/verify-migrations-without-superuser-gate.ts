@@ -5,6 +5,11 @@ import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import {
+  assertClean,
+  findViolations,
+  RUNTIME_GROUP_PATTERN,
+} from "./definer-hardening-checks";
 import { assertAllowedGateUrl } from "./gate-hosts";
 import {
   gateBranchPattern,
@@ -39,6 +44,13 @@ import {
  *
  * The replay is the real command (`bun run db:migrate` of this package, drizzle-kit), so a refusal is the one the
  * staging deploy would hit; the error of the failing migration is printed first.
+ *
+ * After the replay the gate runs the read-only definer-hardening checks, the ones `staging:verify-database after-migrate`
+ * runs on Neon. PostgreSQL 16+ makes a non-superuser with CREATEROLE a member WITH ADMIN OPTION, INHERIT FALSE, SET FALSE of
+ * every role it creates, so the owner is an ADMIN-only member of every `polaris_*` role here too (the gate asserts the
+ * edges exist, so the proof cannot pass by their absence); such an edge is not a runtime login, and the checks must pass.
+ * The control: the same owner with INHERIT or SET on a `*_runtime` group is a runtime login that is the database owner,
+ * and the checks must report it.
  *
  * The guard that replaced NOSUPERUSER in the `ALTER ROLE` of a migration (a `DO` that raises when the role is a
  * superuser) is proven by the negative path: for every `ALTER ROLE` of the migrations, the gate makes the role a
@@ -288,6 +300,51 @@ async function run() {
         journalMigrationCount(),
         "every migration of the journal ran"
       );
+      const adminEdges = await verify.query<{
+        groups: string;
+        only_admin: string;
+      }>(
+        `SELECT count(*)::text AS groups,
+                count(*) FILTER (WHERE m.admin_option AND NOT m.inherit_option AND NOT m.set_option)::text AS only_admin
+           FROM pg_catalog.pg_auth_members m
+           JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
+           JOIN pg_catalog.pg_roles u ON u.oid = m.member
+          WHERE u.rolname = $1 AND g.rolname ~ $2`,
+        [OWNER, RUNTIME_GROUP_PATTERN]
+      );
+      const [edges] = adminEdges.rows;
+      assert.ok(
+        Number(edges?.groups) > 0 && edges?.groups === edges?.only_admin,
+        "the owner is an ADMIN-only member (no INHERIT, no SET) of every runtime group it created"
+      );
+      assertClean(await findViolations(verify));
+      // the control: INHERIT or SET on a runtime group makes the owner a runtime login, which is the database owner
+      const [group] = await rolesWhere(
+        verify,
+        "rolname ~ $1",
+        RUNTIME_GROUP_PATTERN
+      );
+      assert.ok(group, "a runtime group the owner administers");
+      for (const option of [
+        "INHERIT TRUE, SET FALSE",
+        "INHERIT FALSE, SET TRUE",
+      ]) {
+        await verify.query("BEGIN");
+        try {
+          await verify.query(
+            `GRANT ${quote(group)} TO ${OWNER} WITH ${option}`
+          );
+          assert.ok(
+            (await findViolations(verify)).privilegedRuntime.includes(
+              `${OWNER} (database owner)`
+            ),
+            `an owner with ${option} on ${group} is not reported`
+          );
+        } finally {
+          await verify.query("ROLLBACK").catch(() => undefined);
+        }
+      }
+      assertClean(await findViolations(verify));
       const risky = await verify.query<{ rolname: string }>(
         `SELECT rolname FROM pg_catalog.pg_roles
           WHERE rolname LIKE 'polaris\\_%' AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls)
@@ -340,6 +397,7 @@ async function run() {
       tests: [
         "every migration replays from scratch as a login owner with CREATEROLE and no SUPERUSER, member of a neon_superuser with CREATEDB, CREATEROLE, BYPASSRLS and REPLICATION, owner of the database and of public",
         "no polaris role the migrations made carries SUPERUSER, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS",
+        "the read-only definer-hardening checks of the staging after-migrate pass with the owner an ADMIN-only member of every runtime group, and report the same owner with INHERIT or SET on one",
         "every ALTER ROLE of the migrations is guarded: with the role made a superuser the statement fails",
       ],
     };

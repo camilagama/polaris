@@ -8,7 +8,9 @@ import type { Client } from "pg";
  * runs them after every migration of the staging database, where nothing may be written.
  */
 // a runtime role is a `polaris_*_runtime` group, a temporary gate login, or any role that is a member of such a group
-// (production logins have free names); PUBLIC is checked on its own, because every role inherits from it. Membership is explicit (pg_auth_members, followed through groups): pg_has_role says a superuser is a member of everything. A runtime role that is a superuser or the database owner is reported as such and left out of the membership checks
+// (production logins have free names); PUBLIC is checked on its own, because every role inherits from it. Membership is explicit (pg_auth_members, followed through groups): pg_has_role says a superuser is a member of everything. A runtime role that is a superuser or the database owner is reported as such and left out of the membership checks.
+// An edge of the database owner with ADMIN OPTION alone (inherit and set false) does not count toward membership: it lets the owner administer the group, not use its privileges. PostgreSQL 16+ creates exactly that edge when a role with CREATEROLE but no SUPERUSER creates a role: the creator is made a member WITH ADMIN OPTION, INHERIT FALSE, SET FALSE (on Neon the grantor is cloud_admin), so `neondb_owner` is an ADMIN-only member of every polaris_* role, and that does not make it a runtime login. The edge would let the owner put itself in the group (GRANT … TO self), but the owner and migrator already can: it owns the database and the objects and creates and drops these roles, so there is nothing to find. The exemption is only the owner's: any other role with an ADMIN-only edge on a runtime group is still a runtime role, because nothing explains that edge and the role could grant itself the group.
+
 export const RUNTIME_GROUP_PATTERN = "^polaris_.+_runtime$";
 // fewer definer functions than the migrations create means the database is not the migrated one
 export const MIN_DEFINER_FUNCTIONS = 88;
@@ -72,8 +74,10 @@ export async function findViolations(client: Client): Promise<Findings> {
   const runtime = `
     WITH RECURSIVE closure(member, roleid) AS (
       SELECT member, roleid FROM pg_auth_members
+       WHERE inherit_option OR set_option OR member <> (SELECT datdba FROM pg_database WHERE datname = current_database())
       UNION
       SELECT c.member, m.roleid FROM closure c JOIN pg_auth_members m ON m.member = c.roleid
+       WHERE m.inherit_option OR m.set_option OR m.member <> (SELECT datdba FROM pg_database WHERE datname = current_database())
     ),
     runtime AS (
       SELECT r.oid, r.rolname, r.rolsuper, r.rolcreaterole, r.rolreplication, r.rolbypassrls, r.oid = d.datdba AS is_owner
