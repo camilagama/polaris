@@ -25,7 +25,13 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
-import { lockRow, raceBehindLock, raceRounds } from "./concurrency-support";
+import {
+  advisoryLock,
+  eachRound,
+  lockRow,
+  raceBehindLock,
+  raceRounds,
+} from "./concurrency-support";
 import {
   createTenantFixture,
   type Database,
@@ -647,21 +653,32 @@ async function run() {
       sessionId: leased,
     });
     assert.deepEqual(await originOf(c2.id, leased), ["use"]);
-    // two recent checks of one session on two devices at the same time: exactly one becomes its own
-    const twoCheckSession = await createSession(tenantC.userId);
-    await Promise.all(
-      [c2, c3].map((checkedConcurrently) =>
-        touchDevice(db, tenantC.userId, checkedConcurrently.id, {
-          freshSession: true,
-          sessionId: twoCheckSession,
-        })
-      )
-    );
-    const racedOrigins = [
-      ...(await originOf(c2.id, twoCheckSession)),
-      ...(await originOf(c3.id, twoCheckSession)),
-    ].sort();
-    assert.deepEqual(racedOrigins, ["register", "use"]);
+    // two recent checks of one session on two devices at the same time: exactly one becomes its own. The holder
+    // takes the lock of the session first, so both checks are seen waiting on it before they go on
+    await eachRound(async () => {
+      const twoCheckSession = await createSession(tenantC.userId);
+      const { results: twoChecks } = await raceBehindLock({
+        adminUrl,
+        hold: [advisoryLock(`device-session:${twoCheckSession}`)],
+        label: "two recent checks of one session on two devices",
+        racers: [c2, c3].map(
+          (checkedConcurrently) => () =>
+            touchDevice(db, tenantC.userId, checkedConcurrently.id, {
+              freshSession: true,
+              sessionId: twoCheckSession,
+            })
+        ),
+      });
+      assert.deepEqual(
+        twoChecks.map((check) => check.status),
+        ["fulfilled", "fulfilled"]
+      );
+      const racedOrigins = [
+        ...(await originOf(c2.id, twoCheckSession)),
+        ...(await originOf(c3.id, twoCheckSession)),
+      ].sort();
+      assert.deepEqual(racedOrigins, ["register", "use"]);
+    });
     // after the window, the other two need a fresh session to be revoked (the rule of device.revoke holds)
     for (const notOwned of [c2, c3]) {
       await assert.rejects(
