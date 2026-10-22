@@ -1,4 +1,9 @@
 import { Client } from "pg";
+import {
+  ENVIRONMENT_MARKER_SQL,
+  type EnvironmentReadings,
+  readsAsEnvironment,
+} from "./environment-marker";
 import { assertAllowedGateUrl, isCiEnvironment } from "./gate-hosts";
 
 const branchPattern = /^pr\d+-[a-z0-9-]+-gate$/;
@@ -38,35 +43,33 @@ const refusedEnvironments: readonly string[] = [
 
 /** The slice of `pg.Client` the marker check uses (a fake in the tests). */
 export interface MarkerClient {
-  query: (sql: string) => Promise<{
-    rows: Array<{ current: string | null; stored: string | null }>;
-  }>;
+  query: (sql: string) => Promise<{ rows: EnvironmentReadings[] }>;
 }
 
-// Same marker as verify-staging-database.ts (`ALTER DATABASE … SET
-// polaris.environment`). Both reads count: the stored one is what ALTER DATABASE
-// wrote, and the current one is what this session sees (a connection option or
-// a role setting could hide the stored one, never add to a refusal).
-const environmentMarkerSql = `SELECT current_setting('polaris.environment', true) AS current,
-       (SELECT substring(c FROM '^polaris\\.environment=(.*)$')
-          FROM pg_db_role_setting s
-          JOIN pg_database d ON d.oid = s.setdatabase,
-               unnest(s.setconfig) AS c
-         WHERE d.datname = current_database() AND s.setrole = 0
-           AND c LIKE 'polaris.environment=%'
-         LIMIT 1) AS stored`;
-
-/** Refuses a database marked as production, staging or restore-drill. */
+/**
+ * Refuses a database marked as production, staging or restore-drill. Every reading counts (the database
+ * comment, what `ALTER DATABASE … SET` stored, and what the session sees), read as in `environment-marker.ts`:
+ * the session could hide the stored marker, never add to a refusal.
+ */
 export async function assertDisposableEnvironment(
   client: MarkerClient
 ): Promise<void> {
-  const { rows } = await client.query(environmentMarkerSql);
-  for (const value of [rows[0]?.current, rows[0]?.stored]) {
-    if (refusedEnvironments.includes((value ?? "").trim().toLowerCase())) {
-      throw new Error(
-        "The gate target is marked as a protected environment (polaris.environment): refusing to run a gate in it."
-      );
-    }
+  const { rows } = await client.query(ENVIRONMENT_MARKER_SQL);
+  const [row] = rows;
+  if (
+    row &&
+    readsAsEnvironment(
+      {
+        comment: row.comment ?? null,
+        current: row.current,
+        stored: row.stored,
+      },
+      refusedEnvironments
+    )
+  ) {
+    throw new Error(
+      "The gate target is marked as a protected environment (polaris.environment): refusing to run a gate in it."
+    );
   }
 }
 

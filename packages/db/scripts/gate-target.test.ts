@@ -192,7 +192,11 @@ describe("connectToGateTarget", () => {
 
 describe("the environment marker of the target", () => {
   /** A client that answers the marker query with the given values and records its calls. */
-  function fakeClient(current: string | null, stored: string | null = null) {
+  function fakeClient(
+    current: string | null,
+    stored: string | null = null,
+    comment: string | null = null
+  ) {
     const calls: string[] = [];
     const client = {
       connect: () => {
@@ -205,7 +209,7 @@ describe("the environment marker of the target", () => {
       },
       query: (sql: string) => {
         calls.push(sql.includes("polaris.environment") ? "marker" : "other");
-        return Promise.resolve({ rows: [{ current, stored }] });
+        return Promise.resolve({ rows: [{ comment, current, stored }] });
       },
     };
     return { calls, client: client as unknown as Client };
@@ -229,6 +233,53 @@ describe("the environment marker of the target", () => {
       );
     });
   }
+
+  for (const value of ["production", "staging", "restore-drill"]) {
+    it(`refuses '${value}' when only the database comment says so (the marker Neon allows)`, async () => {
+      const { calls, client } = fakeClient(
+        null,
+        null,
+        `polaris.environment=${value}`
+      );
+      await expect(connectToGateTarget(target, () => client)).rejects.toThrow(
+        protectedRefusal
+      );
+      expect(calls).toEqual(["connect", "marker", "end"]);
+    });
+  }
+
+  it("refuses a comment that names a protected environment in any formatting, which would not be a marker to accept", async () => {
+    const comments = [
+      " polaris.environment=Production",
+      "polaris.environment=staging ",
+      "polaris.environment = production",
+      "polaris.environment: 'production'",
+      "polaris.environment=production extra",
+      "banco de prod. polaris.environment=production",
+    ];
+    await Promise.all(
+      comments.map((comment) =>
+        expect(
+          assertDisposableEnvironment(fakeClient("", null, comment).client)
+        ).rejects.toThrow(protectedRefusal)
+      )
+    );
+  });
+
+  it("allows a comment that is not a protected marker (control)", async () => {
+    const comments = [
+      "default administrative connection database",
+      "polaris.environment=staging-x",
+      "production",
+    ];
+    await Promise.all(
+      comments.map((comment) =>
+        expect(
+          assertDisposableEnvironment(fakeClient("", null, comment).client)
+        ).resolves.toBeUndefined()
+      )
+    );
+  });
 
   it("refuses the marker with other case or spaces", async () => {
     await expect(
