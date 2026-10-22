@@ -70,7 +70,10 @@ describe("percentageProblem (U-29)", () => {
     ]) {
       expect(percentageProblem(text)).toBe(PERCENTAGE_RULE_TEXT);
     }
-    expect(PERCENTAGE_RULE_TEXT).toContain("0 a 100");
-    expect(PERCENTAGE_RULE_TEXT).toContain("6 casas");
+    expect(PERCENTAGE_RULE_TEXT).toBe(
+      "Informe um percentual de 0 a 100, por exemplo 2,5."
+    );
+    // the six decimals are only enforced: the text does not ask the shopkeeper to count them
+    expect(PERCENTAGE_RULE_TEXT).not.toContain("casas");
   });
 });

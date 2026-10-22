@@ -144,13 +144,19 @@ test("U-29: percentual inválido é dito no campo, com o limite aceito, sem 'Ten
   await percentage.fill("250");
   await page.getByRole("button", { name: "Criar perfil" }).click();
 
-  const message =
-    "Informe o percentual de 0 a 100, com até 6 casas decimais, por exemplo 2,5.";
+  const message = "Informe um percentual de 0 a 100, por exemplo 2,5.";
   await expect(page.getByText(message)).toBeVisible();
   await expect(percentage).toHaveAttribute("aria-invalid", "true");
   const describedBy = await percentage.getAttribute("aria-describedby");
   await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
   await expect(percentage).toBeFocused();
+  // the 3 px focus ring plus its 3 px offset clear the message, so the ring does not strike its first line
+  const margin = await page
+    .locator(`[id="${describedBy}"]`)
+    .evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).marginTop)
+    );
+  expect(margin).toBeGreaterThanOrEqual(6);
   // nothing generic at the top of the page, and no retry for something the person has to fix
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(

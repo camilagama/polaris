@@ -1,6 +1,5 @@
 import {
   MAX_RATE_PERCENTAGE_POINTS,
-  PERCENTAGE_SCALE,
   Percentage,
 } from "@polaris/domain/money/money";
 
@@ -13,8 +12,8 @@ const percentFormat = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 0,
 });
 
-/** What the field says when the percentage cannot be a fee rate: the limit the server accepts, with an example (U-29). */
-export const PERCENTAGE_RULE_TEXT = `Informe o percentual de 0 a ${MAX_RATE_PERCENTAGE_POINTS}, com até ${PERCENTAGE_SCALE} casas decimais, por exemplo 2,5.`;
+/** What the field says when the percentage cannot be a fee rate: the range, with an example. The six decimals are the server's, not the shopkeeper's (U-29). */
+export const PERCENTAGE_RULE_TEXT = `Informe um percentual de 0 a ${MAX_RATE_PERCENTAGE_POINTS}, por exemplo 2,5.`;
 
 /**
  * The same check the server runs on a fee percentage (nonnegative, at most 100, up to 6 decimals), before
